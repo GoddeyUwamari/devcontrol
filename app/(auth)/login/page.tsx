@@ -24,10 +24,18 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  tenantId: z.string().min(1, "Please select a tenant"),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -42,13 +50,14 @@ export default function LoginPage() {
     defaultValues: {
       email: "",
       password: "",
+      tenantId: "00000000-0000-0000-0000-000000000001", // Default to Demo Company
     },
   });
 
   const onSubmit = async (data: LoginFormValues) => {
     try {
       setIsLoading(true);
-      await login(data.email, data.password);
+      await login(data.email, data.password, data.tenantId);
       toast.success("Login successful!");
       router.push("/dashboard");
     } catch (error: any) {
@@ -106,6 +115,38 @@ export default function LoginPage() {
                         {...field}
                       />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="tenantId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tenant</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      disabled={isLoading}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a tenant" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="00000000-0000-0000-0000-000000000001">
+                          Demo Company
+                        </SelectItem>
+                        <SelectItem value="07f2ec41-21b1-44d5-89d8-9a2f50e64dfb">
+                          TestCompany
+                        </SelectItem>
+                        <SelectItem value="ac445df3-3c46-4fde-915b-c87b779510c6">
+                          FreshCompany
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

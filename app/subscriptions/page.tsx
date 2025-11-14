@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { MoreHorizontal, AlertCircle, CreditCard } from 'lucide-react'
+import { Plus, AlertCircle, CreditCard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -14,12 +14,6 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -28,18 +22,11 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import api from '@/lib/api'
+import { SubscriptionFormDialog } from '@/components/subscriptions/subscription-form-dialog'
+import { SubscriptionActions } from '@/components/subscriptions/subscription-actions'
+import type { Subscription } from '@/lib/types'
 
-// Types
-interface Subscription {
-  id: string
-  tenantName: string
-  plan: string
-  status: 'active' | 'cancelled' | 'past_due'
-  amount: number
-  nextBillingDate: string
-}
-
-type StatusFilter = 'all' | 'active' | 'cancelled' | 'past_due'
+type StatusFilter = 'all' | 'active' | 'cancelled' | 'past_due' | 'expired' | 'suspended'
 
 
 // Loading Skeleton Component
@@ -127,6 +114,7 @@ function EmptyState() {
 
 export default function SubscriptionsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
   // Fetch subscriptions with status filter
   const { data: subscriptions = [], isLoading, error, refetch } = useQuery({
@@ -140,15 +128,19 @@ export default function SubscriptionsPage() {
 
   // Status badge helper
   const getStatusBadge = (status: Subscription['status']) => {
-    const variants = {
+    const variants: Record<Subscription['status'], string> = {
       active: 'bg-green-100 text-green-700 hover:bg-green-100',
       cancelled: 'bg-gray-100 text-gray-700 hover:bg-gray-100',
       past_due: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
+      expired: 'bg-red-100 text-red-700 hover:bg-red-100',
+      suspended: 'bg-orange-100 text-orange-700 hover:bg-orange-100',
     }
-    const labels = {
+    const labels: Record<Subscription['status'], string> = {
       active: 'Active',
       cancelled: 'Cancelled',
       past_due: 'Past Due',
+      expired: 'Expired',
+      suspended: 'Suspended',
     }
     return (
       <Badge className={variants[status]} variant="secondary">
@@ -177,11 +169,17 @@ export default function SubscriptionsPage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Subscriptions</h1>
-        <p className="text-muted-foreground mt-2">
-          Manage and monitor all active subscriptions
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Subscriptions</h1>
+          <p className="text-muted-foreground mt-2">
+            Manage and monitor all active subscriptions
+          </p>
+        </div>
+        <Button onClick={() => setCreateDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Create Subscription
+        </Button>
       </div>
 
       {/* Filter Controls */}
@@ -195,6 +193,8 @@ export default function SubscriptionsPage() {
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>
             <SelectItem value="past_due">Past Due</SelectItem>
+            <SelectItem value="expired">Expired</SelectItem>
+            <SelectItem value="suspended">Suspended</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -226,37 +226,18 @@ export default function SubscriptionsPage() {
               {subscriptions.map((subscription) => (
                 <TableRow key={subscription.id}>
                   <TableCell className="font-medium">
-                    {subscription.tenantName}
+                    {subscription.tenantName || 'N/A'}
                   </TableCell>
-                  <TableCell>{subscription.plan}</TableCell>
+                  <TableCell>{subscription.plan || subscription.planId}</TableCell>
                   <TableCell>{getStatusBadge(subscription.status)}</TableCell>
                   <TableCell className="font-medium">
-                    {formatCurrency(subscription.amount)}
+                    {formatCurrency(subscription.amount || subscription.currentPrice)}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatDate(subscription.nextBillingDate)}
+                    {formatDate(subscription.nextBillingDate || subscription.currentPeriodEnd)}
                   </TableCell>
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => console.log('View Details', subscription.id)}
-                        >
-                          View Details
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => console.log('Cancel Subscription', subscription.id)}
-                          className="text-red-600"
-                        >
-                          Cancel Subscription
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <SubscriptionActions subscription={subscription} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -264,6 +245,12 @@ export default function SubscriptionsPage() {
           </Table>
         </div>
       )}
+
+      <SubscriptionFormDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        mode="create"
+      />
     </div>
   )
 }

@@ -17,30 +17,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertCircle, FileText, MoreVertical, Download, Eye } from 'lucide-react'
+import { AlertCircle, FileText, Plus } from 'lucide-react'
 import api from '@/lib/api'
-
-interface Invoice {
-  id: string
-  tenantId: string
-  tenantName: string
-  amount: number
-  status: 'paid' | 'pending' | 'open' | 'overdue' | 'void'
-  dueDate: string
-  createdAt: string
-}
+import { InvoiceFormDialog } from '@/components/invoices/invoice-form-dialog'
+import { InvoiceActions } from '@/components/invoices/invoice-actions'
+import type { Invoice } from '@/lib/types'
 
 export default function InvoicesPage() {
   const [statusFilter, setStatusFilter] = useState('all')
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
   // Fetch invoices using React Query
   const { data: invoices = [], isLoading, error, refetch } = useQuery({
@@ -71,12 +59,12 @@ export default function InvoicesPage() {
 
   // Get status badge styling
   const getStatusBadge = (status: Invoice['status']) => {
-    const variants = {
+    const variants: Record<Invoice['status'], string> = {
+      draft: 'bg-gray-100 text-gray-700 hover:bg-gray-100',
       paid: 'bg-green-100 text-green-700 hover:bg-green-100',
-      pending: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
-      open: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
-      overdue: 'bg-red-100 text-red-700 hover:bg-red-100',
-      void: 'bg-gray-100 text-gray-700 hover:bg-gray-100',
+      open: 'bg-blue-100 text-blue-700 hover:bg-blue-100',
+      void: 'bg-red-100 text-red-700 hover:bg-red-100',
+      uncollectible: 'bg-orange-100 text-orange-700 hover:bg-orange-100',
     }
 
     return (
@@ -86,23 +74,20 @@ export default function InvoicesPage() {
     )
   }
 
-  // Handle actions (UI only)
-  const handleViewInvoice = (invoiceId: string) => {
-    console.log('View invoice:', invoiceId)
-  }
-
-  const handleDownloadPDF = (invoiceId: string) => {
-    console.log('Download PDF:', invoiceId)
-  }
-
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
-        <p className="text-muted-foreground mt-2">
-          Manage and track all invoices across your tenants
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
+          <p className="text-muted-foreground mt-2">
+            Manage and track all invoices across your tenants
+          </p>
+        </div>
+        <Button onClick={() => setCreateDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Create Invoice
+        </Button>
       </div>
 
       {/* Filter Controls */}
@@ -113,10 +98,11 @@ export default function InvoicesPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="open">Open</SelectItem>
             <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="overdue">Overdue</SelectItem>
             <SelectItem value="void">Void</SelectItem>
+            <SelectItem value="uncollectible">Uncollectible</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -215,33 +201,17 @@ export default function InvoicesPage() {
             <TableBody>
               {invoices.map((invoice) => (
                 <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.id}</TableCell>
-                  <TableCell>{invoice.tenantName}</TableCell>
-                  <TableCell>{formatCurrency(invoice.amount)}</TableCell>
+                  <TableCell className="font-medium">
+                    {invoice.invoiceNumber || invoice.id.substring(0, 8)}
+                  </TableCell>
+                  <TableCell>{invoice.tenantName || 'N/A'}</TableCell>
+                  <TableCell>
+                    {formatCurrency(invoice.amount || invoice.totalAmount)}
+                  </TableCell>
                   <TableCell>{getStatusBadge(invoice.status)}</TableCell>
                   <TableCell>{formatDate(invoice.dueDate)}</TableCell>
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => handleViewInvoice(invoice.id)}
-                        >
-                          <Eye className="mr-2 h-4 w-4" />
-                          View Invoice
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDownloadPDF(invoice.id)}
-                        >
-                          <Download className="mr-2 h-4 w-4" />
-                          Download PDF
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <InvoiceActions invoice={invoice} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -249,6 +219,8 @@ export default function InvoicesPage() {
           </Table>
         </div>
       )}
+
+      <InvoiceFormDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
     </div>
   )
 }

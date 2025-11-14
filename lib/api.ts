@@ -89,3 +89,15 @@ export const postData = async <T, D = any>(url: string, data: D): Promise<T> => 
   const response = await api.post<T>(url, data);
   return response.data;
 };
+
+// Helper function to update data via PATCH
+export const patchData = async <T, D = any>(url: string, data: D): Promise<T> => {
+  const response = await api.patch<T>(url, data);
+  return response.data;
+};
+
+// Helper function to delete data
+export const deleteData = async <T>(url: string): Promise<T> => {
+  const response = await api.delete<T>(url);
+  return response.data;
+};

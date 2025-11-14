@@ -10,11 +10,11 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import api from '@/lib/api'
 
-// Mock data for development
-const mockRevenueData = Array.from({ length: 30 }, (_, i) => ({
-  date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-  revenue: Math.floor(Math.random() * 10000) + 5000,
-}))
+// Revenue timeline data type
+interface RevenueDataPoint {
+  date: string
+  revenue: number
+}
 
 // Types
 interface BillingStats {
@@ -182,6 +182,31 @@ export default function DashboardPage() {
     },
   });
 
+  // Fetch revenue timeline data (requires backend endpoint: GET /api/billing/stats/revenue-timeline?days=30)
+  const { data: revenueData = [], isLoading: revenueLoading, error: revenueError } = useQuery<RevenueDataPoint[]>({
+    queryKey: ['revenue-timeline'],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/api/billing/stats/revenue-timeline?days=30');
+        // Extract timeline array from nested response
+        const timeline = response.data.data?.timeline || [];
+        // Transform dates to readable format
+        const formattedData = timeline.map((item: any) => ({
+          date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          revenue: item.revenue,
+        }));
+        return formattedData;
+      } catch (error) {
+        // If endpoint doesn't exist yet, return mock data
+        console.warn('Revenue timeline endpoint not available, using mock data');
+        return Array.from({ length: 30 }, (_, i) => ({
+          date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          revenue: Math.floor(Math.random() * 10000) + 5000,
+        }));
+      }
+    },
+  });
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -258,19 +283,19 @@ export default function DashboardPage() {
       )}
 
       {/* Revenue Chart */}
-      {statsLoading ? (
+      {revenueLoading ? (
         <ChartSkeleton />
       ) : (
         <Card>
           <CardHeader>
             <CardTitle>Revenue Overview</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Daily revenue for the last 30 days
+              Daily revenue for the last 30 days {revenueError && '(using mock data)'}
             </p>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={350}>
-              <LineChart data={mockRevenueData}>
+              <LineChart data={Array.isArray(revenueData) ? revenueData : []}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis
                   dataKey="date"

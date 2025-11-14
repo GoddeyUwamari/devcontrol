@@ -6,7 +6,7 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, tenantId: string) => Promise<void>;
   logout: () => void;
   getUser: () => User | null;
   setUser: (user: User | null) => void;
@@ -35,23 +35,27 @@ export const useAuth = create<AuthState>((set, get) => ({
     }
   },
 
-  login: async (email: string, password: string) => {
+  login: async (email: string, password: string, tenantId: string) => {
     try {
       set({ isLoading: true });
 
-      const response = await api.post<AuthResponse>('/api/auth/login', {
-        email,
-        password,
-      }, {
-        headers: {
-          'X-Tenant-ID': '00000000-0000-0000-0000-000000000001',
+      const response = await api.post<AuthResponse>(
+        '/api/auth/login',
+        {
+          email,
+          password,
         },
-      });
+        {
+          headers: {
+            'X-Tenant-ID': tenantId,
+          },
+        }
+      );
 
-      // Backend returns { success: true, data: { user, accessToken, expiresIn, sessionId }, message, timestamp }
+      // Backend returns { success: true, data: { user, accessToken, sessionId, expiresIn }, message, timestamp }
       const { user, accessToken, sessionId } = response.data.data;
 
-      // Store tokens, sessionId, and user in localStorage
+      // Store tokens and user in localStorage
       localStorage.setItem('accessToken', accessToken);
       localStorage.setItem('sessionId', sessionId);
       localStorage.setItem('user', JSON.stringify(user));
