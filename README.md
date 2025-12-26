@@ -509,3 +509,46 @@ If DevControl helped you, please:
 
 </div>
 ```
+## AWS Cost Explorer Integration (Optional)
+
+DevControl can fetch real-time infrastructure costs from AWS Cost Explorer.
+
+### Setup Instructions
+
+1. **Enable Cost Explorer in AWS Console:**
+   - Visit: https://console.aws.amazon.com/cost-management/
+   - Click "Enable Cost Explorer"
+   - Wait 24 hours for data population
+
+2. **Create IAM User or Use Existing:**
+   - Go to IAM → Users
+   - Attach policy: `CostExplorerReadOnlyAccess`
+   - Or create custom policy with `ce:GetCostAndUsage` permission
+
+3. **Configure Environment Variables:**
+```bash
+   cp backend/.env.example backend/.env
+   # Edit backend/.env with your AWS credentials
+```
+
+4. **Add AWS Credentials to `.env`:**
+```env
+   AWS_ACCESS_KEY_ID=your_key
+   AWS_SECRET_ACCESS_KEY=your_secret
+   AWS_REGION=us-east-1
+   AWS_ACCOUNT_ID=123456789012
+```
+
+5. **Restart Backend:**
+```bash
+   npm run dev:backend
+```
+
+### Graceful Fallback
+
+If AWS credentials are not configured or Cost Explorer is not enabled, DevControl automatically falls back to database costs. The application remains fully functional.
+
+### Costs
+
+AWS Cost Explorer charges $0.01 per API request. With hourly syncs, expect ~$7/month.
+
