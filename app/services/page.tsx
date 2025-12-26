@@ -75,18 +75,26 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   )
 }
 
+import { EmptyState as EmptyStateComponent } from '@/components/ui/empty-state'
+
 // Empty State Component
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center p-12 space-y-4 border rounded-lg">
-      <Layers className="h-12 w-12 text-muted-foreground" />
-      <div className="text-center">
-        <h3 className="text-lg font-semibold">No services found</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Get started by creating your first service
-        </p>
-      </div>
-    </div>
+    <EmptyStateComponent
+      icon={Layers}
+      title="No services yet"
+      description="Deploy your first service to start tracking deployments and infrastructure. Services are the building blocks of your platform."
+      action={{
+        label: 'Create Service',
+        onClick: () => {
+          // Will be connected to create service flow
+        },
+      }}
+      secondaryAction={{
+        label: 'Learn More',
+        onClick: () => window.open('https://docs.example.com', '_blank'),
+      }}
+    />
   )
 }
 
@@ -138,7 +146,7 @@ export default function ServicesPage() {
 }
 
   return (
-    <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6">
+    <div className="space-y-8">
       <Breadcrumb
         items={[
           { label: 'Dashboard', href: '/dashboard' },
@@ -146,14 +154,14 @@ export default function ServicesPage() {
         ]}
       />
 
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">Service Catalog</h1>
-          <p className="text-muted-foreground mt-2">
+          <p className="text-muted-foreground leading-relaxed">
             Manage and monitor all platform services created via CLI
           </p>
         </div>
-        <Button>
+        <Button className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />
           Create Service
         </Button>
@@ -188,21 +196,21 @@ export default function ServicesPage() {
       ) : services.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="border rounded-lg">
+        <div className="border rounded-lg overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Template</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>GitHub</TableHead>
-                <TableHead>Created Date</TableHead>
+                <TableHead className="min-w-[150px]">Name</TableHead>
+                <TableHead className="min-w-[100px]">Template</TableHead>
+                <TableHead className="min-w-[150px]">Owner</TableHead>
+                <TableHead className="min-w-[100px]">Status</TableHead>
+                <TableHead className="min-w-[120px]">GitHub</TableHead>
+                <TableHead className="min-w-[120px]">Created Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {services.map((service) => (
-                <TableRow key={service.id} className="cursor-pointer hover:bg-muted/50">
+                <TableRow key={service.id} className="cursor-pointer hover:bg-muted/50 transition-colors">
                   <TableCell className="font-medium">{service.name}</TableCell>
                   <TableCell>{getTemplateBadge(service.template)}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{service.owner}</TableCell>
@@ -213,7 +221,7 @@ export default function ServicesPage() {
                         href={service.githubUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center text-blue-600 hover:text-blue-800 hover:underline"
+                        className="inline-flex items-center text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Github className="h-4 w-4 mr-1" />

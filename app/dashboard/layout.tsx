@@ -1,5 +1,6 @@
-import { Sidebar } from '@/components/layout/sidebar'
-import { Header } from '@/components/layout/header'
+import { TopNav } from '@/components/layout/top-nav'
+import { ErrorBoundary } from '@/components/error-boundary'
+import { CommandPalette } from '@/components/command-palette'
 
 export default function DashboardLayout({
   children,
@@ -7,19 +8,19 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-[#F7F9FC]">
-      {/* Sidebar - Fixed Left */}
-      <Sidebar />
-
-      {/* Header - Fixed Top (with left margin for sidebar) */}
-      <Header />
+    <div className="min-h-screen bg-background">
+      {/* Top Navigation - Vercel Style */}
+      <TopNav />
 
       {/* Main Content Area */}
-      <main className="ml-60 pt-16">
-        <div className="p-6">
+      <main className="container mx-auto py-6">
+        <ErrorBoundary>
           {children}
-        </div>
+        </ErrorBoundary>
       </main>
+
+      {/* Command Palette (Cmd+K) */}
+      <CommandPalette />
     </div>
   )
 }

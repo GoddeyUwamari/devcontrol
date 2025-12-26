@@ -1,11 +1,12 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { ServicesRepository } from '../repositories/services.repository';
 import { CreateServiceRequest, UpdateServiceRequest, ServiceFilters, ApiResponse } from '../types';
+import { NotFoundError, DatabaseError } from '../utils/errors';
 
 const repository = new ServicesRepository();
 
 export class ServicesController {
-  async getAll(req: Request, res: Response): Promise<void> {
+  async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const filters: ServiceFilters = {
         status: req.query.status as string,
@@ -25,27 +26,17 @@ export class ServicesController {
 
       res.json(response);
     } catch (error) {
-      console.error('Error fetching services:', error);
-      const response: ApiResponse = {
-        success: false,
-        error: 'Failed to fetch services',
-      };
-      res.status(500).json(response);
+      next(new DatabaseError('Failed to fetch services'));
     }
   }
 
-  async getById(req: Request, res: Response): Promise<void> {
+  async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
       const service = await repository.findById(id);
 
       if (!service) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'Service not found',
-        };
-        res.status(404).json(response);
-        return;
+        throw new NotFoundError('Service');
       }
 
       const response: ApiResponse = {
@@ -55,29 +46,13 @@ export class ServicesController {
 
       res.json(response);
     } catch (error) {
-      console.error('Error fetching service:', error);
-      const response: ApiResponse = {
-        success: false,
-        error: 'Failed to fetch service',
-      };
-      res.status(500).json(response);
+      next(error);
     }
   }
 
-  async create(req: Request, res: Response): Promise<void> {
+  async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const serviceData: CreateServiceRequest = req.body;
-
-      // Validate required fields
-      if (!serviceData.name || !serviceData.template || !serviceData.owner || !serviceData.team_id) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'Missing required fields: name, template, owner, team_id',
-        };
-        res.status(400).json(response);
-        return;
-      }
-
       const service = await repository.create(serviceData);
 
       const response: ApiResponse = {
@@ -88,29 +63,18 @@ export class ServicesController {
 
       res.status(201).json(response);
     } catch (error) {
-      console.error('Error creating service:', error);
-      const response: ApiResponse = {
-        success: false,
-        error: 'Failed to create service',
-      };
-      res.status(500).json(response);
+      next(new DatabaseError('Failed to create service'));
     }
   }
 
-  async update(req: Request, res: Response): Promise<void> {
+  async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
       const updates: UpdateServiceRequest = req.body;
-
       const service = await repository.update(id, updates);
 
       if (!service) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'Service not found',
-        };
-        res.status(404).json(response);
-        return;
+        throw new NotFoundError('Service');
       }
 
       const response: ApiResponse = {
@@ -121,27 +85,17 @@ export class ServicesController {
 
       res.json(response);
     } catch (error) {
-      console.error('Error updating service:', error);
-      const response: ApiResponse = {
-        success: false,
-        error: 'Failed to update service',
-      };
-      res.status(500).json(response);
+      next(error);
     }
   }
 
-  async delete(req: Request, res: Response): Promise<void> {
+  async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
       const deleted = await repository.delete(id);
 
       if (!deleted) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'Service not found',
-        };
-        res.status(404).json(response);
-        return;
+        throw new NotFoundError('Service');
       }
 
       const response: ApiResponse = {
@@ -151,12 +105,7 @@ export class ServicesController {
 
       res.json(response);
     } catch (error) {
-      console.error('Error deleting service:', error);
-      const response: ApiResponse = {
-        success: false,
-        error: 'Failed to delete service',
-      };
-      res.status(500).json(response);
+      next(error);
     }
   }
 }

@@ -10,17 +10,27 @@ A complete platform engineering solution that provides visibility and management
 
 ## ✨ Features
 
+### 🎨 Modern Vercel-Inspired UI
+- **Horizontal Navigation** - Clean, modern top navigation bar
+- **Command Palette (⌘K)** - Quick search and navigation across all resources
+- **Quick Actions Menu** - One-click access to create services, deployments, and infrastructure
+- **Responsive Design** - Mobile-friendly with adaptive layouts
+- **Smooth Animations** - Polished transitions and hover effects
+- **Beautiful Empty States** - Helpful guidance when no data exists
+
 ### 📊 Dashboard
 - Real-time platform metrics (services, deployments, costs)
 - Recent deployment history
 - Service health overview
 - Monthly AWS cost tracking
+- Error boundaries for resilient UI
 
 ### 🚀 Service Catalog
 - View all services created via CLI
 - Filter by template type (API, Microservices)
 - GitHub repository links
 - Service status tracking
+- Horizontal scroll for mobile tables
 
 ![Services](docs/screenshots/02-services.png)
 
@@ -78,17 +88,42 @@ platform-portal/
 - Radix UI components
 - React Query (data fetching)
 - Zustand (state management)
+- cmdk (Command Palette)
+- sonner (Toast Notifications)
+- date-fns (Date Formatting)
 
 **Backend:**
 - Express.js
 - TypeScript
 - PostgreSQL
 - Node.js 20+
+- Zod (Validation)
+- Custom Error Handling
+- Repository Pattern
 
 **DevOps:**
 - Docker (PostgreSQL)
 - npm workspaces (monorepo)
 - Concurrent dev servers
+
+## 🎯 New in Week 1-2 Enhancement
+
+### Week 1: Real Data Integration & Error Handling ✅
+- ✅ **Enhanced Error Handling** - Custom error classes (ValidationError, NotFoundError, DatabaseError)
+- ✅ **Backend Validation** - Zod schemas for all API endpoints
+- ✅ **Frontend Error Boundaries** - Graceful error handling in React
+- ✅ **Service Names Fix** - Proper JOIN queries (service names instead of IDs)
+- ✅ **Loading States** - Comprehensive skeletons across all pages
+- ✅ **Mobile Responsive** - Tables scroll horizontally on mobile
+
+### Week 2: Vercel-Inspired UI Enhancements ✅
+- ✅ **Horizontal Navigation** - Modern top nav replacing sidebar
+- ✅ **Command Palette (⌘K)** - Spotlight-style search
+- ✅ **Quick Actions Dropdown** - One-click resource creation
+- ✅ **Enhanced Empty States** - Beautiful, actionable empty states
+- ✅ **Improved Typography** - Better spacing and readability
+- ✅ **Smooth Animations** - Polished transitions throughout
+- ✅ **Toast Notifications** - User feedback with sonner
 
 ## 🚀 Quick Start
 
