@@ -1,4 +1,4 @@
-# Platform Portal
+# DevControl
 
 <div align="center">
 
@@ -6,9 +6,9 @@
 ![React](https://img.shields.io/badge/React-19-blue?style=for-the-badge&logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Stars](https://img.shields.io/github/stars/GoddeyUwamari/platform-portal?style=for-the-badge)
+![Stars](https://img.shields.io/github/stars/GoddeyUwamari/devcontrol?style=for-the-badge)
 
-**The developer portal for platform engineering teams**
+**Take control of your development infrastructure**
 
 Track services, deployments, and AWS infrastructure from a beautiful dashboard.
 
@@ -27,7 +27,7 @@ Track services, deployments, and AWS infrastructure from a beautiful dashboard.
 - **DevOps engineers** tracking AWS costs and deployments
 - **Engineering managers** needing service visibility
 
-## ⭐ Why Platform Portal?
+## ⭐ Why DevControl?
 
 ✅ **2 minutes to deploy** - Not 2 weeks like Backstage  
 ✅ **Beautiful UI** - Vercel-quality design, not enterprise gray  
@@ -93,7 +93,7 @@ Track services, deployments, and AWS infrastructure from a beautiful dashboard.
 
 ### Monorepo Structure
 ```
-platform-portal/
+devcontrol/
 ├── backend/              # Express.js + TypeScript API
 │   ├── src/
 │   │   ├── config/      # Database & environment config
@@ -183,17 +183,17 @@ platform-portal/
 ### Installation
 ```bash
 # 1. Clone the repository
-git clone https://github.com/GoddeyUwamari/platform-portal.git
-cd platform-portal
+git clone https://github.com/GoddeyUwamari/devcontrol.git
+cd devcontrol
 
 # 2. Install dependencies (root + backend)
 npm install
 
 # 3. Start PostgreSQL with Docker
 docker run -d \
-  --name platform-postgres \
+  --name devcontrol-postgres \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=platform_portal \
+  -e POSTGRES_DB=devcontrol \
   -p 5432:5432 \
   postgres:14
 
@@ -201,7 +201,7 @@ docker run -d \
 node database/migrate.js
 
 # 5. (Optional) Load sample data
-psql -h localhost -U postgres -d platform_portal -f database/seeds/001_platform_seed.sql
+psql -h localhost -U postgres -d devcontrol -f database/seeds/001_platform_seed.sql
 
 # 6. Start both frontend and backend
 npm run dev
@@ -361,13 +361,13 @@ CREATE TABLE infrastructure_resources (
 
 Seamless integration with the [Platform Engineering Toolkit](https://github.com/GoddeyUwamari/platform-engineering-toolkit):
 ```bash
-# CLI creates service → Portal tracks it
+# CLI creates service → DevControl tracks it
 platform create api my-service --github
 
-# CLI deploys → Portal records deployment
+# CLI deploys → DevControl records deployment
 platform deploy aws my-service --env production
 
-# Portal automatically displays:
+# DevControl automatically displays:
 # ✅ Service in catalog
 # ✅ Deployment in history
 # ✅ AWS resources in infrastructure
@@ -407,7 +407,7 @@ Team management and system health
 
 ## 💼 For Businesses
 
-Need help implementing Platform Portal for your team?
+Need help implementing DevControl for your team?
 
 **Services Offered:**
 - 📞 **Free Consultation** - 30-minute discovery call
@@ -417,9 +417,10 @@ Need help implementing Platform Portal for your team?
 - 🔧 **Custom Development** - $150/hour for modifications
 
 **Contact:**  
-📧 goddey@wayuptech.com  
+📧 projectmanager@wayuptechn.com  
+📞 +1 (848) 228-9890  
 🔗 [Schedule a Call](https://calendly.com/goddeyuwamari)  
-💼 [WayUP Technology](https://wayuptech.com)
+💼 [WayUP Technology](https://wayuptechn.com)
 
 ---
 
@@ -445,12 +446,13 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 **Goddey Uwamari**
 
-- 🏢 Founder & CEO, [WayUP Technology](https://wayuptech.com)
+- 🏢 Founder & CEO, [WayUP Technology](https://wayuptechn.com)
 - 💼 Senior Full-Stack & Platform Engineer
-- 🎯 Target: Staff/Principal Engineer roles ($160K-350K+)
+- 🎯 Building open-source developer tools
 - 🌐 GitHub: [@GoddeyUwamari](https://github.com/GoddeyUwamari)
-- 🔗 LinkedIn: [Goddey Uwamari](https://www.linkedin.com/in/goddeyuwamari)
-- 📧 Email: goddey@wayuptech.com
+- 🔗 LinkedIn: [Goddey Uwamari](https://www.linkedin.com/in/goddey-uwamari)
+- 📧 Email: projectmanager@wayuptechn.com
+- 📞 Phone: +1 (848) 228-9890
 - 📍 Location: Newark, NJ (NYC Metro)
 
 ---
@@ -472,7 +474,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## ⭐ Show Your Support
 
-If Platform Portal helped you, please:
+If DevControl helped you, please:
 
 - ⭐ **Star this repository**
 - 🐦 **Share on Twitter/LinkedIn**
@@ -485,6 +487,7 @@ If Platform Portal helped you, please:
 
 **Built with ❤️ by platform engineers, for platform engineers**
 
-[⬆ Back to Top](#platform-portal)
+[⬆ Back to Top](#devcontrol)
 
 </div>
+```
