@@ -7,6 +7,9 @@ import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
 import { corsMiddleware } from './middleware/cors';
 import { pool, testConnection } from './config/database';
+import { metricsMiddleware } from './middleware/metrics';
+import metricsRoutes from './routes/metrics.routes';
+import { updateBusinessMetrics } from './metrics';
 
 dotenv.config();
 
@@ -29,6 +32,12 @@ if (NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 app.use(requestLogger);
+
+// Metrics middleware
+app.use(metricsMiddleware);
+
+// Metrics endpoint
+app.use(metricsRoutes);
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -73,6 +82,7 @@ const startServer = async () => {
       console.log(`Port: ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
       console.log(`API root: http://localhost:${PORT}/api`);
+      console.log(`Metrics: http://localhost:${PORT}/metrics`);
       console.log('='.repeat(50));
       console.log('Available endpoints:');
       console.log(`  - GET    /api/services`);
@@ -85,6 +95,14 @@ const startServer = async () => {
       console.log(`  - GET    /api/platform/stats/dashboard`);
       console.log('='.repeat(50));
     });
+
+    // Update business metrics every 30s
+    setInterval(async () => {
+      await updateBusinessMetrics(pool);
+    }, 30000);
+
+    // Initial metrics update
+    await updateBusinessMetrics(pool);
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);

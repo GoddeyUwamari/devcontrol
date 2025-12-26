@@ -1,0 +1,29 @@
+groups:
+  - name: devcontrol_alerts
+    interval: 30s
+    rules:
+      - alert: DevControlAPIDown
+        expr: up{job="devcontrol-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DevControl API is down"
+
+      - alert: HighAPIErrorRate
+        expr: |
+          (sum(rate(http_requests_total{status_code=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate (>5%)"
+
+      - alert: HighMemoryUsage
+        expr: |
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory usage above 85%"
