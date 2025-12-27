@@ -48,7 +48,7 @@ Track services, deployments, and AWS infrastructure from a beautiful dashboard.
 - **Beautiful Empty States** - Helpful guidance when no data exists
 
 ### 📊 Comprehensive Dashboard
-- Real-time platform metrics (6 services, 5 deployments, $1,675 AWS costs)
+- Real-time platform metrics (services, deployments, AWS costs)
 - Recent deployment history across all environments
 - Service health scores and status tracking
 - Monthly AWS cost breakdown with trend analysis
@@ -72,14 +72,25 @@ Track services, deployments, and AWS infrastructure from a beautiful dashboard.
 
 ![Deployments](docs/screenshots/03-deployments.png)
 
-### ☁️ Infrastructure Monitoring
-- AWS resource inventory (EC2, RDS, S3, Lambda, VPC, CloudFront, ELB)
-- Monthly cost breakdown: **$1,675 total** across 12 resources
-- Resource status monitoring (Running, Stopped, Terminated)
-- Filter by resource type for focused analysis
-- Service-to-infrastructure mapping
+### ☁️ Real-Time AWS Cost Tracking
+- **AWS Cost Explorer Integration** - Fetch real infrastructure costs
+- **Manual Sync Button** - Update costs on-demand with "Sync AWS"
+- **Last Synced Timestamp** - Shows "X minutes ago" sync status
+- **Free Tier Compatible** - Accurately tracks $0 costs
+- **Resource Inventory** - Track EC2, RDS, S3, Lambda, VPC, CloudFront, ELB
+- **Cost Breakdown** - Monthly spend by service and resource type
+- **Graceful Fallback** - Uses cached data when AWS unavailable
 
 ![Infrastructure](docs/screenshots/04-infrastructure.png)
+
+### 📊 Production Monitoring & Observability
+- **Prometheus + Grafana Stack** - Industry-standard monitoring
+- **Real-Time Metrics** - HTTP requests, error rates, response times
+- **Business KPIs** - Services, deployments, infrastructure costs
+- **System Metrics** - CPU, memory, disk, database performance
+- **Auto-Refresh Dashboard** - Updates every 30 seconds
+- **Alert Rules** - Automated alerts for critical conditions
+- **30-Day Retention** - Historical metrics for trend analysis
 
 ### 👥 Team Management & System Health
 - Team-based service ownership
@@ -108,14 +119,23 @@ devcontrol/
 │   ├── src/
 │   │   ├── config/      # Database & environment config
 │   │   ├── controllers/ # Business logic handlers
-│   │   ├── middleware/  # Auth, CORS, error handling
+│   │   ├── middleware/  # Auth, CORS, error handling, metrics
+│   │   ├── metrics/     # Prometheus metrics collection
 │   │   ├── repositories/# Data access layer (Repository Pattern)
 │   │   ├── routes/      # API route definitions
+│   │   ├── services/    # AWS Cost Explorer integration
 │   │   ├── validators/  # Zod validation schemas
 │   │   ├── utils/       # Custom error classes
 │   │   └── server.ts    # Express app entry point
 │   ├── package.json
 │   └── tsconfig.json
+├── monitoring/          # Prometheus + Grafana stack
+│   ├── docker-compose.monitoring.yml
+│   ├── prometheus/
+│   │   ├── prometheus.yml
+│   │   └── alerts.yml
+│   └── grafana/
+│       └── provisioning/
 ├── app/                 # Next.js 15 App Router
 ├── components/          # React components
 │   ├── layout/         # Navigation, headers
@@ -151,25 +171,42 @@ devcontrol/
 - **Zod** - Schema validation
 - **Repository Pattern** - Clean architecture
 - **Custom Error Classes** - Production error handling
+- **AWS SDK** - Cost Explorer integration
+- **prom-client** - Prometheus metrics
+
+**Monitoring:**
+- **Prometheus** - Metrics collection and storage
+- **Grafana** - Visualization and dashboards
+- **Node Exporter** - System metrics
+- **PostgreSQL Exporter** - Database metrics
 
 **DevOps:**
-- **Docker** - PostgreSQL containerization
+- **Docker** - PostgreSQL and monitoring containerization
 - **npm workspaces** - Monorepo management
 - **Concurrent** - Run frontend + backend simultaneously
 
 ---
 
-## 🎯 What's New in v2.0
+## 🎯 What's New
 
-### Week 1: Real Data Integration & Error Handling ✅
+### Weeks 3-4: Production Monitoring & AWS Integration ✅
+- ✅ **AWS Cost Explorer Integration** - Real-time cost tracking from AWS
+- ✅ **Manual Sync Endpoint** - POST /api/infrastructure/sync-aws
+- ✅ **Sync UI Button** - "Sync AWS" with loading states and toast notifications
+- ✅ **Last Synced Timestamp** - "X minutes ago" display
+- ✅ **Prometheus Monitoring** - 4-container stack (Prometheus, Grafana, exporters)
+- ✅ **Custom Metrics** - HTTP requests, business KPIs, system resources
+- ✅ **Real-Time Dashboard** - Auto-refresh every 30s
+- ✅ **Alert Rules** - Critical and warning conditions
+- ✅ **Graceful Degradation** - Falls back to cached data when AWS unavailable
+
+### Week 1-2: Foundation & Real Data ✅
 - ✅ **Production Error Handling** - Custom error classes (ValidationError, NotFoundError, DatabaseError)
 - ✅ **Backend Validation** - Zod schemas validate all API requests
 - ✅ **React Error Boundaries** - Graceful degradation on component failures
 - ✅ **Service Name Resolution** - Proper SQL JOINs (displays "ml-service" not "eeeeeeee")
 - ✅ **Loading States** - Skeleton screens prevent layout shift
 - ✅ **Mobile First** - Responsive tables with horizontal scroll
-
-### Week 2: Vercel-Inspired UI Transformation ✅
 - ✅ **Horizontal Navigation** - Modern top nav (killed the sidebar!)
 - ✅ **Command Palette (⌘K)** - Instant search across services, deployments, infrastructure
 - ✅ **Quick Actions Dropdown** - "+" button for rapid resource creation
@@ -178,7 +215,7 @@ devcontrol/
 - ✅ **Smooth Animations** - Polished transitions and hover effects
 - ✅ **Toast Notifications** - Real-time user feedback with sonner
 
-**Impact:** 2000+ lines of production code, 8 new components, enterprise-grade UX
+**Impact:** 3000+ lines of production code, enterprise-grade monitoring, real AWS integration
 
 ---
 
@@ -187,8 +224,9 @@ devcontrol/
 ### Prerequisites
 
 - **Node.js 20+**
-- **Docker** (for PostgreSQL)
+- **Docker** (for PostgreSQL and monitoring)
 - **npm or yarn**
+- **AWS Account** (optional, for cost tracking)
 
 ### Installation
 ```bash
@@ -199,28 +237,40 @@ cd devcontrol
 # 2. Install dependencies (root + backend)
 npm install
 
-# 3. Start PostgreSQL with Docker
+# 3. Start PostgreSQL and Monitoring Stack
 docker run -d \
-  --name devcontrol-postgres \
+  --name platform-postgres \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=devcontrol \
+  -e POSTGRES_DB=platform_portal \
   -p 5432:5432 \
   postgres:14
 
-# 4. Run database migrations
+# Optional: Start monitoring stack
+cd monitoring
+docker-compose -f docker-compose.monitoring.yml up -d
+cd ..
+
+# 4. Configure environment variables
+cp backend/.env.example backend/.env
+# Edit backend/.env with your configuration
+
+# 5. Run database migrations
 node database/migrate.js
 
-# 5. (Optional) Load sample data
-psql -h localhost -U postgres -d devcontrol -f database/seeds/001_platform_seed.sql
+# 6. (Optional) Load sample data
+psql -h localhost -U postgres -d platform_portal -f database/seeds/001_platform_seed.sql
 
-# 6. Start both frontend and backend
+# 7. Start both frontend and backend
 npm run dev
 ```
 
 **Your portal is now running:**
-- 🌐 Frontend: http://localhost:3010
-- 🔌 Backend API: http://localhost:8080
-- ❤️ Health check: http://localhost:8080/health
+- 🌐 **Frontend:** http://localhost:3010
+- 🔌 **Backend API:** http://localhost:8080
+- ❤️ **Health Check:** http://localhost:8080/health
+- 📊 **Metrics:** http://localhost:8080/metrics
+- 📈 **Prometheus:** http://localhost:9090
+- 📉 **Grafana:** http://localhost:3000 (admin/devcontrol2024)
 
 ### Development Commands
 ```bash
@@ -239,6 +289,178 @@ npm run build
 # Run production servers
 npm start
 ```
+
+### Environment Variables
+
+Copy example file:
+```bash
+cp backend/.env.example backend/.env
+```
+
+**Required:**
+```env
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=platform_portal
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+# Server
+PORT=8080
+NODE_ENV=development
+FRONTEND_URL=http://localhost:3010
+```
+
+**Optional (AWS Integration):**
+```env
+# AWS Cost Explorer
+AWS_ACCESS_KEY_ID=your_key
+AWS_SECRET_ACCESS_KEY=your_secret
+AWS_REGION=us-east-1
+AWS_ACCOUNT_ID=123456789012
+```
+
+See `backend/.env.example` for complete configuration.
+
+---
+
+## ☁️ AWS Cost Explorer Integration
+
+DevControl tracks real-time infrastructure costs from AWS Cost Explorer API.
+
+### Quick Setup
+
+**1. Enable Cost Explorer** (24hr setup time)
+```
+Visit: https://console.aws.amazon.com/cost-management/
+Click "Enable Cost Explorer"
+Wait 24 hours for data population
+```
+
+**2. Configure IAM Policy**
+
+Attach `CostExplorerReadOnlyAccess` to your IAM user, or create custom policy:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "ce:GetCostAndUsage",
+      "ce:GetCostForecast",
+      "ce:GetDimensionValues"
+    ],
+    "Resource": "*"
+  }]
+}
+```
+
+**3. Add Credentials to `.env`**
+
+Edit `backend/.env`:
+```env
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION=us-east-1
+AWS_ACCOUNT_ID=123456789012
+```
+
+**4. Restart & Sync**
+```bash
+npm run dev:backend
+# Click "Sync AWS" button in Infrastructure page
+```
+
+### Features
+✅ **Real-time cost tracking** - Fetches actual AWS monthly spend  
+✅ **Manual sync button** - Update on-demand with loading state  
+✅ **Last synced timestamp** - Shows "X minutes ago"  
+✅ **Free tier compatible** - Accurately tracks $0 costs  
+✅ **Cost breakdown** - By service (EC2, RDS, S3, Lambda, etc.)  
+✅ **Graceful fallback** - Uses cached database costs if AWS unavailable  
+✅ **Error handling** - Clear messages for credentials/permissions issues
+
+### Cost
+AWS Cost Explorer charges **$0.01 per API request**. With hourly syncs, expect ~$7/month. Manual syncs only cost $0.01 per click.
+
+### Troubleshooting
+
+**"AWS credentials not configured"** → Add AWS_* variables to `.env`  
+**"Cost Explorer not enabled"** → Enable in AWS Console (takes 24hrs)  
+**"AccessDenied"** → Attach CostExplorerReadOnlyAccess IAM policy  
+**Shows $0.00** → Either free tier (correct) or waiting for Cost Explorer data (24hr delay)
+
+---
+
+## 📊 Monitoring & Observability
+
+Production-grade monitoring with Prometheus + Grafana stack.
+
+### Quick Start
+```bash
+cd monitoring
+docker-compose -f docker-compose.monitoring.yml up -d
+```
+
+### Access Points
+- **Prometheus UI:** http://localhost:9090
+- **Grafana Dashboards:** http://localhost:3000 (admin/devcontrol2024)
+- **Metrics Endpoint:** http://localhost:8080/metrics
+- **Monitoring Page:** http://localhost:3010/admin/monitoring
+
+### Metrics Tracked
+
+**HTTP Metrics:**
+- Request rate (requests/second)
+- Response time (p50, p95, p99 percentiles)
+- Error rate by endpoint
+- Requests in progress (concurrent)
+
+**Business Metrics:**
+- Total services / Active services
+- Deployments by environment and status
+- Infrastructure costs (real-time from AWS or database)
+
+**System Metrics:**
+- CPU usage (%)
+- Memory usage (MB and %)
+- Disk I/O
+- Network traffic
+
+**Database Metrics:**
+- Query duration
+- Connection pool size
+- Queries per second
+- Active connections
+
+### Alert Rules
+
+**Critical Alerts:**
+- 🚨 API down for > 1 minute
+- 🚨 Database down for > 1 minute
+
+**Warning Alerts:**
+- ⚠️ Error rate > 5% for 5 minutes
+- ⚠️ Memory usage > 85% for 5 minutes
+- ⚠️ CPU usage > 80% for 5 minutes
+
+### Features
+✅ **4-container stack** - Prometheus, Grafana, Node Exporter, PostgreSQL Exporter  
+✅ **Real-time dashboard** - Auto-refresh every 30 seconds  
+✅ **30-day retention** - Historical metrics for trend analysis  
+✅ **Custom metrics** - Business KPIs alongside technical metrics  
+✅ **Alert rules** - Automated notifications for critical conditions  
+✅ **Production-ready** - Same stack used by Netflix, Uber, SoundCloud
+
+### Container Details
+
+| Container | Port | Purpose |
+|-----------|------|---------|
+| devcontrol-prometheus | 9090 | Metrics storage & queries |
+| devcontrol-grafana | 3000 | Visualization dashboards |
+| devcontrol-node-exporter | 9100 | System metrics (CPU, memory) |
+| devcontrol-postgres-exporter | 9187 | Database metrics |
 
 ---
 
@@ -282,20 +504,32 @@ DELETE /api/deployments/:id       # Delete deployment record
 ```
 GET    /api/infrastructure        # List AWS resources
 POST   /api/infrastructure        # Add infrastructure resource
+POST   /api/infrastructure/sync-aws  # Sync costs from AWS Cost Explorer
 GET    /api/infrastructure/costs  # Cost breakdown analysis
 ```
 
-**Cost Breakdown Response:**
+**Sync AWS Response:**
 ```json
 {
   "success": true,
   "data": {
-    "total_monthly_cost": 1675.00,
-    "by_service": [...],
-    "by_resource_type": [...],
-    "by_team": [...]
-  }
+    "resourcesSynced": 1,
+    "totalCost": 0.00,
+    "lastSyncedAt": "2025-12-27T18:33:34.008Z",
+    "period": {
+      "start": "2025-12-01",
+      "end": "2025-12-31"
+    },
+    "byService": [...]
+  },
+  "message": "Successfully synced AWS resources"
 }
+```
+
+### Monitoring API
+```
+GET    /metrics                   # Prometheus metrics endpoint
+GET    /health                    # Health check
 ```
 
 ### Platform Stats API
@@ -351,7 +585,7 @@ CREATE TABLE deployments (
   resources JSONB
 );
 
--- Infrastructure Resources (AWS inventory)
+-- Infrastructure Resources (AWS inventory + cost metadata)
 CREATE TABLE infrastructure_resources (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   service_id UUID REFERENCES services(id) ON DELETE CASCADE,
@@ -361,9 +595,12 @@ CREATE TABLE infrastructure_resources (
   status VARCHAR(50) NOT NULL,
   cost_per_month DECIMAL(10,2) DEFAULT 0.00,
   metadata JSONB,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
+
+**Note:** `service_id` is nullable to support `AWS_COST_TOTAL` metadata records for cost sync.
 
 ---
 
@@ -381,7 +618,8 @@ platform deploy aws my-service --env production
 # ✅ Service in catalog
 # ✅ Deployment in history
 # ✅ AWS resources in infrastructure
-# ✅ Costs in dashboard
+# ✅ Costs in dashboard (synced from AWS)
+# ✅ Real-time metrics in monitoring
 ```
 
 ---
@@ -404,8 +642,8 @@ All services with templates, owners, and GitHub links
 Track deployments across dev, staging, and production
 ![Deployments](docs/screenshots/03-deployments.png)
 
-### Infrastructure Monitoring
-AWS resources with cost breakdown ($1,675/month)
+### Infrastructure & AWS Costs
+Real-time cost tracking with sync button
 ![Infrastructure](docs/screenshots/04-infrastructure.png)
 
 ### Teams & Monitoring
@@ -421,10 +659,11 @@ Need help implementing DevControl for your team?
 
 **Services Offered:**
 - 📞 **Free Consultation** - 30-minute discovery call
-- 💻 **Custom Implementation** - Starting at $5,000
+- 💻 **Custom Implementation** - Starting at $10,000
 - 🎓 **Team Training** - $2,000/day workshop
 - 🏢 **Enterprise Support** - Custom SLA, priority fixes
-- 🔧 **Custom Development** - $150/hour for modifications
+- 🔧 **Custom Development** - $150-250/hour for modifications
+- ☁️ **AWS Integration** - Cost tracking & optimization consulting
 
 **Contact:**  
 📧 projectmanager@wayuptechn.com  
@@ -457,6 +696,8 @@ MIT License - see [LICENSE](LICENSE) file for details
 - **[API Documentation](docs/API.md)** - Complete REST API reference with examples
 - **[Contributing Guide](CONTRIBUTING.md)** - Guidelines for contributing to DevControl
 - **[Architecture Overview](#architecture)** - System design and technical decisions
+- **[AWS Integration Guide](#aws-cost-explorer-integration)** - Step-by-step AWS setup
+- **[Monitoring Guide](#monitoring--observability)** - Prometheus & Grafana configuration
 
 ---
 
@@ -478,9 +719,10 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## 🙏 Acknowledgments
 
 - **Design Inspiration:** [Vercel](https://vercel.com), [Backstage](https://backstage.io), [Grafana](https://grafana.com)
-- **Built With:** Next.js 15, React 19, Express.js, PostgreSQL
+- **Built With:** Next.js 15, React 19, Express.js, PostgreSQL, Prometheus, Grafana
 - **UI Components:** Shadcn UI, Radix UI, Tailwind CSS
 - **Influenced By:** Modern platform engineering practices and developer experience principles
+- **Monitoring Stack:** Prometheus & Grafana (industry standards from Netflix, Uber, SoundCloud)
 
 ---
 
@@ -498,6 +740,7 @@ If DevControl helped you, please:
 - 🐦 **Share on Twitter/LinkedIn**
 - 💬 **Provide feedback** via issues
 - 🤝 **Contribute** improvements
+- 📧 **Hire us** for custom implementations
 
 ---
 
@@ -505,50 +748,8 @@ If DevControl helped you, please:
 
 **Built with ❤️ by platform engineers, for platform engineers**
 
+**Production-ready monitoring • Real AWS integration • Enterprise-grade observability**
+
 [⬆ Back to Top](#devcontrol)
 
 </div>
-```
-## AWS Cost Explorer Integration (Optional)
-
-DevControl can fetch real-time infrastructure costs from AWS Cost Explorer.
-
-### Setup Instructions
-
-1. **Enable Cost Explorer in AWS Console:**
-   - Visit: https://console.aws.amazon.com/cost-management/
-   - Click "Enable Cost Explorer"
-   - Wait 24 hours for data population
-
-2. **Create IAM User or Use Existing:**
-   - Go to IAM → Users
-   - Attach policy: `CostExplorerReadOnlyAccess`
-   - Or create custom policy with `ce:GetCostAndUsage` permission
-
-3. **Configure Environment Variables:**
-```bash
-   cp backend/.env.example backend/.env
-   # Edit backend/.env with your AWS credentials
-```
-
-4. **Add AWS Credentials to `.env`:**
-```env
-   AWS_ACCESS_KEY_ID=your_key
-   AWS_SECRET_ACCESS_KEY=your_secret
-   AWS_REGION=us-east-1
-   AWS_ACCOUNT_ID=123456789012
-```
-
-5. **Restart Backend:**
-```bash
-   npm run dev:backend
-```
-
-### Graceful Fallback
-
-If AWS credentials are not configured or Cost Explorer is not enabled, DevControl automatically falls back to database costs. The application remains fully functional.
-
-### Costs
-
-AWS Cost Explorer charges $0.01 per API request. With hourly syncs, expect ~$7/month.
-
