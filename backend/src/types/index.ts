@@ -154,3 +154,53 @@ export interface TypedRequest<T = any> extends Request {
 export interface TypedResponse<T = any> extends Response {
   json: (body: ApiResponse<T>) => this;
 }
+
+// Cost Recommendations
+export type RecommendationSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+export type RecommendationStatus = 'ACTIVE' | 'RESOLVED' | 'DISMISSED';
+
+export interface CostRecommendation {
+  id: string;
+  resource_id: string;
+  resource_name?: string;
+  resource_type: string;
+  issue: string;
+  description?: string;
+  potential_savings: number;
+  severity: RecommendationSeverity;
+  status: RecommendationStatus;
+  aws_region?: string;
+  metadata?: Record<string, any>;
+  created_at: Date;
+  updated_at: Date;
+  resolved_at?: Date;
+}
+
+export interface CreateRecommendationRequest {
+  resource_id: string;
+  resource_name?: string;
+  resource_type: string;
+  issue: string;
+  description?: string;
+  potential_savings: number;
+  severity: RecommendationSeverity;
+  aws_region?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface RecommendationFilters extends PaginationQuery {
+  severity?: RecommendationSeverity;
+  status?: RecommendationStatus;
+  resource_type?: string;
+}
+
+export interface RecommendationStats {
+  total_recommendations: number;
+  active_recommendations: number;
+  total_potential_savings: number;
+  by_severity: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+}

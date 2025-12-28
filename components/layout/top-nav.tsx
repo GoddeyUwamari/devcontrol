@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Layers, Rocket, Server, Users, Activity, Plus, Search } from 'lucide-react'
+import { LayoutDashboard, Layers, Rocket, Server, Users, Activity, TrendingUp, Plus, Search } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -21,6 +21,7 @@ const navigation = [
   { name: 'Infrastructure', href: '/infrastructure', icon: Server },
   { name: 'Teams', href: '/teams', icon: Users },
   { name: 'Monitoring', href: '/admin/monitoring', icon: Activity },
+  { name: 'DORA Metrics', href: '/admin/dora-metrics', icon: TrendingUp },
 ]
 
 // Mock user data - authentication disabled

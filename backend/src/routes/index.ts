@@ -5,6 +5,8 @@ import infrastructureRoutes from './infrastructure.routes';
 import teamsRoutes from './teams.routes';
 import platformRoutes from './platform.routes';
 import awsRoutes from './aws.routes';
+import costRecommendationsRoutes from './cost-recommendations.routes';
+import doraMetricsRoutes from './dora-metrics.routes';
 
 const router = Router();
 
@@ -15,6 +17,8 @@ router.use('/infrastructure', infrastructureRoutes);
 router.use('/teams', teamsRoutes);
 router.use('/platform', platformRoutes);
 router.use('/aws', awsRoutes);
+router.use('/cost-recommendations', costRecommendationsRoutes);
+router.use('/metrics/dora', doraMetricsRoutes);
 
 // API root
 router.get('/', (req, res) => {
@@ -29,6 +33,8 @@ router.get('/', (req, res) => {
       teams: '/api/teams',
       platform: '/api/platform',
       aws: '/api/aws',
+      costRecommendations: '/api/cost-recommendations',
+      doraMetrics: '/api/metrics/dora',
     },
   });
 });

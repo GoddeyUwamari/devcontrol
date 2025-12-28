@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Server, AlertCircle, Database, HardDrive, Cloud, Zap, Globe, Network, RefreshCw } from 'lucide-react'
+import { Server, AlertCircle, Database, HardDrive, Cloud, Zap, Globe, Network, RefreshCw, TrendingDown } from 'lucide-react'
 import { toast } from 'sonner'
+import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Breadcrumb } from '@/components/navigation/breadcrumb'
@@ -25,6 +26,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
+import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import type { InfrastructureResource, ResourceType, ResourceStatus } from '@/lib/types'
 
 type ResourceFilter = 'all' | ResourceType
@@ -121,6 +123,12 @@ export default function InfrastructurePage() {
     queryFn: () => infrastructureService.getAll(),
   })
 
+  // Get active recommendations count
+  const { data: recommendationsCount = 0 } = useQuery({
+    queryKey: ['cost-recommendations-count'],
+    queryFn: costRecommendationsService.getActiveCount,
+  })
+
   const totalMonthlyCost = resources.reduce((sum, r) => sum + r.costPerMonth, 0)
 
   // Sync AWS mutation
@@ -129,6 +137,7 @@ export default function InfrastructurePage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['infrastructure'] })
       queryClient.invalidateQueries({ queryKey: ['infrastructure-all'] })
+      queryClient.invalidateQueries({ queryKey: ['cost-recommendations-count'] })
       toast.success(`AWS resources synced successfully. Total cost: $${data.totalCost.toFixed(2)}`)
     },
     onError: (error: any) => {
@@ -207,18 +216,31 @@ export default function InfrastructurePage() {
             Monitor AWS resources and track monthly costs
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <Button
-            onClick={handleSyncAWS}
-            disabled={syncMutation.isPending}
-            className="gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-            {syncMutation.isPending ? 'Syncing...' : 'Sync AWS'}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Last synced: {getLastSyncedText()}
-          </p>
+        <div className="flex items-center gap-3">
+          {recommendationsCount > 0 && (
+            <Link href="/infrastructure/recommendations">
+              <Button variant="outline" className="gap-2 relative">
+                <TrendingDown className="h-4 w-4" />
+                Cost Optimization
+                <Badge className="ml-1 bg-orange-500 text-white hover:bg-orange-600">
+                  {recommendationsCount}
+                </Badge>
+              </Button>
+            </Link>
+          )}
+          <div className="flex flex-col items-end gap-2">
+            <Button
+              onClick={handleSyncAWS}
+              disabled={syncMutation.isPending}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+              {syncMutation.isPending ? 'Syncing...' : 'Sync AWS'}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Last synced: {getLastSyncedText()}
+            </p>
+          </div>
         </div>
       </div>
 

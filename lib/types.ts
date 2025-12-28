@@ -554,3 +554,83 @@ export interface InfrastructureFilters {
   status?: ResourceStatus;
   awsRegion?: string;
 }
+
+// Cost Recommendations
+export type RecommendationSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+export type RecommendationStatus = 'ACTIVE' | 'RESOLVED' | 'DISMISSED';
+
+export interface CostRecommendation {
+  id: string;
+  resourceId: string;
+  resourceName?: string;
+  resourceType: string;
+  issue: string;
+  description?: string;
+  potentialSavings: number;
+  severity: RecommendationSeverity;
+  status: RecommendationStatus;
+  awsRegion?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+}
+
+export interface RecommendationStats {
+  totalRecommendations: number;
+  activeRecommendations: number;
+  totalPotentialSavings: number;
+  bySeverity: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+}
+
+export interface AnalysisResult {
+  recommendationsFound: number;
+  totalPotentialSavings: number;
+  bySeverity: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+}
+
+// DORA Metrics Types
+export type BenchmarkLevel = 'elite' | 'high' | 'medium' | 'low';
+export type TrendDirection = 'improving' | 'stable' | 'declining';
+export type DateRangeOption = '7d' | '30d' | '90d';
+
+export interface DORAMetric {
+  value: number;
+  unit: string;
+  benchmark: BenchmarkLevel;
+  trend: TrendDirection;
+  breakdown?: { [key: string]: number };
+  description?: string;
+}
+
+export interface DORAMetricsData {
+  deploymentFrequency: DORAMetric;
+  leadTime: DORAMetric;
+  changeFailureRate: DORAMetric;
+  mttr: DORAMetric;
+  period: {
+    start: string;
+    end: string;
+    days: number;
+  };
+}
+
+export interface DORAMetricsResponse {
+  success: boolean;
+  data: DORAMetricsData;
+}
+
+export interface DORAMetricsFilters {
+  dateRange?: DateRangeOption;
+  serviceId?: string;
+  teamId?: string;
+  environment?: string;
+}
