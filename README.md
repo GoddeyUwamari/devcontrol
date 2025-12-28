@@ -26,7 +26,8 @@ Track services, deployments, and infrastructure costs in 2 minutes. Backstage al
 ⚡ **Fast & beautiful** - Vercel-quality UI, not enterprise gray boxes.  
 🔍 **Command palette (⌘K)** - Spotlight-style search across everything.  
 📊 **Production monitoring** - Prometheus + Grafana stack included.  
-🎯 **AWS-native** - Built for teams already on AWS. No Kubernetes required.
+🎯 **AWS-native** - Built for teams already on AWS. No Kubernetes required.  
+🔐 **Multi-tenant** - Complete authentication with organization workspaces.
 
 **Perfect for:** Startups scaling from 5 to 50 engineers managing microservices on AWS.
 
@@ -38,6 +39,8 @@ Track services, deployments, and infrastructure costs in 2 minutes. Backstage al
 - **Service catalog** - Track all microservices with GitHub links, owners, templates
 - **Deployment history** - Every deploy across dev/staging/prod with status tracking
 - **Team management** - Service ownership, Slack integration, member lists
+- **Multi-tenancy** - Multiple organizations with complete data isolation
+- **Authentication** - JWT-based auth with login, register, password reset
 
 ### 💰 Real-Time AWS Cost Tracking
 - **Real-time sync** from AWS Cost Explorer API
@@ -45,8 +48,9 @@ Track services, deployments, and infrastructure costs in 2 minutes. Backstage al
 - **Free tier compatible** - Accurately shows $0 when using free tier
 - **Cost breakdown** - By service (EC2, RDS, S3, Lambda, etc.)
 - **Graceful fallback** - Works offline with cached data
+- **Per-organization** - Encrypted AWS credentials for each workspace
 
-### 🎯 Cost Optimization Recommendations (NEW!)
+### 🎯 Cost Optimization Recommendations
 - **AI-powered savings detection** - Identify idle EC2 instances, oversized databases, unused resources
 - **CloudWatch integration** - Analyzes 7-day CPU utilization patterns via AWS API
 - **Actionable insights** - HIGH/MEDIUM/LOW severity scoring with potential monthly savings
@@ -56,7 +60,7 @@ Track services, deployments, and infrastructure costs in 2 minutes. Backstage al
 
 ![Cost Recommendations](docs/screenshots/cost-optimization/recommendations-page.png)
 
-### 📊 DORA Metrics Dashboard (NEW!)
+### 📊 DORA Metrics Dashboard
 - **Industry-standard DevOps metrics** - Track the 4 key DORA metrics used by elite engineering teams
 - **Deployment Frequency** - Measure deployment velocity per service, team, and environment
 - **Lead Time for Changes** - Track time between consecutive deployments
@@ -71,18 +75,35 @@ Based on Google Cloud's DevOps Research and Assessment (DORA) research.
 
 ![DORA Metrics Dashboard](docs/screenshots/dora-metrics/dashboard-overview.png)
 
+### 🔐 Multi-Tenancy & Authentication
+- **Complete authentication system** - Email/password login, registration, password reset
+- **Multiple organizations** - Users can belong to multiple workspaces
+- **Organization switching** - Instant context switching in UI
+- **Team collaboration** - Invite members, assign roles, manage permissions
+- **Role-based access control** - Owner, Admin, Member, Viewer roles
+- **Encrypted credentials** - AES-256 encryption for AWS credentials per organization
+- **Data isolation** - PostgreSQL Row-Level Security ensures complete separation
+- **Organization settings** - Manage name, members, AWS integration, and more
+
+![Login Page](docs/screenshots/auth/login-page.png)
+
 ### 📊 Monitoring & Observability
 - **Prometheus + Grafana** - Industry-standard monitoring stack
+- **4 pre-built dashboards** - API Performance, Infrastructure Costs, Service Health, System Resources
 - **Real-time metrics** - HTTP requests, errors, response times
 - **Business KPIs** - Services, deployments, infrastructure costs
 - **Auto-refresh dashboard** - Updates every 30 seconds
 - **Alert rules** - Automated notifications for critical issues
+- **Alert history** - Track, acknowledge, and resolve Prometheus alerts
 
 ### 🎨 Modern UX
 - **Horizontal navigation** - Clean, Vercel-inspired design
 - **Command palette** - Press ⌘K to search everything
+- **Organization switcher** - Quick switching between workspaces
+- **User menu** - Profile settings, organization settings, sign out
 - **Empty states** - Helpful guidance when starting fresh
 - **Mobile responsive** - Works on desktop, tablet, phone
+- **Dark mode** - Beautiful dark theme throughout
 - **Loading states** - Skeleton screens, toast notifications
 
 ---
@@ -92,8 +113,14 @@ Based on Google Cloud's DevOps Research and Assessment (DORA) research.
 ### Dashboard - Real-time Metrics
 ![Dashboard](docs/screenshots/01-dashboard.png)
 
+### Login - Authentication
+![Login Page](docs/screenshots/auth/login-page.png)
+
 ### AWS Cost Sync - Your Differentiator
 ![Infrastructure with AWS Sync](docs/screenshots/04-infrastructure.png)
+
+### Organization Settings - Multi-Tenancy
+![Organization Settings](docs/screenshots/organization/settings-page.png)
 
 ### Command Palette - Instant Search
 ![Command Palette](docs/screenshots/command-palette.png)
@@ -114,16 +141,28 @@ git clone https://github.com/GoddeyUwamari/devcontrol.git
 cd devcontrol
 npm install
 
-# Start PostgreSQL + monitoring stack
+# Start PostgreSQL
 docker run -d --name platform-postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=platform_portal \
   -p 5432:5432 postgres:14
 
+# Run database migrations
+psql -h localhost -U postgres -d platform_portal -f database/migrations/001_initial_schema.sql
+psql -h localhost -U postgres -d platform_portal -f database/migrations/002_create_cost_recommendations.sql
+psql -h localhost -U postgres -d platform_portal -f database/migrations/003_create_alert_history.sql
+psql -h localhost -U postgres -d platform_portal -f database/migrations/004_add_multi_tenancy.sql
+psql -h localhost -U postgres -d platform_portal -f database/migrations/005_migrate_existing_data.sql
+
+# Start monitoring stack
 cd monitoring && docker-compose -f docker-compose.monitoring.yml up -d && cd ..
 
-# Configure (optional: add AWS credentials)
+# Configure environment
 cp backend/.env.example backend/.env
+# Add required secrets:
+# - JWT_SECRET (generate: openssl rand -hex 32)
+# - ENCRYPTION_KEY (generate: openssl rand -hex 32)
+# - AWS credentials (optional)
 
 # Start everything
 npm run dev
@@ -135,19 +174,31 @@ npm run dev
 - Prometheus: http://localhost:9090
 - Grafana: http://localhost:3000 (admin/devcontrol2024)
 
+**Default admin account (CHANGE PASSWORD!):**
+- Email: admin@devcontrol.local
+- Password: ChangeMe123!
+
+### First-Time Setup
+
+1. **Register your account** at http://localhost:3010/register
+   - Auto-creates your personal organization
+   - Logs you in automatically
+
+2. **Configure AWS (optional):**
+   - Settings → Organization → AWS tab
+   - Add Access Key ID and Secret Key
+   - Credentials are encrypted with AES-256
+
+3. **Invite team members:**
+   - Settings → Organization → Members tab
+   - Send email invitations with roles
+
 ### AWS Cost Integration (Optional)
 ```bash
 # 1. Enable Cost Explorer in AWS Console (takes 24hrs)
-# 2. Create IAM user with CostExplorerReadOnlyAccess policy
-# 3. Add to backend/.env:
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
-AWS_REGION=us-east-1
-AWS_ACCOUNT_ID=123456789012
-
-# 4. Restart backend
-npm run dev:backend
-
+# 2. Create IAM user with CostExplorerReadOnlyAccess + CloudWatchReadOnlyAccess
+# 3. Add credentials in Organization Settings → AWS tab
+# 4. Click "Test Connection" to verify
 # 5. Click "Sync AWS" in Infrastructure page
 ```
 
@@ -158,7 +209,8 @@ npm run dev:backend
 ## Tech Stack
 
 **Frontend:** Next.js 15 • React 19 • TypeScript • Tailwind v4 • Radix UI  
-**Backend:** Express.js • PostgreSQL • Node.js 20+ • Zod validation  
+**Backend:** Express.js • PostgreSQL with RLS • Node.js 20+ • Zod validation • JWT Auth  
+**Security:** AES-256 encryption • bcrypt • Row-Level Security • RBAC  
 **Monitoring:** Prometheus • Grafana • Node Exporter • prom-client  
 **Cloud:** AWS SDK (Cost Explorer, CloudWatch) • Docker  
 
@@ -168,9 +220,33 @@ npm run dev:backend
 
 ## API Examples
 
+### Authentication
+
+**Register:**
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "SecurePass123!",
+    "fullName": "John Doe"
+  }'
+```
+
+**Login:**
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "SecurePass123!"
+  }'
+```
+
 ### Sync AWS Costs
 ```bash
-curl -X POST http://localhost:8080/api/infrastructure/sync-aws
+curl -X POST http://localhost:8080/api/infrastructure/sync-aws \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
 **Response:**
@@ -180,7 +256,7 @@ curl -X POST http://localhost:8080/api/infrastructure/sync-aws
   "data": {
     "totalCost": 0.00,
     "resourcesSynced": 1,
-    "lastSyncedAt": "2025-12-27T18:33:34.008Z",
+    "lastSyncedAt": "2025-12-28T18:33:34.008Z",
     "byService": [...]
   }
 }
@@ -188,70 +264,36 @@ curl -X POST http://localhost:8080/api/infrastructure/sync-aws
 
 ### Get Cost Recommendations
 ```bash
-curl http://localhost:8080/api/cost-recommendations
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "uuid",
-      "resourceType": "EC2",
-      "resourceId": "i-1234567890abcdef0",
-      "issue": "Idle instance (1.97% CPU utilization)",
-      "potentialSavings": 7.50,
-      "severity": "LOW",
-      "status": "active"
-    }
-  ]
-}
+curl http://localhost:8080/api/cost-recommendations \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
 ### Get DORA Metrics
 ```bash
-curl "http://localhost:8080/api/metrics/dora?date_range=30d&environment=production"
+curl "http://localhost:8080/api/metrics/dora?date_range=30d&environment=production" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "deploymentFrequency": {
-      "value": 1.2,
-      "unit": "per day",
-      "benchmark": "high",
-      "trend": "improving"
-    },
-    "leadTime": {
-      "value": 4.5,
-      "unit": "hours",
-      "benchmark": "elite"
-    },
-    "changeFailureRate": {
-      "value": 0,
-      "unit": "percentage",
-      "benchmark": "elite"
-    },
-    "mttr": {
-      "value": 0,
-      "unit": "minutes",
-      "benchmark": "elite"
-    }
-  }
-}
-```
-
-### List Services
+### Organization Management
 ```bash
-curl http://localhost:8080/api/services
-```
+# List organizations
+curl http://localhost:8080/api/organizations \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 
-### Get Prometheus Metrics
-```bash
-curl http://localhost:8080/metrics
+# Create organization
+curl -X POST http://localhost:8080/api/organizations \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Company",
+    "slug": "my-company"
+  }'
+
+# Switch organization
+curl -X POST http://localhost:8080/api/organizations/switch \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "organizationId": "uuid" }'
 ```
 
 **See [API Documentation](docs/API.md) for complete reference.**
@@ -263,6 +305,7 @@ curl http://localhost:8080/metrics
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - System design, tech stack, patterns
 - **[AWS Integration](docs/AWS_INTEGRATION.md)** - Complete Cost Explorer setup
 - **[Monitoring Setup](docs/MONITORING.md)** - Prometheus + Grafana configuration
+- **[Multi-Tenancy Setup](MULTI_TENANCY_SETUP.md)** - Authentication and organization management
 - **[API Reference](docs/API.md)** - All endpoints with examples
 - **[Contributing](CONTRIBUTING.md)** - Development guidelines
 
@@ -278,32 +321,40 @@ curl http://localhost:8080/metrics
 - Mobile responsive design
 
 **✅ Completed (Weeks 5-6):**
-- **Cost Optimization Engine** - AWS CloudWatch integration detecting idle resources
-  - Idle EC2 detection (CPU <5% for 7 days)
-  - Oversized RDS databases in non-production environments
-  - Unused Elastic IP identification
-  - Reserved Instance opportunity analysis
-  - Potential savings calculator with severity scoring
-  - Prometheus metrics: cost_optimization_potential_savings_total
-- **DORA Metrics Dashboard** - Industry-standard DevOps performance tracking
-  - 4 core metrics: Deployment Frequency, Lead Time, Change Failure Rate, MTTR
-  - Elite/High/Medium/Low benchmark classification
-  - Service and team breakdown analytics
-  - Trend indicators (improving/stable/declining)
-  - Time-series analysis with PostgreSQL window functions
-  - Prometheus integration for real-time monitoring
+- Cost Optimization Engine (CloudWatch integration, idle resource detection)
+- DORA Metrics Dashboard (4 core metrics with benchmarks)
+- Grafana dashboard templates (4 pre-built dashboards)
+- Alert History UI (Prometheus alert management)
 
-**🚧 In Progress (Weeks 7-8):**
-- Grafana dashboard templates
-- Alert history UI
-- Service dependency graphs
+**✅ Completed (Weeks 7-9):**
+- **Multi-Tenancy Backend** - PostgreSQL Row-Level Security, JWT authentication
+- **Multi-Tenancy Frontend** - Login, register, organization switching
+- **Organization Management** - Create, invite members, assign roles
+- **Encrypted AWS Credentials** - Per-organization credential storage
+- **Team Collaboration** - Invite members, manage permissions
+- **Complete Authentication** - Email/password, forgot password, reset flow
 
-**📋 Planned (Weeks 9-12):**
-- Multi-tenancy support
-- SSO integration (SAML, OAuth)
-- Role-based access control
+**📋 Planned (Future):**
+- SSO integration (Google, GitHub, Okta)
+- Advanced RBAC with custom permissions
 - Deployment logs streaming
+- Service dependency graphs
 - Terraform state tracking
+- Audit logs and compliance features
+
+---
+
+## Security
+
+DevControl implements enterprise-grade security:
+
+- **Authentication:** JWT with 7-day access tokens, 30-day refresh tokens
+- **Password Hashing:** bcrypt with 10 rounds
+- **Data Isolation:** PostgreSQL Row-Level Security (RLS)
+- **Encryption:** AES-256-GCM for sensitive data (AWS credentials)
+- **RBAC:** 4 roles (Owner, Admin, Member, Viewer) with granular permissions
+- **CSRF Protection:** Ready for production (commented placeholders)
+- **Rate Limiting:** Infrastructure ready for protection
 
 ---
 
@@ -311,10 +362,32 @@ curl http://localhost:8080/metrics
 
 **Need implementation help?**
 
-- Custom deployments: Starting at $10,000
-- Team training: $2,000/day workshop
-- Enterprise support: Custom SLA
-- AWS integration consulting: $150-250/hour
+DevControl is production-ready for enterprise deployments:
+
+### Self-Hosted Implementation ($10,000 - $20,000)
+- Deploy to your infrastructure (AWS, GCP, Azure)
+- Multi-organization setup
+- AWS integration configuration
+- Team training (2-day workshop)
+- 30-day support included
+
+### Multi-Tenant Hosting ($30,000 - $50,000)
+- Host multiple clients on your infrastructure
+- Custom branding per organization
+- SSO integration (Google, Okta, Azure AD)
+- Enterprise support with SLA
+- Dedicated account management
+
+### SaaS Subscription (Coming Soon)
+- **Free:** 1 org, 5 users, 10 services
+- **Pro ($49/month):** 3 orgs, 20 users, 50 services
+- **Enterprise ($999/month):** Unlimited everything + priority support
+
+### Consulting
+- AWS integration setup: $150-250/hour
+- Custom feature development: $200-300/hour
+- Architecture review: $2,000/day
+- Team training: $2,000/day
 
 **Contact:** projectmanager@wayuptechn.com • +1 (848) 228-9890  
 **Schedule:** [calendly.com/goddeyuwamari](https://calendly.com/goddeyuwamari)
@@ -324,6 +397,7 @@ curl http://localhost:8080/metrics
 ## Related Projects
 
 - **[Platform Engineering Toolkit](https://github.com/GoddeyUwamari/platform-engineering-toolkit)** - CLI tool for service creation and AWS deployment
+- **[CloudBill](https://github.com/GoddeyUwamari/cloudbill)** - Multi-tenant SaaS billing platform
 
 ---
 
@@ -332,9 +406,10 @@ curl http://localhost:8080/metrics
 Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 1. Fork the repo
-2. Create feature branch
-3. Commit changes
-4. Open pull request
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open pull request
 
 ---
 
@@ -348,7 +423,7 @@ MIT License - see [LICENSE](LICENSE)
 
 **Goddey Uwamari**  
 Founder & CEO, [WayUP Technology](https://wayuptechn.com)  
-Senior Platform Engineer
+Senior Full-Stack & Platform Engineer
 
 📧 projectmanager@wayuptechn.com  
 🔗 [LinkedIn](https://www.linkedin.com/in/goddey-uwamari) • [GitHub](https://github.com/GoddeyUwamari)  
