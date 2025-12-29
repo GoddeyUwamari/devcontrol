@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Layers, Rocket, Server, Users, Activity, TrendingUp, Plus, Search, AlertTriangle } from 'lucide-react'
+import { LayoutDashboard, Layers, Network, Rocket, Server, Users, Activity, TrendingUp, Plus, Search, AlertTriangle } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -18,6 +18,7 @@ import { useAuth } from '@/lib/contexts/auth-context'
 const navigation = [
   { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Services', href: '/services', icon: Layers },
+  { name: 'Dependencies', href: '/dependencies', icon: Network },
   { name: 'Deployments', href: '/deployments', icon: Rocket },
   { name: 'Infrastructure', href: '/infrastructure', icon: Server },
   { name: 'Teams', href: '/teams', icon: Users },

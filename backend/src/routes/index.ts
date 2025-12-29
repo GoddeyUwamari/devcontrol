@@ -2,6 +2,7 @@ import { Router } from 'express';
 import authRoutes from './auth.routes';
 import organizationsRoutes from './organizations.routes';
 import servicesRoutes from './services.routes';
+import dependenciesRoutes from './dependencies.routes';
 import deploymentsRoutes from './deployments.routes';
 import infrastructureRoutes from './infrastructure.routes';
 import teamsRoutes from './teams.routes';
@@ -21,6 +22,7 @@ router.use('/organizations', organizationsRoutes);
 
 // API routes (will need authentication middleware)
 router.use('/services', servicesRoutes);
+router.use('/dependencies', dependenciesRoutes);
 router.use('/deployments', deploymentsRoutes);
 router.use('/infrastructure', infrastructureRoutes);
 router.use('/teams', teamsRoutes);
@@ -40,6 +42,7 @@ router.get('/', (req, res) => {
       auth: '/api/auth',
       organizations: '/api/organizations',
       services: '/api/services',
+      dependencies: '/api/dependencies',
       deployments: '/api/deployments',
       infrastructure: '/api/infrastructure',
       teams: '/api/teams',
