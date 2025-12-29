@@ -69,7 +69,7 @@ export function TopNav() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center px-6">
+      <div className="flex h-16 items-center pl-6 pr-8">
         {/* Left: Logo + Navigation */}
         <div className="flex items-center gap-8 flex-1">
           {/* Logo */}
@@ -90,7 +90,7 @@ export function TopNav() {
                   key={item.name}
                   href={item.href}
                   className={cn(
-                    'px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                    'px-3 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap',
                     'hover:bg-accent hover:text-accent-foreground',
                     isActive
                       ? 'text-foreground'
@@ -111,7 +111,7 @@ export function TopNav() {
             variant="outline"
             size="sm"
             onClick={handleSearchClick}
-            className="hidden md:flex items-center gap-2 text-sm text-muted-foreground w-64 justify-start"
+            className="hidden md:flex items-center gap-2 text-sm text-muted-foreground md:w-48 lg:w-64 justify-start"
           >
             <Search className="h-4 w-4" />
             <span>Search...</span>
