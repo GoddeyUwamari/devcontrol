@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Rocket, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Rocket, AlertCircle, FileText } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Breadcrumb } from '@/components/navigation/breadcrumb'
+import Link from 'next/link'
 import {
   Table,
   TableBody,
@@ -24,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { deploymentsService } from '@/lib/services/deployments.service'
 import type { Deployment, DeploymentEnvironment, DeploymentStatus } from '@/lib/types'
+import { useWebSocket } from '@/lib/hooks/useWebSocket'
 
 type EnvironmentFilter = 'all' | DeploymentEnvironment
 
@@ -40,6 +42,7 @@ function TableSkeleton() {
             <TableHead>Cost Estimate</TableHead>
             <TableHead>Deployed By</TableHead>
             <TableHead>Deployed At</TableHead>
+            <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -52,6 +55,7 @@ function TableSkeleton() {
               <TableCell><Skeleton className="h-4 w-16" /></TableCell>
               <TableCell><Skeleton className="h-4 w-40" /></TableCell>
               <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+              <TableCell><Skeleton className="h-8 w-24" /></TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -91,6 +95,8 @@ function EmptyState() {
 
 export default function DeploymentsPage() {
   const [environmentFilter, setEnvironmentFilter] = useState<EnvironmentFilter>('all')
+  const { socket } = useWebSocket()
+  const queryClient = useQueryClient()
 
   const { data: deployments = [], isLoading, error, refetch } = useQuery({
     queryKey: ['deployments', environmentFilter],
@@ -101,6 +107,37 @@ export default function DeploymentsPage() {
         : allDeployments.filter(d => d.environment === environmentFilter)
     },
   })
+
+  // WebSocket event listeners for real-time updates
+  useEffect(() => {
+    if (!socket) return
+
+    console.log('📡 Deployments: Setting up WebSocket listeners...')
+
+    // Refresh deployments list on any deployment event
+    socket.on('deployment:started', () => {
+      console.log('🚀 Deployment started - refreshing list')
+      queryClient.invalidateQueries({ queryKey: ['deployments'] })
+    })
+
+    socket.on('deployment:status', () => {
+      console.log('🔄 Deployment status changed - refreshing list')
+      queryClient.invalidateQueries({ queryKey: ['deployments'] })
+    })
+
+    socket.on('deployment:completed', () => {
+      console.log('✅ Deployment completed - refreshing list')
+      queryClient.invalidateQueries({ queryKey: ['deployments'] })
+    })
+
+    // Cleanup listeners on unmount
+    return () => {
+      console.log('🧹 Deployments: Cleaning up WebSocket listeners...')
+      socket.off('deployment:started')
+      socket.off('deployment:status')
+      socket.off('deployment:completed')
+    }
+  }, [socket, queryClient])
 
   const getStatusBadge = (status: DeploymentStatus) => {
     const variants = {
@@ -205,6 +242,7 @@ export default function DeploymentsPage() {
                 <TableHead>Cost Estimate</TableHead>
                 <TableHead>Deployed By</TableHead>
                 <TableHead>Deployed At</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -224,6 +262,14 @@ export default function DeploymentsPage() {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(deployment.deployedAt)}
+                  </TableCell>
+                  <TableCell>
+                    <Link href={`/deployments/${deployment.id}`}>
+                      <Button variant="ghost" size="sm">
+                        <FileText className="h-4 w-4 mr-2" />
+                        View Logs
+                      </Button>
+                    </Link>
                   </TableCell>
                 </TableRow>
               ))}

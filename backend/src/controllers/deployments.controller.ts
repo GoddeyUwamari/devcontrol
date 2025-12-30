@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { DeploymentsRepository } from '../repositories/deployments.repository';
 import { CreateDeploymentRequest, DeploymentFilters, ApiResponse } from '../types';
+import { DeploymentEvents } from '../services/deploymentEvents';
+import { WebSocketServer } from '../websocket/server';
 
 const repository = new DeploymentsRepository();
 
@@ -80,6 +82,25 @@ export class DeploymentsController {
       }
 
       const deployment = await repository.create(deploymentData);
+
+      // Emit WebSocket event for deployment started
+      try {
+        const wsServer: WebSocketServer = req.app.get('wsServer');
+        if (wsServer) {
+          const deploymentEvents = new DeploymentEvents(wsServer);
+          const organizationId = (req as any).organizationId || 'default-org';
+
+          deploymentEvents.deploymentStarted(organizationId, {
+            id: deployment.id,
+            service_name: deployment.service_name || 'Unknown Service',
+            environment: deployment.environment,
+            deployed_by: deployment.deployed_by,
+          });
+        }
+      } catch (wsError) {
+        console.error('Error emitting WebSocket event:', wsError);
+        // Don't fail the request if WebSocket fails
+      }
 
       const response: ApiResponse = {
         success: true,

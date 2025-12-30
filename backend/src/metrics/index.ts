@@ -1,4 +1,6 @@
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client'
+import { WebSocketServer } from '../websocket/server'
+import { MetricsEvents } from '../services/metricsEvents'
 
 export const register = new Registry()
 
@@ -108,7 +110,7 @@ export const alertsMTTRMinutes = new Gauge({
 })
 
 // Update business metrics from database and AWS
-export async function updateBusinessMetrics(dbPool: any) {
+export async function updateBusinessMetrics(dbPool: any, wsServer?: WebSocketServer) {
   try {
     // Services
     const services = await dbPool.query(`
@@ -136,6 +138,20 @@ export async function updateBusinessMetrics(dbPool: any) {
       const awsCost = Number(awsTotalRecord.rows[0].cost_per_month)
       infrastructureCostTotal.set(awsCost)
       console.log(`Updated infrastructure cost from AWS Cost Explorer: $${awsCost.toFixed(2)}`)
+
+      // Emit WebSocket event for cost update
+      if (wsServer) {
+        const metricsEvents = new MetricsEvents(wsServer)
+        // Get all organizations and emit to each
+        const organizations = await dbPool.query('SELECT id FROM organizations WHERE status = $1', ['active'])
+        organizations.rows.forEach((org: any) => {
+          metricsEvents.costsUpdated(org.id, {
+            total: awsCost,
+            monthToDate: awsCost,
+            trend: 'stable',
+          })
+        })
+      }
     } else {
       // Fallback to summing database costs (for resources not synced with AWS)
       const infra = await dbPool.query(`
@@ -146,7 +162,22 @@ export async function updateBusinessMetrics(dbPool: any) {
       `)
 
       if (infra.rows.length > 0) {
-        infrastructureCostTotal.set(Number(infra.rows[0].total_cost))
+        const totalCost = Number(infra.rows[0].total_cost)
+        infrastructureCostTotal.set(totalCost)
+
+        // Emit WebSocket event for cost update
+        if (wsServer) {
+          const metricsEvents = new MetricsEvents(wsServer)
+          // Get all organizations and emit to each
+          const organizations = await dbPool.query('SELECT id FROM organizations WHERE status = $1', ['active'])
+          organizations.rows.forEach((org: any) => {
+            metricsEvents.costsUpdated(org.id, {
+              total: totalCost,
+              monthToDate: totalCost,
+              trend: 'stable',
+            })
+          })
+        }
       }
     }
 

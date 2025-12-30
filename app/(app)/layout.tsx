@@ -1,6 +1,7 @@
 import { TopNav } from '@/components/layout/top-nav'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { CommandPalette } from '@/components/command-palette'
+import { ConnectionIndicator } from '@/components/ConnectionIndicator'
 
 export default function AppLayout({
   children,
@@ -21,6 +22,9 @@ export default function AppLayout({
 
       {/* Command Palette (Cmd+K) */}
       <CommandPalette />
+
+      {/* WebSocket Connection Indicator */}
+      <ConnectionIndicator />
     </div>
   )
 }

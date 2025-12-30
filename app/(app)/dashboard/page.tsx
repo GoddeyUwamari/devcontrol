@@ -1,6 +1,7 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TrendingUp, TrendingDown, Users, Layers, Rocket, DollarSign, AlertCircle, FileText } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -10,6 +11,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { deploymentsService } from '@/lib/services/deployments.service'
 import type { PlatformDashboardStats, Deployment, DeploymentStatus } from '@/lib/types'
+import { useWebSocket } from '@/lib/hooks/useWebSocket'
+import { toast } from 'sonner'
 
 
 // Metric Card Component
@@ -137,6 +140,9 @@ function EmptyState({ message }: { message: string }) {
 }
 
 export default function DashboardPage() {
+  const { socket, isConnected } = useWebSocket();
+  const queryClient = useQueryClient();
+
   // Fetch platform dashboard stats
   const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
@@ -151,6 +157,80 @@ export default function DashboardPage() {
       return allDeployments.slice(0, 5); // Get latest 5
     },
   });
+
+  // WebSocket event listeners for real-time updates
+  useEffect(() => {
+    if (!socket) return;
+
+    console.log('📡 Dashboard: Setting up WebSocket listeners...');
+
+    // Listen for AWS cost updates
+    socket.on('metrics:costs', (data) => {
+      console.log('💰 Costs updated:', data);
+      toast.info('AWS costs updated', {
+        description: `New total: $${data.totalCost.toFixed(2)}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
+    });
+
+    // Listen for new alerts
+    socket.on('alert:created', (data) => {
+      console.log('🚨 New alert:', data);
+      toast.error(`New ${data.severity} Alert`, {
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
+    });
+
+    // Listen for deployment started
+    socket.on('deployment:started', (data) => {
+      console.log('🚀 Deployment started:', data);
+      toast.info(`Deployment started: ${data.serviceName}`, {
+        description: `Environment: ${data.environment} | By: ${data.deployedBy}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-deployments'] });
+    });
+
+    // Listen for deployment completed
+    socket.on('deployment:completed', (data) => {
+      console.log('✅ Deployment completed:', data);
+      const isSuccess = data.status === 'success';
+
+      toast[isSuccess ? 'success' : 'error'](
+        `Deployment ${isSuccess ? 'succeeded' : 'failed'}: ${data.serviceName}`,
+        {
+          description: isSuccess
+            ? `Duration: ${data.duration}`
+            : 'Check logs for details',
+        }
+      );
+
+      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-deployments'] });
+    });
+
+    // Listen for service health changes
+    socket.on('service:health', (data) => {
+      console.log('💊 Service health changed:', data);
+      if (data.status !== 'healthy') {
+        toast.warning(`Service ${data.serviceName} is ${data.status}`, {
+          description: `Health score: ${data.healthScore}%`,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
+    });
+
+    // Cleanup listeners on unmount
+    return () => {
+      console.log('🧹 Dashboard: Cleaning up WebSocket listeners...');
+      socket.off('metrics:costs');
+      socket.off('alert:created');
+      socket.off('deployment:started');
+      socket.off('deployment:completed');
+      socket.off('service:health');
+    };
+  }, [socket, queryClient]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -181,6 +261,13 @@ export default function DashboardPage() {
         <p className="text-muted-foreground mt-2">
           Welcome back! Here&apos;s an overview of your billing analytics.
         </p>
+        {/* WebSocket Connection Status */}
+        {isConnected && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-green-600">
+            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+            Live updates enabled
+          </div>
+        )}
       </div>
 
       {/* Metrics Grid */}

@@ -112,11 +112,11 @@ const startServer = async () => {
 
     // Update business metrics every 30s
     setInterval(async () => {
-      await updateBusinessMetrics(pool);
+      await updateBusinessMetrics(pool, wsServer);
     }, 30000);
 
     // Initial metrics update
-    await updateBusinessMetrics(pool);
+    await updateBusinessMetrics(pool, wsServer);
 
     // Start alert sync job (syncs alerts from Prometheus every minute)
     const alertSyncJob = new AlertSyncJob(pool);
