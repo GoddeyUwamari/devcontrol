@@ -1,5 +1,8 @@
 import express from 'express';
 import { createServer } from 'http';
+import https from 'https';
+import fs from 'fs';
+import path from 'path';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
@@ -9,20 +12,60 @@ import { requestLogger } from './middleware/request-logger';
 import { corsMiddleware } from './middleware/cors';
 import { pool, testConnection } from './config/database';
 import { metricsMiddleware } from './middleware/metrics';
+import { auditLogger } from './middleware/auditLogger';
+import { standardRateLimiter } from './middleware/rateLimiter';
+import { sanitizerMiddleware } from './middleware/sanitizer';
 import metricsRoutes from './routes/metrics.routes';
 import { updateBusinessMetrics } from './metrics';
 import { AlertSyncJob } from './jobs/alert-sync.job';
 import { ResourceDiscoveryJob } from './jobs/resourceDiscovery.job';
 import { WebSocketServer } from './websocket/server';
+import { validateEnv } from './config/validateEnv';
 
 dotenv.config();
+
+// Validate environment variables before starting
+validateEnv();
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Security middleware
-app.use(helmet());
+// Security middleware - Helmet with comprehensive configuration
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      scriptSrc: ["'self'"],
+      connectSrc: [
+        "'self'",
+        "https://api.stripe.com",
+        "ws://localhost:*",
+        "wss://localhost:*",
+        process.env.FRONTEND_URL || "http://localhost:3010"
+      ],
+      frameSrc: ["'self'", "https://js.stripe.com"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: NODE_ENV === 'production' ? [] : null,
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year in seconds
+    includeSubDomains: true,
+    preload: true,
+  },
+  frameguard: {
+    action: 'deny', // Prevent clickjacking
+  },
+  noSniff: true, // Prevent MIME type sniffing
+  xssFilter: true, // Enable XSS filter
+  referrerPolicy: {
+    policy: 'strict-origin-when-cross-origin',
+  },
+}));
 
 // CORS middleware
 app.use(corsMiddleware);
@@ -30,6 +73,9 @@ app.use(corsMiddleware);
 // Body parsing middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Input sanitization (after body parser, prevents XSS)
+app.use(sanitizerMiddleware);
 
 // Logging middleware
 if (NODE_ENV === 'development') {
@@ -39,6 +85,12 @@ app.use(requestLogger);
 
 // Metrics middleware
 app.use(metricsMiddleware);
+
+// Audit logger middleware (after auth, before routes)
+app.use(auditLogger);
+
+// Rate limiting middleware (protects all API routes)
+app.use('/api', standardRateLimiter);
 
 // Metrics endpoint
 app.use(metricsRoutes);
@@ -78,8 +130,39 @@ const startServer = async () => {
     // Test database connection
     await testConnection();
 
-    // Create HTTP server (required for WebSocket)
-    const httpServer = createServer(app);
+    // Check for SSL certificates
+    const certPath = path.join(__dirname, '../certs/cert.pem');
+    const keyPath = path.join(__dirname, '../certs/key.pem');
+    const hasCerts = fs.existsSync(certPath) && fs.existsSync(keyPath);
+    const useHTTPS = hasCerts || NODE_ENV === 'production';
+
+    let httpServer;
+    let protocol = 'http';
+    let wsProtocol = 'ws';
+
+    if (useHTTPS && hasCerts) {
+      // Create HTTPS server
+      const options = {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+      };
+      httpServer = https.createServer(options, app);
+      protocol = 'https';
+      wsProtocol = 'wss';
+      console.log('🔒 HTTPS enabled with SSL certificates');
+    } else {
+      // Create HTTP server
+      httpServer = createServer(app);
+      if (NODE_ENV === 'production') {
+        console.warn('⚠️  WARNING: Running HTTP in production! SSL certificates not found.');
+        console.warn('   Expected certificates at:');
+        console.warn(`   - ${certPath}`);
+        console.warn(`   - ${keyPath}`);
+      } else {
+        console.log('⚠️  Running HTTP (development mode)');
+        console.log('   Run ./scripts/generate-ssl-cert.sh to enable HTTPS');
+      }
+    }
 
     // Initialize WebSocket server
     const wsServer = new WebSocketServer(httpServer);
@@ -92,11 +175,12 @@ const startServer = async () => {
       console.log(`🚀 Platform Portal API Server`);
       console.log('='.repeat(50));
       console.log(`Environment: ${NODE_ENV}`);
+      console.log(`Protocol: ${protocol.toUpperCase()}`);
       console.log(`Port: ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
-      console.log(`API root: http://localhost:${PORT}/api`);
-      console.log(`Metrics: http://localhost:${PORT}/metrics`);
-      console.log(`🔌 WebSocket server ready at ws://localhost:${PORT}`);
+      console.log(`Health check: ${protocol}://localhost:${PORT}/health`);
+      console.log(`API root: ${protocol}://localhost:${PORT}/api`);
+      console.log(`Metrics: ${protocol}://localhost:${PORT}/metrics`);
+      console.log(`🔌 WebSocket server ready at ${wsProtocol}://localhost:${PORT}`);
       console.log('='.repeat(50));
       console.log('Available endpoints:');
       console.log(`  - GET    /api/services`);

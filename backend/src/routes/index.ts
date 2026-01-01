@@ -13,6 +13,8 @@ import doraMetricsRoutes from './dora-metrics.routes';
 import alertHistoryRoutes from './alert-history.routes';
 import awsResourcesRoutes from './awsResources.routes';
 import logsRoutes from './logs.routes';
+import auditLogsRoutes from './auditLogs.routes';
+import stripeRoutes from './stripe.routes';
 
 const router = Router();
 
@@ -34,6 +36,8 @@ router.use('/aws-resources', awsResourcesRoutes);
 router.use('/cost-recommendations', costRecommendationsRoutes);
 router.use('/metrics/dora', doraMetricsRoutes);
 router.use('/alerts', alertHistoryRoutes);
+router.use('/audit-logs', auditLogsRoutes);
+router.use('/stripe', stripeRoutes);
 router.use('/', logsRoutes);
 
 // API root
@@ -56,6 +60,8 @@ router.get('/', (req, res) => {
       costRecommendations: '/api/cost-recommendations',
       doraMetrics: '/api/metrics/dora',
       alerts: '/api/alerts',
+      auditLogs: '/api/audit-logs',
+      stripe: '/api/stripe',
       logs: '/api/logs',
     },
   });

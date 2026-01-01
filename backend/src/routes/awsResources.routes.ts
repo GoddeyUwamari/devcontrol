@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { AWSResourcesController } from '../controllers/awsResources.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
+import { discoveryRateLimiter } from '../middleware/rateLimiter';
 import { TaggingComplianceService } from '../services/taggingCompliance.service';
 import { AWSTaggingService } from '../services/awsTagging.service';
 
@@ -41,9 +42,9 @@ router.get('/discovery/jobs', authenticate, (req, res, next) => controller.getDi
 
 /**
  * POST /api/aws-resources/discover
- * Trigger resource discovery scan (Admin only)
+ * Trigger resource discovery scan (Admin only, rate limited to 10/hour)
  */
-router.post('/discover', authenticate, requireAdmin, (req, res, next) => controller.discover(req, res, next));
+router.post('/discover', authenticate, requireAdmin, discoveryRateLimiter, (req, res, next) => controller.discover(req, res, next));
 
 /**
  * GET /api/aws-resources/:id

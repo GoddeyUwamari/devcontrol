@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Layers, Network, Rocket, Server, Users, Activity, TrendingUp, Plus, Search, AlertTriangle, Database, Settings, Building2, User, Book, LogOut } from 'lucide-react'
+import { Layers, Network, Rocket, Server, Users, Activity, TrendingUp, Plus, Search, AlertTriangle, Database, Settings, Building2, User, Book, LogOut, Shield } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -200,6 +200,12 @@ export function TopNav() {
                 <Link href="/admin/alerts" className="flex items-center gap-2 cursor-pointer">
                   <AlertTriangle className="h-4 w-4" />
                   Alerts
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/audit-logs" className="flex items-center gap-2 cursor-pointer">
+                  <Shield className="h-4 w-4" />
+                  Audit Logs
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
