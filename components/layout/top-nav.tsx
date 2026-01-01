@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Layers, Network, Rocket, Server, Users, Activity, TrendingUp, Plus, Search, AlertTriangle, Database, Settings, Building2, User, Book, LogOut, Shield } from 'lucide-react'
+import { Layers, Network, Rocket, Server, Users, Activity, TrendingUp, Plus, Search, AlertTriangle, Database, Settings, Building2, User, Book, LogOut, Shield, CreditCard, DollarSign } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -194,6 +194,18 @@ export function TopNav() {
                 <Link href="/settings/preferences" className="flex items-center gap-2 cursor-pointer">
                   <Settings className="h-4 w-4" />
                   Settings
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/settings/billing" className="flex items-center gap-2 cursor-pointer">
+                  <CreditCard className="h-4 w-4" />
+                  Billing
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/pricing" className="flex items-center gap-2 cursor-pointer">
+                  <DollarSign className="h-4 w-4" />
+                  View Pricing
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>

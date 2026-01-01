@@ -169,7 +169,7 @@ export async function updateBusinessMetrics(dbPool: any, wsServer?: WebSocketSer
         if (wsServer) {
           const metricsEvents = new MetricsEvents(wsServer)
           // Get all organizations and emit to each
-          const organizations = await dbPool.query('SELECT id FROM organizations WHERE status = $1', ['active'])
+          const organizations = await dbPool.query('SELECT id FROM organizations WHERE is_active = $1 AND deleted_at IS NULL', [true])
           organizations.rows.forEach((org: any) => {
             metricsEvents.costsUpdated(org.id, {
               total: totalCost,

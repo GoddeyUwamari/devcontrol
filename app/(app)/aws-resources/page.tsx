@@ -21,6 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { BulkTagDialog } from '@/components/aws-resources/BulkTagDialog';
+import { Breadcrumb } from '@/components/navigation/breadcrumb';
 
 export default function AWSResourcesPage() {
   const queryClient = useQueryClient();
@@ -122,6 +123,14 @@ export default function AWSResourcesPage() {
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* Breadcrumb */}
+      <Breadcrumb
+        items={[
+          { label: 'Dashboard', href: '/dashboard' },
+          { label: 'AWS Resources', current: true },
+        ]}
+      />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
