@@ -1,60 +1,66 @@
-'use client'
+'use client';
 
-import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { Layers, Network, Rocket, Server, Users, Activity, TrendingUp, Plus, Search, AlertTriangle, Database, Settings, Building2, User, Book, LogOut, Shield, CreditCard, DollarSign } from 'lucide-react'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import {
+  Layers,
+  Rocket,
+  Server,
+  Users,
+  Plus,
+  Search,
+  Menu,
+  X,
+} from 'lucide-react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { useAuth } from '@/lib/contexts/auth-context'
-
-const navigation = [
-  { name: 'Services', href: '/services', icon: Layers },
-  { name: 'Dependencies', href: '/dependencies', icon: Network },
-  { name: 'Deployments', href: '/deployments', icon: Rocket },
-  { name: 'Infrastructure', href: '/infrastructure', icon: Server },
-  { name: 'AWS Resources', href: '/aws-resources', icon: Database },
-  { name: 'Teams', href: '/teams', icon: Users },
-  { name: 'Monitoring', href: '/admin/monitoring', icon: Activity },
-  { name: 'DORA Metrics', href: '/admin/dora-metrics', icon: TrendingUp },
-]
+} from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
+import { NavDropdown } from '@/components/ui/nav-dropdown';
+import { UserDropdown } from '@/components/ui/user-dropdown';
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/contexts/auth-context';
+import {
+  platformNav,
+  solutionsNav,
+  resourcesNav,
+  standaloneLinks,
+  quickActions,
+} from '@/lib/navigation-config';
+import { useState } from 'react';
 
 export function TopNav() {
-  const pathname = usePathname()
-  const router = useRouter()
-  const { user, isLoading } = useAuth()
-
-  // Debug log
-  console.log('👤 TopNav - Current user:', user)
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user, logout, isLoading } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const getUserInitials = () => {
-    if (!user) return 'U'
+    if (!user) return 'U';
 
-    const fullName = user.fullName || ''
-    const nameParts = fullName.split(' ')
+    const fullName = user.fullName || '';
+    const nameParts = fullName.split(' ');
 
     if (nameParts.length >= 2) {
-      return (nameParts[0].charAt(0) + nameParts[1].charAt(0)).toUpperCase()
+      return (nameParts[0].charAt(0) + nameParts[1].charAt(0)).toUpperCase();
     }
 
     if (fullName) {
-      return fullName.charAt(0).toUpperCase()
+      return fullName.charAt(0).toUpperCase();
     }
 
-    return user.email?.charAt(0).toUpperCase() || 'U'
-  }
+    return user.email?.charAt(0).toUpperCase() || 'U';
+  };
 
   const getUserName = () => {
-    if (!user) return 'Loading...'
-    return user.fullName || user.email
-  }
+    if (!user) return 'Loading...';
+    return user.fullName || user.email;
+  };
 
   const handleSearchClick = () => {
     // This will be connected to the command palette
@@ -62,52 +68,72 @@ export function TopNav() {
       key: 'k',
       metaKey: true,
       bubbles: true,
-    })
-    document.dispatchEvent(event)
-  }
+    });
+    document.dispatchEvent(event);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
       <div className="max-w-[1920px] mx-auto flex h-16 items-center px-4 md:px-6 lg:px-8">
         {/* Left: Logo + Navigation */}
-        <div className="flex items-center gap-3 lg:gap-4 flex-1 min-w-0">
+        <div className="flex items-center gap-2 lg:gap-6">
           {/* Logo */}
-          <Link href="/dashboard" className="flex items-center gap-2 font-semibold shrink-0">
-            <div className="w-8 h-8 rounded-md bg-linear-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2 font-semibold shrink-0"
+          >
+            <div className="w-8 h-8 rounded-md bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
               <span className="text-white text-sm font-bold">DC</span>
             </div>
-            <span className="hidden lg:inline-block">DevControl</span>
+            <span className="hidden lg:inline-block text-xl">DevControl</span>
           </Link>
 
-          {/* Navigation Links - Hidden on mobile */}
-          <nav className="hidden md:flex items-center gap-0.5 lg:gap-1">
-            {navigation.map((item, index) => {
-              const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-              // Hide some items on medium screens, show on xl
-              const isHiddenOnMedium = index >= 6 // Hide last 2 items (Monitoring, DORA Metrics) on medium
+          {/* Desktop Navigation Dropdowns */}
+          <nav className="hidden lg:flex items-center gap-0.5">
+            <NavDropdown group={platformNav} />
+            <NavDropdown group={solutionsNav} />
+            <NavDropdown group={resourcesNav} />
 
+            {/* Standalone Links */}
+            {standaloneLinks.map((link) => {
+              const isActive =
+                pathname === link.href || pathname.startsWith(link.href + '/');
               return (
                 <Link
-                  key={item.name}
-                  href={item.href}
+                  key={link.href}
+                  href={link.href}
                   className={cn(
-                    'px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium rounded-md transition-colors whitespace-nowrap',
+                    'px-3 py-2 text-base font-medium rounded-md transition-colors',
                     'hover:bg-accent hover:text-accent-foreground',
-                    isActive
-                      ? 'text-foreground'
-                      : 'text-muted-foreground',
-                    isHiddenOnMedium && 'hidden xl:flex'
+                    isActive ? 'text-foreground' : 'text-muted-foreground'
                   )}
                 >
-                  {item.name}
+                  {link.label}
                 </Link>
-              )
+              );
             })}
           </nav>
         </div>
 
         {/* Right: Search + Actions + User */}
-        <div className="flex items-center gap-2 lg:gap-3 shrink-0 ml-2 lg:ml-4">
+        <div className="ml-auto flex items-center gap-2 lg:gap-3 shrink-0">
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="lg:hidden p-2 hover:bg-accent rounded-md transition-colors"
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          >
+            {mobileMenuOpen ? (
+              <X className="w-5 h-5" />
+            ) : (
+              <Menu className="w-5 h-5" />
+            )}
+          </button>
+
           {/* Search Trigger (Cmd+K) */}
           <Button
             variant="outline"
@@ -135,132 +161,170 @@ export function TopNav() {
           {/* Quick Actions Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" className="gap-1.5 shrink-0">
+              <Button size="sm" className="gap-1.5 shrink-0 bg-blue-600 hover:bg-blue-700 text-white">
                 <Plus className="h-4 w-4" />
                 <span className="hidden lg:inline">New</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={() => router.push('/services/new')}>
-                <Layers className="mr-2 h-4 w-4" />
-                Create Service
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/deployments/new')}>
-                <Rocket className="mr-2 h-4 w-4" />
-                Record Deployment
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/infrastructure/new')}>
-                <Server className="mr-2 h-4 w-4" />
-                Add Infrastructure
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/teams/new')}>
-                <Users className="mr-2 h-4 w-4" />
-                Create Team
-              </DropdownMenuItem>
+              {quickActions.map((action, idx) => {
+                const Icon = action.icon;
+                return (
+                  <DropdownMenuItem
+                    key={action.href}
+                    onClick={() => router.push(action.href)}
+                  >
+                    {Icon && <Icon className="mr-2 h-4 w-4" />}
+                    {action.label}
+                  </DropdownMenuItem>
+                );
+              })}
             </DropdownMenuContent>
           </DropdownMenu>
 
           {/* User Menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full shrink-0">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="text-xs">
-                    {getUserInitials()}
-                  </AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <div className="px-2 py-1.5">
-                <p className="text-sm font-medium">{getUserName()}</p>
-                <p className="text-xs text-muted-foreground">{user?.email || 'Loading...'}</p>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/settings/profile" className="flex items-center gap-2 cursor-pointer">
-                  <User className="h-4 w-4" />
-                  Profile
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/settings/organization" className="flex items-center gap-2 cursor-pointer">
-                  <Building2 className="h-4 w-4" />
-                  Organization
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/settings/preferences" className="flex items-center gap-2 cursor-pointer">
-                  <Settings className="h-4 w-4" />
-                  Settings
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/settings/billing" className="flex items-center gap-2 cursor-pointer">
-                  <CreditCard className="h-4 w-4" />
-                  Billing
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/pricing" className="flex items-center gap-2 cursor-pointer">
-                  <DollarSign className="h-4 w-4" />
-                  View Pricing
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/admin/alerts" className="flex items-center gap-2 cursor-pointer">
-                  <AlertTriangle className="h-4 w-4" />
-                  Alerts
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/audit-logs" className="flex items-center gap-2 cursor-pointer">
-                  <Shield className="h-4 w-4" />
-                  Audit Logs
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/docs" className="flex items-center gap-2 cursor-pointer">
-                  <Book className="h-4 w-4" />
-                  Documentation
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive">
-                <LogOut className="h-4 w-4" />
-                Logout
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {isLoading ? (
+            <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+          ) : user ? (
+            <UserDropdown
+              user={{
+                name: getUserName(),
+                email: user.email || '',
+                initials: getUserInitials(),
+              }}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/login">Sign in</Link>
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Mobile Navigation */}
-      <div className="md:hidden border-t px-4 py-2 overflow-x-auto">
-        <nav className="flex gap-1 min-w-max">
-          {navigation.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={cn(
-                  'px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap',
-                  'hover:bg-accent hover:text-accent-foreground',
-                  isActive
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground'
+      {/* Mobile Navigation Menu */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden border-t bg-background">
+          <div className="px-4 py-4 space-y-4">
+            {/* Platform Links */}
+            <div>
+              <div className="text-xs uppercase text-muted-foreground font-semibold mb-2 px-2">
+                Platform
+              </div>
+              <div className="space-y-1">
+                {platformNav.sections?.map((section) =>
+                  section.items.map((item) => {
+                    const isActive =
+                      pathname === item.href ||
+                      pathname.startsWith(item.href + '/');
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors',
+                          'hover:bg-accent',
+                          isActive
+                            ? 'bg-accent text-foreground'
+                            : 'text-muted-foreground'
+                        )}
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        {Icon && <Icon className="w-4 h-4" />}
+                        {item.label}
+                      </Link>
+                    );
+                  })
                 )}
-              >
-                {item.name}
-              </Link>
-            )
-          })}
-        </nav>
-      </div>
+              </div>
+            </div>
+
+            <DropdownMenuSeparator />
+
+            {/* Solutions Links */}
+            <div>
+              <div className="text-xs uppercase text-muted-foreground font-semibold mb-2 px-2">
+                Solutions
+              </div>
+              <div className="space-y-1">
+                {solutionsNav.sections?.map((section) =>
+                  section.items.map((item) => {
+                    const isActive =
+                      pathname === item.href ||
+                      pathname.startsWith(item.href + '/');
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={cn(
+                          'block px-3 py-2 text-sm rounded-md transition-colors',
+                          'hover:bg-accent',
+                          isActive
+                            ? 'bg-accent text-foreground'
+                            : 'text-muted-foreground'
+                        )}
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <DropdownMenuSeparator />
+
+            {/* Resources Links */}
+            <div>
+              <div className="text-xs uppercase text-muted-foreground font-semibold mb-2 px-2">
+                Resources
+              </div>
+              <div className="space-y-1">
+                {resourcesNav.items?.map((item) => {
+                  const isActive =
+                    pathname === item.href ||
+                    pathname.startsWith(item.href + '/');
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        'block px-3 py-2 text-sm rounded-md transition-colors',
+                        'hover:bg-accent',
+                        isActive
+                          ? 'bg-accent text-foreground'
+                          : 'text-muted-foreground'
+                      )}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
+            <DropdownMenuSeparator />
+
+            {/* Pricing */}
+            <Link
+              href="/pricing"
+              className={cn(
+                'block px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                'hover:bg-accent',
+                pathname === '/pricing'
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground'
+              )}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Pricing
+            </Link>
+          </div>
+        </div>
+      )}
     </header>
-  )
+  );
 }

@@ -11,6 +11,7 @@ import { useOnboardingStore } from '@/lib/stores/onboarding-store';
 import { useBreadcrumbs } from '@/lib/hooks/useBreadcrumbs';
 import { DemoModeToggle } from '@/components/demo/demo-mode-toggle';
 import { SalesDemoToggle } from '@/components/demo/sales-demo-toggle';
+import { AnnouncementBar } from '@/components/announcement-bar';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const fetchStatus = useOnboardingStore((state) => state.fetchStatus);
@@ -23,6 +24,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Announcement Bar */}
+      <AnnouncementBar
+        message="🚀 Limited Time Offer: Get 20% off annual plans!"
+        linkText="Learn More"
+        linkHref="/pricing"
+      />
+
       {/* Top Navigation - Shows on all authenticated pages */}
       <TopNav />
 

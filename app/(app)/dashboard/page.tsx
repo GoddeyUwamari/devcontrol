@@ -22,7 +22,6 @@ import { ValuePropCards } from '@/components/dashboard/ValuePropCards'
 import { IntegrationShowcase } from '@/components/dashboard/IntegrationShowcase'
 import { Testimonials } from '@/components/dashboard/Testimonials'
 import { TrustIndicators } from '@/components/dashboard/TrustIndicators'
-import { FAQ } from '@/components/dashboard/FAQ'
 import { FinalCTA } from '@/components/dashboard/FinalCTA'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -326,14 +325,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* 9. FAQ - Collapsible questions */}
-        <section className="px-4">
-          <div className="mx-auto max-w-7xl">
-            <FAQ />
-          </div>
-        </section>
-
-        {/* 10. Final CTA - Enhanced conversion section */}
+        {/* 9. Final CTA - Enhanced conversion section */}
         <section>
           <FinalCTA />
         </section>
