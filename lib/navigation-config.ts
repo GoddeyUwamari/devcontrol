@@ -1,5 +1,4 @@
 import {
-  LayoutDashboard,
   Package,
   Boxes,
   Rocket,
@@ -54,12 +53,6 @@ export const platformNav: NavGroup = {
     {
       label: 'Core Features',
       items: [
-        {
-          label: 'Dashboard',
-          href: '/dashboard',
-          icon: LayoutDashboard,
-          description: 'Overview of your infrastructure',
-        },
         {
           label: 'Services',
           href: '/services',
@@ -237,7 +230,7 @@ export const userNavSections: NavSection[] = [
     items: [
       {
         label: 'Profile',
-        href: '/settings/profile',
+        href: '/profile',
         icon: User,
       },
       {
@@ -247,7 +240,7 @@ export const userNavSections: NavSection[] = [
       },
       {
         label: 'Settings',
-        href: '/settings/preferences',
+        href: '/settings',
         icon: Settings,
       },
     ],

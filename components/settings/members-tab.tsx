@@ -196,12 +196,16 @@ export function MembersTab({ organization }: MembersTabProps) {
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8">
                             <AvatarFallback className="text-xs">
-                              {getInitials(member.user.fullName)}
+                              {member.user?.fullName
+                                ? getInitials(member.user.fullName)
+                                : member.user?.email
+                                  ? member.user.email.substring(0, 2).toUpperCase()
+                                  : "??"}
                             </AvatarFallback>
                           </Avatar>
                           <div>
                             <p className="font-medium">
-                              {member.user.fullName}
+                              {member.user?.fullName || member.user?.email || "Unknown User"}
                               {isCurrentUser && (
                                 <span className="ml-2 text-xs text-muted-foreground">
                                   (You)
@@ -209,7 +213,7 @@ export function MembersTab({ organization }: MembersTabProps) {
                               )}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {member.user.email}
+                              {member.user?.email || "No email"}
                             </p>
                           </div>
                         </div>
@@ -287,7 +291,9 @@ export function MembersTab({ organization }: MembersTabProps) {
             <AlertDialogTitle>Remove team member?</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to remove{" "}
-              <span className="font-medium">{memberToRemove?.user.fullName}</span>{" "}
+              <span className="font-medium">
+                {memberToRemove?.user?.fullName || memberToRemove?.user?.email || "this member"}
+              </span>{" "}
               from this organization? They will lose access to all resources.
             </AlertDialogDescription>
           </AlertDialogHeader>

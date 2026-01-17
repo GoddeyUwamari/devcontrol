@@ -18,7 +18,6 @@ import { WelcomeHero } from '@/components/dashboard/WelcomeHero'
 import { TrustedByLogos } from '@/components/dashboard/TrustedByLogos'
 import { QuickWins } from '@/components/dashboard/QuickWins'
 import { PlatformPreview } from '@/components/dashboard/PlatformPreview'
-import { ValuePropCards } from '@/components/dashboard/ValuePropCards'
 import { IntegrationShowcase } from '@/components/dashboard/IntegrationShowcase'
 import { Testimonials } from '@/components/dashboard/Testimonials'
 import { TrustIndicators } from '@/components/dashboard/TrustIndicators'
@@ -285,47 +284,40 @@ export default function DashboardPage() {
           <TrustedByLogos />
         </section>
 
-        {/* 3. Quick Wins - Immediate benefits */}
+        {/* 3. Platform Preview - Feature showcase */}
+        <section className="px-4">
+          <PlatformPreview />
+        </section>
+
+        {/* 4. Quick Wins - Immediate benefits */}
         <section className="px-4 py-8 md:py-12 bg-white">
           <div className="mx-auto max-w-7xl">
             <QuickWins />
           </div>
         </section>
 
-        {/* 4. Platform Preview - Visual showcase */}
-        <section className="px-4">
-          <PlatformPreview />
-        </section>
-
-        {/* 5. Key Features Grid - Enhanced with details */}
-        <section className="px-4 py-8 md:py-12 bg-white">
-          <div className="mx-auto max-w-7xl">
-            <ValuePropCards />
-          </div>
-        </section>
-
-        {/* 6. Integration Showcase */}
+        {/* 5. Integration Showcase */}
         <section className="px-4">
           <div className="mx-auto max-w-7xl">
             <IntegrationShowcase />
           </div>
         </section>
 
-        {/* 7. Social Proof - Enhanced testimonials */}
+        {/* 6. Social Proof - Enhanced testimonials */}
         <section className="px-4">
           <div className="mx-auto max-w-7xl">
             <Testimonials />
           </div>
         </section>
 
-        {/* 8. Trust Indicators - Security & compliance */}
+        {/* 7. Trust Indicators - Security & compliance */}
         <section className="px-4">
           <div className="mx-auto max-w-7xl">
             <TrustIndicators />
           </div>
         </section>
 
-        {/* 9. Final CTA - Enhanced conversion section */}
+        {/* 8. Final CTA - Enhanced conversion section */}
         <section>
           <FinalCTA />
         </section>

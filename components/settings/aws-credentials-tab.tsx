@@ -175,7 +175,7 @@ export function AWSCredentialsTab({ organization }: AWSCredentialsTabProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
           {/* Status Alert */}
           {hasCredentials && (
             <Alert>

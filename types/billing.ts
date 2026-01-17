@@ -38,13 +38,20 @@ export interface PricingTier {
   tier: SubscriptionTier;
   price: number;
   priceId: string;
+  annualPrice?: number;
+  annualPriceId?: string;
+  annualSavings?: number;
   popular?: boolean;
+  trialDays?: number;
   features: string[];
   limits: {
-    resources: number | 'unlimited';
-    resourceTypes: number | 'all';
-    apiRequests: number;
+    resources: number | 'unlimited' | string;
+    resourceTypes?: number | 'all';
+    apiRequests?: number;
+    teamMembers?: number | 'unlimited' | string;
   };
+  cta?: string;
+  addOns?: Array<{ name: string; price: number }>;
 }
 
 export interface CheckoutSessionResponse {

@@ -1,102 +1,60 @@
 /**
  * PlatformPreview Component
- * Feature-focused showcase with real visual examples
+ * Feature-focused showcase with compact cards
  */
 
 'use client';
 
 import React from 'react';
-import { DollarSign, Activity, Shield, TrendingUp, Search, Users, Sparkles } from 'lucide-react';
+import { DollarSign, Rocket, Shield, TrendingUp, Search, Users, Sparkles } from 'lucide-react';
 import { FeatureCard } from './FeatureCard';
-import { MiniCostChart } from './MiniCostChart';
-import { MiniDeploymentTimeline } from './MiniDeploymentTimeline';
-import { MiniSecurityChecklist } from './MiniSecurityChecklist';
-import { MiniPerformanceMetrics } from './MiniPerformanceMetrics';
-import { MiniResourceGrid } from './MiniResourceGrid';
-import { MiniTeamActivity } from './MiniTeamActivity';
 
 export function PlatformPreview() {
   const features = [
     {
       icon: DollarSign,
       title: 'Cost Optimization',
-      description: 'Real-time cost tracking across all AWS services with AI-powered savings recommendations. Average 15% cost reduction.',
-      preview: <MiniCostChart />,
-      keyPoints: [
-        'Real-time spending alerts',
-        'Automated optimization tips',
-        'Cost forecasting & budgets',
-      ],
+      description: 'Monitor AWS spending in real-time with actionable insights. Identify savings opportunities and reduce costs by 15-30%.',
       color: 'green' as const,
     },
     {
-      icon: Activity,
-      title: 'Live Deployments',
-      description: 'Monitor all deployments with DORA metrics automatically tracked. Know exactly when, what, and who deployed across your infrastructure.',
-      preview: <MiniDeploymentTimeline />,
-      keyPoints: [
-        'Real-time deployment tracking',
-        'DORA metrics dashboard',
-        'Automated rollback on failure',
-      ],
+      icon: Rocket,
+      title: 'Deployment Tracking',
+      description: 'Track all deployments across your infrastructure with detailed history, rollback capabilities, and deployment frequency metrics.',
       color: 'blue' as const,
     },
     {
       icon: Shield,
-      title: 'Security Posture',
-      description: 'Automated compliance checks and vulnerability detection. Identify public resources, missing encryption, and security risks instantly.',
-      preview: <MiniSecurityChecklist />,
-      keyPoints: [
-        'Compliance monitoring',
-        'Vulnerability scanning',
-        'Security best practices',
-      ],
+      title: 'Security & Compliance',
+      description: 'Automated security scanning and compliance monitoring. Stay compliant with SOC 2, HIPAA, and PCI standards effortlessly.',
       color: 'purple' as const,
     },
     {
       icon: TrendingUp,
       title: 'Performance Insights',
-      description: 'Engineering velocity and efficiency metrics at your fingertips. Track service health, response times, and team productivity.',
-      preview: <MiniPerformanceMetrics />,
-      keyPoints: [
-        'DORA velocity metrics',
-        'Service health monitoring',
-        'Performance benchmarking',
-      ],
+      description: 'Real-time performance monitoring with DORA metrics. Measure deployment frequency, lead time, and change failure rate.',
       color: 'orange' as const,
     },
     {
       icon: Search,
       title: 'Resource Discovery',
-      description: 'Complete visibility into your AWS infrastructure. Discover, tag, and manage all resources across multiple regions and accounts.',
-      preview: <MiniResourceGrid />,
-      keyPoints: [
-        'Multi-region discovery',
-        'Automated tagging',
-        'Resource optimization',
-      ],
+      description: 'Automatically discover and catalog all AWS resources across regions. Get complete visibility into your infrastructure.',
       color: 'cyan' as const,
     },
     {
       icon: Users,
       title: 'Team Collaboration',
-      description: 'Unified dashboard for your entire engineering team. Role-based access, shared insights, and collaborative workflows.',
-      preview: <MiniTeamActivity />,
-      keyPoints: [
-        'Role-based access control',
-        'Shared team dashboards',
-        'Activity tracking & audit logs',
-      ],
+      description: 'Role-based access control, shared dashboards, and team activity feeds. Collaborate seamlessly across your organization.',
       color: 'pink' as const,
     },
   ];
 
   return (
-    <section className="py-20 bg-white">
+    <section className="py-16 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Section Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-12">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-full mb-6">
             <Sparkles className="w-4 h-4 text-blue-600" />
@@ -104,28 +62,25 @@ export function PlatformPreview() {
           </div>
 
           {/* Title */}
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">
             Everything You Need in One Platform
           </h2>
 
-          {/* Description */}
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            A comprehensive view of your AWS infrastructure with real-time insights,
-            cost optimization, security monitoring, and deployment tracking — all in
-            an intuitive dashboard
+          {/* Description - Shorter */}
+          <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+            Complete AWS infrastructure management with real-time insights,
+            cost optimization, and security monitoring.
           </p>
         </div>
 
-        {/* Feature Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {/* Feature Grid - 3 columns */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((feature, index) => (
             <FeatureCard
               key={index}
               icon={feature.icon}
               title={feature.title}
               description={feature.description}
-              preview={feature.preview}
-              keyPoints={feature.keyPoints}
               color={feature.color}
             />
           ))}

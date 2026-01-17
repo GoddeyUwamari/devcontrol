@@ -1,59 +1,59 @@
 /**
  * FeatureCard Component
- * Individual feature card with icon, preview, and description
+ * Compact feature card with icon, title, and description
  */
 
 'use client';
 
 import React from 'react';
-import { ArrowRight, Check, LucideIcon } from 'lucide-react';
+import { ArrowRight, LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 
 interface FeatureCardProps {
   icon: LucideIcon;
   title: string;
   description: string;
-  preview: React.ReactNode;
-  keyPoints: string[];
+  preview?: React.ReactNode;
+  keyPoints?: string[];
   color: 'green' | 'blue' | 'purple' | 'orange' | 'cyan' | 'pink';
+  compact?: boolean;
 }
 
 const colorClasses = {
   green: {
-    iconBg: 'bg-green-100',
+    iconBg: 'bg-green-50',
     iconText: 'text-green-600',
-    border: 'border-green-200',
+    border: 'border-gray-200',
     hoverBorder: 'hover:border-green-400',
   },
   blue: {
-    iconBg: 'bg-blue-100',
+    iconBg: 'bg-blue-50',
     iconText: 'text-blue-600',
-    border: 'border-blue-200',
+    border: 'border-gray-200',
     hoverBorder: 'hover:border-blue-400',
   },
   purple: {
-    iconBg: 'bg-purple-100',
+    iconBg: 'bg-purple-50',
     iconText: 'text-purple-600',
-    border: 'border-purple-200',
+    border: 'border-gray-200',
     hoverBorder: 'hover:border-purple-400',
   },
   orange: {
-    iconBg: 'bg-orange-100',
+    iconBg: 'bg-orange-50',
     iconText: 'text-orange-600',
-    border: 'border-orange-200',
+    border: 'border-gray-200',
     hoverBorder: 'hover:border-orange-400',
   },
   cyan: {
-    iconBg: 'bg-cyan-100',
+    iconBg: 'bg-cyan-50',
     iconText: 'text-cyan-600',
-    border: 'border-cyan-200',
+    border: 'border-gray-200',
     hoverBorder: 'hover:border-cyan-400',
   },
   pink: {
-    iconBg: 'bg-pink-100',
+    iconBg: 'bg-pink-50',
     iconText: 'text-pink-600',
-    border: 'border-pink-200',
+    border: 'border-gray-200',
     hoverBorder: 'hover:border-pink-400',
   },
 };
@@ -62,50 +62,35 @@ export function FeatureCard({
   icon: Icon,
   title,
   description,
-  preview,
-  keyPoints,
   color,
+  compact = true,
 }: FeatureCardProps) {
   const colors = colorClasses[color];
 
   return (
     <Card
-      className={`p-6 hover:shadow-xl transition-all duration-300 border-2 ${colors.border} ${colors.hoverBorder}`}
+      className={`bg-white rounded-xl border ${colors.border} p-6 hover:shadow-lg transition-all duration-300 ${colors.hoverBorder}`}
     >
-      {/* Icon with colored background */}
+      {/* Icon */}
       <div className={`w-12 h-12 rounded-lg ${colors.iconBg} flex items-center justify-center mb-4`}>
         <Icon className={`w-6 h-6 ${colors.iconText}`} />
       </div>
 
       {/* Title */}
-      <h3 className="text-xl font-semibold text-gray-900 mb-3">
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">
         {title}
       </h3>
 
-      {/* Visual Preview */}
-      <div className="mb-4">
-        {preview}
-      </div>
-
-      {/* Description */}
-      <p className="text-gray-600 mb-4 leading-relaxed">
+      {/* Description - compact with line clamp */}
+      <p className="text-sm text-gray-600 leading-relaxed line-clamp-3">
         {description}
       </p>
 
-      {/* Key points */}
-      <ul className="space-y-2 mb-4">
-        {keyPoints.map((point, index) => (
-          <li key={index} className="flex items-start gap-2 text-sm text-gray-600">
-            <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-            <span>{point}</span>
-          </li>
-        ))}
-      </ul>
-
-      {/* CTA */}
-      <Button variant="link" className="p-0 h-auto text-gray-700 hover:text-gray-900">
-        Learn more <ArrowRight className="w-4 h-4 ml-1" />
-      </Button>
+      {/* Learn more link */}
+      <button className="inline-flex items-center text-sm text-blue-600 hover:text-blue-700 mt-4 font-medium transition-colors">
+        Learn more
+        <ArrowRight className="w-4 h-4 ml-1" />
+      </button>
     </Card>
   );
 }

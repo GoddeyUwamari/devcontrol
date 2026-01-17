@@ -54,23 +54,23 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
 
       <DropdownMenuContent
         className={cn(
-          'p-2',
-          group.sections ? 'w-[480px]' : 'w-[320px]'
+          'px-4 py-6 shadow-xl border border-gray-200 dark:border-gray-800',
+          group.sections ? 'w-[720px]' : 'w-[400px]'
         )}
         align="start"
         sideOffset={8}
       >
         {group.sections ? (
           // Multi-section dropdown (like Platform, Solutions)
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-8">
             {group.sections.map((section, idx) => (
-              <div key={idx} className="space-y-1">
+              <div key={idx} className="space-y-2">
                 {section.label && (
-                  <DropdownMenuLabel className="text-xs uppercase text-muted-foreground font-semibold px-2 pb-1">
+                  <DropdownMenuLabel className="text-xs uppercase text-gray-500 dark:text-gray-400 font-semibold tracking-wider px-2 pb-2">
                     {section.label}
                   </DropdownMenuLabel>
                 )}
-                <div className="space-y-0.5">
+                <div className="space-y-2">
                   {section.items.map((item) => {
                     const isActive =
                       pathname === item.href ||
@@ -82,18 +82,18 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
                         <Link
                           href={item.href}
                           className={cn(
-                            'flex items-start gap-3 p-2 rounded-md cursor-pointer transition-colors w-full',
-                            'hover:bg-accent',
-                            isActive && 'bg-accent/50'
+                            'flex items-start gap-4 p-4 rounded-lg cursor-pointer transition-all duration-200 w-full',
+                            'hover:bg-gray-50 dark:hover:bg-gray-800/50',
+                            isActive && 'bg-blue-50 dark:bg-blue-900/20'
                           )}
                         >
                           {Icon && (
-                            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <Icon className="w-4 h-4 text-primary" />
+                            <div className="w-11 h-11 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                              <Icon className="w-5 h-5 text-primary" />
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm text-foreground flex items-center gap-2">
+                            <div className="font-semibold text-base text-foreground flex items-center gap-2">
                               {item.label}
                               {item.badge && (
                                 <span className="px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded-full">
@@ -102,7 +102,7 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
                               )}
                             </div>
                             {item.description && (
-                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 leading-relaxed line-clamp-2">
                                 {item.description}
                               </p>
                             )}
@@ -117,7 +117,7 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
           </div>
         ) : (
           // Simple list dropdown (like Resources)
-          <div className="space-y-0.5">
+          <div className="space-y-2">
             {group.items?.map((item) => {
               const isActive =
                 pathname === item.href ||
@@ -129,22 +129,22 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
                   <Link
                     href={item.href}
                     className={cn(
-                      'flex items-start gap-3 p-2.5 rounded-md cursor-pointer transition-colors w-full',
-                      'hover:bg-accent',
-                      isActive && 'bg-accent/50'
+                      'flex items-start gap-4 p-4 rounded-lg cursor-pointer transition-all duration-200 w-full',
+                      'hover:bg-gray-50 dark:hover:bg-gray-800/50',
+                      isActive && 'bg-blue-50 dark:bg-blue-900/20'
                     )}
                   >
                     {Icon && (
-                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <Icon className="w-4 h-4 text-primary" />
+                      <div className="w-11 h-11 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Icon className="w-5 h-5 text-primary" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-foreground">
+                      <div className="font-semibold text-base text-foreground">
                         {item.label}
                       </div>
                       {item.description && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">
                           {item.description}
                         </p>
                       )}
