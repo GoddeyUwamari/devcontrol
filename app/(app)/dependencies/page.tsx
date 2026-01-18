@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Network, List, Activity, AlertTriangle, Plus } from 'lucide-react'
+import { Network, List, Activity, AlertTriangle, Plus, Command } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -13,6 +13,14 @@ import { DependencyGraphPreview } from '@/components/dependencies/DependencyGrap
 import { DependencyBenefits } from '@/components/dependencies/DependencyBenefits'
 import { DependencyIntegrations } from '@/components/dependencies/DependencyIntegrations'
 import { DependencyUseCases } from '@/components/dependencies/DependencyUseCases'
+import { ExportMenu } from '@/components/dependencies/ExportMenu'
+import { DependencySearch, type DependencySearchHandle } from '@/components/dependencies/DependencySearch'
+import { DependencyFilters, type DependencyFiltersHandle } from '@/components/dependencies/DependencyFilters'
+import { FilterSummary } from '@/components/dependencies/FilterSummary'
+import { KeyboardShortcutsModal } from '@/components/dependencies/KeyboardShortcutsModal'
+import { useDependencySearch } from '@/lib/hooks/use-dependency-search'
+import { useDependencyFilters } from '@/lib/hooks/use-dependency-filters'
+import { useKeyboardShortcuts } from '@/lib/hooks/use-keyboard-shortcuts'
 import dynamic from 'next/dynamic'
 
 // Dynamically import React Flow component to avoid SSR issues
@@ -39,6 +47,11 @@ const AddDependencyDialog = dynamic(
 export default function DependenciesPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('graph')
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const graphRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<DependencySearchHandle>(null)
+  const exportButtonRef = useRef<HTMLButtonElement>(null)
+  const filtersRef = useRef<DependencyFiltersHandle>(null)
 
   // Fetch all dependencies
   const {
@@ -66,6 +79,37 @@ export default function DependenciesPage() {
     queryFn: () => dependenciesService.detectCircularDependencies(),
   })
 
+  // Search functionality
+  const {
+    query,
+    setQuery,
+    results,
+    isSearching,
+    clearSearch,
+    hasActiveSearch,
+  } = useDependencySearch(dependencies)
+
+  // Filter functionality
+  const {
+    filters,
+    setFilter,
+    clearFilters,
+    activeFilterCount,
+    filteredResults,
+  } = useDependencyFilters(results)
+
+  // Map filtered search results back to ServiceDependency type
+  const displayedDependencies = filteredResults
+    .map((result) => {
+      // Find the original dependency by matching serviceName and dependsOn
+      return dependencies.find(
+        (dep) =>
+          (dep.sourceServiceName || dep.sourceServiceId) === result.item.serviceName &&
+          (dep.targetServiceName || dep.targetServiceId) === result.item.dependsOn
+      )
+    })
+    .filter((dep): dep is NonNullable<typeof dep> => dep !== undefined)
+
   // Calculate stats
   const stats = {
     total: dependencies.length,
@@ -80,6 +124,15 @@ export default function DependenciesPage() {
 
   const hasDependencies = dependencies.length > 0
   const hasServices = services.length > 0
+
+  // Setup keyboard shortcuts
+  useKeyboardShortcuts({
+    onSearch: () => searchRef.current?.focus(),
+    onClearSearch: () => searchRef.current?.clear(),
+    onShowHelp: () => setShowShortcuts(true),
+    onOpenFilters: () => filtersRef.current?.focusFirst(),
+    onExport: () => exportButtonRef.current?.click(),
+  })
 
   // Empty State
   if (!isLoading && !hasDependencies) {
@@ -144,10 +197,28 @@ export default function DependenciesPage() {
               Visualize and manage service dependency relationships
             </p>
           </div>
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Dependency
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowShortcuts(true)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Command className="h-4 w-4 mr-2" />
+              Shortcuts
+            </Button>
+            <ExportMenu
+              ref={exportButtonRef}
+              dependencies={displayedDependencies}
+              cycles={cycles}
+              graphRef={graphRef}
+              activeTab={activeTab}
+            />
+            <Button onClick={() => setIsAddDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Dependency
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -195,6 +266,32 @@ export default function DependenciesPage() {
         </Alert>
       )}
 
+      {/* Search and Filters */}
+      <div className="space-y-3">
+        <DependencySearch
+          ref={searchRef}
+          query={query}
+          onQueryChange={setQuery}
+          resultsCount={displayedDependencies.length}
+          totalCount={dependencies.length}
+          isSearching={isSearching}
+          onClear={clearSearch}
+          hasActiveFilters={activeFilterCount > 0}
+        />
+
+        <DependencyFilters
+          ref={filtersRef}
+          filters={filters}
+          onFilterChange={setFilter}
+          onClearFilters={clearFilters}
+          activeCount={activeFilterCount}
+        />
+
+        {activeFilterCount > 0 && (
+          <FilterSummary filters={filters} onRemoveFilter={setFilter} />
+        )}
+      </div>
+
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
@@ -213,15 +310,17 @@ export default function DependenciesPage() {
         </TabsList>
 
         <TabsContent value="graph" className="space-y-4">
-          <DependencyGraph onRefresh={refetch} />
+          <DependencyGraph onRefresh={refetch} graphRef={graphRef} />
         </TabsContent>
 
         <TabsContent value="list" className="space-y-4">
           <DependencyList
-            dependencies={dependencies}
+            dependencies={displayedDependencies}
             cycles={cycles}
             isLoading={isLoading}
             onRefresh={refetch}
+            searchQuery={query}
+            onClearSearch={clearSearch}
           />
         </TabsContent>
 
@@ -238,6 +337,12 @@ export default function DependenciesPage() {
           refetch()
           refetchCycles()
         }}
+      />
+
+      {/* Keyboard Shortcuts Modal */}
+      <KeyboardShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
       />
     </div>
   )

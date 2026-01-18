@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import ReactFlow, {
   Background,
@@ -38,9 +38,12 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
 
 interface DependencyGraphProps {
   onRefresh: () => void
+  graphRef?: React.RefObject<HTMLDivElement>
 }
 
-export function DependencyGraph({ onRefresh }: DependencyGraphProps) {
+export function DependencyGraph({ onRefresh, graphRef }: DependencyGraphProps) {
+  const internalRef = useRef<HTMLDivElement>(null)
+  const activeRef = graphRef || internalRef
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
@@ -125,7 +128,7 @@ export function DependencyGraph({ onRefresh }: DependencyGraphProps) {
   }
 
   return (
-    <div className="h-[600px] border rounded-lg bg-gray-50">
+    <div ref={activeRef} className="h-[600px] border rounded-lg bg-gray-50">
       <ReactFlow
         nodes={nodes}
         edges={edges}

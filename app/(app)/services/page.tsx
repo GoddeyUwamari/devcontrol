@@ -1,63 +1,64 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, AlertCircle, Github } from 'lucide-react'
-import { useDemoMode } from '@/components/demo/demo-mode-toggle'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+  Plus,
+  AlertCircle,
+  Layers,
+  CheckCircle,
+  Rocket,
+  DollarSign,
+  MoreVertical,
+  Download,
+  Upload,
+  GitBranch,
+} from 'lucide-react';
+import { useDemoMode } from '@/components/demo/demo-mode-toggle';
+import { Button } from '@/components/ui/button';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import { servicesService } from '@/lib/services/services.service'
-import type { ServiceStatus } from '@/lib/types'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Skeleton } from '@/components/ui/skeleton';
+import { servicesService } from '@/lib/services/services.service';
 
-type StatusFilter = 'all' | ServiceStatus
+// Import existing premium components
+import { HeroMetricCard } from '@/components/dashboard/hero-metric-card';
+import { ServiceHealthGrid, type ServiceHealth } from '@/components/dashboard/service-health-grid';
 
-// Loading Skeleton Component
-function TableSkeleton() {
+// Import service-specific components
+import { ServiceDetailSlideOver } from '@/components/services/service-detail-slide-over';
+import {
+  generateExtendedDemoServices,
+  calculateServiceMetrics,
+  toServiceDetail,
+  type ExtendedService,
+} from '@/components/services/demo-services-data';
+import { QuickStartOptions } from '@/components/services/QuickStartOptions';
+import { ServiceBenefits } from '@/components/services/ServiceBenefits';
+import { ProTip } from '@/components/services/ProTip';
+
+// Loading Skeleton for metrics
+function MetricsSkeleton() {
   return (
-    <div className="border rounded-lg">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Template</TableHead>
-            <TableHead>Owner</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>GitHub</TableHead>
-            <TableHead>Created Date</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {[...Array(5)].map((_, i) => (
-            <TableRow key={i}>
-              <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-              <TableCell><Skeleton className="h-6 w-20" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-28" /></TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="bg-white rounded-lg border p-6">
+          <div className="flex items-center justify-between mb-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-10 w-10 rounded-lg" />
+          </div>
+          <Skeleton className="h-9 w-28 mb-3" />
+          <Skeleton className="h-4 w-24" />
+        </div>
+      ))}
     </div>
-  )
+  );
 }
 
 // Error State Component
@@ -73,167 +74,230 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
         Try Again
       </Button>
     </div>
-  )
+  );
 }
-
-import { QuickStartOptions } from '@/components/services/QuickStartOptions'
-import { ServicePreview } from '@/components/services/ServicePreview'
-import { ServiceBenefits } from '@/components/services/ServiceBenefits'
-import { ServiceResources } from '@/components/services/ServiceResources'
-import { ProTip } from '@/components/services/ProTip'
 
 export default function ServicesPage() {
-  const router = useRouter()
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const demoMode = useDemoMode()
+  const router = useRouter();
+  const demoMode = useDemoMode();
 
-  const { data: services = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['services', statusFilter],
-    queryFn: async () => {
-      const allServices = await servicesService.getAll()
-      return statusFilter === 'all'
-        ? allServices
-        : allServices.filter(s => s.status === statusFilter)
-    },
-  })
+  // State for slide-over
+  const [selectedService, setSelectedService] = useState<ExtendedService | null>(null);
+  const [slideOverOpen, setSlideOverOpen] = useState(false);
 
-  const getStatusBadge = (status: ServiceStatus) => {
-    const variants = {
-      active: 'bg-green-100 text-green-700 border-green-200',
-      inactive: 'bg-gray-100 text-gray-700 border-gray-200',
-      deploying: 'bg-blue-100 text-blue-700 border-blue-200',
-      failed: 'bg-red-100 text-red-700 border-red-200',
+  // Fetch real services
+  const { data: realServices = [], isLoading, error, refetch } = useQuery({
+    queryKey: ['services'],
+    queryFn: () => servicesService.getAll(),
+  });
+
+  // Demo services
+  const demoServices = useMemo(() => generateExtendedDemoServices(), []);
+
+  // Map real service status to grid status
+  const mapServiceStatus = (status: string): 'healthy' | 'warning' | 'critical' | 'unknown' => {
+    switch (status) {
+      case 'active':
+        return 'healthy';
+      case 'deploying':
+        return 'warning';
+      case 'failed':
+        return 'critical';
+      case 'inactive':
+      default:
+        return 'unknown';
     }
-    return (
-      <Badge className={`${variants[status]} border`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
-  }
+  };
 
-  const getTemplateBadge = (template: string) => {
-    return (
-      <Badge variant="outline" className="font-mono text-xs">
-        {template}
-      </Badge>
-    )
-  }
+  // Use demo services when demo mode is on, otherwise use real services
+  const services: ExtendedService[] = useMemo(() => {
+    if (demoMode) {
+      return demoServices;
+    }
+    // Convert real services to ExtendedService format
+    return realServices.map((s): ExtendedService => ({
+      id: s.id,
+      name: s.name,
+      status: mapServiceStatus(s.status),
+      environment: 'production',
+      techStack: s.template || 'Unknown',
+      team: s.owner || 'Unknown',
+      version: '1.0.0',
+      uptime: 99.9,
+      responseTime: 100,
+      errorRate: 0.5,
+      monthlyCoste: 200,
+      activeAlerts: 0,
+      lastDeployment: s.createdAt ? new Date(s.createdAt) : undefined,
+      repositoryUrl: s.githubUrl,
+    }));
+  }, [demoMode, demoServices, realServices]);
 
-  const formatDate = (dateString: string | Date) => {
-  if (!dateString) return 'N/A';
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return 'N/A'; // Check if valid date
-  
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(date);
-}
+  // Calculate metrics
+  const metrics = useMemo(() => calculateServiceMetrics(services), [services]);
+
+  // Check if truly empty (no demo mode AND no services)
+  const isEmptyState = !demoMode && !isLoading && realServices.length === 0;
+
+  // Handle service click
+  const handleServiceClick = (service: ServiceHealth) => {
+    const extendedService = services.find(s => s.id === service.id);
+    if (extendedService) {
+      setSelectedService(extendedService);
+      setSlideOverOpen(true);
+    }
+  };
+
+  // Handle edit service
+  const handleEditService = (service: ExtendedService) => {
+    setSlideOverOpen(false);
+    router.push(`/app/services/${service.id}/edit`);
+  };
+
+  // Handle deploy now
+  const handleDeployNow = (service: ExtendedService) => {
+    setSlideOverOpen(false);
+    router.push(`/app/deployments/new?service=${service.id}`);
+  };
 
   return (
     <div className="space-y-8 px-4 md:px-6 lg:px-8">
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">Service Catalog</h1>
           <p className="text-muted-foreground leading-relaxed">
-            Manage and monitor all platform services created via CLI
+            Manage and monitor all platform services
           </p>
         </div>
-        <Button className="w-full sm:w-auto" onClick={() => router.push('/services/new')}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Service
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-4">
-        <Select value={statusFilter} onValueChange={(value: StatusFilter) => setStatusFilter(value)}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-            <SelectItem value="deploying">Deploying</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <div className="text-sm text-muted-foreground">
-          {services.length} {services.length === 1 ? 'service' : 'services'}
+        <div className="flex items-center gap-3">
+          {/* Quick Actions Dropdown */}
+          {!isEmptyState && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => router.push('/app/infrastructure?action=import')}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Bulk Import from AWS
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Services (CSV)
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push('/app/deployments')}>
+                  <Rocket className="h-4 w-4 mr-2" />
+                  View All Deployments
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push('/app/dependencies')}>
+                  <GitBranch className="h-4 w-4 mr-2" />
+                  View Service Map
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <Button className="w-full sm:w-auto" onClick={() => router.push('/services/new')}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Service
+          </Button>
         </div>
       </div>
 
-      {isLoading ? (
-        <TableSkeleton />
-      ) : error ? (
-        <ErrorState
-          message={(error as Error).message}
-          onRetry={() => refetch()}
-        />
-      ) : (demoMode || services.length === 0) ? (
+      {/* Show empty state only when no demo mode AND no real services */}
+      {isEmptyState ? (
         <>
           {/* Quick Start Options */}
           <QuickStartOptions />
 
-          {/* Service Preview */}
-          <ServicePreview />
-
           {/* Value Proposition */}
           <ServiceBenefits />
-
-          {/* Resources */}
-          <ServiceResources />
 
           {/* Pro Tip */}
           <ProTip />
         </>
       ) : (
-        <div className="border rounded-lg overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[150px]">Name</TableHead>
-                <TableHead className="min-w-[100px]">Template</TableHead>
-                <TableHead className="min-w-[150px]">Owner</TableHead>
-                <TableHead className="min-w-[100px]">Status</TableHead>
-                <TableHead className="min-w-[120px]">GitHub</TableHead>
-                <TableHead className="min-w-[120px]">Created Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {services.map((service) => (
-                <TableRow key={service.id} className="cursor-pointer hover:bg-muted/50 transition-colors">
-                  <TableCell className="font-medium">{service.name}</TableCell>
-                  <TableCell>{getTemplateBadge(service.template)}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{service.owner}</TableCell>
-                  <TableCell>{getStatusBadge(service.status)}</TableCell>
-                  <TableCell>
-                    {service.githubUrl ? (
-                      <a
-                        href={service.githubUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Github className="h-4 w-4 mr-1" />
-                        View Repo
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDate(service.createdAt)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <>
+          {/* Metrics Cards */}
+          {isLoading ? (
+            <MetricsSkeleton />
+          ) : error ? (
+            <ErrorState
+              message={(error as Error).message}
+              onRetry={() => refetch()}
+            />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <HeroMetricCard
+                title="Total Services"
+                value={metrics.totalServices}
+                trend={{ value: 8.7, direction: 'up', label: 'vs last month' }}
+                icon={Layers}
+                iconColor="text-blue-600"
+                iconBgColor="bg-blue-100"
+                sparklineData={[10, 10, 11, 11, 12, 12]}
+              />
+              <HeroMetricCard
+                title="Healthy Services"
+                value={metrics.healthyServices}
+                trend={{ value: 5, direction: 'up', label: 'this week' }}
+                icon={CheckCircle}
+                iconColor="text-green-600"
+                iconBgColor="bg-green-100"
+                status={{
+                  label: `${metrics.healthyPercentage}% of total`,
+                  variant: metrics.healthyPercentage >= 80 ? 'success' : metrics.healthyPercentage >= 60 ? 'warning' : 'error',
+                }}
+                sparklineData={[7, 7, 8, 8, 9, 9]}
+              />
+              <HeroMetricCard
+                title="Deployments This Week"
+                value={metrics.deploymentsThisWeek}
+                trend={{ value: 20, direction: 'up', label: 'vs last week' }}
+                icon={Rocket}
+                iconColor="text-purple-600"
+                iconBgColor="bg-purple-100"
+                href="/app/deployments"
+                sparklineData={[12, 15, 18, 20, 16, 16]}
+              />
+              <HeroMetricCard
+                title="Total Service Cost"
+                value={`$${metrics.totalCost.toLocaleString()}/mo`}
+                trend={{ value: 8, direction: 'up', label: 'vs last month' }}
+                icon={DollarSign}
+                iconColor="text-orange-600"
+                iconBgColor="bg-orange-100"
+                trendInverted={true}
+                sparklineData={[5200, 5400, 5600, 5800, 6000, metrics.totalCost]}
+              />
+            </div>
+          )}
+
+          {/* Service Health Grid */}
+          {!isLoading && !error && (
+            <ServiceHealthGrid
+              services={services}
+              isLoading={isLoading}
+              onServiceClick={handleServiceClick}
+            />
+          )}
+        </>
       )}
+
+      {/* Service Detail Slide-Over */}
+      <ServiceDetailSlideOver
+        service={selectedService ? toServiceDetail(selectedService) : null}
+        isOpen={slideOverOpen}
+        onClose={() => {
+          setSlideOverOpen(false);
+          setSelectedService(null);
+        }}
+        onEditService={selectedService ? () => handleEditService(selectedService) : undefined}
+        onDeployNow={selectedService ? () => handleDeployNow(selectedService) : undefined}
+      />
     </div>
-  )
+  );
 }

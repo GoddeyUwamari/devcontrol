@@ -4,6 +4,7 @@ import { HeroSection } from '@/components/landing/HeroSection'
 import { FeatureShowcase } from '@/components/landing/FeatureShowcase'
 import { SocialProofSection } from '@/components/landing/SocialProofSection'
 import { CTASection } from '@/components/landing/CTASection'
+import { Footer } from '@/components/footer'
 
 export const metadata: Metadata = {
   title: 'DevControl - AWS Infrastructure Command Center',
@@ -31,6 +32,7 @@ export default function Home() {
       <FeatureShowcase />
       <SocialProofSection />
       <CTASection />
+      <Footer />
     </main>
   )
 }

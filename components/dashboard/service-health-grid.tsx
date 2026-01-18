@@ -91,13 +91,17 @@ function ServiceCard({
   const status = statusConfig[service.status];
   const Icon = service.icon || defaultIcons.default;
 
+  // Build dynamic className based on status
+  const cardClassName = `
+    shadow-sm border border-gray-200 transition-all duration-200
+    ${onClick ? 'cursor-pointer hover:shadow-xl hover:-translate-y-1 hover:ring-2 hover:ring-blue-500/20' : ''}
+    ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200 bg-red-50/30' : ''}
+    ${service.status === 'warning' ? 'border-yellow-200 bg-yellow-50/20' : ''}
+    ${status.borderColor} border-l-4
+  `.trim();
+
   return (
-    <Card
-      className={`transition-all hover:shadow-lg ${
-        onClick ? 'cursor-pointer hover:-translate-y-0.5' : ''
-      } ${status.borderColor} border-l-4`}
-      onClick={() => onClick?.(service)}
-    >
+    <Card className={cardClassName} onClick={() => onClick?.(service)}>
       <CardContent className={compact ? 'p-4' : 'p-5'}>
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
@@ -106,7 +110,7 @@ function ServiceCard({
               <Icon className={`h-5 w-5 ${status.color}`} />
             </div>
             <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-semibold text-gray-900 truncate">
+              <h4 className={`text-sm font-semibold text-gray-900 truncate ${service.status === 'critical' ? 'font-bold' : ''}`}>
                 {service.name}
               </h4>
               {service.environment && (
@@ -122,9 +126,25 @@ function ServiceCard({
         <div className="mb-3">
           <Badge
             variant="secondary"
-            className={`${status.bgColor} ${status.color} border-0`}
+            className={`${status.bgColor} ${status.color} border-0 ${service.status === 'critical' ? 'text-sm font-bold' : ''}`}
           >
-            <span className="mr-1">{status.icon}</span>
+            {/* Enhanced status dot with ping animation for critical */}
+            <span className="relative flex h-3 w-3 mr-2">
+              {service.status === 'critical' && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              )}
+              <span
+                className={`relative inline-flex rounded-full h-3 w-3 ${
+                  service.status === 'healthy'
+                    ? 'bg-green-500'
+                    : service.status === 'warning'
+                    ? 'bg-yellow-500'
+                    : service.status === 'critical'
+                    ? 'bg-red-500 animate-pulse'
+                    : 'bg-gray-400'
+                }`}
+              ></span>
+            </span>
             {status.label}
           </Badge>
         </div>
@@ -135,13 +155,19 @@ function ServiceCard({
             {service.responseTime !== undefined && (
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Response time:</span>
-                <span className="font-medium">{service.responseTime}ms</span>
+                <span className={`font-semibold ${service.status === 'critical' ? 'text-base' : ''}`}>
+                  {service.responseTime}ms
+                </span>
               </div>
             )}
             {service.errorRate !== undefined && (
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Error rate:</span>
-                <span className={`font-medium ${service.errorRate > 5 ? 'text-red-600' : 'text-gray-900'}`}>
+                <span
+                  className={`font-semibold ${service.errorRate > 5 ? 'text-red-600' : 'text-gray-900'} ${
+                    service.status === 'critical' ? 'text-base' : ''
+                  }`}
+                >
                   {service.errorRate.toFixed(1)}%
                 </span>
               </div>
@@ -149,7 +175,9 @@ function ServiceCard({
             {service.uptime !== undefined && (
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Uptime:</span>
-                <span className="font-medium">{service.uptime.toFixed(1)}%</span>
+                <span className={`font-semibold ${service.status === 'critical' ? 'text-base' : ''}`}>
+                  {service.uptime.toFixed(1)}%
+                </span>
               </div>
             )}
           </div>
@@ -181,13 +209,17 @@ function ServiceListItem({
   const status = statusConfig[service.status];
   const Icon = service.icon || defaultIcons.default;
 
+  // Build dynamic className based on status
+  const listItemClassName = `
+    flex items-center gap-4 p-4 border rounded-lg shadow-sm transition-all duration-200
+    ${onClick ? 'cursor-pointer hover:bg-gray-50 hover:shadow-xl hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20' : ''}
+    ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200 bg-red-50/30' : ''}
+    ${service.status === 'warning' ? 'border-yellow-200 bg-yellow-50/20' : 'border-gray-200'}
+    ${status.borderColor} border-l-4
+  `.trim();
+
   return (
-    <div
-      className={`flex items-center gap-4 p-4 border rounded-lg transition-all hover:shadow-md ${
-        onClick ? 'cursor-pointer hover:bg-gray-50' : ''
-      } ${status.borderColor} border-l-4`}
-      onClick={() => onClick?.(service)}
-    >
+    <div className={listItemClassName} onClick={() => onClick?.(service)}>
       {/* Icon */}
       <div className={`h-10 w-10 rounded-lg ${status.bgColor} flex items-center justify-center flex-shrink-0`}>
         <Icon className={`h-5 w-5 ${status.color}`} />
@@ -196,9 +228,31 @@ function ServiceListItem({
       {/* Name & Status */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <h4 className="text-sm font-semibold text-gray-900 truncate">{service.name}</h4>
-          <Badge variant="secondary" className={`${status.bgColor} ${status.color} border-0 text-xs`}>
-            {status.icon} {status.label}
+          <h4 className={`text-sm font-semibold text-gray-900 truncate ${service.status === 'critical' ? 'font-bold' : ''}`}>
+            {service.name}
+          </h4>
+          <Badge
+            variant="secondary"
+            className={`${status.bgColor} ${status.color} border-0 text-xs ${service.status === 'critical' ? 'font-bold' : ''}`}
+          >
+            {/* Enhanced status dot with ping animation for critical */}
+            <span className="relative flex h-3 w-3 mr-1.5">
+              {service.status === 'critical' && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              )}
+              <span
+                className={`relative inline-flex rounded-full h-3 w-3 ${
+                  service.status === 'healthy'
+                    ? 'bg-green-500'
+                    : service.status === 'warning'
+                    ? 'bg-yellow-500'
+                    : service.status === 'critical'
+                    ? 'bg-red-500 animate-pulse'
+                    : 'bg-gray-400'
+                }`}
+              ></span>
+            </span>
+            {status.label}
           </Badge>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -214,13 +268,19 @@ function ServiceListItem({
         {service.responseTime !== undefined && (
           <div className="text-center">
             <div className="text-muted-foreground mb-0.5">Response</div>
-            <div className="font-medium">{service.responseTime}ms</div>
+            <div className={`font-semibold ${service.status === 'critical' ? 'text-sm' : ''}`}>
+              {service.responseTime}ms
+            </div>
           </div>
         )}
         {service.errorRate !== undefined && (
           <div className="text-center">
             <div className="text-muted-foreground mb-0.5">Error Rate</div>
-            <div className={`font-medium ${service.errorRate > 5 ? 'text-red-600' : ''}`}>
+            <div
+              className={`font-semibold ${service.errorRate > 5 ? 'text-red-600' : ''} ${
+                service.status === 'critical' ? 'text-sm' : ''
+              }`}
+            >
               {service.errorRate.toFixed(1)}%
             </div>
           </div>
@@ -228,7 +288,9 @@ function ServiceListItem({
         {service.uptime !== undefined && (
           <div className="text-center">
             <div className="text-muted-foreground mb-0.5">Uptime</div>
-            <div className="font-medium">{service.uptime.toFixed(1)}%</div>
+            <div className={`font-semibold ${service.status === 'critical' ? 'text-sm' : ''}`}>
+              {service.uptime.toFixed(1)}%
+            </div>
           </div>
         )}
       </div>

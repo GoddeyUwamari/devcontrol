@@ -22,6 +22,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
+import { EmptySearchState } from '@/components/dependencies/EmptySearchState'
 import type { ServiceDependency, CircularDependency, DependencyType } from '@/lib/types'
 
 interface DependencyListProps {
@@ -29,6 +30,8 @@ interface DependencyListProps {
   cycles: CircularDependency[]
   isLoading: boolean
   onRefresh: () => void
+  searchQuery?: string
+  onClearSearch?: () => void
 }
 
 export function DependencyList({
@@ -36,6 +39,8 @@ export function DependencyList({
   cycles,
   isLoading,
   onRefresh,
+  searchQuery,
+  onClearSearch,
 }: DependencyListProps) {
   const [typeFilter, setTypeFilter] = useState<'all' | DependencyType>('all')
   const [criticalFilter, setCriticalFilter] = useState<'all' | 'critical' | 'standard'>('all')
@@ -52,6 +57,12 @@ export function DependencyList({
     return <TableSkeleton />
   }
 
+  // Show empty search state if searching and no results
+  if (dependencies.length === 0 && searchQuery && onClearSearch) {
+    return <EmptySearchState query={searchQuery} onClear={onClearSearch} />
+  }
+
+  // Show general empty state if no dependencies at all
   if (dependencies.length === 0) {
     return (
       <EmptyState

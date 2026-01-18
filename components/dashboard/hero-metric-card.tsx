@@ -142,13 +142,23 @@ export function HeroMetricCard({
 
         {/* Sparkline Chart */}
         {sparklineData && sparklineData.length > 0 && (
-          <div className="mt-4 h-12 w-full">
+          <div className="mt-4 h-12 w-full opacity-70 hover:opacity-100 transition-opacity">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={sparklineData.map((value, index) => ({ value, index }))}>
                 <Line
                   type="monotone"
                   dataKey="value"
-                  stroke={iconColor.replace('text-', '#')}
+                  stroke={
+                    iconColor === 'text-blue-600'
+                      ? '#2563eb'
+                      : iconColor === 'text-green-600'
+                      ? '#16a34a'
+                      : iconColor === 'text-purple-600'
+                      ? '#9333ea'
+                      : iconColor === 'text-orange-600'
+                      ? '#ea580c'
+                      : '#635BFF'
+                  }
                   strokeWidth={2}
                   dot={false}
                 />

@@ -12,6 +12,7 @@ import { useBreadcrumbs } from '@/lib/hooks/useBreadcrumbs';
 import { DemoModeToggle } from '@/components/demo/demo-mode-toggle';
 import { SalesDemoToggle } from '@/components/demo/sales-demo-toggle';
 import { AnnouncementBar } from '@/components/announcement-bar';
+import { Footer } from '@/components/footer';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const fetchStatus = useOnboardingStore((state) => state.fetchStatus);
@@ -62,6 +63,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Sales Demo Mode Toggle (for sales presentations) */}
       <SalesDemoToggle />
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }
