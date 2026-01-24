@@ -121,8 +121,9 @@ export function BulkTagDialog({
                 size="icon"
                 onClick={() => removeTagRow(index)}
                 disabled={tags.length === 1}
+                aria-label="Remove tag"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
           ))}

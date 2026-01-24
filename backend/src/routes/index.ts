@@ -16,6 +16,7 @@ import logsRoutes from './logs.routes';
 import auditLogsRoutes from './auditLogs.routes';
 import stripeRoutes from './stripe.routes';
 import onboardingRoutes from './onboarding.routes';
+import prometheusRoutes from './prometheus.routes';
 
 const router = Router();
 
@@ -40,6 +41,7 @@ router.use('/alerts', alertHistoryRoutes);
 router.use('/audit-logs', auditLogsRoutes);
 router.use('/stripe', stripeRoutes);
 router.use('/onboarding', onboardingRoutes);
+router.use('/prometheus', prometheusRoutes);
 router.use('/', logsRoutes);
 
 // API root
@@ -65,6 +67,7 @@ router.get('/', (req, res) => {
       auditLogs: '/api/audit-logs',
       stripe: '/api/stripe',
       onboarding: '/api/onboarding',
+      prometheus: '/api/prometheus',
       logs: '/api/logs',
     },
   });

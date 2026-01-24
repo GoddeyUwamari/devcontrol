@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Database, RefreshCw, Search, Server, Cloud, HardDrive, AlertTriangle, Shield, DollarSign, Tags, TrendingUp, Download, Ticket, Zap, Lightbulb, Activity } from 'lucide-react';
 import { EmptyState } from '@/components/onboarding/empty-state';
@@ -43,6 +44,7 @@ import { SeverityBadge } from '@/components/ui/severity-badge';
 import { calculateRiskScore, calculateDaysExposed, calculateResourceRisk } from '@/lib/utils/riskScoring';
 
 export default function AWSResourcesPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const demoMode = useDemoMode();
   const subscription = useSubscription();
@@ -372,6 +374,7 @@ export default function AWSResourcesPage() {
             {statsLoading ? (
               <Skeleton className="h-8 w-16" />
             ) : !subscription.canViewCompliance ? (
+              // Paywall - Pro feature
               <>
                 <div className="text-2xl font-bold blur-sm select-none">95/100</div>
                 <div className="mt-2">
@@ -383,7 +386,18 @@ export default function AWSResourcesPage() {
                   Upgrade to scan for SOC 2, HIPAA, PCI compliance
                 </p>
               </>
+            ) : !stats || stats.total_resources === 0 ? (
+              // Empty state - no resources
+              <>
+                <div className="text-base font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                  Not Connected
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Connect AWS to see compliance status
+                </p>
+              </>
             ) : (
+              // Has data - show actual score
               <>
                 <div className="text-2xl font-bold">
                   {complianceScore}/100
@@ -423,7 +437,26 @@ export default function AWSResourcesPage() {
           <CardContent>
             {statsLoading ? (
               <Skeleton className="h-8 w-16" />
+            ) : !stats || stats.total_resources === 0 ? (
+              // Empty state - no AWS resources connected
+              <>
+                <div className="text-base font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                  Not Connected
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Connect your AWS account to see security insights
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 text-xs"
+                  onClick={() => router.push('/settings/aws')}
+                >
+                  Connect AWS Account →
+                </Button>
+              </>
             ) : (
+              // Has data - show actual score
               <>
                 <div className="text-2xl font-bold">
                   {securityScore}/100
@@ -626,12 +659,25 @@ export default function AWSResourcesPage() {
                       Overall Health
                     </span>
                   </div>
-                  <div className={`text-2xl font-bold ${healthLevel.color} mb-1`}>
-                    {overallHealthScore}/100
-                  </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {healthLevel.label} health score
-                  </p>
+                  {!stats || stats.total_resources === 0 ? (
+                    <>
+                      <div className="text-base font-semibold text-gray-500 dark:text-gray-400 mb-1">
+                        Not Connected
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        Connect AWS to see health score
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className={`text-2xl font-bold ${healthLevel.color} mb-1`}>
+                        {overallHealthScore}/100
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        {healthLevel.label} health score
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

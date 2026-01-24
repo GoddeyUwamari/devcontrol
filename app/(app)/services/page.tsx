@@ -186,8 +186,8 @@ export default function ServicesPage() {
           {!isEmptyState && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon">
-                  <MoreVertical className="h-4 w-4" />
+                <Button variant="outline" size="icon" aria-label="Service actions menu">
+                  <MoreVertical className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">

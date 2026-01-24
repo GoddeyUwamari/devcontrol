@@ -159,8 +159,9 @@ export function TopNav() {
             size="icon"
             onClick={handleSearchClick}
             className="md:hidden"
+            aria-label="Search"
           >
-            <Search className="h-5 w-5" />
+            <Search className="h-5 w-5" aria-hidden="true" />
           </Button>
 
           {/* Quick Actions Dropdown */}

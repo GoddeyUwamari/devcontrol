@@ -46,8 +46,9 @@ export function TimeRangeSelector({ selected, onChange, onRefresh }: TimeRangeSe
           onClick={onRefresh}
           className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors ml-2"
           title="Refresh metrics"
+          aria-label="Refresh metrics"
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className="w-4 h-4" aria-hidden="true" />
         </button>
       )}
     </div>

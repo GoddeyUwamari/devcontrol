@@ -99,9 +99,11 @@ export function LastSynced({
           disabled={isRefreshing}
           className="ml-1 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors disabled:opacity-50"
           title="Refresh data"
+          aria-label="Refresh data"
         >
           <RefreshCw
             className={`${iconSizes[size]} ${isRefreshing ? 'animate-spin' : ''}`}
+            aria-hidden="true"
           />
         </button>
       )}
