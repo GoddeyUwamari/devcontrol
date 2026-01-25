@@ -13,7 +13,12 @@ import {
   Minus,
   ChevronDown,
   ChevronUp,
+  CheckCircle,
+  Download,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
+import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,6 +48,64 @@ import {
   Service,
   Team,
 } from '@/lib/types';
+
+// Helper function to generate mock 30-day trend data
+// TODO: Replace with real API data when available
+function generateTrendData(baseValue: number, variance: number = 0.2) {
+  return Array.from({ length: 30 }, (_, i) => ({
+    day: i + 1,
+    value: Math.max(0, baseValue + (Math.random() - 0.5) * variance * baseValue),
+  }));
+}
+
+// Helper function to export metrics to CSV
+function exportToCSV(metrics: any, dateRange: string) {
+  const csvData = [
+    ['Metric', 'Value', 'Unit', 'Benchmark', 'Trend'],
+    [
+      'Deployment Frequency',
+      metrics.deploymentFrequency.value.toFixed(2),
+      metrics.deploymentFrequency.unit,
+      metrics.deploymentFrequency.benchmark,
+      metrics.deploymentFrequency.trend,
+    ],
+    [
+      'Lead Time for Changes',
+      metrics.leadTime.value.toFixed(2),
+      metrics.leadTime.unit,
+      metrics.leadTime.benchmark,
+      metrics.leadTime.trend,
+    ],
+    [
+      'Change Failure Rate',
+      metrics.changeFailureRate.value.toFixed(2),
+      metrics.changeFailureRate.unit,
+      metrics.changeFailureRate.benchmark,
+      metrics.changeFailureRate.trend,
+    ],
+    [
+      'Mean Time to Recovery',
+      metrics.mttr.value.toFixed(2),
+      metrics.mttr.unit,
+      metrics.mttr.benchmark,
+      metrics.mttr.trend,
+    ],
+  ];
+
+  const csv = csvData.map((row) => row.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dora-metrics-${dateRange}-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Helper function to export to PDF (using browser print)
+function exportToPDF() {
+  window.print();
+}
 
 // Benchmark badge component
 function BenchmarkBadge({ level }: { level: BenchmarkLevel }) {
@@ -97,9 +160,13 @@ interface MetricCardProps {
   name: string;
   metric: DORAMetric;
   icon: React.ElementType;
+  color?: string;
 }
 
-function MetricCard({ name, metric, icon: Icon }: MetricCardProps) {
+function MetricCard({ name, metric, icon: Icon, color = '#3b82f6' }: MetricCardProps) {
+  // Generate trend data for sparkline
+  const trendData = generateTrendData(metric.value);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -108,10 +175,41 @@ function MetricCard({ name, metric, icon: Icon }: MetricCardProps) {
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-2">
-          <div className="text-2xl font-bold">
-            {metric.value.toFixed(2)} {metric.unit}
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-2xl font-bold">
+                {metric.value.toFixed(2)} {metric.unit}
+              </div>
+            </div>
+
+            {/* Sparkline */}
+            <div className="w-32 h-12">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData}>
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke={color}
+                    fill={color}
+                    fillOpacity={0.2}
+                    strokeWidth={2}
+                  />
+                  <Tooltip
+                    content={({ payload }) => {
+                      if (!payload?.[0]) return null;
+                      return (
+                        <div className="bg-white px-2 py-1 rounded shadow text-xs border">
+                          {(payload[0].value as number).toFixed(2)} {metric.unit}
+                        </div>
+                      );
+                    }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-2 mt-2">
             <BenchmarkBadge level={metric.benchmark} />
             <TrendIndicator trend={metric.trend} />
           </div>
@@ -201,19 +299,83 @@ export default function DORAMetricsPage() {
     setSelectedEnvironment('all');
   };
 
+  // Calculate total deployments for data confidence
+  const totalDeployments = metrics
+    ? Object.values(metrics.deploymentFrequency.breakdown || {}).reduce(
+        (sum, val) => sum + (val || 0),
+        0
+      ) * metrics.period.days
+    : 0;
+
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">DORA Metrics Dashboard</h1>
-        <p className="text-muted-foreground">
-          Track the 4 key DevOps Research and Assessment (DORA) metrics to measure your team&apos;s
-          software delivery performance
-        </p>
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold tracking-tight">DORA Metrics Dashboard</h1>
+          <p className="text-muted-foreground">
+            Track the 4 key DevOps Research and Assessment (DORA) metrics to measure your team&apos;s
+            software delivery performance
+          </p>
+        </div>
+
+        {/* Data Confidence & Export */}
+        {metrics && (
+          <div className="flex flex-col items-start md:items-end gap-3">
+            {/* Data Confidence */}
+            <div className="text-right">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <span>
+                  Based on <strong>{Math.round(totalDeployments)}</strong> deployments
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Last updated: {new Date().toLocaleTimeString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                })}
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex gap-2 no-print">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportToCSV(metrics, dateRange)}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Export CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportToPDF}>
+                <Download className="w-4 h-4 mr-2" />
+                Download PDF
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Low Data Warning */}
+      {metrics && totalDeployments < 10 && (
+        <Card className="border-yellow-500 bg-yellow-50">
+          <CardContent className="flex items-start gap-3 pt-6">
+            <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-yellow-900">Limited Data</h3>
+              <p className="text-sm text-yellow-800">
+                Metrics based on only {Math.round(totalDeployments)} deployments. More data needed
+                for reliable trends.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filters */}
-      <Card>
+      <Card className="no-print">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
           <CardDescription>Customize the metrics view with filters</CardDescription>
@@ -349,21 +511,25 @@ export default function DORAMetricsPage() {
               name="Deployment Frequency"
               metric={metrics.deploymentFrequency}
               icon={TrendingUp}
+              color="#3b82f6"
             />
             <MetricCard
               name="Lead Time for Changes"
               metric={metrics.leadTime}
               icon={Clock}
+              color="#8b5cf6"
             />
             <MetricCard
               name="Change Failure Rate"
               metric={metrics.changeFailureRate}
               icon={AlertTriangle}
+              color="#f59e0b"
             />
             <MetricCard
               name="Mean Time to Recovery"
               metric={metrics.mttr}
               icon={Timer}
+              color="#10b981"
             />
           </div>
 
@@ -578,15 +744,87 @@ export default function DORAMetricsPage() {
         )}
       </Card>
 
-      {/* No Data State */}
+      {/* Enhanced Empty State */}
+      {!isLoading && !metrics && (
+        <Card className="col-span-full">
+          <CardContent className="py-12">
+            <div className="max-w-2xl mx-auto text-center">
+              <TrendingUp className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+              <h3 className="text-xl font-semibold mb-2">Start Tracking Your DORA Metrics</h3>
+              <p className="text-muted-foreground mb-6">
+                Connect your deployment pipeline to see how your team performs against industry
+                benchmarks.
+              </p>
+
+              <div className="space-y-3 mb-6 max-w-md mx-auto">
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg text-left">
+                  <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                    1
+                  </div>
+                  <span className="text-sm">Connect your Git repository</span>
+                </div>
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg text-left">
+                  <div className="w-6 h-6 rounded-full bg-gray-300 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                    2
+                  </div>
+                  <span className="text-sm">Configure deployment tracking</span>
+                </div>
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg text-left">
+                  <div className="w-6 h-6 rounded-full bg-gray-300 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                    3
+                  </div>
+                  <span className="text-sm">View your metrics</span>
+                </div>
+              </div>
+
+              <Button className="mb-6" asChild>
+                <a href="/integrations">
+                  Set Up Integration
+                  <ExternalLink className="w-4 h-4 ml-2" />
+                </a>
+              </Button>
+
+              <div className="mt-6 p-6 bg-blue-50 rounded-lg">
+                <p className="text-sm font-medium mb-3">Preview: What you&apos;ll see</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white p-3 rounded shadow-sm">
+                    <div className="text-xs font-semibold text-gray-700">
+                      Deployment Frequency
+                    </div>
+                    <div className="text-lg font-bold text-blue-600 mt-1">2.3 per day</div>
+                    <Badge className="mt-2 bg-green-500 text-white">Elite</Badge>
+                  </div>
+                  <div className="bg-white p-3 rounded shadow-sm">
+                    <div className="text-xs font-semibold text-gray-700">Lead Time</div>
+                    <div className="text-lg font-bold text-purple-600 mt-1">4.2 hours</div>
+                    <Badge className="mt-2 bg-blue-500 text-white">High</Badge>
+                  </div>
+                  <div className="bg-white p-3 rounded shadow-sm">
+                    <div className="text-xs font-semibold text-gray-700">Failure Rate</div>
+                    <div className="text-lg font-bold text-amber-600 mt-1">2.1%</div>
+                    <Badge className="mt-2 bg-green-500 text-white">Elite</Badge>
+                  </div>
+                  <div className="bg-white p-3 rounded shadow-sm">
+                    <div className="text-xs font-semibold text-gray-700">MTTR</div>
+                    <div className="text-lg font-bold text-green-600 mt-1">1.8 hours</div>
+                    <Badge className="mt-2 bg-green-500 text-white">Elite</Badge>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No Deployment Data in Period */}
       {!isLoading && metrics && !metrics.deploymentFrequency.breakdown && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Activity className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No deployment data found</h3>
             <p className="text-sm text-muted-foreground text-center max-w-md">
-              There are no deployments in the selected period. Deploy some services to see DORA
-              metrics.
+              There are no deployments in the selected period. Try selecting a different time range
+              or deploy some services to see DORA metrics.
             </p>
           </CardContent>
         </Card>

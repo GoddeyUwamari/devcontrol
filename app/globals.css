@@ -454,4 +454,40 @@
   .no-print {
     display: none !important;
   }
+
+  /* DORA Metrics Print Styles */
+  nav,
+  aside,
+  button,
+  .no-print-element {
+    display: none !important;
+  }
+
+  .metric-card {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Ensure cards are visible */
+  .bg-white,
+  .dark\:bg-gray-900 {
+    background: white !important;
+  }
+
+  /* Print-friendly colors */
+  * {
+    color: black !important;
+  }
+
+  .border {
+    border-color: #ccc !important;
+  }
+
+  /* Make page content full width */
+  main {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 1rem !important;
+  }
 }

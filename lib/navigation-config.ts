@@ -106,7 +106,7 @@ export const appNav: NavGroup = {
         },
         {
           label: 'DORA Metrics',
-          href: '/admin/dora-metrics',
+          href: '/dora-metrics',
           icon: TrendingUp,
           description: 'DevOps performance metrics',
         },
