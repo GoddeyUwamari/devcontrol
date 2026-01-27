@@ -28,6 +28,9 @@ import { TrustIndicators } from '@/components/dashboard/TrustIndicators'
 import { FinalCTA } from '@/components/dashboard/FinalCTA'
 import { HeroMetricCard } from '@/components/dashboard/hero-metric-card'
 import { CostTrendChart } from '@/components/dashboard/cost-trend-chart'
+import { RiskScoreTrendChart } from '@/components/dashboard/risk-score-trend-chart'
+import { useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
+import type { DateRange } from '@/lib/services/risk-score.service'
 import { QuickInsights, generateDemoInsights } from '@/components/dashboard/quick-insights'
 import { ActivityFeed, generateDemoActivities } from '@/components/dashboard/activity-feed'
 import { ServiceHealthGrid, generateDemoServices } from '@/components/dashboard/service-health-grid'
@@ -47,7 +50,16 @@ import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { subDays, format } from 'date-fns'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/contexts/auth-context'
+import { SectionHeader } from '@/components/dashboard/section-header'
 
+// Helper function to get time-based greeting
+function getGreeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
 
 // Metric Card Component
 function MetricCard({
@@ -186,6 +198,7 @@ function generateCostTrendData(days: number) {
 }
 
 export default function DashboardPage() {
+  const { user, isLoading: authLoading } = useAuth();
   const { socket, isConnected } = useWebSocket();
   const queryClient = useQueryClient();
   const demoMode = useDemoMode();
@@ -194,8 +207,12 @@ export default function DashboardPage() {
   const router = useRouter();
   const [dismissedInsights, setDismissedInsights] = useState<string[]>([]);
   const [costDateRange, setCostDateRange] = useState<'7d' | '30d' | '90d' | '6mo' | '1yr'>('90d');
+  const [riskScoreDateRange, setRiskScoreDateRange] = useState<DateRange>('30d');
   const [lastSynced, setLastSynced] = useState<Date>(demoMode ? DEMO_LAST_SYNCED : new Date());
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'synced' | 'error'>(DEMO_SYNC_STATUS);
+
+  // Fetch risk score trend data
+  const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange);
 
   // Fetch platform dashboard stats
   const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery<PlatformDashboardStats>({
@@ -378,7 +395,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Onboarding Progress Banner - Only on Dashboard */}
       <OnboardingProgress />
 
@@ -393,34 +410,73 @@ export default function DashboardPage() {
       )}
 
       <div className="px-4 md:px-6 lg:px-8">
-        {/* Page Title */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
+        {/* Page Header - Personalized greeting with actions */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+          <div className="space-y-1">
+            {/* Personalized Greeting */}
+            {authLoading ? (
+              <Skeleton className="h-7 w-48 mb-2" />
+            ) : (
+              <p className="text-sm font-medium text-muted-foreground">
+                {getGreeting()}, {user?.fullName?.split(' ')[0] || user?.email?.split('@')[0] || 'there'}
+              </p>
+            )}
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground mt-2">
+            <p className="text-muted-foreground">
               {salesDemoMode
                 ? 'Sales Demo View - Showcasing 26x ROI and Elite Tier Performance'
-                : "Welcome back! Here's an overview of your billing analytics."}
+                : 'Your infrastructure at a glance'}
             </p>
-            {/* WebSocket Connection Status */}
-            {isConnected && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-green-600">
-                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                Live updates enabled
-              </div>
-            )}
-            {salesDemoMode && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-purple-600 font-semibold">
-                <div className="h-2 w-2 rounded-full bg-purple-500 animate-pulse" />
-                Sales Demo Mode Active - Using realistic demo data
-              </div>
+            {/* Status indicators */}
+            <div className="flex items-center gap-4 pt-1">
+              {isConnected && (
+                <div className="flex items-center gap-1.5 text-xs text-green-600">
+                  <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                  Live updates
+                </div>
+              )}
+              {salesDemoMode && (
+                <div className="flex items-center gap-1.5 text-xs text-purple-600 font-medium">
+                  <div className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse" />
+                  Sales Demo
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Header Actions */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <LastSynced
+              timestamp={lastSynced}
+              onRefresh={handleRefreshDashboard}
+              autoRefresh={true}
+            />
+            {!statsError && (
+              <QuickActions
+                actions={[
+                  {
+                    id: 'add-service',
+                    label: 'Add Service',
+                    icon: Rocket,
+                    onClick: () => router.push('/app/services/new'),
+                    variant: 'primary',
+                  },
+                  {
+                    id: 'scan-resources',
+                    label: 'Scan AWS Resources',
+                    icon: Server,
+                    onClick: () => router.push('/app/infrastructure'),
+                  },
+                  {
+                    id: 'configure-alerts',
+                    label: 'Configure Alerts',
+                    icon: AlertCircle,
+                    onClick: () => router.push('/app/admin/alerts'),
+                  },
+                ]}
+              />
             )}
           </div>
-          <LastSynced
-            timestamp={lastSynced}
-            onRefresh={handleRefreshDashboard}
-            autoRefresh={true}
-          />
         </div>
 
         {/* Sync Status Banner */}
@@ -435,41 +491,13 @@ export default function DashboardPage() {
         <ROIHero demoMode={salesDemoMode} />
       )}
 
-      {/* Quick Actions Bar */}
-      {!statsError && (
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Last updated {new Date().toLocaleTimeString()}
-            </p>
-          </div>
-          <QuickActions
-            actions={[
-              {
-                id: 'add-service',
-                label: 'Add Service',
-                icon: Rocket,
-                onClick: () => router.push('/app/services/new'),
-                variant: 'primary',
-              },
-              {
-                id: 'scan-resources',
-                label: 'Scan AWS Resources',
-                icon: Server,
-                onClick: () => router.push('/app/infrastructure'),
-              },
-              {
-                id: 'configure-alerts',
-                label: 'Configure Alerts',
-                icon: AlertCircle,
-                onClick: () => router.push('/app/admin/alerts'),
-              },
-            ]}
-          />
-        </div>
-      )}
+      {/* Key Metrics Section */}
+      <SectionHeader
+        title="Key Metrics"
+        description="Real-time overview of your infrastructure"
+        showDivider={false}
+      />
 
-      {/* Premium Hero Metrics Grid */}
       {statsError ? (
         <Card>
           <CardContent className="pt-6">
@@ -480,7 +508,8 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {/* Primary Metrics - Row 1 */}
           <HeroMetricCard
             title="AWS Monthly Spend"
             value={stats ? formatCurrency(stats.monthlyAwsCost) : '$0.00'}
@@ -502,6 +531,25 @@ export default function DashboardPage() {
             sparklineData={[800, 950, 1100, 1050, 1200, 1150, stats?.monthlyAwsCost ?? 1247]}
           />
           <HeroMetricCard
+            title="Security Score"
+            value={riskScoreData ? `${riskScoreData.current.score}/100` : '—/100'}
+            trend={{
+              value: Math.abs(riskScoreData?.trendPercentage ?? 0),
+              direction: riskScoreData?.trend === 'improving' ? 'up' : riskScoreData?.trend === 'declining' ? 'down' : 'up',
+              label: 'this period',
+            }}
+            icon={Shield}
+            loading={riskScoreLoading}
+            iconColor="text-teal-600"
+            iconBgColor="bg-teal-100"
+            status={{
+              label: riskScoreData?.current.grade ? `Grade ${riskScoreData.current.grade}` : 'No data',
+              variant: riskScoreData?.current.grade === 'A' || riskScoreData?.current.grade === 'B' ? 'success' : riskScoreData?.current.grade === 'C' ? 'warning' : 'destructive',
+            }}
+            href="/compliance"
+            sparklineData={riskScoreData?.history?.slice(-7).map(h => h.score) ?? []}
+          />
+          <HeroMetricCard
             title="Active Services"
             value={stats?.totalServices ?? 0}
             trend={{
@@ -521,6 +569,27 @@ export default function DashboardPage() {
             sparklineData={[4, 5, 4, 6, 5, 7, stats?.totalServices ?? 8]}
           />
           <HeroMetricCard
+            title="Active Alerts"
+            value={0}
+            trend={{
+              value: 100,
+              direction: 'down',
+              label: 'resolved',
+            }}
+            icon={AlertCircle}
+            loading={statsLoading}
+            iconColor="text-amber-600"
+            iconBgColor="bg-amber-100"
+            status={{
+              label: 'All clear',
+              variant: 'success',
+            }}
+            href="/app/admin/alerts"
+            sparklineData={[5, 4, 3, 2, 1, 1, 0]}
+            trendInverted={true}
+          />
+          {/* Secondary Metrics - Row 2 */}
+          <HeroMetricCard
             title="AWS Resources"
             value={156}
             trend={{
@@ -534,45 +603,6 @@ export default function DashboardPage() {
             iconBgColor="bg-purple-100"
             href="/app/infrastructure"
             sparklineData={[142, 145, 148, 151, 149, 152, 156]}
-          />
-          <HeroMetricCard
-            title="Security Score"
-            value="87/100"
-            trend={{
-              value: 5,
-              direction: 'up',
-              label: 'this week',
-            }}
-            icon={Shield}
-            loading={statsLoading}
-            iconColor="text-teal-600"
-            iconBgColor="bg-teal-100"
-            status={{
-              label: '3 issues',
-              variant: 'warning',
-            }}
-            href="/app/compliance"
-            sparklineData={[78, 80, 82, 85, 83, 85, 87]}
-          />
-          <HeroMetricCard
-            title="Active Alerts"
-            value={0}
-            trend={{
-              value: 100,
-              direction: 'down',
-              label: 'resolved',
-            }}
-            icon={AlertCircle}
-            loading={statsLoading}
-            iconColor="text-red-600"
-            iconBgColor="bg-red-100"
-            status={{
-              label: 'All clear',
-              variant: 'success',
-            }}
-            href="/app/admin/alerts"
-            sparklineData={[5, 4, 3, 2, 1, 1, 0]}
-            trendInverted={true}
           />
           <HeroMetricCard
             title="Deployments/Week"
@@ -595,6 +625,12 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Trends & Analytics Section */}
+      <SectionHeader
+        title="Trends & Analytics"
+        description="Track costs and security posture over time"
+      />
+
       {/* Cost Trend Chart */}
       {!statsError && (
         <CostTrendChart
@@ -607,6 +643,22 @@ export default function DashboardPage() {
           }}
         />
       )}
+
+      {/* Risk Score Trend Chart */}
+      {!statsError && (
+        <RiskScoreTrendChart
+          data={riskScoreData ?? null}
+          isLoading={riskScoreLoading}
+          dateRange={riskScoreDateRange}
+          onDateRangeChange={setRiskScoreDateRange}
+        />
+      )}
+
+      {/* Insights & Activity Section */}
+      <SectionHeader
+        title="Insights & Activity"
+        description="Recommendations and recent deployments"
+      />
 
       {/* Quick Insights */}
       {!statsError && (
@@ -695,6 +747,12 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {/* Infrastructure Health Section */}
+      <SectionHeader
+        title="Infrastructure Health"
+        description="Service status and recent activity"
+      />
+
       {/* Two Column Layout: Service Health + Activity Feed */}
       {!statsError && (
         <div className="grid gap-6 lg:grid-cols-3">
@@ -722,6 +780,12 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Performance & Optimization Section */}
+      <SectionHeader
+        title="Performance & Optimization"
+        description="Engineering metrics and cost savings opportunities"
+      />
 
       {/* DORA Metrics */}
       {!statsError && (

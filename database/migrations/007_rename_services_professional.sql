@@ -220,7 +220,6 @@ SELECT
   d.id,
   s.name AS service_name,
   d.environment,
-  d.version,
   d.status,
   d.created_at,
   'Deployment link intact' AS status

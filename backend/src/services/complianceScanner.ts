@@ -28,20 +28,28 @@ export class ComplianceScannerService {
   /**
    * Scan a single resource for compliance issues
    */
-  async scanResource(resource: AWSResource): Promise<ComplianceIssue[]> {
+  async scanResource(resource: AWSResource, frameworks?: string[]): Promise<ComplianceIssue[]> {
     const issues: ComplianceIssue[] = [];
 
-    // Check encryption
+    // Generic security checks (always run)
     issues.push(...this.checkEncryption(resource));
-
-    // Check public access
     issues.push(...this.checkPublicAccess(resource));
-
-    // Check backups
     issues.push(...this.checkBackups(resource));
-
-    // Check tagging
     issues.push(...this.checkTags(resource));
+
+    // Framework-specific checks
+    if (!frameworks || frameworks.length === 0) {
+      // If no frameworks specified, run all framework-specific checks
+      issues.push(...this.checkSOC2Compliance(resource));
+      issues.push(...this.checkHIPAACompliance(resource));
+    } else {
+      if (frameworks.includes('SOC2')) {
+        issues.push(...this.checkSOC2Compliance(resource));
+      }
+      if (frameworks.includes('HIPAA')) {
+        issues.push(...this.checkHIPAACompliance(resource));
+      }
+    }
 
     return issues;
   }
@@ -209,13 +217,242 @@ export class ComplianceScannerService {
   }
 
   /**
+   * SOC2-specific compliance checks
+   * Focuses on: Access Controls, Change Management, System Monitoring
+   */
+  private checkSOC2Compliance(resource: AWSResource): ComplianceIssue[] {
+    const issues: ComplianceIssue[] = [];
+
+    // SOC2: Access Control - Check for IAM role/policy attachment
+    if (['ec2', 'lambda', 'ecs'].includes(resource.resource_type)) {
+      // Check if resource has proper IAM role attached
+      const hasIAMRole = resource.tags?.['IAMRole'] || resource.tags?.['Role'];
+      if (!hasIAMRole) {
+        issues.push({
+          severity: 'high',
+          category: 'iam',
+          issue: 'SOC2: Resource lacks documented IAM role for access control',
+          recommendation: 'Attach an IAM role with least-privilege permissions and tag the resource with "IAMRole" or "Role" for audit tracking.',
+          resource_arn: resource.resource_arn,
+        });
+      }
+    }
+
+    // SOC2: Change Management - Check for change tracking tags
+    const hasChangeManagement = resource.tags?.['LastModifiedBy'] ||
+                                 resource.tags?.['ChangeTicket'] ||
+                                 resource.tags?.['Version'];
+    if (!hasChangeManagement) {
+      issues.push({
+        severity: 'medium',
+        category: 'tagging',
+        issue: 'SOC2: Resource lacks change management tracking tags',
+        recommendation: 'Add tags like "LastModifiedBy", "ChangeTicket", or "Version" to track changes for audit compliance.',
+        resource_arn: resource.resource_arn,
+      });
+    }
+
+    // SOC2: System Monitoring - Check for monitoring/logging configuration
+    if (['ec2', 'rds', 'lambda', 's3'].includes(resource.resource_type)) {
+      const hasMonitoring = resource.tags?.['MonitoringEnabled'] ||
+                           resource.tags?.['LoggingEnabled'] ||
+                           resource.tags?.['CloudWatchAlarms'];
+
+      if (!hasMonitoring) {
+        let recommendation = '';
+        switch (resource.resource_type) {
+          case 's3':
+            recommendation = 'Enable S3 server access logging and tag with "LoggingEnabled:true". Configure CloudWatch metrics for bucket monitoring.';
+            break;
+          case 'rds':
+            recommendation = 'Enable RDS Enhanced Monitoring, audit logs, and error logs. Tag with "MonitoringEnabled:true" and "LoggingEnabled:true".';
+            break;
+          case 'ec2':
+            recommendation = 'Install CloudWatch agent for detailed monitoring. Enable VPC Flow Logs. Tag with "MonitoringEnabled:true".';
+            break;
+          case 'lambda':
+            recommendation = 'Ensure CloudWatch Logs are enabled (default). Add CloudWatch alarms for errors and throttles.';
+            break;
+          default:
+            recommendation = 'Enable monitoring and logging for this resource type according to SOC2 requirements.';
+        }
+
+        issues.push({
+          severity: 'high',
+          category: 'networking',
+          issue: 'SOC2: Resource lacks documented monitoring/logging configuration',
+          recommendation,
+          resource_arn: resource.resource_arn,
+        });
+      }
+    }
+
+    // SOC2: Access logging for S3 buckets
+    if (resource.resource_type === 's3' && !resource.tags?.['AccessLogging']) {
+      issues.push({
+        severity: 'high',
+        category: 'networking',
+        issue: 'SOC2: S3 bucket does not have access logging enabled',
+        recommendation: 'Enable S3 server access logging to track all requests. Configure logs to be sent to a dedicated logging bucket.',
+        resource_arn: resource.resource_arn,
+      });
+    }
+
+    return issues;
+  }
+
+  /**
+   * HIPAA-specific compliance checks
+   * Focuses on: PHI Data Encryption, Access Logging, Backup Requirements
+   */
+  private checkHIPAACompliance(resource: AWSResource): ComplianceIssue[] {
+    const issues: ComplianceIssue[] = [];
+
+    // HIPAA: PHI Data Encryption - Stricter encryption requirements
+    if (['s3', 'rds', 'ebs', 'ec2'].includes(resource.resource_type)) {
+      if (!resource.is_encrypted) {
+        issues.push({
+          severity: 'critical',
+          category: 'encryption',
+          issue: `HIPAA: ${resource.resource_type.toUpperCase()} resource storing PHI must be encrypted at rest`,
+          recommendation: 'HIPAA requires encryption of all PHI data at rest. Enable encryption using AWS KMS with customer-managed keys (CMK) for audit trail.',
+          resource_arn: resource.resource_arn,
+        });
+      } else {
+        // Even if encrypted, check if using KMS CMK (recommended for HIPAA)
+        const usesKMSCMK = resource.tags?.['KMSKey'] || resource.tags?.['EncryptionKey'];
+        if (!usesKMSCMK) {
+          issues.push({
+            severity: 'medium',
+            category: 'encryption',
+            issue: 'HIPAA: Resource should use AWS KMS Customer Managed Keys (CMK) for encryption',
+            recommendation: 'Use AWS KMS CMK instead of AWS-managed keys for better audit capabilities and key rotation control.',
+            resource_arn: resource.resource_arn,
+          });
+        }
+      }
+    }
+
+    // HIPAA: Encryption in transit for data stores
+    if (['rds', 's3', 'elasticache'].includes(resource.resource_type)) {
+      const hasTransitEncryption = resource.tags?.['SSLEnabled'] ||
+                                   resource.tags?.['TLSEnabled'] ||
+                                   resource.tags?.['EncryptionInTransit'];
+      if (!hasTransitEncryption) {
+        let recommendation = '';
+        switch (resource.resource_type) {
+          case 'rds':
+            recommendation = 'Enable SSL/TLS connections and enforce with rds.force_ssl parameter. Tag with "SSLEnabled:true".';
+            break;
+          case 's3':
+            recommendation = 'Create bucket policy requiring aws:SecureTransport condition. Use HTTPS endpoints only.';
+            break;
+          case 'elasticache':
+            recommendation = 'Enable in-transit encryption when creating the cluster. Recreate cluster if necessary.';
+            break;
+          default:
+            recommendation = 'Enable encryption in transit using TLS/SSL for all data communications.';
+        }
+
+        issues.push({
+          severity: 'critical',
+          category: 'encryption',
+          issue: `HIPAA: ${resource.resource_type.toUpperCase()} must have encryption in transit for PHI data`,
+          recommendation,
+          resource_arn: resource.resource_arn,
+        });
+      }
+    }
+
+    // HIPAA: Access Logging - Required for audit trails
+    if (['s3', 'rds', 'lambda', 'ec2'].includes(resource.resource_type)) {
+      const hasAccessLogging = resource.tags?.['AccessLogging'] ||
+                              resource.tags?.['AuditLogging'] ||
+                              resource.tags?.['CloudTrailEnabled'];
+
+      if (!hasAccessLogging) {
+        let recommendation = '';
+        switch (resource.resource_type) {
+          case 's3':
+            recommendation = 'Enable S3 server access logging and CloudTrail data events. Store logs in WORM-enabled bucket with MFA delete.';
+            break;
+          case 'rds':
+            recommendation = 'Enable audit logging, error logging, and slow query logs. Export logs to CloudWatch for long-term retention.';
+            break;
+          case 'lambda':
+            recommendation = 'Ensure CloudWatch Logs retention is set to at least 6 years (HIPAA requirement). Enable X-Ray tracing for detailed audit.';
+            break;
+          case 'ec2':
+            recommendation = 'Enable VPC Flow Logs, CloudTrail, and CloudWatch Logs agent. Configure log retention for 6+ years.';
+            break;
+          default:
+            recommendation = 'Enable comprehensive access logging with minimum 6-year retention for HIPAA compliance.';
+        }
+
+        issues.push({
+          severity: 'critical',
+          category: 'networking',
+          issue: `HIPAA: ${resource.resource_type.toUpperCase()} lacks required access logging for audit trails`,
+          recommendation,
+          resource_arn: resource.resource_arn,
+        });
+      }
+    }
+
+    // HIPAA: Backup Requirements - More stringent than generic
+    if (['rds', 'ec2', 'ebs', 's3'].includes(resource.resource_type)) {
+      if (!resource.has_backup && resource.resource_type !== 's3') {
+        issues.push({
+          severity: 'critical',
+          category: 'backups',
+          issue: `HIPAA: ${resource.resource_type.toUpperCase()} storing PHI must have automated backups`,
+          recommendation: 'Enable automated backups with minimum 30-day retention. Test backup restoration quarterly. Document backup procedures.',
+          resource_arn: resource.resource_arn,
+        });
+      }
+
+      // Check for backup retention tagging
+      const hasBackupRetention = resource.tags?.['BackupRetention'] ||
+                                 resource.tags?.['BackupPolicy'];
+      if (!hasBackupRetention) {
+        issues.push({
+          severity: 'high',
+          category: 'backups',
+          issue: 'HIPAA: Resource lacks documented backup retention policy',
+          recommendation: 'Tag resource with "BackupRetention" indicating retention period (minimum 6 years for HIPAA). Document in backup policy.',
+          resource_arn: resource.resource_arn,
+        });
+      }
+    }
+
+    // HIPAA: S3 versioning for data integrity
+    if (resource.resource_type === 's3') {
+      const hasVersioning = resource.tags?.['VersioningEnabled'];
+      if (!hasVersioning) {
+        issues.push({
+          severity: 'high',
+          category: 'backups',
+          issue: 'HIPAA: S3 bucket should have versioning enabled for PHI data integrity',
+          recommendation: 'Enable S3 versioning and MFA delete protection. Configure lifecycle policies for version retention.',
+          resource_arn: resource.resource_arn,
+        });
+      }
+    }
+
+    return issues;
+  }
+
+  /**
    * Scan multiple resources and return aggregate compliance data
    */
-  async scanMultipleResources(resources: AWSResource[]): Promise<Map<string, ComplianceIssue[]>> {
+  async scanMultipleResources(
+    resources: AWSResource[],
+    frameworks?: string[]
+  ): Promise<Map<string, ComplianceIssue[]>> {
     const results = new Map<string, ComplianceIssue[]>();
 
     for (const resource of resources) {
-      const issues = await this.scanResource(resource);
+      const issues = await this.scanResource(resource, frameworks);
       if (issues.length > 0) {
         results.set(resource.id, issues);
       }

@@ -55,9 +55,9 @@ const performanceLevelConfig: Record<PerformanceLevel, {
   },
   medium: {
     label: 'Medium',
-    color: 'text-yellow-700',
-    bgColor: 'bg-yellow-100',
-    borderColor: 'border-yellow-200',
+    color: 'text-blue-700',
+    bgColor: 'bg-blue-100',
+    borderColor: 'border-blue-200',
   },
   low: {
     label: 'Low',
@@ -102,7 +102,7 @@ function DORAMetricCard({
   }
 
   return (
-    <Card className="transition-all hover:shadow-lg hover:-translate-y-0.5">
+    <Card className="transition-shadow hover:shadow-md">
       <CardContent className="p-5">
         {/* Icon */}
         <div className={`h-10 w-10 rounded-lg ${levelConfig.bgColor} flex items-center justify-center mb-3`}>
@@ -115,6 +115,7 @@ function DORAMetricCard({
           <button
             className="text-gray-400 hover:text-gray-600 transition-colors"
             title={metric.description}
+            aria-label={`More information about ${metric.name}`}
           >
             <HelpCircle className="h-4 w-4" />
           </button>

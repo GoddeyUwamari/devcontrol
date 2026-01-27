@@ -133,3 +133,6 @@ export const optionalAuthenticate = async (
     next();
   }
 };
+
+// Export alias for backwards compatibility
+export const authenticateToken = authenticate;

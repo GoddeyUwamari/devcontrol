@@ -184,7 +184,7 @@ export function AccessibilityChecker() {
   // Don't show if no issues
   if (issues.length === 0) {
     return (
-      <div className="fixed bottom-4 right-4 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-lg px-4 py-2 shadow-lg z-50 flex items-center gap-2">
+      <div className="fixed top-20 left-4 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-lg px-4 py-2 shadow-lg z-50 flex items-center gap-2">
         <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
         <span className="text-sm font-medium text-green-800 dark:text-green-200">
           No accessibility issues
@@ -197,35 +197,35 @@ export function AccessibilityChecker() {
     return (
       <button
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-4 right-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 dark:border-yellow-600 rounded-lg px-4 py-2 shadow-lg z-50 flex items-center gap-2 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 transition-colors"
+        className="fixed top-20 left-4 bg-blue-100 dark:bg-blue-900/30 border border-blue-400 dark:border-blue-600 rounded-lg px-4 py-2 shadow-lg z-50 flex items-center gap-2 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
         aria-label={`Show ${issues.length} accessibility issues`}
       >
-        <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
-        <span className="text-sm font-bold text-yellow-900 dark:text-yellow-100">
+        <AlertTriangle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+        <span className="text-sm font-bold text-blue-900 dark:text-blue-100">
           A11y: {errorCount > 0 && <span className="text-red-600">{errorCount}E</span>}
           {errorCount > 0 && warningCount > 0 && ' / '}
-          {warningCount > 0 && <span className="text-yellow-600">{warningCount}W</span>}
+          {warningCount > 0 && <span className="text-blue-600">{warningCount}W</span>}
         </span>
       </button>
     );
   }
 
   return (
-    <div className="fixed bottom-4 right-4 bg-white dark:bg-gray-900 border-2 border-yellow-400 dark:border-yellow-600 rounded-lg shadow-xl z-50 max-w-md max-h-96 overflow-hidden flex flex-col">
+    <div className="fixed top-20 left-4 bg-white dark:bg-gray-900 border-2 border-blue-400 dark:border-blue-600 rounded-lg shadow-xl z-50 max-w-md max-h-96 overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
         <div className="flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
-          <h3 className="font-bold text-yellow-900 dark:text-yellow-100">
+          <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <h3 className="font-bold text-blue-900 dark:text-blue-100">
             Accessibility Issues ({issues.length})
           </h3>
         </div>
         <button
           onClick={() => setIsMinimized(true)}
-          className="p-1 hover:bg-yellow-200 dark:hover:bg-yellow-800 rounded transition-colors"
+          className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded transition-colors"
           aria-label="Minimize accessibility checker"
         >
-          <X className="w-4 h-4 text-yellow-700 dark:text-yellow-300" />
+          <X className="w-4 h-4 text-blue-700 dark:text-blue-300" />
         </button>
       </div>
 
@@ -238,7 +238,7 @@ export function AccessibilityChecker() {
           </div>
         )}
         {warningCount > 0 && (
-          <div className="flex items-center gap-1 text-yellow-600 dark:text-yellow-400">
+          <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
             <AlertTriangle className="w-4 h-4" />
             <span>{warningCount} warnings</span>
           </div>
@@ -253,14 +253,14 @@ export function AccessibilityChecker() {
             className={`text-sm p-2 rounded ${
               issue.type === 'error'
                 ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
             }`}
           >
             <div
               className={`font-medium ${
                 issue.type === 'error'
                   ? 'text-red-800 dark:text-red-200'
-                  : 'text-yellow-800 dark:text-yellow-200'
+                  : 'text-blue-800 dark:text-blue-200'
               }`}
             >
               {issue.message}

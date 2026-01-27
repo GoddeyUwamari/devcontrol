@@ -18,6 +18,9 @@ import auditLogsRoutes from './auditLogs.routes';
 import stripeRoutes from './stripe.routes';
 import onboardingRoutes from './onboarding.routes';
 import prometheusRoutes from './prometheus.routes';
+import riskScoreRoutes from './risk-score.routes';
+import scheduledReportsRoutes from './scheduled-reports.routes';
+import complianceFrameworksRoutes from './compliance-frameworks.routes';
 
 const router = Router();
 
@@ -44,6 +47,9 @@ router.use('/audit-logs', auditLogsRoutes);
 router.use('/stripe', stripeRoutes);
 router.use('/onboarding', onboardingRoutes);
 router.use('/prometheus', prometheusRoutes);
+router.use('/risk-score', riskScoreRoutes);
+router.use('/scheduled-reports', scheduledReportsRoutes);
+router.use('/compliance-frameworks', complianceFrameworksRoutes);
 router.use('/', logsRoutes);
 
 // API root
@@ -71,6 +77,9 @@ router.get('/', (req, res) => {
       stripe: '/api/stripe',
       onboarding: '/api/onboarding',
       prometheus: '/api/prometheus',
+      riskScore: '/api/risk-score',
+      scheduledReports: '/api/scheduled-reports',
+      complianceFrameworks: '/api/compliance-frameworks',
       logs: '/api/logs',
     },
   });

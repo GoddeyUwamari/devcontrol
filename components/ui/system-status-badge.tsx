@@ -31,7 +31,7 @@ export function SystemStatusBadge({ className }: SystemStatusBadgeProps) {
               'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-help',
               status.operational
                 ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400 border border-green-200 dark:border-green-800'
-                : 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800',
+                : 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 border border-blue-200 dark:border-blue-800',
               className
             )}
           >

@@ -49,13 +49,64 @@ import {
   RDSInstanceMetadata,
   S3BucketMetadata,
 } from '../types/aws-resources.types';
+import { SubscriptionTier } from '../middleware/subscription.middleware';
+
+/**
+ * Resource types allowed by subscription tier
+ */
+const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
+  free: ['ec2', 'rds', 's3'], // 3 types - Core compute, database, storage
+  starter: [
+    'ec2',           // Compute instances
+    'rds',           // Relational databases
+    's3',            // Object storage
+    'lambda',        // Serverless functions
+    'ecs',           // Container orchestration
+    'vpc',           // Virtual networks
+    'load-balancer', // Load balancers
+    // Note: 7 types currently implemented. To reach 10, add: DynamoDB, ElastiCache, CloudFront
+    // These would require implementation of discovery methods
+  ], // 7 types (expandable to 10)
+  pro: ['ec2', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer'], // All current types
+  enterprise: ['ec2', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer'], // All current types
+};
 
 export class AWSResourceDiscoveryService {
   constructor(private pool: Pool) {}
 
   /**
+   * Get organization's subscription tier
+   */
+  private async getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
+    const result = await this.pool.query(
+      'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
+      [organizationId]
+    );
+
+    if (result.rows.length === 0) {
+      return 'free'; // Default to free if org not found
+    }
+
+    return (result.rows[0].subscription_tier as SubscriptionTier) || 'free';
+  }
+
+  /**
+   * Get allowed resource types for a subscription tier
+   */
+  private getAllowedResourceTypes(tier: SubscriptionTier): ResourceType[] {
+    return TIER_RESOURCE_TYPES[tier] || TIER_RESOURCE_TYPES.free;
+  }
+
+  /**
+   * Check if a resource type is allowed for the organization's tier
+   */
+  private isResourceTypeAllowed(resourceType: ResourceType, allowedTypes: ResourceType[]): boolean {
+    return allowedTypes.includes(resourceType);
+  }
+
+  /**
    * Discover all AWS resources for an organization
-   * Creates a discovery job and scans EC2, RDS, and S3 resources
+   * Creates a discovery job and scans resources based on subscription tier
    */
   async discoverAllResources(organizationId: string): Promise<DiscoveryResult> {
     console.log(`\n🔍 [Discovery] Starting AWS resource discovery for organization: ${organizationId}`);
@@ -64,7 +115,14 @@ export class AWSResourceDiscoveryService {
     let jobId: string;
 
     try {
-      // Create discovery job
+      // Get organization's subscription tier
+      const tier = await this.getOrganizationTier(organizationId);
+      const allowedTypes = this.getAllowedResourceTypes(tier);
+
+      console.log(`🎫 [Discovery] Subscription tier: ${tier}`);
+      console.log(`📦 [Discovery] Allowed resource types: ${allowedTypes.join(', ')}`);
+
+      // Create discovery job with allowed resource types
       const jobResult = await client.query(
         `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, resource_types, regions)
          VALUES ($1, $2, NOW(), $3, $4)
@@ -72,7 +130,7 @@ export class AWSResourceDiscoveryService {
         [
           organizationId,
           'running' as DiscoveryJobStatus,
-          ['ec2', 'rds', 's3', 'lambda', 'ecs', 'load-balancer', 'vpc'],
+          allowedTypes,
           [] // Will be populated during discovery
         ]
       );
@@ -92,117 +150,159 @@ export class AWSResourceDiscoveryService {
       const errors: string[] = [];
       let totalDiscovered = 0;
       let totalUpdated = 0;
+      const skippedTypes: string[] = [];
 
       // Discover EC2 instances
-      console.log(`🔎 [Discovery] Discovering EC2 instances...`);
-      try {
-        const ec2Resources = await this.discoverEC2Instances(organizationId, awsClients.ec2!, awsClients.region);
-        for (const resource of ec2Resources) {
-          const result = await this.upsertResource(client, resource);
-          if (result === 'created') totalDiscovered++;
-          else if (result === 'updated') totalUpdated++;
+      if (this.isResourceTypeAllowed('ec2', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering EC2 instances...`);
+        try {
+          const ec2Resources = await this.discoverEC2Instances(organizationId, awsClients.ec2!, awsClients.region);
+          for (const resource of ec2Resources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${ec2Resources.length} EC2 instances`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] EC2 discovery failed:`, error.message);
+          errors.push(`EC2: ${error.message}`);
         }
-        console.log(`✅ [Discovery] Found ${ec2Resources.length} EC2 instances`);
-      } catch (error: any) {
-        console.error(`❌ [Discovery] EC2 discovery failed:`, error.message);
-        errors.push(`EC2: ${error.message}`);
+      } else {
+        console.log(`⏭️  [Discovery] Skipping EC2 instances (not available in ${tier} tier)`);
+        skippedTypes.push('ec2');
       }
 
       // Discover RDS databases
-      console.log(`🔎 [Discovery] Discovering RDS databases...`);
-      try {
-        const rdsResources = await this.discoverRDSDatabases(organizationId, awsClients.rds!, awsClients.region);
-        for (const resource of rdsResources) {
-          const result = await this.upsertResource(client, resource);
-          if (result === 'created') totalDiscovered++;
-          else if (result === 'updated') totalUpdated++;
+      if (this.isResourceTypeAllowed('rds', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering RDS databases...`);
+        try {
+          const rdsResources = await this.discoverRDSDatabases(organizationId, awsClients.rds!, awsClients.region);
+          for (const resource of rdsResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${rdsResources.length} RDS databases`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] RDS discovery failed:`, error.message);
+          errors.push(`RDS: ${error.message}`);
         }
-        console.log(`✅ [Discovery] Found ${rdsResources.length} RDS databases`);
-      } catch (error: any) {
-        console.error(`❌ [Discovery] RDS discovery failed:`, error.message);
-        errors.push(`RDS: ${error.message}`);
+      } else {
+        console.log(`⏭️  [Discovery] Skipping RDS databases (not available in ${tier} tier)`);
+        skippedTypes.push('rds');
       }
 
       // Discover S3 buckets
-      console.log(`🔎 [Discovery] Discovering S3 buckets...`);
-      try {
-        const s3Resources = await this.discoverS3Buckets(organizationId, awsClients.s3!, awsClients.region);
-        for (const resource of s3Resources) {
-          const result = await this.upsertResource(client, resource);
-          if (result === 'created') totalDiscovered++;
-          else if (result === 'updated') totalUpdated++;
+      if (this.isResourceTypeAllowed('s3', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering S3 buckets...`);
+        try {
+          const s3Resources = await this.discoverS3Buckets(organizationId, awsClients.s3!, awsClients.region);
+          for (const resource of s3Resources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${s3Resources.length} S3 buckets`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] S3 discovery failed:`, error.message);
+          errors.push(`S3: ${error.message}`);
         }
-        console.log(`✅ [Discovery] Found ${s3Resources.length} S3 buckets`);
-      } catch (error: any) {
-        console.error(`❌ [Discovery] S3 discovery failed:`, error.message);
-        errors.push(`S3: ${error.message}`);
+      } else {
+        console.log(`⏭️  [Discovery] Skipping S3 buckets (not available in ${tier} tier)`);
+        skippedTypes.push('s3');
       }
 
       // Discover Lambda functions
-      console.log(`🔎 [Discovery] Discovering Lambda functions...`);
-      try {
-        const lambdaResources = await this.discoverLambdaFunctions(organizationId, awsClients.region);
-        for (const resource of lambdaResources) {
-          const result = await this.upsertResource(client, resource);
-          if (result === 'created') totalDiscovered++;
-          else if (result === 'updated') totalUpdated++;
+      if (this.isResourceTypeAllowed('lambda', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering Lambda functions...`);
+        try {
+          const lambdaResources = await this.discoverLambdaFunctions(organizationId, awsClients.region);
+          for (const resource of lambdaResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${lambdaResources.length} Lambda functions`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] Lambda discovery failed:`, error.message);
+          errors.push(`Lambda: ${error.message}`);
         }
-        console.log(`✅ [Discovery] Found ${lambdaResources.length} Lambda functions`);
-      } catch (error: any) {
-        console.error(`❌ [Discovery] Lambda discovery failed:`, error.message);
-        errors.push(`Lambda: ${error.message}`);
+      } else {
+        console.log(`⏭️  [Discovery] Skipping Lambda functions (not available in ${tier} tier)`);
+        skippedTypes.push('lambda');
       }
 
       // Discover ECS services
-      console.log(`🔎 [Discovery] Discovering ECS services...`);
-      try {
-        const ecsResources = await this.discoverECSServices(organizationId, awsClients.region);
-        for (const resource of ecsResources) {
-          const result = await this.upsertResource(client, resource);
-          if (result === 'created') totalDiscovered++;
-          else if (result === 'updated') totalUpdated++;
+      if (this.isResourceTypeAllowed('ecs', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering ECS services...`);
+        try {
+          const ecsResources = await this.discoverECSServices(organizationId, awsClients.region);
+          for (const resource of ecsResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${ecsResources.length} ECS services`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] ECS discovery failed:`, error.message);
+          errors.push(`ECS: ${error.message}`);
         }
-        console.log(`✅ [Discovery] Found ${ecsResources.length} ECS services`);
-      } catch (error: any) {
-        console.error(`❌ [Discovery] ECS discovery failed:`, error.message);
-        errors.push(`ECS: ${error.message}`);
+      } else {
+        console.log(`⏭️  [Discovery] Skipping ECS services (not available in ${tier} tier)`);
+        skippedTypes.push('ecs');
       }
 
       // Discover Load Balancers
-      console.log(`🔎 [Discovery] Discovering Load Balancers...`);
-      try {
-        const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.region);
-        for (const resource of lbResources) {
-          const result = await this.upsertResource(client, resource);
-          if (result === 'created') totalDiscovered++;
-          else if (result === 'updated') totalUpdated++;
+      if (this.isResourceTypeAllowed('load-balancer', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering Load Balancers...`);
+        try {
+          const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.region);
+          for (const resource of lbResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${lbResources.length} Load Balancers`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] Load Balancer discovery failed:`, error.message);
+          errors.push(`Load Balancer: ${error.message}`);
         }
-        console.log(`✅ [Discovery] Found ${lbResources.length} Load Balancers`);
-      } catch (error: any) {
-        console.error(`❌ [Discovery] Load Balancer discovery failed:`, error.message);
-        errors.push(`Load Balancer: ${error.message}`);
+      } else {
+        console.log(`⏭️  [Discovery] Skipping Load Balancers (not available in ${tier} tier)`);
+        skippedTypes.push('load-balancer');
       }
 
       // Discover VPC resources
-      console.log(`🔎 [Discovery] Discovering VPCs...`);
-      try {
-        const vpcResources = await this.discoverVPCResources(organizationId, awsClients.ec2!, awsClients.region);
-        for (const resource of vpcResources) {
-          const result = await this.upsertResource(client, resource);
-          if (result === 'created') totalDiscovered++;
-          else if (result === 'updated') totalUpdated++;
+      if (this.isResourceTypeAllowed('vpc', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering VPCs...`);
+        try {
+          const vpcResources = await this.discoverVPCResources(organizationId, awsClients.ec2!, awsClients.region);
+          for (const resource of vpcResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${vpcResources.length} VPCs`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] VPC discovery failed:`, error.message);
+          errors.push(`VPC: ${error.message}`);
         }
-        console.log(`✅ [Discovery] Found ${vpcResources.length} VPCs`);
-      } catch (error: any) {
-        console.error(`❌ [Discovery] VPC discovery failed:`, error.message);
-        errors.push(`VPC: ${error.message}`);
+      } else {
+        console.log(`⏭️  [Discovery] Skipping VPCs (not available in ${tier} tier)`);
+        skippedTypes.push('vpc');
       }
 
       // Update job status
       console.log(`\n📊 [Discovery] Discovery Summary:`);
+      console.log(`  - Subscription tier: ${tier}`);
       console.log(`  - Total resources discovered (new): ${totalDiscovered}`);
       console.log(`  - Total resources updated: ${totalUpdated}`);
       console.log(`  - Total resources: ${totalDiscovered + totalUpdated}`);
+
+      if (skippedTypes.length > 0) {
+        console.log(`  - ⏭️  Resource types skipped (tier limitation): ${skippedTypes.join(', ')}`);
+        console.log(`  - 💡 Upgrade to access: ${skippedTypes.join(', ')}`);
+      }
 
       if (errors.length > 0) {
         console.log(`  - Errors encountered: ${errors.length}`);

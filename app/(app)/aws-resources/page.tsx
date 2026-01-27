@@ -42,6 +42,7 @@ import { SecurityInsightsBanner } from '@/components/aws/security-insights-banne
 import { CostAttributionTeaser } from '@/components/aws/cost-attribution-teaser';
 import { SeverityBadge } from '@/components/ui/severity-badge';
 import { calculateRiskScore, calculateDaysExposed, calculateResourceRisk } from '@/lib/utils/riskScoring';
+import { UpgradeModal } from '@/components/billing/upgrade-modal';
 
 export default function AWSResourcesPage() {
   const router = useRouter();
@@ -62,6 +63,14 @@ export default function AWSResourcesPage() {
   const [isSetEnvironmentDialogOpen, setIsSetEnvironmentDialogOpen] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date>(new Date());
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'synced' | 'error'>('synced');
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [upgradeModalData, setUpgradeModalData] = useState<{
+    currentTier: string;
+    requiredTier: string;
+    currentLimit?: number;
+    nextLimit?: number;
+    message?: string;
+  } | null>(null);
 
   // Fetch resources
   const { data: resourcesData = { resources: [], total: 0 }, isLoading: resourcesLoading } = useQuery({
@@ -112,6 +121,22 @@ export default function AWSResourcesPage() {
     },
     onError: (error: any) => {
       console.error('Discovery failed:', error);
+
+      // Check if this is a resource limit error (402 Payment Required)
+      if (error?.response?.status === 402 || error?.code === 'RESOURCE_LIMIT_REACHED') {
+        const errorData = error?.response?.data;
+
+        // Show upgrade modal instead of toast
+        setUpgradeModalData({
+          currentTier: errorData?.details?.tier || 'free',
+          requiredTier: errorData?.upgrade?.nextTier || 'pro',
+          currentLimit: errorData?.upgrade?.currentLimit,
+          nextLimit: errorData?.upgrade?.nextLimit,
+          message: errorData?.details?.message || errorData?.error,
+        });
+        setIsUpgradeModalOpen(true);
+        return;
+      }
 
       // User-friendly error messages based on error type
       let errorMessage = 'Failed to start resource discovery';
@@ -234,8 +259,8 @@ export default function AWSResourcesPage() {
   const getScoreLevel = (score: number) => {
     if (score >= 80) return { label: 'Excellent', color: 'text-green-600', bgColor: 'bg-green-100' };
     if (score >= 60) return { label: 'Good', color: 'text-blue-600', bgColor: 'bg-blue-100' };
-    if (score >= 40) return { label: 'Fair', color: 'text-amber-600', bgColor: 'bg-amber-100' };
-    return { label: 'Needs Attention', color: 'text-orange-600', bgColor: 'bg-orange-100' };
+    if (score >= 40) return { label: 'Fair', color: 'text-blue-600', bgColor: 'bg-blue-100' };
+    return { label: 'Needs Attention', color: 'text-blue-700', bgColor: 'bg-blue-100' };
   };
 
   const securityScore = calculateSecurityScore();
@@ -274,16 +299,14 @@ export default function AWSResourcesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {subscription.canExportReports && (
-            <Button
-              onClick={() => setIsExportDialogOpen(true)}
-              variant="outline"
-              size="sm"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Export
-            </Button>
-          )}
+          <Button
+            onClick={() => setIsExportDialogOpen(true)}
+            variant="outline"
+            size="sm"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export
+          </Button>
           <Button
             onClick={handleDiscovery}
             disabled={discoveryMutation.isPending}
@@ -506,8 +529,8 @@ export default function AWSResourcesPage() {
                           : riskScore.grade === 'C'
                           ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                           : riskScore.grade === 'D'
-                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                          : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                          : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                       }`}
                     >
                       {riskScore.label}
@@ -521,8 +544,8 @@ export default function AWSResourcesPage() {
                           : riskScore.score >= 60
                           ? 'bg-blue-600 dark:bg-blue-500'
                           : riskScore.score >= 40
-                          ? 'bg-amber-600 dark:bg-amber-500'
-                          : 'bg-orange-600 dark:bg-orange-500'
+                          ? 'bg-blue-600 dark:bg-blue-500'
+                          : 'bg-blue-700 dark:bg-blue-600'
                       }`}
                       style={{ width: `${riskScore.score}%` }}
                     />
@@ -561,7 +584,7 @@ export default function AWSResourcesPage() {
                 <div className="space-y-3">
                   <div>
                     <div className="text-sm text-muted-foreground">Potential Monthly Savings</div>
-                    <div className="text-3xl font-bold text-orange-600">
+                    <div className="text-3xl font-bold text-blue-700">
                       ${(stats?.orphaned_savings || 0).toFixed(2)}
                     </div>
                   </div>
@@ -637,12 +660,12 @@ export default function AWSResourcesPage() {
                 {hasSecurityIssues && (
                   <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                      <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">
                         Security Items
                       </span>
                     </div>
-                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-1">
+                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mb-1">
                       {(stats.unencrypted_count || 0) + (stats.public_count || 0)}
                     </div>
                     <p className="text-xs text-gray-600 dark:text-gray-400">
@@ -1160,7 +1183,7 @@ export default function AWSResourcesPage() {
                                   className="w-fit"
                                 />
                                 {resource.is_public && daysExposed > 0 && (
-                                  <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
                                     {daysExposed}d exposed
                                   </span>
                                 )}
@@ -1294,6 +1317,21 @@ export default function AWSResourcesPage() {
           queryClient.invalidateQueries({ queryKey: ['aws-resources-cost-by-environment'] });
         }}
       />
+
+      {/* Upgrade Modal - shown when resource limit is reached */}
+      {upgradeModalData && (
+        <UpgradeModal
+          open={isUpgradeModalOpen}
+          onOpenChange={setIsUpgradeModalOpen}
+          title="You've reached your resource limit"
+          description={upgradeModalData.message}
+          currentTier={upgradeModalData.currentTier}
+          requiredTier={upgradeModalData.requiredTier}
+          currentLimit={upgradeModalData.currentLimit}
+          nextLimit={upgradeModalData.nextLimit}
+          resourceType="AWS resources"
+        />
+      )}
       </div>
     </ErrorBoundary>
   );

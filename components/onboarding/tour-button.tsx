@@ -14,6 +14,7 @@ export function TourButton({ onStartTour, variant = 'button' }: TourButtonProps)
         onClick={onStartTour}
         className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         title="Take a tour"
+        aria-label="Take a tour"
       >
         <HelpCircle className="w-5 h-5" />
       </button>

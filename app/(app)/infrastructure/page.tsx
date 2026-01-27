@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Server, AlertCircle, Database, HardDrive, Cloud, Zap, Globe, Network, RefreshCw, TrendingDown } from 'lucide-react'
+import { Server, AlertCircle, Database, HardDrive, Cloud, Zap, Globe, Network, RefreshCw, TrendingDown, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
@@ -42,6 +42,8 @@ import { InfrastructureTrustSection } from '@/components/infrastructure/Infrastr
 // import { InfrastructureTestimonials } from '@/components/infrastructure/InfrastructureTestimonials'
 import { InfrastructureMetricsBanner } from '@/components/infrastructure/InfrastructureMetricsBanner'
 import { InfrastructureComparison } from '@/components/infrastructure/InfrastructureComparison'
+import { RiskScoreCard } from '@/components/dashboard/risk-score-card'
+import { useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
 
 type ResourceFilter = 'all' | ResourceType
 
@@ -254,6 +256,9 @@ export default function InfrastructurePage() {
     queryFn: costRecommendationsService.getActiveCount,
   })
 
+  // Get risk score data
+  const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend('30d')
+
   const totalMonthlyCost = resources.reduce((sum, r) => sum + r.costPerMonth, 0)
 
   // Sync AWS mutation
@@ -362,23 +367,32 @@ export default function InfrastructurePage() {
         </div>
       </div>
 
-      {/* Cost Summary Card */}
-      <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
-        <CardHeader>
-          <CardTitle className="text-xl flex items-center gap-2">
-            <Server className="h-6 w-6 text-blue-600" />
-            Total Monthly Infrastructure Cost
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-4xl md:text-5xl font-bold text-blue-900">
-            {formatCurrency(totalMonthlyCost)}
-          </div>
-          <p className="text-sm text-blue-700 mt-2">
-            {resources.length} {resources.length === 1 ? 'resource' : 'resources'} actively tracked
-          </p>
-        </CardContent>
-      </Card>
+      {/* Summary Cards Grid */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Cost Summary Card */}
+        <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+          <CardHeader>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <Server className="h-6 w-6 text-blue-600" />
+              Total Monthly Infrastructure Cost
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-4xl md:text-5xl font-bold text-blue-900">
+              {formatCurrency(totalMonthlyCost)}
+            </div>
+            <p className="text-sm text-blue-700 mt-2">
+              {resources.length} {resources.length === 1 ? 'resource' : 'resources'} actively tracked
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Risk Score Card */}
+        <RiskScoreCard
+          data={riskScoreData ?? null}
+          isLoading={riskScoreLoading}
+        />
+      </div>
 
       <div className="flex items-center gap-4">
         <Select value={resourceFilter} onValueChange={(value: ResourceFilter) => setResourceFilter(value)}>

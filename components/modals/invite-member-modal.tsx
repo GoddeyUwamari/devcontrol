@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { UpgradeModal } from "@/components/billing/upgrade-modal";
 
 const inviteMemberSchema = z.object({
   email: z
@@ -53,6 +54,14 @@ export function InviteMemberModal({
   onSuccess,
 }: InviteMemberModalProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [upgradeModalData, setUpgradeModalData] = useState<{
+    currentTier: string;
+    requiredTier: string;
+    currentLimit?: number;
+    nextLimit?: number;
+    message?: string;
+  } | null>(null);
 
   const {
     register,
@@ -89,6 +98,27 @@ export function InviteMemberModal({
       onSuccess?.();
     } catch (error: any) {
       console.error("Failed to invite member:", error);
+
+      // Check if this is a resource limit error (402 Payment Required)
+      if (error?.response?.status === 402 || error?.code === 'RESOURCE_LIMIT_REACHED') {
+        const errorData = error?.response?.data;
+
+        // Close the invite modal first
+        onOpenChange(false);
+        reset();
+
+        // Show upgrade modal instead of toast
+        setUpgradeModalData({
+          currentTier: errorData?.details?.tier || 'free',
+          requiredTier: errorData?.upgrade?.nextTier || 'pro',
+          currentLimit: errorData?.upgrade?.currentLimit,
+          nextLimit: errorData?.upgrade?.nextLimit,
+          message: errorData?.details?.message || errorData?.error,
+        });
+        setIsUpgradeModalOpen(true);
+        return;
+      }
+
       const message =
         error.response?.data?.error ||
         error.response?.data?.message ||
@@ -107,14 +137,15 @@ export function InviteMemberModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Invite Team Member</DialogTitle>
-          <DialogDescription>
-            Send an invitation to join your organization
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Invite Team Member</DialogTitle>
+            <DialogDescription>
+              Send an invitation to join your organization
+            </DialogDescription>
+          </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Email Input */}
@@ -226,5 +257,21 @@ export function InviteMemberModal({
         </form>
       </DialogContent>
     </Dialog>
+
+    {/* Upgrade Modal - shown when user limit is reached */}
+    {upgradeModalData && (
+      <UpgradeModal
+        open={isUpgradeModalOpen}
+        onOpenChange={setIsUpgradeModalOpen}
+        title="You've reached your team member limit"
+        description={upgradeModalData.message}
+        currentTier={upgradeModalData.currentTier}
+        requiredTier={upgradeModalData.requiredTier}
+        currentLimit={upgradeModalData.currentLimit}
+        nextLimit={upgradeModalData.nextLimit}
+        resourceType="team members"
+      />
+    )}
+    </>
   );
 }

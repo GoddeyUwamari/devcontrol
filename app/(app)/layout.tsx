@@ -13,7 +13,6 @@ import { DemoModeToggle } from '@/components/demo/demo-mode-toggle';
 import { SalesDemoToggle } from '@/components/demo/sales-demo-toggle';
 import { AnnouncementBar } from '@/components/announcement-bar';
 import { Footer } from '@/components/footer';
-import { AccessibilityChecker } from '@/components/dev/AccessibilityChecker';
 
 /**
  * App Layout - Authenticated Users Only
@@ -87,9 +86,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Footer */}
       <Footer />
-
-      {/* Accessibility Checker (Development Only) */}
-      <AccessibilityChecker />
     </div>
   );
 }

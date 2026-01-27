@@ -13,6 +13,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { FileText, Download, FileSpreadsheet } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface ExportReportsDialogProps {
   open: boolean;
@@ -67,18 +68,58 @@ export function ExportReportsDialog({
     setIsExporting(true);
 
     try {
-      // Simulate export generation
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Call API with responseType: 'blob'
+      const response = await api.post('/api/aws-resources/export', {
+        format,
+        columns: selectedColumns,
+        filters, // Pass filters from props
+      }, {
+        responseType: 'blob',
+      });
 
-      // In production, this would call the API and download the file
+      // Create blob and download link
+      const blob = new Blob([response.data], {
+        type: format === 'csv' ? 'text/csv' : 'application/pdf',
+      });
+      const url = window.URL.createObjectURL(blob);
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+      const filename = `aws-resources-${timestamp}.${format}`;
+
+      // Trigger download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
       toast.success(`Export generated successfully`, {
         description: `${totalResources} resources exported to ${format.toUpperCase()}`,
       });
 
       onOpenChange(false);
     } catch (error: any) {
+      console.error('Export failed:', error);
+
+      // Handle blob error responses
+      let errorMessage = 'Failed to generate export';
+      if (error.response?.data instanceof Blob) {
+        try {
+          const text = await error.response.data.text();
+          const errorData = JSON.parse(text);
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          // Use default message if parsing fails
+        }
+      } else {
+        errorMessage = error.response?.data?.message || error.message || errorMessage;
+      }
+
       toast.error('Export failed', {
-        description: error.message || 'Failed to generate export',
+        description: errorMessage,
       });
     } finally {
       setIsExporting(false);

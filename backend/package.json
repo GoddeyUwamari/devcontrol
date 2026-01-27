@@ -33,6 +33,8 @@
     "express-rate-limit": "^8.2.1",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.3",
+    "jspdf": "^4.0.0",
+    "jspdf-autotable": "^5.0.7",
     "morgan": "^1.10.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.12",

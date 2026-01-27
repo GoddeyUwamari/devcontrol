@@ -1,6 +1,6 @@
 /**
  * Database Migration Runner
- * Runs PostgreSQL migration scripts
+ * Runs PostgreSQL migration scripts in order
  *
  * Usage: node database/migrate.js
  *
@@ -30,34 +30,84 @@ async function runMigrations() {
     await client.connect();
     console.log('✅ Connected to database');
 
-    const migrationFile = path.join(__dirname, 'migrations', '001_create_platform_tables.sql');
-    console.log(`📄 Reading migration file: ${migrationFile}`);
+    // Create migrations tracking table if it doesn't exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id SERIAL PRIMARY KEY,
+        migration_name VARCHAR(255) UNIQUE NOT NULL,
+        executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
 
-    const sql = fs.readFileSync(migrationFile, 'utf8');
+    // Get list of already executed migrations
+    const executedMigrations = await client.query(
+      'SELECT migration_name FROM schema_migrations ORDER BY migration_name'
+    );
+    const executedSet = new Set(executedMigrations.rows.map(row => row.migration_name));
 
-    console.log('🚀 Running migration...');
-    await client.query(sql);
+    // Read all migration files from the migrations directory
+    const migrationsDir = path.join(__dirname, 'migrations');
+    const files = fs.readdirSync(migrationsDir)
+      .filter(file => file.endsWith('.sql') && !file.includes('GUIDE') && !file.includes('rollback'))
+      .sort();
 
-    console.log('✅ Migration completed successfully');
-    console.log('');
-    console.log('📊 Created tables:');
-    console.log('   - services');
-    console.log('   - deployments');
-    console.log('   - infrastructure_resources');
-    console.log('   - teams');
-    console.log('');
-    console.log('🔒 Row-Level Security (RLS) enabled on all tables');
-    console.log('📈 Indexes created for optimal query performance');
+    console.log(`\n📁 Found ${files.length} migration files`);
+
+    let executed = 0;
+    let skipped = 0;
+
+    for (const file of files) {
+      if (executedSet.has(file)) {
+        console.log(`⏭️  Skipping ${file} (already executed)`);
+        skipped++;
+        continue;
+      }
+
+      const migrationPath = path.join(migrationsDir, file);
+      console.log(`\n🚀 Running migration: ${file}`);
+
+      const sql = fs.readFileSync(migrationPath, 'utf8');
+
+      try {
+        // Run the migration in a transaction
+        await client.query('BEGIN');
+        await client.query(sql);
+        await client.query(
+          'INSERT INTO schema_migrations (migration_name) VALUES ($1)',
+          [file]
+        );
+        await client.query('COMMIT');
+
+        console.log(`✅ Migration ${file} completed successfully`);
+        executed++;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        console.error(`❌ Migration ${file} failed:`, error.message);
+        throw error;
+      }
+    }
+
+    console.log('\n' + '='.repeat(60));
+    console.log('📊 Migration Summary:');
+    console.log(`   ✅ Executed: ${executed}`);
+    console.log(`   ⏭️  Skipped: ${skipped}`);
+    console.log(`   📁 Total: ${files.length}`);
+    console.log('='.repeat(60));
+
+    if (executed > 0) {
+      console.log('\n✨ Database schema is now up to date!');
+    } else {
+      console.log('\n✨ Database schema was already up to date!');
+    }
   } catch (error) {
-    console.error('❌ Migration failed:', error.message);
+    console.error('\n❌ Migration process failed:', error.message);
     if (error.stack) {
       console.error('Stack trace:', error.stack);
     }
     throw error;
   } finally {
     await client.end();
-    console.log('');
-    console.log('🔌 Database connection closed');
+    console.log('\n🔌 Database connection closed');
   }
 }
 

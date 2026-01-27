@@ -2,8 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
+import { AWSResourcesExportService } from '../services/awsResourcesExport.service';
 import { ApiResponse } from '../types/api.types';
 import { ResourceFilters } from '../types/aws-resources.types';
+import { ExportFormat, ExportColumn } from '../types/export.types';
 
 export class AWSResourcesController {
   private repository: AWSResourcesRepository;
@@ -296,6 +298,73 @@ export class AWSResourcesController {
         data: { id },
         timestamp: new Date().toISOString(),
       } as ApiResponse<{ id: string }>);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/aws-resources/export
+   * Export AWS resources to CSV or PDF
+   */
+  async exportResources(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      const { format, columns, filters } = req.body;
+
+      // Validation
+      if (!organizationId) {
+        res.status(400).json({
+          success: false,
+          message: 'Organization ID not found',
+          data: null,
+          timestamp: new Date().toISOString(),
+        } as ApiResponse<null>);
+        return;
+      }
+
+      if (!format || !['csv', 'pdf'].includes(format)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid format. Must be csv or pdf',
+          data: null,
+          timestamp: new Date().toISOString(),
+        } as ApiResponse<null>);
+        return;
+      }
+
+      if (!columns || !Array.isArray(columns) || columns.length === 0) {
+        res.status(400).json({
+          success: false,
+          message: 'At least one column must be selected',
+          data: null,
+          timestamp: new Date().toISOString(),
+        } as ApiResponse<null>);
+        return;
+      }
+
+      // Generate export
+      const exportService = new AWSResourcesExportService(this.pool);
+      const fileBuffer =
+        format === 'csv'
+          ? await exportService.generateCSV(organizationId, filters || {}, columns)
+          : await exportService.generatePDF(organizationId, filters || {}, columns);
+
+      // Generate filename with timestamp
+      const now = new Date();
+      const timestamp = now
+        .toISOString()
+        .slice(0, 16)
+        .replace(/[T:]/g, '-');
+      const filename = `aws-resources-${timestamp}.${format}`;
+
+      // Set response headers for file download
+      res.setHeader('Content-Type', format === 'csv' ? 'text/csv' : 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', fileBuffer.length.toString());
+
+      // Send file
+      res.send(fileBuffer);
     } catch (error) {
       next(error);
     }

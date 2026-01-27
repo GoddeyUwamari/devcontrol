@@ -19,6 +19,8 @@ import metricsRoutes from './routes/metrics.routes';
 import { updateBusinessMetrics } from './metrics';
 import { AlertSyncJob } from './jobs/alert-sync.job';
 import { ResourceDiscoveryJob } from './jobs/resourceDiscovery.job';
+import { RiskScoreSnapshotJob } from './jobs/risk-score-snapshot.job';
+import { ScheduledReportsJob } from './jobs/scheduled-reports.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
 
@@ -230,6 +232,14 @@ const startServer = async () => {
     // Start resource discovery job (discovers AWS resources every 6 hours)
     const resourceDiscoveryJob = new ResourceDiscoveryJob(pool);
     resourceDiscoveryJob.start();
+
+    // Start risk score snapshot job (captures daily risk snapshots at 2 AM UTC)
+    const riskSnapshotJob = new RiskScoreSnapshotJob(pool);
+    riskSnapshotJob.start();
+
+    // Start scheduled reports job (checks for due reports every 15 minutes)
+    const scheduledReportsJob = new ScheduledReportsJob(pool);
+    scheduledReportsJob.start();
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);

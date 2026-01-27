@@ -11,6 +11,7 @@ import {
   requireMember,
   requirePermission,
 } from '../middleware/rbac.middleware';
+import { checkResourceLimit } from '../middleware/subscription.middleware';
 
 const router = Router();
 
@@ -40,16 +41,18 @@ router.delete(
 // Member management
 router.get('/:id/members', organizationController.getMembers.bind(organizationController));
 
-// Invite users (requires admin or owner)
+// Invite users (requires admin or owner, checks user limit)
 router.post(
   '/:id/invite',
   requireAdmin,
+  checkResourceLimit('users', 1),
   organizationController.inviteUser.bind(organizationController)
 );
 
-// Accept invitation (any authenticated user)
+// Accept invitation (any authenticated user, checks user limit)
 router.post(
   '/accept-invitation',
+  checkResourceLimit('users', 1),
   organizationController.acceptInvitation.bind(organizationController)
 );
 

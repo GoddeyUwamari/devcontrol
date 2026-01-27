@@ -6,7 +6,7 @@ export function ConnectionIndicator() {
   const { isConnected } = useWebSocket();
 
   return (
-    <div className="fixed bottom-4 right-4 flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs shadow-lg z-50">
+    <div className="fixed bottom-4 left-4 flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs shadow-lg z-50">
       <div
         className={`h-2 w-2 rounded-full ${
           isConnected

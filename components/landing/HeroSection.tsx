@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Sparkles, ArrowRight, Play, Check } from 'lucide-react'
+import { Sparkles, ArrowRight, Play, Check, ChevronDown, Star } from 'lucide-react'
 import { DashboardPreview } from './DashboardPreview'
 import { AnimatedBackground } from './AnimatedBackground'
 
@@ -25,8 +25,24 @@ export function HeroSection() {
       {/* Content Container */}
       <div className="container mx-auto px-4 relative z-10">
         <div className="max-w-4xl mx-auto text-center">
+          {/* Social Proof Badge */}
+          <div className="flex justify-center mb-4 animate-in fade-in slide-in-from-top-4 duration-700">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm rounded-full border shadow-sm">
+              <div className="flex items-center text-blue-500">
+                <Star className="h-4 w-4 fill-current" />
+                <Star className="h-4 w-4 fill-current" />
+                <Star className="h-4 w-4 fill-current" />
+                <Star className="h-4 w-4 fill-current" />
+                <Star className="h-4 w-4 fill-current" />
+              </div>
+              <span className="text-sm font-medium text-gray-700">
+                Trusted by 500+ engineering teams
+              </span>
+            </div>
+          </div>
+
           {/* Announcement Badge */}
-          <div className="flex justify-center mb-6 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="flex justify-center mb-6 animate-in fade-in slide-in-from-top-4 duration-700 delay-100">
             <Badge
               variant="outline"
               className="py-2 px-4 border-[#635BFF]/20 hover:border-[#635BFF]/40 transition-colors cursor-pointer"
@@ -37,6 +53,11 @@ export function HeroSection() {
             </Badge>
           </div>
 
+          {/* Eyebrow Text */}
+          <p className="text-sm font-semibold text-[#635BFF] uppercase tracking-wide mb-4 animate-in fade-in duration-700 delay-150">
+            For Platform Engineers
+          </p>
+
           {/* Main Heading */}
           <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 animate-in fade-in zoom-in duration-1000 delay-200">
             Your AWS Infrastructure,
@@ -45,10 +66,12 @@ export function HeroSection() {
             </span>
           </h1>
 
-          {/* Description */}
+          {/* Description - Outcome focused */}
           <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto mb-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-400">
-            Monitor services, track deployments, and optimize AWS costs in one beautiful dashboard.
-            Built for platform engineering teams.
+            Cut AWS costs by 30%, deploy 2x faster, and sleep better at night.
+            <span className="block mt-2 text-lg">
+              Join 500+ teams saving $2,400/month on average.
+            </span>
           </p>
 
           {/* CTAs */}
@@ -93,6 +116,17 @@ export function HeroSection() {
         {/* Dashboard Preview */}
         <div className="mt-16 animate-in fade-in zoom-in duration-1000 delay-1000">
           <DashboardPreview />
+        </div>
+
+        {/* Scroll Indicator */}
+        <div className="flex justify-center mt-12 animate-in fade-in duration-1000 delay-1200">
+          <a
+            href="#how-it-works"
+            className="flex flex-col items-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer group"
+          >
+            <span className="text-sm mb-2">See how it works</span>
+            <ChevronDown className="h-5 w-5 animate-bounce" />
+          </a>
         </div>
       </div>
     </section>

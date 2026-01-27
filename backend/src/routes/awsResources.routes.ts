@@ -4,6 +4,7 @@ import { AWSResourcesController } from '../controllers/awsResources.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
+import { checkDiscoveryLimit, requireTier } from '../middleware/subscription.middleware';
 import { TaggingComplianceService } from '../services/taggingCompliance.service';
 import { AWSTaggingService } from '../services/awsTagging.service';
 
@@ -24,15 +25,15 @@ router.get('/stats', authenticate, (req, res, next) => controller.getStats(req, 
 
 /**
  * GET /api/aws-resources/compliance
- * Get all compliance issues
+ * Get all compliance issues (Pro+ feature)
  */
-router.get('/compliance', authenticate, (req, res, next) => controller.getComplianceIssues(req, res, next));
+router.get('/compliance', authenticate, requireTier('pro'), (req, res, next) => controller.getComplianceIssues(req, res, next));
 
 /**
  * GET /api/aws-resources/orphaned
- * Get orphaned resources
+ * Get orphaned resources (Starter+ feature)
  */
-router.get('/orphaned', authenticate, (req, res, next) => controller.getOrphaned(req, res, next));
+router.get('/orphaned', authenticate, requireTier('starter'), (req, res, next) => controller.getOrphaned(req, res, next));
 
 /**
  * GET /api/aws-resources/discovery/jobs
@@ -42,9 +43,9 @@ router.get('/discovery/jobs', authenticate, (req, res, next) => controller.getDi
 
 /**
  * POST /api/aws-resources/discover
- * Trigger resource discovery scan (Admin only, rate limited to 10/hour)
+ * Trigger resource discovery scan (Admin only, rate limited to 10/hour, resource limit enforced)
  */
-router.post('/discover', authenticate, requireAdmin, discoveryRateLimiter, (req, res, next) => controller.discover(req, res, next));
+router.post('/discover', authenticate, requireAdmin, checkDiscoveryLimit, discoveryRateLimiter, (req, res, next) => controller.discover(req, res, next));
 
 /**
  * GET /api/aws-resources/:id
@@ -60,10 +61,16 @@ router.get('/:id', authenticate, (req, res, next) => controller.getById(req, res
 router.delete('/:id', authenticate, requireAdmin, (req, res, next) => controller.delete(req, res, next));
 
 /**
- * GET /api/aws-resources/tagging-compliance
- * Get tagging compliance report
+ * POST /api/aws-resources/export
+ * Export AWS resources to CSV or PDF (Starter+ feature)
  */
-router.get('/tagging-compliance', authenticate, async (req, res) => {
+router.post('/export', authenticate, requireTier('starter'), (req, res, next) => controller.exportResources(req, res, next));
+
+/**
+ * GET /api/aws-resources/tagging-compliance
+ * Get tagging compliance report (Pro+ feature)
+ */
+router.get('/tagging-compliance', authenticate, requireTier('pro'), async (req, res) => {
   try {
     const organizationId = (req as any).user?.organization_id;
 

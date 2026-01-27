@@ -88,7 +88,7 @@ function TimelineItem({ entry }: { entry: TimelineEntry }) {
 
   const environmentBadges = {
     production: 'bg-green-100 text-green-700 border-green-200',
-    staging: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    staging: 'bg-blue-100 text-blue-700 border-blue-200',
     development: 'bg-blue-100 text-blue-700 border-blue-200',
   }
 
@@ -113,7 +113,7 @@ function TimelineItem({ entry }: { entry: TimelineEntry }) {
         </div>
 
         <div className="space-y-1.5">
-          <h4 className="font-semibold text-sm text-gray-900">{entry.service}</h4>
+          <h3 className="font-semibold text-sm text-gray-900">{entry.service}</h3>
 
           <div className="flex items-center gap-3 text-xs text-gray-600">
             <div className="flex items-center gap-1">

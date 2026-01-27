@@ -134,14 +134,14 @@ export function ROIHero({ demoMode = false, realData }: ROIHeroProps) {
       </div>
 
       {/* ROI Calculation Callout */}
-      <Card className="border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50">
+      <Card className="border-2 border-blue-500 bg-gradient-to-r from-blue-50 to-blue-100">
         <CardContent className="py-4">
           <div className="flex items-center justify-center gap-3 text-center">
             <span className="text-3xl">💡</span>
             <div>
-              <p className="text-lg font-semibold text-amber-900">
+              <p className="text-lg font-semibold text-blue-900">
                 That's{' '}
-                <span className="text-2xl font-bold text-amber-600">
+                <span className="text-2xl font-bold text-blue-700">
                   ${annualSavings.toLocaleString()}/year
                 </span>{' '}
                 savings for{' '}
@@ -150,7 +150,7 @@ export function ROIHero({ demoMode = false, realData }: ROIHeroProps) {
                 </span>{' '}
                 cost
               </p>
-              <p className="text-3xl font-bold text-amber-700 mt-1">
+              <p className="text-3xl font-bold text-blue-900 mt-1">
                 {roiMultiplier}x ROI on your DevControl subscription
               </p>
             </div>

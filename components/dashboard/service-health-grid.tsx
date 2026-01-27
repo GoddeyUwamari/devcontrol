@@ -52,9 +52,9 @@ const statusConfig = {
   warning: {
     icon: '⚠️',
     label: 'Warning',
-    color: 'text-yellow-600',
-    bgColor: 'bg-yellow-100',
-    borderColor: 'border-yellow-200',
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-100',
+    borderColor: 'border-blue-200',
   },
   critical: {
     icon: '●',
@@ -93,10 +93,10 @@ function ServiceCard({
 
   // Build dynamic className based on status
   const cardClassName = `
-    shadow-sm border border-gray-200 transition-all duration-200
-    ${onClick ? 'cursor-pointer hover:shadow-xl hover:-translate-y-1 hover:ring-2 hover:ring-blue-500/20' : ''}
+    shadow-sm border border-gray-200 transition-shadow
+    ${onClick ? 'cursor-pointer hover:shadow-md' : ''}
     ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200 bg-red-50/30' : ''}
-    ${service.status === 'warning' ? 'border-yellow-200 bg-yellow-50/20' : ''}
+    ${service.status === 'warning' ? 'border-blue-200 bg-blue-50/20' : ''}
     ${status.borderColor} border-l-4
   `.trim();
 
@@ -138,7 +138,7 @@ function ServiceCard({
                   service.status === 'healthy'
                     ? 'bg-green-500'
                     : service.status === 'warning'
-                    ? 'bg-yellow-500'
+                    ? 'bg-blue-500'
                     : service.status === 'critical'
                     ? 'bg-red-500 animate-pulse'
                     : 'bg-gray-400'
@@ -214,7 +214,7 @@ function ServiceListItem({
     flex items-center gap-4 p-4 border rounded-lg shadow-sm transition-all duration-200
     ${onClick ? 'cursor-pointer hover:bg-gray-50 hover:shadow-xl hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20' : ''}
     ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200 bg-red-50/30' : ''}
-    ${service.status === 'warning' ? 'border-yellow-200 bg-yellow-50/20' : 'border-gray-200'}
+    ${service.status === 'warning' ? 'border-blue-200 bg-blue-50/20' : 'border-gray-200'}
     ${status.borderColor} border-l-4
   `.trim();
 
@@ -245,7 +245,7 @@ function ServiceListItem({
                   service.status === 'healthy'
                     ? 'bg-green-500'
                     : service.status === 'warning'
-                    ? 'bg-yellow-500'
+                    ? 'bg-blue-500'
                     : service.status === 'critical'
                     ? 'bg-red-500 animate-pulse'
                     : 'bg-gray-400'

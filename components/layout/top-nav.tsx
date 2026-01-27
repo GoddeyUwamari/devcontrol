@@ -78,7 +78,7 @@ export function TopNav() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
-      <div className="max-w-[1920px] mx-auto flex h-16 items-center px-4 md:px-6 lg:px-8">
+      <div className="max-w-[1920px] mx-auto flex h-22 items-center px-4 md:px-6 lg:px-8">
         {/* Left: Logo + Navigation */}
         <div className="flex items-center gap-2 lg:gap-6">
           {/* Logo */}
@@ -86,8 +86,8 @@ export function TopNav() {
             href="/dashboard"
             className="flex items-center gap-2 font-semibold shrink-0"
           >
-            <div className="w-8 h-8 rounded-md bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
-              <span className="text-white text-sm font-bold">DC</span>
+            <div className="w-10 h-10 rounded-md bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
+              <span className="text-white text-xl font-bold">DC</span>
             </div>
             <span className="hidden lg:inline-block text-xl">DevControl</span>
           </Link>
