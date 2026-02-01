@@ -132,6 +132,13 @@ export const appNav: NavGroup = {
           badge: 'AI',
           description: 'AI-powered anomaly detection and alerting',
         },
+        {
+          label: 'Cost Forecast',
+          href: '/forecast',
+          icon: TrendingUp,
+          badge: 'AI',
+          description: 'AI-powered cost predictions and scenario planning',
+        },
       ],
     },
   ],

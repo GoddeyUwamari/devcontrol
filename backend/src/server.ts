@@ -25,6 +25,7 @@ import { WeeklyAISummaryJob } from './jobs/weekly-ai-summary.job';
 import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
+import { createForecastRoutes } from './routes/forecast.routes';
 
 dotenv.config();
 
@@ -256,6 +257,10 @@ anomalyRouter.patch('/:id/false-positive', async (req, res) => {
 
 app.use('/api/anomalies', anomalyRouter);
 console.log('[Anomaly Detection] Routes registered');
+
+// Forecast routes
+app.use('/api/forecast', createForecastRoutes(pool));
+console.log('[Forecast] Routes registered');
 
 // 404 handler
 app.use(notFoundHandler);

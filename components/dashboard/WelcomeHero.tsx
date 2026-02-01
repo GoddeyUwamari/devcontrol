@@ -37,9 +37,19 @@ export function WelcomeHero() {
               </span>
             </h1>
 
-            {/* Description */}
-            <p className="mx-auto lg:mx-0 mb-8 max-w-xl text-lg leading-relaxed text-gray-600">
-              Your AWS infrastructure command center. Monitor services, track deployments, optimize costs, and ensure security — all in one powerful dashboard.
+            {/* Description - Subheadline 1 */}
+            <p className="mx-auto lg:mx-0 mb-4 max-w-xl text-xl leading-relaxed text-gray-700">
+              Your AI-powered AWS infrastructure command center for engineering teams scaling from 5 to 500 engineers.
+            </p>
+
+            {/* Description - Subheadline 2 */}
+            <p className="mx-auto lg:mx-0 mb-6 max-w-xl text-lg leading-relaxed text-gray-600">
+              Monitor services, track deployments, optimize costs, ensure security, and centralize team governance—all in one powerful dashboard.
+            </p>
+
+            {/* Closing Line - Benefits */}
+            <p className="mx-auto lg:mx-0 mb-8 max-w-xl text-xl font-semibold text-gray-900">
+              Ship faster. Spend less. Reduce risk.
             </p>
 
             {/* CTAs */}

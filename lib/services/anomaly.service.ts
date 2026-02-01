@@ -1,4 +1,5 @@
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
+import { demoModeService } from './demo-mode.service';
 
 class AnomalyService {
   private baseUrl = process.env.NEXT_PUBLIC_API_URL
@@ -27,6 +28,33 @@ class AnomalyService {
     anomalies: AnomalyDetection[];
     stats: AnomalyStats;
   }> {
+    // Return demo data if demo mode is enabled
+    if (demoModeService.isEnabled()) {
+      const anomalies = demoModeService.getDemoAnomalies() as AnomalyDetection[];
+      const filteredAnomalies = status === 'all'
+        ? anomalies
+        : anomalies.filter(a => a.status === 'active');
+
+      const stats: AnomalyStats = {
+        total: filteredAnomalies.length,
+        active: filteredAnomalies.filter(a => a.status === 'active').length,
+        bySeverity: {
+          info: filteredAnomalies.filter(a => a.severity === 'info').length,
+          warning: filteredAnomalies.filter(a => a.severity === 'warning').length,
+          critical: filteredAnomalies.filter(a => a.severity === 'critical').length,
+        },
+        byType: {
+          cpu_spike: filteredAnomalies.filter(a => a.type === 'cpu_spike').length,
+          invocation_spike: filteredAnomalies.filter(a => a.type === 'invocation_spike').length,
+          cost_spike: filteredAnomalies.filter(a => a.type === 'cost_spike').length,
+        },
+        mttr: 2.5,
+        falsePositiveRate: 0.05,
+      };
+
+      return { anomalies: filteredAnomalies, stats };
+    }
+
     const url = status === 'all'
       ? `${this.baseUrl}?status=all`
       : this.baseUrl;

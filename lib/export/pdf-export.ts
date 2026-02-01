@@ -104,7 +104,7 @@ export async function exportDependencyReport(
     // Stats cards layout
     const cardWidth = contentWidth / 2 - 0.1;
     const cardHeight = 0.8;
-    let cardX = margin;
+    const cardX = margin;
     let cardY = yPosition;
 
     // Helper to draw stat card

@@ -20,13 +20,7 @@ export class AnomalyRepository {
         title, description, ai_explanation, impact, recommendation, confidence,
         status
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-      ON CONFLICT (id) DO UPDATE SET
-        current_value = EXCLUDED.current_value,
-        deviation = EXCLUDED.deviation,
-        detected_at = EXCLUDED.detected_at,
-        ai_explanation = EXCLUDED.ai_explanation,
-        impact = EXCLUDED.impact,
-        recommendation = EXCLUDED.recommendation
+      ON CONFLICT ON CONSTRAINT unique_active_anomaly DO NOTHING
     `;
 
     const client = await this.pool.connect();
