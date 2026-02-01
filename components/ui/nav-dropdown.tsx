@@ -35,6 +35,14 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
     );
   }, [group, pathname]);
 
+  // Determine number of columns based on sections
+  const sectionCount = group.sections?.length || 0;
+  const isThreeColumn = sectionCount >= 3;
+  const isTwoColumn = sectionCount === 2;
+
+  // Check if section is AI Features for special styling
+  const isAISection = (label: string) => label.toLowerCase().includes('ai');
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -54,70 +62,118 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
 
       <DropdownMenuContent
         className={cn(
-          'px-4 py-6 shadow-xl border border-gray-200 dark:border-gray-800',
-          group.sections ? 'w-[720px]' : 'w-[400px]'
+          'p-6 shadow-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950',
+          isThreeColumn && 'w-[920px]',
+          isTwoColumn && 'w-[640px]',
+          !group.sections && 'w-[380px]'
         )}
         align="start"
         sideOffset={8}
       >
         {group.sections ? (
-          // Multi-section dropdown (like Platform, Solutions)
-          <div className="grid grid-cols-2 gap-8">
-            {group.sections.map((section, idx) => (
-              <div key={idx} className="space-y-2">
-                {section.label && (
-                  <DropdownMenuLabel className="text-xs uppercase text-gray-500 dark:text-gray-400 font-semibold tracking-wider px-2 pb-2">
-                    {section.label}
-                  </DropdownMenuLabel>
-                )}
-                <div className="space-y-2">
-                  {section.items.map((item) => {
-                    const isActive =
-                      pathname === item.href ||
-                      pathname.startsWith(item.href + '/');
-                    const Icon = item.icon;
+          // Multi-section dropdown (Platform, Solutions)
+          <div
+            className={cn(
+              'grid gap-8',
+              isThreeColumn && 'grid-cols-3',
+              isTwoColumn && 'grid-cols-2'
+            )}
+          >
+            {group.sections.map((section, idx) => {
+              const isAI = isAISection(section.label);
 
-                    return (
-                      <DropdownMenuItem key={item.href} asChild className="p-0">
-                        <Link
-                          href={item.href}
-                          className={cn(
-                            'flex items-start gap-4 p-4 rounded-lg cursor-pointer transition-all duration-200 w-full',
-                            'hover:bg-gray-50 dark:hover:bg-gray-800/50',
-                            isActive && 'bg-blue-50 dark:bg-blue-900/20'
-                          )}
+              return (
+                <div key={idx} className="space-y-1">
+                  {section.label && (
+                    <DropdownMenuLabel
+                      className={cn(
+                        'text-xs uppercase font-semibold tracking-wider px-2 pb-3',
+                        isAI
+                          ? 'text-purple-600 dark:text-purple-400'
+                          : 'text-gray-500 dark:text-gray-400'
+                      )}
+                    >
+                      {section.label}
+                    </DropdownMenuLabel>
+                  )}
+                  <div className="space-y-1">
+                    {section.items.map((item) => {
+                      const isActive =
+                        pathname === item.href ||
+                        pathname.startsWith(item.href + '/');
+                      const Icon = item.icon;
+                      const hasAIBadge =
+                        item.badge === 'AI' || item.badge === 'New';
+
+                      return (
+                        <DropdownMenuItem
+                          key={item.href}
+                          asChild
+                          className="p-0"
                         >
-                          {Icon && (
-                            <div className="w-11 h-11 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                              <Icon className="w-5 h-5 text-primary" />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-base text-foreground flex items-center gap-2">
-                              {item.label}
-                              {item.badge && (
-                                <span className="px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded-full">
-                                  {item.badge}
-                                </span>
+                          <Link
+                            href={item.href}
+                            className={cn(
+                              'flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all duration-200 w-full group',
+                              'hover:bg-gray-50 dark:hover:bg-gray-800/50',
+                              isActive && 'bg-blue-50 dark:bg-blue-900/20'
+                            )}
+                          >
+                            {Icon && (
+                              <div
+                                className={cn(
+                                  'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors',
+                                  isAI
+                                    ? 'bg-purple-100 dark:bg-purple-900/30 group-hover:bg-purple-200 dark:group-hover:bg-purple-900/50'
+                                    : 'bg-gray-100 dark:bg-gray-800 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30'
+                                )}
+                              >
+                                <Icon
+                                  className={cn(
+                                    'w-4.5 h-4.5',
+                                    isAI
+                                      ? 'text-purple-600 dark:text-purple-400'
+                                      : 'text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'
+                                  )}
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm text-foreground flex items-center gap-2">
+                                {item.label}
+                                {item.badge && (
+                                  <span
+                                    className={cn(
+                                      'px-1.5 py-0.5 text-[10px] font-semibold rounded',
+                                      item.badge === 'New'
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                        : item.badge === 'AI'
+                                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                    )}
+                                  >
+                                    {item.badge}
+                                  </span>
+                                )}
+                              </div>
+                              {item.description && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed line-clamp-1">
+                                  {item.description}
+                                </p>
                               )}
                             </div>
-                            {item.description && (
-                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 leading-relaxed line-clamp-2">
-                                {item.description}
-                              </p>
-                            )}
-                          </div>
-                        </Link>
-                      </DropdownMenuItem>
-                    );
-                  })}
+                          </Link>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           // Simple list dropdown (like Resources)
-          <div className="space-y-2">
+          <div className="space-y-1">
             {group.items?.map((item) => {
               const isActive =
                 pathname === item.href ||
@@ -129,22 +185,22 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
                   <Link
                     href={item.href}
                     className={cn(
-                      'flex items-start gap-4 p-4 rounded-lg cursor-pointer transition-all duration-200 w-full',
+                      'flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all duration-200 w-full group',
                       'hover:bg-gray-50 dark:hover:bg-gray-800/50',
                       isActive && 'bg-blue-50 dark:bg-blue-900/20'
                     )}
                   >
                     {Icon && (
-                      <div className="w-11 h-11 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <Icon className="w-5 h-5 text-primary" />
+                      <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+                        <Icon className="w-4.5 h-4.5 text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-base text-foreground">
+                      <div className="font-medium text-sm text-foreground">
                         {item.label}
                       </div>
                       {item.description && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
                           {item.description}
                         </p>
                       )}
@@ -153,6 +209,28 @@ export function NavDropdown({ group, className = '' }: NavDropdownProps) {
                 </DropdownMenuItem>
               );
             })}
+          </div>
+        )}
+
+        {/* Bottom CTA for Platform dropdown */}
+        {group.label === 'Platform' && (
+          <div className="mt-6 pt-5 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  Ready to get started?
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Connect your AWS account in minutes
+                </p>
+              </div>
+              <Link
+                href="/settings/organization"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Get Started
+              </Link>
+            </div>
           </div>
         )}
       </DropdownMenuContent>

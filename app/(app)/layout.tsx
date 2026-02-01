@@ -41,29 +41,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         Skip to main content
       </a>
 
-      {/* Announcement Bar */}
-      <AnnouncementBar
-        message="🚀 Limited Time Offer: Get 20% off annual plans!"
-        linkText="Learn More"
-        linkHref="/pricing"
-      />
+      {/* Sticky Header Container - Includes announcement, nav, and breadcrumbs */}
+      <div className="sticky top-0 z-50">
+        {/* Announcement Bar */}
+        <AnnouncementBar
+          message="🚀 Limited Time Offer: Get 20% off annual plans!"
+          linkText="Learn More"
+          linkHref="/pricing"
+        />
 
-      {/* Top Navigation - Shows on all authenticated pages */}
-      <header role="banner">
-        <TopNav />
-      </header>
+        {/* Top Navigation - Shows on all authenticated pages */}
+        <header role="banner">
+          <TopNav />
+        </header>
 
-      {/* Breadcrumb Navigation */}
-      {breadcrumbs.length > 0 && (
-        <nav
-          aria-label="Breadcrumb"
-          className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
-        >
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
-            <Breadcrumb items={breadcrumbs} />
-          </div>
-        </nav>
-      )}
+        {/* Breadcrumb Navigation */}
+        {breadcrumbs.length > 0 && (
+          <nav
+            aria-label="Breadcrumb"
+            className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
+          >
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
+              <Breadcrumb items={breadcrumbs} />
+            </div>
+          </nav>
+        )}
+      </div>
 
       {/* Main Content Area */}
       <main id="main-content" role="main" tabIndex={-1}>
