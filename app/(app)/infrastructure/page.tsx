@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Server, AlertCircle, Database, HardDrive, Cloud, Zap, Globe, Network, RefreshCw, TrendingDown, Shield } from 'lucide-react'
 import { toast } from 'sonner'
@@ -229,8 +230,37 @@ function EmptyState() {
 }
 
 export default function InfrastructurePage() {
-  const [resourceFilter, setResourceFilter] = useState<ResourceFilter>('all')
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
+
+  // Initialize from URL params
+  const [resourceFilter, setResourceFilter] = useState<ResourceFilter>(
+    (searchParams.get('resourceType') as ResourceFilter) || 'all'
+  )
+
+  // Sync URL params to state
+  useEffect(() => {
+    const urlType = searchParams.get('resourceType') as ResourceFilter
+    if (urlType && urlType !== resourceFilter) {
+      setResourceFilter(urlType)
+    }
+  }, [searchParams])
+
+  // Update URL when filter changes
+  const handleFilterChange = (filter: ResourceFilter) => {
+    setResourceFilter(filter)
+
+    const params = new URLSearchParams(searchParams.toString())
+    if (filter === 'all') {
+      params.delete('resourceType')
+    } else {
+      params.set('resourceType', filter)
+    }
+
+    const queryString = params.toString()
+    router.push(`/infrastructure${queryString ? `?${queryString}` : ''}`)
+  }
 
   const { data: resources = [], isLoading, error, refetch } = useQuery({
     queryKey: ['infrastructure', resourceFilter],
@@ -395,7 +425,7 @@ export default function InfrastructurePage() {
       </div>
 
       <div className="flex items-center gap-4">
-        <Select value={resourceFilter} onValueChange={(value: ResourceFilter) => setResourceFilter(value)}>
+        <Select value={resourceFilter} onValueChange={handleFilterChange}>
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="Filter by type" />
           </SelectTrigger>

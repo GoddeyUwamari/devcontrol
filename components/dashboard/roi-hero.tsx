@@ -40,12 +40,12 @@ export function ROIHero({ demoMode = false, realData }: ROIHeroProps) {
   const annualCost = 5988; // $499/mo * 12
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 lg:space-y-8">
       {/* Giant ROI Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
         {/* Cost Savings */}
-        <Card className="border-2 border-green-200 bg-green-50/50 hover:shadow-lg transition-all">
-          <CardContent className="pt-6">
+        <Card className="border-2 border-green-200 bg-white dark:bg-gray-900 hover:shadow-xl transition-all duration-200 rounded-xl">
+          <CardContent className="p-6 lg:p-8">
             <div className="flex items-start justify-between mb-3">
               <div>
                 <p className="text-sm font-medium text-green-700 mb-1">
@@ -73,8 +73,8 @@ export function ROIHero({ demoMode = false, realData }: ROIHeroProps) {
         </Card>
 
         {/* Time Saved */}
-        <Card className="border-2 border-blue-200 bg-blue-50/50 hover:shadow-lg transition-all">
-          <CardContent className="pt-6">
+        <Card className="border-2 border-blue-200 bg-white dark:bg-gray-900 hover:shadow-xl transition-all duration-200 rounded-xl">
+          <CardContent className="p-6 lg:p-8">
             <div className="flex items-start justify-between mb-3">
               <div>
                 <p className="text-sm font-medium text-blue-700 mb-1">
@@ -104,8 +104,8 @@ export function ROIHero({ demoMode = false, realData }: ROIHeroProps) {
         </Card>
 
         {/* Security */}
-        <Card className="border-2 border-emerald-200 bg-emerald-50/50 hover:shadow-lg transition-all">
-          <CardContent className="pt-6">
+        <Card className="border-2 border-emerald-200 bg-white dark:bg-gray-900 hover:shadow-xl transition-all duration-200 rounded-xl">
+          <CardContent className="p-6 lg:p-8">
             <div className="flex items-start justify-between mb-3">
               <div>
                 <p className="text-sm font-medium text-emerald-700 mb-1">
@@ -134,8 +134,8 @@ export function ROIHero({ demoMode = false, realData }: ROIHeroProps) {
       </div>
 
       {/* ROI Calculation Callout */}
-      <Card className="border-2 border-blue-500 bg-gradient-to-r from-blue-50 to-blue-100">
-        <CardContent className="py-4">
+      <Card className="border-2 border-blue-500 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-100">
+        <CardContent className="py-8 lg:py-10">
           <div className="flex items-center justify-center gap-3 text-center">
             <span className="text-3xl">💡</span>
             <div>

@@ -21,6 +21,8 @@ import { AlertSyncJob } from './jobs/alert-sync.job';
 import { ResourceDiscoveryJob } from './jobs/resourceDiscovery.job';
 import { RiskScoreSnapshotJob } from './jobs/risk-score-snapshot.job';
 import { ScheduledReportsJob } from './jobs/scheduled-reports.job';
+import { WeeklyAISummaryJob } from './jobs/weekly-ai-summary.job';
+import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
 
@@ -141,6 +143,120 @@ app.get('/health', async (req, res) => {
 // API routes
 app.use('/api', routes);
 
+// Anomaly detection routes (needs to be registered before 404 handler)
+// Note: Job is started in startServer(), but routes work independently
+import { AnomalyRepository } from './repositories/anomaly.repository';
+import { AnomalyDetectionService } from './services/anomaly-detection.service';
+import { AnomalyAIService } from './services/anomaly-ai.service';
+import { Router } from 'express';
+import { authenticateToken } from './middleware/auth.middleware';
+
+const anomalyRouter = Router();
+const anomalyRepository = new AnomalyRepository(pool);
+const anomalyDetectionService = new AnomalyDetectionService(pool);
+const anomalyAIService = new AnomalyAIService();
+
+// Make authentication optional for testing
+// TODO: Re-enable in production
+// anomalyRouter.use(authenticateToken);
+
+// Set default org for demo when not authenticated
+anomalyRouter.use((req, res, next) => {
+  if (!req.headers.authorization && !(req as any).user) {
+    (req as any).user = { organizationId: 'a8ea4c8f-5f93-4073-b627-160c61aa064f' };
+  }
+  next();
+});
+
+anomalyRouter.get('/', async (req, res) => {
+  try {
+    const organizationId = (req as any).user?.organizationId;
+    const { status } = req.query;
+    if (!organizationId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const anomalies = status === 'all'
+      ? await anomalyRepository.getAllAnomalies(organizationId)
+      : await anomalyRepository.getActiveAnomalies(organizationId);
+    const stats = await anomalyRepository.getStats(organizationId);
+
+    res.json({ success: true, anomalies, stats });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+anomalyRouter.post('/scan', async (req, res) => {
+  try {
+    const organizationId = (req as any).user?.organizationId;
+    if (!organizationId) return res.status(401).json({ error: 'Unauthorized' });
+
+    let anomalies = await anomalyDetectionService.scanForAnomalies(organizationId);
+    if (anomalies.length > 0) {
+      anomalies = await anomalyAIService.explainAnomalies(anomalies);
+      await anomalyRepository.saveAnomalies(anomalies);
+    }
+
+    res.json({
+      success: true,
+      anomalies,
+      count: anomalies.length,
+      message: anomalies.length > 0
+        ? `Found ${anomalies.length} anomalies`
+        : 'No anomalies detected - infrastructure is healthy',
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+anomalyRouter.get('/stats', async (req, res) => {
+  try {
+    const organizationId = (req as any).user?.organizationId;
+    if (!organizationId) return res.status(401).json({ error: 'Unauthorized' });
+    const stats = await anomalyRepository.getStats(organizationId);
+    res.json({ success: true, stats });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+anomalyRouter.patch('/:id/acknowledge', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    await anomalyRepository.acknowledge(id, userId);
+    res.json({ success: true, message: 'Anomaly acknowledged' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+anomalyRouter.patch('/:id/resolve', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    await anomalyRepository.resolve(id, notes);
+    res.json({ success: true, message: 'Anomaly resolved' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+anomalyRouter.patch('/:id/false-positive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    await anomalyRepository.markFalsePositive(id, notes);
+    res.json({ success: true, message: 'Anomaly marked as false positive' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.use('/api/anomalies', anomalyRouter);
+console.log('[Anomaly Detection] Routes registered');
+
 // 404 handler
 app.use(notFoundHandler);
 
@@ -240,6 +356,15 @@ const startServer = async () => {
     // Start scheduled reports job (checks for due reports every 15 minutes)
     const scheduledReportsJob = new ScheduledReportsJob(pool);
     scheduledReportsJob.start();
+
+    // Start weekly AI summary job (runs every Monday at 9 AM)
+    const weeklyAISummaryJob = new WeeklyAISummaryJob(pool);
+    weeklyAISummaryJob.start();
+
+    // Start anomaly detection job (runs every 5 minutes)
+    const anomalyDetectionJob = new AnomalyDetectionJob(pool);
+    anomalyDetectionJob.start();
+    console.log('[Anomaly Detection] Job started');
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);

@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { RiskTrackingService } from '../services/risk-tracking.service';
 import { RiskScoreController } from '../controllers/risk-score.controller';
 import { authenticate } from '../middleware/auth.middleware';
+import { requirePro } from '../middleware/subscription.middleware';
 
 const router = Router();
 
@@ -20,16 +21,16 @@ router.use(authenticate);
  * Query parameters:
  * - date_range: 7d | 30d | 90d (default: 30d)
  *
- * Requires: Pro+ subscription (canViewRiskScore)
+ * Requires: Pro+ subscription
  */
-router.get('/trend', (req, res) => controller.getTrend(req, res));
+router.get('/trend', requirePro, (req, res) => controller.getTrend(req, res));
 
 /**
  * GET /api/risk-score/current
  * Get current risk score without historical data
  *
- * Requires: Pro+ subscription (canViewRiskScore)
+ * Requires: Pro+ subscription
  */
-router.get('/current', (req, res) => controller.getCurrent(req, res));
+router.get('/current', requirePro, (req, res) => controller.getCurrent(req, res));
 
 export default router;

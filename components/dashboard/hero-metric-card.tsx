@@ -56,8 +56,8 @@ export function HeroMetricCard({
 
   if (loading) {
     return (
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="border border-gray-200 dark:border-gray-800">
+        <CardContent className="p-6 lg:p-8">
           <div className="flex items-center justify-between mb-2">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-10 w-10 rounded-lg" />
@@ -85,19 +85,19 @@ export function HeroMetricCard({
 
   const statusColors = {
     success: 'bg-green-100 text-green-700 border-green-200',
-    warning: 'bg-blue-100 text-blue-700 border-blue-200',
+    warning: 'bg-yellow-100 text-yellow-700 border-yellow-200',
     error: 'bg-red-100 text-red-700 border-red-200',
     info: 'bg-blue-100 text-blue-700 border-blue-200',
   };
 
   return (
     <Card
-      className={`transition-all hover:shadow-lg ${
+      className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-xl transition-all duration-200 rounded-xl ${
         isClickable ? 'cursor-pointer hover:-translate-y-1' : ''
       }`}
       onClick={isClickable ? handleClick : undefined}
     >
-      <CardContent className="pt-6">
+      <CardContent className="p-6 lg:p-8">
         {/* Header Row */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">

@@ -151,6 +151,16 @@ export class AuthController {
         data: user,
       });
     } catch (error: any) {
+      // If user not found, return 401 so frontend knows to logout
+      // This handles cases where token is valid but user was deleted
+      if (error.message === 'User not found') {
+        res.status(401).json({
+          success: false,
+          error: 'User not found',
+          code: 'USER_NOT_FOUND',
+        });
+        return;
+      }
       res.status(400).json({
         success: false,
         error: error.message || 'Failed to get user info',

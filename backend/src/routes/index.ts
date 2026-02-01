@@ -21,6 +21,11 @@ import prometheusRoutes from './prometheus.routes';
 import riskScoreRoutes from './risk-score.routes';
 import scheduledReportsRoutes from './scheduled-reports.routes';
 import complianceFrameworksRoutes from './compliance-frameworks.routes';
+import aiInsightsRoutes from './ai-insights.routes';
+import aiChatRoutes from './ai-chat.routes';
+import nlQueryRoutes from './nl-query.routes';
+import aiReportsRoutes from './ai-reports.routes';
+import optimizationRoutes from './optimization.routes';
 
 const router = Router();
 
@@ -50,6 +55,11 @@ router.use('/prometheus', prometheusRoutes);
 router.use('/risk-score', riskScoreRoutes);
 router.use('/scheduled-reports', scheduledReportsRoutes);
 router.use('/compliance-frameworks', complianceFrameworksRoutes);
+router.use('/ai-insights', aiInsightsRoutes);
+router.use('/ai-chat', aiChatRoutes);
+router.use('/nl-query', nlQueryRoutes);
+router.use('/ai-reports', aiReportsRoutes);
+router.use('/optimizations', optimizationRoutes);
 router.use('/', logsRoutes);
 
 // API root
@@ -80,6 +90,11 @@ router.get('/', (req, res) => {
       riskScore: '/api/risk-score',
       scheduledReports: '/api/scheduled-reports',
       complianceFrameworks: '/api/compliance-frameworks',
+      aiInsights: '/api/ai-insights',
+      aiChat: '/api/ai-chat',
+      nlQuery: '/api/nl-query',
+      aiReports: '/api/ai-reports',
+      optimizations: '/api/optimizations',
       logs: '/api/logs',
     },
   });

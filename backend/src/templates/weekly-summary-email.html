@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevControl Weekly Summary</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #374151;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f9fafb;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    .header {
+      border-bottom: 3px solid #635BFF;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+    }
+    .header h1 {
+      margin: 0 0 4px 0;
+      color: #111827;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .header p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .greeting {
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+    .section {
+      margin-bottom: 24px;
+      padding: 20px;
+      border-left: 4px solid #e5e7eb;
+      background: #f9fafb;
+      border-radius: 0 8px 8px 0;
+    }
+    .section.cost {
+      border-left-color: #10b981;
+      background: #ecfdf5;
+    }
+    .section.alert {
+      border-left-color: #f59e0b;
+      background: #fffbeb;
+    }
+    .section.dora {
+      border-left-color: #3b82f6;
+      background: #eff6ff;
+    }
+    .section.recommendation {
+      border-left-color: #8b5cf6;
+      background: #faf5ff;
+    }
+    .section-icon {
+      font-size: 20px;
+      margin-right: 8px;
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 12px 0;
+      color: #111827;
+      display: flex;
+      align-items: center;
+    }
+    .section-content {
+      font-size: 15px;
+      color: #374151;
+      margin: 0;
+    }
+    .savings {
+      display: inline-block;
+      background: #d1fae5;
+      color: #065f46;
+      padding: 6px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 14px;
+      margin-top: 12px;
+    }
+    .cta-container {
+      text-align: center;
+      margin-top: 32px;
+    }
+    .button {
+      display: inline-block;
+      background: #635BFF;
+      color: white !important;
+      padding: 14px 36px;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      transition: background 0.2s;
+    }
+    .button:hover {
+      background: #4f46e5;
+    }
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+    .footer a {
+      color: #6b7280;
+      text-decoration: none;
+    }
+    .footer a:hover {
+      text-decoration: underline;
+    }
+    .divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 24px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Your DevControl Weekly Summary</h1>
+      <p>AI-Powered Infrastructure Insights</p>
+    </div>
+
+    <p class="greeting">Hi {{userName}},</p>
+    <p style="margin-bottom: 24px;">Here's what happened this week:</p>
+
+    <div class="section cost">
+      <div class="section-title">
+        <span class="section-icon">&#128176;</span> COSTS
+      </div>
+      <p class="section-content">{{costSummary}}</p>
+    </div>
+
+    {{#if hasAlerts}}
+    <div class="section alert">
+      <div class="section-title">
+        <span class="section-icon">&#9888;&#65039;</span> ALERTS: {{totalAlerts}} this week
+      </div>
+      <p class="section-content">{{alertSummary}}</p>
+    </div>
+    {{/if}}
+
+    <div class="section dora">
+      <div class="section-title">
+        <span class="section-icon">&#128200;</span> DORA METRICS
+      </div>
+      <p class="section-content">{{doraSummary}}</p>
+    </div>
+
+    <div class="section recommendation">
+      <div class="section-title">
+        <span class="section-icon">&#127919;</span> AI RECOMMENDATION
+      </div>
+      <p class="section-content">{{recommendation}}</p>
+      {{#if estimatedSavings}}
+      <div class="savings">&#128176; Save ${{estimatedSavings}}/month</div>
+      {{/if}}
+    </div>
+
+    <div class="cta-container">
+      <a href="{{dashboardUrl}}" class="button">View Full Dashboard &rarr;</a>
+    </div>
+
+    <div class="footer">
+      <p>This is your weekly automated summary from DevControl.</p>
+      <p style="margin-top: 8px;">
+        <a href="{{unsubscribeUrl}}">Unsubscribe</a> |
+        <a href="{{preferencesUrl}}">Email Preferences</a>
+      </p>
+      <p style="margin-top: 16px; color: #d1d5db;">
+        &copy; {{year}} DevControl. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

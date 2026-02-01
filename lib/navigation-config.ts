@@ -23,6 +23,7 @@ import {
   Shield,
   Zap,
   Building2,
+  Brain,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -109,6 +110,27 @@ export const appNav: NavGroup = {
           href: '/dora-metrics',
           icon: TrendingUp,
           description: 'DevOps performance metrics',
+        },
+        {
+          label: 'AI Reports',
+          href: '/ai-reports',
+          icon: Sparkles,
+          badge: 'New',
+          description: 'AI-powered executive summaries and insights',
+        },
+        {
+          label: 'Cost Optimization',
+          href: '/cost-optimization',
+          icon: DollarSign,
+          badge: 'AI',
+          description: 'Automated cost reduction recommendations',
+        },
+        {
+          label: 'Anomaly Detection',
+          href: '/anomalies',
+          icon: Brain,
+          badge: 'AI',
+          description: 'AI-powered anomaly detection and alerting',
         },
       ],
     },

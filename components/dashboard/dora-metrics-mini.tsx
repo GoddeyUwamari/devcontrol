@@ -55,9 +55,9 @@ const performanceLevelConfig: Record<PerformanceLevel, {
   },
   medium: {
     label: 'Medium',
-    color: 'text-blue-700',
-    bgColor: 'bg-blue-100',
-    borderColor: 'border-blue-200',
+    color: 'text-yellow-700',
+    bgColor: 'bg-yellow-100',
+    borderColor: 'border-yellow-200',
   },
   low: {
     label: 'Low',
@@ -87,8 +87,8 @@ function DORAMetricCard({
 
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="p-5">
+      <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl">
+        <CardContent className="p-6 lg:p-8">
           <div className="space-y-3">
             <Skeleton className="h-8 w-8 rounded-lg" />
             <Skeleton className="h-4 w-32" />
@@ -102,8 +102,8 @@ function DORAMetricCard({
   }
 
   return (
-    <Card className="transition-shadow hover:shadow-md">
-      <CardContent className="p-5">
+    <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-xl transition-all duration-200 rounded-xl">
+      <CardContent className="p-6 lg:p-8">
         {/* Icon */}
         <div className={`h-10 w-10 rounded-lg ${levelConfig.bgColor} flex items-center justify-center mb-3`}>
           <Icon className={`h-5 w-5 ${levelConfig.color}`} />
@@ -123,7 +123,7 @@ function DORAMetricCard({
 
         {/* Value */}
         <div className="mb-3">
-          <p className="text-2xl font-bold">{metric.value}</p>
+          <p className="text-3xl lg:text-4xl font-bold">{metric.value}</p>
         </div>
 
         {/* Performance Level Badge */}
@@ -262,7 +262,7 @@ export function DORAMetricsMini({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-6 lg:gap-8 md:grid-cols-2 lg:grid-cols-4">
           <DORAMetricCard
             metric={displayMetrics.deploymentFrequency}
             icon={metricIcons.deploymentFrequency}
@@ -287,7 +287,7 @@ export function DORAMetricsMini({
 
         {/* Overall Performance Summary */}
         {!isLoading && (
-          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <div className="mt-8 p-6 lg:p-8 bg-green-50 border border-green-200 rounded-xl">
             <div className="flex items-start gap-3">
               <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
                 <Rocket className="h-5 w-5 text-green-600" />

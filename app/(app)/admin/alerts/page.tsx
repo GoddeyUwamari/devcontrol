@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -58,16 +59,69 @@ function generateTrendData(days: number) {
 }
 
 export default function AlertsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const [dateRange, setDateRange] = useState<DateRangeOption>('30d');
-  const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+
+  // Initialize from URL params
+  const [dateRange, setDateRange] = useState<DateRangeOption>(
+    (searchParams.get('dateRange') as DateRangeOption) || '30d'
+  );
+  const [selectedSeverity, setSelectedSeverity] = useState<string>(
+    searchParams.get('severity') || 'all'
+  );
+  const [selectedStatus, setSelectedStatus] = useState<string>(
+    searchParams.get('status') || 'all'
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [page, setPage] = useState(1);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [selectedAlerts, setSelectedAlerts] = useState<Set<string>>(new Set());
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
   const [isSlideOverOpen, setIsSlideOverOpen] = useState(false);
+
+  // Sync URL params to state
+  useEffect(() => {
+    const urlDateRange = searchParams.get('dateRange') as DateRangeOption;
+    const urlSeverity = searchParams.get('severity');
+    const urlStatus = searchParams.get('status');
+
+    if (urlDateRange && urlDateRange !== dateRange) setDateRange(urlDateRange);
+    if (urlSeverity && urlSeverity !== selectedSeverity) setSelectedSeverity(urlSeverity);
+    if (urlStatus && urlStatus !== selectedStatus) setSelectedStatus(urlStatus);
+  }, [searchParams]);
+
+  // Update URL when filters change
+  const updateURL = (updates: { dateRange?: DateRangeOption; severity?: string; status?: string }) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (updates.dateRange) {
+      if (updates.dateRange === '30d') {
+        params.delete('dateRange');
+      } else {
+        params.set('dateRange', updates.dateRange);
+      }
+    }
+
+    if (updates.severity !== undefined) {
+      if (updates.severity === 'all') {
+        params.delete('severity');
+      } else {
+        params.set('severity', updates.severity);
+      }
+    }
+
+    if (updates.status !== undefined) {
+      if (updates.status === 'all') {
+        params.delete('status');
+      } else {
+        params.set('status', updates.status);
+      }
+    }
+
+    const queryString = params.toString();
+    router.push(`/admin/alerts${queryString ? `?${queryString}` : ''}`);
+  };
 
   // Build filters
   const filters: AlertFiltersType & { page: number; limit: number } = {
@@ -240,6 +294,7 @@ export default function AlertsPage() {
     setSelectedStatus('all');
     setSearchQuery('');
     setPage(1);
+    updateURL({ severity: 'all', status: 'all' });
   };
 
   // Format duration
@@ -442,16 +497,19 @@ export default function AlertsPage() {
             onDateRangeChange={(range) => {
               setDateRange(range);
               setPage(1);
+              updateURL({ dateRange: range });
             }}
             severity={selectedSeverity}
             onSeverityChange={(severity) => {
               setSelectedSeverity(severity);
               setPage(1);
+              updateURL({ severity });
             }}
             status={selectedStatus}
             onStatusChange={(status) => {
               setSelectedStatus(status);
               setPage(1);
+              updateURL({ status });
             }}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}

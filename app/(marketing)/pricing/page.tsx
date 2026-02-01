@@ -84,9 +84,15 @@ const pricingTiers: PricingTier[] = [
     popular: true,
     trialDays: 14,
     features: [
+      '✨ AI Chat Assistant (unlimited queries)',
+      '✨ Anomaly Detection (4 detection types)',
+      '✨ Natural Language Search',
+      '✨ AI Cost Optimization (7 types)',
+      '✨ On-Demand AI Reports',
+      '✨ Smart AI Recommendations',
+      '───────────────',
       'Up to 500 AWS resources',
       'All resource types',
-      'Smart recommendations',
       'Compliance scanning (SOC 2, HIPAA)',
       'Risk score & trends',
       'Slack & Jira integrations',
@@ -108,11 +114,16 @@ const pricingTiers: PricingTier[] = [
     priceId: 'price_1Skm4iH8pNFfrvRPa6nDnjqc',
     trialDays: 14,
     features: [
+      '✨ Everything in Pro',
+      '✨ Scheduled AI Reports (weekly/monthly)',
+      '✨ Weekly AI Email Summaries',
+      '✨ Custom Anomaly Detection Rules',
+      '✨ Advanced AI Insights',
+      '───────────────',
       'Unlimited AWS resources',
       'All resource types',
       'Custom compliance frameworks',
       'Auto-remediation workflows',
-      'Scheduled reports',
       'Full API access',
       'SSO/SAML authentication',
       'Dedicated account manager',
@@ -183,18 +194,18 @@ export default function PricingPage() {
 
             {/* Main Headline */}
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
-              Pricing That{' '}
+              AI-Powered DevOps,{' '}
               <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                Pays for Itself
+                Human-Friendly Pricing
               </span>
             </h1>
 
             {/* Subheadline with ROI */}
             <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-              Teams save an average of{' '}
-              <span className="font-semibold text-foreground">$2,400/month</span> in AWS costs
+              The only platform with{' '}
+              <span className="font-semibold text-purple-600 dark:text-purple-400">6 AI features</span> built-in.
               <br className="hidden sm:block" />
-              delivering <span className="font-semibold text-green-600 dark:text-green-400">8-10x ROI</span> on any plan
+              Cut AWS costs <span className="font-semibold text-green-600 dark:text-green-400">30%</span>, deploy <span className="font-semibold text-blue-600 dark:text-blue-400">2x faster</span>.
             </p>
 
             {/* Quick Value Props */}
@@ -239,10 +250,10 @@ export default function PricingPage() {
           {/* Section Header */}
           <div className="text-center mb-8">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Simple, Transparent Pricing
+              AI-Powered Plans for Every Team
             </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Choose the plan that fits your infrastructure. All plans include a 14-day free trial.
+              Get AI-driven insights, anomaly detection, and cost optimization. All paid plans include a 14-day free trial.
             </p>
           </div>
 

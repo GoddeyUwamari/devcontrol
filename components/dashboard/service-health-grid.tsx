@@ -45,28 +45,28 @@ const statusConfig = {
   healthy: {
     icon: '●',
     label: 'Healthy',
-    color: 'text-green-600',
+    color: 'text-green-700',
     bgColor: 'bg-green-100',
     borderColor: 'border-green-200',
   },
   warning: {
     icon: '⚠️',
     label: 'Warning',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100',
-    borderColor: 'border-blue-200',
+    color: 'text-yellow-700',
+    bgColor: 'bg-yellow-100',
+    borderColor: 'border-yellow-200',
   },
   critical: {
     icon: '●',
     label: 'Critical',
-    color: 'text-red-600',
+    color: 'text-red-700',
     bgColor: 'bg-red-100',
     borderColor: 'border-red-200',
   },
   unknown: {
     icon: '●',
     label: 'Unknown',
-    color: 'text-gray-600',
+    color: 'text-gray-700',
     bgColor: 'bg-gray-100',
     borderColor: 'border-gray-200',
   },
@@ -93,16 +93,16 @@ function ServiceCard({
 
   // Build dynamic className based on status
   const cardClassName = `
-    shadow-sm border border-gray-200 transition-shadow
-    ${onClick ? 'cursor-pointer hover:shadow-md' : ''}
-    ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200 bg-red-50/30' : ''}
-    ${service.status === 'warning' ? 'border-blue-200 bg-blue-50/20' : ''}
+    bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-xl transition-all duration-200 rounded-xl
+    ${onClick ? 'cursor-pointer hover:-translate-y-0.5' : ''}
+    ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200' : ''}
+    ${service.status === 'warning' ? 'border-yellow-200' : ''}
     ${status.borderColor} border-l-4
   `.trim();
 
   return (
     <Card className={cardClassName} onClick={() => onClick?.(service)}>
-      <CardContent className={compact ? 'p-4' : 'p-5'}>
+      <CardContent className={compact ? 'p-5' : 'p-6'}>
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -211,10 +211,10 @@ function ServiceListItem({
 
   // Build dynamic className based on status
   const listItemClassName = `
-    flex items-center gap-4 p-4 border rounded-lg shadow-sm transition-all duration-200
-    ${onClick ? 'cursor-pointer hover:bg-gray-50 hover:shadow-xl hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20' : ''}
-    ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200 bg-red-50/30' : ''}
-    ${service.status === 'warning' ? 'border-blue-200 bg-blue-50/20' : 'border-gray-200'}
+    flex items-center gap-4 p-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm transition-all duration-200
+    ${onClick ? 'cursor-pointer hover:bg-gray-50 hover:shadow-xl hover:-translate-y-0.5' : ''}
+    ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200' : ''}
+    ${service.status === 'warning' ? 'border-yellow-200' : ''}
     ${status.borderColor} border-l-4
   `.trim();
 
@@ -440,7 +440,7 @@ export function ServiceHealthGrid({
 
       <CardContent>
         {isLoading ? (
-          <div className={viewMode === 'grid' ? 'grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'space-y-3'}>
+          <div className={viewMode === 'grid' ? 'grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'space-y-4'}>
             {[...Array(8)].map((_, i) => (
               <ServiceSkeleton key={i} viewMode={viewMode} />
             ))}
@@ -456,13 +456,13 @@ export function ServiceHealthGrid({
             </p>
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredServices.map((service) => (
               <ServiceCard key={service.id} service={service} onClick={onServiceClick} />
             ))}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {filteredServices.map((service) => (
               <ServiceListItem key={service.id} service={service} onClick={onServiceClick} />
             ))}

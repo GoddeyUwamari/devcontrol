@@ -13,6 +13,7 @@ import { DemoModeToggle } from '@/components/demo/demo-mode-toggle';
 import { SalesDemoToggle } from '@/components/demo/sales-demo-toggle';
 import { AnnouncementBar } from '@/components/announcement-bar';
 import { Footer } from '@/components/footer';
+import { AIChatWidget } from '@/components/ai/AIChatWidget';
 
 /**
  * App Layout - Authenticated Users Only
@@ -86,6 +87,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Footer */}
       <Footer />
+
+      {/* AI Chat Widget */}
+      <AIChatWidget />
     </div>
   );
 }

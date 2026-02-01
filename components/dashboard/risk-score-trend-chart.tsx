@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { TrendingUp, TrendingDown, Minus, Shield } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Shield, Link2, CheckCircle2 } from 'lucide-react';
 import {
   AreaChart,
   Area,
@@ -16,6 +16,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
+import Link from 'next/link';
 import type { RiskScoreTrendResponse, DateRange } from '@/lib/services/risk-score.service';
 
 interface RiskScoreTrendChartProps {
@@ -68,20 +69,82 @@ export function RiskScoreTrendChart({
 
   if (!data) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-600" />
-            Risk Score Trend
-          </CardTitle>
-          <CardDescription>No risk score data available</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center justify-center h-[280px] text-muted-foreground">
-            <Shield className="h-12 w-12 mb-4 opacity-50" />
-            <p>Risk score data will appear once resources are scanned</p>
+      <Card className="p-8 lg:p-12">
+        <div className="flex flex-col items-center text-center max-w-2xl mx-auto">
+          {/* Icon */}
+          <div className="w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center mb-4">
+            <Shield className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
-        </CardContent>
+
+          {/* Title */}
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            Security Score: Not Yet Available
+          </h3>
+
+          {/* Description */}
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Connect your AWS account to start tracking security posture,
+            compliance issues, and risk trends over time.
+          </p>
+
+          {/* Primary CTA */}
+          <Link href="/settings/integrations">
+            <Button size="lg" className="mb-6">
+              <Link2 className="w-4 h-4 mr-2" />
+              Connect AWS Account
+            </Button>
+          </Link>
+
+          {/* What You'll Get - 3 Benefits */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mt-4">
+            <div className="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+              <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="text-left">
+                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
+                  Real-Time Monitoring
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">
+                  Track security posture 24/7
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center shrink-0">
+                <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div className="text-left">
+                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
+                  Compliance Scanning
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">
+                  SOC2, HIPAA, and more
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+              <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div className="text-left">
+                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
+                  Historical Trends
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">
+                  30-day security history
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Secondary Info */}
+          <div className="mt-6 text-xs text-gray-500 dark:text-gray-400">
+            Setup takes 3 minutes with read-only IAM access
+          </div>
+        </div>
       </Card>
     );
   }

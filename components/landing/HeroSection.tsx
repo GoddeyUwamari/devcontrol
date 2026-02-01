@@ -53,25 +53,24 @@ export function HeroSection() {
             </Badge>
           </div>
 
-          {/* Eyebrow Text */}
-          <p className="text-sm font-semibold text-[#635BFF] uppercase tracking-wide mb-4 animate-in fade-in duration-700 delay-150">
-            For Platform Engineers
-          </p>
-
           {/* Main Heading */}
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 animate-in fade-in zoom-in duration-1000 delay-200">
-            Your AWS Infrastructure,
-            <span className="block mt-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Simplified
-            </span>
+          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-6 animate-in fade-in zoom-in duration-1000 delay-150">
+            Welcome to DevControl
           </h1>
 
-          {/* Description - Outcome focused */}
-          <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto mb-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-400">
-            Cut AWS costs by 30%, deploy 2x faster, and sleep better at night.
-            <span className="block mt-2 text-lg">
-              Join 500+ teams saving $2,400/month on average.
-            </span>
+          {/* Subheadline 1 - AI-powered */}
+          <p className="text-lg md:text-xl text-gray-700 mb-4 leading-relaxed max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
+            Your AI-powered AWS infrastructure command center for engineering teams scaling from 5 to 500 engineers.
+          </p>
+
+          {/* Subheadline 2 - Features */}
+          <p className="text-base md:text-lg text-gray-600 mb-6 leading-relaxed max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-400">
+            Monitor services, track deployments, optimize costs, ensure security, and centralize team governance—all in one powerful dashboard.
+          </p>
+
+          {/* Closing Line - Benefits */}
+          <p className="text-lg md:text-xl font-semibold text-gray-900 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-500">
+            Ship faster. Spend less. Reduce risk.
           </p>
 
           {/* CTAs */}

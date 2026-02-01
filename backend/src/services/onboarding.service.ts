@@ -5,6 +5,7 @@
  */
 
 import { pool } from '../config/database';
+import { PoolClient } from 'pg';
 
 // Simple error class
 class AppError extends Error {
@@ -64,23 +65,33 @@ export class OnboardingService {
   /**
    * Get or create onboarding status for organization
    * This is the main entry point - computes status from real data
+   * Uses a dedicated client to ensure RLS context is set correctly
    */
   async getStatus(organizationId: string, userId: string): Promise<OnboardingStatus> {
+    const client = await pool.connect();
     try {
+      // Set RLS context for this client connection
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [organizationId]
+      );
+
       // 1. Get or create onboarding_progress record
-      let progress = await this.getProgressRecord(organizationId, userId);
+      let progress = await this.getProgressRecordWithClient(client, organizationId, userId);
 
       // 2. Compute actual completion from real data
-      const dataStatus = await this.computeFromData(organizationId);
+      const dataStatus = await this.computeFromDataWithClient(client, organizationId);
 
       // 3. Update onboarding_progress if data changed
-      progress = await this.syncProgress(progress, dataStatus);
+      progress = await this.syncProgressWithClient(client, progress, dataStatus);
 
       // 4. Build response with all stage details
       return this.buildStatus(progress, dataStatus);
     } catch (error) {
       console.error('Error getting onboarding status:', error);
       throw new AppError('Failed to get onboarding status', 500);
+    } finally {
+      client.release();
     }
   }
 
@@ -88,14 +99,21 @@ export class OnboardingService {
    * Get or create the onboarding_progress record
    */
   private async getProgressRecord(organizationId: string, userId: string) {
-    const result = await pool.query(
+    return this.getProgressRecordWithClient(pool, organizationId, userId);
+  }
+
+  /**
+   * Get or create the onboarding_progress record using a specific client
+   */
+  private async getProgressRecordWithClient(client: PoolClient | typeof pool, organizationId: string, userId: string) {
+    const result = await client.query(
       `SELECT * FROM onboarding_progress WHERE organization_id = $1`,
       [organizationId]
     );
 
     if (result.rows.length === 0) {
       // Create new record (shouldn't happen due to trigger, but just in case)
-      const insert = await pool.query(
+      const insert = await client.query(
         `INSERT INTO onboarding_progress (organization_id, user_id, current_stage)
          VALUES ($1, $2, 'welcome')
          RETURNING *`,
@@ -112,10 +130,17 @@ export class OnboardingService {
    * This is the "source of truth" - what actually exists in the database
    */
   private async computeFromData(organizationId: string): Promise<DataStatus> {
+    return this.computeFromDataWithClient(pool, organizationId);
+  }
+
+  /**
+   * Compute completion status from real data using a specific client
+   */
+  private async computeFromDataWithClient(client: PoolClient | typeof pool, organizationId: string): Promise<DataStatus> {
     const [servicesCount, deploymentsCount, awsCredentials] = await Promise.all([
-      this.getServicesCount(organizationId),
-      this.getDeploymentsCount(organizationId),
-      this.getAwsCredentials(organizationId),
+      this.getServicesCountWithClient(client, organizationId),
+      this.getDeploymentsCountWithClient(client, organizationId),
+      this.getAwsCredentialsWithClient(client, organizationId),
     ]);
 
     return {
@@ -132,7 +157,13 @@ export class OnboardingService {
    * Auto-completes steps based on what exists
    */
   private async syncProgress(progress: any, dataStatus: DataStatus) {
-    const updates: any = {};
+    return this.syncProgressWithClient(pool, progress, dataStatus);
+  }
+
+  /**
+   * Sync onboarding_progress with actual data using a specific client
+   */
+  private async syncProgressWithClient(client: PoolClient | typeof pool, progress: any, dataStatus: DataStatus) {
     const setters: string[] = [];
     const values: any[] = [progress.organization_id];
     let paramIndex = 2;
@@ -175,7 +206,7 @@ export class OnboardingService {
     if (setters.length > 0) {
       setters.push('updated_at = NOW()');
 
-      const result = await pool.query(
+      const result = await client.query(
         `UPDATE onboarding_progress
          SET ${setters.join(', ')}
          WHERE organization_id = $1
@@ -386,7 +417,11 @@ export class OnboardingService {
   // =====================================================
 
   private async getServicesCount(organizationId: string): Promise<number> {
-    const result = await pool.query(
+    return this.getServicesCountWithClient(pool, organizationId);
+  }
+
+  private async getServicesCountWithClient(client: PoolClient | typeof pool, organizationId: string): Promise<number> {
+    const result = await client.query(
       `SELECT COUNT(*) as count FROM services WHERE organization_id = $1`,
       [organizationId]
     );
@@ -394,7 +429,11 @@ export class OnboardingService {
   }
 
   private async getDeploymentsCount(organizationId: string): Promise<number> {
-    const result = await pool.query(
+    return this.getDeploymentsCountWithClient(pool, organizationId);
+  }
+
+  private async getDeploymentsCountWithClient(client: PoolClient | typeof pool, organizationId: string): Promise<number> {
+    const result = await client.query(
       `SELECT COUNT(*) as count FROM deployments WHERE organization_id = $1`,
       [organizationId]
     );
@@ -402,7 +441,11 @@ export class OnboardingService {
   }
 
   private async getAwsCredentials(organizationId: string): Promise<any> {
-    const result = await pool.query(
+    return this.getAwsCredentialsWithClient(pool, organizationId);
+  }
+
+  private async getAwsCredentialsWithClient(client: PoolClient | typeof pool, organizationId: string): Promise<any> {
+    const result = await client.query(
       `SELECT aws_credentials_encrypted
        FROM organizations
        WHERE id = $1

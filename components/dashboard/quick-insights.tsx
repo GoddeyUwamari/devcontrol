@@ -30,35 +30,40 @@ const insightConfig: Record<InsightType, {
   icon: React.ElementType;
   borderColor: string;
   bgColor: string;
+  iconBgColor: string;
   iconColor: string;
   badgeColor: string;
 }> = {
   info: {
     icon: Lightbulb,
     borderColor: 'border-l-blue-500',
-    bgColor: 'bg-blue-50',
-    iconColor: 'text-blue-600',
+    bgColor: 'bg-white dark:bg-gray-900',
+    iconBgColor: 'bg-blue-100 dark:bg-blue-900/20',
+    iconColor: 'text-blue-600 dark:text-blue-400',
     badgeColor: 'bg-blue-100 text-blue-700',
   },
   warning: {
     icon: AlertTriangle,
     borderColor: 'border-l-yellow-500',
-    bgColor: 'bg-yellow-50',
-    iconColor: 'text-yellow-600',
+    bgColor: 'bg-white dark:bg-gray-900',
+    iconBgColor: 'bg-yellow-100 dark:bg-yellow-900/20',
+    iconColor: 'text-yellow-600 dark:text-yellow-400',
     badgeColor: 'bg-yellow-100 text-yellow-700',
   },
   critical: {
     icon: AlertTriangle,
     borderColor: 'border-l-red-500',
-    bgColor: 'bg-red-50',
-    iconColor: 'text-red-600',
+    bgColor: 'bg-white dark:bg-gray-900',
+    iconBgColor: 'bg-red-100 dark:bg-red-900/20',
+    iconColor: 'text-red-600 dark:text-red-400',
     badgeColor: 'bg-red-100 text-red-700',
   },
   success: {
     icon: CheckCircle2,
     borderColor: 'border-l-green-500',
-    bgColor: 'bg-green-50',
-    iconColor: 'text-green-600',
+    bgColor: 'bg-white dark:bg-gray-900',
+    iconBgColor: 'bg-green-100 dark:bg-green-900/20',
+    iconColor: 'text-green-600 dark:text-green-400',
     badgeColor: 'bg-green-100 text-green-700',
   },
 };
@@ -80,12 +85,12 @@ function InsightCard({ insight, onDismiss }: { insight: Insight; onDismiss?: (id
   }
 
   return (
-    <Card className={`${config.borderColor} ${config.bgColor} border-l-4 transition-all hover:shadow-md animate-in fade-in slide-in-from-left-2 duration-300`}>
+    <Card className={`${config.bgColor} ${config.borderColor} border-l-4 hover:shadow-lg transition-all duration-200 animate-in fade-in slide-in-from-left-2`}>
       <div className="p-4">
         <div className="flex items-start gap-3">
           {/* Icon */}
           <div className="flex-shrink-0">
-            <div className={`h-10 w-10 rounded-lg ${config.bgColor} flex items-center justify-center border border-current/20`}>
+            <div className={`h-10 w-10 rounded-lg ${config.iconBgColor} flex items-center justify-center`}>
               <Icon className={`h-5 w-5 ${config.iconColor}`} />
             </div>
           </div>
@@ -93,18 +98,18 @@ function InsightCard({ insight, onDismiss }: { insight: Insight; onDismiss?: (id
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2 mb-2">
-              <h4 className="text-sm font-semibold text-gray-900">{insight.title}</h4>
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{insight.title}</h4>
               {insight.dismissible && (
                 <button
                   onClick={handleDismiss}
-                  className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
-                  aria-label="Dismiss"
+                  className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  aria-label="Dismiss insight"
                 >
                   <X className="h-4 w-4" />
                 </button>
               )}
             </div>
-            <p className="text-sm text-gray-700 mb-3">{insight.description}</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">{insight.description}</p>
 
             {/* CTA Button */}
             {insight.cta && (
@@ -147,7 +152,7 @@ export function QuickInsights({ insights, onDismiss }: QuickInsightsProps) {
           {sortedInsights.length} {sortedInsights.length === 1 ? 'insight' : 'insights'}
         </Badge>
       </div>
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 lg:gap-8 md:grid-cols-2 lg:grid-cols-3">
         {sortedInsights.map((insight) => (
           <InsightCard
             key={insight.id}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, FileText, Activity } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -88,10 +89,39 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 // EmptyState component now imported from onboarding
 
 export default function DeploymentsPage() {
-  const [environmentFilter, setEnvironmentFilter] = useState<EnvironmentFilter>('all')
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { socket } = useWebSocket()
   const queryClient = useQueryClient()
   const demoMode = useDemoMode()
+
+  // Initialize from URL params
+  const [environmentFilter, setEnvironmentFilter] = useState<EnvironmentFilter>(
+    (searchParams.get('environment') as EnvironmentFilter) || 'all'
+  )
+
+  // Sync URL params to state
+  useEffect(() => {
+    const urlEnv = searchParams.get('environment') as EnvironmentFilter
+    if (urlEnv && urlEnv !== environmentFilter) {
+      setEnvironmentFilter(urlEnv)
+    }
+  }, [searchParams])
+
+  // Update URL when filter changes
+  const handleFilterChange = (filter: EnvironmentFilter) => {
+    setEnvironmentFilter(filter)
+
+    const params = new URLSearchParams(searchParams.toString())
+    if (filter === 'all') {
+      params.delete('environment')
+    } else {
+      params.set('environment', filter)
+    }
+
+    const queryString = params.toString()
+    router.push(`/deployments${queryString ? `?${queryString}` : ''}`)
+  }
 
   const { data: deployments = [], isLoading, error, refetch } = useQuery({
     queryKey: ['deployments', environmentFilter],
@@ -202,7 +232,7 @@ export default function DeploymentsPage() {
       </div>
 
       <div className="flex items-center gap-4">
-        <Select value={environmentFilter} onValueChange={(value: EnvironmentFilter) => setEnvironmentFilter(value)}>
+        <Select value={environmentFilter} onValueChange={handleFilterChange}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Filter by environment" />
           </SelectTrigger>

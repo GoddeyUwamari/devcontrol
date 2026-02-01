@@ -7,7 +7,7 @@ export class RiskScoreController {
   /**
    * GET /api/risk-score/trend
    * Get risk score trend with historical data
-   * Premium feature - requires Pro+ subscription
+   * Premium feature - requires Pro+ subscription (enforced by route middleware)
    */
   async getTrend(req: Request, res: Response): Promise<void> {
     try {
@@ -17,17 +17,6 @@ export class RiskScoreController {
         res.status(401).json({
           success: false,
           error: 'Unauthorized',
-        });
-        return;
-      }
-
-      // Check subscription tier (Pro+ only)
-      const subscription = req.user?.subscription;
-      if (!subscription?.canViewRiskScore) {
-        res.status(403).json({
-          success: false,
-          error: 'Premium feature - upgrade to Pro or Enterprise',
-          requiredTier: 'pro',
         });
         return;
       }
@@ -64,7 +53,7 @@ export class RiskScoreController {
   /**
    * GET /api/risk-score/current
    * Get current risk score without historical data
-   * Premium feature - requires Pro+ subscription
+   * Premium feature - requires Pro+ subscription (enforced by route middleware)
    */
   async getCurrent(req: Request, res: Response): Promise<void> {
     try {
@@ -73,16 +62,6 @@ export class RiskScoreController {
         res.status(401).json({
           success: false,
           error: 'Unauthorized',
-        });
-        return;
-      }
-
-      // Check subscription
-      if (!req.user?.subscription?.canViewRiskScore) {
-        res.status(403).json({
-          success: false,
-          error: 'Premium feature - upgrade to Pro or Enterprise',
-          requiredTier: 'pro',
         });
         return;
       }

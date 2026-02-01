@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, Layers, Rocket, Server, Activity, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Layers, Rocket, Server, Activity, Sparkles, AlertTriangle, LogOut } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -13,13 +13,22 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/contexts/auth-context'
 
-const navigation = [
+interface NavigationItem {
+  name: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  badge?: string
+}
+
+const navigation: NavigationItem[] = [
   { name: 'Home', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Services', href: '/services', icon: Layers },
   { name: 'Deployments', href: '/deployments', icon: Rocket },
   { name: 'Infrastructure', href: '/infrastructure', icon: Server },
   { name: 'Teams', href: '/teams', icon: Users },
   { name: 'Monitoring', href: '/admin/monitoring', icon: Activity },
+  { name: 'Anomaly Detection', href: '/anomalies', icon: AlertTriangle, badge: 'AI' },
+  { name: 'AI Reports', href: '/ai-reports', icon: Sparkles, badge: 'New' },
 ]
 
 export function Sidebar() {
@@ -78,7 +87,12 @@ export function Sidebar() {
               )}
             >
               <Icon className="w-5 h-5" />
-              {item.name}
+              <span className="flex-1">{item.name}</span>
+              {item.badge && (
+                <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-500 text-white rounded">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           )
         })}
