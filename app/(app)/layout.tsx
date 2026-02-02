@@ -42,7 +42,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </a>
 
       {/* Sticky Header Container - Includes announcement, nav, and breadcrumbs */}
-      <div className="sticky top-0 z-50">
+      <div className="sticky top-0 z-50 bg-white dark:bg-gray-950 shadow-sm">
         {/* Announcement Bar */}
         <AnnouncementBar
           message="🚀 Limited Time Offer: Get 20% off annual plans!"
