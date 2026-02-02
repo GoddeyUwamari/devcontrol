@@ -109,8 +109,10 @@ export class WeeklySummaryRepository {
       const result = await this.pool.query(
         `SELECT u.email, u.full_name
          FROM users u
-         JOIN organizations o ON u.id = o.owner_id
-         WHERE o.id = $1`,
+         JOIN organization_memberships om ON u.id = om.user_id
+         WHERE om.organization_id = $1
+           AND om.role = 'owner'
+         LIMIT 1`,
         [organizationId]
       );
 
@@ -146,14 +148,23 @@ export class WeeklySummaryRepository {
 
   /**
    * Get all active organizations with email enabled
-   * TODO: Add email preferences table for opt-in/opt-out
+   * Filters by user email preferences (opt-in/opt-out)
    */
   async getActiveOrganizations(): Promise<string[]> {
     const result = await this.pool.query(
-      `SELECT DISTINCT id
-       FROM organizations
+      `SELECT DISTINCT o.id, o.created_at
+       FROM organizations o
+       JOIN organization_memberships om ON o.id = om.organization_id
+       JOIN users u ON om.user_id = u.id
+       WHERE om.role = 'owner'
+         AND u.email_weekly_summary = true
+         AND u.email IS NOT NULL
+         AND u.is_email_verified = true
+       ORDER BY o.created_at DESC
        LIMIT 100`
     );
+
+    console.log(`[Weekly Summary] Found ${result.rows.length} organizations with email preferences enabled`);
 
     return result.rows.map(r => r.id);
   }

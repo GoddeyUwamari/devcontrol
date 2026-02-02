@@ -8,7 +8,7 @@ import { Pool } from 'pg';
 import fs from 'fs';
 import path from 'path';
 import Handlebars from 'handlebars';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { AIInsightsService, WeeklySummaryData } from '../services/ai-insights.service';
 import { WeeklySummaryRepository } from '../repositories/weekly-summary.repository';
 
@@ -17,13 +17,13 @@ export class WeeklyAISummaryJob {
   private repository: WeeklySummaryRepository;
   private task: ReturnType<typeof cron.schedule> | null = null;
   private emailTemplate: HandlebarsTemplateDelegate | null = null;
-  private transporter: nodemailer.Transporter | null = null;
+  private resend: Resend | null = null;
 
   constructor(private pool: Pool) {
     this.aiService = new AIInsightsService(pool);
     this.repository = new WeeklySummaryRepository(pool);
     this.loadEmailTemplate();
-    this.setupEmailTransporter();
+    this.setupResendClient();
   }
 
   /**
@@ -45,28 +45,19 @@ export class WeeklyAISummaryJob {
   }
 
   /**
-   * Setup nodemailer transporter
+   * Setup Resend email client
    */
-  private setupEmailTransporter(): void {
-    const host = process.env.SMTP_HOST;
-    const port = parseInt(process.env.SMTP_PORT || '587');
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
+  private setupResendClient(): void {
+    const apiKey = process.env.RESEND_API_KEY;
 
-    if (!host || !user || !pass) {
-      console.warn('[Weekly AI Summary] SMTP not configured - email sending disabled');
-      console.warn('  Required env vars: SMTP_HOST, SMTP_USER, SMTP_PASS');
+    if (!apiKey) {
+      console.warn('[Weekly AI Summary] Resend not configured - email sending disabled');
+      console.warn('  Required env var: RESEND_API_KEY');
       return;
     }
 
-    this.transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass },
-    });
-
-    console.log('[Weekly AI Summary] Email transporter configured');
+    this.resend = new Resend(apiKey);
+    console.log('[Weekly AI Summary] Resend email client configured');
   }
 
   /**
@@ -143,8 +134,8 @@ export class WeeklyAISummaryJob {
    * Send summary for a single organization
    */
   private async sendSummaryForOrganization(organizationId: string): Promise<void> {
-    if (!this.transporter) {
-      throw new Error('Email transporter not configured');
+    if (!this.resend) {
+      throw new Error('Resend email client not configured');
     }
 
     if (!this.emailTemplate) {
@@ -202,6 +193,17 @@ export class WeeklyAISummaryJob {
     const userName = userInfo.fullName?.split(' ')[0] || userInfo.email.split('@')[0];
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
 
+    // Get user ID for unsubscribe token
+    const userResult = await this.pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [userInfo.email]
+    );
+    const userId = userResult.rows[0]?.id;
+
+    // Create unsubscribe token (base64 encoded user ID)
+    const unsubscribeToken = userId ? Buffer.from(userId).toString('base64') : '';
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
+
     const html = this.emailTemplate({
       userName,
       costSummary: aiSummary.costs.summary,
@@ -212,37 +214,130 @@ export class WeeklyAISummaryJob {
       recommendation: aiSummary.recommendation.text,
       estimatedSavings: aiSummary.recommendation.estimatedSavings,
       dashboardUrl: `${frontendUrl}/dashboard`,
-      unsubscribeUrl: `${frontendUrl}/settings/notifications`,
+      unsubscribeUrl: `${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}`,
       preferencesUrl: `${frontendUrl}/settings/notifications`,
+      privacyUrl: `${frontendUrl}/privacy`,
       year: new Date().getFullYear()
     });
 
-    // Send email
-    await this.transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: userInfo.email,
-      subject: 'Your DevControl Weekly Summary (AI-Powered)',
-      html,
+    // Generate plain text version for better deliverability
+    const textContent = this.generateTextVersion({
+      userName,
+      costSummary: aiSummary.costs.summary,
+      hasAlerts: aiSummary.alerts.total > 0,
+      totalAlerts: aiSummary.alerts.total,
+      alertSummary: aiSummary.alerts.summary,
+      doraSummary: aiSummary.dora.summary,
+      recommendation: aiSummary.recommendation.text,
+      estimatedSavings: aiSummary.recommendation.estimatedSavings,
+      dashboardUrl: `${frontendUrl}/dashboard`,
+      unsubscribeUrl: `${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}`,
+      preferencesUrl: `${frontendUrl}/settings/notifications`,
     });
 
-    console.log(`[Weekly AI Summary] Sent to ${userInfo.email}`);
+    // Send email via Resend with anti-spam headers
+    try {
+      const result = await this.resend.emails.send({
+        from: process.env.EMAIL_FROM || 'DevControl <noreply@devcontrol.app>',
+        to: userInfo.email,
+        subject: 'Your DevControl Weekly Summary (AI-Powered)',
+        html,
+        text: textContent,
+        headers: {
+          'List-Unsubscribe': `<${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}>`,
+          'X-Entity-Ref-ID': `weekly-summary-${Date.now()}`,
+        },
+      });
+
+      console.log(`[Weekly AI Summary] ✅ Sent to ${userInfo.email} via Resend (ID: ${result.data?.id})`);
+    } catch (error: any) {
+      console.error(`[Weekly AI Summary] ❌ Failed to send to ${userInfo.email}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate plain text version of email for better deliverability
+   */
+  private generateTextVersion(data: {
+    userName: string;
+    costSummary: string;
+    hasAlerts: boolean;
+    totalAlerts: number;
+    alertSummary: string;
+    doraSummary: string;
+    recommendation: string;
+    estimatedSavings?: number | null;
+    dashboardUrl: string;
+    unsubscribeUrl: string;
+    preferencesUrl: string;
+  }): string {
+    let text = `
+Your DevControl Weekly Summary
+AI-Powered Infrastructure Insights
+
+Hi ${data.userName},
+
+Here's what happened this week:
+
+COSTS
+${data.costSummary}
+`;
+
+    if (data.hasAlerts) {
+      text += `
+ALERTS: ${data.totalAlerts} this week
+${data.alertSummary}
+`;
+    }
+
+    text += `
+DORA METRICS
+${data.doraSummary}
+
+AI RECOMMENDATION
+${data.recommendation}`;
+
+    if (data.estimatedSavings) {
+      text += `\nEstimated Savings: $${data.estimatedSavings}/month`;
+    }
+
+    text += `
+
+View Full Dashboard: ${data.dashboardUrl}
+
+---
+This is your weekly automated summary from DevControl.
+Unsubscribe: ${data.unsubscribeUrl}
+Email Preferences: ${data.preferencesUrl}
+
+You're receiving this email because you have an active DevControl account
+with weekly summaries enabled.
+
+DevControl, Inc.
+Questions? Reply to this email or contact support.
+
+© ${new Date().getFullYear()} DevControl. All rights reserved.
+`.trim();
+
+    return text;
   }
 
   /**
    * Test email configuration
    */
   async testEmailConfig(): Promise<boolean> {
-    if (!this.transporter) {
-      console.error('[Weekly AI Summary] Transporter not configured');
+    if (!this.resend) {
+      console.error('[Weekly AI Summary] Resend client not configured');
       return false;
     }
 
     try {
-      await this.transporter.verify();
-      console.log('[Weekly AI Summary] Email configuration verified');
+      // Resend doesn't have a verify method, so we just check if the client is initialized
+      console.log('[Weekly AI Summary] Resend client verified (API key configured)');
       return true;
     } catch (error: any) {
-      console.error('[Weekly AI Summary] Email config test failed:', error.message);
+      console.error('[Weekly AI Summary] Resend config test failed:', error.message);
       return false;
     }
   }
