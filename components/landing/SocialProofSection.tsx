@@ -26,9 +26,9 @@ const badges = [
 ]
 
 const inner: React.CSSProperties = {
-  maxWidth: '1200px',
+  maxWidth: '1400px',
   margin: '0 auto',
-  padding: '0 48px',
+  padding: '0 32px',
 }
 
 const eyebrow: React.CSSProperties = {
@@ -52,7 +52,7 @@ export function SocialProofSection() {
       <div style={inner}>
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
           <p style={eyebrow}>Results</p>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#111827', marginBottom: '14px', lineHeight: 1.2 }}>
+          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#7c3aed', marginBottom: '14px', lineHeight: 1.2 }}>
             Trusted by platform engineering teams
           </h2>
           <p style={{ fontSize: '1.125rem', color: '#6b7280', maxWidth: '480px', margin: '0 auto', lineHeight: 1.7 }}>
@@ -72,14 +72,21 @@ export function SocialProofSection() {
                   borderRadius: '16px',
                   padding: '40px 32px',
                   border: '1px solid #f3f4f6',
-                  boxShadow: '0 4px 20px rgba(124,58,237,0.06)',
+                  boxShadow: '0 4px 20px rgba(124,58,237,0.12)',
                 }}
               >
                 <div
-                  className="rounded-xl flex items-center justify-center"
-                  style={{ width: '52px', height: '52px', backgroundColor: '#ede9fe', margin: '0 auto 20px' }}
+                  style={{
+                    backgroundColor: 'rgba(124,58,237,0.12)',
+                    borderRadius: '14px',
+                    padding: '12px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 20px',
+                  }}
                 >
-                  <Icon className="h-6 w-6" style={{ color: '#7c3aed' }} />
+                  <Icon style={{ color: '#7c3aed' }} size={22} />
                 </div>
                 <div className="font-extrabold" style={{ fontSize: 'clamp(2rem, 5vw, 3rem)', color: '#7c3aed', marginBottom: '10px' }}>
                   {stat.value}

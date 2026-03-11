@@ -38,7 +38,7 @@ export function middleware(request: NextRequest) {
   }
 
   // RULE 3: Unauthenticated users on protected routes should go to /login
-  const protectedRoutes = ['/dashboard', '/services', '/infrastructure', '/settings', '/profile'];
+  const protectedRoutes = ['/dashboard', '/services/new', '/infrastructure', '/settings', '/profile'];
   const isProtected = protectedRoutes.some(route =>
     pathname === route || pathname.startsWith(route + '/')
   );

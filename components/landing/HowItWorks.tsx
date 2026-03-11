@@ -22,9 +22,9 @@ const steps = [
 ]
 
 const inner: React.CSSProperties = {
-  maxWidth: '1200px',
+  maxWidth: '1400px',
   margin: '0 auto',
-  padding: '0 48px',
+  padding: '0 32px',
 }
 
 const eyebrow: React.CSSProperties = {
@@ -59,10 +59,16 @@ export function HowItWorks() {
                 <div style={{ textAlign: 'center', padding: '0 16px', minWidth: '200px', maxWidth: '280px' }}>
                   <div className="relative inline-flex" style={{ marginBottom: '20px' }}>
                     <div
-                      className="rounded-2xl flex items-center justify-center"
-                      style={{ width: '96px', height: '96px', backgroundColor: '#ede9fe' }}
+                      style={{
+                        backgroundColor: 'rgba(124,58,237,0.12)',
+                        borderRadius: '14px',
+                        padding: '22px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
                     >
-                      <Icon className="h-10 w-10" style={{ color: '#7c3aed' }} />
+                      <Icon style={{ color: '#7c3aed' }} size={22} />
                     </div>
                     <div
                       className="absolute flex items-center justify-center text-white font-bold rounded-full shadow-lg"

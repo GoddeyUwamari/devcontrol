@@ -55,9 +55,9 @@ const aiFeatures = [
 ]
 
 const inner: React.CSSProperties = {
-  maxWidth: '1200px',
+  maxWidth: '1400px',
   margin: '0 auto',
-  padding: '0 48px',
+  padding: '0 32px',
 }
 
 const eyebrow: React.CSSProperties = {
@@ -115,13 +115,20 @@ export function AIFeaturesSection() {
                 }}
               >
                 <div
-                  className="rounded-xl flex items-center justify-center"
-                  style={{ width: '44px', height: '44px', backgroundColor: '#ede9fe', marginBottom: '16px' }}
+                  style={{
+                    backgroundColor: 'rgba(124,58,237,0.12)',
+                    borderRadius: '14px',
+                    padding: '12px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '16px',
+                  }}
                 >
-                  <Icon className="w-5 h-5" style={{ color: '#7c3aed' }} />
+                  <Icon style={{ color: '#7c3aed' }} size={22} />
                 </div>
-                <h3 className="font-bold" style={{ fontSize: '1rem', color: '#111827', marginBottom: '8px' }}>{feature.title}</h3>
-                <p style={{ color: '#6b7280', fontSize: '14px', lineHeight: 1.6, marginBottom: '16px' }}>{feature.description}</p>
+                <h3 className="font-bold" style={{ fontSize: '1.4rem', color: '#111827', marginBottom: '8px' }}>{feature.title}</h3>
+                <p style={{ color: '#6b7280', fontSize: '16px', lineHeight: 1.6, marginBottom: '16px' }}>{feature.description}</p>
                 <Link
                   href={feature.href}
                   className="inline-flex items-center font-semibold"

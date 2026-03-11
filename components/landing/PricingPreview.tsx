@@ -72,9 +72,9 @@ const tiers = [
 ]
 
 const inner: React.CSSProperties = {
-  maxWidth: '1200px',
+  maxWidth: '1400px',
   margin: '0 auto',
-  padding: '0 48px',
+  padding: '0 32px',
 }
 
 const eyebrow: React.CSSProperties = {

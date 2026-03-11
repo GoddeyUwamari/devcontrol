@@ -1,6 +1,7 @@
 'use client';
 
-import { HeroSection } from '@/components/landing/HeroSection';
+import { HeroSection } from '@/components/landing/HeroSection'
+import { TrustedBySection } from '@/components/landing/TrustedBySection';
 import { HowItWorks } from '@/components/landing/HowItWorks';
 import { FeatureShowcase } from '@/components/landing/FeatureShowcase';
 import { AIFeaturesSection } from '@/components/landing/AIFeaturesSection';
@@ -62,12 +63,11 @@ const securityItems = [
   },
 ];
 
-const companyLogos = ['Stripe', 'Notion', 'Vercel', 'Linear', 'Figma'];
 
 const inner: React.CSSProperties = {
-  maxWidth: '1200px',
+  maxWidth: '1400px',
   margin: '0 auto',
-  padding: '0 48px',
+  padding: '0 32px',
 };
 
 const eyebrow: React.CSSProperties = {
@@ -85,48 +85,8 @@ export function MarketingContent() {
       {/* Hero */}
       <HeroSection />
 
-      {/* Social Proof / Logo Bar — flush below hero, no gap */}
-      <div
-        style={{
-          width: '100%',
-          padding: '28px 0',
-          backgroundColor: '#fff',
-          borderTop: '1px solid #f3f4f6',
-          borderBottom: '1px solid #f3f4f6',
-        }}
-      >
-        <div style={inner}>
-          <p
-            style={{
-              textAlign: 'center',
-              fontSize: '12px',
-              color: '#9ca3af',
-              fontWeight: 500,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              marginBottom: '20px',
-            }}
-          >
-            Trusted by engineering teams at startups to Fortune 500
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '40px' }}>
-            {companyLogos.map((name) => (
-              <span
-                key={name}
-                style={{
-                  fontSize: '1.375rem',
-                  fontWeight: 800,
-                  letterSpacing: '-0.03em',
-                  color: '#d1d5db',
-                  userSelect: 'none',
-                }}
-              >
-                {name}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* Social Proof / Logo Ticker */}
+      <TrustedBySection />
 
       {/* Platform Features */}
       <FeatureShowcase />
@@ -259,10 +219,17 @@ export function MarketingContent() {
                   }}
                 >
                   <div
-                    className="rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ width: '48px', height: '48px', backgroundColor: '#7c3aed' }}
+                    style={{
+                      backgroundColor: 'rgba(124,58,237,0.12)',
+                      borderRadius: '14px',
+                      padding: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
                   >
-                    <Icon className="w-6 h-6 text-white" />
+                    <Icon style={{ color: '#7c3aed' }} size={22} />
                   </div>
                   <div>
                     <h3 className="font-bold" style={{ fontSize: '1.0625rem', color: '#111827', marginBottom: '8px' }}>{item.title}</h3>

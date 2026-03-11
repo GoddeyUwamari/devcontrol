@@ -1,125 +1,168 @@
 'use client'
 
 import Link from 'next/link'
-import { DollarSign, Shield, BarChart2, Activity, Search, Users, ArrowRight } from 'lucide-react'
+import { DollarSign, Shield, BarChart2, Activity, Search, Users } from 'lucide-react'
 
 const features = [
   {
     icon: DollarSign,
-    title: 'Cost Optimization',
-    description: 'Identify waste and reduce AWS spend by 15-30% with AI-powered recommendations. Average team saves $2,400/month.',
+    title: 'Cut AWS Costs by 30%',
+    description: 'Identify waste, unused resources, and right-sizing opportunities automatically. Average team saves $2,400/month.',
     href: '/features/cost-optimization',
   },
   {
     icon: Shield,
     title: 'Security & Compliance',
-    description: 'Automated security scanning across all your AWS resources. Stay SOC 2, HIPAA, and PCI compliant effortlessly.',
+    description: 'Automated scanning across all AWS resources. Stay SOC 2, HIPAA, and PCI compliant without manual audits.',
     href: '/features/security',
   },
   {
     icon: BarChart2,
     title: 'DORA Metrics',
-    description: 'Track deployment frequency, lead time, change failure rate, and MTTR automatically. No manual reporting.',
+    description: 'Track deployment frequency, lead time, change failure rate, and MTTR automatically. No spreadsheets.',
     href: '/features/dora-metrics',
   },
   {
     icon: Activity,
     title: 'Infrastructure Health',
-    description: 'Real-time monitoring of all your AWS services with instant alerts before users are affected.',
+    description: 'Real-time monitoring across all your AWS services with instant alerts before users are affected.',
     href: '/features/infrastructure-health',
   },
   {
     icon: Search,
-    title: 'Resource Discovery',
-    description: 'Automatically map every AWS resource across all accounts and regions. Complete visibility in minutes.',
+    title: 'Full Resource Visibility',
+    description: 'Map every AWS resource across all accounts and regions. Complete inventory in under 15 minutes.',
     href: '/features/resource-discovery',
   },
   {
     icon: Users,
-    title: 'Team Collaboration',
-    description: 'Role-based access, shared dashboards, and team activity feeds. Built for engineering orgs of 5–500.',
+    title: 'Team Governance',
+    description: 'Role-based access, shared dashboards, and audit logs. Built for engineering orgs of 5 to 500.',
     href: '/features/collaboration',
   },
 ]
 
-const inner: React.CSSProperties = {
-  maxWidth: '1200px',
-  margin: '0 auto',
-  padding: '0 48px',
-}
-
-const eyebrow: React.CSSProperties = {
-  color: '#7c3aed',
-  fontSize: '13px',
-  letterSpacing: '0.1em',
-  fontWeight: 600,
-  textTransform: 'uppercase',
-  marginBottom: '12px',
-}
-
 export function FeatureShowcase() {
   return (
-    <section id="features" style={{ width: '100%', padding: '64px 0', backgroundColor: '#fff' }}>
-      <div style={inner}>
-        <div style={{ textAlign: 'center', maxWidth: '680px', margin: '0 auto 48px' }}>
-          <p style={eyebrow}>Platform Features</p>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#7c3aed', marginBottom: '16px', lineHeight: 1.2 }}>
-            Everything your AWS team needs,<br />nothing they don&apos;t
-          </h2>
-          <p style={{ fontSize: '1.125rem', color: '#6b7280', lineHeight: 1.7 }}>
-            Complete AWS infrastructure management with real-time insights, cost optimization, and security monitoring.
-          </p>
-        </div>
+    <section
+      id="features"
+      style={{ width: '100%', padding: '80px 0', backgroundColor: '#fff' }}
+    >
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 32px' }}>
 
-        <div className="grid md:grid-cols-3 gap-6">
+        <h2
+          style={{
+            fontSize: 'clamp(2.6rem, 5vw, 3rem)',
+            color: '#7c3aed',
+            fontWeight: 800,
+            lineHeight: 1.15,
+            textAlign: 'center',
+            marginBottom: '16px',
+          }}
+        >
+          Your AWS Infrastructure, Finally Under Control
+        </h2>
+
+        <p
+          style={{
+            fontSize: '1.15rem',
+            color: '#6b7280',
+            lineHeight: 1.7,
+            maxWidth: '620px',
+            textAlign: 'center',
+            margin: '0 auto 48px',
+          }}
+        >
+          Cut costs, fix security gaps, and track engineering performance — all from one AI-powered dashboard.
+        </p>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '24px',
+          }}
+        >
           {features.map((feature) => {
             const Icon = feature.icon
             return (
               <div
                 key={feature.title}
-                className="bg-white rounded-2xl cursor-pointer"
                 style={{
-                  border: '1px solid #f3f4f6',
-                  padding: '32px',
-                  transition: 'all 0.2s ease',
+                  backgroundColor: '#fff',
+                  borderRadius: '16px',
+                  border: '1.5px solid #e5e7eb',
+                  padding: '40px',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                 }}
                 onMouseEnter={(e) => {
                   const el = e.currentTarget
-                  el.style.boxShadow = '0 8px 30px rgba(124, 58, 237, 0.12)'
-                  el.style.transform = 'translateY(-2px)'
-                  el.style.borderColor = '#ede9fe'
+                  el.style.borderColor = '#7c3aed'
+                  el.style.boxShadow = '0 4px 24px rgba(124,58,237,0.10)'
                 }}
                 onMouseLeave={(e) => {
                   const el = e.currentTarget
+                  el.style.borderColor = '#e5e7eb'
                   el.style.boxShadow = 'none'
-                  el.style.transform = 'translateY(0)'
-                  el.style.borderColor = '#f3f4f6'
                 }}
               >
                 <div
-                  className="rounded-xl flex items-center justify-center"
-                  style={{ width: '48px', height: '48px', backgroundColor: '#ede9fe', marginBottom: '24px' }}
+                  style={{
+                    backgroundColor: 'rgba(124,58,237,0.06)',
+                    borderRadius: '14px',
+                    padding: '12px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '16px',
+                  }}
                 >
-                  <Icon className="h-6 w-6" style={{ color: '#7c3aed' }} />
+                  <Icon style={{ color: '#7c3aed' }} size={22} />
                 </div>
-                <h3 className="font-bold" style={{ fontSize: '1.125rem', color: '#111827', marginBottom: '12px' }}>{feature.title}</h3>
-                <p style={{ color: '#6b7280', fontSize: '14px', lineHeight: 1.7, marginBottom: '20px' }}>{feature.description}</p>
+                <h3
+                  style={{
+                    fontSize: '1.4rem',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    marginTop: '20px',
+                    marginBottom: 0,
+                  }}
+                >
+                  {feature.title}
+                </h3>
+                <p
+                  style={{
+                    fontSize: '0.99rem',
+                    color: '#4b5563',
+                    lineHeight: 1.6,
+                    marginTop: '8px',
+                    marginBottom: 0,
+                  }}
+                >
+                  {feature.description}
+                </p>
                 <Link
                   href={feature.href}
-                  className="inline-flex items-center font-semibold"
-                  style={{ color: '#7c3aed', fontSize: '14px', textDecoration: 'none', transition: 'all 0.15s ease' }}
+                  style={{
+                    display: 'inline-block',
+                    color: '#7c3aed',
+                    fontWeight: 600,
+                    fontSize: '0.9rem',
+                    marginTop: '20px',
+                    textDecoration: 'none',
+                    transition: 'text-decoration 0.15s ease',
+                  }}
                   onMouseEnter={(e) => {
                     const el = e.currentTarget as HTMLAnchorElement
-                    el.style.color = '#6b21a8'
                     el.style.textDecoration = 'underline'
                   }}
                   onMouseLeave={(e) => {
                     const el = e.currentTarget as HTMLAnchorElement
-                    el.style.color = '#7c3aed'
                     el.style.textDecoration = 'none'
                   }}
                 >
-                  Learn More <ArrowRight className="ml-1 h-4 w-4" />
+                  Learn More →
                 </Link>
               </div>
             )
