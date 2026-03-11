@@ -178,7 +178,7 @@ export function FAQ() {
           </h2>
           <p className="text-lg text-gray-600 max-w-3xl mx-auto">
             Everything you need to know about DevControl.{' '}
-            <button className="text-[#635BFF] hover:text-[#4f46e5] font-medium hover:underline">
+            <button className="text-[#7c3aed] hover:text-[#4f46e5] font-medium hover:underline">
               Contact us →
             </button>
           </p>
@@ -217,7 +217,7 @@ export function FAQ() {
                     <div className="flex-1 min-w-0">
                       <h3
                         className={`font-semibold text-gray-900 transition-colors ${
-                          isOpen ? colors.text : 'group-hover:text-[#635BFF]'
+                          isOpen ? colors.text : 'group-hover:text-[#7c3aed]'
                         }`}
                       >
                         {faq.question}
@@ -248,8 +248,8 @@ export function FAQ() {
 
         {/* Bottom CTA Section */}
         <div className="text-center p-8 bg-white rounded-2xl border-2 border-gray-200 shadow-sm">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#635BFF]/10 mb-4">
-            <HelpCircle className="h-6 w-6 text-[#635BFF]" />
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#7c3aed]/10 mb-4">
+            <HelpCircle className="h-6 w-6 text-[#7c3aed]" />
           </div>
           <h3 className="text-xl font-semibold text-gray-900 mb-2">Still have questions?</h3>
           <p className="text-gray-600 mb-6">
@@ -258,11 +258,11 @@ export function FAQ() {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button
               size="lg"
-              className="bg-[#635BFF] hover:bg-[#4f46e5] text-white"
+              className="bg-[#7c3aed] hover:bg-[#4f46e5] text-white"
             >
               Contact Support
             </Button>
-            <Button size="lg" variant="outline" className="border-gray-300 hover:border-[#635BFF]">
+            <Button size="lg" variant="outline" className="border-gray-300 hover:border-[#7c3aed]">
               Schedule Demo
             </Button>
           </div>

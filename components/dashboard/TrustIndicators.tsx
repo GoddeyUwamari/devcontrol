@@ -85,7 +85,7 @@ export function TrustIndicators() {
           {securityFeatures.map((feature, index) => (
             <Card
               key={index}
-              className="border-2 border-gray-200 hover:border-[#635BFF]/50 transition-all duration-300 hover:shadow-lg animate-in fade-in slide-in-from-bottom-4"
+              className="border-2 border-gray-200 hover:border-[#7c3aed]/50 transition-all duration-300 hover:shadow-lg animate-in fade-in slide-in-from-bottom-4"
               style={{ animationDelay: `${index * 100 + 400}ms`, animationDuration: '600ms' }}
             >
               <CardContent className="p-6">
@@ -111,7 +111,7 @@ export function TrustIndicators() {
           <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
             Read our comprehensive security documentation and compliance reports
           </p>
-          <button className="inline-flex items-center gap-2 bg-[#635BFF] hover:bg-[#4f46e5] text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
+          <button className="inline-flex items-center gap-2 bg-[#7c3aed] hover:bg-[#4f46e5] text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
             <span>View Security Details</span>
             <ArrowRight className="h-4 w-4" />
           </button>

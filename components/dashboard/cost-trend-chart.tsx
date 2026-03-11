@@ -265,8 +265,8 @@ export function CostTrendChart({
 
         {/* Anomaly Indicators */}
         {data.some(d => d.total > (data.reduce((sum, d) => sum + d.total, 0) / data.length) * 1.5) && (
-          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-sm text-yellow-800">
+          <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+            <p className="text-sm text-orange-800">
               <span className="font-semibold">⚠️ Cost Spike Detected:</span> Unusual spending pattern identified. Review details above.
             </p>
           </div>

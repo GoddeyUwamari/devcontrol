@@ -97,6 +97,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (token && cachedUser) {
         setUser(cachedUser);
+        // Re-set the auth cookie in case it was cleared (cookie can expire while localStorage persists)
+        tokenManager.setAuthCookie(token);
         console.log("🔐 Setting cached user, fetching fresh data...");
         // Fetch fresh user data and organizations in the background
         await Promise.all([refreshUser(), refreshOrganizations()]);
@@ -137,23 +139,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
     async (email: string, password: string) => {
       try {
         const response = await authService.login({ email, password });
+        console.log('FULL RESPONSE:', JSON.stringify(response, null, 2));
+
+        // Handle both flat and nested response structures
+        const payload = response?.data ?? response;
+        const accessToken = payload?.accessToken || (response as any)?.token;
+        const refreshToken = payload?.refreshToken;
+        const user = payload?.user;
+        const organization = payload?.organization;
 
         // Store tokens
-        tokenManager.setAccessToken(response.data.accessToken);
-        tokenManager.setRefreshToken(response.data.refreshToken);
-        tokenManager.setUser(response.data.user);
-        tokenManager.setAuthCookie(response.data.accessToken);
+        tokenManager.setAccessToken(accessToken);
+        tokenManager.setRefreshToken(refreshToken);
+        tokenManager.setUser(user);
+        tokenManager.setAuthCookie(accessToken);
 
-        // Update state with user and organization from login response
-        console.log("✅ Login successful, user:", response.data.user);
-        console.log("✅ Organization:", response.data.organization);
-
-        setUser(response.data.user);
+        setUser(user);
 
         // Set organization from login response
-        if (response.data.organization) {
-          setOrganization(response.data.organization);
-          setOrganizations([response.data.organization]);
+        if (organization) {
+          setOrganization(organization);
+          setOrganizations([organization]);
         }
 
         // Fetch all user's organizations in background

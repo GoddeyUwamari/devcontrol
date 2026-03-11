@@ -214,7 +214,7 @@ function FooterColumn({ column, isMobile }: { column: FooterColumn; isMobile?: b
                     <li key={linkIdx}>
                       <Link
                         href={link.href}
-                        className="text-sm text-gray-400 hover:text-white transition-colors duration-200"
+                        className="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200"
                       >
                         {link.label}
                       </Link>
@@ -246,7 +246,7 @@ function FooterColumn({ column, isMobile }: { column: FooterColumn; isMobile?: b
               <li key={linkIdx}>
                 <Link
                   href={link.href}
-                  className="text-sm text-gray-400 hover:text-white transition-colors duration-200 inline-block"
+                  className="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block"
                 >
                   {link.label}
                 </Link>
@@ -326,7 +326,7 @@ export function Footer() {
             {/* Left - Logo and Copyright */}
             <div className="flex flex-col items-center lg:items-start gap-3">
               <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
                   <span className="text-white font-bold text-sm">DC</span>
                 </div>
                 <div className="text-left">
@@ -343,28 +343,28 @@ export function Footer() {
             <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
               <Link
                 href="/legal/privacy"
-                className="text-gray-400 hover:text-white transition-colors duration-200"
+                className="text-gray-400 hover:text-purple-400 transition-colors duration-200"
               >
                 Privacy
               </Link>
               <span className="text-gray-600">·</span>
               <Link
                 href="/legal/terms"
-                className="text-gray-400 hover:text-white transition-colors duration-200"
+                className="text-gray-400 hover:text-purple-400 transition-colors duration-200"
               >
                 Terms
               </Link>
               <span className="text-gray-600">·</span>
               <Link
                 href="/company/security"
-                className="text-gray-400 hover:text-white transition-colors duration-200"
+                className="text-gray-400 hover:text-purple-400 transition-colors duration-200"
               >
                 Security
               </Link>
               <span className="text-gray-600">·</span>
               <Link
                 href="/legal/cookies"
-                className="text-gray-400 hover:text-white transition-colors duration-200"
+                className="text-gray-400 hover:text-purple-400 transition-colors duration-200"
               >
                 Cookies
               </Link>
@@ -381,7 +381,7 @@ export function Footer() {
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={social.name}
-                    className="text-gray-400 hover:text-white transition-colors duration-200"
+                    className="text-gray-400 hover:text-purple-400 transition-colors duration-200"
                   >
                     <Icon className="h-5 w-5" />
                   </a>

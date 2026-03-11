@@ -91,7 +91,7 @@ export function PricingCard({ tier, currentTier, billingPeriod = 'monthly' }: Pr
     >
       {tier.popular && (
         <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-          <Badge className="bg-gradient-to-r from-[#635BFF] to-[#4f46e5] text-white px-4 py-1 shadow-lg">
+          <Badge className="bg-gradient-to-r from-[#7c3aed] to-[#4f46e5] text-white px-4 py-1 shadow-lg">
             Most Popular
           </Badge>
         </div>
@@ -183,7 +183,7 @@ export function PricingCard({ tier, currentTier, billingPeriod = 'monthly' }: Pr
 
       <CardFooter className="flex-col gap-3">
         <Button
-          className={`w-full ${tier.popular ? 'bg-gradient-to-r from-[#635BFF] to-[#4f46e5] hover:from-[#5851ea] hover:to-[#4338ca]' : ''}`}
+          className={`w-full ${tier.popular ? 'bg-gradient-to-r from-[#7c3aed] to-[#4f46e5] hover:from-[#5851ea] hover:to-[#4338ca]' : ''}`}
           onClick={handleCheckout}
           disabled={loading || isCurrentPlan}
           variant={tier.popular ? 'default' : 'outline'}

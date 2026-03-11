@@ -96,7 +96,7 @@ export function StatsRow() {
             <div className={`inline-flex p-3 rounded-full ${stat.bgColor} mb-4`}>
               <Icon className={`h-6 w-6 ${stat.color}`} />
             </div>
-            <div className="text-4xl md:text-5xl font-bold text-[#635BFF] mb-2">
+            <div className="text-4xl md:text-5xl font-bold text-[#7c3aed] mb-2">
               {stat.value}
             </div>
             <div className="text-muted-foreground font-medium">

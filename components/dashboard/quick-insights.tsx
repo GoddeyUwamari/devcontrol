@@ -44,11 +44,11 @@ const insightConfig: Record<InsightType, {
   },
   warning: {
     icon: AlertTriangle,
-    borderColor: 'border-l-yellow-500',
+    borderColor: 'border-l-orange-500',
     bgColor: 'bg-white dark:bg-gray-900',
-    iconBgColor: 'bg-yellow-100 dark:bg-yellow-900/20',
-    iconColor: 'text-yellow-600 dark:text-yellow-400',
-    badgeColor: 'bg-yellow-100 text-yellow-700',
+    iconBgColor: 'bg-orange-100 dark:bg-orange-900/20',
+    iconColor: 'text-orange-600 dark:text-orange-400',
+    badgeColor: 'bg-orange-100 text-orange-700',
   },
   critical: {
     icon: AlertTriangle,

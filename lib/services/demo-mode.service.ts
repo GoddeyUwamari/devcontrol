@@ -17,7 +17,8 @@ class DemoModeService {
   enable() {
     if (typeof window === 'undefined') return;
     localStorage.setItem(this.DEMO_MODE_KEY, 'true');
-    window.location.reload();
+    // Dispatch event instead of reloading - React state handles the data swap
+    window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled: true } }));
   }
 
   /**
@@ -25,8 +26,9 @@ class DemoModeService {
    */
   disable() {
     if (typeof window === 'undefined') return;
-    localStorage.removeItem(this.DEMO_MODE_KEY);
-    window.location.reload();
+    localStorage.setItem(this.DEMO_MODE_KEY, 'false');
+    // Dispatch event instead of reloading - React state handles the data swap
+    window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled: false } }));
   }
 
   /**

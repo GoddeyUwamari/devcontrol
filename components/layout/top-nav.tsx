@@ -4,35 +4,36 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Layers,
-  Rocket,
   Server,
-  Users,
+  DollarSign,
+  Shield,
   Plus,
   Search,
   Menu,
   X,
+  LayoutDashboard,
 } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { NavDropdown } from '@/components/ui/nav-dropdown';
 import { UserDropdown } from '@/components/ui/user-dropdown';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/contexts/auth-context';
-import {
-  appNav,
-  solutionsNav,
-  resourcesNav,
-  marketingStandaloneLinks,
-  quickActions,
-} from '@/lib/navigation-config';
+import { quickActions } from '@/lib/navigation-config';
 import { useState } from 'react';
+
+// App navigation links for authenticated users
+const appNavLinks = [
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Services', href: '/services', icon: Layers },
+  { label: 'Infrastructure', href: '/infrastructure', icon: Server },
+  { label: 'Costs', href: '/cost-optimization', icon: DollarSign },
+  { label: 'Security', href: '/solutions/security', icon: Shield },
+];
 
 export function TopNav() {
   const pathname = usePathname();
@@ -92,19 +93,10 @@ export function TopNav() {
             <span className="hidden lg:inline-block text-xl">DevControl</span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-0.5">
-            {/* Platform Dropdown */}
-            <NavDropdown group={appNav} />
-
-            {/* Solutions Dropdown */}
-            <NavDropdown group={solutionsNav} />
-
-            {/* Resources Dropdown */}
-            <NavDropdown group={resourcesNav} />
-
-            {/* Standalone Links - Pricing, Enterprise, Developers */}
-            {marketingStandaloneLinks.map((link) => {
+          {/* Desktop Navigation - App Links Only */}
+          <nav className="hidden lg:flex items-center gap-1">
+            {appNavLinks.map((link) => {
+              const Icon = link.icon;
               const isActive =
                 pathname === link.href || pathname.startsWith(link.href + '/');
               return (
@@ -112,11 +104,14 @@ export function TopNav() {
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    'px-3 py-2 text-base font-medium rounded-md transition-colors',
+                    'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors',
                     'hover:bg-accent hover:text-accent-foreground',
-                    isActive ? 'text-foreground' : 'text-muted-foreground'
+                    isActive
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground'
                   )}
                 >
+                  <Icon className="h-4 w-4" />
                   {link.label}
                 </Link>
               );
@@ -211,130 +206,30 @@ export function TopNav() {
       {/* Mobile Navigation Menu */}
       {mobileMenuOpen && (
         <div className="lg:hidden border-t bg-background">
-          <div className="px-4 py-4 space-y-4">
-            {/* Platform Links */}
-            <div>
-              <div className="text-xs uppercase text-muted-foreground font-semibold mb-2 px-2">
-                Platform
-              </div>
-              <div className="space-y-1">
-                {appNav.sections?.map((section) =>
-                  section.items.map((item) => {
-                    const isActive =
-                      pathname === item.href ||
-                      pathname.startsWith(item.href + '/');
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={cn(
-                          'flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors',
-                          'hover:bg-accent',
-                          isActive
-                            ? 'bg-accent text-foreground'
-                            : 'text-muted-foreground'
-                        )}
-                        onClick={() => setMobileMenuOpen(false)}
-                      >
-                        {Icon && <Icon className="w-4 h-4" />}
-                        {item.label}
-                      </Link>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <DropdownMenuSeparator />
-
-            {/* Solutions Links */}
-            <div>
-              <div className="text-xs uppercase text-muted-foreground font-semibold mb-2 px-2">
-                Solutions
-              </div>
-              <div className="space-y-1">
-                {solutionsNav.sections?.map((section) =>
-                  section.items.map((item) => {
-                    const isActive =
-                      pathname === item.href ||
-                      pathname.startsWith(item.href + '/');
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={cn(
-                          'flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors',
-                          'hover:bg-accent',
-                          isActive
-                            ? 'bg-accent text-foreground'
-                            : 'text-muted-foreground'
-                        )}
-                        onClick={() => setMobileMenuOpen(false)}
-                      >
-                        {Icon && <Icon className="w-4 h-4" />}
-                        {item.label}
-                      </Link>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <DropdownMenuSeparator />
-
-            {/* Resources Links */}
-            <div>
-              <div className="text-xs uppercase text-muted-foreground font-semibold mb-2 px-2">
-                Resources
-              </div>
-              <div className="space-y-1">
-                {resourcesNav.items?.map((item) => {
-                  const isActive =
-                    pathname === item.href ||
-                    pathname.startsWith(item.href + '/');
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors',
-                        'hover:bg-accent',
-                        isActive
-                          ? 'bg-accent text-foreground'
-                          : 'text-muted-foreground'
-                      )}
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      {Icon && <Icon className="w-4 h-4" />}
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-
-            <DropdownMenuSeparator />
-
-            {/* Standalone Links - Pricing, Enterprise, Developers */}
-            {marketingStandaloneLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  'block px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                  'hover:bg-accent',
-                  pathname === link.href
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground'
-                )}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {link.label}
-              </Link>
-            ))}
+          <div className="px-4 py-4 space-y-1">
+            {appNavLinks.map((link) => {
+              const Icon = link.icon;
+              const isActive =
+                pathname === link.href ||
+                pathname.startsWith(link.href + '/');
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                    'hover:bg-accent',
+                    isActive
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground'
+                  )}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <Icon className="w-4 h-4" />
+                  {link.label}
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}

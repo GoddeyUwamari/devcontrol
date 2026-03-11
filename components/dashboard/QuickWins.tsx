@@ -63,7 +63,7 @@ export function QuickWins() {
         {quickWins.map((win, index) => (
           <Card
             key={index}
-            className="group border-2 border-gray-200 transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:border-[#635BFF]/50 animate-in fade-in slide-in-from-bottom-4"
+            className="group border-2 border-gray-200 transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:border-[#7c3aed]/50 animate-in fade-in slide-in-from-bottom-4"
             style={{ animationDelay: `${index * 150}ms`, animationDuration: '600ms' }}
           >
             <CardContent className="p-6">

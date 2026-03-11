@@ -97,7 +97,7 @@ const statusConfig = {
   },
   warning: {
     icon: AlertCircle,
-    color: 'text-yellow-600',
+    color: 'text-orange-600',
   },
   error: {
     icon: AlertCircle,
@@ -146,7 +146,7 @@ function ActivityItemComponent({
         <div className="flex-1 min-w-0 pt-1">
           <div className="flex items-start justify-between gap-2 mb-1">
             <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900 group-hover:text-[#635BFF] transition-colors">
+              <p className="text-sm font-medium text-gray-900 group-hover:text-[#7c3aed] transition-colors">
                 {activity.title}
               </p>
               {activity.description && (

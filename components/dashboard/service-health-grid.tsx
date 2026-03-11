@@ -52,9 +52,9 @@ const statusConfig = {
   warning: {
     icon: '⚠️',
     label: 'Warning',
-    color: 'text-yellow-700',
-    bgColor: 'bg-yellow-100',
-    borderColor: 'border-yellow-200',
+    color: 'text-orange-700',
+    bgColor: 'bg-orange-100',
+    borderColor: 'border-orange-200',
   },
   critical: {
     icon: '●',
@@ -96,7 +96,7 @@ function ServiceCard({
     bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-xl transition-all duration-200 rounded-xl
     ${onClick ? 'cursor-pointer hover:-translate-y-0.5' : ''}
     ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200' : ''}
-    ${service.status === 'warning' ? 'border-yellow-200' : ''}
+    ${service.status === 'warning' ? 'border-orange-200' : ''}
     ${status.borderColor} border-l-4
   `.trim();
 
@@ -214,7 +214,7 @@ function ServiceListItem({
     flex items-center gap-4 p-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm transition-all duration-200
     ${onClick ? 'cursor-pointer hover:bg-gray-50 hover:shadow-xl hover:-translate-y-0.5' : ''}
     ${service.status === 'critical' ? 'ring-2 ring-red-500/30 border-red-200' : ''}
-    ${service.status === 'warning' ? 'border-yellow-200' : ''}
+    ${service.status === 'warning' ? 'border-orange-200' : ''}
     ${status.borderColor} border-l-4
   `.trim();
 

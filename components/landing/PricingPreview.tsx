@@ -1,136 +1,199 @@
 'use client'
 
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { ArrowRight, Check } from 'lucide-react'
-import { cn } from '@/lib/utils'
-
-/**
- * PricingPreview Component
- *
- * Mini pricing section showing all tiers at a glance.
- * Drives users to full pricing page for details.
- */
 
 const tiers = [
   {
     name: 'Free',
     price: '$0',
     period: 'forever',
-    resources: '20 resources',
     highlight: 'For personal projects',
     highlighted: false,
+    features: [
+      '20 AWS resources',
+      'Basic cost dashboard',
+      '7-day data history',
+      'Email alerts',
+    ],
+    cta: 'Get Started Free',
+    ctaHref: '/register',
   },
   {
     name: 'Starter',
     price: '$79',
     period: '/month',
-    resources: '60 resources',
     highlight: 'For small teams',
     highlighted: false,
+    features: [
+      '60 AWS resources',
+      'AI cost insights',
+      '30-day history',
+      'Slack alerts',
+      '3 team members',
+    ],
+    cta: 'Start Free Trial',
+    ctaHref: '/register',
   },
   {
     name: 'Pro',
     price: '$299',
     period: '/month',
-    resources: '500 resources',
-    highlight: 'Most popular',
+    highlight: 'Most Popular',
     highlighted: true,
+    features: [
+      '500 AWS resources',
+      'All 8 AI features',
+      '90-day history',
+      'DORA metrics',
+      'Unlimited members',
+      'Priority support',
+    ],
+    cta: 'Start Free Trial',
+    ctaHref: '/register',
   },
   {
     name: 'Enterprise',
     price: 'Custom',
     period: '',
-    resources: 'Unlimited',
     highlight: 'For large orgs',
     highlighted: false,
+    features: [
+      'Unlimited resources',
+      'Custom integrations',
+      'Unlimited history',
+      'SSO / SAML',
+      'Dedicated CSM',
+      'SLA guarantee',
+    ],
+    cta: 'Talk to Sales',
+    ctaHref: '/contact',
   },
 ]
 
+const inner: React.CSSProperties = {
+  maxWidth: '1200px',
+  margin: '0 auto',
+  padding: '0 48px',
+}
+
+const eyebrow: React.CSSProperties = {
+  color: '#7c3aed',
+  fontSize: '13px',
+  letterSpacing: '0.1em',
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  marginBottom: '12px',
+}
+
 export function PricingPreview() {
   return (
-    <section className="py-24 bg-white">
-      <div className="container mx-auto px-4">
-        {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-12">
-          <p className="text-sm font-semibold text-[#635BFF] uppercase tracking-wide mb-3">
-            Pricing
-          </p>
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Simple, transparent pricing
+    <section id="pricing" style={{ width: '100%', padding: '64px 0', backgroundColor: '#fff' }}>
+      <div style={inner}>
+        <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 48px' }}>
+          <p style={eyebrow}>Pricing</p>
+          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#7c3aed', marginBottom: '14px', lineHeight: 1.2 }}>
+            Start free. Scale as you grow.
           </h2>
-          <p className="text-xl text-muted-foreground">
-            Start free, upgrade as you grow. All plans include a 14-day trial.
+          <p style={{ fontSize: '1.125rem', color: '#6b7280', lineHeight: 1.7 }}>
+            All plans include a 14-day free trial. No credit card required.
           </p>
         </div>
 
-        {/* Pricing Cards Grid */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto mb-10">
-          {tiers.map((tier, index) => (
-            <Card
-              key={index}
-              className={cn(
-                'relative transition-all duration-300 hover:shadow-lg',
-                tier.highlighted
-                  ? 'border-2 border-[#635BFF] shadow-lg scale-105'
-                  : 'border hover:border-gray-300'
-              )}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6" style={{ marginBottom: '36px' }}>
+          {tiers.map((tier) => (
+            <div
+              key={tier.name}
+              className="relative bg-white rounded-2xl flex flex-col"
+              style={{
+                border: tier.highlighted ? '2px solid #7c3aed' : '1px solid #f3f4f6',
+                boxShadow: tier.highlighted ? '0 8px 30px rgba(124,58,237,0.15)' : '0 2px 8px rgba(0,0,0,0.04)',
+                transform: tier.highlighted ? 'scale(1.03)' : 'none',
+                padding: '32px 24px',
+              }}
             >
               {tier.highlighted && (
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#635BFF] hover:bg-[#635BFF]">
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 rounded-full text-white font-bold whitespace-nowrap"
+                  style={{ top: '-14px', backgroundColor: '#7c3aed', padding: '4px 16px', fontSize: '12px' }}
+                >
                   Most Popular
-                </Badge>
-              )}
-              <CardContent className="p-6 text-center">
-                <h3 className="font-semibold text-lg mb-2">{tier.name}</h3>
-                <div className="mb-3">
-                  <span className="text-3xl font-bold">{tier.price}</span>
-                  <span className="text-muted-foreground text-sm">
-                    {tier.period}
-                  </span>
                 </div>
-                <p className="text-sm text-muted-foreground mb-3">
-                  {tier.resources}
-                </p>
-                <p className="text-xs text-[#635BFF] font-medium">
-                  {tier.highlight}
-                </p>
-              </CardContent>
-            </Card>
+              )}
+
+              <div style={{ marginBottom: '24px' }}>
+                <h3 className="font-bold" style={{ fontSize: '1.125rem', color: '#111827', marginBottom: '4px' }}>{tier.name}</h3>
+                <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '16px' }}>{tier.highlight}</p>
+                <div className="flex items-baseline gap-1">
+                  <span className="font-extrabold" style={{ fontSize: '2.25rem', color: '#111827' }}>{tier.price}</span>
+                  {tier.period && <span style={{ color: '#9ca3af', fontSize: '14px' }}>{tier.period}</span>}
+                </div>
+              </div>
+
+              <ul style={{ marginBottom: '24px', flex: 1 }} className="space-y-3">
+                {tier.features.map((feature) => (
+                  <li key={feature} className="flex items-center gap-2" style={{ fontSize: '14px', color: '#6b7280' }}>
+                    <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#7c3aed' }} />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                href={tier.ctaHref}
+                className="block text-center rounded-xl font-semibold"
+                style={{
+                  padding: '12px 16px',
+                  fontSize: '14px',
+                  textDecoration: 'none',
+                  transition: 'all 0.15s ease',
+                  ...(tier.highlighted
+                    ? { backgroundColor: '#7c3aed', color: '#fff' }
+                    : { backgroundColor: '#f3f4f6', color: '#374151' }),
+                }}
+                onMouseEnter={(e) => {
+                  const el = e.currentTarget as HTMLAnchorElement
+                  el.style.opacity = '0.85'
+                }}
+                onMouseLeave={(e) => {
+                  const el = e.currentTarget as HTMLAnchorElement
+                  el.style.opacity = '1'
+                }}
+              >
+                {tier.cta}
+              </Link>
+            </div>
           ))}
         </div>
 
-        {/* CTA */}
-        <div className="text-center">
-          <Button
-            variant="outline"
-            size="lg"
-            className="group"
-            asChild
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <Link
+            href="/pricing"
+            className="inline-flex items-center gap-2 font-semibold"
+            style={{ color: '#7c3aed', textDecoration: 'none', fontSize: '15px', transition: 'all 0.15s ease' }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget as HTMLAnchorElement
+              el.style.color = '#6b21a8'
+              el.style.textDecoration = 'underline'
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget as HTMLAnchorElement
+              el.style.color = '#7c3aed'
+              el.style.textDecoration = 'none'
+            }}
           >
-            <Link href="/pricing">
-              See full pricing comparison
-              <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
-          </Button>
+            See full pricing comparison
+            <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
 
-        {/* Trust Signals */}
-        <div className="flex flex-wrap items-center justify-center gap-6 mt-8 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-600" />
-            <span>14-day free trial</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-600" />
-            <span>No credit card required</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-600" />
-            <span>Cancel anytime</span>
-          </div>
+        <div className="flex flex-wrap items-center justify-center gap-6" style={{ fontSize: '14px', color: '#9ca3af' }}>
+          {['14-day free trial', 'No credit card required', 'Cancel anytime'].map((item) => (
+            <div key={item} className="flex items-center gap-2">
+              <Check className="h-4 w-4" style={{ color: '#16a34a' }} />
+              <span>{item}</span>
+            </div>
+          ))}
         </div>
       </div>
     </section>

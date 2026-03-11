@@ -25,7 +25,7 @@ const gradeColors: Record<string, string> = {
 const gradeBackgrounds: Record<string, string> = {
   A: 'bg-green-100 text-green-800 border-green-200',
   B: 'bg-lime-100 text-lime-800 border-lime-200',
-  C: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  C: 'bg-orange-100 text-orange-800 border-orange-200',
   D: 'bg-orange-100 text-orange-800 border-orange-200',
   F: 'bg-red-100 text-red-800 border-red-200',
 };
@@ -102,7 +102,7 @@ export function RiskScoreCard({ data, isLoading, compact = false }: RiskScoreCar
   const getFactorColor = (value: number) => {
     if (value >= 90) return 'bg-green-500';
     if (value >= 75) return 'bg-lime-500';
-    if (value >= 60) return 'bg-yellow-500';
+    if (value >= 60) return 'bg-orange-500';
     if (value >= 40) return 'bg-orange-500';
     return 'bg-red-500';
   };

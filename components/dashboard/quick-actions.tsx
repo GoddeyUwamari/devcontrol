@@ -92,7 +92,7 @@ export function QuickActions({
       {primaryAction && (
         <Button
           onClick={primaryAction.onClick}
-          className="bg-[#635BFF] hover:bg-[#4f46e5]"
+          className="bg-[#7c3aed] hover:bg-[#4f46e5]"
         >
           <primaryAction.icon className="h-4 w-4 mr-2" />
           {primaryAction.label}

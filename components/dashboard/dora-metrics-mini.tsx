@@ -55,9 +55,9 @@ const performanceLevelConfig: Record<PerformanceLevel, {
   },
   medium: {
     label: 'Medium',
-    color: 'text-yellow-700',
-    bgColor: 'bg-yellow-100',
-    borderColor: 'border-yellow-200',
+    color: 'text-orange-700',
+    bgColor: 'bg-orange-100',
+    borderColor: 'border-orange-200',
   },
   low: {
     label: 'Low',

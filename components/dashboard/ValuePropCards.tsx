@@ -91,7 +91,7 @@ export function ValuePropCards() {
     <div className="py-8">
       {/* Section Header */}
       <div className="mb-12 text-center">
-        <Badge className="mb-4 bg-[#635BFF]/10 text-[#635BFF] border-[#635BFF]/20 hover:bg-[#635BFF]/20">
+        <Badge className="mb-4 bg-[#7c3aed]/10 text-[#7c3aed] border-[#7c3aed]/20 hover:bg-[#7c3aed]/20">
           <Sparkles className="h-3 w-3 mr-1" />
           Key Features
         </Badge>
@@ -108,7 +108,7 @@ export function ValuePropCards() {
         {valueCards.map((card, index) => (
           <Card
             key={index}
-            className={`group border-2 ${card.borderColor} transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:border-[#635BFF] animate-in fade-in slide-in-from-bottom-4`}
+            className={`group border-2 ${card.borderColor} transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:border-[#7c3aed] animate-in fade-in slide-in-from-bottom-4`}
             style={{ animationDelay: `${index * 100}ms`, animationDuration: '600ms' }}
           >
             <CardContent className="p-6">
@@ -131,7 +131,7 @@ export function ValuePropCards() {
               <ul className="mb-4 space-y-2">
                 {card.features.map((feature, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-gray-600">
-                    <ArrowRight className="h-3 w-3 mt-0.5 text-[#635BFF] flex-shrink-0" />
+                    <ArrowRight className="h-3 w-3 mt-0.5 text-[#7c3aed] flex-shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -139,13 +139,13 @@ export function ValuePropCards() {
 
               {/* Metric */}
               <div className="pt-4 border-t border-gray-100">
-                <p className="text-sm font-semibold text-[#635BFF]">
+                <p className="text-sm font-semibold text-[#7c3aed]">
                   {card.metric}
                 </p>
               </div>
 
               {/* Learn more link */}
-              <button className="mt-4 text-sm font-medium text-[#635BFF] hover:text-[#4f46e5] flex items-center gap-1 group-hover:gap-2 transition-all">
+              <button className="mt-4 text-sm font-medium text-[#7c3aed] hover:text-[#4f46e5] flex items-center gap-1 group-hover:gap-2 transition-all">
                 Learn more
                 <ArrowRight className="h-4 w-4" />
               </button>

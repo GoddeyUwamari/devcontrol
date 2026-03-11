@@ -42,9 +42,9 @@ const confidenceConfig = {
   },
   medium: {
     label: 'Medium Confidence',
-    color: 'text-yellow-700',
-    bgColor: 'bg-yellow-100',
-    borderColor: 'border-yellow-200',
+    color: 'text-orange-700',
+    bgColor: 'bg-orange-100',
+    borderColor: 'border-orange-200',
   },
   low: {
     label: 'Low Confidence',
@@ -116,7 +116,7 @@ function OpportunityItem({
               <Button
                 size="sm"
                 onClick={opportunity.onOptimize}
-                className="bg-[#635BFF] hover:bg-[#4f46e5]"
+                className="bg-[#7c3aed] hover:bg-[#4f46e5]"
               >
                 <Zap className="h-4 w-4 mr-1" />
                 One-click Optimize

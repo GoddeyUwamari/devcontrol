@@ -24,7 +24,7 @@ export function WelcomeHero() {
             {/* Rocket Icon */}
             <div className="mb-6 flex justify-center lg:justify-start">
               <div className="rounded-full bg-gradient-to-br from-blue-100 to-purple-100 p-4 shadow-md">
-                <Rocket className="h-10 w-10 text-[#635BFF]" />
+                <Rocket className="h-10 w-10 text-[#7c3aed]" />
               </div>
             </div>
 
@@ -56,7 +56,7 @@ export function WelcomeHero() {
             <div className="mb-6 flex flex-col items-center lg:items-start gap-3 sm:flex-row">
               <Button
                 size="lg"
-                className="bg-[#635BFF] hover:bg-[#4f46e5] text-white px-8 py-3 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
+                className="bg-[#7c3aed] hover:bg-[#4f46e5] text-white px-8 py-3 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
                 onClick={() => router.push('/settings/organization?tab=aws')}
               >
                 Connect AWS Account

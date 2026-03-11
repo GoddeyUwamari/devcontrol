@@ -1,6 +1,24 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom Purple Color Scale for Tailwind v4 */
+@theme {
+  --color-purple-50: #faf5ff;
+  --color-purple-100: #f3e8ff;
+  --color-purple-200: #e9d5ff;
+  --color-purple-300: #d8b4fe;
+  --color-purple-400: #c084fc;
+  --color-purple-500: #a855f7;
+  --color-purple-600: #9333ea;
+  --color-purple-700: #7c3aed;
+  --color-purple-800: #6b21a8;
+  --color-purple-900: #581c87;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -300,6 +318,152 @@
   .status-indicator-pulse {
     animation: none;
   }
+}
+
+/* ============================================
+   DASHBOARD REDESIGN UTILITIES
+   ============================================ */
+
+/* Background grid pattern for hero CTA */
+.bg-grid-white {
+  background-image: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.05) 1px,
+    transparent 1px
+  ),
+  linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.05) 1px,
+    transparent 1px
+  );
+  background-size: 20px 20px;
+}
+
+/* Remove all yellow backgrounds globally - CRITICAL */
+.bg-yellow-50,
+.bg-yellow-100,
+.bg-yellow-200,
+.bg-yellow-300,
+.bg-yellow-400,
+.bg-yellow-500 {
+  background-color: white !important;
+}
+
+/* Remove yellow text colors */
+.text-yellow-500,
+.text-yellow-600,
+.text-yellow-700,
+.text-yellow-800 {
+  color: rgb(107 114 128) !important; /* gray-500 */
+}
+
+/* Remove yellow borders */
+.border-yellow-300,
+.border-yellow-400,
+.border-yellow-500 {
+  border-color: rgb(229 231 235) !important; /* gray-200 */
+}
+
+/* Ensure consistent card styling */
+.card-hover {
+  transition: all 0.2s ease-in-out;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+}
+
+/* Purple accent utilities - Vibrant Purple (#7c3aed) */
+.border-purple-accent {
+  border-color: #7c3aed;
+}
+
+.bg-purple-accent {
+  background-color: #7c3aed;
+}
+
+.text-purple-accent {
+  color: #7c3aed;
+}
+
+/* ============================================
+   VIBRANT PURPLE BRAND COLORS - Marketing Homepage
+   Primary: #7c3aed (purple-700)
+   ============================================ */
+
+/* Primary Purple Color Scale */
+:root {
+  --purple-50: 250 245 255;
+  --purple-100: 243 232 255;
+  --purple-200: 233 213 255;
+  --purple-300: 216 180 254;
+  --purple-400: 192 132 252;
+  --purple-500: 168 85 247;
+  --purple-600: 147 51 234;
+  --purple-700: 124 58 237;  /* Main brand color */
+  --purple-800: 107 33 168;
+  --purple-900: 88 28 135;
+  --brand-primary: #7c3aed;
+  --brand-primary-hover: #6d28d9;
+  --brand-primary-light: #8b5cf6;
+}
+
+/* Brand color utilities */
+.bg-brand-primary {
+  background-color: #7c3aed;
+}
+
+.bg-brand-primary-hover:hover {
+  background-color: #6d28d9;
+}
+
+.text-brand-primary {
+  color: #7c3aed;
+}
+
+.border-brand-primary {
+  border-color: #7c3aed;
+}
+
+/* Marketing card styles with enhanced visibility */
+.marketing-card {
+  background: white;
+  border: 2px solid rgb(209 213 219); /* gray-300 */
+  border-radius: 1rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  transition: all 0.3s ease;
+}
+
+.marketing-card:hover {
+  border-color: rgb(192 132 252); /* purple-400 */
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  transform: translateY(-4px);
+}
+
+/* Gradient icon backgrounds */
+.icon-gradient-green {
+  background: linear-gradient(135deg, rgb(220 252 231) 0%, rgb(187 247 208) 100%);
+}
+
+.icon-gradient-blue {
+  background: linear-gradient(135deg, rgb(219 234 254) 0%, rgb(191 219 254) 100%);
+}
+
+.icon-gradient-purple {
+  background: linear-gradient(135deg, rgb(243 232 255) 0%, rgb(233 213 255) 100%);
+}
+
+.icon-gradient-orange {
+  background: linear-gradient(135deg, rgb(255 237 213) 0%, rgb(254 215 170) 100%);
+}
+
+.icon-gradient-cyan {
+  background: linear-gradient(135deg, rgb(207 250 254) 0%, rgb(165 243 252) 100%);
+}
+
+.icon-gradient-pink {
+  background: linear-gradient(135deg, rgb(252 231 243) 0%, rgb(251 207 232) 100%);
 }
 
 /* ============================================

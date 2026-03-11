@@ -35,17 +35,10 @@ export function DemoModeToggle() {
     localStorage.setItem(DEMO_MODE_KEY, String(newValue));
 
     // Dispatch custom event so pages can react to the change
+    // No page reload - React state handles the data swap
     window.dispatchEvent(new CustomEvent('demo-mode-changed', {
       detail: { enabled: newValue }
     }));
-
-    // When turning ON demo mode, navigate to dashboard
-    // When turning OFF, stay on current page and reload
-    if (newValue) {
-      window.location.href = '/dashboard';
-    } else {
-      window.location.reload();
-    }
   };
 
   return (
@@ -74,8 +67,8 @@ export function DemoModeToggle() {
         <TooltipContent side="left">
           <p className="text-xs max-w-xs">
             {demoMode
-              ? 'Showing empty state previews. Click to view real data.'
-              : 'Showing real data. Click to preview empty states.'}
+              ? 'Viewing sample data. Click to return to real data.'
+              : 'Viewing real data. Click to see sample data.'}
           </p>
         </TooltipContent>
       </Tooltip>

@@ -78,7 +78,7 @@ export function Header() {
             <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
               <Avatar className="w-9 h-9">
                 <AvatarImage src="/avatar.png" alt="User" />
-                <AvatarFallback className="bg-[#635BFF] text-white text-sm">
+                <AvatarFallback className="bg-[#7c3aed] text-white text-sm">
                   {getUserInitials()}
                 </AvatarFallback>
               </Avatar>

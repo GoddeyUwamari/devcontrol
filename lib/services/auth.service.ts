@@ -193,11 +193,15 @@ export const tokenManager = {
    * Set auth cookie for middleware
    */
   setAuthCookie(token: string): void {
+    console.log('setAuthCookie called with:', token);
+    console.log('typeof token:', typeof token);
     if (typeof window === "undefined") return;
     // Set cookie with SameSite and Secure flags for better compatibility
     const isSecure = window.location.protocol === "https:";
     const secureFlag = isSecure ? " Secure;" : "";
-    document.cookie = `auth-token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax;${secureFlag}`;
+    console.log('Setting auth-token cookie with token:', token.substring(0, 20) + '...');
+    document.cookie = `auth-token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Strict`;
+    console.log('Cookie after set:', document.cookie);
   },
 
   /**

@@ -57,7 +57,7 @@ export function ResourceLinks() {
           <Button
             key={index}
             variant="outline"
-            className="border-gray-300 text-gray-700 hover:border-[#635BFF] hover:bg-[#635BFF] hover:text-white"
+            className="border-gray-300 text-gray-700 hover:border-[#7c3aed] hover:bg-[#7c3aed] hover:text-white"
             onClick={() => {
               // In a real app, these would link to actual resources
               console.log(`Navigate to: ${resource.label}`);

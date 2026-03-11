@@ -2,130 +2,101 @@
 
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Sparkles, ArrowRight, Play, Check, ChevronDown, Star } from 'lucide-react'
-import { DashboardPreview } from './DashboardPreview'
+import { ArrowRight, Play, Check } from 'lucide-react'
 import { AnimatedBackground } from './AnimatedBackground'
 
-/**
- * HeroSection Component
- *
- * Primary conversion driver with gradient background, animated elements,
- * large CTAs, and dashboard preview.
- */
+const inner: React.CSSProperties = {
+  maxWidth: '1200px',
+  margin: '0 auto',
+  padding: '0 48px',
+}
+
 export function HeroSection() {
   return (
-    <section className="relative min-h-screen pt-24 pb-20 overflow-hidden">
-      {/* Animated Background */}
+    <section
+      className="relative overflow-hidden flex items-center"
+      style={{ width: '100%', paddingTop: '120px', paddingBottom: '32px' }}
+    >
       <AnimatedBackground />
+      <div className="absolute inset-0 -z-10" style={{ background: 'linear-gradient(to bottom, #faf5ff, #ffffff)' }} />
 
-      {/* Gradient Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-purple-50 to-blue-50 -z-10" />
+      <div style={{ ...inner, width: '100%', textAlign: 'center' }}>
+        <h1 className="font-extrabold leading-tight" style={{ fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', marginBottom: '20px' }}>
+          <span style={{ color: '#7c3aed' }}>Stop Firefighting</span>
+          <br />
+          <span style={{ color: '#111827' }}>Your AWS Infrastructure</span>
+        </h1>
 
-      {/* Content Container */}
-      <div className="container mx-auto px-4 relative z-10">
-        <div className="max-w-4xl mx-auto text-center">
-          {/* Social Proof Badge */}
-          <div className="flex justify-center mb-4 animate-in fade-in slide-in-from-top-4 duration-700">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm rounded-full border shadow-sm">
-              <div className="flex items-center text-blue-500">
-                <Star className="h-4 w-4 fill-current" />
-                <Star className="h-4 w-4 fill-current" />
-                <Star className="h-4 w-4 fill-current" />
-                <Star className="h-4 w-4 fill-current" />
-                <Star className="h-4 w-4 fill-current" />
-              </div>
-              <span className="text-sm font-medium text-gray-700">
-                Trusted by 500+ engineering teams
-              </span>
-            </div>
-          </div>
+        <p className="leading-relaxed" style={{ fontSize: '1.25rem', color: '#6b7280', marginBottom: '36px', maxWidth: '680px', margin: '0 auto 36px' }}>
+          See costs, security, and performance in one AI-powered control center — before problems become incidents.
+        </p>
 
-          {/* Announcement Badge */}
-          <div className="flex justify-center mb-6 animate-in fade-in slide-in-from-top-4 duration-700 delay-100">
-            <Badge
-              variant="outline"
-              className="py-2 px-4 border-[#635BFF]/20 hover:border-[#635BFF]/40 transition-colors cursor-pointer"
-            >
-              <Sparkles className="h-3 w-3 mr-2 text-[#635BFF]" />
-              <span className="text-sm">New: Automated cost optimization</span>
-              <ArrowRight className="h-3 w-3 ml-2" />
-            </Badge>
-          </div>
-
-          {/* Main Heading */}
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-6 animate-in fade-in zoom-in duration-1000 delay-150">
-            Welcome to DevControl
-          </h1>
-
-          {/* Subheadline 1 - AI-powered */}
-          <p className="text-lg md:text-xl text-gray-700 mb-4 leading-relaxed max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
-            Your AI-powered AWS infrastructure command center for engineering teams scaling from 5 to 500 engineers.
-          </p>
-
-          {/* Subheadline 2 - Features */}
-          <p className="text-base md:text-lg text-gray-600 mb-6 leading-relaxed max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-400">
-            Monitor services, track deployments, optimize costs, ensure security, and centralize team governance—all in one powerful dashboard.
-          </p>
-
-          {/* Closing Line - Benefits */}
-          <p className="text-lg md:text-xl font-semibold text-gray-900 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-500">
-            Ship faster. Spend less. Reduce risk.
-          </p>
-
-          {/* CTAs */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-10 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-600">
-            <Button
-              size="lg"
-              className="bg-[#635BFF] hover:bg-[#4f46e5] text-lg px-8 py-6 hover:scale-105 transition-transform"
-              asChild
-            >
-              <Link href="/register">
-                Get Started Free
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Link>
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="text-lg px-8 py-6 hover:scale-105 transition-transform"
-            >
-              <Play className="mr-2 h-5 w-5" />
-              Watch Demo
-            </Button>
-          </div>
-
-          {/* Trust Signals */}
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground animate-in fade-in duration-1000 delay-800">
-            <div className="flex items-center gap-2">
-              <Check className="h-4 w-4 text-green-600" />
-              <span>2-minute setup</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Check className="h-4 w-4 text-green-600" />
-              <span>No credit card required</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Check className="h-4 w-4 text-green-600" />
-              <span>14-day free trial</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Dashboard Preview */}
-        <div className="mt-16 animate-in fade-in zoom-in duration-1000 delay-1000">
-          <DashboardPreview />
-        </div>
-
-        {/* Scroll Indicator */}
-        <div className="flex justify-center mt-12 animate-in fade-in duration-1000 delay-1200">
-          <a
-            href="#how-it-works"
-            className="flex flex-col items-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer group"
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4" style={{ marginBottom: '24px' }}>
+          <Button
+            size="lg"
+            style={{ backgroundColor: '#7c3aed' }}
+            className="hover:opacity-90 text-lg px-8 py-6 hover:scale-105 transition-all shadow-lg hover:shadow-xl text-white"
+            asChild
           >
-            <span className="text-sm mb-2">See how it works</span>
-            <ChevronDown className="h-5 w-5 animate-bounce" />
-          </a>
+            <Link href="/register">
+              Connect AWS Account
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Link>
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="text-lg px-8 py-6 hover:scale-105 transition-all border-2 hover:shadow-lg"
+            style={{ borderColor: '#e5e7eb' }}
+          >
+            <Play className="mr-2 h-5 w-5" />
+            Watch Demo
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-6" style={{ color: '#9ca3af', fontSize: '14px', marginBottom: '48px' }}>
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4" style={{ color: '#16a34a' }} />
+            <span>2-minute setup</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4" style={{ color: '#16a34a' }} />
+            <span>No credit card required</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4" style={{ color: '#16a34a' }} />
+            <span>14-day free trial</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4" style={{ color: '#16a34a' }} />
+            <span>Read-only access</span>
+          </div>
+        </div>
+
+        <div
+          className="rounded-2xl"
+          style={{
+            background: '#fff',
+            border: '1px solid #f3f4f6',
+            boxShadow: '0 8px 32px rgba(124,58,237,0.08)',
+            padding: '32px',
+            maxWidth: '700px',
+            margin: '0 auto',
+          }}
+        >
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[
+              { value: '$2,400', label: 'avg monthly savings' },
+              { value: '15min', label: 'setup time' },
+              { value: '99.9%', label: 'platform uptime' },
+              { value: 'SOC 2', label: 'ready' },
+            ].map((stat, i) => (
+              <div key={stat.label} className="text-center" style={i > 0 ? { borderLeft: '1px solid #f3f4f6' } : {}}>
+                <div className="font-extrabold text-2xl" style={{ color: '#7c3aed' }}>{stat.value}</div>
+                <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>

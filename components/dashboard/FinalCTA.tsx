@@ -52,7 +52,7 @@ export function FinalCTA() {
         <div className="mb-8 flex flex-col sm:flex-row items-center justify-center gap-4">
           <Button
             size="lg"
-            className="bg-white hover:bg-gray-100 text-[#635BFF] px-10 py-7 text-lg font-bold shadow-2xl transition-all duration-200 hover:scale-105 hover:shadow-3xl"
+            className="bg-white hover:bg-gray-100 text-[#7c3aed] px-10 py-7 text-lg font-bold shadow-2xl transition-all duration-200 hover:scale-105 hover:shadow-3xl"
             onClick={() => router.push('/settings/organization?tab=aws')}
           >
             <Rocket className="mr-2 h-6 w-6" />
@@ -62,7 +62,7 @@ export function FinalCTA() {
           <Button
             size="lg"
             variant="outline"
-            className="border-2 border-white text-white hover:bg-white hover:text-[#635BFF] px-10 py-7 text-lg font-bold transition-all duration-200 hover:scale-105"
+            className="border-2 border-white text-white hover:bg-white hover:text-[#7c3aed] px-10 py-7 text-lg font-bold transition-all duration-200 hover:scale-105"
             onClick={() => router.push('/services/new')}
           >
             Schedule Demo

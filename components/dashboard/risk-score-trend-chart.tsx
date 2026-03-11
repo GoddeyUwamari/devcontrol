@@ -37,7 +37,7 @@ const gradeColors: Record<string, string> = {
 const gradeBackgrounds: Record<string, string> = {
   A: 'bg-green-100 text-green-800',
   B: 'bg-lime-100 text-lime-800',
-  C: 'bg-yellow-100 text-yellow-800',
+  C: 'bg-orange-100 text-orange-800',
   D: 'bg-orange-100 text-orange-800',
   F: 'bg-red-100 text-red-800',
 };

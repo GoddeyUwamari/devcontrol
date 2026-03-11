@@ -85,7 +85,7 @@ export function IntegrationShowcase() {
         {integrations.map((integration, index) => (
           <Card
             key={index}
-            className="group border-2 border-gray-200 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 hover:border-[#635BFF]/50 animate-in fade-in slide-in-from-bottom-4"
+            className="group border-2 border-gray-200 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 hover:border-[#7c3aed]/50 animate-in fade-in slide-in-from-bottom-4"
             style={{ animationDelay: `${index * 100}ms`, animationDuration: '600ms' }}
           >
             <CardContent className="p-6">
@@ -103,7 +103,7 @@ export function IntegrationShowcase() {
                   <Badge
                     key={i}
                     variant="outline"
-                    className="text-xs border-gray-300 hover:border-[#635BFF] hover:bg-[#635BFF]/10 transition-colors"
+                    className="text-xs border-gray-300 hover:border-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
                   >
                     {service}
                   </Badge>
@@ -116,7 +116,7 @@ export function IntegrationShowcase() {
 
       {/* View all link */}
       <div className="mt-10 text-center">
-        <button className="inline-flex items-center gap-2 text-[#635BFF] hover:text-[#4f46e5] font-medium text-lg group">
+        <button className="inline-flex items-center gap-2 text-[#7c3aed] hover:text-[#4f46e5] font-medium text-lg group">
           <span>View all 50+ integrations</span>
           <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
         </button>

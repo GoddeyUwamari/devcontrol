@@ -34,8 +34,8 @@ export function HeroMetricCard({
   trend,
   icon: Icon,
   loading,
-  iconColor = 'text-[#635BFF]',
-  iconBgColor = 'bg-[#635BFF]/10',
+  iconColor = 'text-[#7c3aed]',
+  iconBgColor = 'bg-[#7c3aed]/10',
   status,
   sparklineData,
   onClick,
@@ -85,7 +85,7 @@ export function HeroMetricCard({
 
   const statusColors = {
     success: 'bg-green-100 text-green-700 border-green-200',
-    warning: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    warning: 'bg-orange-100 text-orange-700 border-orange-200',
     error: 'bg-red-100 text-red-700 border-red-200',
     info: 'bg-blue-100 text-blue-700 border-blue-200',
   };
@@ -157,7 +157,7 @@ export function HeroMetricCard({
                       ? '#9333ea'
                       : iconColor === 'text-orange-600'
                       ? '#ea580c'
-                      : '#635BFF'
+                      : '#7c3aed'
                   }
                   strokeWidth={2}
                   dot={false}

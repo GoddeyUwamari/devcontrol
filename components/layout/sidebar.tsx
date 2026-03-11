@@ -82,7 +82,7 @@ export function Sidebar() {
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-[#635BFF] text-white'
+                  ? 'bg-[#7c3aed] text-white'
                   : 'text-gray-300 hover:bg-white/5 hover:text-white'
               )}
             >
@@ -105,7 +105,7 @@ export function Sidebar() {
             <button className="flex items-center gap-3 w-full px-2 py-2 rounded-lg hover:bg-white/5 transition-colors">
               <Avatar className="w-8 h-8">
                 <AvatarImage src="/avatar.png" alt="User" />
-                <AvatarFallback className="bg-[#635BFF] text-white text-sm">
+                <AvatarFallback className="bg-[#7c3aed] text-white text-sm">
                   {getUserInitials()}
                 </AvatarFallback>
               </Avatar>
