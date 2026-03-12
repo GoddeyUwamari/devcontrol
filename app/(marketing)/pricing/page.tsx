@@ -1,28 +1,11 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { PricingTier } from '@/types/billing';
-import { PricingCard } from '@/components/billing/pricing-card';
-import { BillingToggle } from '@/components/billing/billing-toggle';
-import { FeatureComparisonTable } from '@/components/billing/feature-comparison-table';
-import { PricingFAQ } from '@/components/billing/pricing-faq';
-import { TrustBadges } from '@/components/billing/trust-badges';
-import { PricingROI } from '@/components/pricing/pricing-roi';
-// REMOVED: Fake testimonials - legal compliance
-// import { PricingTestimonials } from '@/components/pricing/pricing-testimonials';
-import { getSubscription } from '@/lib/services/stripe.service';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Footer } from '@/components/footer';
-import { Breadcrumb } from '@/components/navigation/breadcrumb';
-import {
-  Sparkles,
-  Shield,
-  Clock,
-  CheckCircle2,
-  ArrowRight,
-  Calculator
-} from 'lucide-react';
+import { useState } from 'react'
+import { CheckCircle2, Clock, Shield, Sparkles, Zap } from 'lucide-react'
+import { FeatureComparisonTable } from '@/components/billing/feature-comparison-table'
+import { PricingFAQ } from '@/components/billing/pricing-faq'
+import { PricingROI } from '@/components/pricing/pricing-roi'
+import { PricingTier } from '@/types/billing'
 
 const pricingTiers: PricingTier[] = [
   {
@@ -142,245 +125,360 @@ const pricingTiers: PricingTier[] = [
       { name: 'Custom integrations', price: 299 },
     ],
   },
-];
+]
 
 export default function PricingPage() {
-  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
-  const [currentTier, setCurrentTier] = useState<string>('free');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchSubscription() {
-      try {
-        const result = await getSubscription();
-        if (result.success && result.data) {
-          setCurrentTier(result.data.tier);
-        }
-      } catch (error) {
-        console.error('Error fetching subscription:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchSubscription();
-  }, []);
+  const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Hero Section - Strong Value Prop */}
-      <section className="relative overflow-hidden">
-        {/* Gradient Background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-purple-50 via-purple-50/50 to-background dark:from-purple-950/20 dark:via-purple-950/10 dark:to-background" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-purple-100/40 via-transparent to-transparent dark:from-purple-900/20" />
+    <div style={{ minHeight: '100vh', background: '#fff' }}>
 
-        {/* Breadcrumb Navigation */}
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <Breadcrumb
-            items={[
-              { label: 'Home', href: '/' },
-              { label: 'Pricing', current: true },
-            ]}
-          />
-        </div>
+      {/* HERO */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
+        padding: '80px 48px 60px',
+        textAlign: 'center',
+        borderBottom: '1px solid #f3f4f6',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)',
+            borderRadius: '100px', padding: '6px 16px',
+            fontSize: '0.78rem', fontWeight: 600, color: '#15803d',
+            marginBottom: '24px',
+          }}>
+            <CheckCircle2 size={14} />
+            Average $2,400/month AWS savings
+          </div>
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-12">
-          <div className="text-center max-w-4xl mx-auto">
-            {/* Trust Signal */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-sm font-medium mb-6">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Average $2,400/month AWS savings</span>
-            </div>
+          <h1 style={{
+            fontSize: 'clamp(2rem, 5vw, 3.5rem)',
+            fontWeight: 800, color: '#0f172a',
+            lineHeight: 1.15, marginBottom: '16px',
+            letterSpacing: '-0.02em',
+          }}>
+            Simple Pricing.{' '}
+            <span style={{ color: '#7c3aed' }}>Serious Savings.</span>
+          </h1>
 
-            {/* Main Headline */}
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
-              AI-Powered DevOps,{' '}
-              <span className="bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">
-                Human-Friendly Pricing
-              </span>
-            </h1>
+          <p style={{
+            fontSize: '1.15rem', color: '#374151',
+            lineHeight: 1.7, maxWidth: '560px',
+            margin: '0 auto 32px',
+          }}>
+            Start free. Upgrade when you need AI-powered cost optimization,
+            security scanning, and DORA metrics.
+          </p>
 
-            {/* Subheadline with ROI */}
-            <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-              The only platform with{' '}
-              <span className="font-semibold text-purple-600 dark:text-purple-400">6 AI features</span> built-in.
-              <br className="hidden sm:block" />
-              Cut AWS costs <span className="font-semibold text-green-600 dark:text-green-400">30%</span>, deploy <span className="font-semibold text-purple-600 dark:text-purple-400">2x faster</span>.
-            </p>
-
-            {/* Quick Value Props */}
-            <div className="flex flex-wrap justify-center gap-6 text-sm text-muted-foreground mb-8">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-purple-600" />
-                <span>3-minute setup</span>
+          <div style={{
+            display: 'flex', flexWrap: 'wrap',
+            justifyContent: 'center', gap: '28px',
+            fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+          }}>
+            {([
+              { icon: Clock,     text: '15-min setup' },
+              { icon: Shield,    text: 'Read-only AWS access' },
+              { icon: Sparkles,  text: 'No credit card required' },
+              { icon: Zap,       text: '14-day free trial' },
+            ] as const).map(({ icon: Icon, text }) => (
+              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Icon size={16} style={{ color: '#7c3aed' }} />
+                {text}
               </div>
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-green-600" />
-                <span>Read-only AWS access</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-purple-600" />
-                <span>No credit card required</span>
-              </div>
-            </div>
-
-            {/* CTA Link */}
-            <a
-              href="#pricing-cards"
-              className="inline-flex items-center gap-2 text-primary hover:text-primary/80 font-medium transition-colors"
-            >
-              <Calculator className="w-4 h-4" />
-              Calculate your potential savings
-              <ArrowRight className="w-4 h-4" />
-            </a>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* ROI Section */}
-      <section className="py-12 md:py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* BILLING TOGGLE */}
+      <section style={{ padding: '48px 48px 0', textAlign: 'center' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center',
+            background: '#f3f4f6', borderRadius: '10px', padding: '4px',
+          }}>
+            {(['monthly', 'annual'] as const).map(period => (
+              <button
+                key={period}
+                onClick={() => setBilling(period)}
+                style={{
+                  padding: '8px 24px', borderRadius: '8px', border: 'none',
+                  fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
+                  background: billing === period ? '#7c3aed' : 'transparent',
+                  color: billing === period ? '#fff' : '#374151',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {period === 'monthly' ? 'Monthly' : 'Annual'}
+                {period === 'annual' && (
+                  <span style={{
+                    marginLeft: '6px', background: '#16a34a', color: '#fff',
+                    borderRadius: '100px', padding: '1px 6px', fontSize: '0.65rem',
+                    fontWeight: 700,
+                  }}>
+                    Save 20%
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING CARDS */}
+      <section style={{ padding: '40px 48px 80px', width: '100%' }}>
+        <div style={{
+          maxWidth: '1400px', margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '24px',
+        }}>
+          {pricingTiers.map(tier => {
+            const isPopular = tier.popular
+            const price = billing === 'annual' && tier.annualPrice
+              ? tier.annualPrice
+              : tier.price
+            const isEnterprise = tier.tier === 'enterprise'
+            const isFree = tier.tier === 'free'
+
+            return (
+              <div
+                key={tier.tier}
+                style={{
+                  background: '#fff',
+                  borderRadius: '20px',
+                  border: isPopular ? '2px solid #7c3aed' : '1.5px solid #e5e7eb',
+                  padding: '32px',
+                  position: 'relative',
+                  boxShadow: isPopular
+                    ? '0 8px 40px rgba(124,58,237,0.15)'
+                    : '0 2px 12px rgba(0,0,0,0.06)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                {isPopular && (
+                  <div style={{
+                    position: 'absolute', top: '-14px', left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: '#7c3aed', color: '#fff',
+                    borderRadius: '100px', padding: '4px 16px',
+                    fontSize: '0.75rem', fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                  }}>
+                    Most Popular
+                  </div>
+                )}
+
+                <div style={{
+                  fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                  textTransform: 'uppercase', letterSpacing: '0.1em',
+                  marginBottom: '8px',
+                }}>
+                  {tier.name}
+                </div>
+
+                <div style={{ marginBottom: '24px' }}>
+                  {isEnterprise ? (
+                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a' }}>
+                      Custom
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px' }}>
+                      <span style={{ fontSize: '2.5rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>
+                        ${price}
+                      </span>
+                      <span style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '6px' }}>
+                        /month
+                      </span>
+                    </div>
+                  )}
+                  {billing === 'annual' && tier.annualSavings && (
+                    <div style={{ fontSize: '0.78rem', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
+                      Save ${tier.annualSavings}/year
+                    </div>
+                  )}
+                  {isFree && (
+                    <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '4px' }}>
+                      Free forever
+                    </div>
+                  )}
+                </div>
+
+                <a
+                  href={isEnterprise ? '/contact' : '/register'}
+                  style={{
+                    display: 'block', textAlign: 'center',
+                    padding: '12px 24px', borderRadius: '10px',
+                    fontWeight: 700, fontSize: '0.9rem',
+                    textDecoration: 'none', marginBottom: '28px',
+                    background: isPopular ? '#7c3aed' : 'transparent',
+                    color: isPopular ? '#fff' : '#7c3aed',
+                    border: isPopular ? 'none' : '1.5px solid #7c3aed',
+                    boxShadow: isPopular ? '0 4px 16px rgba(124,58,237,0.3)' : 'none',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  {tier.cta}
+                </a>
+
+                <div style={{ borderTop: '1px solid #f3f4f6', marginBottom: '24px' }} />
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+                  {tier.features
+                    .filter(f => !f.startsWith('───'))
+                    .map(feature => {
+                      const isAI = feature.startsWith('✨')
+                      const text = feature.replace('✨ ', '')
+                      return (
+                        <div key={feature} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                          <CheckCircle2
+                            size={16}
+                            style={{ color: isAI ? '#7c3aed' : '#16a34a', marginTop: '2px', flexShrink: 0 }}
+                          />
+                          <span style={{ fontSize: '0.85rem', color: '#374151', fontWeight: isAI ? 600 : 400 }}>
+                            {isAI && (
+                              <span style={{
+                                background: 'rgba(124,58,237,0.08)',
+                                color: '#7c3aed', borderRadius: '4px',
+                                padding: '1px 5px', fontSize: '0.65rem',
+                                fontWeight: 700, marginRight: '4px',
+                              }}>AI</span>
+                            )}
+                            {text}
+                          </span>
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ maxWidth: '1400px', margin: '32px auto 0', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.875rem', color: '#374151', fontWeight: 500, marginBottom: '12px' }}>
+            All paid plans include a <strong>14-day money-back guarantee</strong>
+          </p>
+          <div style={{
+            display: 'flex', flexWrap: 'wrap',
+            justifyContent: 'center', gap: '20px',
+            fontSize: '0.8rem', color: '#6b7280',
+          }}>
+            {['Cancel anytime', 'No hidden fees', 'Instant access', 'SOC 2 In Progress'].map(item => (
+              <span key={item} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <CheckCircle2 size={13} style={{ color: '#16a34a' }} />
+                {item}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ROI CALCULATOR */}
+      <section style={{ padding: '80px 48px', width: '100%', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+
+          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center',
+              background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+              borderRadius: '100px', padding: '6px 16px',
+              fontSize: '0.78rem', fontWeight: 700, color: '#7c3aed',
+              marginBottom: '16px', letterSpacing: '0.1em', textTransform: 'uppercase' as const,
+            }}>
+              ROI Calculator
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '12px',
+            }}>
+              Why Teams Choose DevControl
+            </h2>
+            <p style={{
+              fontSize: '1rem', color: '#374151', lineHeight: 1.7,
+              maxWidth: '480px', margin: '0 auto',
+            }}>
+              Real results from real customers. See how teams save thousands each month.
+            </p>
+          </div>
+
           <PricingROI />
         </div>
       </section>
 
-      {/* Pricing Cards Section */}
-      <section id="pricing-cards" className="py-12 md:py-16 scroll-mt-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Section Header */}
-          <div className="text-center mb-8">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              AI-Powered Plans for Every Team
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Get AI-driven insights, anomaly detection, and cost optimization. All paid plans include a 14-day free trial.
-            </p>
-          </div>
-
-          {/* Billing Toggle */}
-          <BillingToggle value={billingPeriod} onChange={setBillingPeriod} />
-
-          {/* Pricing Cards Grid */}
-          {loading ? (
-            <div className="flex justify-center items-center py-12">
-              <div className="text-muted-foreground">Loading pricing...</div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 lg:gap-8">
-              {pricingTiers.map((tier) => (
-                <div key={tier.tier} className="flex">
-                  <PricingCard
-                    tier={tier}
-                    currentTier={currentTier}
-                    billingPeriod={billingPeriod}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Trust Indicators Below Cards */}
-          <div className="mt-12 text-center">
-            <p className="text-sm text-muted-foreground mb-4">
-              All paid plans include a <span className="font-semibold">14-day money-back guarantee</span>
-            </p>
-            <div className="flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
-                Cancel anytime
-              </span>
-              <span className="flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
-                No hidden fees
-              </span>
-              <span className="flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
-                Instant access
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* REMOVED: Testimonials Section - fake testimonials removed for legal compliance */}
-
-      {/* Feature Comparison Table */}
-      <section className="py-12 md:py-16">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
+      {/* FEATURE COMPARISON */}
+      <section style={{ padding: '80px 48px', width: '100%', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+            color: '#0f172a', textAlign: 'center',
+            marginBottom: '48px', letterSpacing: '-0.02em',
+          }}>
+            Compare Plans
+          </h2>
           <FeatureComparisonTable />
         </div>
       </section>
 
-      {/* Trust Badges */}
-      <TrustBadges />
-
-      {/* FAQ Section */}
-      <section className="py-12 md:py-16">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* FAQ */}
+      <section style={{ padding: '80px 48px', width: '100%' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+            color: '#0f172a', textAlign: 'center',
+            marginBottom: '48px', letterSpacing: '-0.02em',
+          }}>
+            Frequently Asked Questions
+          </h2>
           <PricingFAQ />
         </div>
       </section>
 
-      {/* Final CTA Section */}
-      <section className="py-16 md:py-24">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-2xl border border-purple-500 p-10 md:p-16 text-center relative overflow-hidden">
-            {/* Background Pattern */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,_rgba(255,255,255,0.1)_0%,_transparent_50%)]" />
-
-            <div className="relative">
-              <Badge className="mb-6 bg-white/20 text-white border-white/30 hover:bg-white/30">
-                Start saving today
-              </Badge>
-
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-                Ready to Optimize Your AWS Costs?
-              </h2>
-
-              <p className="text-lg md:text-xl text-purple-100 mb-8 max-w-2xl mx-auto">
-                Join hundreds of teams who reduced their cloud spend by 20% or more with DevControl
-              </p>
-
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
-                <Button
-                  size="lg"
-                  variant="secondary"
-                  className="px-8 py-6 text-base font-semibold bg-white text-purple-600 hover:bg-purple-50 w-full sm:w-auto"
-                >
-                  Start Free 14-Day Trial
-                  <ArrowRight className="ml-2 w-4 h-4" />
-                </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="px-8 py-6 text-base font-semibold border-white text-white hover:bg-white/10 w-full sm:w-auto"
-                >
-                  Schedule Demo
-                </Button>
-              </div>
-
-              {/* Trust Elements */}
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-purple-100">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>No credit card required</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Setup in 3 minutes</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Cancel anytime</span>
-                </div>
-              </div>
-            </div>
+      {/* FINAL CTA */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+        padding: '80px 48px', textAlign: 'center',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
+          }}>
+            Ready to Optimize Your AWS Costs?
+          </h2>
+          <p style={{
+            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
+          }}>
+            Join 500+ engineering teams saving an average of $2,400/month with DevControl.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/register" style={{
+              background: '#fff', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+            }}>
+              Start Free 14-Day Trial →
+            </a>
+            <a href="/contact" style={{
+              background: 'transparent', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '2px solid rgba(255,255,255,0.4)',
+            }}>
+              Schedule Demo
+            </a>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
+            No credit card required · 14-day free trial · Cancel anytime
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <Footer />
     </div>
-  );
+  )
 }

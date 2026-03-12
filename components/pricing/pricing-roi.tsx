@@ -1,7 +1,6 @@
 'use client';
 
 import { TrendingDown, Clock, Shield, DollarSign, Zap, BarChart3 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 
 const roiMetrics = [
   {
@@ -10,10 +9,11 @@ const roiMetrics = [
     sublabel: '/month average',
     title: 'AWS Cost Savings',
     description: '12-18% reduction in cloud spend through optimization recommendations',
-    gradient: 'from-green-500 to-emerald-600',
-    bgGradient: 'from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30',
-    iconBg: 'bg-green-100 dark:bg-green-900/50',
-    iconColor: 'text-green-600 dark:text-green-400',
+    metricColor: '#16a34a',
+    iconBg: 'rgba(22,163,74,0.1)',
+    iconColor: '#16a34a',
+    cardBg: 'linear-gradient(135deg, #f0fdf4, #ecfdf5)',
+    cardBorder: 'rgba(22,163,74,0.2)',
   },
   {
     icon: Clock,
@@ -21,10 +21,11 @@ const roiMetrics = [
     sublabel: '/month saved',
     title: 'Time Saved',
     description: '3-minute setup vs hours of manual tracking and configuration',
-    gradient: 'from-blue-500 to-indigo-600',
-    bgGradient: 'from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30',
-    iconBg: 'bg-blue-100 dark:bg-blue-900/50',
-    iconColor: 'text-blue-600 dark:text-blue-400',
+    metricColor: '#7c3aed',
+    iconBg: 'rgba(124,58,237,0.1)',
+    iconColor: '#7c3aed',
+    cardBg: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+    cardBorder: 'rgba(124,58,237,0.2)',
   },
   {
     icon: Shield,
@@ -32,10 +33,11 @@ const roiMetrics = [
     sublabel: 'average prevented',
     title: 'Risk Reduction',
     description: 'Prevent budget overruns with real-time alerts and 100% infrastructure visibility',
-    gradient: 'from-purple-500 to-violet-600',
-    bgGradient: 'from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30',
-    iconBg: 'bg-purple-100 dark:bg-purple-900/50',
-    iconColor: 'text-purple-600 dark:text-purple-400',
+    metricColor: '#7c3aed',
+    iconBg: 'rgba(124,58,237,0.1)',
+    iconColor: '#7c3aed',
+    cardBg: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+    cardBorder: 'rgba(124,58,237,0.2)',
   },
 ];
 
@@ -62,71 +64,89 @@ const additionalBenefits = [
 
 export function PricingROI() {
   return (
-    <div className="space-y-12">
-      {/* Section Header */}
-      <div className="text-center">
-        <h2 className="text-2xl md:text-3xl font-bold mb-3">
-          Why Teams Choose DevControl
-        </h2>
-        <p className="text-muted-foreground max-w-2xl mx-auto">
-          Real results from real customers. See how teams like yours save thousands each month.
-        </p>
-      </div>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '40px' }}>
 
       {/* Main ROI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: '24px',
+        width: '100%',
+      }}>
         {roiMetrics.map((item, index) => {
           const Icon = item.icon;
           return (
-            <Card
+            <div
               key={index}
-              className={`relative overflow-hidden border-2 hover:border-primary/30 transition-all duration-300 hover:shadow-lg bg-gradient-to-br ${item.bgGradient}`}
+              style={{
+                background: item.cardBg,
+                border: `1.5px solid ${item.cardBorder}`,
+                borderRadius: '16px',
+                padding: '32px',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
             >
-              <CardContent className="p-6 lg:p-8">
-                {/* Icon */}
-                <div className={`w-12 h-12 rounded-xl ${item.iconBg} flex items-center justify-center mb-6`}>
-                  <Icon className={`w-6 h-6 ${item.iconColor}`} />
-                </div>
+              <div style={{
+                width: '48px', height: '48px', borderRadius: '12px',
+                background: item.iconBg,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: '20px', flexShrink: 0,
+              }}>
+                <Icon style={{ width: '24px', height: '24px', color: item.iconColor }} />
+              </div>
 
-                {/* Metric */}
-                <div className="mb-4">
-                  <div className="flex items-baseline gap-1">
-                    <span className={`text-4xl lg:text-5xl font-bold bg-gradient-to-r ${item.gradient} bg-clip-text text-transparent`}>
-                      {item.metric}
-                    </span>
-                  </div>
-                  <span className="text-sm text-muted-foreground font-medium">
-                    {item.sublabel}
-                  </span>
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '2.8rem', fontWeight: 800, color: item.metricColor, lineHeight: 1 }}>
+                  {item.metric}
                 </div>
+                <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: 500, marginTop: '4px' }}>
+                  {item.sublabel}
+                </div>
+              </div>
 
-                {/* Title & Description */}
-                <h3 className="text-lg font-semibold mb-2">{item.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {item.description}
-                </p>
-              </CardContent>
-            </Card>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                {item.title}
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.6 }}>
+                {item.description}
+              </p>
+            </div>
           );
         })}
       </div>
 
       {/* Additional Benefits Bar */}
-      <div className="bg-card border rounded-xl p-6 lg:p-8">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 lg:gap-8">
+      <div style={{
+        background: '#fff',
+        border: '1.5px solid #e5e7eb',
+        borderRadius: '16px',
+        padding: '32px',
+        width: '100%',
+      }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '32px',
+        }}>
           {additionalBenefits.map((benefit, index) => {
             const Icon = benefit.icon;
             return (
-              <div key={index} className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <Icon className="w-5 h-5 text-primary" />
+              <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                <div style={{
+                  width: '40px', height: '40px', borderRadius: '10px',
+                  background: 'rgba(124,58,237,0.08)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Icon style={{ width: '20px', height: '20px', color: '#7c3aed' }} />
                 </div>
                 <div>
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-xl font-bold text-foreground">{benefit.value}</span>
-                    <span className="text-xs text-muted-foreground">{benefit.description}</span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a' }}>{benefit.value}</span>
+                    <span style={{ fontSize: '0.78rem', color: '#374151' }}>{benefit.description}</span>
                   </div>
-                  <p className="text-sm font-medium text-foreground">{benefit.title}</p>
+                  <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a' }}>{benefit.title}</p>
                 </div>
               </div>
             );
@@ -134,17 +154,25 @@ export function PricingROI() {
         </div>
       </div>
 
-      {/* ROI Calculator Teaser */}
-      <div className="text-center p-6 bg-muted/50 rounded-xl border border-dashed">
-        <p className="text-sm text-muted-foreground mb-2">
-          <span className="font-semibold text-foreground">Pro Plan Example:</span>{' '}
+      {/* ROI Teaser */}
+      <div style={{
+        textAlign: 'center',
+        padding: '24px 32px',
+        background: '#f9fafb',
+        borderRadius: '12px',
+        border: '1px dashed #d1d5db',
+        width: '100%',
+      }}>
+        <p style={{ fontSize: '0.875rem', color: '#374151', marginBottom: '6px' }}>
+          <strong style={{ color: '#0f172a' }}>Pro Plan Example:</strong>{' '}
           Typical ROI: Save $2,400/mo vs $299 cost ={' '}
-          <span className="font-bold text-green-600 dark:text-green-400">8x return</span>
+          <strong style={{ color: '#16a34a' }}>8x return</strong>
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p style={{ fontSize: '0.78rem', color: '#6b7280' }}>
           Based on average customer data. Your actual savings may vary based on infrastructure size.
         </p>
       </div>
+
     </div>
   );
 }

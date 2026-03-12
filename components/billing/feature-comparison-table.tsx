@@ -1,22 +1,7 @@
 'use client';
 
 import React from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Check, X, HelpCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 
 interface Feature {
   category: string;
@@ -81,160 +66,178 @@ const features: Feature[] = [
   { category: 'Support & SLA', name: 'Uptime guarantee', free: '99%', starter: '99.5%', pro: '99.9%', enterprise: '99.99%' },
 ];
 
-function FeatureValue({ value, highlight }: { value: boolean | string; highlight?: boolean }) {
+function FeatureValue({ value, highlight, isProCol }: { value: boolean | string; highlight?: boolean; isProCol?: boolean }) {
   if (typeof value === 'boolean') {
     return value ? (
-      <div className="flex items-center justify-center">
-        <div className={`w-6 h-6 rounded-full ${highlight ? 'bg-green-100 dark:bg-green-900/50' : ''} flex items-center justify-center`}>
-          <Check className={`w-4 h-4 ${highlight ? 'text-green-600 dark:text-green-400' : 'text-green-600 dark:text-green-400'}`} />
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Check style={{ width: '16px', height: '16px', color: '#16a34a' }} />
       </div>
     ) : (
-      <X className="w-4 h-4 text-muted-foreground/30 mx-auto" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <X style={{ width: '16px', height: '16px', color: '#d1d5db' }} />
+      </div>
     );
   }
   return (
-    <span className={`text-sm font-medium ${highlight ? 'text-primary font-semibold' : ''}`}>
+    <span style={{
+      fontSize: '0.85rem',
+      fontWeight: highlight ? 700 : 500,
+      color: highlight ? '#7c3aed' : '#374151',
+    }}>
       {value}
     </span>
   );
 }
 
 function FeatureName({ feature }: { feature: Feature }) {
-  const content = (
-    <span className={`${feature.highlight ? 'font-semibold text-foreground' : 'font-medium'}`}>
+  const nameContent = (
+    <span style={{
+      fontSize: '0.875rem',
+      fontWeight: feature.highlight ? 600 : 400,
+      color: '#374151',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+    }}>
       {feature.name}
       {feature.highlight && (
-        <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">
+        <span style={{
+          background: 'rgba(124,58,237,0.08)',
+          color: '#7c3aed',
+          borderRadius: '4px',
+          padding: '1px 6px',
+          fontSize: '0.65rem',
+          fontWeight: 700,
+        }}>
           Key
-        </Badge>
+        </span>
       )}
     </span>
   );
 
   if (feature.tooltip) {
     return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 cursor-help">
-              {content}
-              <HelpCircle className="w-3.5 h-3.5 text-muted-foreground/50" />
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="right" className="max-w-[200px]">
-            <p className="text-xs">{feature.tooltip}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} title={feature.tooltip}>
+        {nameContent}
+        <HelpCircle style={{ width: '14px', height: '14px', color: '#9ca3af', flexShrink: 0 }} />
+      </div>
     );
   }
 
-  return content;
+  return nameContent;
 }
+
+const cellBase: React.CSSProperties = {
+  padding: '12px 16px',
+  borderBottom: '1px solid #f3f4f6',
+  fontSize: '0.875rem',
+};
+
+const proColStyle: React.CSSProperties = {
+  background: 'rgba(124,58,237,0.04)',
+  borderLeft: '1px solid rgba(124,58,237,0.15)',
+  borderRight: '1px solid rgba(124,58,237,0.15)',
+};
 
 export function FeatureComparisonTable() {
   const categories = Array.from(new Set(features.map((f) => f.category)));
 
   return (
-    <div className="space-y-8">
-      {/* Section Header */}
-      <div className="text-center">
-        <h2 className="text-3xl md:text-4xl font-bold mb-4">Compare All Features</h2>
-        <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Detailed feature comparison to help you choose the right plan
-        </p>
-      </div>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-      {/* Table Container with horizontal scroll on mobile */}
-      <div className="bg-card border rounded-xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <Table className="min-w-[800px]">
-            <TableHeader>
-              <TableRow className="bg-muted/50 border-b-2">
-                <TableHead className="w-[280px] font-semibold text-foreground sticky left-0 bg-muted/50 z-10">
+      {/* Table */}
+      <div style={{
+        background: '#fff',
+        border: '1.5px solid #e5e7eb',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        width: '100%',
+      }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+                <th style={{ ...cellBase, width: '280px', textAlign: 'left', fontWeight: 600, color: '#0f172a', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 10 }}>
                   Feature
-                </TableHead>
-                <TableHead className="text-center font-semibold text-foreground w-[120px]">
-                  <div className="space-y-1">
-                    <div>Free</div>
-                    <div className="text-xs font-normal text-muted-foreground">$0/mo</div>
+                </th>
+                <th style={{ ...cellBase, width: '120px', textAlign: 'center', fontWeight: 600, color: '#0f172a' }}>
+                  <div>Free</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 400, color: '#6b7280', marginTop: '2px' }}>$0/mo</div>
+                </th>
+                <th style={{ ...cellBase, width: '120px', textAlign: 'center', fontWeight: 600, color: '#0f172a' }}>
+                  <div>Starter</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 400, color: '#6b7280', marginTop: '2px' }}>$79/mo</div>
+                </th>
+                <th style={{ ...cellBase, ...proColStyle, width: '140px', textAlign: 'center', fontWeight: 600, color: '#0f172a', borderTop: '2px solid #7c3aed' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    Pro
+                    <span style={{
+                      background: 'rgba(124,58,237,0.1)', color: '#7c3aed',
+                      borderRadius: '100px', padding: '1px 8px',
+                      fontSize: '0.65rem', fontWeight: 700,
+                    }}>Popular</span>
                   </div>
-                </TableHead>
-                <TableHead className="text-center font-semibold text-foreground w-[120px]">
-                  <div className="space-y-1">
-                    <div>Starter</div>
-                    <div className="text-xs font-normal text-muted-foreground">$79/mo</div>
-                  </div>
-                </TableHead>
-                <TableHead className="text-center font-semibold text-foreground w-[140px] bg-primary/5 border-x border-primary/20">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-center gap-1">
-                      Pro
-                      <Badge className="text-[10px] px-1.5 py-0 bg-primary/20 text-primary hover:bg-primary/30">
-                        Popular
-                      </Badge>
-                    </div>
-                    <div className="text-xs font-normal text-muted-foreground">$299/mo</div>
-                  </div>
-                </TableHead>
-                <TableHead className="text-center font-semibold text-foreground w-[140px]">
-                  <div className="space-y-1">
-                    <div>Enterprise</div>
-                    <div className="text-xs font-normal text-muted-foreground">Custom</div>
-                  </div>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 400, color: '#6b7280', marginTop: '2px' }}>$299/mo</div>
+                </th>
+                <th style={{ ...cellBase, width: '140px', textAlign: 'center', fontWeight: 600, color: '#0f172a' }}>
+                  <div>Enterprise</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 400, color: '#6b7280', marginTop: '2px' }}>Custom</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
               {categories.map((category) => {
                 const categoryFeatures = features.filter((f) => f.category === category);
                 return (
                   <React.Fragment key={category}>
-                    <TableRow className="bg-muted/30 hover:bg-muted/30">
-                      <TableCell colSpan={5} className="font-semibold text-sm py-3 text-foreground sticky left-0 bg-muted/30">
+                    <tr style={{ background: '#f9fafb' }}>
+                      <td colSpan={5} style={{ ...cellBase, fontWeight: 700, fontSize: '0.8rem', color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.08em', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 10 }}>
                         {category}
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                     {categoryFeatures.map((feature, index) => (
-                      <TableRow
+                      <tr
                         key={`${category}-${index}`}
-                        className={`${feature.highlight ? 'bg-primary/[0.02]' : ''} hover:bg-muted/50`}
+                        style={{ background: feature.highlight ? 'rgba(124,58,237,0.02)' : '#fff' }}
                       >
-                        <TableCell className="sticky left-0 bg-card z-10">
+                        <td style={{ ...cellBase, position: 'sticky', left: 0, background: feature.highlight ? 'rgba(124,58,237,0.02)' : '#fff', zIndex: 10 }}>
                           <FeatureName feature={feature} />
-                        </TableCell>
-                        <TableCell className="text-center">
+                        </td>
+                        <td style={{ ...cellBase, textAlign: 'center' }}>
                           <FeatureValue value={feature.free} highlight={feature.highlight} />
-                        </TableCell>
-                        <TableCell className="text-center">
+                        </td>
+                        <td style={{ ...cellBase, textAlign: 'center' }}>
                           <FeatureValue value={feature.starter} highlight={feature.highlight} />
-                        </TableCell>
-                        <TableCell className="text-center bg-primary/5 border-x border-primary/10">
-                          <FeatureValue value={feature.pro} highlight={feature.highlight} />
-                        </TableCell>
-                        <TableCell className="text-center">
+                        </td>
+                        <td style={{ ...cellBase, ...proColStyle, textAlign: 'center' }}>
+                          <FeatureValue value={feature.pro} highlight={feature.highlight} isProCol />
+                        </td>
+                        <td style={{ ...cellBase, textAlign: 'center' }}>
                           <FeatureValue value={feature.enterprise} highlight={feature.highlight} />
-                        </TableCell>
-                      </TableRow>
+                        </td>
+                      </tr>
                     ))}
                   </React.Fragment>
                 );
               })}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* Footer Note */}
-      <div className="text-center space-y-2">
-        <p className="text-sm text-muted-foreground">
-          All paid plans include a <span className="font-semibold text-foreground">14-day free trial</span>. No credit card required to start.
+      <div style={{ textAlign: 'center' }}>
+        <p style={{ fontSize: '0.875rem', color: '#374151', marginBottom: '4px' }}>
+          All paid plans include a <strong style={{ color: '#0f172a' }}>14-day free trial</strong>. No credit card required to start.
         </p>
-        <p className="text-xs text-muted-foreground">
-          Need a custom plan? <a href="mailto:sales@devcontrol.app" className="text-primary hover:underline">Contact our sales team</a>
+        <p style={{ fontSize: '0.78rem', color: '#6b7280' }}>
+          Need a custom plan?{' '}
+          <a href="mailto:sales@devcontrol.app" style={{ color: '#7c3aed', textDecoration: 'underline' }}>
+            Contact our sales team
+          </a>
         </p>
       </div>
+
     </div>
   );
 }
