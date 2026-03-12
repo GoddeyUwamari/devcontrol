@@ -1,314 +1,349 @@
-'use client';
+'use client'
 
-import { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import {
-  Plus,
-  AlertCircle,
-  Layers,
-  CheckCircle,
-  Rocket,
-  DollarSign,
-  MoreVertical,
-  Download,
-  Upload,
-  GitBranch,
-  Activity,
-} from 'lucide-react';
-import { useDemoMode } from '@/components/demo/demo-mode-toggle';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
-import { servicesService } from '@/lib/services/services.service';
+import { Activity, AlertTriangle, Bell, BarChart3, Clock, Shield } from 'lucide-react'
 
-// Import existing premium components
-import { HeroMetricCard } from '@/components/dashboard/hero-metric-card';
-import { ServiceHealthGrid, type ServiceHealth } from '@/components/dashboard/service-health-grid';
+export default function ServiceHealthPage() {
 
-// Import service-specific components
-import { ServiceDetailSlideOver } from '@/components/services/service-detail-slide-over';
-import {
-  generateExtendedDemoServices,
-  calculateServiceMetrics,
-  toServiceDetail,
-  type ExtendedService,
-} from '@/components/services/demo-services-data';
-import { QuickStartOptions } from '@/components/services/QuickStartOptions';
-import { ServiceBenefits } from '@/components/services/ServiceBenefits';
-import { ProTip } from '@/components/services/ProTip';
+  const features = [
+    { icon: Activity, title: 'Real-time Service Health', desc: 'Live health status for every service across your AWS infrastructure. Aggregate health scores surface degradation before your users file a support ticket.' },
+    { icon: AlertTriangle, title: 'Incident Detection & Alerting', desc: 'Instant alerts the moment a service degrades or goes down. Configurable thresholds per service ensure you only get alerted on what matters.' },
+    { icon: Clock, title: 'Uptime Tracking & SLA Monitoring', desc: 'Track uptime percentages per service and against your SLA commitments. Historical uptime data ready for customer-facing status pages and board reports.' },
+    { icon: BarChart3, title: 'Performance Trend Analysis', desc: 'Latency, error rate, and throughput trends over time. Identify services that are slowly degrading before they cause a production incident.' },
+    { icon: Bell, title: 'Smart Notification Routing', desc: 'Route alerts to the right team via Slack, PagerDuty, or email. On-call schedules, escalation policies, and alert fatigue prevention built in.' },
+    { icon: Shield, title: 'Dependency Health Mapping', desc: 'See how a degraded service impacts every downstream dependency. Understand blast radius instantly and prioritize incident response with confidence.' },
+  ]
 
-// Loading Skeleton for metrics
-function MetricsSkeleton() {
+  const impacts = [
+    { value: '99.9%', label: 'Average uptime after onboarding' },
+    { value: '< 2min', label: 'Mean time to alert on incidents' },
+    { value: '60%', label: 'Reduction in MTTR' },
+  ]
+
+  const steps = [
+    { step: '01', title: 'Connect Your AWS Account', desc: 'Grant read-only IAM access. DevControl immediately starts monitoring health across all your services, regions, and accounts.' },
+    { step: '02', title: 'Health Baseline Established', desc: 'DevControl learns your normal performance patterns and sets smart alert thresholds — no manual configuration required.' },
+    { step: '03', title: 'Monitor, Alert & Resolve', desc: 'Get instant alerts on degradation, see dependency impact maps, and track MTTR improvements over time from one dashboard.' },
+  ]
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {[...Array(4)].map((_, i) => (
-        <div key={i} className="bg-white rounded-lg border p-6">
-          <div className="flex items-center justify-between mb-2">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-10 w-10 rounded-lg" />
+    <div style={{ minHeight: '100vh', background: '#fff' }}>
+
+      {/* HERO */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
+        padding: '80px 48px',
+        borderBottom: '1px solid #f3f4f6',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
+
+          <div style={{
+            display: 'inline-flex', alignItems: 'center',
+            background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+            borderRadius: '100px', padding: '6px 16px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+            marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
+          }}>
+            Platform · Service Health
           </div>
-          <Skeleton className="h-9 w-28 mb-3" />
-          <Skeleton className="h-4 w-24" />
-        </div>
-      ))}
-    </div>
-  );
-}
 
-// Error State Component
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center p-12 space-y-4 border rounded-lg bg-red-50">
-      <AlertCircle className="h-8 w-8 text-red-600" />
-      <div className="text-center">
-        <h3 className="text-lg font-semibold text-red-900">Error Loading Services</h3>
-        <p className="text-sm text-red-700 mt-1">{message}</p>
-      </div>
-      <Button onClick={onRetry} variant="outline">
-        Try Again
-      </Button>
-    </div>
-  );
-}
+          <h1 style={{
+            fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+            fontWeight: 800, color: '#0f172a',
+            lineHeight: 1.15, marginBottom: '20px',
+            letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
+          }}>
+            Know When Services Degrade{' '}
+            <span style={{ color: '#7c3aed' }}>Before Your Users Do</span>
+          </h1>
 
-export default function ServicesPage() {
-  const router = useRouter();
-  const demoMode = useDemoMode();
-
-  // State for slide-over
-  const [selectedService, setSelectedService] = useState<ExtendedService | null>(null);
-  const [slideOverOpen, setSlideOverOpen] = useState(false);
-
-  // Fetch real services
-  const { data: realServices = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['services'],
-    queryFn: () => servicesService.getAll(),
-  });
-
-  // Demo services
-  const demoServices = useMemo(() => generateExtendedDemoServices(), []);
-
-  // Map real service status to grid status
-  const mapServiceStatus = (status: string): 'healthy' | 'warning' | 'critical' | 'unknown' => {
-    switch (status) {
-      case 'active':
-        return 'healthy';
-      case 'deploying':
-        return 'warning';
-      case 'failed':
-        return 'critical';
-      case 'inactive':
-      default:
-        return 'unknown';
-    }
-  };
-
-  // Use demo services when demo mode is on, otherwise use real services
-  const services: ExtendedService[] = useMemo(() => {
-    if (demoMode) {
-      return demoServices;
-    }
-    // Convert real services to ExtendedService format
-    return realServices.map((s): ExtendedService => ({
-      id: s.id,
-      name: s.name,
-      status: mapServiceStatus(s.status),
-      environment: 'production',
-      techStack: s.template || 'Unknown',
-      team: s.owner || 'Unknown',
-      version: '1.0.0',
-      uptime: 99.9,
-      responseTime: 100,
-      errorRate: 0.5,
-      monthlyCoste: 200,
-      activeAlerts: 0,
-      lastDeployment: s.createdAt ? new Date(s.createdAt) : undefined,
-      repositoryUrl: s.githubUrl,
-    }));
-  }, [demoMode, demoServices, realServices]);
-
-  // Calculate metrics
-  const metrics = useMemo(() => calculateServiceMetrics(services), [services]);
-
-  // Check if truly empty (no demo mode AND no services)
-  const isEmptyState = !demoMode && !isLoading && realServices.length === 0;
-
-  // Handle service click
-  const handleServiceClick = (service: ServiceHealth) => {
-    const extendedService = services.find(s => s.id === service.id);
-    if (extendedService) {
-      setSelectedService(extendedService);
-      setSlideOverOpen(true);
-    }
-  };
-
-  // Handle edit service
-  const handleEditService = (service: ExtendedService) => {
-    setSlideOverOpen(false);
-    router.push(`/app/services/${service.id}/edit`);
-  };
-
-  // Handle deploy now
-  const handleDeployNow = (service: ExtendedService) => {
-    setSlideOverOpen(false);
-    router.push(`/app/deployments/new?service=${service.id}`);
-  };
-
-  return (
-    <div className="space-y-8 px-4 md:px-6 lg:px-8">
-      {/* Demo Mode Indicator */}
-      {demoMode && (
-        <div className="bg-purple-600 text-white px-4 py-3 rounded-lg text-center font-medium -mx-4 md:-mx-6 lg:-mx-8 -mt-8 mb-0">
-          <div className="flex items-center justify-center gap-2">
-            <Activity className="w-4 h-4 animate-pulse" />
-            <span>Demo Mode Active - Showing sample service catalog data</span>
-          </div>
-        </div>
-      )}
-
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight">Service Catalog</h1>
-          <p className="text-muted-foreground leading-relaxed">
-            Manage and monitor all platform services
+          <p style={{
+            fontSize: '1.15rem', color: '#374151',
+            lineHeight: 1.75, maxWidth: '600px',
+            margin: '0 auto 36px',
+          }}>
+            Real-time health monitoring, intelligent alerting, and dependency impact maps
+            for every service in your AWS infrastructure. Stop reacting to incidents —
+            start preventing them.
           </p>
+
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+            <a href="/register" style={{
+              background: '#7c3aed', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+            }}>
+              Monitor My Services Free →
+            </a>
+            <a href="/tour" style={{
+              background: 'transparent', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '1.5px solid #7c3aed',
+            }}>
+              See How It Works
+            </a>
+          </div>
+
+          <div style={{
+            display: 'flex', flexWrap: 'wrap',
+            justifyContent: 'center', gap: '24px',
+            fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+          }}>
+            {['Real-time health monitoring', 'Smart alert routing', 'Dependency impact maps'].map(t => (
+              <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#16a34a' }}>✓</span> {t}
+              </span>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Quick Actions Dropdown */}
-          {!isEmptyState && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" aria-label="Service actions menu">
-                  <MoreVertical className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => router.push('/app/infrastructure?action=import')}>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Bulk Import from AWS
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Services (CSV)
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/app/deployments')}>
-                  <Rocket className="h-4 w-4 mr-2" />
-                  View All Deployments
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push('/app/dependencies')}>
-                  <GitBranch className="h-4 w-4 mr-2" />
-                  View Service Map
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <Button className="w-full sm:w-auto" onClick={() => router.push('/services/new')}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Service
-          </Button>
-        </div>
-      </div>
+      </section>
 
-      {/* Show empty state only when no demo mode AND no real services */}
-      {isEmptyState ? (
-        <>
-          {/* Quick Start Options */}
-          <QuickStartOptions />
-
-          {/* Value Proposition */}
-          <ServiceBenefits />
-
-          {/* Pro Tip */}
-          <ProTip />
-        </>
-      ) : (
-        <>
-          {/* Metrics Cards */}
-          {isLoading ? (
-            <MetricsSkeleton />
-          ) : error ? (
-            <ErrorState
-              message={(error as Error).message}
-              onRetry={() => refetch()}
-            />
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <HeroMetricCard
-                title="Total Services"
-                value={metrics.totalServices}
-                trend={{ value: 8.7, direction: 'up', label: 'vs last month' }}
-                icon={Layers}
-                iconColor="text-purple-600"
-                iconBgColor="bg-purple-100"
-                sparklineData={[10, 10, 11, 11, 12, 12]}
-              />
-              <HeroMetricCard
-                title="Healthy Services"
-                value={metrics.healthyServices}
-                trend={{ value: 5, direction: 'up', label: 'this week' }}
-                icon={CheckCircle}
-                iconColor="text-green-600"
-                iconBgColor="bg-green-100"
-                status={{
-                  label: `${metrics.healthyPercentage}% of total`,
-                  variant: metrics.healthyPercentage >= 80 ? 'success' : metrics.healthyPercentage >= 60 ? 'warning' : 'error',
-                }}
-                sparklineData={[7, 7, 8, 8, 9, 9]}
-              />
-              <HeroMetricCard
-                title="Deployments This Week"
-                value={metrics.deploymentsThisWeek}
-                trend={{ value: 20, direction: 'up', label: 'vs last week' }}
-                icon={Rocket}
-                iconColor="text-purple-600"
-                iconBgColor="bg-purple-100"
-                href="/app/deployments"
-                sparklineData={[12, 15, 18, 20, 16, 16]}
-              />
-              <HeroMetricCard
-                title="Total Service Cost"
-                value={`$${metrics.totalCost.toLocaleString()}/mo`}
-                trend={{ value: 8, direction: 'up', label: 'vs last month' }}
-                icon={DollarSign}
-                iconColor="text-orange-600"
-                iconBgColor="bg-orange-100"
-                trendInverted={true}
-                sparklineData={[5200, 5400, 5600, 5800, 6000, metrics.totalCost]}
-              />
+      {/* BUSINESS IMPACT BAR */}
+      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{
+          maxWidth: '1400px', margin: '0 auto',
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '32px', textAlign: 'center',
+        }}>
+          {impacts.map(({ value, label }) => (
+            <div key={label}>
+              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+                {value}
+              </div>
+              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+                {label}
+              </div>
             </div>
-          )}
+          ))}
+        </div>
+      </section>
 
-          {/* Service Health Grid */}
-          {!isLoading && !error && (
-            <ServiceHealthGrid
-              services={services}
-              isLoading={isLoading}
-              onServiceClick={handleServiceClick}
-            />
-          )}
-        </>
-      )}
+      {/* FEATURES */}
+      <section style={{ padding: '80px 48px', width: '100%' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Health Monitoring Capabilities
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              From Reactive to Proactive in 15 Minutes
+            </h2>
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+              Stop firefighting. Start monitoring every service with the intelligence to act before users are impacted.
+            </p>
+          </div>
 
-      {/* Service Detail Slide-Over */}
-      <ServiceDetailSlideOver
-        service={selectedService ? toServiceDetail(selectedService) : null}
-        isOpen={slideOverOpen}
-        onClose={() => {
-          setSlideOverOpen(false);
-          setSelectedService(null);
-        }}
-        onEditService={selectedService ? () => handleEditService(selectedService) : undefined}
-        onDeployNow={selectedService ? () => handleDeployNow(selectedService) : undefined}
-      />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+            {features.map(({ icon: Icon, title, desc }) => (
+              <div key={title} style={{
+                background: '#fff', border: '1.5px solid #e5e7eb',
+                borderRadius: '16px', padding: '32px',
+                transition: 'all 0.2s ease',
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#7c3aed'
+                  e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.12)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = '#e5e7eb'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '12px',
+                  background: 'rgba(124,58,237,0.08)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: '20px',
+                }}>
+                  <Icon size={22} style={{ color: '#7c3aed' }} />
+                </div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                  {title}
+                </h3>
+                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                  {desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* HOW IT WORKS */}
+      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Quick Setup
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Full Service Monitoring in 15 Minutes
+            </h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '32px' }}>
+            {steps.map(({ step, title, desc }) => (
+              <div key={step} style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: '56px', height: '56px', borderRadius: '50%',
+                  background: '#7c3aed', color: '#fff',
+                  fontSize: '1rem', fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 20px',
+                }}>
+                  {step}
+                </div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>
+                  {title}
+                </h3>
+                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                  {desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* WHO IT'S FOR */}
+      <section style={{ padding: '80px 48px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Built For Your Team
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Who It&apos;s For
+            </h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            <div style={{
+              background: '#fff', border: '1.5px solid #e5e7eb',
+              borderRadius: '20px', padding: '40px',
+            }}>
+              <div style={{
+                display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                For CTOs &amp; Engineering Leaders
+              </div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                Protect Revenue with Proactive Monitoring
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  'SLA compliance tracking across all services',
+                  'Uptime reports for board and customer reporting',
+                  'Reduce incident costs with faster detection',
+                  'Engineering reliability metrics for investors',
+                ].map(point => (
+                  <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+              border: '1.5px solid rgba(124,58,237,0.2)',
+              borderRadius: '20px', padding: '40px',
+            }}>
+              <div style={{
+                display: 'inline-flex', background: '#7c3aed',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#fff',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                For DevOps &amp; Platform Engineers
+              </div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                Catch Incidents Before They Escalate
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  'Real-time health scores for every service',
+                  'Dependency maps show downstream blast radius instantly',
+                  'Smart alerts routed to the right on-call engineer',
+                  'MTTR tracking to prove incident response improvement',
+                ].map(point => (
+                  <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* BOTTOM CTA */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+        padding: '80px 48px', textAlign: 'center',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
+          }}>
+            Stop Firefighting. Start Preventing.
+          </h2>
+          <p style={{
+            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
+          }}>
+            Monitor every service in your AWS infrastructure and catch incidents before your users do.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/register" style={{
+              background: '#fff', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+            }}>
+              Start Free Trial →
+            </a>
+            <a href="/tour" style={{
+              background: 'transparent', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '2px solid rgba(255,255,255,0.4)',
+            }}>
+              Take a Product Tour
+            </a>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
+            No credit card required · Read-only AWS access · Cancel anytime
+          </div>
+        </div>
+      </section>
+
     </div>
-  );
+  )
 }

@@ -1,268 +1,424 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  TrendingUp, ArrowRight, CheckCircle2, Shield, DollarSign,
-  BarChart3, Users, Zap, GitBranch, Activity, AlertTriangle,
-  Check, X, Clock, Server,
-} from 'lucide-react';
-import Link from 'next/link';
+'use client'
 
-function Hero() {
+import { TrendingUp, Users, Shield, BarChart3, Zap, GitBranch, DollarSign, Globe } from 'lucide-react'
+
+export default function ScaleupsPage() {
+
+  const signatureFeature = {
+    icon: TrendingUp,
+    title: 'Multi-Account Cost Intelligence at Scale',
+    desc: 'As you grow from 1 to 10+ AWS accounts, costs become impossible to track manually. DevControl unifies spend across every account, team, and environment — with AI recommendations that scale with your infrastructure.',
+    stats: [
+      { value: '10+', label: 'AWS accounts unified' },
+      { value: '30%', label: 'Cost reduction typical' },
+      { value: '$47K', label: 'Annual waste found avg' },
+    ],
+  }
+
+  const features = [
+    { icon: Users, title: 'Team-level Cost Attribution', desc: 'Break down AWS spend by team, product, environment, or any custom tag. Every engineer knows what they own and what it costs.' },
+    { icon: Shield, title: 'Enterprise Security Posture', desc: 'Continuous SOC 2 and CIS compliance monitoring across all accounts. Close enterprise deals without a dedicated security team.' },
+    { icon: BarChart3, title: 'DORA Metrics at Team Level', desc: 'Track engineering performance per team, service, or squad. Identify bottlenecks and benchmark against Elite-tier standards.' },
+    { icon: GitBranch, title: 'Infrastructure Drift Detection', desc: 'Catch when actual infrastructure diverges from your Terraform definitions. Prevent configuration drift from causing production incidents.' },
+    { icon: DollarSign, title: 'Reserved Instance Strategy', desc: 'AI identifies exactly which workloads to commit to reserved pricing — with projected savings calculated before you commit a dollar.' },
+    { icon: Globe, title: 'Multi-region Visibility', desc: 'Single dashboard across every AWS region your team uses. No more logging into multiple consoles or stitching together reports.' },
+  ]
+
+  const impacts = [
+    { value: '$2,400', label: 'Avg monthly savings' },
+    { value: '10+', label: 'Accounts unified' },
+    { value: 'Elite', label: 'DORA tier achieved' },
+    { value: '2 weeks', label: 'To SOC 2 readiness' },
+  ]
+
+  const timeline = [
+    { step: '1', title: 'Connect All Accounts', desc: 'One CloudFormation template, all accounts and regions connected in minutes.' },
+    { step: '2', title: 'Unified Dashboard', desc: 'Every account, team, and service visible in one place immediately.' },
+    { step: '3', title: 'AI Finds the Waste', desc: 'Cost recommendations, security findings, and performance gaps surfaced automatically.' },
+    { step: '4', title: 'Scale With Control', desc: 'Continuous monitoring keeps your infrastructure tight as you grow.' },
+  ]
+
+  const audiences = [
+    {
+      role: 'For VPs of Engineering',
+      title: 'Visibility Across Every Team',
+      points: ['Per-team cost attribution and budgets', 'Engineering performance benchmarks', 'Cross-account security posture', 'Board-ready infrastructure reports'],
+    },
+    {
+      role: 'For CTOs',
+      title: 'Strategic Infrastructure Control',
+      points: ['Forecast AWS spend as you scale', 'SOC 2 compliance without extra headcount', 'Risk visibility before it becomes an incident', 'Data for investor and board conversations'],
+    },
+    {
+      role: 'For Platform Engineers',
+      title: 'One Tool for Everything',
+      points: ['Multi-account resource discovery', 'Drift detection across Terraform stacks', 'DORA metrics from existing GitHub setup', 'Smart alerts routed to the right team'],
+    },
+  ]
+
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-primary/10 py-20 lg:py-28">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center max-w-4xl mx-auto">
-          <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm">
-            Built for Series A–C engineering teams
-          </Badge>
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight">
-            Scale Your Infrastructure{' '}
-            <span className="text-primary">Without Scaling Your Problems.</span>
-          </h1>
-          <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto mb-8 leading-relaxed">
-            DevControl gives scale-up engineering teams complete platform visibility — reduce cloud
-            waste, enforce security standards, and ship reliably as headcount doubles.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-            <Button asChild size="lg" className="gap-2 px-8 h-12 text-base">
-              <Link href="/register">
-                Start Free Trial <ArrowRight className="w-5 h-5" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="gap-2 px-8 h-12 text-base">
-              <Link href="/pricing">View Pricing</Link>
-            </Button>
+    <div style={{ minHeight: '100vh', background: '#fff' }}>
+
+      {/* HERO — 2 column left/right */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)',
+        padding: '80px 48px',
+      }}>
+        <div style={{
+          maxWidth: '1400px', margin: '0 auto',
+          display: 'grid', gridTemplateColumns: '1.2fr 1fr',
+          gap: '64px', alignItems: 'center',
+        }}>
+          {/* Left — text */}
+          <div>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center',
+              background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.4)',
+              borderRadius: '100px', padding: '6px 16px',
+              fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa',
+              marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
+            }}>
+              Solutions · For Scale-ups
+            </div>
+
+            <h1 style={{
+              fontSize: 'clamp(2rem, 4vw, 3rem)',
+              fontWeight: 800, color: '#fff',
+              lineHeight: 1.15, marginBottom: '20px',
+              letterSpacing: '-0.02em',
+            }}>
+              Infrastructure Control{' '}
+              <span style={{ color: '#a78bfa' }}>That Scales With You</span>
+            </h1>
+
+            <p style={{
+              fontSize: '1.1rem', color: 'rgba(255,255,255,0.75)',
+              lineHeight: 1.75, marginBottom: '36px', maxWidth: '520px',
+            }}>
+              You&apos;ve outgrown spreadsheets and gut feel. DevControl gives scale-up
+              engineering teams unified visibility across every AWS account, team, and
+              region — without the enterprise price tag.
+            </p>
+
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              <a href="/register" style={{
+                background: '#7c3aed', color: '#fff',
+                padding: '14px 32px', borderRadius: '10px',
+                fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+                boxShadow: '0 4px 20px rgba(124,58,237,0.4)',
+              }}>
+                Get Started Free →
+              </a>
+              <a href="/case-studies" style={{
+                background: 'transparent', color: '#fff',
+                padding: '14px 32px', borderRadius: '10px',
+                fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+                border: '1.5px solid rgba(255,255,255,0.3)',
+              }}>
+                Read Case Studies
+              </a>
+            </div>
           </div>
-          <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
-            {['14-day free trial', 'No credit card required', 'Setup in under 10 minutes'].map((t) => (
-              <div key={t} className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                <span>{t}</span>
+
+          {/* Right — stat panel */}
+          <div style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '20px', padding: '40px',
+          }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '24px',
+            }}>
+              What scale-ups achieve
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {impacts.map(({ value, label }) => (
+                <div key={label} style={{
+                  display: 'flex', alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingBottom: '24px',
+                  borderBottom: '1px solid rgba(255,255,255,0.08)',
+                }}>
+                  <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+                    {label}
+                  </span>
+                  <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#a78bfa' }}>
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>
+              Based on average customer results
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SIGNATURE FEATURE */}
+      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            background: '#fff',
+            border: '2px solid rgba(124,58,237,0.2)',
+            borderRadius: '24px', padding: '48px',
+            display: 'grid', gridTemplateColumns: '1.2fr 1fr',
+            gap: '48px', alignItems: 'center',
+          }}>
+            <div>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.1em',
+              }}>
+                ✦ Signature Feature
+              </div>
+              <h2 style={{
+                fontSize: 'clamp(1.6rem, 3vw, 2.2rem)', fontWeight: 800,
+                color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              }}>
+                {signatureFeature.title}
+              </h2>
+              <p style={{ fontSize: '1rem', color: '#374151', lineHeight: 1.75 }}>
+                {signatureFeature.desc}
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {signatureFeature.stats.map(({ value, label }) => (
+                <div key={label} style={{
+                  background: '#faf5ff',
+                  border: '1px solid rgba(124,58,237,0.12)',
+                  borderRadius: '14px', padding: '24px',
+                  display: 'flex', alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}>
+                  <span style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500 }}>{label}</span>
+                  <span style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed' }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FEATURES — 2 col grid */}
+      <section style={{ padding: '80px 48px', width: '100%' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Platform Capabilities
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              Built for Teams Growing Fast
+            </h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            {features.map(({ icon: Icon, title, desc }) => (
+              <div key={title} style={{
+                background: '#fff', border: '1.5px solid #e5e7eb',
+                borderRadius: '16px', padding: '36px',
+                display: 'flex', gap: '24px', alignItems: 'flex-start',
+                transition: 'all 0.2s ease',
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#7c3aed'
+                  e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.12)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = '#e5e7eb'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div style={{
+                  width: '52px', height: '52px', borderRadius: '14px',
+                  background: 'rgba(124,58,237,0.08)', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Icon size={24} style={{ color: '#7c3aed' }} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                    {title}
+                  </h3>
+                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                    {desc}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
         </div>
-      </div>
-      <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-    </section>
-  );
-}
+      </section>
 
-function Stats() {
-  const stats = [
-    { value: '42%', label: 'Average cloud cost reduction', icon: DollarSign },
-    { value: '3×', label: 'Faster incident resolution',    icon: Activity },
-    { value: '80%', label: 'Less time on infra toil',       icon: Clock },
-    { value: '500+', label: 'Scale-up teams onboarded',    icon: Users },
-  ];
-  return (
-    <section className="py-14 border-b">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {stats.map(({ value, label, icon: Icon }) => (
-            <div key={label} className="flex flex-col items-center gap-2 p-6 rounded-xl bg-muted/50 text-center">
-              <Icon className="w-6 h-6 text-primary" />
-              <span className="text-3xl font-bold text-primary">{value}</span>
-              <span className="text-sm text-muted-foreground">{label}</span>
+      {/* HOW IT WORKS — horizontal timeline */}
+      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Quick Setup
             </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Challenges() {
-  const items = [
-    {
-      problem: 'Cloud bill growing faster than revenue',
-      solution: 'AI-powered rightsizing and waste detection across all AWS accounts',
-      icon: DollarSign, color: 'text-green-500',
-    },
-    {
-      problem: 'New engineers can\'t understand the infra',
-      solution: 'Visual dependency maps and auto-generated architecture docs',
-      icon: Users, color: 'text-purple-500',
-    },
-    {
-      problem: 'Security reviews blocking every release',
-      solution: 'Continuous compliance scanning with one-click remediation',
-      icon: Shield, color: 'text-purple-500',
-    },
-    {
-      problem: 'On-call rota burning out your team',
-      solution: 'DORA metrics and anomaly detection to prevent incidents before they happen',
-      icon: AlertTriangle, color: 'text-orange-500',
-    },
-  ];
-  return (
-    <section className="py-16 lg:py-24 bg-muted/30">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Scale-Up Growing Pains — Solved</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">The infrastructure problems that emerge at 50–500 engineers</p>
-        </div>
-        <div className="grid md:grid-cols-2 gap-6">
-          {items.map((item) => (
-            <Card key={item.problem} className="overflow-hidden">
-              <CardHeader className="bg-muted/50 border-b">
-                <div className="flex items-start gap-4">
-                  <div className={`p-2 rounded-lg bg-background ${item.color}`}>
-                    <item.icon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">The Problem</p>
-                    <CardTitle className="text-lg">{item.problem}</CardTitle>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                    <Zap className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">DevControl Solution</p>
-                    <p className="font-medium">{item.solution}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Features() {
-  const features = [
-    { icon: BarChart3, title: 'Multi-account visibility', desc: 'Unified dashboard across all AWS accounts and regions. One pane of glass for your entire infrastructure.' },
-    { icon: DollarSign, title: 'Cost allocation by team', desc: 'Tag-based cost attribution so every team owns their cloud spend. No more surprise bills.' },
-    { icon: Shield, title: 'Policy enforcement', desc: 'Define and enforce security policies across all environments. Drift detection alerts you instantly.' },
-    { icon: GitBranch, title: 'Deployment tracking', desc: 'DORA metrics measured automatically. Know your deployment frequency, lead time, and change failure rate.' },
-    { icon: Server, title: 'Capacity planning', desc: 'Forecasted resource utilisation so you provision ahead of demand, not in reaction to it.' },
-    { icon: Activity, title: 'Service dependency maps', desc: 'Auto-discovered dependency graphs updated in real time. Understand blast radius before you deploy.' },
-  ];
-  return (
-    <section className="py-16 lg:py-24">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Built for Your Growth Stage</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">The controls enterprise teams have — at a price scale-ups can actually afford</p>
-        </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((f) => (
-            <Card key={f.title} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                  <f.icon className="w-6 h-6 text-primary" />
-                </div>
-                <CardTitle className="text-xl">{f.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="text-base leading-relaxed">{f.desc}</CardDescription>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Comparison() {
-  const rows = [
-    { feature: 'Multi-account dashboard',  devcontrol: true,        others: false },
-    { feature: 'Setup time',               devcontrol: '< 10 min',  others: '2–6 weeks' },
-    { feature: 'Per-team cost allocation', devcontrol: true,        others: false },
-    { feature: 'DORA metrics',             devcontrol: true,        others: false },
-    { feature: 'Starting price',           devcontrol: '$199/mo',   others: '$1,000+/mo' },
-    { feature: 'No agents required',       devcontrol: true,        others: false },
-  ];
-  return (
-    <section className="py-16 lg:py-24 bg-muted/30">
-      <div className="max-w-4xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Why Scale-Ups Choose DevControl</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">Enterprise features without enterprise complexity or pricing</p>
-        </div>
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-4 font-semibold">Feature</th>
-                  <th className="text-center p-4 font-semibold text-primary">DevControl</th>
-                  <th className="text-center p-4 font-semibold text-muted-foreground">Traditional Tools</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.feature} className="border-b last:border-0">
-                    <td className="p-4 font-medium">{row.feature}</td>
-                    <td className="p-4 text-center">
-                      {typeof row.devcontrol === 'boolean'
-                        ? row.devcontrol ? <Check className="w-5 h-5 text-green-500 mx-auto" /> : <X className="w-5 h-5 text-red-500 mx-auto" />
-                        : <span className="font-semibold text-primary">{row.devcontrol}</span>}
-                    </td>
-                    <td className="p-4 text-center text-muted-foreground">
-                      {typeof row.others === 'boolean'
-                        ? row.others ? <Check className="w-5 h-5 text-green-500 mx-auto" /> : <X className="w-5 h-5 text-red-500 mx-auto" />
-                        : row.others}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Multi-Account Visibility in 15 Minutes
+            </h2>
           </div>
-        </Card>
-      </div>
-    </section>
-  );
-}
 
-function CTA() {
-  return (
-    <section className="py-20 lg:py-28 bg-gradient-to-br from-primary/10 via-background to-primary/5">
-      <div className="max-w-4xl mx-auto px-6 text-center">
-        <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-6">
-          Ready to Scale With Confidence?
-        </h2>
-        <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-          Join hundreds of scale-up teams who use DevControl to grow their infrastructure without growing their toil.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
-          <Button asChild size="lg" className="gap-2 px-8 h-12 text-base">
-            <Link href="/register">Start Free Trial <ArrowRight className="w-5 h-5" /></Link>
-          </Button>
-          <Button asChild variant="outline" size="lg" className="px-8 h-12 text-base">
-            <Link href="/pricing">See Pricing</Link>
-          </Button>
-        </div>
-        <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
-          {['14-day free trial', 'No credit card required', 'Cancel anytime'].map((t) => (
-            <div key={t} className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" /><span>{t}</span>
+          {/* Timeline */}
+          <div style={{ position: 'relative' }}>
+            {/* Connector line */}
+            <div style={{
+              position: 'absolute', top: '28px', left: '12.5%', right: '12.5%',
+              height: '2px', background: 'rgba(124,58,237,0.2)', zIndex: 0,
+            }} />
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '24px', position: 'relative', zIndex: 1,
+            }}>
+              {timeline.map(({ step, title, desc }) => (
+                <div key={step} style={{ textAlign: 'center' }}>
+                  <div style={{
+                    width: '56px', height: '56px', borderRadius: '50%',
+                    background: '#7c3aed', color: '#fff',
+                    fontSize: '1.1rem', fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 20px',
+                    boxShadow: '0 0 0 6px #fafafa, 0 0 0 8px rgba(124,58,237,0.2)',
+                  }}>
+                    {step}
+                  </div>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                    {title}
+                  </h3>
+                  <p style={{ fontSize: '0.85rem', color: '#374151', lineHeight: 1.7 }}>
+                    {desc}
+                  </p>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-export default function ScaleupsPage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <Hero />
-      <Stats />
-      <Challenges />
-      <Features />
-      <Comparison />
-      <CTA />
+      {/* WHO IT'S FOR — 3 cards */}
+      <section style={{ padding: '80px 48px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Every Role Covered
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Who It&apos;s For
+            </h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+            {audiences.map(({ role, title, points }, i) => (
+              <div key={role} style={{
+                background: i === 1 ? 'linear-gradient(135deg, #faf5ff, #f3e8ff)' : '#fff',
+                border: i === 1 ? '2px solid rgba(124,58,237,0.25)' : '1.5px solid #e5e7eb',
+                borderRadius: '20px', padding: '36px',
+              }}>
+                <div style={{
+                  display: 'inline-flex',
+                  background: i === 1 ? '#7c3aed' : 'rgba(124,58,237,0.08)',
+                  borderRadius: '100px', padding: '5px 14px',
+                  fontSize: '0.72rem', fontWeight: 700,
+                  color: i === 1 ? '#fff' : '#7c3aed',
+                  marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.08em',
+                }}>
+                  {role}
+                </div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                  {title}
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {points.map(point => (
+                    <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                      <span style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* BOTTOM CTA — dark navy */}
+      <section style={{
+        width: '100%',
+        background: '#0f172a',
+        padding: '80px 48px', textAlign: 'center',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'inline-flex',
+            background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.3)',
+            borderRadius: '100px', padding: '6px 16px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa',
+            marginBottom: '24px', textTransform: 'uppercase', letterSpacing: '0.1em',
+          }}>
+            Ready to Scale With Control?
+          </div>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
+          }}>
+            Your Infrastructure Complexity Is About to Get Simple
+          </h2>
+          <p style={{
+            fontSize: '1.1rem', color: 'rgba(255,255,255,0.65)',
+            maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
+          }}>
+            Join fast-growing teams using DevControl to unify AWS visibility and stay in control as they scale.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/register" style={{
+              background: '#7c3aed', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              boxShadow: '0 4px 20px rgba(124,58,237,0.4)',
+            }}>
+              Start Free Trial →
+            </a>
+            <a href="/case-studies" style={{
+              background: 'transparent', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '1.5px solid rgba(255,255,255,0.25)',
+            }}>
+              Read Case Studies
+            </a>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.35)', marginTop: '16px' }}>
+            14-day free trial · No credit card required · Cancel anytime
+          </div>
+        </div>
+      </section>
+
     </div>
-  );
+  )
 }
