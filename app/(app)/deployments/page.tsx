@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, FileText, Activity } from 'lucide-react'
@@ -89,6 +89,14 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 // EmptyState component now imported from onboarding
 
 export default function DeploymentsPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>Loading...</div>}>
+      <DeploymentsContent />
+    </Suspense>
+  );
+}
+
+function DeploymentsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { socket } = useWebSocket()

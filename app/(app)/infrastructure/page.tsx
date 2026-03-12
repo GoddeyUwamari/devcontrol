@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Server, AlertCircle, Database, HardDrive, Cloud, Zap, Globe, Network, RefreshCw, TrendingDown, Shield } from 'lucide-react'
@@ -230,6 +230,14 @@ function EmptyState() {
 }
 
 export default function InfrastructurePage() {
+  return (
+    <Suspense fallback={<div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>Loading...</div>}>
+      <InfrastructureContent />
+    </Suspense>
+  );
+}
+
+function InfrastructureContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()

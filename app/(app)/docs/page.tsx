@@ -131,7 +131,7 @@ function PopularTopicsSection() {
     { title: 'Set Up Cost Alerts', href: '/docs', icon: Bell },
     { title: 'Configure RBAC', href: '/docs', icon: Users },
     { title: 'Security Scanning', href: '/docs', icon: Shield },
-    { title: 'DORA Metrics Setup', href: '/dora-metrics', icon: BarChart3 },
+    { title: 'DORA Metrics Setup', href: '/app/dora-metrics', icon: BarChart3 },
     { title: 'Service Catalog', href: '/services', icon: Layers },
     { title: 'CI/CD Integration', href: '/docs', icon: GitBranch },
     { title: 'API Authentication', href: '/docs/api', icon: FileCode },

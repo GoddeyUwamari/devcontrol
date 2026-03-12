@@ -1,143 +1,348 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  DollarSign, ArrowRight, CheckCircle2, TrendingDown, BarChart3,
-  Bell, PieChart, Target, Zap, Activity, FileText,
-} from 'lucide-react';
-import Link from 'next/link';
+'use client'
+
+import { TrendingDown, AlertTriangle, BarChart3, DollarSign, Zap, PieChart } from 'lucide-react'
 
 export default function CostOptimizationPage() {
+
   const features = [
-    { icon: TrendingDown, title: 'AI waste detection',           desc: 'ML models continuously analyse usage patterns to surface idle instances, orphaned storage, unused load balancers, and oversized resources — ranked by savings.' },
-    { icon: Target,       title: 'Rightsizing engine',           desc: 'Instance rightsizing recommendations based on 30-day CPU, memory, and network utilisation. One-click approval workflow for fast implementation.' },
-    { icon: PieChart,     title: 'Cost allocation',              desc: 'Attribute every dollar to a team, service, or environment using tags. Automatic allocation for untagged resources using intelligent heuristics.' },
-    { icon: BarChart3,    title: 'Spend forecasting',            desc: 'Predict next month\'s bill by account, service, and team. ML-powered forecasts trained on your historical spend patterns.' },
-    { icon: Bell,         title: 'Budget alerting',              desc: 'Set budgets at any granularity — account, team, service, or tag. Get Slack and email alerts at 80% and 100% of budget thresholds.' },
-    { icon: Activity,     title: 'Anomaly detection',            desc: 'Instant alerts when spend spikes unexpectedly. Surfaces the exact resource causing the anomaly within minutes of detection.' },
-    { icon: FileText,     title: 'Savings reports',              desc: 'Monthly cost review reports showing savings achieved, top spenders, trends, and next actions. Shareable with finance and leadership.' },
-    { icon: DollarSign,   title: 'Reserved Instance tracking',   desc: 'Utilisation and coverage reporting for all RIs and Savings Plans. Identify expiring commitments and recommend optimal renewal strategies.' },
-    { icon: Zap,          title: 'Automated remediation',        desc: 'Optional auto-remediation policies that shut down idle dev environments on a schedule or right-size resources after team approval.' },
-  ];
+    { icon: TrendingDown, title: 'AI Cost Recommendations', desc: 'Machine learning analyzes your usage patterns and recommends right-sizing, reserved instances, and idle resource elimination automatically.' },
+    { icon: BarChart3, title: 'Real-time Spend Tracking', desc: 'Live cost dashboard broken down by service, team, environment, and tag. Know exactly where every dollar goes — no surprises at month end.' },
+    { icon: AlertTriangle, title: 'Anomaly Detection', desc: 'Instant alerts when spend spikes unexpectedly. Catch runaway costs within minutes before they become a billing catastrophe.' },
+    { icon: PieChart, title: 'Budget Forecasting', desc: 'Predict next month\'s AWS bill with 95% accuracy. Set budgets by team or project and get alerts before you breach them.' },
+    { icon: DollarSign, title: 'Orphaned Resource Detection', desc: 'Find forgotten EC2 instances, unattached EBS volumes, and idle load balancers draining your budget silently every month.' },
+    { icon: Zap, title: 'Reserved Instance Optimizer', desc: 'AI identifies exactly which workloads to commit to reserved or savings plans — and how much you\'ll save before you commit.' },
+  ]
+
+  const impacts = [
+    { value: '$2,400', label: 'Average monthly savings' },
+    { value: '30%', label: 'Typical cost reduction' },
+    { value: '8x', label: 'Average ROI on Pro plan' },
+  ]
+
+  const steps = [
+    { step: '01', title: 'Connect in 15 Minutes', desc: 'Grant read-only IAM access. DevControl immediately starts analyzing your spend across all accounts and services.' },
+    { step: '02', title: 'AI Finds the Waste', desc: 'Our cost intelligence engine scans for idle resources, right-sizing opportunities, and reserved instance gaps within minutes.' },
+    { step: '03', title: 'Act on Recommendations', desc: 'One-click savings reports show exactly what to cut, resize, or commit — with projected savings before you make any change.' },
+  ]
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-primary/10 py-20 lg:py-28">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center max-w-4xl mx-auto">
-            <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm">Platform · Cost Optimization</Badge>
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight">
-              Reduce Cloud Spend by{' '}
-              <span className="text-primary">Up to 42%</span>
-            </h1>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto mb-8 leading-relaxed">
-              DevControl's AI-powered cost optimisation engine continuously finds waste, recommends
-              rightsizing, and gives every team visibility into their cloud spend — so savings happen
-              every month, not just when someone runs an audit.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-              <Button asChild size="lg" className="gap-2 px-8 h-12 text-base">
-                <Link href="/register">Start Free Trial <ArrowRight className="w-5 h-5" /></Link>
-              </Button>
-              <Button asChild variant="outline" size="lg" className="px-8 h-12 text-base">
-                <Link href="/pricing">View Pricing</Link>
-              </Button>
-            </div>
-            <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
-              {['Average 42% cost reduction', 'ROI positive in week 1', 'No code changes required'].map((t) => (
-                <div key={t} className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" /><span>{t}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      </section>
+    <div style={{ minHeight: '100vh', background: '#fff' }}>
 
-      {/* Stats */}
-      <section className="py-14 border-b">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {[
-              { value: '42%',  label: 'Average cost reduction',      icon: TrendingDown },
-              { value: '$47K', label: 'Average annual savings',       icon: DollarSign },
-              { value: '3 days', label: 'Time to first savings',      icon: Zap },
-              { value: '500+', label: 'Teams saving with DevControl', icon: BarChart3 },
-            ].map(({ value, label, icon: Icon }) => (
-              <div key={label} className="flex flex-col items-center gap-2 p-6 rounded-xl bg-muted/50 text-center">
-                <Icon className="w-6 h-6 text-primary" />
-                <span className="text-3xl font-bold text-primary">{value}</span>
-                <span className="text-sm text-muted-foreground">{label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* HERO */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
+        padding: '80px 48px',
+        borderBottom: '1px solid #f3f4f6',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
 
-      {/* Features */}
-      <section className="py-16 lg:py-24">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">The Complete Cost Optimisation Toolkit</h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">From detection to remediation — everything FinOps teams need in one place</p>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center',
+            background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+            borderRadius: '100px', padding: '6px 16px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+            marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
+          }}>
+            Platform · Cost Optimization
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {features.map((f) => (
-              <Card key={f.title} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                    <f.icon className="w-6 h-6 text-primary" />
-                  </div>
-                  <CardTitle className="text-xl">{f.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="text-base leading-relaxed">{f.desc}</CardDescription>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* How it works */}
-      <section className="py-16 lg:py-24 bg-muted/30">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Savings in 3 Steps</h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { step: '01', title: 'Connect',  desc: 'Link your AWS account with read-only access. DevControl ingests your billing data and resource utilisation history.' },
-              { step: '02', title: 'Discover', desc: 'AI scans your entire infrastructure to identify waste, rightsizing opportunities, and cost anomalies in under 24 hours.' },
-              { step: '03', title: 'Save',     desc: 'Review prioritised recommendations with estimated savings. Implement with one click or route to the owning team.' },
-            ].map(({ step, title, desc }) => (
-              <div key={step} className="text-center">
-                <div className="w-12 h-12 rounded-full bg-primary text-white flex items-center justify-center mx-auto mb-4 text-lg font-bold">{step}</div>
-                <h3 className="text-xl font-bold mb-3">{title}</h3>
-                <p className="text-muted-foreground leading-relaxed">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+          <h1 style={{
+            fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+            fontWeight: 800, color: '#0f172a',
+            lineHeight: 1.15, marginBottom: '20px',
+            letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
+          }}>
+            Cut AWS Costs by 30%{' '}
+            <span style={{ color: '#7c3aed' }}>Without Touching Your Infrastructure</span>
+          </h1>
 
-      {/* CTA */}
-      <section className="py-20 bg-gradient-to-br from-primary/10 via-background to-primary/5">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-            Find Your First Savings in 24 Hours
-          </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-            Connect DevControl to your AWS account and get a complete cost optimisation report by tomorrow.
+          <p style={{
+            fontSize: '1.15rem', color: '#374151',
+            lineHeight: 1.75, maxWidth: '600px',
+            margin: '0 auto 36px',
+          }}>
+            AI-powered cost intelligence that finds waste, forecasts spend, and recommends
+            savings automatically. Average team saves $2,400/month in the first week.
           </p>
-          <Button asChild size="lg" className="gap-2 px-8 h-12 text-base">
-            <Link href="/register">Start Free Trial <ArrowRight className="w-5 h-5" /></Link>
-          </Button>
+
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+            <a href="/register" style={{
+              background: '#7c3aed', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+            }}>
+              See My AWS Costs Free →
+            </a>
+            <a href="/tour" style={{
+              background: 'transparent', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '1.5px solid #7c3aed',
+            }}>
+              Take a Product Tour
+            </a>
+          </div>
+
+          <div style={{
+            display: 'flex', flexWrap: 'wrap',
+            justifyContent: 'center', gap: '24px',
+            fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+          }}>
+            {['AI-powered recommendations', 'No code changes required', 'ROI in first week'].map(t => (
+              <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#16a34a' }}>✓</span> {t}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
+
+      {/* BUSINESS IMPACT BAR */}
+      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{
+          maxWidth: '1400px', margin: '0 auto',
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '32px', textAlign: 'center',
+        }}>
+          {impacts.map(({ value, label }) => (
+            <div key={label}>
+              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+                {value}
+              </div>
+              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* FEATURES */}
+      <section style={{ padding: '80px 48px', width: '100%' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Cost Intelligence
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              Every Dollar Accounted For
+            </h2>
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+              Six AI-powered tools to find waste, forecast spend, and act on savings — automatically.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+            {features.map(({ icon: Icon, title, desc }) => (
+              <div key={title} style={{
+                background: '#fff', border: '1.5px solid #e5e7eb',
+                borderRadius: '16px', padding: '32px',
+                transition: 'all 0.2s ease',
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#7c3aed'
+                  e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.12)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = '#e5e7eb'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '12px',
+                  background: 'rgba(124,58,237,0.08)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: '20px',
+                }}>
+                  <Icon size={22} style={{ color: '#7c3aed' }} />
+                </div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                  {title}
+                </h3>
+                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                  {desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* HOW IT WORKS */}
+      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Quick Setup
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              From Zero to Savings in 15 Minutes
+            </h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '32px' }}>
+            {steps.map(({ step, title, desc }) => (
+              <div key={step} style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: '56px', height: '56px', borderRadius: '50%',
+                  background: '#7c3aed', color: '#fff',
+                  fontSize: '1rem', fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 20px',
+                }}>
+                  {step}
+                </div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>
+                  {title}
+                </h3>
+                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                  {desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* WHO IT'S FOR */}
+      <section style={{ padding: '80px 48px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Built For Your Team
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Who It's For
+            </h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            <div style={{
+              background: '#fff', border: '1.5px solid #e5e7eb',
+              borderRadius: '20px', padding: '40px',
+            }}>
+              <div style={{
+                display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                For CTOs & Finance Leaders
+              </div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                Control Cloud Spend at the Board Level
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  'Real-time AWS spend visibility across all teams',
+                  'Budget alerts before overspend happens',
+                  'ROI reporting for cloud investment decisions',
+                  'Forecast accuracy for quarterly planning',
+                ].map(point => (
+                  <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+              border: '1.5px solid rgba(124,58,237,0.2)',
+              borderRadius: '20px', padding: '40px',
+            }}>
+              <div style={{
+                display: 'inline-flex', background: '#7c3aed',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#fff',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                For DevOps & Platform Engineers
+              </div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                Find and Fix Waste at the Resource Level
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  'Identify idle EC2, RDS, and EBS resources instantly',
+                  'Right-sizing recommendations with projected savings',
+                  'Reserved instance gaps flagged automatically',
+                  'Per-service cost breakdown across all regions',
+                ].map(point => (
+                  <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* BOTTOM CTA */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+        padding: '80px 48px', textAlign: 'center',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
+          }}>
+            Stop Overpaying for AWS. Start Today.
+          </h2>
+          <p style={{
+            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
+          }}>
+            Join 500+ engineering teams saving an average of $2,400/month with DevControl.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/register" style={{
+              background: '#fff', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+            }}>
+              Start Free Trial →
+            </a>
+            <a href="/tour" style={{
+              background: 'transparent', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '2px solid rgba(255,255,255,0.4)',
+            }}>
+              Take a Product Tour
+            </a>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
+            No credit card required · Read-only AWS access · Cancel anytime
+          </div>
+        </div>
+      </section>
+
     </div>
-  );
+  )
 }

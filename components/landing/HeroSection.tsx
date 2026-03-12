@@ -36,7 +36,7 @@ export function HeroSection() {
         <p
           className="font-bold"
           style={{
-            fontSize: '1.1rem',
+            fontSize: '1.2rem',
             color: '#111827',
             letterSpacing: '0.02em',
             marginBottom: '36px',
@@ -111,77 +111,75 @@ export function HeroSection() {
           </a>
         </div>
 
-        {/* Security trust badges */}
+        {/* Trust badges — tight under buttons */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-          gap: '28px',
-          marginTop: '20px',
+          display: 'flex', flexWrap: 'wrap',
+          justifyContent: 'center', gap: '20px',
+          fontSize: '0.82rem', fontWeight: 500, color: '#374151',
+          marginTop: '16px',
+          marginBottom: '0',
         }}>
-          {[
-            { icon: '🔐', label: 'AES-256 Encrypted' },
-            { icon: '🛡️', label: 'SOC 2 In Progress' },
-            { icon: '☁️', label: 'AWS Cloud Partner' },
-            { icon: '🇪🇺', label: 'GDPR Friendly' },
-          ].map(badge => (
-            <div key={badge.label} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '0.82rem',
-              fontWeight: 500,
-              color: '#374151',
-            }}>
-              <span>{badge.icon}</span>
-              <span>{badge.label}</span>
-            </div>
-          ))}
+          <span>🔐 AES-256 Encrypted</span>
+          <span>🛡️ SOC 2 In Progress</span>
+          <span>☁️ AWS Cloud Partner</span>
+          <span>🇪🇺 GDPR Friendly</span>
         </div>
 
-        {/* Mini how-it-works */}
+        {/* How it works */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px',
-          marginTop: '32px',
-          flexWrap: 'wrap',
+          width: '100%',
+          background: 'rgba(124,58,237,0.04)',
+          border: '1.5px solid rgba(124,58,237,0.1)',
+          borderRadius: '20px',
+          padding: '28px 32px',
+          marginTop: '48px',
         }}>
-          {[
-            { step: '1', text: 'Deploy read-only IAM role' },
-            { step: '2', text: 'DevControl scans your account' },
-            { step: '3', text: 'See costs, risks & insights instantly' },
-          ].map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                backgroundColor: '#7c3aed',
-                color: '#fff',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
+          <div style={{
+            textAlign: 'center',
+            fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed',
+            letterSpacing: '0.12em', textTransform: 'uppercase' as const,
+            marginBottom: '20px',
+          }}>
+            How it works — 4 steps, 15 minutes
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '16px',
+            width: '100%',
+          }}>
+            {[
+              { step: '1', title: 'Secure Connection', sub: 'Read-only IAM role' },
+              { step: '2', title: 'Instant Analysis', sub: 'Automated scanning' },
+              { step: '3', title: 'Get Insights', sub: 'Full dashboard access' },
+              { step: '4', title: 'Take Action', sub: 'AI-powered recommendations' },
+            ].map(({ step, title, sub }) => (
+              <div key={step} style={{
+                background: '#fff',
+                border: '1.5px solid #e5e7eb',
+                borderRadius: '14px',
+                padding: '24px 16px',
+                textAlign: 'center',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
               }}>
-                {item.step}
+                <div style={{
+                  width: '32px', height: '32px', borderRadius: '50%',
+                  background: '#7c3aed', color: '#fff',
+                  fontSize: '0.85rem', fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 12px',
+                }}>
+                  {step}
+                </div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
+                  {title}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#374151' }}>
+                  {sub}
+                </div>
               </div>
-              <span style={{
-                fontSize: '0.85rem',
-                fontWeight: 500,
-                color: '#374151',
-              }}>
-                {item.text}
-              </span>
-              {i < 2 && (
-                <span style={{ color: '#d1d5db', fontSize: '1.2rem', margin: '0 4px' }}>→</span>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
       </div>
