@@ -66,8 +66,8 @@ export function FeatureShowcase() {
         <p
           style={{
             fontSize: '1.15rem',
-            color: '#6b7280',
-            lineHeight: 1.7,
+            color: '#374151',
+            lineHeight: 1.75,
             maxWidth: '620px',
             textAlign: 'center',
             margin: '0 auto 48px',
@@ -122,20 +122,21 @@ export function FeatureShowcase() {
                 </div>
                 <h3
                   style={{
-                    fontSize: '1.4rem',
+                    fontSize: '1.1rem',
                     fontWeight: 700,
                     color: '#0f172a',
                     marginTop: '20px',
-                    marginBottom: 0,
+                    marginBottom: '8px',
+                    lineHeight: 1.3,
                   }}
                 >
                   {feature.title}
                 </h3>
                 <p
                   style={{
-                    fontSize: '0.99rem',
-                    color: '#4b5563',
-                    lineHeight: 1.6,
+                    fontSize: '0.95rem',
+                    color: '#374151',
+                    lineHeight: 1.65,
                     marginTop: '8px',
                     marginBottom: 0,
                   }}
@@ -147,9 +148,10 @@ export function FeatureShowcase() {
                   style={{
                     display: 'inline-block',
                     color: '#7c3aed',
-                    fontWeight: 600,
-                    fontSize: '0.9rem',
-                    marginTop: '20px',
+                    fontWeight: 700,
+                    fontSize: '0.875rem',
+                    letterSpacing: '0.04em',
+                    marginTop: '16px',
                     textDecoration: 'none',
                     transition: 'text-decoration 0.15s ease',
                   }}

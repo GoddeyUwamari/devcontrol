@@ -79,9 +79,9 @@ const inner: React.CSSProperties = {
 
 const eyebrow: React.CSSProperties = {
   color: '#7c3aed',
-  fontSize: '13px',
-  letterSpacing: '0.1em',
-  fontWeight: 600,
+  fontSize: '11px',
+  letterSpacing: '0.12em',
+  fontWeight: 700,
   textTransform: 'uppercase',
   marginBottom: '12px',
 }
@@ -92,10 +92,10 @@ export function PricingPreview() {
       <div style={inner}>
         <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 48px' }}>
           <p style={eyebrow}>Pricing</p>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#7c3aed', marginBottom: '14px', lineHeight: 1.2 }}>
+          <h2 className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
             Start free. Scale as you grow.
           </h2>
-          <p style={{ fontSize: '1.125rem', color: '#6b7280', lineHeight: 1.7 }}>
+          <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75 }}>
             All plans include a 14-day free trial. No credit card required.
           </p>
         </div>
@@ -122,17 +122,17 @@ export function PricingPreview() {
               )}
 
               <div style={{ marginBottom: '24px' }}>
-                <h3 className="font-bold" style={{ fontSize: '1.125rem', color: '#111827', marginBottom: '4px' }}>{tier.name}</h3>
-                <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '16px' }}>{tier.highlight}</p>
+                <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '4px', lineHeight: 1.3 }}>{tier.name}</h3>
+                <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '16px' }}>{tier.highlight}</p>
                 <div className="flex items-baseline gap-1">
                   <span className="font-extrabold" style={{ fontSize: '2.25rem', color: '#111827' }}>{tier.price}</span>
-                  {tier.period && <span style={{ color: '#9ca3af', fontSize: '14px' }}>{tier.period}</span>}
+                  {tier.period && <span style={{ color: '#6b7280', fontSize: '14px' }}>{tier.period}</span>}
                 </div>
               </div>
 
               <ul style={{ marginBottom: '24px', flex: 1 }} className="space-y-3">
                 {tier.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2" style={{ fontSize: '14px', color: '#6b7280' }}>
+                  <li key={feature} className="flex items-center gap-2" style={{ fontSize: '14px', color: '#374151' }}>
                     <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#7c3aed' }} />
                     {feature}
                   </li>
@@ -187,7 +187,7 @@ export function PricingPreview() {
           </Link>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-6" style={{ fontSize: '14px', color: '#9ca3af' }}>
+        <div className="flex flex-wrap items-center justify-center gap-6" style={{ fontSize: '14px', color: '#6b7280' }}>
           {['14-day free trial', 'No credit card required', 'Cancel anytime'].map((item) => (
             <div key={item} className="flex items-center gap-2">
               <Check className="h-4 w-4" style={{ color: '#16a34a' }} />

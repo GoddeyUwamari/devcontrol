@@ -62,9 +62,9 @@ const inner: React.CSSProperties = {
 
 const eyebrow: React.CSSProperties = {
   color: '#7c3aed',
-  fontSize: '13px',
-  letterSpacing: '0.1em',
-  fontWeight: 600,
+  fontSize: '11px',
+  letterSpacing: '0.12em',
+  fontWeight: 700,
   textTransform: 'uppercase',
 }
 
@@ -75,15 +75,15 @@ export function AIFeaturesSection() {
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
           <div
             className="inline-flex items-center gap-2 rounded-full font-semibold"
-            style={{ color: '#7c3aed', backgroundColor: '#ede9fe', padding: '6px 16px', fontSize: '13px', marginBottom: '16px' }}
+            style={{ color: '#7c3aed', backgroundColor: '#ede9fe', padding: '6px 16px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '16px' }}
           >
             <Sparkles className="w-4 h-4" />
             8 AI-Powered Features
           </div>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#111827', marginBottom: '16px', lineHeight: 1.2 }}>
+          <h2 className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '16px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
             Built AI-Native, Not AI-Washed
           </h2>
-          <p style={{ fontSize: '1.125rem', color: '#6b7280', maxWidth: '600px', margin: '0 auto', lineHeight: 1.7 }}>
+          <p style={{ fontSize: '1.15rem', color: '#374151', maxWidth: '600px', margin: '0 auto', lineHeight: 1.75 }}>
             While competitors bolt on 2–4 AI features, we built 8 from day one.
             Real intelligence, not marketing buzzwords.
           </p>
@@ -127,12 +127,12 @@ export function AIFeaturesSection() {
                 >
                   <Icon style={{ color: '#7c3aed' }} size={22} />
                 </div>
-                <h3 className="font-bold" style={{ fontSize: '1.4rem', color: '#111827', marginBottom: '8px' }}>{feature.title}</h3>
-                <p style={{ color: '#6b7280', fontSize: '16px', lineHeight: 1.6, marginBottom: '16px' }}>{feature.description}</p>
+                <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{feature.title}</h3>
+                <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: 1.65, marginBottom: '16px' }}>{feature.description}</p>
                 <Link
                   href={feature.href}
                   className="inline-flex items-center font-semibold"
-                  style={{ color: '#7c3aed', fontSize: '13px', textDecoration: 'none', transition: 'all 0.15s ease' }}
+                  style={{ color: '#7c3aed', fontSize: '0.875rem', fontWeight: 700, letterSpacing: '0.04em', textDecoration: 'none', transition: 'all 0.15s ease', marginTop: '16px', display: 'inline-flex' }}
                   onMouseEnter={(e) => {
                     const el = e.currentTarget as HTMLAnchorElement
                     el.style.color = '#6b21a8'

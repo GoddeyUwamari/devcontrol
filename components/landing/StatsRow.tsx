@@ -96,13 +96,13 @@ export function StatsRow() {
             <div className={`inline-flex p-3 rounded-full ${stat.bgColor} mb-4`}>
               <Icon className={`h-6 w-6 ${stat.color}`} />
             </div>
-            <div className="text-4xl md:text-5xl font-bold text-[#7c3aed] mb-2">
+            <div style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', fontWeight: 800, color: '#7c3aed', lineHeight: 1, marginBottom: '8px' }}>
               {stat.value}
             </div>
-            <div className="text-muted-foreground font-medium">
+            <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginTop: '6px' }}>
               {stat.label}
             </div>
-            <div className="text-sm text-muted-foreground/70 mt-1">
+            <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '4px' }}>
               {stat.sublabel}
             </div>
           </div>

@@ -33,9 +33,9 @@ const inner: React.CSSProperties = {
 
 const eyebrow: React.CSSProperties = {
   color: '#7c3aed',
-  fontSize: '13px',
-  letterSpacing: '0.1em',
-  fontWeight: 600,
+  fontSize: '11px',
+  letterSpacing: '0.12em',
+  fontWeight: 700,
   textTransform: 'uppercase',
   marginBottom: '12px',
 }
@@ -52,10 +52,10 @@ export function SocialProofSection() {
       <div style={inner}>
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
           <p style={eyebrow}>Results</p>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#7c3aed', marginBottom: '14px', lineHeight: 1.2 }}>
+          <h2 className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
             Trusted by platform engineering teams
           </h2>
-          <p style={{ fontSize: '1.125rem', color: '#6b7280', maxWidth: '480px', margin: '0 auto', lineHeight: 1.7 }}>
+          <p style={{ fontSize: '1.15rem', color: '#374151', maxWidth: '480px', margin: '0 auto', lineHeight: 1.75 }}>
             Real results from teams saving real money with DevControl.
           </p>
         </div>
@@ -88,10 +88,10 @@ export function SocialProofSection() {
                 >
                   <Icon style={{ color: '#7c3aed' }} size={22} />
                 </div>
-                <div className="font-extrabold" style={{ fontSize: 'clamp(2rem, 5vw, 3rem)', color: '#7c3aed', marginBottom: '10px' }}>
+                <div className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, lineHeight: 1, marginBottom: '10px' }}>
                   {stat.value}
                 </div>
-                <div style={{ color: '#6b7280', fontWeight: 500, fontSize: '15px' }}>{stat.label}</div>
+                <div style={{ color: '#374151', fontWeight: 500, fontSize: '0.875rem', marginTop: '6px' }}>{stat.label}</div>
               </div>
             )
           })}

@@ -29,9 +29,9 @@ const inner: React.CSSProperties = {
 
 const eyebrow: React.CSSProperties = {
   color: '#7c3aed',
-  fontSize: '13px',
-  letterSpacing: '0.1em',
-  fontWeight: 600,
+  fontSize: '11px',
+  letterSpacing: '0.12em',
+  fontWeight: 700,
   textTransform: 'uppercase',
   marginBottom: '12px',
 }
@@ -42,10 +42,10 @@ export function HowItWorks() {
       <div style={inner}>
         <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 48px' }}>
           <p style={eyebrow}>Simple Setup</p>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#7c3aed', marginBottom: '16px', lineHeight: 1.2 }}>
+          <h2 className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '16px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
             From zero to insights in 15 minutes
           </h2>
-          <p style={{ fontSize: '1.125rem', color: '#6b7280', lineHeight: 1.7 }}>
+          <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75 }}>
             No complex configuration. No agents to install. Just connect and go.
           </p>
         </div>
@@ -84,8 +84,8 @@ export function HowItWorks() {
                       {step.number}
                     </div>
                   </div>
-                  <h3 className="font-bold" style={{ fontSize: '1.125rem', color: '#111827', marginBottom: '10px' }}>{step.title}</h3>
-                  <p style={{ color: '#6b7280', fontSize: '14px', lineHeight: 1.6 }}>{step.description}</p>
+                  <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{step.title}</h3>
+                  <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: 1.65 }}>{step.description}</p>
                 </div>
 
                 {/* Arrow connector (desktop only, between steps) */}

@@ -72,9 +72,9 @@ const inner: React.CSSProperties = {
 
 const eyebrow: React.CSSProperties = {
   color: '#7c3aed',
-  fontSize: '13px',
-  letterSpacing: '0.1em',
-  fontWeight: 600,
+  fontSize: '11px',
+  letterSpacing: '0.12em',
+  fontWeight: 700,
   textTransform: 'uppercase',
   marginBottom: '12px',
 };
@@ -104,11 +104,11 @@ export function MarketingContent() {
             <p style={eyebrow}>Integrations</p>
             <h2
               className="font-extrabold"
-              style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#7c3aed', marginBottom: '14px', lineHeight: 1.2 }}
+              style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
             >
               Works with your entire stack
             </h2>
-            <p style={{ fontSize: '1.125rem', color: '#6b7280', lineHeight: 1.7 }}>
+            <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75 }}>
               DevControl connects to the tools your team already uses. One platform, zero friction.
             </p>
           </div>
@@ -174,18 +174,18 @@ export function MarketingContent() {
           <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 48px' }}>
             <div
               className="inline-flex items-center gap-2 rounded-full font-semibold"
-              style={{ color: '#7c3aed', backgroundColor: '#ede9fe', padding: '6px 16px', fontSize: '13px', marginBottom: '16px' }}
+              style={{ color: '#7c3aed', backgroundColor: '#ede9fe', padding: '6px 16px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '16px' }}
             >
               <ShieldCheck className="w-4 h-4" />
               Security &amp; Trust
             </div>
             <h2
               className="font-extrabold"
-              style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', color: '#7c3aed', marginBottom: '14px', lineHeight: 1.2 }}
+              style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
             >
               Your data is safe with us
             </h2>
-            <p style={{ fontSize: '1.125rem', color: '#6b7280', lineHeight: 1.7, marginBottom: '12px' }}>
+            <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75, marginBottom: '12px' }}>
               We built DevControl with a security-first mindset. Enterprise-grade protections out of the box — no add-ons required.
             </p>
             <p style={{ fontSize: '15px', fontWeight: 600, color: '#7c3aed' }}>
@@ -232,8 +232,8 @@ export function MarketingContent() {
                     <Icon style={{ color: '#7c3aed' }} size={22} />
                   </div>
                   <div>
-                    <h3 className="font-bold" style={{ fontSize: '1.0625rem', color: '#111827', marginBottom: '8px' }}>{item.title}</h3>
-                    <p style={{ color: '#6b7280', fontSize: '14px', lineHeight: 1.7 }}>{item.description}</p>
+                    <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{item.title}</h3>
+                    <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: 1.65 }}>{item.description}</p>
                   </div>
                 </div>
               );

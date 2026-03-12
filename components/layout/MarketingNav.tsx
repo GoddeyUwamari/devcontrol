@@ -83,7 +83,7 @@ function MegaMenu({ items, showFooter }: { items: NavItem[]; showFooter?: boolea
         >
           <Link
             href="/register"
-            style={{ fontSize: '0.82rem', fontWeight: 600, color: '#7c3aed', textDecoration: 'none' }}
+            style={{ fontSize: '0.82rem', fontWeight: 700, color: '#7c3aed', letterSpacing: '0.02em', textDecoration: 'none' }}
             onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
             onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
           >
@@ -91,9 +91,9 @@ function MegaMenu({ items, showFooter }: { items: NavItem[]; showFooter?: boolea
           </Link>
           <Link
             href="/demo"
-            style={{ fontSize: '0.82rem', color: '#6b7280', textDecoration: 'none' }}
-            onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
-            onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
+            style={{ fontSize: '0.82rem', fontWeight: 500, color: '#374151', textDecoration: 'none' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#0f172a')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#374151')}
           >
             Watch a demo
           </Link>
@@ -124,7 +124,7 @@ function MegaMenuItem({ item }: { item: NavItem }) {
       </div>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: '2px', display: 'block' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px', display: 'block', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
             {title}
           </span>
           {!href && (
@@ -133,7 +133,7 @@ function MegaMenuItem({ item }: { item: NavItem }) {
             </span>
           )}
         </div>
-        <div style={{ fontSize: '0.78rem', color: '#6b7280', lineHeight: 1.4 }}>{desc}</div>
+        <div style={{ fontSize: '0.78rem', fontWeight: 400, color: '#374151', lineHeight: 1.45 }}>{desc}</div>
       </div>
     </>
   )
@@ -206,9 +206,10 @@ function NavTrigger({
           alignItems: 'center',
           gap: '4px',
           padding: '6px 12px',
-          fontSize: '1rem',
-          fontWeight: 500,
-          color: isOpen ? '#7c3aed' : '#374151',
+          fontSize: '0.9rem',
+          fontWeight: isOpen ? 600 : 500,
+          color: isOpen ? '#7c3aed' : '#0f172a',
+          letterSpacing: '-0.01em',
           background: 'none',
           border: 'none',
           cursor: 'pointer',
@@ -268,12 +269,12 @@ export function MarketingNav() {
           zIndex: 51,
         }}
       >
-        <p style={{ color: '#fff', fontSize: '14px', fontWeight: 500, margin: 0 }}>
+        <p style={{ color: '#ffffff', fontSize: '0.875rem', fontWeight: 500, letterSpacing: '0.01em', margin: 0 }}>
           <span style={{ marginRight: '8px' }}>🚀</span>
           NEW: 8 AI-Powered Features Now Available!{' '}
           <a
             href="#ai-features"
-            style={{ color: '#e9d5ff', textDecoration: 'underline', marginLeft: '4px' }}
+            style={{ color: '#ffffff', fontSize: '0.875rem', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: '2px', marginLeft: '4px' }}
           >
             Learn More →
           </a>
@@ -352,16 +353,16 @@ export function MarketingNav() {
             <Link
               href="/login"
               style={{
-                color: '#374151',
+                color: '#0f172a',
                 fontWeight: 500,
-                fontSize: '1rem',
+                fontSize: '0.9rem',
                 padding: '8px 16px',
                 textDecoration: 'none',
                 borderRadius: '8px',
                 transition: 'color 0.15s ease',
               }}
-              onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#111827')}
-              onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#374151')}
+              onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#7c3aed')}
+              onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#0f172a')}
             >
               Sign In
             </Link>
@@ -371,15 +372,24 @@ export function MarketingNav() {
                 backgroundColor: '#7c3aed',
                 color: '#fff',
                 fontWeight: 600,
-                fontSize: '1rem',
+                fontSize: '0.875rem',
+                letterSpacing: '-0.01em',
                 padding: '10px 20px',
                 borderRadius: '8px',
                 textDecoration: 'none',
-                transition: 'opacity 0.15s ease',
+                transition: 'opacity 0.15s ease, transform 0.15s ease',
                 display: 'inline-block',
               }}
-              onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.9')}
-              onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
+              onMouseEnter={e => {
+                const el = e.currentTarget as HTMLAnchorElement
+                el.style.opacity = '0.9'
+                el.style.transform = 'translateY(-1px)'
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLAnchorElement
+                el.style.opacity = '1'
+                el.style.transform = 'translateY(0)'
+              }}
             >
               Get Started Free
             </Link>
@@ -414,22 +424,22 @@ export function MarketingNav() {
             className="lg:hidden"
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '8px' }}>
-              <Link href="/platform/infrastructure" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#374151', textDecoration: 'none' }}>
+              <Link href="/platform/infrastructure" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Platform
               </Link>
-              <Link href="/solutions/startups" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#374151', textDecoration: 'none' }}>
+              <Link href="/solutions/startups" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Solutions
               </Link>
-              <Link href="/docs" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#374151', textDecoration: 'none' }}>
+              <Link href="/docs" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Resources
               </Link>
-              <Link href="/pricing" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#374151', textDecoration: 'none' }}>
+              <Link href="/pricing" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Pricing
               </Link>
-              <Link href="/solutions/enterprise" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#374151', textDecoration: 'none' }}>
+              <Link href="/solutions/enterprise" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Enterprise
               </Link>
-              <Link href="/developers" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#374151', textDecoration: 'none' }}>
+              <Link href="/developers" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Developers
               </Link>
               <div style={{ borderTop: '1px solid #f3f4f6', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 24px' }}>
@@ -463,9 +473,10 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
       onMouseLeave={() => setHovered(false)}
       style={{
         padding: '6px 12px',
-        fontSize: '1rem',
+        fontSize: '0.9rem',
         fontWeight: 500,
-        color: hovered ? '#7c3aed' : '#374151',
+        letterSpacing: '-0.01em',
+        color: hovered ? '#7c3aed' : '#0f172a',
         textDecoration: 'none',
         borderRadius: '8px',
         transition: 'color 0.15s ease',

@@ -27,9 +27,8 @@ export function HeroSection() {
           <span style={{ color: '#111827' }}>Your AWS Infrastructure</span>
         </h1>
 
-        <p className="leading-relaxed" style={{ fontSize: '1.25rem', color: '#6b7280', maxWidth: '680px', margin: '0 auto 16px' }}>
-          DevControl gives engineering teams complete visibility into costs, 
-security, and performance — before problems become incidents.
+        <p className="leading-relaxed" style={{ fontSize: '1.25rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
+          Eliminate AWS waste and security blind spots in 15 minutes. One dashboard for cost, performance, and peace of mind.
         </p>
 
         <p
