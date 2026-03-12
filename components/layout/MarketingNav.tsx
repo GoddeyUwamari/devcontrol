@@ -90,7 +90,7 @@ function MegaMenu({ items, showFooter }: { items: NavItem[]; showFooter?: boolea
             Get started free →
           </Link>
           <Link
-            href="/demo"
+            href="/tour"
             style={{ fontSize: '0.82rem', fontWeight: 500, color: '#374151', textDecoration: 'none' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#0f172a')}
             onMouseLeave={e => (e.currentTarget.style.color = '#374151')}
