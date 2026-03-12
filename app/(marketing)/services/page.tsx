@@ -247,8 +247,8 @@ export default function ServicesPage() {
                 value={metrics.totalServices}
                 trend={{ value: 8.7, direction: 'up', label: 'vs last month' }}
                 icon={Layers}
-                iconColor="text-blue-600"
-                iconBgColor="bg-blue-100"
+                iconColor="text-purple-600"
+                iconBgColor="bg-purple-100"
                 sparklineData={[10, 10, 11, 11, 12, 12]}
               />
               <HeroMetricCard

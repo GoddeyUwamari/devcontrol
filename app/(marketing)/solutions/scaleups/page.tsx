@@ -84,7 +84,7 @@ function Challenges() {
     {
       problem: 'New engineers can\'t understand the infra',
       solution: 'Visual dependency maps and auto-generated architecture docs',
-      icon: Users, color: 'text-blue-500',
+      icon: Users, color: 'text-purple-500',
     },
     {
       problem: 'Security reviews blocking every release',

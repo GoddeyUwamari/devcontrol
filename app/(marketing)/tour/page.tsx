@@ -183,7 +183,7 @@ function DoraMock() {
   const metrics = [
     { label: 'Deployment Frequency', value: '4.2/day', badge: 'Elite', badgeColor: '#16a34a', badgeBg: 'rgba(22,163,74,0.1)', trend: '↑ +0.8 vs last week' },
     { label: 'Lead Time for Changes', value: '2.1 hrs', badge: 'Elite', badgeColor: '#16a34a', badgeBg: 'rgba(22,163,74,0.1)', trend: '↓ −0.4 hrs' },
-    { label: 'Change Failure Rate', value: '3.2%', badge: 'High', badgeColor: '#2563eb', badgeBg: 'rgba(37,99,235,0.1)', trend: '↓ −0.5%' },
+    { label: 'Change Failure Rate', value: '3.2%', badge: 'High', badgeColor: '#7c3aed', badgeBg: 'rgba(124,58,237,0.1)', trend: '↓ −0.5%' },
     { label: 'MTTR', value: '24 min', badge: 'Elite', badgeColor: '#16a34a', badgeBg: 'rgba(22,163,74,0.1)', trend: '↓ −6 min' },
   ]
   return (

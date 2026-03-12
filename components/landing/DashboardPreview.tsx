@@ -40,7 +40,7 @@ export function DashboardPreview() {
             />
           ) : (
             /* Placeholder if image doesn't exist */
-            <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg aspect-video flex flex-col items-center justify-center border-2 border-dashed border-gray-300">
+            <div className="bg-gradient-to-br from-purple-50 to-purple-50 rounded-lg aspect-video flex flex-col items-center justify-center border-2 border-dashed border-gray-300">
               <div className="text-6xl mb-4">📊</div>
               <p className="text-lg font-semibold text-gray-700 mb-2">Dashboard Preview</p>
               <p className="text-sm text-gray-500">

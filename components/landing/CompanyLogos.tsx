@@ -29,7 +29,7 @@ export function CompanyLogos() {
               key={index}
               className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg border border-gray-100"
             >
-              <Icon className="h-4 w-4 text-blue-600" />
+              <Icon className="h-4 w-4 text-purple-600" />
               <span className="text-sm font-medium text-gray-700">{item.label}</span>
             </div>
           )

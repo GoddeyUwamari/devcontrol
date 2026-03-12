@@ -219,7 +219,7 @@ function UseCasesSection() {
       problem: 'Failed compliance audit surprises',
       solution: 'Continuous compliance monitoring with real-time violation alerts',
       icon: Shield,
-      color: 'text-blue-500',
+      color: 'text-purple-500',
     },
     {
       problem: 'No one knows what depends on what',

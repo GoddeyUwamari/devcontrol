@@ -31,9 +31,9 @@ const integrations = [
   { name: 'Slack', icon: MessageSquare, color: '#7c3aed' },
   { name: 'Terraform', icon: Layers, color: '#6d28d9' },
   { name: 'PagerDuty', icon: AlertCircle, color: '#16a34a' },
-  { name: 'Kubernetes', icon: Container, color: '#2563eb' },
+  { name: 'Kubernetes', icon: Container, color: '#7c3aed' },
   { name: 'Datadog', icon: BarChart2, color: '#a855f7' },
-  { name: 'Jira', icon: Database, color: '#1d4ed8' },
+  { name: 'Jira', icon: Database, color: '#7c3aed' },
 ];
 
 const securityItems = [

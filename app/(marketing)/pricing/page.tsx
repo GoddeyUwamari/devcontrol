@@ -171,8 +171,8 @@ export default function PricingPage() {
       {/* Hero Section - Strong Value Prop */}
       <section className="relative overflow-hidden">
         {/* Gradient Background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-indigo-50/50 to-background dark:from-blue-950/20 dark:via-indigo-950/10 dark:to-background" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-100/40 via-transparent to-transparent dark:from-blue-900/20" />
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-50 via-purple-50/50 to-background dark:from-purple-950/20 dark:via-purple-950/10 dark:to-background" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-purple-100/40 via-transparent to-transparent dark:from-purple-900/20" />
 
         {/* Breadcrumb Navigation */}
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
@@ -195,7 +195,7 @@ export default function PricingPage() {
             {/* Main Headline */}
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
               AI-Powered DevOps,{' '}
-              <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">
                 Human-Friendly Pricing
               </span>
             </h1>
@@ -205,13 +205,13 @@ export default function PricingPage() {
               The only platform with{' '}
               <span className="font-semibold text-purple-600 dark:text-purple-400">6 AI features</span> built-in.
               <br className="hidden sm:block" />
-              Cut AWS costs <span className="font-semibold text-green-600 dark:text-green-400">30%</span>, deploy <span className="font-semibold text-blue-600 dark:text-blue-400">2x faster</span>.
+              Cut AWS costs <span className="font-semibold text-green-600 dark:text-green-400">30%</span>, deploy <span className="font-semibold text-purple-600 dark:text-purple-400">2x faster</span>.
             </p>
 
             {/* Quick Value Props */}
             <div className="flex flex-wrap justify-center gap-6 text-sm text-muted-foreground mb-8">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-blue-600" />
+                <Clock className="w-4 h-4 text-purple-600" />
                 <span>3-minute setup</span>
               </div>
               <div className="flex items-center gap-2">
@@ -324,7 +324,7 @@ export default function PricingPage() {
       {/* Final CTA Section */}
       <section className="py-16 md:py-24">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl border border-blue-500 p-10 md:p-16 text-center relative overflow-hidden">
+          <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-2xl border border-purple-500 p-10 md:p-16 text-center relative overflow-hidden">
             {/* Background Pattern */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,_rgba(255,255,255,0.1)_0%,_transparent_50%)]" />
 
@@ -337,7 +337,7 @@ export default function PricingPage() {
                 Ready to Optimize Your AWS Costs?
               </h2>
 
-              <p className="text-lg md:text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
+              <p className="text-lg md:text-xl text-purple-100 mb-8 max-w-2xl mx-auto">
                 Join hundreds of teams who reduced their cloud spend by 20% or more with DevControl
               </p>
 
@@ -345,7 +345,7 @@ export default function PricingPage() {
                 <Button
                   size="lg"
                   variant="secondary"
-                  className="px-8 py-6 text-base font-semibold bg-white text-blue-600 hover:bg-blue-50 w-full sm:w-auto"
+                  className="px-8 py-6 text-base font-semibold bg-white text-purple-600 hover:bg-purple-50 w-full sm:w-auto"
                 >
                   Start Free 14-Day Trial
                   <ArrowRight className="ml-2 w-4 h-4" />
@@ -360,7 +360,7 @@ export default function PricingPage() {
               </div>
 
               {/* Trust Elements */}
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-blue-100">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-purple-100">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
                   <span>No credit card required</span>

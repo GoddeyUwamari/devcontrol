@@ -71,8 +71,8 @@ export function StatsRow() {
       value: `${roiCount}x`,
       label: 'ROI in first 90 days',
       sublabel: 'guaranteed',
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-100',
     },
     {
       icon: Clock,

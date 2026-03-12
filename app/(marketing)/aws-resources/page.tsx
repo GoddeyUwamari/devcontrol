@@ -258,9 +258,9 @@ export default function AWSResourcesPage() {
 
   const getScoreLevel = (score: number) => {
     if (score >= 80) return { label: 'Excellent', color: 'text-green-600', bgColor: 'bg-green-100' };
-    if (score >= 60) return { label: 'Good', color: 'text-blue-600', bgColor: 'bg-blue-100' };
-    if (score >= 40) return { label: 'Fair', color: 'text-blue-600', bgColor: 'bg-blue-100' };
-    return { label: 'Needs Attention', color: 'text-blue-700', bgColor: 'bg-blue-100' };
+    if (score >= 60) return { label: 'Good', color: 'text-purple-600', bgColor: 'bg-purple-100' };
+    if (score >= 40) return { label: 'Fair', color: 'text-purple-600', bgColor: 'bg-purple-100' };
+    return { label: 'Needs Attention', color: 'text-purple-700', bgColor: 'bg-purple-100' };
   };
 
   const securityScore = calculateSecurityScore();
@@ -340,8 +340,8 @@ export default function AWSResourcesPage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Resources</CardTitle>
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Database className="h-5 w-5 text-blue-600" />
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                <Database className="h-5 w-5 text-purple-600" />
               </div>
             </div>
           </CardHeader>
@@ -527,10 +527,10 @@ export default function AWSResourcesPage() {
                         riskScore.grade === 'A' || riskScore.grade === 'B'
                           ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                           : riskScore.grade === 'C'
-                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                          ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
                           : riskScore.grade === 'D'
-                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                          : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                          ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                          : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
                       }`}
                     >
                       {riskScore.label}
@@ -542,10 +542,10 @@ export default function AWSResourcesPage() {
                         riskScore.score >= 80
                           ? 'bg-green-600 dark:bg-green-500'
                           : riskScore.score >= 60
-                          ? 'bg-blue-600 dark:bg-blue-500'
+                          ? 'bg-purple-600 dark:bg-purple-500'
                           : riskScore.score >= 40
-                          ? 'bg-blue-600 dark:bg-blue-500'
-                          : 'bg-blue-700 dark:bg-blue-600'
+                          ? 'bg-purple-600 dark:bg-purple-500'
+                          : 'bg-purple-700 dark:bg-purple-600'
                       }`}
                       style={{ width: `${riskScore.score}%` }}
                     />
@@ -584,7 +584,7 @@ export default function AWSResourcesPage() {
                 <div className="space-y-3">
                   <div>
                     <div className="text-sm text-muted-foreground">Potential Monthly Savings</div>
-                    <div className="text-3xl font-bold text-blue-700">
+                    <div className="text-3xl font-bold text-purple-700">
                       ${(stats?.orphaned_savings || 0).toFixed(2)}
                     </div>
                   </div>
@@ -627,10 +627,10 @@ export default function AWSResourcesPage() {
           if (!showInsights) return null;
 
           return (
-            <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800 p-6">
+            <div className="bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800 p-6">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
-                  <Lightbulb className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900 rounded-lg flex items-center justify-center">
+                  <Lightbulb className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Quick Insights
@@ -660,12 +660,12 @@ export default function AWSResourcesPage() {
                 {hasSecurityIssues && (
                   <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      <AlertTriangle className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">
                         Security Items
                       </span>
                     </div>
-                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mb-1">
+                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mb-1">
                       {(stats.unencrypted_count || 0) + (stats.public_count || 0)}
                     </div>
                     <p className="text-xs text-gray-600 dark:text-gray-400">
@@ -677,7 +677,7 @@ export default function AWSResourcesPage() {
                 {/* Overall Health Score */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <Activity className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                     <span className="text-sm font-semibold text-gray-900 dark:text-white">
                       Overall Health
                     </span>
@@ -1183,7 +1183,7 @@ export default function AWSResourcesPage() {
                                   className="w-fit"
                                 />
                                 {resource.is_public && daysExposed > 0 && (
-                                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                  <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
                                     {daysExposed}d exposed
                                   </span>
                                 )}

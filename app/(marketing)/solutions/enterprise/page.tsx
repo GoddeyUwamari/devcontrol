@@ -212,7 +212,7 @@ function UseCasesSection() {
       problem: 'Sprawling multi-account AWS environments',
       solution: 'Unified visibility across hundreds of accounts and regions with centralized governance',
       icon: Globe,
-      color: 'text-blue-500',
+      color: 'text-purple-500',
     },
     {
       problem: 'Complex compliance requirements across teams',

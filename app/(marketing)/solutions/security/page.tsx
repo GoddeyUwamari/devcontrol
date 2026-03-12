@@ -26,7 +26,7 @@ import { securityFeatures } from './data/securityFeatures';
 // ============================================
 function SecurityHero() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-blue-500/5 via-background to-blue-500/10 py-12 lg:py-16">
+    <section className="relative overflow-hidden bg-gradient-to-br from-purple-500/5 via-background to-purple-500/10 py-12 lg:py-16">
       <div className="max-w-7xl mx-auto px-4">
         <div className="text-center max-w-4xl mx-auto">
           <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm">
@@ -35,7 +35,7 @@ function SecurityHero() {
 
           <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4 leading-tight">
             Secure Your Cloud.{' '}
-            <span className="text-blue-500">Automate Compliance.</span>
+            <span className="text-purple-500">Automate Compliance.</span>
             <br />
             Sleep at Night.
           </h1>
@@ -46,7 +46,7 @@ function SecurityHero() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-8">
-            <Button asChild size="lg" className="gap-2 px-6 h-11 bg-blue-600 hover:bg-blue-700">
+            <Button asChild size="lg" className="gap-2 px-6 h-11 bg-purple-600 hover:bg-purple-700">
               <Link href="/dashboard">
                 Start Security Scan
                 <ArrowRight className="w-4 h-4" />
@@ -61,23 +61,23 @@ function SecurityHero() {
 
           <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-blue-500" />
+              <CheckCircle2 className="w-4 h-4 text-purple-500" />
               <span>200+ security checks</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-blue-500" />
+              <CheckCircle2 className="w-4 h-4 text-purple-500" />
               <span>Read-only access</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-blue-500" />
+              <CheckCircle2 className="w-4 h-4 text-purple-500" />
               <span>Results in minutes</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="absolute -top-24 -right-24 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
-      <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
+      <div className="absolute -top-24 -right-24 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl" />
+      <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl" />
     </section>
   );
 }
@@ -99,7 +99,7 @@ function TrustSection() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {stats.map((stat, index) => (
             <div key={index} className="text-center p-3">
-              <div className="text-2xl font-bold text-blue-600">{stat.value}</div>
+              <div className="text-2xl font-bold text-purple-600">{stat.value}</div>
               <div className="text-sm text-muted-foreground">{stat.label}</div>
             </div>
           ))}
@@ -129,10 +129,10 @@ function MetricsSection() {
           {securityMetrics.map((metric, index) => (
             <Card key={index} className="text-center border-0 shadow-md bg-card">
               <CardHeader className="pb-1 pt-5">
-                <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center mx-auto mb-3">
-                  <metric.icon className="w-6 h-6 text-blue-600" />
+                <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center mx-auto mb-3">
+                  <metric.icon className="w-6 h-6 text-purple-600" />
                 </div>
-                <CardTitle className="text-4xl font-bold text-blue-600 mb-1">
+                <CardTitle className="text-4xl font-bold text-purple-600 mb-1">
                   {metric.value}
                 </CardTitle>
                 <CardDescription className="text-base font-semibold text-foreground">
@@ -179,8 +179,8 @@ function ComplianceFrameworksSection() {
           {frameworks.map((framework, index) => (
             <Card key={index} className="text-center hover:shadow-md transition-shadow">
               <CardHeader className="pb-1 pt-4">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center mx-auto mb-2">
-                  <Check className="w-4 h-4 text-blue-600" />
+                <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center mx-auto mb-2">
+                  <Check className="w-4 h-4 text-purple-600" />
                 </div>
                 <CardTitle className="text-base">{framework.name}</CardTitle>
               </CardHeader>
@@ -216,8 +216,8 @@ function FeaturesSection() {
           {securityFeatures.map((feature, index) => (
             <Card key={index} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
-                <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center mb-2">
-                  <feature.icon className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center mb-2">
+                  <feature.icon className="w-5 h-5 text-purple-600" />
                 </div>
                 <CardTitle className="text-lg">{feature.title}</CardTitle>
               </CardHeader>
@@ -304,7 +304,7 @@ function UseCasesSection() {
               </CardHeader>
               <CardContent className="py-4">
                 <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600">
+                  <div className="p-2 rounded-lg bg-purple-500/10 text-purple-600">
                     <useCase.icon className="w-4 h-4" />
                   </div>
                   <div className="flex-1">
@@ -352,7 +352,7 @@ function ComparisonSection() {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-semibold text-sm">Capability</th>
-                  <th className="text-center p-3 font-semibold text-sm text-blue-600">DevControl</th>
+                  <th className="text-center p-3 font-semibold text-sm text-purple-600">DevControl</th>
                   <th className="text-center p-3 font-semibold text-sm text-muted-foreground">Manual Audit</th>
                 </tr>
               </thead>
@@ -362,15 +362,15 @@ function ComparisonSection() {
                     <td className="p-3 text-sm font-medium">{row.feature}</td>
                     <td className="p-3 text-center">
                       {typeof row.devcontrol === 'boolean' ? (
-                        <Check className="w-4 h-4 text-blue-500 mx-auto" />
+                        <Check className="w-4 h-4 text-purple-500 mx-auto" />
                       ) : (
-                        <span className="text-sm font-semibold text-blue-600">{row.devcontrol}</span>
+                        <span className="text-sm font-semibold text-purple-600">{row.devcontrol}</span>
                       )}
                     </td>
                     <td className="p-3 text-center text-muted-foreground">
                       {typeof row.others === 'boolean' ? (
                         row.others ? (
-                          <Check className="w-4 h-4 text-blue-500 mx-auto" />
+                          <Check className="w-4 h-4 text-purple-500 mx-auto" />
                         ) : (
                           <X className="w-4 h-4 text-red-500 mx-auto" />
                         )
@@ -394,7 +394,7 @@ function ComparisonSection() {
 // ============================================
 function FinalCTASection() {
   return (
-    <section className="py-14 lg:py-20 bg-gradient-to-br from-blue-500/10 via-background to-blue-500/5">
+    <section className="py-14 lg:py-20 bg-gradient-to-br from-purple-500/10 via-background to-purple-500/5">
       <div className="max-w-7xl mx-auto px-4 text-center">
         <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-foreground mb-4">
           Ready to Secure Your AWS Infrastructure?
@@ -404,7 +404,7 @@ function FinalCTASection() {
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-6">
-          <Button asChild size="lg" className="gap-2 px-6 h-11 bg-blue-600 hover:bg-blue-700">
+          <Button asChild size="lg" className="gap-2 px-6 h-11 bg-purple-600 hover:bg-purple-700">
             <Link href="/dashboard">
               Start Free Security Scan
               <ArrowRight className="w-4 h-4" />
@@ -419,15 +419,15 @@ function FinalCTASection() {
 
         <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-blue-500" />
+            <CheckCircle2 className="w-4 h-4 text-purple-500" />
             <span>200+ security checks</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-blue-500" />
+            <CheckCircle2 className="w-4 h-4 text-purple-500" />
             <span>No credit card required</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-blue-500" />
+            <CheckCircle2 className="w-4 h-4 text-purple-500" />
             <span>Results in minutes</span>
           </div>
         </div>

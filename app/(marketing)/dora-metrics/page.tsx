@@ -111,7 +111,7 @@ function exportToPDF() {
 function BenchmarkBadge({ level }: { level: BenchmarkLevel }) {
   const config = {
     elite: { label: 'Elite', className: 'bg-green-500 text-white' },
-    high: { label: 'High', className: 'bg-blue-500 text-white' },
+    high: { label: 'High', className: 'bg-purple-500 text-white' },
     medium: { label: 'Medium', className: 'bg-yellow-500 text-white' },
     low: { label: 'Low', className: 'bg-red-500 text-white' },
   };
@@ -163,7 +163,7 @@ interface MetricCardProps {
   color?: string;
 }
 
-function MetricCard({ name, metric, icon: Icon, color = '#3b82f6' }: MetricCardProps) {
+function MetricCard({ name, metric, icon: Icon, color = '#7c3aed' }: MetricCardProps) {
   // Generate trend data for sparkline
   const trendData = generateTrendData(metric.value);
 
@@ -511,7 +511,7 @@ export default function DORAMetricsPage() {
               name="Deployment Frequency"
               metric={metrics.deploymentFrequency}
               icon={TrendingUp}
-              color="#3b82f6"
+              color="#7c3aed"
             />
             <MetricCard
               name="Lead Time for Changes"
@@ -734,7 +734,7 @@ export default function DORAMetricsPage() {
                   href="https://dora.dev/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
+                  className="text-purple-600 hover:underline"
                 >
                   dora.dev
                 </a>
@@ -758,7 +758,7 @@ export default function DORAMetricsPage() {
 
               <div className="space-y-3 mb-6 max-w-md mx-auto">
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg text-left">
-                  <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                  <div className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-sm font-semibold shrink-0">
                     1
                   </div>
                   <span className="text-sm">Connect your Git repository</span>
@@ -784,20 +784,20 @@ export default function DORAMetricsPage() {
                 </a>
               </Button>
 
-              <div className="mt-6 p-6 bg-blue-50 rounded-lg">
+              <div className="mt-6 p-6 bg-purple-50 rounded-lg">
                 <p className="text-sm font-medium mb-3">Preview: What you&apos;ll see</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-white p-3 rounded shadow-sm">
                     <div className="text-xs font-semibold text-gray-700">
                       Deployment Frequency
                     </div>
-                    <div className="text-lg font-bold text-blue-600 mt-1">2.3 per day</div>
+                    <div className="text-lg font-bold text-purple-600 mt-1">2.3 per day</div>
                     <Badge className="mt-2 bg-green-500 text-white">Elite</Badge>
                   </div>
                   <div className="bg-white p-3 rounded shadow-sm">
                     <div className="text-xs font-semibold text-gray-700">Lead Time</div>
                     <div className="text-lg font-bold text-purple-600 mt-1">4.2 hours</div>
-                    <Badge className="mt-2 bg-blue-500 text-white">High</Badge>
+                    <Badge className="mt-2 bg-purple-500 text-white">High</Badge>
                   </div>
                   <div className="bg-white p-3 rounded shadow-sm">
                     <div className="text-xs font-semibold text-gray-700">Failure Rate</div>

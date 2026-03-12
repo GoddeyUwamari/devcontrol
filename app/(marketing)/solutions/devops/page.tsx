@@ -113,7 +113,7 @@ function UseCases() {
   const items = [
     { problem: 'Mystery outage at 2am', solution: 'Service dependency maps pinpoint the root cause in minutes — not hours of log diving', icon: AlertTriangle, color: 'text-orange-500' },
     { problem: 'Deployment slowed to a crawl', solution: 'DORA trends identify which steps are bottlenecks so you can prioritise fixes', icon: Clock, color: 'text-red-500' },
-    { problem: 'Infra drift causing prod failures', solution: 'Real-time drift detection with auto-remediation suggestions before anything breaks', icon: RefreshCw, color: 'text-blue-500' },
+    { problem: 'Infra drift causing prod failures', solution: 'Real-time drift detection with auto-remediation suggestions before anything breaks', icon: RefreshCw, color: 'text-purple-500' },
     { problem: 'Security blocked your release', solution: 'Pre-deploy security checks surface issues in CI so security never surprises you', icon: Shield, color: 'text-purple-500' },
   ];
   return (

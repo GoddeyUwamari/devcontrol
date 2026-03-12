@@ -227,7 +227,7 @@ function StartupUseCases() {
       problem: 'Failed SOC 2 security review',
       solution: 'Continuous security scanning with automated compliance reports',
       icon: Shield,
-      color: 'text-blue-500',
+      color: 'text-purple-500',
     },
     {
       problem: 'Production outage, no one knows why',
