@@ -1,7 +1,6 @@
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { BarList } from '@tremor/react'
 import { TrendingUp, TrendingDown, Download, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
@@ -79,17 +78,8 @@ export function CostBreakdownBarList({
   if (isLoading) {
     return (
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="space-y-2">
-              <div className="h-6 bg-gray-200 rounded animate-pulse w-48" />
-              <div className="h-4 bg-gray-200 rounded animate-pulse w-64" />
-            </div>
-            <div className="h-9 bg-gray-200 rounded animate-pulse w-32" />
-          </div>
-        </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <div className="space-y-4 pt-6">
             <div className="h-20 bg-gray-200 rounded animate-pulse" />
             <div className="h-4 bg-gray-200 rounded animate-pulse" />
             <div className="h-4 bg-gray-200 rounded animate-pulse" />
@@ -102,9 +92,12 @@ export function CostBreakdownBarList({
     )
   }
 
+  // Max value for bar width scaling
+  const maxValue = Math.max(...data.map(d => d.value))
+
   return (
     <div>
-      {/* Date Range Selector — FIX 4: active tab styling */}
+      {/* Date Range Selector */}
       {onDateRangeChange && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: '#F8FAFC', borderRadius: '8px', padding: '3px', marginBottom: '16px' }}>
           {dateRangeOptions.map((option) => {
@@ -130,7 +123,6 @@ export function CostBreakdownBarList({
               </button>
             )
           })}
-          {/* Export button */}
           {onExport && (
             <button
               onClick={onExport}
@@ -152,68 +144,105 @@ export function CostBreakdownBarList({
         </div>
       </div>
 
-      {/* BarList — FIX 3: desaturate only the bars */}
-      <div style={{ filter: 'saturate(0.15)' }} className="mt-2 [&_.tremor-BarList-bar]:h-8 [&_.tremor-BarList-bar]:transition-all [&_.tremor-BarList-bar]:duration-200">
-        <BarList
-          data={dataWithPercentage.map(item => ({
-            name: item.name,
-            value: item.value,
-            color: item.color,
-          }))}
-          valueFormatter={valueFormatter}
-        />
+      {/* Custom Bar Chart — hex colors applied directly, no Tremor color mapping */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px' }}>
+        {dataWithPercentage.map((item) => {
+          const widthPct = (item.value / maxValue) * 100
+          return (
+            <div key={item.name}>
+              {/* Name + value on same line above the bar */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 500, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.color, display: 'inline-block', flexShrink: 0 }} />
+                  {item.name}
+                </span>
+                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0F172A' }}>
+                  {valueFormatter(item.value)}
+                </span>
+              </div>
+              {/* Bar */}
+              <div style={{ height: '8px', background: '#F1F5F9', borderRadius: '4px', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${widthPct}%`,
+                    height: '100%',
+                    background: item.color,
+                    borderRadius: '4px',
+                    transition: 'width 0.4s ease',
+                  }}
+                />
+              </div>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Detailed Breakdown with Changes - Clickable with enhanced hover */}
-      <div className="mt-6 space-y-2">
+      {/* Detailed Breakdown with Changes — clickable rows */}
+      <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
         {dataWithPercentage.map((item) => (
           <button
             key={item.name}
             onClick={() => handleCategoryClick(item.name)}
-            className="w-full flex items-center justify-between text-sm py-3 px-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:shadow-md transition-all duration-200 cursor-pointer group border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid transparent',
+              background: 'transparent',
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.background = '#F8FAFC'
+              ;(e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0'
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.background = 'transparent'
+              ;(e.currentTarget as HTMLElement).style.borderColor = 'transparent'
+            }}
           >
-            <div className="flex items-center gap-3">
-              <div
-                className="w-3 h-3 rounded-full group-hover:scale-110 transition-transform duration-200"
-                style={{
-                  backgroundColor: item.color
-                }}
-                aria-hidden="true"
-              />
-              <span className="text-gray-700 dark:text-gray-300 font-medium group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {/* Color dot using the actual hex */}
+              <div style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                background: item.color,
+                flexShrink: 0,
+              }} />
+              <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#1E293B' }}>
                 {item.name}
               </span>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="font-semibold text-gray-900 dark:text-gray-100">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A' }}>
                 {valueFormatter(item.value)}
               </span>
-              <span className="text-gray-500 dark:text-gray-400 min-w-[45px] text-right">
+              <span style={{ fontSize: '0.75rem', color: '#64748B', minWidth: '42px', textAlign: 'right' }}>
                 {item.percentage}%
               </span>
-              <div className={`flex items-center gap-1 min-w-[60px] ${
-                item.change > 0
-                  ? 'text-red-600 dark:text-red-400'
-                  : 'text-green-600 dark:text-green-400'
-              }`}>
-                {item.change > 0 ? (
-                  <TrendingUp className="w-3 h-3" />
-                ) : (
-                  <TrendingDown className="w-3 h-3" />
-                )}
-                <span className="text-xs font-medium">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: '48px', color: item.change > 0 ? '#DC2626' : '#059669' }}>
+                {item.change > 0
+                  ? <TrendingUp size={12} />
+                  : <TrendingDown size={12} />
+                }
+                <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
                   {Math.abs(item.change)}%
                 </span>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+              <ChevronRight size={14} style={{ color: '#CBD5E1' }} />
             </div>
           </button>
         ))}
       </div>
 
       {/* Footer Note */}
-      <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+      <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #F1F5F9' }}>
+        <p style={{ fontSize: '0.72rem', color: '#64748B', margin: 0 }}>
           💡 Click any category to view detailed resource breakdown. Trends show change vs previous period.
         </p>
       </div>

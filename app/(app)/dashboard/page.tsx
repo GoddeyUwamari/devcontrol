@@ -156,15 +156,22 @@ function generateCostTrendData(days: number) {
   return data;
 }
 
+const SERVICE_COLORS: Record<string, string> = {
+  'Compute (EC2, Lambda, ECS)': '#3B82F6',  // vivid blue
+  'Storage (S3, EBS)':          '#06B6D4',  // cyan
+  'Database (RDS, DynamoDB)':   '#8B5CF6',  // violet
+  'Network (Data Transfer)':    '#F59E0B',  // amber
+  'Other Services':             '#94A3B8',  // slate
+}
+
 // Helper function to generate cost breakdown data for BarList
-// UPDATED: Modern, distinct colors for each service category
 function generateCostBreakdownData() {
   return [
-    { name: 'Compute (EC2, Lambda, ECS)', value: 5200, change: 12, color: '#3B82F6' },  // vivid blue
-    { name: 'Storage (S3, EBS)',           value: 3800, change: -5, color: '#06B6D4' },  // cyan
-    { name: 'Database (RDS, DynamoDB)',    value: 2400, change:  8, color: '#8B5CF6' },  // violet
-    { name: 'Network (Data Transfer)',     value: 1200, change:  3, color: '#F59E0B' },  // amber
-    { name: 'Other Services',             value:  247, change: -2, color: '#94A3B8' },  // slate
+    { name: 'Compute (EC2, Lambda, ECS)', value: 5200, change: 12, color: SERVICE_COLORS['Compute (EC2, Lambda, ECS)'] },
+    { name: 'Storage (S3, EBS)',           value: 3800, change: -5, color: SERVICE_COLORS['Storage (S3, EBS)'] },
+    { name: 'Database (RDS, DynamoDB)',    value: 2400, change:  8, color: SERVICE_COLORS['Database (RDS, DynamoDB)'] },
+    { name: 'Network (Data Transfer)',     value: 1200, change:  3, color: SERVICE_COLORS['Network (Data Transfer)'] },
+    { name: 'Other Services',             value:  247, change: -2, color: SERVICE_COLORS['Other Services'] },
   ];
 }
 
