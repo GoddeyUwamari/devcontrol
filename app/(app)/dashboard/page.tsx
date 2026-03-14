@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { TrendingUp, TrendingDown, Users, Layers, Rocket, DollarSign, AlertCircle, Server, Shield, Activity, Database, Plus, Zap } from 'lucide-react'
+import { TrendingUp, TrendingDown, Users, Layers, Rocket, DollarSign, AlertCircle, Server, Shield, Activity, Database, Plus, Zap, Building2, Wifi, WifiOff, Minus, X, ChevronRight, GitBranch, MoreHorizontal, ArrowRight, CheckCircle, Sparkles } from 'lucide-react'
 import { OnboardingProgress } from '@/components/onboarding/progress-indicator'
 
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -131,125 +131,6 @@ const DEMO_DEPLOYMENTS: Deployment[] = [
   },
 ]
 
-// Helper function to get time-based greeting
-function getGreeting(): string {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 18) return 'Good afternoon'
-  return 'Good evening'
-}
-
-// Metric Card Component
-function MetricCard({
-  title,
-  value,
-  change,
-  icon: Icon,
-  loading,
-}: {
-  title: string
-  value: string | number
-  change: number
-  icon: React.ElementType
-  loading?: boolean
-}) {
-  const isPositive = change >= 0
-
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between mb-2">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-8 w-8 rounded" />
-          </div>
-          <Skeleton className="h-8 w-24 mb-2" />
-          <Skeleton className="h-4 w-20" />
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <div className="h-8 w-8 rounded-md bg-purple-100 flex items-center justify-center">
-            <Icon className="h-4 w-4" style={{ color: '#7c3aed' }} />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <p className="text-2xl font-bold">{value}</p>
-          <div className="flex items-center text-xs">
-            {isPositive ? (
-              <TrendingUp className="h-3 w-3 text-green-600 mr-1" />
-            ) : (
-              <TrendingDown className="h-3 w-3 text-red-600 mr-1" />
-            )}
-            <span className={isPositive ? 'text-green-600' : 'text-red-600'}>
-              {isPositive ? '+' : ''}{change}%
-            </span>
-            <span className="text-muted-foreground ml-1">vs last month</span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Chart Loading Skeleton
-function ChartSkeleton() {
-  return (
-    <Card>
-      <CardHeader>
-        <Skeleton className="h-6 w-48" />
-      </CardHeader>
-      <CardContent>
-        <Skeleton className="h-80 w-full" />
-      </CardContent>
-    </Card>
-  )
-}
-
-// Table Loading Skeleton
-function TableSkeleton() {
-  return (
-    <Card>
-      <CardHeader>
-        <Skeleton className="h-6 w-40" />
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Error State Component
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center p-8 space-y-4">
-      <div className="h-12 w-12 rounded-full bg-red-100 flex items-center justify-center">
-        <AlertCircle className="h-6 w-6 text-red-600" />
-      </div>
-      <div className="text-center space-y-2">
-        <p className="font-medium text-foreground">Failed to load data</p>
-        <p className="text-sm text-muted-foreground">{message}</p>
-      </div>
-      <Button onClick={onRetry} variant="outline" style={{ borderColor: '#7c3aed', color: '#7c3aed' }} className="hover:bg-purple-50">
-        Try Again
-      </Button>
-    </div>
-  )
-}
-
-// Empty State Component (deprecated - now using onboarding EmptyState)
-
 // Helper function to generate demo cost trend data
 function generateCostTrendData(days: number) {
   const data = [];
@@ -269,7 +150,7 @@ function generateCostTrendData(days: number) {
       network,
       other,
       total: compute + storage + database + network + other,
-      forecast: i < -7, // Last 7 days are forecast
+      forecast: i < -7,
     });
   }
   return data;
@@ -278,37 +159,29 @@ function generateCostTrendData(days: number) {
 // Helper function to generate cost breakdown data for BarList
 function generateCostBreakdownData() {
   return [
-    {
-      name: 'Compute (EC2, Lambda, ECS)',
-      value: 5200,
-      change: 12, // +12% vs last month
-      color: 'blue' as const
-    },
-    {
-      name: 'Storage (S3, EBS)',
-      value: 3800,
-      change: -5, // -5% vs last month
-      color: 'teal' as const
-    },
-    {
-      name: 'Database (RDS, DynamoDB)',
-      value: 2400,
-      change: 8,
-      color: 'purple' as const
-    },
-    {
-      name: 'Network (Data Transfer)',
-      value: 1200,
-      change: 3,
-      color: 'amber' as const
-    },
-    {
-      name: 'Other Services',
-      value: 247,
-      change: -2,
-      color: 'gray' as const
-    },
+    { name: 'Compute (EC2, Lambda, ECS)', value: 5200, change: 12, color: 'blue' as const },
+    { name: 'Storage (S3, EBS)', value: 3800, change: -5, color: 'teal' as const },
+    { name: 'Database (RDS, DynamoDB)', value: 2400, change: 8, color: 'purple' as const },
+    { name: 'Network (Data Transfer)', value: 1200, change: 3, color: 'amber' as const },
+    { name: 'Other Services', value: 247, change: -2, color: 'gray' as const },
   ];
+}
+
+function getDeploymentStatusColor(status: DeploymentStatus): string {
+  switch (status) {
+    case 'running': return '#059669'
+    case 'failed': return '#DC2626'
+    case 'deploying': return '#D97706'
+    default: return '#94A3B8'
+  }
+}
+
+// Shared card style
+const card: React.CSSProperties = {
+  background: '#FFFFFF',
+  borderRadius: '16px',
+  padding: '32px',
+  border: '1px solid #F1F5F9',
 }
 
 export default function DashboardPage() {
@@ -319,16 +192,17 @@ export default function DashboardPage() {
   const salesDemoMode = useSalesDemo((state) => state.enabled);
   const router = useRouter();
 
-  // Function to exit demo mode
   const handleExitDemoMode = () => {
     localStorage.setItem('devcontrol_demo_mode', 'false');
     window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled: false } }));
   };
+
   const [dismissedInsights, setDismissedInsights] = useState<string[]>([]);
   const [costDateRange, setCostDateRange] = useState<'7d' | '30d' | '90d' | '6mo' | '1yr'>('90d');
   const [riskScoreDateRange, setRiskScoreDateRange] = useState<DateRange>('30d');
   const [lastSynced, setLastSynced] = useState<Date>(demoMode ? DEMO_LAST_SYNCED : new Date());
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'synced' | 'error'>(DEMO_SYNC_STATUS);
+  const [insightDismissed, setInsightDismissed] = useState(false);
 
   // Fetch risk score trend data
   const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange);
@@ -341,7 +215,7 @@ export default function DashboardPage() {
 
   // Fetch AI insights based on cost data (after stats are defined)
   const costAnalysisData = stats ? {
-    previousCost: stats.monthlyAwsCost * 0.95, // Simulated previous cost
+    previousCost: stats.monthlyAwsCost * 0.95,
     currentCost: stats.monthlyAwsCost,
     percentageIncrease: stats.costChange ?? 0,
     topSpenders: generateCostBreakdownData().slice(0, 3).map(item => ({
@@ -355,7 +229,7 @@ export default function DashboardPage() {
   const { data: aiInsight, isLoading: aiInsightLoading } = useAIInsights(
     costAnalysisData,
     {
-      enabled: !demoMode && !!stats, // Only fetch when not in demo mode and stats are available
+      enabled: !demoMode && !!stats,
       onSuccess: (data) => {
         console.log('[Dashboard] AI Insights loaded:', data.cached ? 'from cache' : 'fresh');
       },
@@ -370,7 +244,7 @@ export default function DashboardPage() {
     queryKey: ['recent-deployments'],
     queryFn: async () => {
       const allDeployments = await deploymentsService.getAll();
-      return allDeployments.slice(0, 5); // Get latest 5
+      return allDeployments.slice(0, 5);
     },
   });
 
@@ -380,7 +254,6 @@ export default function DashboardPage() {
 
     console.log('📡 Dashboard: Setting up WebSocket listeners...');
 
-    // Listen for AWS cost updates
     socket.on('metrics:costs', (data) => {
       console.log('💰 Costs updated:', data);
       toast.info('AWS costs updated', {
@@ -389,7 +262,6 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
     });
 
-    // Listen for new alerts
     socket.on('alert:created', (data) => {
       console.log('🚨 New alert:', data);
       toast.error(`New ${data.severity} Alert`, {
@@ -398,7 +270,6 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
     });
 
-    // Listen for deployment started
     socket.on('deployment:started', (data) => {
       console.log('🚀 Deployment started:', data);
       toast.info(`Deployment started: ${data.serviceName}`, {
@@ -408,11 +279,9 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['recent-deployments'] });
     });
 
-    // Listen for deployment completed
     socket.on('deployment:completed', (data) => {
       console.log('✅ Deployment completed:', data);
       const isSuccess = data.status === 'success';
-
       toast[isSuccess ? 'success' : 'error'](
         `Deployment ${isSuccess ? 'succeeded' : 'failed'}: ${data.serviceName}`,
         {
@@ -421,12 +290,10 @@ export default function DashboardPage() {
             : 'Check logs for details',
         }
       );
-
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['recent-deployments'] });
     });
 
-    // Listen for service health changes
     socket.on('service:health', (data) => {
       console.log('💊 Service health changed:', data);
       if (data.status !== 'healthy') {
@@ -437,7 +304,6 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] });
     });
 
-    // Cleanup listeners on unmount
     return () => {
       console.log('🧹 Dashboard: Cleaning up WebSocket listeners...');
       socket.off('metrics:costs');
@@ -448,7 +314,6 @@ export default function DashboardPage() {
     };
   }, [socket, queryClient]);
 
-  // Handle manual refresh
   const handleRefreshDashboard = async () => {
     setSyncStatus('syncing');
     try {
@@ -467,377 +332,235 @@ export default function DashboardPage() {
     }).format(amount)
   }
 
-  const getDeploymentStatusBadge = (status: DeploymentStatus) => {
-    const variants = {
-      running: 'bg-green-100 text-green-700 hover:bg-green-100',
-      stopped: 'bg-gray-100 text-gray-700 hover:bg-gray-100',
-      deploying: 'bg-blue-100 text-blue-700 hover:bg-blue-100',
-      failed: 'bg-red-100 text-red-700 hover:bg-red-100',
-    }
-    return (
-      <Badge className={variants[status]} variant="secondary">
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
-  }
+  const activeDeployments = demoMode ? DEMO_DEPLOYMENTS : deployments;
+  const insightMessage = demoMode
+    ? 'Lambda function costs increased 23% due to higher invocation count — enable reserved concurrency and consider Graviton2 for up to $540/year savings.'
+    : (aiInsight?.rootCause || aiInsight?.recommendation || null);
+
+  // Derived display values
+  const currentSpend = demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0);
+  const costChange = demoMode ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0);
+  const securityScore = riskScoreData?.current.score ?? (demoMode ? 87 : null);
+  const wasteAmount = 1922; // AI-identified; would come from optimization service
+  const efficiencyRatio = currentSpend > 0
+    ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100)
+    : null;
+
+  // FIX 6 — Semantic delta color helpers
+  // Cost: increase = bad (red), decrease = good (emerald), zero = neutral (amber)
+  const costDeltaColor = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706';
+  const CostDeltaIcon = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus;
+
+  // Security: >= 80 = good (emerald), < 80 = needs attention (red)
+  const securityDeltaColor = securityScore !== null && securityScore >= 80 ? '#059669' : '#DC2626';
+  const SecurityDeltaIcon = securityScore !== null && securityScore >= 80 ? TrendingUp : TrendingDown;
+
+  // Efficiency: >= 90% = good (emerald), >= 75% = neutral (amber), < 75% = bad (red)
+  const efficiencyDeltaColor = efficiencyRatio !== null
+    ? efficiencyRatio >= 90 ? '#059669' : efficiencyRatio >= 75 ? '#D97706' : '#DC2626'
+    : '#D97706';
+  const EfficiencyDeltaIcon = efficiencyRatio !== null
+    ? efficiencyRatio >= 90 ? TrendingUp : efficiencyRatio >= 75 ? Minus : TrendingDown
+    : Minus;
+
+  const doraRows: { label: string; value: string; tier: 'Elite' | 'High' }[] = [
+    { label: 'Deployment Frequency', value: `${demoMode ? 12 : (stats?.activeDeployments ?? 12)}/week`, tier: 'Elite' },
+    { label: 'Lead Time for Changes', value: '2.4 hours', tier: 'Elite' },
+    { label: 'Change Failure Rate', value: '8.3%', tier: 'High' },
+    { label: 'Mean Time to Recovery', value: '36 min', tier: 'Elite' },
+  ];
+
+  const securityRows: { label: string; value: string | number; status: 'good' | 'warn' }[] = [
+    { label: 'Critical Vulnerabilities', value: demoMode ? 0 : 0, status: 'good' },
+    { label: 'Compliance Frameworks', value: '4/4', status: 'good' },
+    { label: 'Active Anomalies', value: demoMode ? 3 : (statsLoading ? '—' : 3), status: 'warn' },
+  ];
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* SECTION 1: HERO HEADER - Centered, Prominent */}
-      <section className="relative overflow-hidden border-b border-gray-200">
-        {/* Subtle gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-purple-50/30 to-white" />
+    // FIX 2 — maxWidth: 1400px per spec, padding fills edge-to-edge within shell
+    // FIX 8 — paddingBottom: 64px for breathing room
+    <div style={{
+      padding: '40px 56px 64px',
+      maxWidth: '1400px',
+      margin: '0 auto',
+      minHeight: '100vh',
+      background: '#F9FAFB',
+      fontFamily: 'Inter, system-ui, sans-serif',
+    }}>
 
-        <div className="relative max-w-7xl mx-auto px-8 py-16 text-center">
-          {authLoading ? (
-            <Skeleton className="h-12 w-64 mx-auto mb-4" />
-          ) : (
-            <h2 className="text-4xl font-bold text-gray-900 mb-3">
-              {getGreeting()}, {user?.fullName?.split(' ')[0] || user?.email?.split('@')[0] || 'there'} 👋
-            </h2>
-          )}
-          <h1 className="text-5xl md:text-6xl font-extrabold mb-4">
-            <span style={{ color: '#7c3aed' }}>Dashboard</span>
-          </h1>
-          <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
-            {salesDemoMode
-              ? 'Sales Demo View - Showcasing 26x ROI and Elite Tier Performance'
-              : 'Your infrastructure at a glance - Real-time monitoring and insights'}
+      {/* ── LAYER 1: COMMAND HEADER ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        marginBottom: '40px',
+      }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+            <h1 style={{
+              fontSize: '1.75rem',
+              fontWeight: 700,
+              color: '#0F172A',
+              margin: 0,
+              letterSpacing: '-0.02em',
+            }}>
+              AI-powered AWS infrastructure command center
+            </h1>
+            {(demoMode || salesDemoMode) && (
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                background: '#FFFBEB',
+                color: '#D97706',
+                border: '1px solid #FDE68A',
+                padding: '3px 12px',
+                borderRadius: '100px',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}>
+                Demo Mode
+              </span>
+            )}
+          </div>
+          <p style={{
+            fontSize: '0.875rem',
+            color: '#64748B',
+            margin: 0,
+            lineHeight: 1.6,
+          }}>
+            WayUP Technology · 3 AWS accounts · Last synced {formatDistanceToNow(lastSynced, { addSuffix: true })}
           </p>
-
-          {/* Status indicators */}
-          <div className="flex items-center justify-center gap-6 pt-4">
-            {isConnected && (
-              <div className="flex items-center gap-2 text-sm text-green-600">
-                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                Live updates
-              </div>
-            )}
-            {salesDemoMode && (
-              <div className="flex items-center gap-2 text-sm text-purple-600 font-medium">
-                <div className="h-2 w-2 rounded-full bg-purple-500 animate-pulse" />
-                Sales Demo Active
-              </div>
-            )}
-            {demoMode && !salesDemoMode && (
-              <div className="flex items-center gap-2 text-sm text-purple-600 font-medium">
-                <Activity className="w-4 h-4 animate-pulse" />
-                Demo Mode Active
-              </div>
-            )}
-          </div>
-
-          {/* Header Actions */}
-          <div className="flex items-center justify-center gap-3 mt-6">
-            <LastSynced
-              timestamp={lastSynced}
-              onRefresh={handleRefreshDashboard}
-              autoRefresh={true}
-            />
-            {!statsError && (
-              <QuickActions
-                actions={[
-                  {
-                    id: 'add-service',
-                    label: 'Add Service',
-                    icon: Rocket,
-                    onClick: () => router.push('/app/services/new'),
-                    variant: 'primary',
-                  },
-                  {
-                    id: 'scan-resources',
-                    label: 'Scan AWS Resources',
-                    icon: Server,
-                    onClick: () => router.push('/app/infrastructure'),
-                  },
-                  {
-                    id: 'configure-alerts',
-                    label: 'Configure Alerts',
-                    icon: AlertCircle,
-                    onClick: () => router.push('/app/admin/alerts'),
-                  },
-                ]}
-              />
-            )}
-          </div>
         </div>
-      </section>
-
-      {/* Demo Mode Banner */}
-      {demoMode && !salesDemoMode && (
-        <div className="max-w-7xl mx-auto px-8 pt-6">
-          <DemoModeBanner onExit={handleExitDemoMode} />
-        </div>
-      )}
-
-      {/* Onboarding Progress Banner */}
-      <div className="max-w-7xl mx-auto px-8 pt-6">
-        <OnboardingProgress />
+        <a href="/cost-optimization" style={{
+          background: '#7C3AED',
+          color: '#fff',
+          padding: '10px 24px',
+          borderRadius: '8px',
+          fontSize: '0.875rem',
+          fontWeight: 600,
+          textDecoration: 'none',
+          letterSpacing: '-0.01em',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+        }}>
+          Approve Savings <ArrowRight size={14} />
+        </a>
       </div>
 
-      {/* Sync Status Banner */}
-      <div className="max-w-7xl mx-auto px-8">
-        <SyncStatusBanner
-          lastSynced={lastSynced}
-          status={syncStatus}
-          onRetry={handleRefreshDashboard}
-        />
+      {/* ── NORTH STAR METRICS — 3 col ── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: '24px',
+        marginBottom: '32px',
+      }}>
+
+        {/* Total Cloud Spend — FIX 6: semantic delta color */}
+        <div style={card}>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+            Total Cloud Spend
+          </p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+            {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
+            <span style={{ fontSize: '0.8rem', color: costDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+              {costChange > 0 ? '+' : ''}{Math.abs(costChange)}%
+            </span>
+            <span style={{ fontSize: '0.8rem', color: '#64748B', lineHeight: 1.6 }}>vs last month</span>
+          </div>
+        </div>
+
+        {/* Security Posture — FIX 6: semantic delta color */}
+        <div style={card}>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+            Security Posture
+          </p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+            {securityScore ?? '—'}
+            <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <SecurityDeltaIcon size={14} style={{ color: securityDeltaColor }} />
+            <span style={{ fontSize: '0.8rem', color: securityDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+              {securityScore !== null && securityScore >= 80 ? 'Stable · Above benchmark' : 'Needs attention'}
+            </span>
+          </div>
+        </div>
+
+        {/* Efficiency Ratio — FIX 6: semantic delta color */}
+        <div style={card}>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+            Infrastructure Efficiency
+          </p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+            {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <EfficiencyDeltaIcon size={14} style={{ color: efficiencyDeltaColor }} />
+            <span style={{ fontSize: '0.8rem', color: efficiencyDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+              ${wasteAmount.toLocaleString()} identified waste
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Sales Demo Mode: ROI Hero Section */}
-      {salesDemoMode && (
-        <div className="max-w-7xl mx-auto px-8 py-8">
-          <ROIHero demoMode={salesDemoMode} />
-        </div>
-      )}
-
-      {/* SECTION 2: KEY METRICS - Clean White Cards */}
-      <section className="max-w-7xl mx-auto px-8 py-12">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Key Metrics</h2>
-          <p className="text-base text-gray-600">Real-time overview of your infrastructure</p>
-        </div>
-
-        {statsError ? (
-          <Card className="bg-white border border-gray-200">
-            <CardContent className="pt-6">
-              <ErrorState
-                message={(statsError as Error).message}
-                onRetry={() => refetchStats()}
-              />
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Metric Card 1: AWS Spend */}
-            <Card className="bg-white border border-gray-200 rounded-xl p-8 hover:border-purple-400 transition-colors">
-              <CardContent className="p-0">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
-                    <DollarSign className="w-6 h-6 text-purple-600" />
-                  </div>
-                  <div className="text-4xl font-bold text-gray-900 mb-2">
-                    {demoMode ? formatCurrency(DEMO_DASHBOARD_STATS.monthlyAwsCost) : (stats ? formatCurrency(stats.monthlyAwsCost) : '$0.00')}
-                  </div>
-                  <div className="text-xs uppercase tracking-wide text-gray-600 font-semibold mb-3">
-                    AWS Monthly Spend
-                  </div>
-                  <div className="flex items-center text-sm text-green-600">
-                    <TrendingUp className="w-4 h-4 mr-1" />
-                    {Math.abs(demoMode ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0))}% vs last month
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Metric Card 2: Security Score */}
-            <Card className="bg-white border border-gray-200 rounded-xl p-8 hover:border-purple-400 transition-colors">
-              <CardContent className="p-0">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
-                    <Shield className="w-6 h-6 text-purple-600" />
-                  </div>
-                  <div className="text-4xl font-bold text-gray-900 mb-2">
-                    {riskScoreData ? `${riskScoreData.current.score}/100` : '—/100'}
-                  </div>
-                  <div className="text-xs uppercase tracking-wide text-gray-600 font-semibold mb-3">
-                    Security Score
-                  </div>
-                  <div className="flex items-center text-sm text-green-600">
-                    <Shield className="w-4 h-4 mr-1" />
-                    Grade {riskScoreData?.current.grade || 'N/A'}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Metric Card 3: Active Services */}
-            <Card className="bg-white border border-gray-200 rounded-xl p-8 hover:border-purple-400 transition-colors">
-              <CardContent className="p-0">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
-                    <Layers className="w-6 h-6 text-purple-600" />
-                  </div>
-                  <div className="text-4xl font-bold text-gray-900 mb-2">
-                    {demoMode ? DEMO_DASHBOARD_STATS.totalServices : (stats?.totalServices ?? 0)}
-                  </div>
-                  <div className="text-xs uppercase tracking-wide text-gray-600 font-semibold mb-3">
-                    Active Services
-                  </div>
-                  <div className="flex items-center text-sm text-green-600">
-                    <Activity className="w-4 h-4 mr-1" />
-                    {demoMode ? DEMO_DASHBOARD_STATS.healthyServices : (stats?.activeDeployments ?? 0)} healthy
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Metric Card 4: Active Alerts */}
-            <Card className="bg-white border border-gray-200 rounded-xl p-8 hover:border-purple-400 transition-colors">
-              <CardContent className="p-0">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
-                    <AlertCircle className="w-6 h-6 text-purple-600" />
-                  </div>
-                  <div className="text-4xl font-bold text-gray-900 mb-2">
-                    {demoMode ? (DEMO_DASHBOARD_STATS.criticalAlerts + DEMO_DASHBOARD_STATS.warningAlerts) : 0}
-                  </div>
-                  <div className="text-xs uppercase tracking-wide text-gray-600 font-semibold mb-3">
-                    Active Alerts
-                  </div>
-                  <div className="flex items-center text-sm text-green-600">
-                    <Activity className="w-4 h-4 mr-1" />
-                    {demoMode ? `${DEMO_DASHBOARD_STATS.criticalAlerts} critical` : 'All clear'}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </section>
-
-      {/* SECTION 3: AI COST ANALYSIS - Purple Accent Card */}
-      {!statsError && (demoMode || (stats && stats.totalServices > 0)) && (
-        <section className="max-w-7xl mx-auto px-8 py-8">
-          <Card className="bg-white border-l-4 border-l-purple-600 border-t border-r border-b border-gray-200 rounded-lg p-8 shadow-sm">
-            <CardContent className="p-0">
-              <div className="mb-3">
-                <span className="text-xs uppercase tracking-wider text-purple-600 font-bold">
-                  ✨ AI COST ANALYSIS
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                💡 Cost Insight
-              </h3>
-              <p className="text-base text-gray-700 leading-relaxed mb-4">
-                {aiInsight?.rootCause || 'Lambda function costs increased 23% due to higher invocation count from new marketing campaign traffic'}
+      {/* ── LAYER 2: EXECUTIVE INSIGHTS ── */}
+      {!insightDismissed && (demoMode || insightMessage) && (
+        <div style={{ ...card, marginBottom: '32px', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background: '#7C3AED',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Sparkles size={16} style={{ color: '#fff' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>
+                Executive Insights
               </p>
-              <div className="mt-6">
-                <h4 className="text-base font-semibold text-gray-900 mb-3">
-                  🎯 Recommendation:
-                </h4>
-                <p className="text-base text-gray-700 leading-relaxed">
-                  {aiInsight?.recommendation || 'Enable reserved concurrency for predictable workloads and consider Graviton2 instances for 20% cost savings'}
-                </p>
-              </div>
-              <div className="flex items-center gap-6 mt-6 pt-6 border-t border-gray-200">
-                <Button
-                  variant="default"
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
-                  onClick={() => router.push('/app/cost-optimization')}
-                >
-                  View Optimization Options →
-                </Button>
-                <div className="text-sm text-gray-500">
-                  Confidence: {aiInsight?.confidence || 'high'} | Potential Savings: ${aiInsight?.estimatedSavings ?? 540}/year
-                  {aiInsight?.cached && ` | Cached ${aiInsight.cacheAge}`}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
+              <p style={{ fontSize: '0.975rem', color: '#0F172A', lineHeight: 1.7, margin: 0, fontWeight: 400 }}>
+                {insightMessage
+                  ? insightMessage
+                  : `Your infrastructure efficiency is up 12% this month. We identified $${wasteAmount.toLocaleString()} in immediate savings with zero risk. Security posture is stable${securityScore ? ` at ${securityScore}%` : ''}, and engineering velocity remains Elite across all DORA metrics.`
+                }
+              </p>
+            </div>
+            <button
+              onClick={() => setInsightDismissed(true)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: '4px', flexShrink: 0, lineHeight: 1 }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* SECTION 4: INSIGHTS & ACTIVITY - Two Column */}
-      {!statsError && (demoMode || (stats && stats.totalServices > 0)) && (
-        <section className="max-w-7xl mx-auto px-8 py-8">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Insights & Activity</h2>
-            <p className="text-base text-gray-600">Recommendations and recent activity</p>
-          </div>
+      {/* ── NARRATIVE — FIX 5: 3fr/2fr Spend Trend + Security Posture ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '32px' }}>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Quick Insights */}
-            <Card className="bg-gray-50 border border-gray-200 rounded-xl p-6">
-              <CardHeader className="p-0 mb-6">
-                <CardTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  🔍 Quick Insights
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="space-y-3">
-                  {generateDemoInsights()
-                    .filter(insight => !dismissedInsights.includes(insight.id))
-                    .map((insight) => (
-                      <Card
-                        key={insight.id}
-                        className={`bg-white border-l-4 ${
-                          insight.priority === 'high' ? 'border-l-red-500' :
-                          insight.priority === 'medium' ? 'border-l-orange-500' :
-                          'border-l-blue-500'
-                        } border-t border-r border-b border-gray-200 p-4`}
-                      >
-                        <CardContent className="p-0">
-                          <div className="flex items-start gap-3">
-                            <span className="text-xl">{insight.icon}</span>
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-gray-900 text-sm mb-1">
-                                {insight.title}
-                              </h4>
-                              <p className="text-sm text-gray-600">
-                                {insight.description}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => setDismissedInsights([...dismissedInsights, insight.id])}
-                              className="text-gray-400 hover:text-gray-600"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Recent Activity */}
-            <Card className="bg-gray-50 border border-gray-200 rounded-xl p-6">
-              <CardHeader className="p-0 mb-6">
-                <CardTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  📋 Recent Activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="space-y-3">
-                  {generateDemoActivities().slice(0, 5).map((activity) => {
-                    // Format timestamp to relative time
-                    const timestamp = activity.timestamp instanceof Date
-                      ? formatDistanceToNow(activity.timestamp, { addSuffix: true })
-                      : activity.timestamp;
-
-                    return (
-                      <Card
-                        key={activity.id}
-                        className="bg-white border border-gray-200 p-4"
-                      >
-                        <CardContent className="p-0">
-                          <div className="text-sm text-gray-900 font-medium mb-1">
-                            {activity.title}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {timestamp}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                  <button className="text-sm text-purple-600 hover:text-purple-700 font-medium">
-                    View All Activity →
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
-      )}
-
-      {/* SECTION 5: COST BREAKDOWN */}
-      {!statsError && (demoMode || (stats && stats.totalServices > 0)) && (
-        <section className="max-w-7xl mx-auto px-8 py-8">
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">💰 AWS Cost Breakdown</h2>
+        {/* Spend Trend — FIX 3: desaturation handled inside CostBreakdownBarList on bars only */}
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <div>
+              <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>
+                Spend Trend
+              </p>
+              <p style={{ fontSize: '0.875rem', color: '#0F172A', margin: 0, lineHeight: 1.6 }}>
+                Infrastructure cost over time
+              </p>
+            </div>
+            <a href="/costs" style={{ color: '#94A3B8', display: 'flex', lineHeight: 1 }}>
+              <MoreHorizontal size={16} />
+            </a>
           </div>
           <CostBreakdownBarList
             data={generateCostBreakdownData()}
@@ -845,222 +568,184 @@ export default function DashboardPage() {
             isLoading={!demoMode && statsLoading}
             dateRange={costDateRange}
             onDateRangeChange={setCostDateRange}
-            onExport={() => {
-              toast.success('Exporting cost data...');
-            }}
+            onExport={() => { toast.success('Exporting cost data...'); }}
           />
-        </section>
-      )}
+        </div>
 
-      {/* Risk Score Trend */}
-      {!statsError && (demoMode || (stats && stats.totalServices > 0)) && (
-        <section className="max-w-7xl mx-auto px-8 py-8">
-          <RiskScoreTrendChart
-            data={riskScoreData ?? null}
-            isLoading={!demoMode && riskScoreLoading}
-            dateRange={riskScoreDateRange}
-            onDateRangeChange={setRiskScoreDateRange}
-          />
-        </section>
-      )}
-
-      {/* Recent Deployments - Kept as table for now */}
-      {!statsError && (demoMode || (deployments && deployments.length > 0)) && (
-        <section className="max-w-7xl mx-auto px-8 py-8">
-          <Card className="bg-white border border-gray-200">
-            <CardHeader>
-              <CardTitle>Recent Deployments</CardTitle>
-              <p className="text-sm text-gray-600">
-                Latest 5 deployments across all services
-              </p>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Service</TableHead>
-                    <TableHead>Environment</TableHead>
-                    <TableHead>Region</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Deployed By</TableHead>
-                    <TableHead>Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(demoMode ? DEMO_DEPLOYMENTS : deployments).map((deployment) => (
-                    <TableRow key={deployment.id}>
-                      <TableCell className="font-medium">
-                        {deployment.serviceName || deployment.serviceId.slice(0, 8)}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {deployment.environment}
-                      </TableCell>
-                      <TableCell className="text-sm">{deployment.awsRegion}</TableCell>
-                      <TableCell>{getDeploymentStatusBadge(deployment.status)}</TableCell>
-                      <TableCell className="text-sm">{deployment.deployedBy}</TableCell>
-                      <TableCell className="text-gray-600">
-                        {new Date(deployment.deployedAt).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </section>
-      )}
-
-      {/* SECTION 6: DORA METRICS - Clean Cards */}
-      {!statsError && (demoMode || (stats && stats.totalServices > 0)) && (
-        <section className="max-w-7xl mx-auto px-8 py-12 bg-gray-50">
-          <div className="mb-8 text-center">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              📊 DevOps Performance (DORA Metrics)
-            </h2>
-          </div>
-          <DORAMetricsMini
-            isLoading={!demoMode && statsLoading}
-            onLearnMore={() => {
-              window.open('https://cloud.google.com/blog/products/devops-sre/using-the-four-keys-to-measure-your-devops-performance', '_blank');
-            }}
-            onViewDetails={() => {
-              router.push('/app/metrics/dora');
-            }}
-          />
-          <p className="text-center text-base text-gray-700 mt-6">
-            💡 You're in the <span className="font-bold text-purple-600">TOP 10%</span> (Elite Tier)
+        {/* Security Posture Detail */}
+        <div style={card}>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 24px' }}>
+            Security Posture
           </p>
-        </section>
-      )}
 
-      {/* Infrastructure Health & Performance */}
-      {!statsError && (demoMode || (stats && stats.totalServices > 0)) && (
-        <section className="max-w-7xl mx-auto px-8 py-8">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Infrastructure Health</h2>
-            <p className="text-base text-gray-600">Service status and performance metrics</p>
-          </div>
-          <div className="grid gap-8 lg:gap-12 lg:grid-cols-2">
-            <ServiceHealthGrid
-              services={generateDemoServices()}
-              isLoading={!demoMode && statsLoading}
-              onServiceClick={(service) => {
-                toast.info(`Viewing details for ${service.name}`);
-              }}
-            />
-            <ResourceDistributionChart
-              isLoading={!demoMode && statsLoading}
-              onSegmentClick={(resource) => {
-                toast.info(`Viewing ${resource.name}`);
-              }}
-            />
-          </div>
-        </section>
-      )}
-
-      {/* Cost Optimization Opportunities */}
-      {!statsError && (demoMode || (stats && stats.totalServices > 0)) && (
-        <section className="max-w-7xl mx-auto px-8 py-8">
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              🎯 Cost Optimization Recommendations
-            </h2>
-          </div>
-          <CostOptimizationCard
-            opportunities={generateDemoCostOpportunities()}
-            isLoading={!demoMode && statsLoading}
-            currentSpend={demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 1247)}
-            onViewAll={() => {
-              router.push('/app/cost-optimization');
-            }}
-          />
-        </section>
-      )}
-
-      {/* Sales Demo Mode: Business Value Components */}
-      {salesDemoMode && (
-        <div className="max-w-7xl mx-auto px-8 py-8">
-          {/* Row 1: Engineering Velocity + Cost Optimization */}
-          <div className="grid gap-6 md:grid-cols-2 mb-6">
-            <EngineeringVelocity demoMode={salesDemoMode} />
-            <CostOptimizationWins demoMode={salesDemoMode} />
+          {/* Large score */}
+          <div style={{ textAlign: 'center', padding: '20px 0', borderBottom: '1px solid #F1F5F9', marginBottom: '20px' }}>
+            <div style={{ fontSize: '4rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1 }}>
+              {securityScore ?? '87'}
+            </div>
+            <div style={{ fontSize: '0.875rem', color: securityDeltaColor, fontWeight: 600, marginTop: '8px' }}>
+              {riskScoreData?.current.grade ? `Grade ${riskScoreData.current.grade} · ` : ''}
+              {securityScore !== null && securityScore >= 80 ? 'Stable · Elite Tier' : 'Below threshold'}
+            </div>
           </div>
 
-          {/* Row 2: Time Saved + Security Posture */}
-          <div className="grid gap-6 md:grid-cols-2 mb-6">
-            <TimeSaved demoMode={salesDemoMode} />
-            <SecurityPosture demoMode={salesDemoMode} />
-          </div>
+          {/* Risk detail rows */}
+          {securityRows.map(({ label, value, status }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F1F5F9' }}>
+              <span style={{ fontSize: '0.82rem', color: '#64748B', lineHeight: 1.6 }}>{label}</span>
+              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: status === 'good' ? '#059669' : '#D97706' }}>
+                {value}
+              </span>
+            </div>
+          ))}
 
-          {/* Row 3: Before/After Transformation (Full Width) */}
-          <div className="mb-6">
-            <BeforeAfterTransformation demoMode={salesDemoMode} />
-          </div>
-
-          {/* Row 4: Competitive Benchmarking (Full Width) */}
-          <div className="mb-6">
-            <CompetitiveBenchmarking demoMode={salesDemoMode} />
-          </div>
+          <a href="/security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '20px', fontSize: '0.82rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>
+            View Security Report <ArrowRight size={13} />
+          </a>
         </div>
-      )}
+      </div>
 
-      {/* SECTION 8: HERO CTA - PURPLE GRADIENT */}
-      <section className="max-w-7xl mx-auto px-8 py-12 mb-12">
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-600 to-purple-800 p-16 text-center shadow-xl">
-          {/* Background pattern overlay */}
-          <div className="absolute inset-0 opacity-10" style={{
-            backgroundImage: 'linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
-            backgroundSize: '20px 20px'
-          }} />
-
-          <div className="relative z-10">
-            <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-6 leading-tight">
-              Ready to achieve these results?
-            </h2>
-            <p className="text-xl text-purple-100 mb-10 max-w-3xl mx-auto leading-relaxed">
-              Start optimizing your AWS infrastructure today with AI-powered
-              insights and recommendations.
+      {/* ── LAYER 3: DECISION CARD ── */}
+      <div style={{ ...card, marginBottom: '32px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '32px', alignItems: 'center' }}>
+          <div>
+            <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>
+              Savings Opportunity
             </p>
-
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
-              <Button
-                size="lg"
-                className="bg-white text-purple-600 hover:bg-gray-50 font-bold text-lg px-12 py-6 h-auto rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all"
-                onClick={() => router.push('/app/infrastructure')}
-              >
-                Connect Your AWS Account →
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-2 border-white text-white hover:bg-white/10 font-bold text-lg px-12 py-6 h-auto rounded-xl"
-                onClick={() => router.push('/app/services')}
-              >
-                Schedule Demo Call
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-purple-100">
-              <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5" />
-                <span>No credit card required</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5" />
-                <span>Full feature access</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5" />
-                <span>Setup assistance included</span>
-              </div>
-            </div>
+            <p style={{ fontSize: '1.1rem', fontWeight: 600, color: '#0F172A', lineHeight: 1.6, margin: '0 0 4px' }}>
+              We've identified{' '}
+              <span style={{ color: '#059669', fontWeight: 700 }}>
+                ${wasteAmount.toLocaleString()}/month
+              </span>{' '}
+              in immediate savings.
+            </p>
+            <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0, lineHeight: 1.6 }}>
+              Impact: High · Risk: Zero · Estimated implementation: 15 minutes
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+            <a href="/cost-optimization" style={{
+              background: '#7C3AED',
+              color: '#fff',
+              padding: '12px 28px',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}>
+              Approve All Changes
+            </a>
+            <a href="/cost-optimization" style={{
+              background: 'transparent',
+              color: '#64748B',
+              padding: '12px 20px',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              textDecoration: 'none',
+              border: '1px solid #E2E8F0',
+              whiteSpace: 'nowrap',
+            }}>
+              Review First
+            </a>
           </div>
         </div>
-      </section>
+      </div>
+
+      {/* ── ENGINEERING VELOCITY + RECENT ACTIVITY ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+
+        {/* Engineering Velocity — DORA row list */}
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <div>
+              <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
+                Engineering Velocity
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>Elite</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, background: '#ECFDF5', color: '#059669', padding: '2px 10px', borderRadius: '100px' }}>
+                  Top 10%
+                </span>
+              </div>
+            </div>
+            <a href="/app/dora-metrics" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              Full report <ArrowRight size={12} />
+            </a>
+          </div>
+
+          {doraRows.map(({ label, value, tier }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F8FAFC' }}>
+              <span style={{ fontSize: '0.82rem', color: '#64748B', lineHeight: 1.6 }}>{label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{value}</span>
+                <span style={{
+                  fontSize: '0.7rem',
+                  fontWeight: 600,
+                  color: tier === 'Elite' ? '#059669' : '#D97706',
+                  background: tier === 'Elite' ? '#ECFDF5' : '#FFFBEB',
+                  padding: '2px 8px',
+                  borderRadius: '100px',
+                }}>
+                  {tier}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Recent Activity */}
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+              Recent Activity
+            </p>
+            <a href="/deployments" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              View all <ArrowRight size={12} />
+            </a>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {activeDeployments.slice(0, 5).map((d: Deployment) => (
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F8FAFC' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    background: getDeploymentStatusColor(d.status),
+                  }} />
+                  <div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#0F172A', lineHeight: 1.4 }}>
+                      {d.serviceName || d.serviceId.slice(0, 8)}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#94A3B8', lineHeight: 1.6 }}>{d.environment}</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: getDeploymentStatusColor(d.status), textTransform: 'capitalize' }}>
+                    {d.status}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                    {formatDistanceToNow(new Date(d.deployedAt), { addSuffix: true })}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {activeDeployments.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: '#94A3B8', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                No recent deployments ·{' '}
+                <a href="/deployments/new" style={{ color: '#7C3AED', fontWeight: 600, textDecoration: 'none' }}>
+                  Create one
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
     </div>
   )
 }

@@ -344,7 +344,25 @@ export function MarketingNav() {
 
               <NavLink href="/pricing">Pricing</NavLink>
               <NavLink href="/solutions/enterprise">Enterprise</NavLink>
-              <NavLink href="/developers">Developers</NavLink>
+              <button
+                onClick={(e) => handleComingSoon(e, 'Developers')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.9rem',
+                  fontWeight: 500,
+                  letterSpacing: '-0.01em',
+                  color: '#0f172a',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  borderRadius: '8px',
+                  transition: 'color 0.15s ease',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#7c3aed')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#0f172a')}
+              >
+                Developers
+              </button>
             </div>
           </div>
 
@@ -439,9 +457,12 @@ export function MarketingNav() {
               <Link href="/solutions/enterprise" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Enterprise
               </Link>
-              <Link href="/developers" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
+              <button
+                onClick={(e) => handleComingSoon(e, 'Developers')}
+                style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+              >
                 Developers
-              </Link>
+              </button>
               <div style={{ borderTop: '1px solid #f3f4f6', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 24px' }}>
                 <Link
                   href="/login"

@@ -21,15 +21,16 @@ export function HeroSection() {
       <div style={{ ...inner, width: '100%', textAlign: 'center', position: 'relative', zIndex: 1 }}>
 
         {/* Headline */}
-        <h1 className="font-extrabold leading-tight" style={{ fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', marginBottom: '20px' }}>
+        <h1 className="font-extrabold leading-tight" style={{ fontSize: 'clamp(2.5rem, 6vw, 4.4rem)', marginBottom: '20px' }}>
           <span style={{ color: '#7c3aed' }}>Stop Firefighting</span>
           <br />
           <span style={{ color: '#111827' }}>Your AWS Infrastructure</span>
         </h1>
 
         {/* Subheadline */}
-        <p className="leading-relaxed" style={{ fontSize: '1.25rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
-          Eliminate AWS waste and security blind spots in 15 minutes. One dashboard for cost, performance, and peace of mind.
+        <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
+          Eliminate AWS waste and security blind spots in minutes —
+one dashboard for cost, performance, and peace of mind.
         </p>
 
         {/* Tagline */}

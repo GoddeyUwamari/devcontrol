@@ -31,7 +31,7 @@ export function SalesDemoToggle() {
   return (
     <>
       {/* Floating Toggle Button */}
-      <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-2">
+      <div className="flex flex-col items-end gap-2">
         {enabled && (
           <div className="bg-purple-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm font-semibold animate-pulse flex items-center gap-2">
             <Presentation className="h-4 w-4" />

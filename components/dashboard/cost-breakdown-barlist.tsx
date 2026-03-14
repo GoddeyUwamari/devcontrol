@@ -103,128 +103,125 @@ export function CostBreakdownBarList({
   }
 
   return (
-    <Card className="transition-shadow hover:shadow-md">
-      {/* Header */}
-      <CardHeader>
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <CardTitle>AWS Cost Breakdown</CardTitle>
-            <CardDescription>Current spending distribution by service category</CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Date Range Selector */}
-            {onDateRangeChange && (
-              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                {dateRangeOptions.map((option) => (
-                  <Button
-                    key={option.value}
-                    variant={dateRange === option.value ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => onDateRangeChange(option.value as any)}
-                    className={`h-7 px-3 text-xs ${
-                      dateRange === option.value
-                        ? 'bg-white shadow-sm'
-                        : 'hover:bg-white/50'
-                    }`}
-                  >
-                    {option.label}
-                  </Button>
-                ))}
-              </div>
-            )}
-            {/* Export Button */}
-            {onExport && (
-              <Button variant="outline" size="sm" onClick={onExport}>
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent>
-        {/* Total Cost Highlight */}
-        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/20">
-          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-            Total Monthly Cost
-          </div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-            {valueFormatter(totalCost)}
-          </div>
-        </div>
-
-        {/* BarList - Custom styling for thinner bars */}
-        <div className="mt-4 [&_.tremor-BarList-bar]:h-8 [&_.tremor-BarList-bar]:transition-all [&_.tremor-BarList-bar]:duration-200">
-          <BarList
-            data={dataWithPercentage.map(item => ({
-              name: item.name,
-              value: item.value,
-              color: item.color,
-            }))}
-            valueFormatter={valueFormatter}
-          />
-        </div>
-
-        {/* Detailed Breakdown with Changes - Clickable with enhanced hover */}
-        <div className="mt-6 space-y-2">
-          {dataWithPercentage.map((item) => (
+    <div>
+      {/* Date Range Selector — FIX 4: active tab styling */}
+      {onDateRangeChange && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: '#F8FAFC', borderRadius: '8px', padding: '3px', marginBottom: '16px' }}>
+          {dateRangeOptions.map((option) => {
+            const isActive = dateRange === option.value
+            return (
+              <button
+                key={option.value}
+                onClick={() => onDateRangeChange(option.value as '7d' | '30d' | '90d' | '6mo' | '1yr')}
+                style={{
+                  padding: '4px 12px',
+                  fontSize: '0.75rem',
+                  fontWeight: isActive ? 600 : 400,
+                  color: isActive ? '#0F172A' : '#64748B',
+                  background: isActive ? '#F1F5F9' : 'transparent',
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.1s',
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+          {/* Export button */}
+          {onExport && (
             <button
-              key={item.name}
-              onClick={() => handleCategoryClick(item.name)}
-              className="w-full flex items-center justify-between text-sm py-3 px-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:shadow-md transition-all duration-200 cursor-pointer group border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+              onClick={onExport}
+              style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '0.75rem', color: '#64748B', background: 'transparent', border: '1px solid #E2E8F0', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-3 h-3 rounded-full group-hover:scale-110 transition-transform duration-200"
-                  style={{
-                    backgroundColor:
-                      item.color === 'blue' ? '#3b82f6' :
-                      item.color === 'teal' ? '#14b8a6' :
-                      item.color === 'purple' ? '#a855f7' :
-                      item.color === 'amber' ? '#f59e0b' :
-                      '#6b7280'
-                  }}
-                  aria-hidden="true"
-                />
-                <span className="text-gray-700 dark:text-gray-300 font-medium group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">
-                  {item.name}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="font-semibold text-gray-900 dark:text-gray-100">
-                  {valueFormatter(item.value)}
-                </span>
-                <span className="text-gray-500 dark:text-gray-400 min-w-[45px] text-right">
-                  {item.percentage}%
-                </span>
-                <div className={`flex items-center gap-1 min-w-[60px] ${
-                  item.change > 0
-                    ? 'text-red-600 dark:text-red-400'
-                    : 'text-green-600 dark:text-green-400'
-                }`}>
-                  {item.change > 0 ? (
-                    <TrendingUp className="w-3 h-3" />
-                  ) : (
-                    <TrendingDown className="w-3 h-3" />
-                  )}
-                  <span className="text-xs font-medium">
-                    {Math.abs(item.change)}%
-                  </span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-              </div>
+              <Download size={12} /> Export
             </button>
-          ))}
+          )}
         </div>
+      )}
 
-        {/* Footer Note */}
-        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            💡 Click any category to view detailed resource breakdown. Trends show change vs previous period.
-          </p>
+      {/* Total Cost */}
+      <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #F1F5F9' }}>
+        <div style={{ fontSize: '0.72rem', color: '#64748B', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+          Total Monthly Cost
         </div>
-      </CardContent>
-    </Card>
+        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>
+          {valueFormatter(totalCost)}
+        </div>
+      </div>
+
+      {/* BarList — FIX 3: desaturate only the bars */}
+      <div style={{ filter: 'saturate(0.15)' }} className="mt-2 [&_.tremor-BarList-bar]:h-8 [&_.tremor-BarList-bar]:transition-all [&_.tremor-BarList-bar]:duration-200">
+        <BarList
+          data={dataWithPercentage.map(item => ({
+            name: item.name,
+            value: item.value,
+            color: item.color,
+          }))}
+          valueFormatter={valueFormatter}
+        />
+      </div>
+
+      {/* Detailed Breakdown with Changes - Clickable with enhanced hover */}
+      <div className="mt-6 space-y-2">
+        {dataWithPercentage.map((item) => (
+          <button
+            key={item.name}
+            onClick={() => handleCategoryClick(item.name)}
+            className="w-full flex items-center justify-between text-sm py-3 px-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:shadow-md transition-all duration-200 cursor-pointer group border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-3 h-3 rounded-full group-hover:scale-110 transition-transform duration-200"
+                style={{
+                  backgroundColor:
+                    item.color === 'blue' ? '#3b82f6' :
+                    item.color === 'teal' ? '#14b8a6' :
+                    item.color === 'purple' ? '#a855f7' :
+                    item.color === 'amber' ? '#f59e0b' :
+                    '#6b7280'
+                }}
+                aria-hidden="true"
+              />
+              <span className="text-gray-700 dark:text-gray-300 font-medium group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">
+                {item.name}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="font-semibold text-gray-900 dark:text-gray-100">
+                {valueFormatter(item.value)}
+              </span>
+              <span className="text-gray-500 dark:text-gray-400 min-w-[45px] text-right">
+                {item.percentage}%
+              </span>
+              <div className={`flex items-center gap-1 min-w-[60px] ${
+                item.change > 0
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-green-600 dark:text-green-400'
+              }`}>
+                {item.change > 0 ? (
+                  <TrendingUp className="w-3 h-3" />
+                ) : (
+                  <TrendingDown className="w-3 h-3" />
+                )}
+                <span className="text-xs font-medium">
+                  {Math.abs(item.change)}%
+                </span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Footer Note */}
+      <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          💡 Click any category to view detailed resource breakdown. Trends show change vs previous period.
+        </p>
+      </div>
+    </div>
   )
 }

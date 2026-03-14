@@ -1,247 +1,417 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  Layers, ArrowRight, CheckCircle2, Shield, DollarSign,
-  BarChart3, Activity, Zap, Server, Users, GitBranch,
-  RefreshCw, Search, Lock,
-} from 'lucide-react';
-import Link from 'next/link';
+'use client'
 
-function Hero() {
+import { Layers, GitBranch, Shield, BarChart3, Zap, Search, RefreshCw, Lock } from 'lucide-react'
+
+export default function PlatformEngineersPage() {
+
+  const features = [
+    { icon: Layers, title: 'Internal Developer Portal Alternative', desc: 'Give every engineer a self-service view of infrastructure they own — costs, health, dependencies, and drift status — without building it yourself.' },
+    { icon: GitBranch, title: 'Terraform & CDK Drift Detection', desc: 'Real-time alerts when live infrastructure diverges from IaC definitions. Know immediately which resources were modified outside of your standard deployment process.' },
+    { icon: Search, title: 'Universal Resource Discovery', desc: 'Auto-discover every resource across every account and region. Build and maintain your CMDB automatically — no manual inventory, no stale data.' },
+    { icon: Shield, title: 'Policy Enforcement at Scale', desc: 'Define tagging policies, security baselines, and cost guardrails that apply across all accounts. Auto-remediate violations without manual intervention.' },
+    { icon: BarChart3, title: 'Platform Health Metrics', desc: 'Track the health and adoption of your internal platform. See which teams are following standards, where drift is highest, and which services need attention.' },
+    { icon: RefreshCw, title: 'Change Management & Audit Trail', desc: 'Every infrastructure change logged with who made it, when, and what changed. Essential for post-incident reviews, compliance audits, and debugging complex issues.' },
+    { icon: Zap, title: 'Developer Self-Service Dashboards', desc: 'Give product engineers read-only access to their own service costs and health metrics. Reduce platform team toil by letting engineers answer their own questions.' },
+    { icon: Lock, title: 'Governance Without Gatekeeping', desc: 'Enforce standards automatically so platform engineers spend time building, not policing. Guardrails run in the background — teams move fast without breaking things.' },
+  ]
+
+  const impacts = [
+    { value: '80%', label: 'Reduction in manual inventory work' },
+    { value: '< 1min', label: 'Time to detect drift' },
+    { value: '50+', label: 'AWS resource types governed' },
+  ]
+
+  const maturityLevels = [
+    {
+      level: '01',
+      title: 'Reactive',
+      subtitle: 'Where most teams start',
+      color: '#ef4444',
+      bg: 'rgba(239,68,68,0.06)',
+      border: 'rgba(239,68,68,0.2)',
+      points: [
+        'Manual AWS console access for inventory',
+        'No standard tagging or cost attribution',
+        'Drift discovered during incidents',
+        'Security issues found at audit time',
+      ],
+    },
+    {
+      level: '02',
+      title: 'Proactive',
+      subtitle: 'Where DevControl takes you in week 1',
+      color: '#f59e0b',
+      bg: 'rgba(245,158,11,0.06)',
+      border: 'rgba(245,158,11,0.2)',
+      points: [
+        'Automated resource discovery across all accounts',
+        'Tagging policies enforced automatically',
+        'Drift detected within minutes of occurring',
+        'Continuous security scanning active',
+      ],
+    },
+    {
+      level: '03',
+      title: 'Elite',
+      subtitle: 'Where DevControl takes you in month 1',
+      color: '#7c3aed',
+      bg: 'rgba(124,58,237,0.06)',
+      border: 'rgba(124,58,237,0.2)',
+      points: [
+        'Self-service dashboards for every team',
+        'Auto-remediation handles routine violations',
+        'Platform health metrics tracked and improving',
+        'Zero-toil governance running in the background',
+      ],
+    },
+  ]
+
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-primary/10 py-20 lg:py-28">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center max-w-4xl mx-auto">
-          <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm">
-            For Internal Developer Platform teams
-          </Badge>
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight">
-            Build Golden Paths.{' '}
-            <span className="text-primary">Not Ticket Queues.</span>
-          </h1>
-          <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto mb-8 leading-relaxed">
-            DevControl gives platform engineering teams the data layer they need to build great
-            internal developer platforms — with infrastructure visibility, self-service guardrails,
-            and DORA metrics out of the box.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-            <Button asChild size="lg" className="gap-2 px-8 h-12 text-base">
-              <Link href="/register">
-                Start Free Trial <ArrowRight className="w-5 h-5" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="gap-2 px-8 h-12 text-base">
-              <Link href="/docs/api">View API Reference</Link>
-            </Button>
+    <div style={{ minHeight: '100vh', background: '#fff' }}>
+
+      {/* HERO — Dark with grid pattern */}
+      <section style={{
+        width: '100%',
+        background: '#0f172a',
+        padding: '140px 48px 100px',
+        borderBottom: '1px solid #1e293b',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Grid pattern overlay */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          backgroundImage: 'linear-gradient(rgba(124,58,237,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.08) 1px, transparent 1px)',
+          backgroundSize: '40px 40px',
+          pointerEvents: 'none',
+        }} />
+
+        <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center', position: 'relative', zIndex: 1 }}>
+
+          <div style={{
+            display: 'inline-flex', alignItems: 'center',
+            background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.4)',
+            borderRadius: '100px', padding: '6px 16px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa',
+            marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
+          }}>
+            Solutions · Platform Engineers
           </div>
-          <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
-            {['Full REST API & webhooks', 'Terraform provider available', 'SSO & SCIM supported'].map((t) => (
-              <div key={t} className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-green-500" /><span>{t}</span>
+
+          <h1 style={{
+            fontSize: 'clamp(2.2rem, 5vw, 3.5rem)',
+            fontWeight: 800, color: '#fff',
+            lineHeight: 1.1, marginBottom: '20px',
+            letterSpacing: '-0.02em', maxWidth: '900px', margin: '0 auto 20px',
+          }}>
+            The Control Plane Your{' '}
+            <span style={{ color: '#a78bfa' }}>Internal Platform Is Missing</span>
+          </h1>
+
+          <p style={{
+            fontSize: '1.15rem', color: '#94a3b8',
+            lineHeight: 1.75, maxWidth: '640px',
+            margin: '0 auto 36px',
+          }}>
+            Stop building internal tooling from scratch. DevControl gives platform engineering
+            teams unified visibility, drift detection, policy enforcement, and developer
+            self-service — deployed in 15 minutes, not 6 months.
+          </p>
+
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+            <a href="/register" style={{
+              background: '#7c3aed', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+            }}>
+              Start Free Trial →
+            </a>
+            <a href="/tour" style={{
+              background: 'transparent', color: '#e2e8f0',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '1.5px solid #334155',
+            }}>
+              See How It Works
+            </a>
+          </div>
+
+          <div style={{
+            display: 'flex', flexWrap: 'wrap',
+            justifyContent: 'center', gap: '24px',
+            fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
+          }}>
+            {['No agents required', 'IaC drift detection', 'Developer self-service'].map(t => (
+              <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#a78bfa' }}>✓</span> {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* BUSINESS IMPACT BAR */}
+      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{
+          maxWidth: '1400px', margin: '0 auto',
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '32px', textAlign: 'center',
+        }}>
+          {impacts.map(({ value, label }) => (
+            <div key={label}>
+              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+                {value}
+              </div>
+              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* FEATURES — 2 col alternating backgrounds */}
+      <section style={{ padding: '80px 48px', width: '100%' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Platform Capabilities
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              Everything Your Platform Team Needs to Scale
+            </h2>
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+              Stop building internal tooling. Start governing infrastructure — automatically.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+            {features.map(({ icon: Icon, title, desc }, i) => (
+              <div key={title} style={{
+                background: i % 2 === 0 ? '#faf5ff' : '#fff',
+                border: i % 2 === 0 ? '1.5px solid rgba(124,58,237,0.15)' : '1.5px solid #e5e7eb',
+                borderRadius: '16px', padding: '32px',
+                transition: 'all 0.2s ease',
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#7c3aed'
+                  e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.12)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = i % 2 === 0 ? 'rgba(124,58,237,0.15)' : '#e5e7eb'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '12px',
+                  background: 'rgba(124,58,237,0.08)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: '20px',
+                }}>
+                  <Icon size={22} style={{ color: '#7c3aed' }} />
+                </div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                  {title}
+                </h3>
+                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                  {desc}
+                </p>
               </div>
             ))}
           </div>
         </div>
-      </div>
-      <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-    </section>
-  );
-}
+      </section>
 
-function PlatformCapabilities() {
-  const capabilities = [
-    {
-      icon: Search,
-      title: 'Resource catalogue',
-      desc: 'Auto-discovered, auto-tagged inventory of every cloud resource across all accounts and regions. Always up to date.',
-    },
-    {
-      icon: Shield,
-      title: 'Policy as code',
-      desc: 'Define guardrails in code. DevControl enforces them continuously and alerts on any drift — before it becomes a prod incident.',
-    },
-    {
-      icon: Layers,
-      title: 'Self-service templates',
-      desc: 'Give developers pre-approved infrastructure templates. They provision what they need, within the guardrails you define.',
-    },
-    {
-      icon: BarChart3,
-      title: 'Platform engineering metrics',
-      desc: 'Measure the health of your platform: onboarding time, self-service adoption rate, paved road coverage, and more.',
-    },
-    {
-      icon: GitBranch,
-      title: 'DORA for the whole org',
-      desc: 'Aggregate DORA metrics across all teams and services. Identify which teams need platform investment most.',
-    },
-    {
-      icon: RefreshCw,
-      title: 'Dependency graph API',
-      desc: 'Expose service and infrastructure relationships via API. Build your own IDP portals on top of DevControl\'s data.',
-    },
-    {
-      icon: Lock,
-      title: 'RBAC & audit logs',
-      desc: 'Fine-grained role-based access control with a complete, tamper-proof audit trail of every action.',
-    },
-    {
-      icon: Activity,
-      title: 'Reliability scoring',
-      desc: 'Per-service reliability scores based on uptime, error rates, and deployment stability. Drive platform quality with data.',
-    },
-    {
-      icon: Users,
-      title: 'Team ownership mapping',
-      desc: 'Define which team owns which service and infrastructure. Route alerts and cost reports to the right people automatically.',
-    },
-  ];
-  return (
-    <section className="py-16 lg:py-24">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Your Platform Data Layer</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            DevControl is the data layer under your IDP. Use our UI directly or build your own portal on top of our API.
-          </p>
-        </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {capabilities.map((c) => (
-            <Card key={c.title} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                  <c.icon className="w-6 h-6 text-primary" />
-                </div>
-                <CardTitle className="text-xl">{c.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="text-base leading-relaxed">{c.desc}</CardDescription>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function IDPIntegration() {
-  const portals = ['Backstage', 'Port', 'Cortex', 'OpsLevel', 'Custom portal'];
-  return (
-    <section className="py-16 lg:py-24 bg-muted/30">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="grid md:grid-cols-2 gap-12 items-center">
-          <div>
-            <Badge variant="secondary" className="mb-4">IDP Integration</Badge>
-            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-              Works With Your IDP of Choice
+      {/* MATURITY MODEL */}
+      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Platform Engineering Maturity
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              Where Are You Today? Where Could You Be?
             </h2>
-            <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
-              Already building on Backstage, Port, or a custom portal? DevControl exposes its full
-              data set via REST API and webhooks. Pipe infrastructure data, health scores, cost
-              breakdowns, and DORA metrics directly into your existing developer portal.
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+              Most platform teams move from Reactive to Elite within 30 days of using DevControl.
             </p>
-            <ul className="space-y-3">
-              {[
-                'REST API with OpenAPI spec',
-                'Webhooks for real-time events',
-                'Terraform provider for GitOps workflows',
-                'CLI for scripting and automation',
-                'Native Backstage plugin (coming soon)',
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
           </div>
-          <div>
-            <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Compatible with</p>
-            <div className="grid grid-cols-2 gap-4">
-              {portals.map((p) => (
-                <div key={p} className="flex items-center justify-center p-4 rounded-xl bg-background border text-sm font-medium text-center h-14">
-                  {p}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+            {maturityLevels.map(({ level, title, subtitle, color, bg, border, points }) => (
+              <div key={level} style={{
+                background: bg,
+                border: `1.5px solid ${border}`,
+                borderRadius: '20px',
+                padding: '36px',
+              }}>
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '50%',
+                  background: color, color: '#fff',
+                  fontSize: '1rem', fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: '16px',
+                }}>
+                  {level}
                 </div>
-              ))}
+                <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
+                  {title}
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: 500, marginBottom: '24px' }}>
+                  {subtitle}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {points.map(point => (
+                    <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <span style={{ color, fontWeight: 700, marginTop: '1px', fontSize: '1rem' }}>✓</span>
+                      <span style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* WHO IT'S FOR */}
+      <section style={{ padding: '80px 48px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Built For Your Team
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Who It&apos;s For
+            </h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            <div style={{
+              background: '#fff', border: '1.5px solid #e5e7eb',
+              borderRadius: '20px', padding: '40px',
+            }}>
+              <div style={{
+                display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                For Platform Engineers
+              </div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                Build Less. Govern More.
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  'Stop building internal dashboards from scratch',
+                  'Drift detection without custom tooling',
+                  'Policy enforcement that runs automatically',
+                  'Developer self-service reduces platform team toil',
+                ].map(point => (
+                  <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+              border: '1.5px solid rgba(124,58,237,0.2)',
+              borderRadius: '20px', padding: '40px',
+            }}>
+              <div style={{
+                display: 'inline-flex', background: '#7c3aed',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#fff',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                For Engineering Leadership
+              </div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                Platform That Scales With Your Organization
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  'Platform adoption metrics across all engineering teams',
+                  'Standards compliance tracked and improving over time',
+                  'Reduce time-to-production for new services',
+                  'Full audit trail for compliance and post-incident reviews',
+                ].map(point => (
+                  <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-function Metrics() {
-  const items = [
-    { value: '85%', label: 'Reduction in infra tickets', icon: Zap },
-    { value: '10×', label: 'Faster resource provisioning', icon: Server },
-    { value: '100%', label: 'Policy compliance coverage', icon: Shield },
-    { value: '60%', label: 'Improvement in developer NPS', icon: Users },
-  ];
-  return (
-    <section className="py-16 lg:py-24">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Platform Engineering Outcomes</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">Measured results from platform teams using DevControl</p>
+      {/* BOTTOM CTA */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+        padding: '80px 48px', textAlign: 'center',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
+          }}>
+            Your Platform. Finally Under Control.
+          </h2>
+          <p style={{
+            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
+          }}>
+            Stop building internal tools. Start governing your infrastructure automatically — in 15 minutes.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/register" style={{
+              background: '#fff', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+            }}>
+              Start Free Trial →
+            </a>
+            <a href="/tour" style={{
+              background: 'transparent', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '2px solid rgba(255,255,255,0.4)',
+            }}>
+              Take a Product Tour
+            </a>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
+            No credit card required · Read-only AWS access · Cancel anytime
+          </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {items.map(({ value, label, icon: Icon }) => (
-            <Card key={label} className="text-center p-6">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                <Icon className="w-6 h-6 text-primary" />
-              </div>
-              <div className="text-4xl font-bold text-primary mb-2">{value}</div>
-              <p className="text-sm text-muted-foreground">{label}</p>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-function CTA() {
-  return (
-    <section className="py-20 lg:py-28 bg-gradient-to-br from-primary/10 via-background to-primary/5">
-      <div className="max-w-4xl mx-auto px-6 text-center">
-        <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-6">
-          Build the Platform Your Developers Deserve
-        </h2>
-        <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-          Give your engineering teams the self-service infrastructure experience they expect — backed by the governance your org requires.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
-          <Button asChild size="lg" className="gap-2 px-8 h-12 text-base">
-            <Link href="/register">Start Free Trial <ArrowRight className="w-5 h-5" /></Link>
-          </Button>
-          <Button asChild variant="outline" size="lg" className="px-8 h-12 text-base">
-            <Link href="/docs/api">Explore the API</Link>
-          </Button>
-        </div>
-        <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
-          {['14-day free trial', 'Full API access included', 'Dedicated onboarding support'].map((t) => (
-            <div key={t} className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" /><span>{t}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export default function PlatformEngineersPage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <Hero />
-      <PlatformCapabilities />
-      <IDPIntegration />
-      <Metrics />
-      <CTA />
     </div>
-  );
+  )
 }

@@ -1,526 +1,311 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  Building2,
-  Users,
-  Shield,
-  ArrowRight,
-  CheckCircle2,
-  Lock,
-  Globe,
-  AlertTriangle,
-  Lightbulb,
-  Check,
-  X,
-  Server,
-  Database,
-  Cloud,
-  GitBranch,
-  Container,
-  BarChart3,
-  Gauge,
-  Network,
-  FileCheck,
-  Landmark,
-  CloudCog,
-  HardDrive,
-} from 'lucide-react';
-import Link from 'next/link';
-import { enterpriseMetrics } from './data/enterpriseMetrics';
-import { enterpriseValueCards } from './data/enterpriseValueCards';
+'use client'
 
-// ============================================
-// ENTERPRISE HERO SECTION
-// ============================================
-function EnterpriseHero() {
+import { Shield, Lock, Users, BarChart3, Zap, FileText, Globe, Headphones } from 'lucide-react'
+
+export default function EnterprisePage() {
+
+  const features = [
+    { icon: Shield, title: 'Custom Compliance Frameworks', desc: 'Map your infrastructure to any compliance standard — SOC 2, HIPAA, PCI-DSS, ISO 27001, or your own internal security policies. Automated evidence collection for every audit.' },
+    { icon: Lock, title: 'SSO & SAML Authentication', desc: 'Integrate with Okta, Azure AD, or any SAML 2.0 provider. Role-based access control ensures every engineer sees only what they need to see.' },
+    { icon: Users, title: 'Unlimited Team Members', desc: 'No per-seat pricing surprises. Add your entire engineering org, security team, and finance stakeholders — all with customized role-based dashboards.' },
+    { icon: Globe, title: 'Multi-Account & Multi-Region', desc: 'Manage hundreds of AWS accounts across every region from a single control plane. Consolidate visibility across business units, products, and geographies.' },
+    { icon: BarChart3, title: 'Advanced AI Insights', desc: 'Scheduled AI reports delivered weekly to your leadership team. Custom anomaly detection rules, predictive cost forecasting, and executive-ready dashboards built in.' },
+    { icon: FileText, title: 'Auto-Remediation Workflows', desc: 'Go beyond alerts. Define automated remediation policies that fix misconfigurations, enforce tagging, and right-size resources — without human intervention.' },
+    { icon: Zap, title: 'Full API Access', desc: 'Integrate DevControl data into your existing BI tools, security platforms, and internal dashboards. REST API with full documentation and SDK support.' },
+    { icon: Headphones, title: 'Dedicated Account Manager', desc: '24/7 priority support with a named account manager who knows your infrastructure. 99.99% uptime SLA backed by contractual guarantees.' },
+  ]
+
+  const impacts = [
+    { value: '99.99%', label: 'Uptime SLA guaranteed' },
+    { value: 'Unlimited', label: 'AWS accounts supported' },
+    { value: '24/7', label: 'Priority support response' },
+    { value: 'Custom', label: 'Compliance framework mapping' },
+  ]
+
+  const tableRows = [
+    { feature: 'AWS Accounts', enterprise: 'Unlimited', pro: 'Up to 10' },
+    { feature: 'Team Members', enterprise: 'Unlimited', pro: 'Up to 10' },
+    { feature: 'SSO / SAML', enterprise: '✓', pro: '✗' },
+    { feature: 'Custom Compliance', enterprise: '✓', pro: '✗' },
+    { feature: 'Auto-Remediation', enterprise: '✓', pro: '✗' },
+    { feature: 'Dedicated Account Manager', enterprise: '✓', pro: '✗' },
+    { feature: 'SLA Guarantee', enterprise: '99.99%', pro: '99.9%' },
+    { feature: 'Support', enterprise: '24/7 Priority', pro: '4hr Response' },
+    { feature: 'API Access', enterprise: 'Full', pro: 'Limited' },
+    { feature: 'Custom Integrations', enterprise: '✓', pro: '✗' },
+  ]
+
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-primary/10 py-12 lg:py-16">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center max-w-4xl mx-auto">
-          <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm">
-            For teams of 100+ engineers
-          </Badge>
+    <div style={{ minHeight: '100vh', background: '#fff' }}>
 
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4 leading-tight">
-            Mission-Critical{' '}
-            <span className="text-primary">Infrastructure Visibility</span>
-            <br />
-            at Enterprise Scale
+      {/* HERO — Dark Navy */}
+      <section style={{
+        width: '100%',
+        background: '#0f172a',
+        padding: '100px 48px',
+        borderBottom: '1px solid #1e293b',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
+
+          <div style={{
+            display: 'inline-flex', alignItems: 'center',
+            background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.4)',
+            borderRadius: '100px', padding: '6px 16px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa',
+            marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
+          }}>
+            Solutions · Enterprise
+          </div>
+
+          <h1 style={{
+            fontSize: 'clamp(2.2rem, 5vw, 3.5rem)',
+            fontWeight: 800, color: '#fff',
+            lineHeight: 1.1, marginBottom: '20px',
+            letterSpacing: '-0.02em', maxWidth: '900px', margin: '0 auto 20px',
+          }}>
+            Enterprise-Grade AWS Control{' '}
+            <span style={{ color: '#a78bfa' }}>Without Enterprise Complexity</span>
           </h1>
 
-          <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-6 leading-relaxed">
-            DevControl delivers the security, compliance, and scalability that Fortune 500
-            engineering organizations demand—with deployment options that fit your requirements.
+          <p style={{
+            fontSize: '1.15rem', color: '#94a3b8',
+            lineHeight: 1.75, maxWidth: '620px',
+            margin: '0 auto 36px',
+          }}>
+            Unlimited accounts, custom compliance frameworks, SSO, auto-remediation,
+            and a dedicated account manager. Everything a large engineering org needs
+            to govern AWS at scale — deployed in days, not months.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-8">
-            <Button asChild size="lg" className="gap-2 px-6 h-11">
-              <Link href="/contact">
-                Contact Sales
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
-              <Link href="/dashboard">
-                Request Demo
-              </Link>
-            </Button>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+            <a href="/contact" style={{
+              background: '#7c3aed', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+            }}>
+              Schedule Enterprise Demo →
+            </a>
+            <a href="/case-studies" style={{
+              background: 'transparent', color: '#e2e8f0',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '1.5px solid #334155',
+            }}>
+              Read Case Studies
+            </a>
           </div>
 
-          <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span>Custom deployment options</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span>Dedicated success manager</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span>Enterprise SLAs</span>
-            </div>
+          <div style={{
+            display: 'flex', flexWrap: 'wrap',
+            justifyContent: 'center', gap: '24px',
+            fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
+          }}>
+            {['SOC 2 Type II', 'SAML / SSO', '99.99% SLA', 'Dedicated support'].map(t => (
+              <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#a78bfa' }}>✓</span> {t}
+              </span>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-    </section>
-  );
-}
-
-// ============================================
-// TRUSTED BY SECTION
-// ============================================
-function TrustedBySection() {
-  const trustIndicators = [
-    { label: 'Fortune 500 Customers', icon: Landmark },
-    { label: 'SOC 2 Type II Certified', icon: Shield },
-    { label: 'FedRAMP Authorized', icon: FileCheck },
-    { label: '99.99% Uptime SLA', icon: CheckCircle2 },
-  ];
-
-  return (
-    <section className="py-8 border-b">
-      <div className="max-w-7xl mx-auto px-4">
-        <p className="text-center text-sm text-muted-foreground mb-5">
-          Trusted by enterprise engineering organizations worldwide
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {trustIndicators.map((item, index) => (
-            <div
-              key={index}
-              className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/50"
-            >
-              <item.icon className="w-5 h-5 text-primary" />
-              <span className="text-sm font-medium text-center">{item.label}</span>
+      {/* BUSINESS IMPACT BAR */}
+      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{
+          maxWidth: '1400px', margin: '0 auto',
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '32px', textAlign: 'center',
+        }}>
+          {impacts.map(({ value, label }) => (
+            <div key={label}>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+                {value}
+              </div>
+              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+                {label}
+              </div>
             </div>
           ))}
         </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-// ============================================
-// ENTERPRISE METRICS SECTION
-// ============================================
-function MetricsSection() {
-  return (
-    <section className="py-12 lg:py-16 bg-muted/30">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Built for Enterprise Scale
-          </h2>
-          <p className="text-muted-foreground">
-            No limits, no compromises—infrastructure visibility that grows with you
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-4">
-          {enterpriseMetrics.map((metric, index) => (
-            <Card key={index} className="text-center border-0 shadow-md bg-card">
-              <CardHeader className="pb-1 pt-5">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                  <metric.icon className="w-6 h-6 text-primary" />
-                </div>
-                <CardTitle className="text-4xl font-bold text-primary mb-1">
-                  {metric.value}
-                </CardTitle>
-                <CardDescription className="text-base font-semibold text-foreground">
-                  {metric.label}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pb-5">
-                <p className="text-sm text-muted-foreground leading-relaxed">{metric.description}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// VALUE PROPOSITION CARDS
-// ============================================
-function ValuePropsSection() {
-  return (
-    <section className="py-12 lg:py-16">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Enterprise-Grade Capabilities
-          </h2>
-          <p className="text-muted-foreground">
-            Security, compliance, and governance features your organization requires
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {enterpriseValueCards.map((card, index) => (
-            <Card key={index} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-2">
-                  <card.icon className="w-5 h-5 text-primary" />
-                </div>
-                <CardTitle className="text-lg">{card.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="text-sm leading-relaxed">
-                  {card.description}
-                </CardDescription>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// ENTERPRISE USE CASES
-// ============================================
-function UseCasesSection() {
-  const useCases = [
-    {
-      problem: 'Sprawling multi-account AWS environments',
-      solution: 'Unified visibility across hundreds of accounts and regions with centralized governance',
-      icon: Globe,
-      color: 'text-purple-500',
-    },
-    {
-      problem: 'Complex compliance requirements across teams',
-      solution: 'Automated compliance scanning with customizable frameworks and audit-ready reporting',
-      icon: FileCheck,
-      color: 'text-green-500',
-    },
-    {
-      problem: 'Security policies enforced inconsistently',
-      solution: 'Centralized policy definition with automated enforcement and real-time violation alerts',
-      icon: Shield,
-      color: 'text-purple-500',
-    },
-    {
-      problem: 'Lack of visibility into infrastructure changes',
-      solution: 'Complete audit trail with change attribution, approval workflows, and blast radius analysis',
-      icon: Network,
-      color: 'text-orange-500',
-    },
-  ];
-
-  return (
-    <section className="py-12 lg:py-16 bg-muted/30">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Enterprise Challenges, Solved
-          </h2>
-          <p className="text-muted-foreground">
-            Common pain points at scale—addressed comprehensively
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-4">
-          {useCases.map((useCase, index) => (
-            <Card key={index} className="overflow-hidden">
-              <CardHeader className="bg-muted/50 border-b py-4">
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg bg-background ${useCase.color}`}>
-                    <useCase.icon className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-0.5">The Challenge</p>
-                    <CardTitle className="text-base leading-snug">{useCase.problem}</CardTitle>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="py-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                    <Lightbulb className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-0.5">DevControl Solution</p>
-                    <p className="text-sm font-medium leading-snug">{useCase.solution}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// DEPLOYMENT OPTIONS
-// ============================================
-function DeploymentSection() {
-  const deploymentOptions = [
-    {
-      icon: Cloud,
-      title: 'SaaS',
-      description: 'Fully managed cloud deployment with enterprise security controls and data isolation.',
-      features: ['Automatic updates', 'No infrastructure to manage', 'SOC 2 compliant hosting'],
-    },
-    {
-      icon: CloudCog,
-      title: 'Private Cloud',
-      description: 'Dedicated instance deployed in your own VPC for maximum control and data residency.',
-      features: ['Your AWS account', 'Data never leaves your VPC', 'Custom networking'],
-    },
-    {
-      icon: HardDrive,
-      title: 'On-Premise',
-      description: 'Self-hosted deployment for organizations with strict air-gap or compliance requirements.',
-      features: ['Complete data control', 'Air-gap compatible', 'Custom integrations'],
-    },
-  ];
-
-  return (
-    <section className="py-12 lg:py-16">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Flexible Deployment Options
-          </h2>
-          <p className="text-muted-foreground">
-            Deploy DevControl where it makes sense for your organization
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-4">
-          {deploymentOptions.map((option, index) => (
-            <Card key={index} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-2">
-                  <option.icon className="w-5 h-5 text-primary" />
-                </div>
-                <CardTitle className="text-lg">{option.title}</CardTitle>
-                <CardDescription className="text-sm">
-                  {option.description}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-1.5">
-                  {option.features.map((feature, i) => (
-                    <li key={i} className="flex items-center gap-2 text-sm">
-                      <Check className="w-4 h-4 text-green-500 shrink-0" />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// SECURITY & COMPLIANCE
-// ============================================
-function SecuritySection() {
-  const certifications = [
-    { name: 'SOC 2 Type II', description: 'Annual audit by independent third party' },
-    { name: 'HIPAA', description: 'BAA available for healthcare organizations' },
-    { name: 'PCI-DSS', description: 'Level 1 service provider compliance' },
-    { name: 'ISO 27001', description: 'Information security management' },
-    { name: 'FedRAMP', description: 'Authorized for federal government use' },
-    { name: 'GDPR', description: 'EU data protection compliance' },
-  ];
-
-  return (
-    <section className="py-12 lg:py-16 bg-muted/30">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Security & Compliance
-          </h2>
-          <p className="text-muted-foreground">
-            Certifications and standards your security team requires
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-4xl mx-auto">
-          {certifications.map((cert, index) => (
-            <Card key={index} className="text-center">
-              <CardHeader className="pb-1 pt-4">
-                <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center mx-auto mb-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                </div>
-                <CardTitle className="text-base">{cert.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="pb-4">
-                <CardDescription className="text-xs">{cert.description}</CardDescription>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// COMPARISON TABLE
-// ============================================
-function ComparisonSection() {
-  const comparisons = [
-    { feature: 'Time to value', devcontrol: 'Days', others: '6-12 months' },
-    { feature: 'Total cost of ownership', devcontrol: 'Predictable subscription', others: '$500K+ build cost' },
-    { feature: 'Maintenance burden', devcontrol: 'Zero', others: '2-4 FTE ongoing' },
-    { feature: 'Feature updates', devcontrol: 'Continuous', others: 'Manual development' },
-    { feature: 'Multi-cloud support', devcontrol: true, others: 'Custom development' },
-    { feature: 'Enterprise support', devcontrol: '24/7 with SLA', others: 'Internal team' },
-  ];
-
-  return (
-    <section className="py-12 lg:py-16">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Build vs. Buy
-          </h2>
-          <p className="text-muted-foreground">
-            Why leading enterprises choose DevControl over building in-house
-          </p>
-        </div>
-
-        <Card className="overflow-hidden max-w-3xl mx-auto">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-semibold text-sm">Consideration</th>
-                  <th className="text-center p-3 font-semibold text-sm text-primary">DevControl</th>
-                  <th className="text-center p-3 font-semibold text-sm text-muted-foreground">Build In-House</th>
-                </tr>
-              </thead>
-              <tbody>
-                {comparisons.map((row, index) => (
-                  <tr key={index} className="border-b last:border-0">
-                    <td className="p-3 text-sm font-medium">{row.feature}</td>
-                    <td className="p-3 text-center">
-                      {typeof row.devcontrol === 'boolean' ? (
-                        <Check className="w-4 h-4 text-green-500 mx-auto" />
-                      ) : (
-                        <span className="text-sm font-semibold text-primary">{row.devcontrol}</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center text-muted-foreground">
-                      {typeof row.others === 'boolean' ? (
-                        row.others ? (
-                          <Check className="w-4 h-4 text-green-500 mx-auto" />
-                        ) : (
-                          <X className="w-4 h-4 text-red-500 mx-auto" />
-                        )
-                      ) : (
-                        <span className="text-sm">{row.others}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* FEATURES — 2 col alternating */}
+      <section style={{ padding: '80px 48px', width: '100%' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Enterprise Capabilities
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              Built for Large Engineering Organizations
+            </h2>
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+              Every feature your security, finance, and engineering teams need to govern AWS at enterprise scale.
+            </p>
           </div>
-        </Card>
-      </div>
-    </section>
-  );
-}
 
-// ============================================
-// FINAL CTA SECTION
-// ============================================
-function FinalCTASection() {
-  return (
-    <section className="py-14 lg:py-20 bg-gradient-to-br from-primary/10 via-background to-primary/5">
-      <div className="max-w-7xl mx-auto px-4 text-center">
-        <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-foreground mb-4">
-          Ready for Enterprise-Grade Infrastructure Visibility?
-        </h2>
-        <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
-          Join Fortune 500 engineering organizations using DevControl to secure, govern, and optimize their AWS infrastructure.
-        </p>
-
-        <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-6">
-          <Button asChild size="lg" className="gap-2 px-6 h-11">
-            <Link href="/contact">
-              Contact Sales
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
-            <Link href="/dashboard">
-              Request Demo
-            </Link>
-          </Button>
-        </div>
-
-        <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <span>Custom pricing</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <span>Dedicated onboarding</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <span>Enterprise SLAs</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+            {features.map(({ icon: Icon, title, desc }, i) => (
+              <div key={title} style={{
+                background: i % 2 === 0 ? '#fff' : '#faf5ff',
+                border: i % 2 === 0 ? '1.5px solid #e5e7eb' : '1.5px solid rgba(124,58,237,0.15)',
+                borderRadius: '16px', padding: '32px',
+                display: 'flex', gap: '20px', alignItems: 'flex-start',
+                transition: 'all 0.2s ease',
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#7c3aed'
+                  e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.1)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = i % 2 === 0 ? '#e5e7eb' : 'rgba(124,58,237,0.15)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '12px',
+                  background: 'rgba(124,58,237,0.08)', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Icon size={22} style={{ color: '#7c3aed' }} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                    {title}
+                  </h3>
+                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                    {desc}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-// ============================================
-// MAIN PAGE
-// ============================================
-export default function EnterprisePage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <EnterpriseHero />
-      <TrustedBySection />
-      <MetricsSection />
-      <ValuePropsSection />
-      <UseCasesSection />
-      <DeploymentSection />
-      <SecuritySection />
-      <ComparisonSection />
-      <FinalCTASection />
+      {/* COMPARISON TABLE */}
+      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Enterprise vs Pro
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              What Enterprise Teams Get
+            </h2>
+          </div>
+
+          <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+            {/* Table header */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 160px 160px',
+              background: '#0f172a', borderRadius: '12px 12px 0 0',
+              padding: '16px 24px',
+            }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8' }}>Feature</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#a78bfa', textAlign: 'center' }}>Enterprise</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', textAlign: 'center' }}>Pro</div>
+            </div>
+
+            {/* Table rows */}
+            {tableRows.map(({ feature, enterprise, pro }, i) => (
+              <div key={feature} style={{
+                display: 'grid', gridTemplateColumns: '1fr 160px 160px',
+                padding: '14px 24px',
+                background: i % 2 === 0 ? '#fff' : '#f8fafc',
+                borderLeft: '1px solid #e5e7eb',
+                borderRight: '1px solid #e5e7eb',
+                borderBottom: i === tableRows.length - 1 ? '1px solid #e5e7eb' : '1px solid #f1f5f9',
+                borderRadius: i === tableRows.length - 1 ? '0 0 12px 12px' : '0',
+              }}>
+                <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: 500 }}>{feature}</div>
+                <div style={{
+                  fontSize: '0.875rem', fontWeight: 700,
+                  color: enterprise === '✗' ? '#9ca3af' : '#7c3aed',
+                  textAlign: 'center',
+                }}>
+                  {enterprise}
+                </div>
+                <div style={{
+                  fontSize: '0.875rem', fontWeight: 500,
+                  color: pro === '✗' ? '#9ca3af' : '#374151',
+                  textAlign: 'center',
+                }}>
+                  {pro}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* BOTTOM CTA — Inverted (white bg, dark text) */}
+      <section style={{
+        width: '100%',
+        background: '#fff',
+        padding: '80px 48px', textAlign: 'center',
+        borderTop: '1px solid #f3f4f6',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center',
+            background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+            borderRadius: '100px', padding: '6px 16px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+            marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
+          }}>
+            Ready to Scale with DevControl
+          </div>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            color: '#0f172a', marginBottom: '16px', letterSpacing: '-0.02em',
+          }}>
+            Let&apos;s Talk About Your Infrastructure
+          </h2>
+          <p style={{
+            fontSize: '1.1rem', color: '#374151',
+            maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
+          }}>
+            Our enterprise team will walk you through a custom deployment plan,
+            security review, and ROI projection for your organization.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/contact" style={{
+              background: '#7c3aed', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+            }}>
+              Schedule Enterprise Demo →
+            </a>
+            <a href="/case-studies" style={{
+              background: 'transparent', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '1.5px solid #7c3aed',
+            }}>
+              Read Case Studies
+            </a>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '16px' }}>
+            Custom pricing · Dedicated onboarding · Contract SLA
+          </div>
+        </div>
+      </section>
+
     </div>
-  );
+  )
 }

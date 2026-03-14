@@ -11,7 +11,6 @@ import { useOnboardingStore } from '@/lib/stores/onboarding-store';
 import { useBreadcrumbs } from '@/lib/hooks/useBreadcrumbs';
 import { DemoModeToggle } from '@/components/demo/demo-mode-toggle';
 import { SalesDemoToggle } from '@/components/demo/sales-demo-toggle';
-import { AnnouncementBar } from '@/components/announcement-bar';
 import { Footer } from '@/components/footer';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
 
@@ -41,15 +40,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         Skip to main content
       </a>
 
-      {/* Sticky Header Container - Includes announcement, nav, and breadcrumbs */}
+      {/* Sticky Header Container - Includes nav and breadcrumbs */}
       <div className="sticky top-0 z-50 bg-white dark:bg-gray-950 shadow-sm">
-        {/* Announcement Bar */}
-        <AnnouncementBar
-          message="🚀 Limited Time Offer: Get 20% off annual plans!"
-          linkText="Learn More"
-          linkHref="/pricing"
-        />
-
         {/* Top Navigation - Shows on all authenticated pages */}
         <header role="banner">
           <TopNav />
@@ -82,11 +74,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Welcome Modal (Auto-opens on first login) */}
       <WelcomeModal />
 
-      {/* Demo Mode Toggle (for testing empty states) */}
-      <DemoModeToggle />
-
-      {/* Sales Demo Mode Toggle (for sales presentations) */}
-      <SalesDemoToggle />
+      {/* Demo Mode Toggles — stacked in a single fixed anchor (FIX 7) */}
+      <div style={{
+        position: 'fixed',
+        bottom: '24px',
+        right: '24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        alignItems: 'flex-end',
+        zIndex: 50,
+      }}>
+        <SalesDemoToggle />
+        <DemoModeToggle />
+      </div>
 
       {/* Footer */}
       <Footer />

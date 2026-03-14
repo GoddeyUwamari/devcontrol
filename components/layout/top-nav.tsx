@@ -3,15 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Layers,
-  Server,
-  DollarSign,
-  Shield,
-  Plus,
-  Search,
-  Menu,
-  X,
-  LayoutDashboard,
+  LayoutDashboard, Layers, Server, DollarSign, Shield, GitBranch,
+  Plus, Rocket, Activity, Lightbulb, Building, TrendingDown,
+  BarChart3, FileText, Sparkles, AlertTriangle, CheckSquare,
+  ClipboardList, Users, Building2, Code, ChevronDown, BellDot,
+  Search, Menu, X,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -26,13 +22,73 @@ import { useAuth } from '@/lib/contexts/auth-context';
 import { quickActions } from '@/lib/navigation-config';
 import { useState } from 'react';
 
-// App navigation links for authenticated users
-const appNavLinks = [
+type NavChild = {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  desc: string;
+};
+
+type NavItem =
+  | { label: string; href: string; icon: React.ElementType; children?: undefined }
+  | { label: string; icon: React.ElementType; children: NavChild[]; href?: undefined };
+
+const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Services', href: '/services', icon: Layers },
-  { label: 'Infrastructure', href: '/infrastructure', icon: Server },
-  { label: 'Costs', href: '/cost-optimization', icon: DollarSign },
-  { label: 'Security', href: '/solutions/security', icon: Shield },
+  {
+    label: 'Services',
+    icon: Layers,
+    children: [
+      { label: 'Services Overview', href: '/services', icon: Layers, desc: 'All services and health status' },
+      { label: 'Add Service', href: '/services/new', icon: Plus, desc: 'Register a new service' },
+      { label: 'Deployments', href: '/deployments', icon: Rocket, desc: 'Deployment history and tracking' },
+      { label: 'Dependencies', href: '/dependencies', icon: GitBranch, desc: 'Service dependency map' },
+      { label: 'Status Page', href: '/status', icon: Activity, desc: 'Live system status' },
+    ],
+  },
+  {
+    label: 'Infrastructure',
+    icon: Server,
+    children: [
+      { label: 'Infrastructure Overview', href: '/infrastructure', icon: Server, desc: 'All AWS resources' },
+      { label: 'Add Resource', href: '/infrastructure/new', icon: Plus, desc: 'Add infrastructure resource' },
+      { label: 'Recommendations', href: '/infrastructure/recommendations', icon: Lightbulb, desc: 'AI-powered suggestions' },
+      { label: 'Tenants', href: '/tenants', icon: Building, desc: 'Multi-tenant management' },
+    ],
+  },
+  {
+    label: 'Costs',
+    icon: DollarSign,
+    children: [
+      { label: 'Cost Overview', href: '/costs', icon: DollarSign, desc: 'Real-time spend tracking' },
+      { label: 'Optimization', href: '/cost-optimization', icon: TrendingDown, desc: 'AI savings recommendations' },
+      { label: 'Forecast', href: '/forecast', icon: BarChart3, desc: 'Predictive budget forecasting' },
+      { label: 'Invoices', href: '/invoices', icon: FileText, desc: 'Billing history' },
+      { label: 'AI Reports', href: '/ai-reports', icon: Sparkles, desc: 'AI-generated cost reports' },
+    ],
+  },
+  {
+    label: 'Security',
+    icon: Shield,
+    children: [
+      { label: 'Security Overview', href: '/security', icon: Shield, desc: 'Security posture and score' },
+      { label: 'Anomalies', href: '/anomalies', icon: AlertTriangle, desc: 'Detected threats and issues' },
+      { label: 'Compliance', href: '/compliance/frameworks', icon: CheckSquare, desc: 'CIS, NIST, SOC 2 frameworks' },
+      { label: 'Audit Logs', href: '/audit-logs', icon: ClipboardList, desc: 'Full activity audit trail' },
+    ],
+  },
+  {
+    label: 'DevOps',
+    icon: GitBranch,
+    children: [
+      { label: 'DORA Metrics', href: '/app/dora-metrics', icon: BarChart3, desc: 'Deployment frequency and MTTR' },
+      { label: 'Teams', href: '/teams', icon: Users, desc: 'Team management and access' },
+      { label: 'Enterprise', href: '/enterprise', icon: Building2, desc: 'Enterprise controls' },
+      { label: 'Developers', href: '/developers', icon: Code, desc: 'API keys and integrations' },
+      { label: 'Alert Management', href: '/admin/alerts', icon: BellDot, desc: 'Custom alert rules and thresholds' },
+      { label: 'System Monitoring', href: '/admin/monitoring', icon: Activity, desc: 'Prometheus, Grafana, SLO dashboard' },
+    ],
+  },
 ];
 
 export function TopNav() {
@@ -40,6 +96,7 @@ export function TopNav() {
   const router = useRouter();
   const { user, logout, isLoading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
   const getUserInitials = () => {
     if (!user) return 'U';
@@ -77,9 +134,21 @@ export function TopNav() {
     await logout();
   };
 
+  const isItemActive = (item: NavItem): boolean => {
+    if (item.href) {
+      return pathname === item.href || pathname.startsWith(item.href + '/');
+    }
+    if (item.children) {
+      return item.children.some(
+        (child) => pathname === child.href || pathname.startsWith(child.href + '/')
+      );
+    }
+    return false;
+  };
+
   return (
     <header className="w-full border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
-      <div className="max-w-[1920px] mx-auto flex h-22 items-center px-4 md:px-6 lg:px-8">
+      <div className="max-w-[1920px] mx-auto flex h-16 items-center px-4 md:px-6 lg:px-8">
         {/* Left: Logo + Navigation */}
         <div className="flex items-center gap-2 lg:gap-6">
           {/* Logo */}
@@ -93,27 +162,102 @@ export function TopNav() {
             <span className="hidden lg:inline-block text-xl">DevControl</span>
           </Link>
 
-          {/* Desktop Navigation - App Links Only */}
+          {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center gap-1">
-            {appNavLinks.map((link) => {
-              const Icon = link.icon;
-              const isActive =
-                pathname === link.href || pathname.startsWith(link.href + '/');
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = isItemActive(item);
+
+              if (!item.children) {
+                // Simple link
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                      'hover:bg-accent hover:text-accent-foreground',
+                      isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              }
+
+              // Dropdown item
               return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                    'hover:bg-accent hover:text-accent-foreground',
-                    isActive
-                      ? 'bg-accent text-foreground'
-                      : 'text-muted-foreground'
-                  )}
+                <div
+                  key={item.label}
+                  style={{ position: 'relative' }}
+                  onMouseEnter={() => setActiveDropdown(item.label)}
+                  onMouseLeave={() => setActiveDropdown(null)}
                 >
-                  <Icon className="h-4 w-4" />
-                  {link.label}
-                </Link>
+                  <button
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                      'hover:bg-accent hover:text-accent-foreground',
+                      isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                    <ChevronDown className={cn('h-3 w-3 transition-transform', activeDropdown === item.label ? 'rotate-180' : '')} />
+                  </button>
+
+                  {activeDropdown === item.label && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        zIndex: 50,
+                        background: '#fff',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+                        padding: '12px',
+                        minWidth: '480px',
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '4px',
+                      }}
+                    >
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon;
+                        const childActive = pathname === child.href || pathname.startsWith(child.href + '/');
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={() => setActiveDropdown(null)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: '10px',
+                              padding: '10px 12px',
+                              borderRadius: '8px',
+                              textDecoration: 'none',
+                              background: childActive ? '#f5f3ff' : 'transparent',
+                              transition: 'background 0.1s',
+                            }}
+                            onMouseEnter={(e) => { if (!childActive) e.currentTarget.style.background = '#f5f3ff'; }}
+                            onMouseLeave={(e) => { if (!childActive) e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            <div style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <ChildIcon size={16} style={{ color: '#7c3aed' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.3 }}>{child.label}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '2px' }}>{child.desc}</div>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </nav>
@@ -168,7 +312,7 @@ export function TopNav() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              {quickActions.map((action, idx) => {
+              {quickActions.map((action) => {
                 const Icon = action.icon;
                 return (
                   <DropdownMenuItem
@@ -207,27 +351,59 @@ export function TopNav() {
       {mobileMenuOpen && (
         <div className="lg:hidden border-t bg-background">
           <div className="px-4 py-4 space-y-1">
-            {appNavLinks.map((link) => {
-              const Icon = link.icon;
-              const isActive =
-                pathname === link.href ||
-                pathname.startsWith(link.href + '/');
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = isItemActive(item);
+
+              if (!item.children) {
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                      'hover:bg-accent',
+                      isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                    )}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {item.label}
+                  </Link>
+                );
+              }
+
               return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                    'hover:bg-accent',
-                    isActive
-                      ? 'bg-accent text-foreground'
-                      : 'text-muted-foreground'
-                  )}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  <Icon className="w-4 h-4" />
-                  {link.label}
-                </Link>
+                <div key={item.label}>
+                  <div className={cn(
+                    'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md',
+                    isActive ? 'text-foreground' : 'text-muted-foreground'
+                  )}>
+                    <Icon className="w-4 h-4" />
+                    {item.label}
+                  </div>
+                  <div className="ml-7 space-y-1">
+                    {item.children.map((child) => {
+                      const ChildIcon = child.icon;
+                      const childActive = pathname === child.href || pathname.startsWith(child.href + '/');
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          className={cn(
+                            'flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors',
+                            'hover:bg-accent',
+                            childActive ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground'
+                          )}
+                          onClick={() => setMobileMenuOpen(false)}
+                        >
+                          <ChildIcon className="w-3.5 h-3.5" />
+                          {child.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>

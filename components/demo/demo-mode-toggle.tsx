@@ -49,7 +49,7 @@ export function DemoModeToggle() {
             variant={demoMode ? 'default' : 'outline'}
             size="sm"
             onClick={toggleDemoMode}
-            className="fixed bottom-4 right-4 z-50 shadow-lg"
+            className="shadow-lg"
           >
             {demoMode ? (
               <>

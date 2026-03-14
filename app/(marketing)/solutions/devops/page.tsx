@@ -1,225 +1,416 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  GitBranch, ArrowRight, CheckCircle2, Shield, DollarSign,
-  BarChart3, Activity, Zap, Container, Clock, Server,
-  RefreshCw, AlertTriangle, Check, X,
-} from 'lucide-react';
-import Link from 'next/link';
+'use client'
 
-function Hero() {
+import { Terminal, GitBranch, Shield, BarChart3, Zap, RefreshCw, Bell, Cloud } from 'lucide-react'
+
+export default function DevOpsPage() {
+
+  const features = [
+    { icon: GitBranch, title: 'Pipeline Visibility & DORA Metrics', desc: 'Track deployment frequency, lead time, change failure rate, and MTTR automatically from your existing GitHub setup. No instrumentation, no manual tracking — just real data.' },
+    { icon: Shield, title: 'Infrastructure Drift Detection', desc: 'Know instantly when your live infrastructure diverges from your Terraform or CDK definitions. Get alerted before drift causes incidents, compliance failures, or surprise costs.' },
+    { icon: Zap, title: 'AI-Powered Incident Intelligence', desc: 'When something breaks, DevControl shows you exactly what changed, which resources are affected, and the downstream blast radius — so you spend time fixing, not investigating.' },
+    { icon: RefreshCw, title: 'Auto-Remediation Workflows', desc: 'Define policies that automatically fix common misconfigurations, enforce tagging standards, and right-size idle resources. Let automation handle the repetitive ops work.' },
+    { icon: Bell, title: 'Smart Alert Routing', desc: 'Route the right alerts to the right people via Slack, PagerDuty, or email. Reduce alert fatigue with intelligent thresholds that learn your infrastructure\'s normal behavior.' },
+    { icon: Cloud, title: 'Multi-Account AWS Control', desc: 'Manage every AWS account and region from a single dashboard. Full resource inventory, cost breakdown, and security posture across your entire cloud estate.' },
+    { icon: BarChart3, title: 'Unified Observability Dashboard', desc: 'Costs, security, performance, and DORA metrics in one place. Stop switching between 6 different tools and get the full picture of your infrastructure health instantly.' },
+    { icon: Terminal, title: 'Full API & CLI Access', desc: 'Integrate DevControl into your existing workflows. REST API, webhooks, and Terraform provider support let you embed infrastructure intelligence into your CI/CD pipeline.' },
+  ]
+
+  const impacts = [
+    { value: '60%', label: 'Reduction in MTTR' },
+    { value: '4.2hrs', label: 'Average lead time improvement' },
+    { value: '15min', label: 'Setup to first insight' },
+  ]
+
+  const timeline = [
+    { step: '01', title: 'Connect GitHub & AWS', time: 'Day 1', desc: 'Link your repositories and AWS accounts with read-only access. DevControl immediately starts pulling deployment events, resource changes, and cost data.' },
+    { step: '02', title: 'Baseline Established', time: 'Day 1', desc: 'Your DORA metrics are calculated, infrastructure inventory is complete, and security posture score is ready — all within 15 minutes of connecting.' },
+    { step: '03', title: 'Alerts & Automation Configured', time: 'Week 1', desc: 'Set up Slack alerts, configure drift detection thresholds, and define auto-remediation policies for your most common infrastructure issues.' },
+    { step: '04', title: 'Full Team Onboarded', time: 'Week 2', desc: 'Every engineer has access to the dashboards they need. On-call rotations configured, runbooks linked to alerts, and DORA benchmarks shared with leadership.' },
+  ]
+
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-primary/10 py-20 lg:py-28">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center max-w-4xl mx-auto">
-          <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm">
-            For DevOps & Platform teams
-          </Badge>
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight">
-            Ship More. Toil Less.{' '}
-            <span className="text-primary">Own Your Pipeline.</span>
-          </h1>
-          <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto mb-8 leading-relaxed">
-            DevControl gives DevOps teams real-time visibility across deployments, infrastructure
-            drift, security posture, and DORA metrics — all in one unified platform.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-            <Button asChild size="lg" className="gap-2 px-8 h-12 text-base">
-              <Link href="/register">
-                Start Free Trial <ArrowRight className="w-5 h-5" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="gap-2 px-8 h-12 text-base">
-              <Link href="/docs">View Docs</Link>
-            </Button>
+    <div style={{ minHeight: '100vh', background: '#fff' }}>
+
+      {/* HERO */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+        padding: '140px 48px 100px',
+        borderBottom: '1px solid #1e293b',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '80px', alignItems: 'center' }}>
+
+            {/* Left — text */}
+            <div>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center',
+                background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.4)',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa',
+                marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
+              }}>
+                Solutions · DevOps Teams
+              </div>
+
+              <h1 style={{
+                fontSize: 'clamp(2rem, 4vw, 3rem)',
+                fontWeight: 800, color: '#fff',
+                lineHeight: 1.15, marginBottom: '20px',
+                letterSpacing: '-0.02em',
+              }}>
+                One Dashboard for Your{' '}
+                <span style={{ color: '#a78bfa' }}>Entire DevOps Stack</span>
+              </h1>
+
+              <p style={{
+                fontSize: '1.1rem', color: '#94a3b8',
+                lineHeight: 1.75, marginBottom: '36px',
+              }}>
+                Stop switching between AWS Console, Grafana, PagerDuty, and spreadsheets.
+                DevControl gives DevOps teams unified visibility into costs, security,
+                performance, and DORA metrics — in one place.
+              </p>
+
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '32px' }}>
+                <a href="/register" style={{
+                  background: '#7c3aed', color: '#fff',
+                  padding: '14px 32px', borderRadius: '10px',
+                  fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+                  boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+                }}>
+                  Start Free Trial →
+                </a>
+                <a href="/tour" style={{
+                  background: 'transparent', color: '#e2e8f0',
+                  padding: '14px 32px', borderRadius: '10px',
+                  fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+                  border: '1.5px solid #334155',
+                }}>
+                  See How It Works
+                </a>
+              </div>
+
+              <div style={{
+                display: 'flex', flexWrap: 'wrap', gap: '20px',
+                fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
+              }}>
+                {['GitHub & AWS integration', 'No agents required', 'Full API access'].map(t => (
+                  <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#a78bfa' }}>✓</span> {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Right — terminal block */}
+            <div style={{
+              background: '#0d1117',
+              borderRadius: '16px',
+              border: '1px solid #30363d',
+              padding: '24px',
+              fontFamily: 'monospace',
+            }}>
+              {/* Terminal header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ff5f56' }} />
+                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ffbd2e' }} />
+                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#27c93f' }} />
+                <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#8b949e' }}>devcontrol — dashboard</span>
+              </div>
+
+              {/* Terminal content */}
+              <div style={{ fontSize: '0.8rem', lineHeight: 2 }}>
+                <div><span style={{ color: '#8b949e' }}>$</span> <span style={{ color: '#79c0ff' }}>devcontrol</span> <span style={{ color: '#e6edf3' }}>scan --account production</span></div>
+                <div style={{ color: '#3fb950' }}>✓ Connected to 3 AWS accounts</div>
+                <div style={{ color: '#3fb950' }}>✓ Discovered 847 resources across 6 regions</div>
+                <div style={{ color: '#3fb950' }}>✓ DORA metrics calculated from 234 deployments</div>
+                <div style={{ color: '#ff7b72' }}>⚠ 3 security misconfigurations found</div>
+                <div style={{ color: '#ff7b72' }}>⚠ $2,400/mo in idle resources detected</div>
+                <div style={{ color: '#8b949e', marginTop: '8px' }}>────────────────────────────────</div>
+                <div><span style={{ color: '#8b949e' }}>Security Score:</span> <span style={{ color: '#a78bfa', fontWeight: 700 }}>87/100</span></div>
+                <div><span style={{ color: '#8b949e' }}>DORA Tier:</span> <span style={{ color: '#3fb950', fontWeight: 700 }}>Elite</span></div>
+                <div><span style={{ color: '#8b949e' }}>Monthly Savings:</span> <span style={{ color: '#3fb950', fontWeight: 700 }}>$2,400 identified</span></div>
+                <div style={{ color: '#8b949e', marginTop: '8px' }}>────────────────────────────────</div>
+                <div><span style={{ color: '#8b949e' }}>$</span> <span style={{ color: '#8b949e' }}>█</span></div>
+              </div>
+            </div>
+
           </div>
-          <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
-            {['Connects in 5 minutes', 'No agents to install', 'Read-only AWS access'].map((t) => (
-              <div key={t} className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-green-500" /><span>{t}</span>
+        </div>
+      </section>
+
+      {/* BUSINESS IMPACT BAR */}
+      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{
+          maxWidth: '1400px', margin: '0 auto',
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '32px', textAlign: 'center',
+        }}>
+          {impacts.map(({ value, label }) => (
+            <div key={label}>
+              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+                {value}
+              </div>
+              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* FEATURES — Horizontal rows */}
+      <section style={{ padding: '80px 48px', width: '100%' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              DevOps Capabilities
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              Everything Your DevOps Team Needs in One Place
+            </h2>
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+              Stop context switching. Get costs, security, performance, and DORA metrics from a single control plane.
+            </p>
+          </div>
+
+          {/* Feature cards grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+            {features.map(({ icon: Icon, title, desc }) => (
+              <div key={title} style={{
+                background: '#fff',
+                border: '1.5px solid #e5e7eb',
+                borderLeft: '4px solid #7c3aed',
+                borderRadius: '12px',
+                padding: '24px',
+                transition: 'all 0.2s ease',
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = '#faf5ff'
+                  e.currentTarget.style.boxShadow = '0 4px 20px rgba(124,58,237,0.1)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = '#fff'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div style={{
+                  width: '44px', height: '44px', borderRadius: '10px',
+                  background: 'rgba(124,58,237,0.08)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: '16px',
+                }}>
+                  <Icon size={20} style={{ color: '#7c3aed' }} />
+                </div>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.4, marginBottom: '10px' }}>
+                  {title}
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+                  {desc}
+                </p>
               </div>
             ))}
           </div>
         </div>
-      </div>
-      <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-    </section>
-  );
-}
+      </section>
 
-function Stats() {
-  const stats = [
-    { value: '4×', label: 'Deployment frequency increase', icon: GitBranch },
-    { value: '68%', label: 'Reduction in MTTR',             icon: Clock },
-    { value: '91%', label: 'Less infrastructure drift',     icon: RefreshCw },
-    { value: '30min', label: 'Average onboarding time',     icon: Zap },
-  ];
-  return (
-    <section className="py-14 border-b">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {stats.map(({ value, label, icon: Icon }) => (
-            <div key={label} className="flex flex-col items-center gap-2 p-6 rounded-xl bg-muted/50 text-center">
-              <Icon className="w-6 h-6 text-primary" />
-              <span className="text-3xl font-bold text-primary">{value}</span>
-              <span className="text-sm text-muted-foreground">{label}</span>
+      {/* HOW IT WORKS — Vertical Timeline */}
+      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Onboarding Timeline
             </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Fully Operational in 2 Weeks
+            </h2>
+          </div>
 
-function Features() {
-  const features = [
-    { icon: GitBranch, title: 'Deployment pipeline visibility', desc: 'Track every deployment across GitHub Actions, CircleCI, and more. Know exactly what shipped, when, and to which environment.' },
-    { icon: BarChart3, title: 'DORA metrics dashboard', desc: 'Deployment frequency, lead time for changes, MTTR, and change failure rate — calculated automatically from your real data.' },
-    { icon: RefreshCw, title: 'Infrastructure drift detection', desc: 'Instant alerts when your actual infrastructure diverges from your Terraform/CDK definitions. Prevent config debt before it compounds.' },
-    { icon: Shield, title: 'Security posture scoring', desc: 'Continuous CIS benchmark scanning with actionable remediation steps. Ship with security confidence on every deployment.' },
-    { icon: Activity, title: 'Service health monitoring', desc: 'Dependency-aware health checks across all services. Know the blast radius of every change before you make it.' },
-    { icon: Container, title: 'Container & Lambda insights', desc: 'Deep visibility into ECS, EKS, and Lambda workloads. Performance, cost, and error tracking in one place.' },
-  ];
-  return (
-    <section className="py-16 lg:py-24">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">The Platform Your DevOps Team Actually Wants</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">Fewer dashboards. Less context-switching. More time shipping.</p>
-        </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((f) => (
-            <Card key={f.title} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                  <f.icon className="w-6 h-6 text-primary" />
-                </div>
-                <CardTitle className="text-xl">{f.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="text-base leading-relaxed">{f.desc}</CardDescription>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+          <div style={{ maxWidth: '700px', margin: '0 auto', position: 'relative' }}>
+            {/* Vertical line */}
+            <div style={{
+              position: 'absolute', left: '27px', top: '28px',
+              width: '2px', bottom: '28px',
+              background: 'linear-gradient(to bottom, #7c3aed, rgba(124,58,237,0.1))',
+            }} />
 
-function UseCases() {
-  const items = [
-    { problem: 'Mystery outage at 2am', solution: 'Service dependency maps pinpoint the root cause in minutes — not hours of log diving', icon: AlertTriangle, color: 'text-orange-500' },
-    { problem: 'Deployment slowed to a crawl', solution: 'DORA trends identify which steps are bottlenecks so you can prioritise fixes', icon: Clock, color: 'text-red-500' },
-    { problem: 'Infra drift causing prod failures', solution: 'Real-time drift detection with auto-remediation suggestions before anything breaks', icon: RefreshCw, color: 'text-purple-500' },
-    { problem: 'Security blocked your release', solution: 'Pre-deploy security checks surface issues in CI so security never surprises you', icon: Shield, color: 'text-purple-500' },
-  ];
-  return (
-    <section className="py-16 lg:py-24 bg-muted/30">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Scenarios You Know Too Well</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">Common DevOps pain points — and how DevControl eliminates them</p>
-        </div>
-        <div className="grid md:grid-cols-2 gap-6">
-          {items.map((item) => (
-            <Card key={item.problem} className="overflow-hidden">
-              <CardHeader className="bg-muted/50 border-b">
-                <div className="flex items-start gap-4">
-                  <div className={`p-2 rounded-lg bg-background ${item.color}`}>
-                    <item.icon className="w-5 h-5" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+              {timeline.map(({ step, title, time, desc }) => (
+                <div key={step} style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+                  <div style={{
+                    width: '56px', height: '56px', borderRadius: '50%',
+                    background: '#7c3aed', color: '#fff',
+                    fontSize: '0.85rem', fontWeight: 800, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '3px solid #fafafa', zIndex: 1,
+                  }}>
+                    {step}
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">The Problem</p>
-                    <CardTitle className="text-lg">{item.problem}</CardTitle>
+                  <div style={{
+                    background: '#fff', border: '1.5px solid #e5e7eb',
+                    borderRadius: '12px', padding: '20px 24px', flex: 1,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+                        {title}
+                      </h3>
+                      <span style={{
+                        fontSize: '0.75rem', fontWeight: 600, color: '#7c3aed',
+                        background: 'rgba(124,58,237,0.08)', padding: '3px 10px',
+                        borderRadius: '100px',
+                      }}>
+                        {time}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+                      {desc}
+                    </p>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                    <Zap className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">DevControl Solution</p>
-                    <p className="font-medium">{item.solution}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Integrations() {
-  const tools = [
-    'GitHub Actions', 'CircleCI', 'GitLab CI', 'ArgoCD',
-    'Terraform', 'AWS CDK', 'PagerDuty', 'Datadog',
-    'Slack', 'Jira', 'OpsGenie', 'Prometheus',
-  ];
-  return (
-    <section className="py-16 lg:py-24">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Integrates With Your Entire Stack</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">DevControl plugs into the tools you already use — no ripping and replacing</p>
-        </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">
-          {tools.map((tool) => (
-            <div key={tool} className="flex items-center justify-center p-4 rounded-xl bg-muted/50 text-sm font-medium text-center h-16">
-              {tool}
+              ))}
             </div>
-          ))}
+          </div>
         </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-function CTA() {
-  return (
-    <section className="py-20 lg:py-28 bg-gradient-to-br from-primary/10 via-background to-primary/5">
-      <div className="max-w-4xl mx-auto px-6 text-center">
-        <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-6">
-          Better Pipelines Start Today
-        </h2>
-        <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-          Connect DevControl to your AWS account in 5 minutes. No agents. No complex setup. Just instant visibility.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
-          <Button asChild size="lg" className="gap-2 px-8 h-12 text-base">
-            <Link href="/register">Start Free Trial <ArrowRight className="w-5 h-5" /></Link>
-          </Button>
-          <Button asChild variant="outline" size="lg" className="px-8 h-12 text-base">
-            <Link href="/docs">Read the Docs</Link>
-          </Button>
-        </div>
-        <div className="flex flex-wrap justify-center items-center gap-6 text-sm text-muted-foreground">
-          {['14-day free trial', 'No credit card required', 'Cancel anytime'].map((t) => (
-            <div key={t} className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" /><span>{t}</span>
+      {/* WHO IT'S FOR */}
+      <section style={{ padding: '80px 48px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Built For Your Team
             </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Who It&apos;s For
+            </h2>
+          </div>
 
-export default function DevOpsPage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <Hero />
-      <Stats />
-      <Features />
-      <UseCases />
-      <Integrations />
-      <CTA />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            <div style={{
+              background: '#fff', border: '1.5px solid #e5e7eb',
+              borderRadius: '20px', padding: '40px',
+            }}>
+              <div style={{
+                display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                For DevOps Engineers
+              </div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                Stop Firefighting. Start Engineering.
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  'Unified view of costs, security, and performance',
+                  'Drift detection before it causes production incidents',
+                  'Smart alerts routed to the right engineer instantly',
+                  'Full API access to integrate with existing workflows',
+                ].map(point => (
+                  <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+              border: '1.5px solid rgba(124,58,237,0.2)',
+              borderRadius: '20px', padding: '40px',
+            }}>
+              <div style={{
+                display: 'inline-flex', background: '#7c3aed',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#fff',
+                marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                For Engineering Managers
+              </div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                Prove Team Performance with Real Data
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  'DORA metrics show engineering velocity objectively',
+                  'Cost ownership by team drives accountability',
+                  'Security posture trends show continuous improvement',
+                  'Executive dashboards ready for leadership reviews',
+                ].map(point => (
+                  <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
+                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* BOTTOM CTA */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+        padding: '80px 48px', textAlign: 'center',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
+          }}>
+            One Tool. Your Entire DevOps Stack.
+          </h2>
+          <p style={{
+            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
+          }}>
+            Connect your AWS account and GitHub in 15 minutes. Get costs, security, and DORA metrics instantly.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/register" style={{
+              background: '#fff', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+            }}>
+              Start Free Trial →
+            </a>
+            <a href="/tour" style={{
+              background: 'transparent', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '2px solid rgba(255,255,255,0.4)',
+            }}>
+              Take a Product Tour
+            </a>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
+            No credit card required · Read-only AWS access · Cancel anytime
+          </div>
+        </div>
+      </section>
+
     </div>
-  );
+  )
 }
