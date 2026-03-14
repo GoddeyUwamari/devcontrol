@@ -11,7 +11,7 @@ interface CostCategory {
   name: string
   value: number
   change: number // percentage change vs last period
-  color: 'blue' | 'teal' | 'purple' | 'amber' | 'gray'
+  color: string
 }
 
 interface CostBreakdownBarListProps {
@@ -176,12 +176,7 @@ export function CostBreakdownBarList({
               <div
                 className="w-3 h-3 rounded-full group-hover:scale-110 transition-transform duration-200"
                 style={{
-                  backgroundColor:
-                    item.color === 'blue' ? '#3b82f6' :
-                    item.color === 'teal' ? '#14b8a6' :
-                    item.color === 'purple' ? '#a855f7' :
-                    item.color === 'amber' ? '#f59e0b' :
-                    '#6b7280'
+                  backgroundColor: item.color
                 }}
                 aria-hidden="true"
               />

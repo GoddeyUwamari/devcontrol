@@ -157,13 +157,14 @@ function generateCostTrendData(days: number) {
 }
 
 // Helper function to generate cost breakdown data for BarList
+// UPDATED: Modern, distinct colors for each service category
 function generateCostBreakdownData() {
   return [
-    { name: 'Compute (EC2, Lambda, ECS)', value: 5200, change: 12, color: 'blue' as const },
-    { name: 'Storage (S3, EBS)', value: 3800, change: -5, color: 'teal' as const },
-    { name: 'Database (RDS, DynamoDB)', value: 2400, change: 8, color: 'purple' as const },
-    { name: 'Network (Data Transfer)', value: 1200, change: 3, color: 'amber' as const },
-    { name: 'Other Services', value: 247, change: -2, color: 'gray' as const },
+    { name: 'Compute (EC2, Lambda, ECS)', value: 5200, change: 12, color: '#3B82F6' },  // vivid blue
+    { name: 'Storage (S3, EBS)',           value: 3800, change: -5, color: '#06B6D4' },  // cyan
+    { name: 'Database (RDS, DynamoDB)',    value: 2400, change:  8, color: '#8B5CF6' },  // violet
+    { name: 'Network (Data Transfer)',     value: 1200, change:  3, color: '#F59E0B' },  // amber
+    { name: 'Other Services',             value:  247, change: -2, color: '#94A3B8' },  // slate
   ];
 }
 
@@ -182,6 +183,32 @@ const card: React.CSSProperties = {
   borderRadius: '16px',
   padding: '32px',
   border: '1px solid #F1F5F9',
+}
+
+// Shared overline label style — strong, consistent across all sections
+const overline: React.CSSProperties = {
+  fontSize: '0.7rem',
+  fontWeight: 700,
+  color: '#475569',       // slate-600 — noticeably darker than before
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.1em',
+  margin: '0 0 16px',
+}
+
+// Strong section title style
+const sectionTitle: React.CSSProperties = {
+  fontSize: '0.875rem',
+  fontWeight: 600,
+  color: '#1E293B',       // slate-800 — crisp, not faded
+  margin: 0,
+  lineHeight: 1.5,
+}
+
+// Body / supporting text — visible, not washed out
+const bodyText: React.CSSProperties = {
+  fontSize: '0.82rem',
+  color: '#475569',       // slate-600
+  lineHeight: 1.6,
 }
 
 export default function DashboardPage() {
@@ -347,15 +374,12 @@ export default function DashboardPage() {
     : null;
 
   // FIX 6 — Semantic delta color helpers
-  // Cost: increase = bad (red), decrease = good (emerald), zero = neutral (amber)
   const costDeltaColor = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706';
   const CostDeltaIcon = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus;
 
-  // Security: >= 80 = good (emerald), < 80 = needs attention (red)
   const securityDeltaColor = securityScore !== null && securityScore >= 80 ? '#059669' : '#DC2626';
   const SecurityDeltaIcon = securityScore !== null && securityScore >= 80 ? TrendingUp : TrendingDown;
 
-  // Efficiency: >= 90% = good (emerald), >= 75% = neutral (amber), < 75% = bad (red)
   const efficiencyDeltaColor = efficiencyRatio !== null
     ? efficiencyRatio >= 90 ? '#059669' : efficiencyRatio >= 75 ? '#D97706' : '#DC2626'
     : '#D97706';
@@ -377,8 +401,6 @@ export default function DashboardPage() {
   ];
 
   return (
-    // FIX 2 — maxWidth: 1400px per spec, padding fills edge-to-edge within shell
-    // FIX 8 — paddingBottom: 64px for breathing room
     <div style={{
       padding: '40px 56px 64px',
       maxWidth: '1400px',
@@ -409,9 +431,9 @@ export default function DashboardPage() {
             {(demoMode || salesDemoMode) && (
               <span style={{
                 fontSize: '0.7rem',
-                fontWeight: 600,
+                fontWeight: 700,
                 background: '#FFFBEB',
-                color: '#D97706',
+                color: '#B45309',
                 border: '1px solid #FDE68A',
                 padding: '3px 12px',
                 borderRadius: '100px',
@@ -424,7 +446,7 @@ export default function DashboardPage() {
           </div>
           <p style={{
             fontSize: '0.875rem',
-            color: '#64748B',
+            color: '#475569',
             margin: 0,
             lineHeight: 1.6,
           }}>
@@ -456,11 +478,9 @@ export default function DashboardPage() {
         marginBottom: '32px',
       }}>
 
-        {/* Total Cloud Spend — FIX 6: semantic delta color */}
+        {/* Total Cloud Spend */}
         <div style={card}>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            Total Cloud Spend
-          </p>
+          <p style={overline}>Total Cloud Spend</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
             {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
           </div>
@@ -473,11 +493,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Security Posture — FIX 6: semantic delta color */}
+        {/* Security Posture */}
         <div style={card}>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            Security Posture
-          </p>
+          <p style={overline}>Security Posture</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
             {securityScore ?? '—'}
             <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
@@ -490,11 +508,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Efficiency Ratio — FIX 6: semantic delta color */}
+        {/* Efficiency Ratio */}
         <div style={card}>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            Infrastructure Efficiency
-          </p>
+          <p style={overline}>Infrastructure Efficiency</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
             {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
           </div>
@@ -524,10 +540,10 @@ export default function DashboardPage() {
               <Sparkles size={16} style={{ color: '#fff' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>
+              <p style={{ ...overline, margin: '0 0 8px', color: '#7C3AED' }}>
                 Executive Insights
               </p>
-              <p style={{ fontSize: '0.975rem', color: '#0F172A', lineHeight: 1.7, margin: 0, fontWeight: 400 }}>
+              <p style={{ fontSize: '0.975rem', color: '#1E293B', lineHeight: 1.7, margin: 0, fontWeight: 400 }}>
                 {insightMessage
                   ? insightMessage
                   : `Your infrastructure efficiency is up 12% this month. We identified $${wasteAmount.toLocaleString()} in immediate savings with zero risk. Security posture is stable${securityScore ? ` at ${securityScore}%` : ''}, and engineering velocity remains Elite across all DORA metrics.`
@@ -544,19 +560,15 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── NARRATIVE — FIX 5: 3fr/2fr Spend Trend + Security Posture ── */}
+      {/* ── NARRATIVE — 3fr/2fr Spend Trend + Security Posture ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '32px' }}>
 
-        {/* Spend Trend — FIX 3: desaturation handled inside CostBreakdownBarList on bars only */}
+        {/* Spend Trend */}
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
             <div>
-              <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>
-                Spend Trend
-              </p>
-              <p style={{ fontSize: '0.875rem', color: '#0F172A', margin: 0, lineHeight: 1.6 }}>
-                Infrastructure cost over time
-              </p>
+              <p style={overline}>Spend Trend</p>
+              <p style={sectionTitle}>Infrastructure cost over time</p>
             </div>
             <a href="/costs" style={{ color: '#94A3B8', display: 'flex', lineHeight: 1 }}>
               <MoreHorizontal size={16} />
@@ -574,9 +586,7 @@ export default function DashboardPage() {
 
         {/* Security Posture Detail */}
         <div style={card}>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 24px' }}>
-            Security Posture
-          </p>
+          <p style={overline}>Security Posture</p>
 
           {/* Large score */}
           <div style={{ textAlign: 'center', padding: '20px 0', borderBottom: '1px solid #F1F5F9', marginBottom: '20px' }}>
@@ -592,12 +602,36 @@ export default function DashboardPage() {
           {/* Risk detail rows */}
           {securityRows.map(({ label, value, status }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F1F5F9' }}>
-              <span style={{ fontSize: '0.82rem', color: '#64748B', lineHeight: 1.6 }}>{label}</span>
-              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: status === 'good' ? '#059669' : '#D97706' }}>
+              <span style={bodyText}>{label}</span>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: status === 'good' ? '#059669' : '#D97706' }}>
                 {value}
               </span>
             </div>
           ))}
+
+          {/* ── NEW: Compliance Status row ── */}
+          <div style={{ padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={bodyText}>Compliance Status</span>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#059669' }}>3 / 3 passing</span>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {['SOC2', 'CIS AWS', 'GDPR'].map((framework) => (
+                <span key={framework} style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 600,
+                  color: '#059669',
+                  background: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  letterSpacing: '0.02em',
+                }}>
+                  {framework}
+                </span>
+              ))}
+            </div>
+          </div>
 
           <a href="/security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '20px', fontSize: '0.82rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>
             View Security Report <ArrowRight size={13} />
@@ -609,9 +643,7 @@ export default function DashboardPage() {
       <div style={{ ...card, marginBottom: '32px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '32px', alignItems: 'center' }}>
           <div>
-            <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>
-              Savings Opportunity
-            </p>
+            <p style={overline}>Savings Opportunity</p>
             <p style={{ fontSize: '1.1rem', fontWeight: 600, color: '#0F172A', lineHeight: 1.6, margin: '0 0 4px' }}>
               We've identified{' '}
               <span style={{ color: '#059669', fontWeight: 700 }}>
@@ -619,7 +651,7 @@ export default function DashboardPage() {
               </span>{' '}
               in immediate savings.
             </p>
-            <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0, lineHeight: 1.6 }}>
+            <p style={{ ...bodyText, margin: 0 }}>
               Impact: High · Risk: Zero · Estimated implementation: 15 minutes
             </p>
           </div>
@@ -638,7 +670,7 @@ export default function DashboardPage() {
             </a>
             <a href="/cost-optimization" style={{
               background: 'transparent',
-              color: '#64748B',
+              color: '#475569',
               padding: '12px 20px',
               borderRadius: '8px',
               fontSize: '0.875rem',
@@ -660,12 +692,10 @@ export default function DashboardPage() {
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
             <div>
-              <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
-                Engineering Velocity
-              </p>
+              <p style={overline}>Engineering Velocity</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>Elite</span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, background: '#ECFDF5', color: '#059669', padding: '2px 10px', borderRadius: '100px' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, background: '#ECFDF5', color: '#059669', padding: '2px 10px', borderRadius: '100px' }}>
                   Top 10%
                 </span>
               </div>
@@ -676,13 +706,13 @@ export default function DashboardPage() {
           </div>
 
           {doraRows.map(({ label, value, tier }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F8FAFC' }}>
-              <span style={{ fontSize: '0.82rem', color: '#64748B', lineHeight: 1.6 }}>{label}</span>
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+              <span style={bodyText}>{label}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{value}</span>
                 <span style={{
-                  fontSize: '0.7rem',
-                  fontWeight: 600,
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
                   color: tier === 'Elite' ? '#059669' : '#D97706',
                   background: tier === 'Elite' ? '#ECFDF5' : '#FFFBEB',
                   padding: '2px 8px',
@@ -698,9 +728,7 @@ export default function DashboardPage() {
         {/* Recent Activity */}
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-            <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
-              Recent Activity
-            </p>
+            <p style={{ ...overline, margin: 0 }}>Recent Activity</p>
             <a href="/deployments" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
               View all <ArrowRight size={12} />
             </a>
@@ -708,24 +736,24 @@ export default function DashboardPage() {
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {activeDeployments.slice(0, 5).map((d: Deployment) => (
-              <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F8FAFC' }}>
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{
-                    width: '6px',
-                    height: '6px',
+                    width: '7px',
+                    height: '7px',
                     borderRadius: '50%',
                     flexShrink: 0,
                     background: getDeploymentStatusColor(d.status),
                   }} />
                   <div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#0F172A', lineHeight: 1.4 }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', lineHeight: 1.4 }}>
                       {d.serviceName || d.serviceId.slice(0, 8)}
                     </div>
                     <div style={{ fontSize: '0.72rem', color: '#94A3B8', lineHeight: 1.6 }}>{d.environment}</div>
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: getDeploymentStatusColor(d.status), textTransform: 'capitalize' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: getDeploymentStatusColor(d.status), textTransform: 'capitalize' }}>
                     {d.status}
                   </div>
                   <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
