@@ -6,7 +6,6 @@ import { TrendingUp, TrendingDown, Users, Layers, Rocket, DollarSign, AlertCircl
 import { OnboardingProgress } from '@/components/onboarding/progress-indicator'
 
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
-import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { LastSynced } from '@/components/ui/last-synced'
 import { SyncStatusBanner } from '@/components/ui/sync-status-banner'
 import { DEMO_LAST_SYNCED, DEMO_SYNC_STATUS } from '@/lib/demo/demo-timestamps'
@@ -223,7 +222,6 @@ export default function DashboardPage() {
   const { socket, isConnected } = useWebSocket();
   const queryClient = useQueryClient();
   const demoMode = useDemoMode();
-  const salesDemoMode = useSalesDemo((state) => state.enabled);
   const router = useRouter();
 
   const handleExitDemoMode = () => {
@@ -433,23 +431,8 @@ export default function DashboardPage() {
               margin: 0,
               letterSpacing: '-0.02em',
             }}>
-              AI-powered AWS infrastructure command center
+              Your AI Command Center for Cost, Security & Performance
             </h1>
-            {(demoMode || salesDemoMode) && (
-              <span style={{
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                background: '#FFFBEB',
-                color: '#B45309',
-                border: '1px solid #FDE68A',
-                padding: '3px 12px',
-                borderRadius: '100px',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-              }}>
-                Demo Mode
-              </span>
-            )}
           </div>
           <p style={{
             fontSize: '0.875rem',

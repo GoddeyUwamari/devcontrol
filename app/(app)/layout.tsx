@@ -9,8 +9,7 @@ import { WelcomeModal } from '@/components/onboarding/welcome-modal';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { useOnboardingStore } from '@/lib/stores/onboarding-store';
 import { useBreadcrumbs } from '@/lib/hooks/useBreadcrumbs';
-import { DemoModeToggle } from '@/components/demo/demo-mode-toggle';
-import { SalesDemoToggle } from '@/components/demo/sales-demo-toggle';
+import { DemoBanner } from '@/components/demo/DemoBanner';
 import { Footer } from '@/components/footer';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
 
@@ -39,6 +38,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <a href="#main-content" className="skip-to-content">
         Skip to main content
       </a>
+
+      {/* Demo Mode Banner — appears above everything when demo is active */}
+      <DemoBanner />
 
       {/* Sticky Header Container - Includes nav and breadcrumbs */}
       <div className="sticky top-0 z-50 bg-white dark:bg-gray-950 shadow-sm">
@@ -73,21 +75,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Welcome Modal (Auto-opens on first login) */}
       <WelcomeModal />
-
-      {/* Demo Mode Toggles — stacked in a single fixed anchor (FIX 7) */}
-      <div style={{
-        position: 'fixed',
-        bottom: '24px',
-        right: '24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        alignItems: 'flex-end',
-        zIndex: 50,
-      }}>
-        <SalesDemoToggle />
-        <DemoModeToggle />
-      </div>
 
       {/* Footer */}
       <Footer />
