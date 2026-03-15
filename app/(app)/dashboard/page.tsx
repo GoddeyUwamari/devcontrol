@@ -449,7 +449,7 @@ export default function DashboardPage() {
               margin: 0,
               letterSpacing: '-0.02em',
             }}>
-              Command Center
+              Your AI Command Center for Cost, Security & Performance
             </h1>
           </div>
           <p style={{
