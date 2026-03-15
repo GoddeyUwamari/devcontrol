@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { userNavSections } from '@/lib/navigation-config';
+import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 
 interface UserDropdownProps {
   user: {
@@ -27,6 +28,7 @@ interface UserDropdownProps {
 
 export function UserDropdown({ user, onLogout }: UserDropdownProps) {
   const pathname = usePathname();
+  const isDemoMode = useDemoMode();
 
   return (
     <DropdownMenu>
@@ -88,6 +90,49 @@ export function UserDropdown({ user, onLogout }: UserDropdownProps) {
             </div>
           </div>
         ))}
+
+        <DropdownMenuSeparator className="my-1" />
+
+        {/* Demo Mode toggle */}
+        <div style={{ borderTop: '1px solid #F1F5F9', margin: '4px 0' }} />
+        <button
+          onClick={() => {
+            const isDemo = localStorage.getItem('devcontrol_demo_mode') === 'true'
+            const next = !isDemo
+            localStorage.setItem('devcontrol_demo_mode', String(next))
+            window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled: next } }))
+            window.location.reload()
+          }}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 12px',
+            fontSize: '0.82rem',
+            color: '#7C3AED',
+            fontWeight: 500,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            textAlign: 'left',
+            borderRadius: '6px',
+          }}
+        >
+          <span style={{
+            width: '16px',
+            height: '16px',
+            borderRadius: '4px',
+            background: '#7C3AED',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '10px',
+            color: '#fff',
+            flexShrink: 0,
+          }}>D</span>
+          {isDemoMode ? 'Exit Demo Mode' : 'Enter Demo Mode'}
+        </button>
 
         <DropdownMenuSeparator className="my-1" />
 

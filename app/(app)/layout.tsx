@@ -10,7 +10,6 @@ import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { useOnboardingStore } from '@/lib/stores/onboarding-store';
 import { useBreadcrumbs } from '@/lib/hooks/useBreadcrumbs';
 import { DemoBanner } from '@/components/demo/DemoBanner';
-import { Footer } from '@/components/footer';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
 
 /**
@@ -75,9 +74,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Welcome Modal (Auto-opens on first login) */}
       <WelcomeModal />
-
-      {/* Footer */}
-      <Footer />
 
       {/* AI Chat Widget */}
       <AIChatWidget />

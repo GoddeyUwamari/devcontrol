@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, Users, Layers, Rocket, DollarSign, AlertCircl
 import { OnboardingProgress } from '@/components/onboarding/progress-indicator'
 
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { LastSynced } from '@/components/ui/last-synced'
 import { SyncStatusBanner } from '@/components/ui/sync-status-banner'
 import { DEMO_LAST_SYNCED, DEMO_SYNC_STATUS } from '@/lib/demo/demo-timestamps'
@@ -222,6 +223,7 @@ export default function DashboardPage() {
   const { socket, isConnected } = useWebSocket();
   const queryClient = useQueryClient();
   const demoMode = useDemoMode();
+  const { enabled: salesDemoMode } = useSalesDemo();
   const router = useRouter();
 
   const handleExitDemoMode = () => {
@@ -378,12 +380,14 @@ export default function DashboardPage() {
     ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100)
     : null;
 
+  const isDemoActive = demoMode || salesDemoMode;
+
   // FIX 6 — Semantic delta color helpers
   const costDeltaColor = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706';
   const CostDeltaIcon = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus;
 
-  const securityDeltaColor = securityScore !== null && securityScore >= 80 ? '#059669' : '#DC2626';
-  const SecurityDeltaIcon = securityScore !== null && securityScore >= 80 ? TrendingUp : TrendingDown;
+  const securityDeltaColor = (securityScore !== null && securityScore >= 80) || isDemoActive ? '#059669' : '#DC2626';
+  const SecurityDeltaIcon = (securityScore !== null && securityScore >= 80) || isDemoActive ? TrendingUp : TrendingDown;
 
   const efficiencyDeltaColor = efficiencyRatio !== null
     ? efficiencyRatio >= 90 ? '#059669' : efficiencyRatio >= 75 ? '#D97706' : '#DC2626'
@@ -391,6 +395,20 @@ export default function DashboardPage() {
   const EfficiencyDeltaIcon = efficiencyRatio !== null
     ? efficiencyRatio >= 90 ? TrendingUp : efficiencyRatio >= 75 ? Minus : TrendingDown
     : Minus;
+
+  // Cloud Health Score derived values
+  const costScore = isDemoActive ? 82 : (efficiencyRatio ?? 0);
+  const securityScore_health = isDemoActive ? 87 : (securityScore ?? 0);
+  const reliabilityScore = isDemoActive ? 91 : (
+    stats ? Math.min(100, 100 - 0 * 3) : 0
+  );
+  const cloudHealthScore = Math.round((costScore + securityScore_health + reliabilityScore) / 3) || null;
+  const topRecs = [
+    { label: 'Right-size 3 EC2 instances', savings: '$720/mo', effort: 'Low' },
+    { label: 'Delete unattached EBS volumes', savings: '$210/mo', effort: 'Low' },
+    { label: 'Enable S3 Intelligent-Tiering', savings: '$340/mo', effort: 'Medium' },
+  ];
+  const criticalAlerts = demoMode ? DEMO_DASHBOARD_STATS.criticalAlerts : 0;
 
   const doraRows: { label: string; value: string; tier: 'Elite' | 'High' }[] = [
     { label: 'Deployment Frequency', value: `${demoMode ? 12 : (stats?.activeDeployments ?? 12)}/week`, tier: 'Elite' },
@@ -431,7 +449,7 @@ export default function DashboardPage() {
               margin: 0,
               letterSpacing: '-0.02em',
             }}>
-              Your AI Command Center for Cost, Security & Performance
+              Command Center
             </h1>
           </div>
           <p style={{
@@ -460,10 +478,57 @@ export default function DashboardPage() {
         </a>
       </div>
 
-      {/* ── NORTH STAR METRICS — 3 col ── */}
+      {/* ── RISK ALERT BANNER ── */}
+      {(demoMode || salesDemoMode || criticalAlerts > 0) && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          background: '#FFF7ED',
+          border: '1px solid #FED7AA',
+          borderRadius: '12px',
+          padding: '14px 20px',
+          marginBottom: '28px',
+        }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            background: '#FEF3C7',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <AlertCircle size={16} style={{ color: '#D97706' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#92400E' }}>
+              {criticalAlerts} critical alert{criticalAlerts !== 1 ? 's' : ''} require your attention
+            </span>
+            <span style={{ fontSize: '0.82rem', color: '#B45309', marginLeft: '8px' }}>
+              · Lambda invocation spike on payment-processor (+178%), CPU overload on production-worker
+            </span>
+          </div>
+          <a href="/security" style={{
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            color: '#D97706',
+            textDecoration: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            flexShrink: 0,
+          }}>
+            View alerts <ArrowRight size={12} />
+          </a>
+        </div>
+      )}
+
+      {/* ── NORTH STAR METRICS — 4 col ── */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
+        gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '24px',
         marginBottom: '32px',
       }}>
@@ -509,6 +574,36 @@ export default function DashboardPage() {
             <span style={{ fontSize: '0.8rem', color: efficiencyDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
               ${wasteAmount.toLocaleString()} identified waste
             </span>
+          </div>
+        </div>
+
+        {/* Cloud Health Score */}
+        <div style={card}>
+          <p style={overline}>Cloud Health Score</p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+            {cloudHealthScore || '—'}
+            <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {[
+              { label: 'Cost', score: costScore },
+              { label: 'Security', score: securityScore_health },
+              { label: 'Reliability', score: reliabilityScore },
+            ].map(({ label, score }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
+                  <div style={{
+                    width: `${score ?? 0}%`,
+                    height: '100%',
+                    background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626',
+                    borderRadius: '2px',
+                  }} />
+                </div>
+                <span style={{ fontSize: '0.7rem', color: '#64748B', width: '60px', textAlign: 'right' }}>
+                  {label} {score ?? '—'}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -585,7 +680,7 @@ export default function DashboardPage() {
             </div>
             <div style={{ fontSize: '0.875rem', color: securityDeltaColor, fontWeight: 600, marginTop: '8px' }}>
               {riskScoreData?.current.grade ? `Grade ${riskScoreData.current.grade} · ` : ''}
-              {securityScore !== null && securityScore >= 80 ? 'Stable · Elite Tier' : 'Below threshold'}
+              {(securityScore !== null && securityScore >= 80) || isDemoActive ? 'Stable · Elite Tier' : 'Below threshold'}
             </div>
           </div>
 
@@ -629,39 +724,33 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── LAYER 3: DECISION CARD ── */}
+      {/* ── EXECUTIVE ROI SUMMARY ── */}
       <div style={{ ...card, marginBottom: '32px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '32px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div>
-            <p style={overline}>Savings Opportunity</p>
-            <p style={{ fontSize: '1.1rem', fontWeight: 600, color: '#0F172A', lineHeight: 1.6, margin: '0 0 4px' }}>
-              We've identified{' '}
-              <span style={{ color: '#059669', fontWeight: 700 }}>
-                ${wasteAmount.toLocaleString()}/month
-              </span>{' '}
-              in immediate savings.
-            </p>
-            <p style={{ ...bodyText, margin: 0 }}>
-              Impact: High · Risk: Zero · Estimated implementation: 15 minutes
+            <p style={overline}>Executive ROI Summary</p>
+            <p style={{ fontSize: '1.05rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>
+              DEVCONTROL has saved WayUP Technology{' '}
+              <span style={{ color: '#059669' }}>${(wasteAmount * 12).toLocaleString()}</span> annualised
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: '10px', flexShrink: 0 }}>
             <a href="/cost-optimization" style={{
               background: '#7C3AED',
               color: '#fff',
-              padding: '12px 28px',
+              padding: '10px 24px',
               borderRadius: '8px',
               fontSize: '0.875rem',
               fontWeight: 600,
               textDecoration: 'none',
               whiteSpace: 'nowrap',
             }}>
-              Approve All Changes
+              Approve Savings
             </a>
-            <a href="/cost-optimization" style={{
+            <a href="/costs" style={{
               background: 'transparent',
               color: '#475569',
-              padding: '12px 20px',
+              padding: '10px 18px',
               borderRadius: '8px',
               fontSize: '0.875rem',
               fontWeight: 500,
@@ -669,14 +758,31 @@ export default function DashboardPage() {
               border: '1px solid #E2E8F0',
               whiteSpace: 'nowrap',
             }}>
-              Review First
+              View Full Report
             </a>
           </div>
         </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+          {[
+            { label: 'Monthly Savings', value: `$${wasteAmount.toLocaleString()}`, sub: 'AI-identified waste', color: '#059669' },
+            { label: 'Annual Projection', value: `$${(wasteAmount * 12).toLocaleString()}`, sub: 'At current run rate', color: '#059669' },
+            { label: 'Avg. ROI Payback', value: '< 15 min', sub: 'Zero-risk changes only', color: '#7C3AED' },
+            { label: 'Open Recommendations', value: `${topRecs.length}`, sub: 'Ready to action', color: '#D97706' },
+          ].map(({ label, value, sub, color }) => (
+            <div key={label} style={{ padding: '16px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #F1F5F9' }}>
+              <p style={{ ...overline, margin: '0 0 8px', fontSize: '0.65rem' }}>{label}</p>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: '4px' }}>
+                {value}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#94A3B8' }}>{sub}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* ── ENGINEERING VELOCITY + RECENT ACTIVITY ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+      {/* ── ENGINEERING VELOCITY + AI ADVISOR + RECENT ACTIVITY ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
 
         {/* Engineering Velocity — DORA row list */}
         <div style={card}>
@@ -713,6 +819,55 @@ export default function DashboardPage() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* AI Advisor Feed */}
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <div>
+              <p style={overline}>AI Advisor</p>
+              <p style={{ ...sectionTitle, fontSize: '1rem' }}>Top recommendations</p>
+            </div>
+            <a href="/cost-optimization" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              All <ArrowRight size={12} />
+            </a>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+            {topRecs.map((rec, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '8px',
+                  background: '#F3F0FF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Sparkles size={13} style={{ color: '#7C3AED' }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', lineHeight: 1.4, marginBottom: '2px' }}>
+                    {rec.label}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#059669' }}>{rec.savings}</span>
+                    <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>·</span>
+                    <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>Effort: {rec.effort}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: '16px', padding: '12px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #F1F5F9' }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: '2px' }}>Total potential</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.01em' }}>
+              ${topRecs.reduce((sum, r) => sum + parseInt(r.savings.replace(/[^0-9]/g, '')), 0).toLocaleString()}/mo
+            </div>
+          </div>
         </div>
 
         {/* Recent Activity */}
