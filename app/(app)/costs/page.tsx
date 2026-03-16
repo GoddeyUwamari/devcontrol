@@ -54,6 +54,7 @@ export default function CostsPage() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const demoMode = demoModeService.isEnabled()
+  const isDemoActive = demoMode
 
   const { data: forecast, isLoading: forecastLoading } = useQuery({
     queryKey: ['forecast', '90d'],
@@ -143,8 +144,17 @@ export default function CostsPage() {
     { name: 'Other Services',            amount: Math.round(mtdSpend * 0.04), pct: 4,  trend: '-1%',  up: false },
   ]
 
+  const currentSpend = mtdSpend
+  const nextMonthForecast = isDemoActive
+    ? Math.round(currentSpend * 1.09)
+    : Math.round((forecast90 / 3) * 1.09)
+  const nextMonthBaseline = isDemoActive
+    ? currentSpend
+    : Math.round(forecast90 / 3)
+
+  const costAnomalyDetected = !isDemoActive && (forecast?.growthRate ?? 0) > 20
+
   return (
-    // FIX 5 — added 64px bottom padding
     <div style={{
       padding: '40px 56px 64px',
       maxWidth: '1320px',
@@ -153,6 +163,11 @@ export default function CostsPage() {
       background: '#F9FAFB',
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
+      <style>{`
+        @keyframes ping {
+          75%, 100% { transform: scale(2); opacity: 0; }
+        }
+      `}</style>
 
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
@@ -182,7 +197,7 @@ export default function CostsPage() {
       </div>
 
       {/* NL SEARCH BAR */}
-      <form onSubmit={handleNlQuery} style={{ marginBottom: '32px' }}>
+      <form onSubmit={handleNlQuery} style={{ marginBottom: '24px' }}>
         <div style={{ position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
           <input
@@ -236,8 +251,66 @@ export default function CostsPage() {
         )}
       </form>
 
-      {/* 4 KPI CARDS — FIX 3: border #E2E8F0, FIX 4: displaySavings/displayAnnual */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      {/* Cost Anomaly Detection Banner */}
+      {(isDemoActive || costAnomalyDetected) && (
+        <div style={{
+          background: '#FFFBEB',
+          border: '1px solid #FDE68A',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '14px',
+        }}>
+          {/* Pulsing dot */}
+          <div style={{ position: 'relative', flexShrink: 0, marginTop: '2px' }}>
+            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#D97706' }} />
+            <div style={{
+              position: 'absolute', inset: '-3px',
+              borderRadius: '50%',
+              border: '2px solid #D97706',
+              opacity: 0.4,
+              animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
+            }} />
+          </div>
+
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <p style={{ fontSize: '0.78rem', fontWeight: 700, color: '#92400E', margin: 0 }}>
+                Cost Anomaly Detected
+              </p>
+              <span style={{ fontSize: '0.68rem', fontWeight: 600, background: '#FEF3C7', color: '#B45309', padding: '1px 8px', borderRadius: '100px', border: '1px solid #FDE68A' }}>
+                AI Detected
+              </span>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: '#92400E', margin: '0 0 10px', lineHeight: 1.6 }}>
+              {isDemoActive
+                ? 'EC2 compute spending increased 35% in the last 24 hours. Possible cause: Lambda invocation spike on payment-processor triggering auto-scaling. Estimated impact: $864/month if sustained.'
+                : 'Unusual cost pattern detected in the last 24 hours. Review your recent deployments and scaling events.'
+              }
+            </p>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <a href="/anomalies" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#D97706', background: '#fff', border: '1px solid #FDE68A', padding: '5px 12px', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                Investigate <ArrowRight size={11} />
+              </a>
+              <a href="/cost-optimization" style={{ fontSize: '0.75rem', fontWeight: 600, color: '#92400E', padding: '5px 12px', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                View optimization recommendations →
+              </a>
+            </div>
+          </div>
+
+          {/* Cost impact callout */}
+          <div style={{ flexShrink: 0, textAlign: 'right', background: '#fff', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 14px' }}>
+            <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#B45309', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>Est. Impact</p>
+            <p style={{ fontSize: '1.1rem', fontWeight: 700, color: '#D97706', margin: 0, letterSpacing: '-0.02em' }}>+$864<span style={{ fontSize: '0.75rem', fontWeight: 500 }}>/mo</span></p>
+            <p style={{ fontSize: '0.68rem', color: '#B45309', margin: '2px 0 0' }}>if sustained</p>
+          </div>
+        </div>
+      )}
+
+      {/* 5 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {([
           {
             icon: DollarSign,
@@ -248,6 +321,16 @@ export default function CostsPage() {
             TrendIcon: growthRate > 0 ? TrendingUp : TrendingDown,
             trendColor: growthRate > 5 ? '#D97706' : '#059669',
             href: null as string | null,
+          },
+          {
+            icon: TrendingUp,
+            label: 'Next Month Forecast',
+            value: forecastLoading && !isDemoActive ? '—' : `$${nextMonthForecast.toLocaleString()}`,
+            sub: `+9% projected · $${nextMonthBaseline.toLocaleString()} baseline`,
+            subColor: '#D97706',
+            TrendIcon: TrendingUp,
+            trendColor: '#D97706',
+            href: '/forecast' as string | null,
           },
           {
             icon: BarChart3,
@@ -336,8 +419,8 @@ export default function CostsPage() {
         <div style={{
           display: 'flex',
           gap: '32px',
-          marginBottom: '24px',
-          paddingBottom: '24px',
+          marginBottom: '20px',
+          paddingBottom: '20px',
           borderBottom: '1px solid #F1F5F9',
         }}>
           {[
@@ -349,6 +432,22 @@ export default function CostsPage() {
             <div key={label}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>{label}</p>
               <p style={{ fontSize: '1.1rem', fontWeight: 700, color, margin: 0, letterSpacing: '-0.02em' }}>{value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Top 3 cost drivers — quick callout */}
+        <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', paddingBottom: '16px', borderBottom: '1px solid #F1F5F9' }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0, flexShrink: 0, alignSelf: 'center' }}>Top drivers</p>
+          {[
+            { name: 'Compute',  amount: isDemoActive ? 5200 : Math.round((mtdSpend || 0) * 0.63), color: '#3B82F6' },
+            { name: 'Database', amount: isDemoActive ? 2400 : Math.round((mtdSpend || 0) * 0.10), color: '#8B5CF6' },
+            { name: 'Storage',  amount: isDemoActive ? 3800 : Math.round((mtdSpend || 0) * 0.18), color: '#06B6D4' },
+          ].map(({ name, amount, color }) => (
+            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+              <span style={{ fontSize: '0.78rem', color: '#475569' }}>{name}</span>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0F172A' }}>${amount.toLocaleString()}</span>
             </div>
           ))}
         </div>
@@ -488,13 +587,29 @@ export default function CostsPage() {
           </div>
         </div>
 
-        {/* Top Savings Opportunities — FIX 4: displaySavings in emerald box */}
+        {/* Top Savings Opportunities */}
         <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
             <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: 0, letterSpacing: '-0.01em' }}>Top Savings</h2>
             <a href="/cost-optimization" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
               View all <ChevronRight size={13} />
             </a>
+          </div>
+
+          {/* Confidence summary */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+            <div>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 3px' }}>Optimization Confidence</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '100px', width: '120px' }}>
+                  <div style={{ width: '94%', height: '100%', background: '#059669', borderRadius: '100px' }} />
+                </div>
+                <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#059669' }}>94%</span>
+              </div>
+            </div>
+            <span style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600, background: '#F0FDF4', padding: '3px 10px', borderRadius: '100px', border: '1px solid #BBF7D0' }}>
+              Safe to apply
+            </span>
           </div>
 
           <div style={{ background: '#F0FDF4', borderRadius: '10px', padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

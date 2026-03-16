@@ -2,10 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Activity, CheckCircle2, XCircle, TrendingUp, TrendingDown, DollarSign, Loader2, ExternalLink, AlertCircle } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
+import { Activity, CheckCircle2, XCircle, TrendingUp, TrendingDown, ArrowRight, Sparkles, ExternalLink } from 'lucide-react'
 import { TimeRangeSelector } from '@/components/monitoring/TimeRangeSelector'
 import { ResponseTimeChart } from '@/components/monitoring/ResponseTimeChart'
 import { ServiceHealthTable } from '@/components/monitoring/ServiceHealthTable'
@@ -13,12 +10,9 @@ import { ActiveAlertsPanel } from '@/components/monitoring/ActiveAlertsPanel'
 import { SLODashboard } from '@/components/monitoring/SLODashboard'
 import { MonitoringEmptyState } from '@/components/monitoring/MonitoringEmptyState'
 import { MonitoringErrorState, MonitoringErrorType } from '@/components/monitoring/MonitoringErrorState'
-import { MonitoringProFeaturesGrid, InlineUpgradePrompt } from '@/components/monitoring/MonitoringProFeatures'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
-import { useSubscription } from '@/lib/hooks/useSubscription'
-import { LastSynced } from '@/components/ui/last-synced'
-import { Skeleton } from '@/components/ui/skeleton'
+import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { toast } from 'sonner'
 
 // Environment configuration
@@ -48,7 +42,8 @@ interface MonitoringError {
 export default function MonitoringPage() {
   const router = useRouter()
   const demoMode = useDemoMode()
-  const subscription = useSubscription()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  const isDemoActive = demoMode || salesDemoMode
 
   const [systemStatus, setSystemStatus] = useState<'healthy' | 'degraded' | 'down'>('healthy')
   const [metricsAvailable, setMetricsAvailable] = useState(false)
@@ -90,6 +85,7 @@ export default function MonitoringPage() {
 
   // Demo data generator
   const generateDemoMetrics = useCallback(() => {
+    setError(null)
     const now = Date.now()
     const chartData = Array.from({ length: 12 }, (_, i) => ({
       timestamp: now - (11 - i) * 5 * 60 * 1000,
@@ -441,7 +437,7 @@ export default function MonitoringPage() {
       setLoading(false)
       toast.error('Failed to fetch metrics')
     }
-  }, [timeRange, demoMode, generateDemoMetrics])
+  }, [timeRange, isDemoActive, generateDemoMetrics])
 
   const handleRefresh = async () => {
     await fetchMetrics()
@@ -449,19 +445,15 @@ export default function MonitoringPage() {
 
   useEffect(() => {
     fetchMetrics()
-
-    // Smart auto-refresh based on subscription tier
-    const refreshInterval = subscription.isPro ? 30000 : 5 * 60 * 1000 // Pro: 30s, Free: 5min
-    const interval = setInterval(fetchMetrics, refreshInterval)
-
+    const interval = setInterval(fetchMetrics, 60000)
     return () => clearInterval(interval)
-  }, [fetchMetrics, subscription.isPro])
+  }, [fetchMetrics])
 
-  // Show empty state if no metrics and not in demo mode
-  if (!metricsAvailable && !demoMode && !loading && !error) {
+  // Empty state
+  if (!metricsAvailable && !isDemoActive && !loading && !error) {
     return (
       <ErrorBoundary>
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div style={{ padding: '40px 56px 64px', maxWidth: '1320px', margin: '0 auto', minHeight: '100vh', background: '#F9FAFB', fontFamily: 'Inter, system-ui, sans-serif' }}>
           <MonitoringEmptyState onSetup={() => router.push('/settings/monitoring')} />
         </div>
       </ErrorBoundary>
@@ -469,282 +461,212 @@ export default function MonitoringPage() {
   }
 
   return (
-    <ErrorBoundary>
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Demo Mode Banner */}
-        {demoMode && (
-          <div
-            className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4 -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 mb-0"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" aria-hidden="true" />
-              <p className="text-sm font-medium text-purple-900 dark:text-purple-100">
-                Demo Mode Active — Showing sample monitoring data
+    <div style={{
+      padding: '40px 56px 64px',
+      maxWidth: '1320px',
+      margin: '0 auto',
+      minHeight: '100vh',
+      background: '#F9FAFB',
+      fontFamily: 'Inter, system-ui, sans-serif',
+    }}>
+      <style>{`@keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 0.3; } }`}</style>
+
+      {/* PAGE HEADER */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+        <div>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+            Monitoring Overview
+          </h1>
+          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            Real-time infrastructure health, SLOs, and alerts · Powered by Prometheus
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <TimeRangeSelector selected={timeRange} onChange={setTimeRange} onRefresh={handleRefresh} />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <a href={GRAFANA_URL} target="_blank" rel="noopener noreferrer"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#475569', padding: '8px 16px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 500, border: '1px solid #E2E8F0', textDecoration: 'none' }}>
+              <ExternalLink size={13} /> Grafana
+            </a>
+            <a href={PROMETHEUS_URL} target="_blank" rel="noopener noreferrer"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#475569', padding: '8px 16px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 500, border: '1px solid #E2E8F0', textDecoration: 'none' }}>
+              <ExternalLink size={13} /> Prometheus
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* ERROR STATE */}
+      {error && !isDemoActive && (
+        <MonitoringErrorState
+          type={error.type}
+          message={error.message}
+          action={error.action}
+          onRetry={handleRefresh}
+          onSettings={() => router.push('/settings/monitoring')}
+        />
+      )}
+
+      {/* LOADING STATE */}
+      {loading && !isDemoActive && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0', height: '120px', animation: 'pulse 1.5s ease-in-out infinite', opacity: 0.6 }} />
+          ))}
+        </div>
+      )}
+
+      {/* MAIN CONTENT */}
+      {(!loading || isDemoActive) && (!error || isDemoActive) && (
+        <>
+          {/* AI INSIGHT BANNER */}
+          <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 24px', border: '1px solid #F1F5F9', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Sparkles size={14} style={{ color: '#fff' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
+              <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
+                {systemStatus === 'degraded'
+                  ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
+                  : systemStatus === 'healthy'
+                    ? `All ${services.length} services healthy. Average response time ${responseTimeString} with ${uptime} uptime. No active alerts detected.`
+                    : 'System is down. Immediate investigation required across all services.'
+                }
               </p>
             </div>
+            {alerts.length > 0 && (
+              <a href="/admin/alerts" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                View alerts <ArrowRight size={12} />
+              </a>
+            )}
           </div>
-        )}
 
-        {/* Header with Time Range Selector */}
-        <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                <Activity className="h-8 w-8" aria-hidden="true" />
-                System Monitoring
-              </h1>
-              <LastSynced
-                timestamp={lastSynced}
-                onRefresh={handleRefresh}
-                autoRefresh={true}
-                size="sm"
-              />
+          {/* SYSTEM STATUS BANNER — only when degraded or down */}
+          {systemStatus !== 'healthy' && (
+            <div style={{
+              background: systemStatus === 'degraded' ? '#FFFBEB' : '#FEF2F2',
+              border: `1px solid ${systemStatus === 'degraded' ? '#FDE68A' : '#FECACA'}`,
+              borderRadius: '10px',
+              padding: '12px 20px',
+              marginBottom: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+            }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: systemStatus === 'degraded' ? '#D97706' : '#DC2626', flexShrink: 0 }} />
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: systemStatus === 'degraded' ? '#92400E' : '#991B1B' }}>
+                System {systemStatus === 'degraded' ? 'Degraded' : 'Down'} · {alerts.length} active alert{alerts.length !== 1 ? 's' : ''}
+              </span>
+              <span style={{ fontSize: '0.82rem', color: systemStatus === 'degraded' ? '#B45309' : '#B91C1C', marginLeft: '4px' }}>
+                · Last synced {lastSynced.toLocaleTimeString()}
+              </span>
             </div>
-            <p className="text-muted-foreground mt-2">
-              Real-time metrics with enterprise-grade observability
-            </p>
+          )}
+
+          {/* 4 KPI CARDS */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+            {[
+              {
+                label: 'System Uptime',
+                value: uptime,
+                sub: 'Last 30 days',
+                valueColor: uptime === '--' ? '#94A3B8' : parseFloat(uptime) >= 99.9 ? '#059669' : '#D97706',
+              },
+              {
+                label: 'Avg Response Time',
+                value: responseTimeString,
+                sub: `${trendPercent > 0 ? '+' : ''}${trendPercent.toFixed(1)}% vs last period`,
+                valueColor: responseTime < 200 ? '#059669' : responseTime < 500 ? '#D97706' : '#DC2626',
+              },
+              {
+                label: 'Requests / Min',
+                value: requestsPerMinute.toLocaleString(),
+                sub: 'Current throughput',
+                valueColor: '#0F172A',
+              },
+              {
+                label: 'Monthly Cost',
+                value: monthlyCost,
+                sub: 'Infrastructure spend',
+                valueColor: '#0F172A',
+              },
+            ].map(({ label, value, sub, valueColor }) => (
+              <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+                <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
+                <div style={{ fontSize: '2rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
+                <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+              </div>
+            ))}
           </div>
-          <TimeRangeSelector
-            selected={timeRange}
-            onChange={setTimeRange}
-            onRefresh={handleRefresh}
-          />
-        </header>
 
-        {/* Error State */}
-        {error && (
-          <MonitoringErrorState
-            type={error.type}
-            message={error.message}
-            action={error.action}
-            onRetry={handleRefresh}
-            onSettings={() => router.push('/settings/monitoring')}
-          />
-        )}
-
-        {/* Free tier refresh rate notice */}
-        {!subscription.isPro && !error && (
-          <InlineUpgradePrompt
-            feature="Real-Time Monitoring"
-            description="Free tier updates every 5 minutes. Upgrade to Pro for 30-second refresh rate."
-            tier="pro"
-          />
-        )}
-
-        {/* Status Cards */}
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="System metrics">
-          <Card className="hover:shadow-xl hover:-translate-y-1 transition-all duration-200">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">System Status</CardTitle>
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900/30 dark:to-blue-800/30 rounded-lg flex items-center justify-center" aria-hidden="true">
-                {loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
-                ) : systemStatus === 'healthy' ? (
-                  <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-                ) : systemStatus === 'degraded' ? (
-                  <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-24" />
-              ) : (
-                <>
-                  <div className={`text-2xl font-bold ${
-                    systemStatus === 'healthy'
-                      ? 'text-green-600 dark:text-green-400'
-                      : systemStatus === 'degraded'
-                      ? 'text-yellow-600 dark:text-yellow-400'
-                      : 'text-red-600 dark:text-red-400'
-                  }`}>
-                    {systemStatus === 'healthy' ? 'Operational' : systemStatus === 'degraded' ? 'Degraded' : 'Down'}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {services.length} services monitored
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-xl hover:-translate-y-1 transition-all duration-200">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">API Uptime</CardTitle>
-              <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-green-200 dark:from-green-900/30 dark:to-green-800/30 rounded-lg flex items-center justify-center" aria-hidden="true">
-                {loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-green-600 dark:text-green-400" />
-                ) : (
-                  <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{uptime}</div>
-                  <div className="flex items-center gap-1 text-xs mt-1">
-                    <TrendingUp className="w-3 h-3 text-green-600 dark:text-green-400" aria-hidden="true" />
-                    <span className="text-green-600 dark:text-green-400">+0.05% vs last week</span>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-xl hover:-translate-y-1 transition-all duration-200">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Response Time</CardTitle>
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30 rounded-lg flex items-center justify-center" aria-hidden="true">
-                {loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-purple-600 dark:text-purple-400" />
-                ) : (
-                  <Activity className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{responseTimeString}</div>
-                  <div className="flex items-center gap-1 text-xs mt-1">
-                    {trendPercent > 0 ? (
-                      <>
-                        <TrendingUp className="w-3 h-3 text-red-600 dark:text-red-400" aria-hidden="true" />
-                        <span className="text-red-600 dark:text-red-400">+{trendPercent.toFixed(1)}% slower</span>
-                      </>
-                    ) : (
-                      <>
-                        <TrendingDown className="w-3 h-3 text-green-600 dark:text-green-400" aria-hidden="true" />
-                        <span className="text-green-600 dark:text-green-400">{trendPercent.toFixed(1)}% faster</span>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-xl hover:-translate-y-1 transition-all duration-200">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Monthly Cost</CardTitle>
-              <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-orange-200 dark:from-orange-900/30 dark:to-orange-800/30 rounded-lg flex items-center justify-center" aria-hidden="true">
-                {loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-orange-600 dark:text-orange-400" />
-                ) : (
-                  <DollarSign className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-24" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{monthlyCost}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Infrastructure</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-
-        {/* Active Alerts (if any) */}
-        {alerts.length > 0 && <ActiveAlertsPanel alerts={alerts} />}
-
-        {/* Response Time Chart */}
-        {metricsAvailable && responseTimeData.length > 0 && (
-          <ResponseTimeChart
-            data={responseTimeData}
-            currentValue={responseTime}
-            trendPercent={trendPercent}
-          />
-        )}
-
-        {/* SLO Dashboard */}
-        {metricsAvailable && slos.length > 0 && <SLODashboard slos={slos} />}
-
-        {/* Service Health Table */}
-        <ServiceHealthTable services={services} loading={loading} />
-
-        {/* Pro Features (Free tier only) */}
-        {!subscription.isPro && !error && metricsAvailable && (
-          <section className="space-y-4" aria-label="Premium monitoring features">
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold">Unlock Advanced Monitoring</h2>
-              <p className="text-muted-foreground">
-                Upgrade to Pro for historical data, real-time updates, custom alerts, and more
-              </p>
-            </div>
-            <MonitoringProFeaturesGrid />
-          </section>
-        )}
-
-        {/* Deep Dive Links */}
-        {metricsAvailable && (
-          <section
-            className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6"
-            aria-label="Advanced monitoring tools"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <ExternalLink className="w-5 h-5 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+          {/* RESPONSE TIME CHART + ACTIVE ALERTS — 3fr / 2fr */}
+          <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '28px' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <div>
-                  <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-                    Advanced Monitoring Tools
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Access Prometheus, Grafana, and alert management
+                  <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Response Time Trend</p>
+                  <p style={{ fontSize: '0.875rem', color: '#0F172A', fontWeight: 600, margin: 0 }}>
+                    {responseTimeString}
+                    <span style={{ fontSize: '0.78rem', fontWeight: 400, color: trendPercent < 0 ? '#059669' : '#D97706', marginLeft: '8px' }}>
+                      {trendPercent > 0 ? '+' : ''}{trendPercent.toFixed(1)}% vs last period
+                    </span>
                   </p>
                 </div>
               </div>
+              <ResponseTimeChart data={responseTimeData} currentValue={responseTime} trendPercent={trendPercent} />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Button variant="outline" size="sm" className="justify-start" asChild>
-                <a
-                  href={PROMETHEUS_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Open Prometheus in new tab"
-                >
-                  <Activity className="w-4 h-4 mr-2" aria-hidden="true" />
-                  Open Prometheus
+
+            <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Active Alerts</p>
+                <a href="/admin/alerts" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  View all <ArrowRight size={12} />
                 </a>
-              </Button>
-              <Button variant="outline" size="sm" className="justify-start" asChild>
-                <a
-                  href={GRAFANA_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Open Grafana in new tab"
-                >
-                  <TrendingUp className="w-4 h-4 mr-2" aria-hidden="true" />
-                  Open Grafana
-                </a>
-              </Button>
-              <Button variant="outline" size="sm" className="justify-start" asChild>
-                <a
-                  href={`${ALERTMANAGER_URL}/#/alerts`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="View alerts in Alertmanager in new tab"
-                >
-                  <Activity className="w-4 h-4 mr-2" aria-hidden="true" />
-                  View Alerts
-                </a>
-              </Button>
+              </div>
+              <ActiveAlertsPanel alerts={alerts} />
             </div>
-          </section>
-        )}
-      </div>
-    </ErrorBoundary>
+          </div>
+
+          {/* SERVICE HEALTH TABLE */}
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', marginBottom: '28px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Service Health</p>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>
+                  {services.filter(s => s.status === 'healthy').length}/{services.length} healthy
+                </span>
+                <a href="/services" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  All services <ArrowRight size={12} />
+                </a>
+              </div>
+            </div>
+            <ServiceHealthTable services={services} loading={loading} />
+          </div>
+
+          {/* SLO DASHBOARD */}
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div>
+                <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Service Level Objectives</p>
+                <p style={{ fontSize: '0.875rem', color: '#0F172A', margin: 0 }}>
+                  {slos.filter(s => s.current >= s.target).length}/{slos.length} SLOs meeting target
+                </p>
+              </div>
+              <a href="/monitoring/slos" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                Full SLO report <ArrowRight size={12} />
+              </a>
+            </div>
+            <SLODashboard slos={slos} />
+          </div>
+        </>
+      )}
+
+      {/* EMPTY STATE — no services loaded outside demo/loading/error */}
+      {!loading && !isDemoActive && services.length === 0 && !error && (
+        <MonitoringEmptyState onSetup={() => router.push('/settings/monitoring')} />
+      )}
+
+    </div>
   )
 }

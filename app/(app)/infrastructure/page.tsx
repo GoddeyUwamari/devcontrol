@@ -3,238 +3,47 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Server, AlertCircle, Database, HardDrive, Cloud, Zap, Globe, Network, RefreshCw, TrendingDown, Shield } from 'lucide-react'
+import {
+  Server, Database, HardDrive, Zap, Globe, Network,
+  RefreshCw, ArrowRight, Sparkles, Check, Plus, AlertTriangle,
+} from 'lucide-react'
 import { toast } from 'sonner'
-import Link from 'next/link'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Button } from '@/components/ui/button'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
-import type { InfrastructureResource, ResourceType, ResourceStatus } from '@/lib/types'
-import { InfrastructureStatsPreview } from '@/components/infrastructure/InfrastructureStatsPreview'
-import { InfrastructureSetupSteps } from '@/components/infrastructure/InfrastructureSetupSteps'
-import { InfrastructurePreview } from '@/components/infrastructure/InfrastructurePreview'
-import { InfrastructureValueProps } from '@/components/infrastructure/InfrastructureValueProps'
-import { InfrastructureIntegrationOptions } from '@/components/infrastructure/InfrastructureIntegrationOptions'
-import { CostOptimizationPreview } from '@/components/infrastructure/CostOptimizationPreview'
-import { ResourceTypePreview } from '@/components/infrastructure/ResourceTypePreview'
-import { InfrastructureUseCases } from '@/components/infrastructure/InfrastructureUseCases'
-import { InfrastructureFAQ } from '@/components/infrastructure/InfrastructureFAQ'
-import { InfrastructureSecurityBadges } from '@/components/infrastructure/InfrastructureSecurityBadges'
-import { InfrastructureTrustSection } from '@/components/infrastructure/InfrastructureTrustSection'
-// REMOVED: Fake testimonials - legal compliance
-// import { InfrastructureTestimonials } from '@/components/infrastructure/InfrastructureTestimonials'
-import { InfrastructureMetricsBanner } from '@/components/infrastructure/InfrastructureMetricsBanner'
-import { InfrastructureComparison } from '@/components/infrastructure/InfrastructureComparison'
-import { RiskScoreCard } from '@/components/dashboard/risk-score-card'
-import { useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
+import type { InfrastructureResource, ResourceType } from '@/lib/types'
+import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 
 type ResourceFilter = 'all' | ResourceType
 
-const resourceIcons: Record<ResourceType, typeof Server> = {
-  ec2: Server,
-  rds: Database,
-  s3: HardDrive,
-  vpc: Network,
-  lambda: Zap,
-  cloudfront: Globe,
-  elb: Cloud,
+const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
+  ec2:        { icon: Server,    color: '#3B82F6', bg: '#EFF6FF' },
+  lambda:     { icon: Zap,       color: '#D97706', bg: '#FFFBEB' },
+  rds:        { icon: Database,  color: '#059669', bg: '#F0FDF4' },
+  s3:         { icon: HardDrive, color: '#0EA5E9', bg: '#F0F9FF' },
+  elb:        { icon: Globe,     color: '#64748B', bg: '#F8FAFC' },
+  cloudfront: { icon: Globe,     color: '#64748B', bg: '#F8FAFC' },
+  vpc:        { icon: Network,   color: '#64748B', bg: '#F8FAFC' },
+  default:    { icon: Server,    color: '#64748B', bg: '#F8FAFC' },
 }
 
-function TableSkeleton() {
-  return (
-    <div className="border rounded-lg">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Service</TableHead>
-            <TableHead>Resource Type</TableHead>
-            <TableHead>AWS ID</TableHead>
-            <TableHead>Region</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Monthly Cost</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {[...Array(5)].map((_, i) => (
-            <TableRow key={i}>
-              <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-              <TableCell><Skeleton className="h-6 w-24" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-              <TableCell><Skeleton className="h-6 w-20" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center p-12 space-y-4 border rounded-lg bg-red-50">
-      <AlertCircle className="h-8 w-8 text-red-600" />
-      <div className="text-center">
-        <h3 className="text-lg font-semibold text-red-900">Error Loading Infrastructure</h3>
-        <p className="text-sm text-red-700 mt-1">{message}</p>
-      </div>
-      <Button onClick={onRetry} variant="outline">
-        Try Again
-      </Button>
-    </div>
-  )
-}
-
-function EmptyState() {
-  return (
-    <div className="space-y-16">
-      {/* Section 1: Stats Preview with Scenarios */}
-      <InfrastructureStatsPreview />
-
-      {/* Section 2: Metrics Banner */}
-      <InfrastructureMetricsBanner />
-
-      {/* Section 3: Security & Trust */}
-      <InfrastructureSecurityBadges />
-
-      {/* Section 4: Setup Steps */}
-      <InfrastructureSetupSteps />
-
-      {/* Section 5: Dashboard Preview */}
-      <InfrastructurePreview />
-
-      {/* Section 6: Value Props with ROI */}
-      <InfrastructureValueProps />
-
-      {/* REMOVED: Section 7: Testimonials - fake testimonials removed for legal compliance */}
-
-      {/* Mid-Page CTA */}
-      <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg border border-blue-500 p-10 text-center">
-        <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-          Start Your Free 14-Day Trial
-        </h2>
-        <p className="text-lg text-blue-100 mb-8 max-w-2xl mx-auto">
-          See your actual AWS costs and savings opportunities in minutes
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-4 mb-6">
-          <Button size="lg" variant="secondary" className="px-8 py-6 text-base font-semibold bg-white text-blue-600 hover:bg-blue-50">
-            Connect AWS Account
-          </Button>
-          <Button size="lg" variant="outline" className="px-8 py-6 text-base font-semibold border-white text-white hover:bg-white/10">
-            Schedule Demo
-          </Button>
-        </div>
-        {/* Trust Elements */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-blue-100">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            <span>Read-only access to your AWS account</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            <span>3-minute setup</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            <span>Enterprise-grade security</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Section 8: Comparison Table */}
-      <InfrastructureComparison />
-
-      {/* Section 9: Trust Section (customer logos) */}
-      <InfrastructureTrustSection />
-
-      {/* Section 10: Integration Options */}
-      <InfrastructureIntegrationOptions />
-
-      {/* Section 11: Cost Optimization */}
-      <CostOptimizationPreview />
-
-      {/* Section 12: Resource Types */}
-      <ResourceTypePreview />
-
-      {/* Section 13: Use Cases */}
-      <InfrastructureUseCases />
-
-      {/* Section 14: FAQ */}
-      <InfrastructureFAQ />
-
-      {/* Final CTA Footer */}
-      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-12 text-center">
-        <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-          Ready to Optimize Your AWS Infrastructure?
-        </h2>
-        <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-          Start optimizing your AWS infrastructure with complete cost visibility and control
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-4 mb-6">
-          <Button size="lg" className="px-8 py-6 text-base font-semibold">
-            Start Free 14-Day Trial
-          </Button>
-          <Button size="lg" variant="outline" className="px-8 py-6 text-base font-semibold">
-            Schedule Demo
-          </Button>
-        </div>
-        {/* Trust Elements */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            <span>No credit card required</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            <span>Cancel anytime</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            <span>14-day free trial</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+const DEMO_RESOURCES: InfrastructureResource[] = [
+  { id: 'r1', serviceId: 'svc-1', serviceName: 'api-gateway',         resourceType: 'ec2',    awsId: 'i-0a1b2c3d4e5f',    awsRegion: 'us-east-1', status: 'running', costPerMonth: 245.50, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r2', serviceId: 'svc-2', serviceName: 'auth-service',         resourceType: 'ec2',    awsId: 'arn:aws:ecs:auth',   awsRegion: 'us-east-1', status: 'running', costPerMonth: 178.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r3', serviceId: 'svc-3', serviceName: 'payment-processor',    resourceType: 'lambda', awsId: 'payment-fn-prod',    awsRegion: 'us-west-2', status: 'running', costPerMonth: 89.50,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r4', serviceId: 'svc-4', serviceName: 'notification-service', resourceType: 'lambda', awsId: 'notify-fn-prod',     awsRegion: 'us-east-1', status: 'running', costPerMonth: 156.30, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r5', serviceId: 'svc-5', serviceName: 'analytics-worker',     resourceType: 'ec2',    awsId: 'i-9z8y7x6w5v',      awsRegion: 'eu-west-1', status: 'running', costPerMonth: 312.80, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r6', serviceId: 'svc-1', serviceName: 'api-gateway',          resourceType: 'rds',    awsId: 'rds-prod-01',        awsRegion: 'us-east-1', status: 'running', costPerMonth: 445.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r7', serviceId: 'svc-2', serviceName: 'auth-service',         resourceType: 's3',     awsId: 'auth-assets-bucket', awsRegion: 'us-east-1', status: 'running', costPerMonth: 23.40,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r8', serviceId: 'svc-3', serviceName: 'payment-processor',    resourceType: 'rds',    awsId: 'rds-payments-01',    awsRegion: 'us-west-2', status: 'pending', costPerMonth: 398.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+]
 
 export default function InfrastructurePage() {
   return (
     <Suspense fallback={<div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>Loading...</div>}>
       <InfrastructureContent />
     </Suspense>
-  );
+  )
 }
 
 function InfrastructureContent() {
@@ -247,7 +56,7 @@ function InfrastructureContent() {
     (searchParams.get('resourceType') as ResourceFilter) || 'all'
   )
 
-  // Sync URL params to state
+  // Sync URL params → state
   useEffect(() => {
     const urlType = searchParams.get('resourceType') as ResourceFilter
     if (urlType && urlType !== resourceFilter) {
@@ -258,23 +67,20 @@ function InfrastructureContent() {
   // Update URL when filter changes
   const handleFilterChange = (filter: ResourceFilter) => {
     setResourceFilter(filter)
-
     const params = new URLSearchParams(searchParams.toString())
     if (filter === 'all') {
       params.delete('resourceType')
     } else {
       params.set('resourceType', filter)
     }
-
     const queryString = params.toString()
     router.push(`/infrastructure${queryString ? `?${queryString}` : ''}`)
   }
 
-  const { data: resources = [], isLoading, error, refetch } = useQuery({
+  const { data: resources = [], isLoading, refetch } = useQuery({
     queryKey: ['infrastructure', resourceFilter],
     queryFn: async () => {
       const allResources = await infrastructureService.getAll()
-      // Filter out metadata records (AWS_COST_TOTAL) that aren't actual resources
       const actualResources = allResources.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
       return resourceFilter === 'all'
         ? actualResources
@@ -282,25 +88,19 @@ function InfrastructureContent() {
     },
   })
 
-  // Get all resources including metadata to find AWS_COST_TOTAL for last sync timestamp
-  const { data: allResourcesWithMeta = [] } = useQuery({
+  // Keep all resources including metadata for last-sync timestamp
+  useQuery({
     queryKey: ['infrastructure-all'],
     queryFn: () => infrastructureService.getAll(),
   })
 
-  // Get active recommendations count
   const { data: recommendationsCount = 0 } = useQuery({
     queryKey: ['cost-recommendations-count'],
     queryFn: costRecommendationsService.getActiveCount,
   })
 
-  // Get risk score data
-  const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend('30d')
-
-  const totalMonthlyCost = resources.reduce((sum, r) => sum + r.costPerMonth, 0)
-
-  // Sync AWS mutation
-  const syncMutation = useMutation({
+  // Preserve mutation
+  useMutation({
     mutationFn: infrastructureService.syncAWS,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['infrastructure'] })
@@ -313,188 +113,281 @@ function InfrastructureContent() {
     },
   })
 
-  const handleSyncAWS = () => {
-    syncMutation.mutate()
-  }
+  const demoMode = useDemoMode()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  const isDemoActive = demoMode || salesDemoMode
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncComplete, setSyncComplete] = useState(false)
 
-  // Calculate last synced timestamp
-  const getLastSyncedText = () => {
-    const awsCostRecord = allResourcesWithMeta.find(r => (r.resourceType as string) === 'AWS_COST_TOTAL')
-    if (!awsCostRecord?.updatedAt) return 'Never synced'
-
-    const lastSynced = new Date(awsCostRecord.updatedAt)
-    const now = new Date()
-    const diffMinutes = Math.floor((now.getTime() - lastSynced.getTime()) / (1000 * 60))
-
-    if (diffMinutes < 1) return 'Just now'
-    if (diffMinutes < 60) return `${diffMinutes} ${diffMinutes === 1 ? 'minute' : 'minutes'} ago`
-
-    const diffHours = Math.floor(diffMinutes / 60)
-    if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`
-
-    const diffDays = Math.floor(diffHours / 24)
-    return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`
-  }
-
-  const getStatusBadge = (status: ResourceStatus) => {
-    const variants = {
-      running: 'bg-green-100 text-green-700 border-green-200',
-      stopped: 'bg-gray-100 text-gray-700 border-gray-200',
-      terminated: 'bg-red-100 text-red-700 border-red-200',
-      pending: 'bg-blue-100 text-blue-700 border-blue-200',
+  const handleSyncAWS = async () => {
+    if (isDemoActive) {
+      setIsSyncing(true)
+      await new Promise(r => setTimeout(r, 2000))
+      setIsSyncing(false)
+      setSyncComplete(true)
+      setTimeout(() => setSyncComplete(false), 3000)
+      return
     }
-    return (
-      <Badge className={`${variants[status]} border`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
+    try {
+      setIsSyncing(true)
+      await infrastructureService.syncAWS()
+      await refetch()
+      setSyncComplete(true)
+      setTimeout(() => setSyncComplete(false), 3000)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsSyncing(false)
+    }
   }
 
-  const getResourceTypeBadge = (resourceType: ResourceType) => {
-    const Icon = resourceIcons[resourceType]
-    return (
-      <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200">
-        <Icon className="h-4 w-4 text-blue-700" />
-        <span className="text-sm font-medium text-blue-700 uppercase">{resourceType}</span>
-      </div>
-    )
-  }
+  const displayResources = isDemoActive ? DEMO_RESOURCES : resources
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-    }).format(amount)
-  }
+  const filteredResources = displayResources.filter((r: InfrastructureResource) => {
+    if (resourceFilter === 'all') return true
+    return r.resourceType === resourceFilter
+  })
+
+  const totalResources = displayResources.length
+  const totalMonthlyCost = displayResources.reduce((sum: number, r: InfrastructureResource) => sum + (r.costPerMonth || 0), 0)
+  const activeCount = displayResources.filter((r: InfrastructureResource) => r.status === 'running').length
+  const warningCount = displayResources.filter((r: InfrastructureResource) => r.status === 'pending' || r.status === 'stopped').length
+  const displayRecommendationsCount = isDemoActive ? 3 : recommendationsCount
 
   return (
-    <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6">
-      <div className="flex items-center justify-between">
+    <div style={{
+      padding: '40px 56px 64px',
+      maxWidth: '1320px',
+      margin: '0 auto',
+      minHeight: '100vh',
+      background: '#F9FAFB',
+      fontFamily: 'Inter, system-ui, sans-serif',
+    }}>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+      {/* PAGE HEADER */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">AWS Infrastructure</h1>
-          <p className="text-base text-muted-foreground mt-2">
-            Complete visibility and cost optimization for your AWS resources
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+            Infrastructure
+          </h1>
+          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            All AWS resources across your infrastructure · Real-time cost tracking
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {recommendationsCount > 0 && (
-            <Link href="/infrastructure/recommendations">
-              <Button variant="outline" className="gap-2 relative">
-                <TrendingDown className="h-4 w-4" />
-                Cost Optimization
-                <Badge className="ml-1 bg-orange-500 text-white hover:bg-orange-600">
-                  {recommendationsCount}
-                </Badge>
-              </Button>
-            </Link>
-          )}
-          <div className="flex flex-col items-end gap-2">
-            <Button
-              onClick={handleSyncAWS}
-              disabled={syncMutation.isPending}
-              className="gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-              {syncMutation.isPending ? 'Syncing...' : 'Sync AWS'}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Last synced: {getLastSyncedText()}
-            </p>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={handleSyncAWS}
+            disabled={isSyncing}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: syncComplete ? '#059669' : '#fff',
+              color: syncComplete ? '#fff' : '#475569',
+              padding: '10px 20px', borderRadius: '8px',
+              fontSize: '0.875rem', fontWeight: 600,
+              border: `1px solid ${syncComplete ? '#059669' : '#E2E8F0'}`,
+              cursor: isSyncing ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+            }}>
+            {isSyncing
+              ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Syncing AWS...</>
+              : syncComplete
+                ? <><Check size={15} /> Sync Complete</>
+                : <><RefreshCw size={15} /> Sync AWS</>
+            }
+          </button>
+          <a href="/infrastructure/new" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
+            <Plus size={15} /> Add Resource
+          </a>
+        </div>
+      </div>
+
+      {/* AI INSIGHT BANNER */}
+      <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 24px', border: '1px solid #F1F5F9', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Sparkles size={14} style={{ color: '#fff' }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
+          <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
+            {isDemoActive
+              ? `${totalResources} AWS resources tracked across ${new Set(displayResources.map(r => r.awsRegion)).size} regions. Total infrastructure cost is $${Math.round(totalMonthlyCost).toLocaleString()}/mo. RDS payments instance is showing elevated connection wait times — review query performance and connection pool settings. ${displayRecommendationsCount} optimization opportunities identified.`
+              : totalResources === 0
+                ? 'No resources found. Click "Sync AWS" to automatically discover all EC2, Lambda, RDS, and S3 resources from your connected AWS account.'
+                : `${totalResources} resources tracked with $${Math.round(totalMonthlyCost).toLocaleString()}/mo total cost. ${warningCount > 0 ? `${warningCount} resource${warningCount > 1 ? 's' : ''} need attention.` : 'All resources healthy.'} ${displayRecommendationsCount > 0 ? `${displayRecommendationsCount} optimization recommendations available.` : ''}`
+            }
+          </p>
+        </div>
+        {displayRecommendationsCount > 0 && (
+          <a href="/infrastructure/recommendations" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+            View recommendations <ArrowRight size={12} />
+          </a>
+        )}
+      </div>
+
+      {/* 4 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+        {[
+          { label: 'Total Resources', value: totalResources,                                       sub: 'Across all regions',     valueColor: '#0F172A' },
+          { label: 'Monthly Cost',    value: `$${Math.round(totalMonthlyCost).toLocaleString()}`, sub: 'All resources combined', valueColor: '#0F172A' },
+          { label: 'Active',          value: activeCount,                                          sub: 'Running normally',       valueColor: '#059669' },
+          { label: 'Needs Attention', value: warningCount,                                         sub: 'Warning or stopped',     valueColor: warningCount > 0 ? '#D97706' : '#059669' },
+        ].map(({ label, value, sub, valueColor }) => (
+          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
+            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
+            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* RESOURCE TABLE */}
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+
+        {/* Table header + filter pills */}
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Resources</p>
+            <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredResources.length} of {totalResources} resources</p>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {(['all', 'ec2', 'lambda', 'rds', 's3', 'elb'] as const).map(type => (
+              <button
+                key={type}
+                onClick={() => handleFilterChange(type === 'all' ? 'all' : type as ResourceType)}
+                style={{
+                  padding: '4px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600,
+                  border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+                  background: resourceFilter === type ? '#7C3AED' : '#F1F5F9',
+                  color: resourceFilter === type ? '#fff' : '#475569',
+                }}>
+                {type === 'all' ? 'All Types' : type.toUpperCase()}
+              </button>
+            ))}
           </div>
         </div>
-      </div>
 
-      {/* Summary Cards Grid */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Cost Summary Card */}
-        <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
-          <CardHeader>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Server className="h-6 w-6 text-blue-600" />
-              Total Monthly Infrastructure Cost
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl md:text-5xl font-bold text-blue-900">
-              {formatCurrency(totalMonthlyCost)}
+        {/* Column headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 160px 160px 120px 110px 90px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+          {['Resource', 'Type', 'AWS ID', 'Service', 'Region', 'Monthly Cost', 'Status'].map(col => (
+            <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {isLoading && !isDemoActive ? (
+          <div style={{ padding: '48px', textAlign: 'center' }}>
+            <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
+            <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading resources...</p>
+          </div>
+        ) : filteredResources.length === 0 ? (
+          <div style={{ padding: '64px', textAlign: 'center' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Server size={22} style={{ color: '#94A3B8' }} />
             </div>
-            <p className="text-sm text-blue-700 mt-2">
-              {resources.length} {resources.length === 1 ? 'resource' : 'resources'} actively tracked
+            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No resources found</p>
+            <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px', lineHeight: 1.6 }}>
+              Sync your AWS account to automatically discover all infrastructure resources.
             </p>
-          </CardContent>
-        </Card>
+            <button
+              onClick={handleSyncAWS}
+              style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+              <RefreshCw size={14} /> Sync AWS Now
+            </button>
+          </div>
+        ) : (
+          filteredResources.map((r: InfrastructureResource, idx: number) => {
+            const typeConf = resourceTypeConfig[r.resourceType as string] || resourceTypeConfig.default
+            const Icon = typeConf.icon
+            const statusColor = r.status === 'running' ? '#059669' : r.status === 'pending' ? '#D97706' : r.status === 'stopped' ? '#64748B' : '#DC2626'
+            const statusBg    = r.status === 'running' ? '#F0FDF4' : r.status === 'pending' ? '#FFFBEB' : r.status === 'stopped' ? '#F8FAFC' : '#FEF2F2'
+            const statusLabel = r.status === 'running' ? 'Running' : r.status === 'pending' ? 'Warning' : r.status === 'stopped' ? 'Stopped' : 'Terminated'
 
-        {/* Risk Score Card */}
-        <RiskScoreCard
-          data={riskScoreData ?? null}
-          isLoading={riskScoreLoading}
-        />
+            return (
+              <div key={r.id}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '2fr 100px 160px 160px 120px 110px 90px',
+                    padding: '14px 28px',
+                    borderBottom: idx < filteredResources.length - 1 ? '1px solid #F8FAFC' : 'none',
+                    alignItems: 'center',
+                    transition: 'background 0.1s',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+                >
+                  {/* Resource name + icon */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: typeConf.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Icon size={14} style={{ color: typeConf.color }} />
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 1px' }}>
+                        {r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}
+                      </p>
+                      <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: 0 }}>
+                        Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Type badge */}
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', background: typeConf.bg, color: typeConf.color, width: 'fit-content' }}>
+                    {(r.resourceType as string).toUpperCase()}
+                  </span>
+
+                  {/* AWS ID */}
+                  <span style={{ fontSize: '0.75rem', color: '#64748B', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                    {r.awsId || '—'}
+                  </span>
+
+                  {/* Service */}
+                  <span style={{ fontSize: '0.82rem', color: '#475569' }}>
+                    {r.serviceName || '—'}
+                  </span>
+
+                  {/* Region */}
+                  <span style={{ fontSize: '0.78rem', color: '#475569', fontFamily: 'monospace' }}>
+                    {r.awsRegion || '—'}
+                  </span>
+
+                  {/* Monthly Cost */}
+                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>
+                    ${r.costPerMonth?.toFixed(2) ?? '0.00'}
+                  </span>
+
+                  {/* Status badge */}
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '100px', background: statusBg, color: statusColor, width: 'fit-content' }}>
+                    {statusLabel}
+                  </span>
+                </div>
+
+                {/* Fix-It banner for pending status */}
+                {r.status === 'pending' && (
+                  <div style={{ margin: '0 28px 8px', padding: '10px 14px', background: '#FFFBEB', borderRadius: '8px', border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <AlertTriangle size={13} style={{ color: '#D97706' }} />
+                      <span style={{ fontSize: '0.78rem', color: '#92400E', fontWeight: 500 }}>
+                        {isDemoActive
+                          ? 'RDS instance showing elevated connection wait times. Consider scaling up or reviewing query performance.'
+                          : `${(r.resourceType as string).toUpperCase()} resource requires attention. Review CloudWatch metrics for details.`
+                        }
+                      </span>
+                    </div>
+                    <a
+                      href={`/anomalies?resource=${r.awsId}`}
+                      style={{ fontSize: '0.72rem', fontWeight: 700, color: '#D97706', textDecoration: 'none', background: '#fff', border: '1px solid #FDE68A', padding: '3px 10px', borderRadius: '6px', flexShrink: 0 }}>
+                      Investigate →
+                    </a>
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
       </div>
 
-      <div className="flex items-center gap-4">
-        <Select value={resourceFilter} onValueChange={handleFilterChange}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Filter by type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Resources</SelectItem>
-            <SelectItem value="ec2">EC2 Instances</SelectItem>
-            <SelectItem value="rds">RDS Databases</SelectItem>
-            <SelectItem value="s3">S3 Buckets</SelectItem>
-            <SelectItem value="vpc">VPCs</SelectItem>
-            <SelectItem value="lambda">Lambda Functions</SelectItem>
-            <SelectItem value="cloudfront">CloudFront</SelectItem>
-            <SelectItem value="elb">Load Balancers</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <div className="text-sm text-muted-foreground">
-          {resources.length} {resources.length === 1 ? 'resource' : 'resources'}
-        </div>
-      </div>
-
-      {isLoading ? (
-        <TableSkeleton />
-      ) : error ? (
-        <ErrorState
-          message={(error as Error).message}
-          onRetry={() => refetch()}
-        />
-      ) : resources.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <div className="border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Service</TableHead>
-                <TableHead>Resource Type</TableHead>
-                <TableHead>AWS ID</TableHead>
-                <TableHead>Region</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Monthly Cost</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {resources.map((resource) => (
-                <TableRow key={resource.id} className="cursor-pointer hover:bg-muted/50">
-                  <TableCell className="font-medium">
-                    {resource.serviceName || resource.serviceId?.substring(0, 8) || 'N/A'}
-                  </TableCell>
-                  <TableCell>{getResourceTypeBadge(resource.resourceType)}</TableCell>
-                  <TableCell className="font-mono text-sm">{resource.awsId}</TableCell>
-                  <TableCell className="text-sm font-mono">{resource.awsRegion}</TableCell>
-                  <TableCell>{getStatusBadge(resource.status)}</TableCell>
-                  <TableCell className="font-semibold">
-                    {formatCurrency(resource.costPerMonth)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
     </div>
   )
 }
