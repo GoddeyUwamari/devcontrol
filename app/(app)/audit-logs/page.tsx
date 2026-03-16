@@ -2,54 +2,55 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Shield, Filter, User, Activity } from 'lucide-react';
+import { RefreshCw, Download } from 'lucide-react';
 import { auditLogsService, AuditLogFilters } from '@/lib/services/audit-logs.service';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { demoModeService } from '@/lib/services/demo-mode.service';
 import { formatDistanceToNow } from 'date-fns';
 
+// Demo log shape — separate from API shape
+type DemoLog = {
+  id: string;
+  timestamp: Date;
+  user: string;
+  action: string;
+  resource: string;
+  resourceType: string;
+  status: 'success' | 'warning' | 'error';
+  duration: number;
+  ipAddress: string;
+};
+
 export default function AuditLogsPage() {
+  // ── PRESERVED STATE ──────────────────────────────────────────────────────
   const [filters, setFilters] = useState<AuditLogFilters>({
     page: 1,
     limit: 50,
   });
 
-  // Fetch audit logs
+  // ── PRESERVED QUERIES ────────────────────────────────────────────────────
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['audit-logs', filters],
     queryFn: () => auditLogsService.getAll(filters),
   });
 
-  // Fetch unique actions for filter
   const { data: actionsData } = useQuery({
     queryKey: ['audit-log-actions'],
     queryFn: () => auditLogsService.getActions(),
   });
 
-  // Fetch unique resource types for filter
   const { data: resourceTypesData } = useQuery({
     queryKey: ['audit-log-resource-types'],
     queryFn: () => auditLogsService.getResourceTypes(),
   });
 
+  // ── PRESERVED DERIVED VALUES ─────────────────────────────────────────────
   const logs = data?.data || [];
   const total = data?.total || 0;
   const actions = actionsData || [];
-  const resourceTypes = resourceTypesData || [];
+  const resourceTypesList = resourceTypesData || [];
 
-  const updateFilter = (key: keyof AuditLogFilters, value: any) => {
+  // ── PRESERVED FILTER HELPERS ─────────────────────────────────────────────
+  const updateFilter = (key: keyof AuditLogFilters, value: unknown) => {
     setFilters({ ...filters, [key]: value, page: 1 });
   };
 
@@ -57,265 +58,283 @@ export default function AuditLogsPage() {
     setFilters({ page: 1, limit: 50 });
   };
 
-  const getActionBadge = (action: string) => {
-    if (action.startsWith('auth.')) return 'bg-purple-100 text-purple-800';
-    if (action.startsWith('resource.')) return 'bg-blue-100 text-blue-800';
-    if (action.startsWith('service.')) return 'bg-green-100 text-green-800';
-    if (action.startsWith('deployment.')) return 'bg-orange-100 text-orange-800';
-    if (action.startsWith('settings.')) return 'bg-gray-100 text-gray-800';
-    return 'bg-gray-100 text-gray-800';
+  // ── DEMO MODE ────────────────────────────────────────────────────────────
+  const demoMode = demoModeService.isEnabled();
+
+  const DEMO_LOGS: DemoLog[] = [
+    { id: '1',  timestamp: new Date(Date.now() - 1000 * 60 * 5),   user: 'sarah.chen@company.com',   action: 'deployment.create',   resource: 'api-gateway',        resourceType: 'ECS',    status: 'success', duration: 2340,  ipAddress: '192.168.1.42'  },
+    { id: '2',  timestamp: new Date(Date.now() - 1000 * 60 * 12),  user: 'mike.johnson@company.com',  action: 'security.scan',       resource: 'production-cluster', resourceType: 'EKS',    status: 'success', duration: 8920,  ipAddress: '192.168.1.15'  },
+    { id: '3',  timestamp: new Date(Date.now() - 1000 * 60 * 28),  user: 'alex.wong@company.com',     action: 'cost.optimization',   resource: 'rds-prod-01',        resourceType: 'RDS',    status: 'success', duration: 1200,  ipAddress: '192.168.1.88'  },
+    { id: '4',  timestamp: new Date(Date.now() - 1000 * 60 * 45),  user: 'sarah.chen@company.com',    action: 'config.update',       resource: 's3-assets-bucket',   resourceType: 'S3',     status: 'success', duration: 340,   ipAddress: '192.168.1.42'  },
+    { id: '5',  timestamp: new Date(Date.now() - 1000 * 60 * 67),  user: 'emma.davis@company.com',    action: 'compliance.scan',     resource: 'CIS AWS Benchmark',  resourceType: 'Policy', status: 'success', duration: 15600, ipAddress: '192.168.1.71'  },
+    { id: '6',  timestamp: new Date(Date.now() - 1000 * 60 * 89),  user: 'david.kim@company.com',     action: 'deployment.create',   resource: 'payment-processor',  resourceType: 'Lambda', status: 'success', duration: 3100,  ipAddress: '192.168.1.33'  },
+    { id: '7',  timestamp: new Date(Date.now() - 1000 * 60 * 120), user: 'mike.johnson@company.com',  action: 'anomaly.acknowledge', resource: 'production-worker',  resourceType: 'EC2',    status: 'success', duration: 180,   ipAddress: '192.168.1.15'  },
+    { id: '8',  timestamp: new Date(Date.now() - 1000 * 60 * 145), user: 'alex.wong@company.com',     action: 'auth.login',          resource: 'devcontrol-app',     resourceType: 'Auth',   status: 'success', duration: 210,   ipAddress: '203.0.113.42'  },
+    { id: '9',  timestamp: new Date(Date.now() - 1000 * 60 * 180), user: 'emma.davis@company.com',    action: 'cost.export',         resource: 'cost-report-march',  resourceType: 'Report', status: 'success', duration: 890,   ipAddress: '192.168.1.71'  },
+    { id: '10', timestamp: new Date(Date.now() - 1000 * 60 * 210), user: 'sarah.chen@company.com',    action: 'security.policy',     resource: 'iam-prod-policy',    resourceType: 'IAM',    status: 'warning', duration: 450,   ipAddress: '192.168.1.42'  },
+  ];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const displayLogs: any[] = demoMode ? DEMO_LOGS : logs;
+
+  // ── KPI VALUES ────────────────────────────────────────────────────────────
+  const totalLogs         = demoMode ? DEMO_LOGS.length : total;
+  const uniqueActionsKPI  = demoMode ? 8  : actions.length;
+  const resourceTypesKPI  = demoMode ? 9  : resourceTypesList.length;
+  const showingCount      = demoMode ? DEMO_LOGS.length : logs.length;
+
+  // ── HANDLER STUBS ─────────────────────────────────────────────────────────
+  const handleExport = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const csv = displayLogs.map((l: any) => {
+      const ts       = l.timestamp || l.created_at;
+      const user     = l.user     || l.user_email   || '';
+      const resource = l.resource || l.resource_type || '';
+      const status   = l.status   || (l.status_code != null ? (l.status_code < 300 ? 'success' : l.status_code < 500 ? 'warning' : 'error') : '');
+      const duration = l.duration || l.duration_ms  || '';
+      const ip       = l.ipAddress || l.ip_address  || '';
+      return `${new Date(ts).toISOString()},${user},${l.action},${resource},${status},${duration},${ip}`;
+    }).join('\n');
+    const blob = new Blob([`Time,User,Action,Resource,Status,Duration,IP\n${csv}`], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'audit-logs.csv'; a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const getStatusColor = (statusCode?: number) => {
-    if (!statusCode) return 'bg-gray-100 text-gray-800';
-    if (statusCode < 300) return 'bg-green-100 text-green-800';
-    if (statusCode < 400) return 'bg-blue-100 text-blue-800';
-    if (statusCode < 500) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
-  };
+  const handleRefresh = () => { refetch(); };
 
+  const handleClearFilters = () => { clearFilters(); };
+
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div style={{
+      padding: '40px 56px 64px',
+      maxWidth: '1320px',
+      margin: '0 auto',
+      minHeight: '100vh',
+      background: '#F9FAFB',
+      fontFamily: 'Inter, system-ui, sans-serif',
+    }}>
+
+      {/* ── PAGE HEADER ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Shield className="h-8 w-8" />
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
             Audit Logs
           </h1>
-          <p className="text-gray-600 mt-1">
-            Track all actions and changes in your organization
+          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            Complete activity trail for all actions and changes across your organization
           </p>
         </div>
-        <Button onClick={() => refetch()} variant="outline">
-          <Activity className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={handleExport}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}
+          >
+            <Download size={15} /> Export CSV
+          </button>
+          <button
+            onClick={handleRefresh}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+          >
+            <RefreshCw size={15} /> Refresh
+          </button>
+        </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Logs</CardDescription>
-            <CardTitle className="text-2xl">{total.toLocaleString()}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Unique Actions</CardDescription>
-            <CardTitle className="text-2xl">{actions.length}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Resource Types</CardDescription>
-            <CardTitle className="text-2xl">{resourceTypes.length}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Showing</CardDescription>
-            <CardTitle className="text-2xl">{logs.length}</CardTitle>
-          </CardHeader>
-        </Card>
+      {/* ── 4 KPI CARDS ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+        {[
+          { label: 'Total Logs',      value: totalLogs,        sub: 'All time entries',         valueColor: '#0F172A' },
+          { label: 'Unique Actions',  value: uniqueActionsKPI, sub: 'Distinct action types',    valueColor: '#7C3AED' },
+          { label: 'Resource Types',  value: resourceTypesKPI, sub: 'AWS resource categories',  valueColor: '#0F172A' },
+          { label: 'Showing',         value: showingCount,     sub: 'Current filter results',   valueColor: '#0F172A' },
+        ].map(({ label, value, sub, valueColor }) => (
+          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+              {label}
+            </p>
+            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+              {value}
+            </div>
+            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Action Filter */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Action</label>
-              <Select
-                value={filters.action || 'all'}
-                onValueChange={(value) => updateFilter('action', value === 'all' ? undefined : value)}
+      {/* ── FILTERS ── */}
+      <div style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: '1px solid #F1F5F9', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', alignItems: 'end' }}>
+          <div>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Action</p>
+            <select
+              value={filters.action || ''}
+              onChange={(e) => updateFilter('action', e.target.value || undefined)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', cursor: 'pointer', outline: 'none' }}
+            >
+              <option value="">All Actions</option>
+              {actions.map((a: string) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Resource Type</p>
+            <select
+              value={filters.resource_type || ''}
+              onChange={(e) => updateFilter('resource_type', e.target.value || undefined)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', cursor: 'pointer', outline: 'none' }}
+            >
+              <option value="">All Types</option>
+              {resourceTypesList.map((r: string) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Start Date</p>
+            <input
+              type="date"
+              value={filters.start_date || ''}
+              onChange={(e) => updateFilter('start_date', e.target.value || undefined)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>End Date</p>
+            <input
+              type="date"
+              value={filters.end_date || ''}
+              onChange={(e) => updateFilter('end_date', e.target.value || undefined)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+        </div>
+        <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={handleClearFilters}
+            style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 16px', fontSize: '0.78rem', fontWeight: 500, color: '#475569', cursor: 'pointer' }}
+          >
+            Clear Filters
+          </button>
+        </div>
+      </div>
+
+      {/* ── AUDIT LOG TABLE ── */}
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+
+        {/* Table header bar */}
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+            Recent Activity
+          </p>
+          <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>
+            Showing {showingCount} {showingCount === 1 ? 'entry' : 'entries'}
+          </p>
+        </div>
+
+        {/* Column headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: '160px 200px 180px 1fr 90px 90px 130px', padding: '10px 28px', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC' }}>
+          {['Time', 'User', 'Action', 'Resource', 'Status', 'Duration', 'IP Address'].map((col) => (
+            <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              {col}
+            </span>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {isLoading && !demoMode ? (
+          <div style={{ padding: '48px', textAlign: 'center' }}>
+            <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
+            <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading audit logs...</p>
+          </div>
+        ) : displayLogs.length === 0 ? (
+          <div style={{ padding: '64px', textAlign: 'center' }}>
+            <p style={{ fontSize: '0.875rem', color: '#94A3B8', margin: 0 }}>No audit logs found</p>
+          </div>
+        ) : (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          displayLogs.map((log: any, idx: number) => {
+            const ts       = log.timestamp ?? log.created_at;
+            const user     = log.user      ?? log.user_email    ?? '—';
+            const resource = log.resource  ?? log.resource_type ?? '—';
+            const ip       = log.ipAddress ?? log.ip_address    ?? '—';
+            const durationMs = log.duration ?? log.duration_ms;
+
+            // Normalise status from either shape
+            let status: 'success' | 'warning' | 'error' = 'success';
+            if (log.status) {
+              status = log.status as typeof status;
+            } else if (log.status_code != null) {
+              status = log.status_code < 300 ? 'success' : log.status_code < 500 ? 'warning' : 'error';
+            }
+
+            const statusColor = status === 'success' ? '#059669' : status === 'warning' ? '#D97706' : '#DC2626';
+            const statusBg    = status === 'success' ? '#F0FDF4'  : status === 'warning' ? '#FFFBEB' : '#FEF2F2';
+
+            return (
+              <div
+                key={log.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '160px 200px 180px 1fr 90px 90px 130px',
+                  padding: '14px 28px',
+                  borderBottom: idx < displayLogs.length - 1 ? '1px solid #F8FAFC' : 'none',
+                  alignItems: 'center',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#F8FAFC'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Actions" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Actions</SelectItem>
-                  {actions.map((action) => (
-                    <SelectItem key={action} value={action}>
-                      {action}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Resource Type Filter */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Resource Type</label>
-              <Select
-                value={filters.resource_type || 'all'}
-                onValueChange={(value) => updateFilter('resource_type', value === 'all' ? undefined : value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  {resourceTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Start Date */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Start Date</label>
-              <Input
-                type="date"
-                value={filters.start_date || ''}
-                onChange={(e) => updateFilter('start_date', e.target.value)}
-              />
-            </div>
-
-            {/* End Date */}
-            <div>
-              <label className="block text-sm font-medium mb-2">End Date</label>
-              <Input
-                type="date"
-                value={filters.end_date || ''}
-                onChange={(e) => updateFilter('end_date', e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Clear Filters */}
-          <div className="mt-4">
-            <Button onClick={clearFilters} variant="outline" size="sm">
-              Clear Filters
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Audit Logs Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-          <CardDescription>
-            Showing {logs.length} of {total} logs
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Resource</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>IP Address</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-28" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    </TableRow>
-                  ))
-                ) : logs.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                      No audit logs found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  logs.map((log) => (
-                    <TableRow key={log.id} className="hover:bg-gray-50">
-                      <TableCell className="text-sm">
-                        {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-gray-400" />
-                          {log.user_email || 'System'}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`font-mono text-xs ${getActionBadge(log.action)}`}>
-                          {log.action}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {log.resource_type && (
-                          <Badge variant="outline" className="text-xs">
-                            {log.resource_type}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {log.status_code && (
-                          <Badge className={`text-xs ${getStatusColor(log.status_code)}`}>
-                            {log.status_code}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-500">
-                        {log.duration_ms ? `${log.duration_ms}ms` : '-'}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-500 font-mono">
-                        {log.ip_address}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination */}
-          {total > (filters.limit || 50) && (
-            <div className="flex items-center justify-between mt-4">
-              <div className="text-sm text-gray-600">
-                Page {filters.page || 1} of {Math.ceil(total / (filters.limit || 50))}
+                <span style={{ fontSize: '0.78rem', color: '#475569' }}>
+                  {new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+                <span style={{ fontSize: '0.78rem', color: '#1E293B', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {user}
+                </span>
+                <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#7C3AED', background: '#F5F3FF', padding: '2px 8px', borderRadius: '4px', width: 'fit-content' }}>
+                  {log.action}
+                </span>
+                <span style={{ fontSize: '0.78rem', color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {resource}
+                </span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', width: 'fit-content', background: statusBg, color: statusColor, textTransform: 'capitalize' }}>
+                  {status}
+                </span>
+                <span style={{ fontSize: '0.78rem', color: '#475569' }}>
+                  {durationMs != null ? `${(durationMs / 1000).toFixed(1)}s` : '—'}
+                </span>
+                <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#64748B' }}>
+                  {ip}
+                </span>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFilters({ ...filters, page: (filters.page || 1) - 1 })}
-                  disabled={(filters.page || 1) === 1}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFilters({ ...filters, page: (filters.page || 1) + 1 })}
-                  disabled={(filters.page || 1) >= Math.ceil(total / (filters.limit || 50))}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            );
+          })
+        )}
+      </div>
+
+      {/* ── PAGINATION (preserved) ── */}
+      {!demoMode && total > (filters.limit || 50) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '20px' }}>
+          <span style={{ fontSize: '0.78rem', color: '#64748B' }}>
+            Page {filters.page || 1} of {Math.ceil(total / (filters.limit || 50))}
+          </span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => setFilters({ ...filters, page: (filters.page || 1) - 1 })}
+              disabled={(filters.page || 1) === 1}
+              style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 16px', fontSize: '0.78rem', fontWeight: 500, color: (filters.page || 1) === 1 ? '#94A3B8' : '#475569', cursor: (filters.page || 1) === 1 ? 'not-allowed' : 'pointer' }}
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setFilters({ ...filters, page: (filters.page || 1) + 1 })}
+              disabled={(filters.page || 1) >= Math.ceil(total / (filters.limit || 50))}
+              style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 16px', fontSize: '0.78rem', fontWeight: 500, color: (filters.page || 1) >= Math.ceil(total / (filters.limit || 50)) ? '#94A3B8' : '#475569', cursor: (filters.page || 1) >= Math.ceil(total / (filters.limit || 50)) ? 'not-allowed' : 'pointer' }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

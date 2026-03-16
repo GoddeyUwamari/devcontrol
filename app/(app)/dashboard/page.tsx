@@ -441,7 +441,7 @@ export default function DashboardPage() {
         marginBottom: '40px',
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
             <h1 style={{
               fontSize: '1.75rem',
               fontWeight: 700,
