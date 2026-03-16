@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, Layers, Server, DollarSign, Shield, GitBranch,
+  Layers, Server, DollarSign, Shield, GitBranch,
   Plus, Rocket, Activity, Lightbulb, Building, TrendingDown,
   BarChart3, FileText, Sparkles, AlertTriangle, CheckSquare,
   ClipboardList, Users, Building2, Code, ChevronDown, BellDot,
-  Search, Menu, X,
+  Search, Menu, X, Bell, Clock, Target,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -34,7 +34,6 @@ type NavItem =
   | { label: string; icon: React.ElementType; children: NavChild[]; href?: undefined };
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   {
     label: 'Services',
     icon: Layers,
@@ -75,6 +74,16 @@ const navItems: NavItem[] = [
       { label: 'Anomalies', href: '/anomalies', icon: AlertTriangle, desc: 'Detected threats and issues' },
       { label: 'Compliance', href: '/compliance/frameworks', icon: CheckSquare, desc: 'CIS, NIST, SOC 2 frameworks' },
       { label: 'Audit Logs', href: '/audit-logs', icon: ClipboardList, desc: 'Full activity audit trail' },
+    ],
+  },
+  {
+    label: 'Observability',
+    icon: Activity,
+    children: [
+      { label: 'Monitoring Overview', href: '/monitoring',           icon: BarChart3, desc: 'SLOs, response time, health'   },
+      { label: 'Active Alerts',       href: '/admin/alerts',         icon: Bell,      desc: 'Live alerts and incidents'      },
+      { label: 'Alert History',       href: '/admin/alert-history',  icon: Clock,     desc: 'Historical alert timeline'      },
+      { label: 'SLO Dashboard',       href: '/monitoring/slos',      icon: Target,    desc: 'Service level objectives'       },
     ],
   },
   {

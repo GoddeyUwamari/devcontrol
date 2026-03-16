@@ -306,16 +306,6 @@ export const userNavSections: NavSection[] = [
         href: '/pricing',
         icon: DollarSign,
       },
-      {
-        label: 'Alerts',
-        href: '/admin/alerts',
-        icon: Bell,
-      },
-      {
-        label: 'Audit Logs',
-        href: '/audit-logs',
-        icon: Shield,
-      },
     ],
   },
   {

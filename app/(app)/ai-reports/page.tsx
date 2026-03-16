@@ -1,14 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAIReports } from '@/lib/hooks/useAIReports'
 import { GeneratedReport, ReportHistoryItem } from '@/lib/services/ai-reports.service'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Loader2, Sparkles, TrendingUp, Shield, Rocket, AlertCircle, Download, Trash2 } from 'lucide-react'
+import { Sparkles, RefreshCw, Download } from 'lucide-react'
 import { toast } from 'sonner'
+import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 
 export default function AIReportsPage() {
+  const router = useRouter()
   const { generateReport, getReportHistory, deleteReport, isGenerating, isFetchingHistory, error } = useAIReports()
   const [currentReport, setCurrentReport] = useState<GeneratedReport | null>(null)
   const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([])
@@ -24,23 +26,19 @@ export default function AIReportsPage() {
   }
 
   const handleGenerateReport = async () => {
-    toast.info('Generating AI report...', {
-      icon: <Sparkles className="h-4 w-4 animate-pulse" />
-    })
+    toast.info('Generating AI report...')
 
     const report = await generateReport({
       dateRange: {
         from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        to: new Date().toISOString().split('T')[0]
+        to: new Date().toISOString().split('T')[0],
       },
-      reportType: 'weekly_summary'
+      reportType: 'weekly_summary',
     })
 
     if (report) {
       setCurrentReport(report)
-      toast.success('Report generated successfully!', {
-        icon: <Sparkles className="h-4 w-4" />
-      })
+      toast.success('Report generated successfully!')
       loadReportHistory()
     } else {
       toast.error(error || 'Failed to generate report')
@@ -64,188 +62,221 @@ export default function AIReportsPage() {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
     })
   }
 
+  const demoMode = useDemoMode()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  const isDemoActive = demoMode || salesDemoMode
+
+  const DEMO_REPORTS = [
+    {
+      id: 'report-1',
+      title: 'Monthly Cost Analysis — March 2026',
+      type: 'cost_analysis',
+      status: 'completed',
+      createdAt: new Date(Date.now() - 1000 * 60 * 30),
+      summary: 'AWS spend increased 14.3% to $6,847/mo driven primarily by Lambda invocation spikes in payment-processor. Three zero-risk optimizations identified totaling $1,922/mo in savings. Recommend approving reserved instance pricing for RDS immediately.',
+      metrics: { savings: '$1,922/mo', risk: 'Low', confidence: '95%' },
+    },
+    {
+      id: 'report-2',
+      title: 'Security Posture Report — Q1 2026',
+      type: 'security',
+      status: 'completed',
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6),
+      summary: 'Security score improved to 87/100, above industry benchmark of 74. CIS AWS Benchmark at 87%, NIST CSF at 91%. PCI-DSS remains at 68% — remediation plan required within 30 days. No critical vulnerabilities detected.',
+      metrics: { score: '87/100', frameworks: '3/4 passing', vulnerabilities: '0 critical' },
+    },
+    {
+      id: 'report-3',
+      title: 'Infrastructure Health Report — March 2026',
+      type: 'infrastructure',
+      status: 'completed',
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
+      summary: 'All 8 services operational with 99.97% uptime. Engineering velocity rated Elite (top 10%). Deployment frequency at 12/week with 2.4hr lead time. One anomaly detected: CPU spike on production-worker-overloaded requires investigation.',
+      metrics: { uptime: '99.97%', services: '8/8 healthy', velocity: 'Elite' },
+    },
+    {
+      id: 'report-4',
+      title: 'Executive Summary — February 2026',
+      type: 'executive',
+      status: 'completed',
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
+      summary: 'DevControl identified $23,064 in annualized savings this quarter. Security posture improved 5 points. Infrastructure efficiency at 67% with clear path to 85%+ via approved optimizations. ROI on DevControl platform: 12x.',
+      metrics: { savings: '$23,064/yr', roi: '12x', efficiency: '67%' },
+    },
+  ]
+
+  const displayReports = isDemoActive ? DEMO_REPORTS : (reportHistory || [])
+
+  const reportsThisMonth = isDemoActive ? 4 : displayReports.filter((r: any) => {
+    const d = new Date(r.createdAt || r.created_at)
+    const now = new Date()
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+  }).length
+
+  const lastGenerated = isDemoActive
+    ? 'Today, 30 minutes ago'
+    : displayReports.length > 0
+      ? new Date((displayReports[0] as any).createdAt || (displayReports[0] as any).created_at).toLocaleString()
+      : 'Never'
+
+  const typeConfig: Record<string, { color: string; bg: string; label: string }> = {
+    cost_analysis:  { color: '#3B82F6', bg: '#EFF6FF', label: 'Cost Analysis'    },
+    security:       { color: '#059669', bg: '#F0FDF4', label: 'Security'          },
+    infrastructure: { color: '#7C3AED', bg: '#F5F3FF', label: 'Infrastructure'    },
+    executive:      { color: '#D97706', bg: '#FFFBEB', label: 'Executive Summary' },
+  }
+
+  const isLoading = isFetchingHistory
+
+  const handleViewReport = (id: string) => router.push(`/ai-reports/${id}`)
+  const handleDownloadReport = (id: string) => console.log('Download', id)
+
   return (
-    <div className="p-8 space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div style={{
+      padding: '40px 56px 64px',
+      maxWidth: '1320px',
+      margin: '0 auto',
+      minHeight: '100vh',
+      background: '#F9FAFB',
+      fontFamily: 'Inter, system-ui, sans-serif',
+    }}>
+
+      {/* PAGE HEADER */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Sparkles className="h-8 w-8 text-purple-600" />
-            AI-Powered Reports
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+            AI Reports
           </h1>
-          <p className="text-muted-foreground mt-2">
-            Automatic executive summaries and insights powered by Claude AI
+          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            AI-powered executive summaries and infrastructure insights
           </p>
         </div>
-        <Button
+        <button
           onClick={handleGenerateReport}
           disabled={isGenerating}
-          size="lg"
-          className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Generating...
-            </>
-          ) : (
-            <>
-              <Sparkles className="h-4 w-4 mr-2" />
-              Generate Report
-            </>
-          )}
-        </Button>
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            background: isGenerating ? '#A78BFA' : '#7C3AED',
+            color: '#fff', padding: '10px 20px', borderRadius: '8px',
+            fontSize: '0.875rem', fontWeight: 600, border: 'none',
+            cursor: isGenerating ? 'not-allowed' : 'pointer',
+          }}>
+          {isGenerating
+            ? <><RefreshCw size={15} /> Generating...</>
+            : <><Sparkles size={15} /> Generate Report</>
+          }
+        </button>
       </div>
 
-      {/* Current Report */}
-      {currentReport && (
-        <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-blue-50">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Latest Report</span>
-              {currentReport.metadata && (
-                <span className="text-xs font-normal text-muted-foreground">
-                  Generated in {currentReport.metadata.generationTime}ms
-                  {currentReport.metadata.wasFallback && ' (Fallback)'}
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Executive Summary */}
-            <div>
-              <h3 className="font-semibold mb-2 flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-purple-600" />
-                Executive Summary
-              </h3>
-              <p className="text-sm leading-relaxed">{currentReport.executive_summary}</p>
-            </div>
+      {/* 3 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
+        {[
+          { label: 'Reports This Month', value: reportsThisMonth, sub: 'Generated reports',                      valueColor: '#7C3AED' },
+          { label: 'Last Generated',     value: lastGenerated,   sub: 'Most recent report',                     valueColor: '#0F172A' },
+          { label: 'Report Types',       value: 4,               sub: 'Cost, Security, Infra, Executive',       valueColor: '#0F172A' },
+        ].map(({ label, value, sub, valueColor }) => (
+          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
+            <div style={{ fontSize: typeof value === 'number' ? '2.5rem' : '1.1rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.02em', lineHeight: 1.2, marginBottom: '8px' }}>{value}</div>
+            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+          </div>
+        ))}
+      </div>
 
-            {/* Key Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div className="bg-white p-4 rounded-lg border">
-                <div className="text-2xl font-bold">${currentReport.key_metrics.totalCost.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Total Cost</div>
-                <div className="text-xs text-green-600">{currentReport.key_metrics.costChange}</div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border">
-                <div className="text-2xl font-bold">{currentReport.key_metrics.securityScore}</div>
-                <div className="text-xs text-muted-foreground">Security Score</div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border">
-                <div className="text-2xl font-bold">{currentReport.key_metrics.deploymentCount}</div>
-                <div className="text-xs text-muted-foreground">Deployments</div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border">
-                <div className="text-2xl font-bold">{currentReport.key_metrics.resourceCount}</div>
-                <div className="text-xs text-muted-foreground">Resources</div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border">
-                <div className="text-2xl font-bold">{currentReport.alerts_summary.critical}</div>
-                <div className="text-xs text-muted-foreground">Critical Alerts</div>
-              </div>
-            </div>
+      {/* REPORTS LIST */}
+      {isLoading && !isDemoActive ? (
+        <div style={{ background: '#fff', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+          <RefreshCw size={24} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
+          <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading reports...</p>
+        </div>
+      ) : displayReports.length === 0 ? (
+        <div style={{ background: '#fff', borderRadius: '16px', padding: '64px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Sparkles size={22} style={{ color: '#94A3B8' }} />
+          </div>
+          <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No reports generated yet</p>
+          <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px', lineHeight: 1.6 }}>
+            Generate your first AI report to get executive summaries of your AWS infrastructure.
+          </p>
+          <button
+            onClick={handleGenerateReport}
+            style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <Sparkles size={14} /> Generate First Report
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {displayReports.map((report: any) => {
+            const type = typeConfig[report.type] || typeConfig.executive
+            return (
+              <div key={report.id} style={{
+                background: '#fff', borderRadius: '14px',
+                padding: '24px 28px', border: '1px solid #F1F5F9',
+                transition: 'border-color 0.15s',
+              }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#E2E8F0' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#F1F5F9' }}>
 
-            {/* Top Recommendations */}
-            {currentReport.recommendations.length > 0 && (
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Rocket className="h-4 w-4 text-blue-600" />
-                  Top Recommendations
-                </h3>
-                <div className="space-y-2">
-                  {currentReport.recommendations.slice(0, 3).map((rec, idx) => (
-                    <div key={idx} className="bg-white p-3 rounded-lg border flex items-start gap-3">
-                      <div className={`mt-0.5 ${
-                        rec.priority === 'high' ? 'text-red-600' :
-                        rec.priority === 'medium' ? 'text-yellow-600' :
-                        'text-blue-600'
-                      }`}>
-                        {rec.category === 'cost' ? <TrendingUp className="h-4 w-4" /> :
-                         rec.category === 'security' ? <Shield className="h-4 w-4" /> :
-                         <AlertCircle className="h-4 w-4" />}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{rec.title}</div>
-                        <div className="text-xs text-muted-foreground">{rec.description}</div>
-                        <div className="text-xs text-green-600 mt-1">{rec.estimated_impact}</div>
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        rec.priority === 'high' ? 'bg-red-100 text-red-700' :
-                        rec.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-blue-100 text-blue-700'
-                      }`}>
-                        {rec.priority}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '24px', alignItems: 'start' }}>
+                  <div>
+                    {/* Title row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0F172A' }}>
+                        {report.title || (report.report_type
+                          ? report.report_type.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                          : 'Report')}
+                      </span>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: type.bg, color: type.color, flexShrink: 0 }}>
+                        {type.label}
                       </span>
                     </div>
-                  ))}
+
+                    {/* Summary */}
+                    <p style={{ fontSize: '0.82rem', color: '#475569', margin: '0 0 14px', lineHeight: 1.7 }}>
+                      {report.summary || report.report_data?.executive_summary || '—'}
+                    </p>
+
+                    {/* Metrics pills */}
+                    {report.metrics && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {Object.entries(report.metrics).map(([key, val]) => (
+                          <span key={key} style={{ fontSize: '0.75rem', fontWeight: 600, padding: '3px 10px', borderRadius: '100px', background: '#F8FAFC', color: '#475569', border: '1px solid #F1F5F9' }}>
+                            {String(val)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right side */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px', flexShrink: 0 }}>
+                    <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+                      {new Date(report.createdAt || report.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => handleViewReport(report.id)}
+                        style={{ background: '#7C3AED', color: '#fff', padding: '6px 14px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+                        View Report
+                      </button>
+                      <button
+                        onClick={() => handleDownloadReport(report.id)}
+                        style={{ background: 'none', color: '#475569', padding: '6px 12px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Download size={12} /> PDF
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            )
+          })}
+        </div>
       )}
 
-      {/* Report History */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Report History</CardTitle>
-          <CardDescription>Previously generated AI reports</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isFetchingHistory ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : reportHistory.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Sparkles className="h-12 w-12 mx-auto mb-2 opacity-30" />
-              <p>No reports yet. Generate your first AI-powered report!</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {reportHistory.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">
-                      {item.report_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatDate(item.date_range_from)} - {formatDate(item.date_range_to)}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(item.created_at)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setCurrentReport(item.report_data)}
-                    >
-                      View
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteReport(item.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-600" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

@@ -2,30 +2,13 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { AlertCircle, FileText, Plus } from 'lucide-react'
+import { Download, FileText, RefreshCw } from 'lucide-react'
 import api from '@/lib/api'
 import { InvoiceFormDialog } from '@/components/invoices/invoice-form-dialog'
 import { InvoiceActions } from '@/components/invoices/invoice-actions'
-import { Breadcrumb } from '@/components/navigation/breadcrumb'
 import type { Invoice } from '@/lib/types'
+import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 
 export default function InvoicesPage() {
   const [statusFilter, setStatusFilter] = useState('all')
@@ -58,174 +41,263 @@ export default function InvoicesPage() {
     })
   }
 
-  // Get status badge styling
-  const getStatusBadge = (status: Invoice['status']) => {
-    const variants: Record<Invoice['status'], string> = {
-      draft: 'bg-gray-100 text-gray-700 hover:bg-gray-100',
-      paid: 'bg-green-100 text-green-700 hover:bg-green-100',
-      open: 'bg-blue-100 text-blue-700 hover:bg-blue-100',
-      void: 'bg-red-100 text-red-700 hover:bg-red-100',
-      uncollectible: 'bg-orange-100 text-orange-700 hover:bg-orange-100',
-    }
+  const demoMode = useDemoMode()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  const isDemoActive = demoMode || salesDemoMode
 
-    return (
-      <Badge className={variants[status]} variant="secondary">
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
-  }
+  const DEMO_INVOICES = [
+    {
+      id: 'inv-2026-03',
+      period: 'March 2026',
+      issueDate: new Date('2026-03-01'),
+      dueDate: new Date('2026-03-31'),
+      amount: 6847.20,
+      status: 'paid',
+      services: ['EC2', 'RDS', 'S3', 'Lambda'],
+      downloadUrl: '#',
+    },
+    {
+      id: 'inv-2026-02',
+      period: 'February 2026',
+      issueDate: new Date('2026-02-01'),
+      dueDate: new Date('2026-02-28'),
+      amount: 5983.50,
+      status: 'paid',
+      services: ['EC2', 'RDS', 'S3', 'Lambda', 'CloudFront'],
+      downloadUrl: '#',
+    },
+    {
+      id: 'inv-2026-01',
+      period: 'January 2026',
+      issueDate: new Date('2026-01-01'),
+      dueDate: new Date('2026-01-31'),
+      amount: 6124.80,
+      status: 'paid',
+      services: ['EC2', 'RDS', 'S3'],
+      downloadUrl: '#',
+    },
+    {
+      id: 'inv-2025-12',
+      period: 'December 2025',
+      issueDate: new Date('2025-12-01'),
+      dueDate: new Date('2025-12-31'),
+      amount: 5750.00,
+      status: 'paid',
+      services: ['EC2', 'RDS', 'S3', 'Lambda'],
+      downloadUrl: '#',
+    },
+    {
+      id: 'inv-2025-11',
+      period: 'November 2025',
+      issueDate: new Date('2025-11-01'),
+      dueDate: new Date('2025-11-30'),
+      amount: 5420.30,
+      status: 'paid',
+      services: ['EC2', 'RDS', 'S3'],
+      downloadUrl: '#',
+    },
+    {
+      id: 'inv-2025-10',
+      period: 'October 2025',
+      issueDate: new Date('2025-10-01'),
+      dueDate: new Date('2025-10-31'),
+      amount: 4998.60,
+      status: 'paid',
+      services: ['EC2', 'RDS', 'S3', 'CloudWatch'],
+      downloadUrl: '#',
+    },
+  ]
+
+  const displayInvoices = isDemoActive ? DEMO_INVOICES : (invoices || [])
+  const displayError = isDemoActive ? null : error
+
+  const totalThisMonth = isDemoActive ? 6847.20 : (displayInvoices[0]?.amount ?? 0)
+  const totalPaid = isDemoActive
+    ? DEMO_INVOICES.reduce((sum, inv) => sum + inv.amount, 0)
+    : displayInvoices.filter((inv: any) => inv.status === 'paid').reduce((sum: number, inv: any) => sum + inv.amount, 0)
+  const outstanding = isDemoActive ? 0 : displayInvoices.filter((inv: any) => inv.status === 'outstanding').reduce((sum: number, inv: any) => sum + inv.amount, 0)
 
   return (
-    <div className="space-y-6 px-4 md:px-6 lg:px-8">
-      {/* Breadcrumb */}
-      <Breadcrumb
-        items={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Invoices', current: true },
-        ]}
-      />
+    <div style={{
+      padding: '40px 56px 64px',
+      maxWidth: '1320px',
+      margin: '0 auto',
+      minHeight: '100vh',
+      background: '#F9FAFB',
+      fontFamily: 'Inter, system-ui, sans-serif',
+    }}>
 
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
+      {/* PAGE HEADER */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
-          <p className="text-muted-foreground mt-2">
-            Manage and track all invoices across your tenants
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+            Invoices
+          </h1>
+          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            AWS billing history and monthly invoice management
           </p>
         </div>
-        <Button onClick={() => setCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Invoice
-        </Button>
+        <button
+          onClick={() => {
+            const csv = displayInvoices.map((inv: any) =>
+              `${inv.period},${inv.id},${inv.amount},${inv.status}`
+            ).join('\n')
+            const blob = new Blob([`Period,Invoice ID,Amount,Status\n${csv}`], { type: 'text/csv' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url; a.download = 'invoices.csv'; a.click()
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+          <Download size={15} /> Export CSV
+        </button>
       </div>
 
-      {/* Filter Controls */}
-      <div className="flex items-center gap-4">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="All Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="void">Void</SelectItem>
-            <SelectItem value="uncollectible">Uncollectible</SelectItem>
-          </SelectContent>
-        </Select>
+      {/* 3 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
+        {[
+          { label: 'This Month',  value: `$${totalThisMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: 'Current billing period',                                           valueColor: '#0F172A'  },
+          { label: 'Total Paid',  value: `$${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,     sub: 'All time paid invoices',                                          valueColor: '#059669'  },
+          { label: 'Outstanding', value: `$${outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,   sub: outstanding > 0 ? 'Requires payment' : 'All invoices paid', valueColor: outstanding > 0 ? '#DC2626' : '#059669' },
+        ].map(({ label, value, sub, valueColor }) => (
+          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
+            <div style={{ fontSize: '2rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
+            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Loading State */}
-      {isLoading && (
-        <div className="border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice #</TableHead>
-                <TableHead>Tenant</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead className="w-[80px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[...Array(5)].map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell>
-                    <Skeleton className="h-4 w-32" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-40" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-24" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-6 w-20" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-28" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-8 w-8" />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      {/* STATUS FILTER */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px' }}>
+          {['all', 'paid', 'outstanding', 'overdue'].map(f => (
+            <button
+              key={f}
+              onClick={() => setStatusFilter(f)}
+              style={{
+                padding: '7px 18px', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 600,
+                border: 'none', cursor: 'pointer', transition: 'all 0.15s', textTransform: 'capitalize',
+                background: (statusFilter === f || (!statusFilter && f === 'all')) ? '#fff' : 'transparent',
+                color: (statusFilter === f || (!statusFilter && f === 'all')) ? '#0F172A' : '#64748B',
+                boxShadow: (statusFilter === f || (!statusFilter && f === 'all')) ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              }}>
+              {f === 'all' ? 'All Invoices' : f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>
+          {displayInvoices.length} invoice{displayInvoices.length !== 1 ? 's' : ''}
+        </p>
+      </div>
+
+      {/* ERROR STATE */}
+      {displayError && (
+        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', padding: '14px 20px', marginBottom: '24px' }}>
+          <p style={{ fontSize: '0.875rem', color: '#DC2626', margin: 0 }}>
+            Unable to load invoices. Please try again or contact support if the issue persists.
+          </p>
         </div>
       )}
 
-      {/* Error State */}
-      {error && (
-        <div className="flex flex-col items-center justify-center p-12 space-y-4 border rounded-lg">
-          <div className="h-12 w-12 rounded-full bg-red-100 flex items-center justify-center">
-            <AlertCircle className="h-6 w-6 text-red-600" />
-          </div>
-          <div className="text-center space-y-2">
-            <p className="font-medium text-foreground">Failed to load invoices</p>
-            <p className="text-sm text-muted-foreground">
-              {error instanceof Error ? error.message : 'An error occurred'}
-            </p>
-          </div>
-          <Button onClick={() => refetch()} variant="outline">
-            Try Again
-          </Button>
+      {/* INVOICE TABLE */}
+      {isLoading && !isDemoActive ? (
+        <div style={{ background: '#fff', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+          <RefreshCw size={24} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
+          <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading invoices...</p>
         </div>
-      )}
-
-      {/* Empty State */}
-      {!isLoading && !error && invoices && invoices.length === 0 && (
-        <div className="flex flex-col items-center justify-center p-12 space-y-4 border rounded-lg">
-          <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-            <FileText className="h-6 w-6 text-muted-foreground" />
+      ) : displayInvoices.length === 0 ? (
+        <div style={{ background: '#fff', borderRadius: '16px', padding: '64px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <FileText size={22} style={{ color: '#94A3B8' }} />
           </div>
-          <div className="text-center space-y-2">
-            <p className="font-medium text-foreground">No invoices found</p>
-            <p className="text-sm text-muted-foreground">
-              {statusFilter !== 'all'
-                ? `No ${statusFilter} invoices to display`
-                : 'There are no invoices to display'}
-            </p>
-          </div>
+          <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No invoices found</p>
+          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            AWS billing invoices will appear here once your account is connected.
+          </p>
         </div>
-      )}
+      ) : (
+        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+          {/* Column headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 160px 160px 100px 120px', gap: '0', padding: '12px 28px', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC' }}>
+            {['Billing Period', 'Invoice ID', 'Issue Date', 'Amount', 'Status', 'Actions'].map(col => (
+              <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
+            ))}
+          </div>
 
-      {/* Data Table */}
-      {!isLoading && !error && invoices && invoices.length > 0 && (
-        <div className="border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice #</TableHead>
-                <TableHead>Tenant</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead className="w-[80px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {invoices.map((invoice: Invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">
-                    {invoice.invoiceNumber || invoice.id.substring(0, 8)}
-                  </TableCell>
-                  <TableCell>{invoice.tenantName || 'N/A'}</TableCell>
-                  <TableCell>
-                    {formatCurrency(invoice.amount || invoice.totalAmount)}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(invoice.status)}</TableCell>
-                  <TableCell>{formatDate(invoice.dueDate)}</TableCell>
-                  <TableCell>
-                    <InvoiceActions invoice={invoice} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          {/* Invoice rows */}
+          {displayInvoices.map((inv: any, idx: number) => {
+            const isPaid = inv.status === 'paid'
+            const isOutstanding = inv.status === 'outstanding'
+            const statusColor = isPaid ? '#059669' : isOutstanding ? '#D97706' : '#DC2626'
+            const statusBg    = isPaid ? '#F0FDF4' : isOutstanding ? '#FFFBEB' : '#FEF2F2'
+            const statusLabel = isPaid ? 'Paid' : isOutstanding ? 'Outstanding' : 'Overdue'
+
+            return (
+              <div
+                key={inv.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 140px 160px 160px 100px 120px',
+                  gap: '0',
+                  padding: '16px 28px',
+                  borderBottom: idx < displayInvoices.length - 1 ? '1px solid #F8FAFC' : 'none',
+                  alignItems: 'center',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+              >
+                {/* Period */}
+                <div>
+                  <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 2px' }}>
+                    {inv.period || inv.invoiceNumber || inv.id?.substring(0, 8)}
+                  </p>
+                  {inv.services && (
+                    <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: 0 }}>
+                      {inv.services.slice(0, 3).join(', ')}{inv.services.length > 3 ? ` +${inv.services.length - 3}` : ''}
+                    </p>
+                  )}
+                  {inv.tenantName && !inv.services && (
+                    <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: 0 }}>{inv.tenantName}</p>
+                  )}
+                </div>
+
+                {/* Invoice ID */}
+                <span style={{ fontSize: '0.78rem', fontFamily: 'monospace', color: '#64748B' }}>{inv.id}</span>
+
+                {/* Issue Date */}
+                <span style={{ fontSize: '0.82rem', color: '#475569' }}>
+                  {inv.issueDate
+                    ? new Date(inv.issueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : inv.dueDate
+                    ? formatDate(inv.dueDate)
+                    : '—'}
+                </span>
+
+                {/* Amount */}
+                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A' }}>
+                  {formatCurrency(inv.amount ?? inv.totalAmount ?? 0)}
+                </span>
+
+                {/* Status */}
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '100px', background: statusBg, color: statusColor, width: 'fit-content' }}>
+                  {statusLabel}
+                </span>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {isDemoActive ? (
+                    <button
+                      onClick={() => window.open(inv.downloadUrl || '#', '_blank')}
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 10px', fontSize: '0.75rem', fontWeight: 600, color: '#475569', cursor: 'pointer' }}>
+                      <Download size={11} /> PDF
+                    </button>
+                  ) : (
+                    <InvoiceActions invoice={inv as Invoice} />
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 
