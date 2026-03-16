@@ -185,8 +185,8 @@ export function TopNav() {
                     href={item.href}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                      'hover:bg-accent hover:text-accent-foreground',
-                      isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                      'hover:bg-accent hover:text-[#0F172A]',
+                      isActive ? 'bg-accent text-foreground' : 'text-[#1E293B]'
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -206,8 +206,8 @@ export function TopNav() {
                   <button
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                      'hover:bg-accent hover:text-accent-foreground',
-                      isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                      'hover:bg-accent hover:text-[#0F172A]',
+                      isActive ? 'bg-accent text-foreground' : 'text-[#1E293B]'
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -259,7 +259,7 @@ export function TopNav() {
                             </div>
                             <div>
                               <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.3 }}>{child.label}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '2px' }}>{child.desc}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>{child.desc}</div>
                             </div>
                           </Link>
                         );
