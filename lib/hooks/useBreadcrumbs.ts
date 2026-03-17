@@ -31,13 +31,22 @@ const routeLabels: Record<string, string> = {
   'cost-recommendations': 'Cost Recommendations',
   aws: 'AWS',
   platform: 'Platform',
-  admin: 'Admin',
+  admin: 'Observability',
+  observability: 'Observability',
+  'alert-history': 'Alert History',
+  slos: 'SLO Dashboard',
   users: 'Users',
   api: 'API',
   docs: 'Documentation',
   help: 'Help',
   support: 'Support',
+  new: 'Create Service',
 };
+
+const parentPaths: Record<string, { label: string; href: string }> = {
+  '/deployments':  { label: 'Services', href: '/services' },
+  '/dependencies': { label: 'Services', href: '/services' },
+}
 
 /**
  * Hook to generate breadcrumbs from current pathname
@@ -64,7 +73,15 @@ export function useBreadcrumbs(
         label: 'Dashboard',
         href: '/dashboard',
       },
-    ];
+    ]
+
+    const parent = parentPaths[pathname]
+    if (parent) {
+      breadcrumbs.push({
+        label: parent.label,
+        href: parent.href,
+      })
+    }
 
     // Build breadcrumbs from path segments
     let currentPath = '';

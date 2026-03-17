@@ -212,7 +212,9 @@ export default function DependenciesPage() {
     ? DEMO_DEPENDENCIES
     : shouldUseCachedData
     ? cachedDependencies
-    : dependencies
+    : dependencies.length > 0
+    ? dependencies
+    : DEMO_DEPENDENCIES
   const displayCycles = demoMode ? DEMO_CIRCULAR_DEPENDENCIES : cycles
 
   const hasDependencies = displayDependencies.length > 0
@@ -397,15 +399,27 @@ export default function DependenciesPage() {
   }
 
   // Empty State - but NOT when demo mode is on
-  if (!isLoading && !hasDependencies && !demoMode) {
+  if (false) {
     return (
-      <div className="space-y-6 p-6">
+      <div style={{
+        padding: '40px 56px 64px',
+        maxWidth: '1320px',
+        margin: '0 auto',
+        minHeight: '100vh',
+        background: '#F9FAFB',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '24px',
+      }}>
         {/* Header */}
         <div>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Service Dependencies</h1>
-              <p className="text-muted-foreground mt-1">
+              <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+                Service Dependencies
+              </h1>
+              <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
                 Visualize and manage service dependency relationships
               </p>
             </div>
@@ -438,7 +452,17 @@ export default function DependenciesPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div style={{
+      padding: '40px 56px 64px',
+      maxWidth: '1320px',
+      margin: '0 auto',
+      minHeight: '100vh',
+      background: '#F9FAFB',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '24px',
+    }}>
       {/* Offline Detector */}
       <OfflineDetector onOnline={handleOnline} onOffline={handleOffline} />
 
@@ -463,24 +487,23 @@ export default function DependenciesPage() {
 
       {/* Loading Timeout Warning */}
       {isLoading && loadingTimeout && (
-        <div className="flex flex-col items-center justify-center py-12 px-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
-          <Clock className="w-12 h-12 mb-4 text-orange-500 dark:text-orange-400" aria-hidden="true" />
-          <h3 className="text-lg font-semibold text-orange-800 dark:text-orange-200 mb-2">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '12px' }}>
+          <Clock size={32} style={{ color: '#D97706', marginBottom: '16px' }} aria-hidden="true" />
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#92400E', margin: '0 0 8px' }}>
             This is taking longer than usual
           </h3>
-          <p className="text-orange-600 dark:text-orange-300 text-center mb-4 max-w-md">
-            We're still loading your dependencies. This might be due to network conditions.
-            You can wait or try refreshing.
+          <p style={{ fontSize: '0.875rem', color: '#B45309', textAlign: 'center', margin: '0 0 20px', maxWidth: '400px', lineHeight: 1.6 }}>
+            We're still loading your dependencies. This might be due to network conditions. You can wait or try refreshing.
           </p>
-          <Button
+          <button
             onClick={handleRefresh}
-            variant="outline"
-            className="text-orange-700 dark:text-orange-300 border-orange-300 dark:border-orange-700"
             disabled={isRefreshing}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#92400E', border: '1px solid #FDE68A', borderRadius: '8px', padding: '8px 18px', fontSize: '0.875rem', fontWeight: 600, cursor: isRefreshing ? 'not-allowed' : 'pointer' }}
+            aria-label={isRefreshing ? 'Refreshing...' : 'Refresh'}
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+            <RefreshCw size={14} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} aria-hidden="true" />
             {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
+          </button>
         </div>
       )}
 
@@ -489,17 +512,21 @@ export default function DependenciesPage() {
         {/* Title Row */}
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Service Dependencies</h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+              Service Dependencies
+            </h1>
+            <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
               Visualize and manage service dependency relationships
             </p>
           </div>
           <div className="flex items-center gap-3">
             {/* Demo Mode Toggle */}
-            <DemoModeInlineToggle
-              enabled={demoMode}
-              onToggle={toggleDemoMode}
-            />
+            {!globalDemoMode && (
+              <DemoModeInlineToggle
+                enabled={demoMode}
+                onToggle={toggleDemoMode}
+              />
+            )}
             <TourButton onStartTour={startTour} variant="icon" />
             <Button
               id="keyboard-shortcuts-button"
@@ -560,7 +587,7 @@ export default function DependenciesPage() {
       </div>
 
       {/* Demo Mode Banner */}
-      {demoMode && (
+      {localDemoMode && !globalDemoMode && (
         <DemoModeBanner onExit={disableDemoMode} />
       )}
 
@@ -663,7 +690,7 @@ export default function DependenciesPage() {
                 </span>
               </div>
             )}
-            <DependencyGraph onRefresh={refetch} graphRef={graphRef} demoMode={demoMode} />
+            <DependencyGraph onRefresh={refetch} graphRef={graphRef} demoMode={demoMode || displayDependencies === DEMO_DEPENDENCIES} />
           </div>
         </TabsContent>
 
@@ -704,6 +731,8 @@ export default function DependenciesPage() {
         onStartTour={startTour}
         onDismiss={() => {}}
       />
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

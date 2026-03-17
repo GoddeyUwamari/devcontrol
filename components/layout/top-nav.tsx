@@ -42,7 +42,6 @@ const navItems: NavItem[] = [
       { label: 'Add Service', href: '/services/new', icon: Plus, desc: 'Register a new service' },
       { label: 'Deployments', href: '/deployments', icon: Rocket, desc: 'Deployment history and tracking' },
       { label: 'Dependencies', href: '/dependencies', icon: GitBranch, desc: 'Service dependency map' },
-      { label: 'Status Page', href: '/status', icon: Activity, desc: 'Live system status' },
     ],
   },
   {
@@ -81,9 +80,10 @@ const navItems: NavItem[] = [
     icon: Activity,
     children: [
       { label: 'Monitoring Overview', href: '/monitoring',           icon: BarChart3, desc: 'SLOs, response time, health'   },
-      { label: 'Active Alerts',       href: '/admin/alerts',         icon: Bell,      desc: 'Live alerts and incidents'      },
-      { label: 'Alert History',       href: '/admin/alert-history',  icon: Clock,     desc: 'Historical alert timeline'      },
+      { label: 'Active Alerts',       href: '/observability/alerts',        icon: Bell,      desc: 'Live alerts and incidents'      },
+      { label: 'Alert History',       href: '/observability/alert-history', icon: Clock,     desc: 'Historical alert timeline'      },
       { label: 'SLO Dashboard',       href: '/monitoring/slos',      icon: Target,    desc: 'Service level objectives'       },
+      { label: 'Status Page',         href: '/status',               icon: Activity,  desc: 'Live system status'             },
     ],
   },
   {
@@ -94,8 +94,6 @@ const navItems: NavItem[] = [
       { label: 'Teams', href: '/teams', icon: Users, desc: 'Team management and access' },
       { label: 'Enterprise', href: '/enterprise', icon: Building2, desc: 'Enterprise controls' },
       { label: 'Developers', href: '/developers', icon: Code, desc: 'API keys and integrations' },
-      { label: 'Alert Management', href: '/admin/alerts', icon: BellDot, desc: 'Custom alert rules and thresholds' },
-      { label: 'System Monitoring', href: '/admin/monitoring', icon: Activity, desc: 'Prometheus, Grafana, SLO dashboard' },
     ],
   },
 ];

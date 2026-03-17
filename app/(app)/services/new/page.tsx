@@ -20,7 +20,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Breadcrumb } from '@/components/navigation/breadcrumb'
 import { servicesService } from '@/lib/services/services.service'
 import { teamsService } from '@/lib/services/teams.service'
 
@@ -97,14 +96,6 @@ export default function NewServicePage() {
 
   return (
     <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
-      <Breadcrumb
-        items={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Services', href: '/services' },
-          { label: 'Create Service', current: true },
-        ]}
-      />
-
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Create New Service</h1>

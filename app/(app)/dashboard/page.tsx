@@ -39,6 +39,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
+import { monitoringService } from '@/lib/services/monitoring.service'
 import { deploymentsService } from '@/lib/services/deployments.service'
 import type { PlatformDashboardStats, Deployment, DeploymentStatus } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
@@ -282,6 +283,13 @@ export default function DashboardPage() {
     },
   });
 
+  const { data: systemHealth } = useQuery({
+    queryKey: ['system-health'],
+    queryFn: () => monitoringService.getSystemHealth(),
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+  })
+
   // WebSocket event listeners for real-time updates
   useEffect(() => {
     if (!socket) return;
@@ -399,9 +407,42 @@ export default function DashboardPage() {
   // Cloud Health Score derived values
   const costScore = isDemoActive ? 82 : (efficiencyRatio ?? 0);
   const securityScore_health = isDemoActive ? 87 : (securityScore ?? 0);
-  const reliabilityScore = isDemoActive ? 91 : (
-    stats ? Math.min(100, 100 - 0 * 3) : 0
-  );
+  const reliabilityScore = isDemoActive
+    ? 91
+    : systemHealth?.status === 'operational'
+      ? 95
+      : systemHealth?.status === 'degraded'
+        ? 72
+        : stats
+          ? Math.min(100, 100 - 0)
+          : 0
+  // System status bar derived values
+  const systemStatusLabel = isDemoActive
+    ? 'degraded'
+    : systemHealth?.status === 'operational'
+      ? 'healthy'
+      : systemHealth?.status === 'disrupted'
+        ? 'down'
+        : systemHealth?.status === 'degraded'
+          ? 'degraded'
+          : 'healthy'
+
+  const systemResponseTime = isDemoActive ? '145ms' : '—'
+
+  const systemAlertCount: number = isDemoActive ? 2 : 0
+
+  const systemUptimeAvg = isDemoActive
+    ? '99.4%'
+    : (systemHealth?.healthPercentage != null ? `${systemHealth.healthPercentage}%` : '—')
+
+  const systemStatusConfig = {
+    healthy:  { color: '#059669', bg: '#F0FDF4', border: '#BBF7D0', dot: '#059669', label: 'All systems operational' },
+    degraded: { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', dot: '#D97706', label: 'Degraded performance detected' },
+    down:     { color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', dot: '#DC2626', label: 'System outage detected' },
+  }
+
+  const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.healthy
+
   const cloudHealthScore = Math.round((costScore + securityScore_health + reliabilityScore) / 3) || null;
   const topRecs = [
     { label: 'Right-size 3 EC2 instances', savings: '$720/mo', effort: 'Low' },
@@ -781,6 +822,68 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* ── SYSTEM STATUS BAR ── */}
+      <a href="/monitoring" style={{ textDecoration: 'none', display: 'block', marginBottom: '24px' }}>
+        <div style={{
+          background: statusConf.bg,
+          border: `1px solid ${statusConf.border}`,
+          borderRadius: '12px',
+          padding: '14px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+          transition: 'all 0.15s',
+        }}
+          onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 4px 16px ${statusConf.dot}18` }}
+          onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
+        >
+          {/* Pulsing status dot */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: statusConf.dot }} />
+            {systemStatusLabel !== 'healthy' && (
+              <div style={{
+                position: 'absolute', inset: '-3px',
+                borderRadius: '50%',
+                border: `2px solid ${statusConf.dot}`,
+                opacity: 0.4,
+                animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
+              }} />
+            )}
+          </div>
+
+          {/* Status label */}
+          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: statusConf.color }}>
+            {statusConf.label}
+          </span>
+
+          {/* Divider */}
+          <div style={{ width: '1px', height: '16px', background: statusConf.border, flexShrink: 0 }} />
+
+          {/* Metrics */}
+          <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.82rem', color: statusConf.color }}>
+              Avg response <strong>{systemResponseTime}</strong>
+            </span>
+            <span style={{ fontSize: '0.82rem', color: statusConf.color }}>
+              Uptime <strong>{systemUptimeAvg}</strong>
+            </span>
+            {systemAlertCount > 0 && (
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', padding: '2px 10px', borderRadius: '100px' }}>
+                {systemAlertCount} alert{systemAlertCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          {/* Right side — link */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: statusConf.color }}>
+              View observability
+            </span>
+            <ArrowRight size={13} style={{ color: statusConf.color }} />
+          </div>
+        </div>
+      </a>
+
       {/* ── ENGINEERING VELOCITY + AI ADVISOR + RECENT ACTIVITY ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
 
@@ -919,6 +1022,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+      `}</style>
     </div>
   )
 }

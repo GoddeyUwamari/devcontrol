@@ -29,8 +29,7 @@ export function HeroSection() {
 
         {/* Subheadline */}
         <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
-          Eliminate AWS waste and security blind spots in minutes —
-one dashboard for cost, performance, and peace of mind.
+          The AI command center for AWS cost, security, and observability. Detect issues, eliminate waste, and ship faster from one platform.
         </p>
 
         {/* Tagline */}
