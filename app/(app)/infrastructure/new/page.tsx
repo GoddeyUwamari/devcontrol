@@ -19,7 +19,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Breadcrumb } from '@/components/navigation/breadcrumb'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { servicesService } from '@/lib/services/services.service'
 
@@ -108,14 +107,6 @@ export default function NewInfrastructurePage() {
 
   return (
     <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
-      <Breadcrumb
-        items={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Infrastructure', href: '/infrastructure' },
-          { label: 'Add Resource', current: true },
-        ]}
-      />
-
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Add Infrastructure Resource</h1>
