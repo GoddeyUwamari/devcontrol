@@ -12,7 +12,7 @@ import { BreadcrumbItem } from '@/components/ui/breadcrumb';
 // Map of route segments to readable labels
 const routeLabels: Record<string, string> = {
   dashboard: 'Dashboard',
-  services: 'Services',
+  services: 'Services Overview',
   deployments: 'Deployments',
   dependencies: 'Dependencies',
   infrastructure: 'Infrastructure',
@@ -31,6 +31,10 @@ const routeLabels: Record<string, string> = {
   organization: 'Organization',
   pricing: 'Pricing',
   'audit-logs': 'Audit Logs',
+  'security':   'Security Overview',
+  'anomalies':  'Anomalies',
+  'compliance': 'Compliance',
+  'frameworks': 'Compliance',
   enterprise: 'Enterprise',
   alerts: 'Alerts',
   'cost-recommendations': 'Cost Recommendations',
@@ -45,15 +49,23 @@ const routeLabels: Record<string, string> = {
   docs: 'Documentation',
   help: 'Help',
   support: 'Support',
-  new: 'Create Service',
+  new: 'Add Resource',
   developers: 'Developers',
+  'costs': 'Cost Overview',
+  'cost-optimization': 'Optimization',
+  'forecast': 'Forecast',
+  'invoices': 'Invoices',
+  'ai-reports': 'AI Reports',
 };
 
 const parentPaths: Record<string, { label: string; href: string }[]> = {
-  '/deployments':      [{ label: 'Infrastructure', href: '/infrastructure' }],
-  '/dependencies':     [{ label: 'Infrastructure', href: '/infrastructure' }],
+  '/deployments':      [{ label: 'Services', href: '/services' }],
+  '/dependencies':     [{ label: 'Services', href: '/services' }],
+  '/services/new':     [],
   '/recommendations':  [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/tenants':          [{ label: 'Infrastructure', href: '/infrastructure' }],
+  '/infrastructure/new':             [],
+  '/infrastructure/recommendations': [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/status':           [{ label: 'Observability',  href: '/observability'  }],
   '/app/dora-metrics': [{ label: 'DevOps',         href: '/devops'         }],
   '/dora-metrics':     [{ label: 'DevOps',         href: '/devops'         }],
@@ -61,6 +73,15 @@ const parentPaths: Record<string, { label: string; href: string }[]> = {
   '/teams':            [{ label: 'DevOps', href: '/devops' }],
   '/enterprise':       [{ label: 'DevOps', href: '/devops' }],
   '/developers':       [{ label: 'DevOps', href: '/devops' }],
+  '/cost-optimization': [{ label: 'Costs', href: '/costs' }],
+  '/forecast':          [{ label: 'Costs', href: '/costs' }],
+  '/invoices':          [{ label: 'Costs', href: '/costs' }],
+  '/ai-reports':        [{ label: 'Costs', href: '/costs' }],
+  '/monitoring':      [{ label: 'Observability', href: '/monitoring' }],
+  '/monitoring/slos': [{ label: 'Observability', href: '/monitoring' }],
+  '/anomalies':             [{ label: 'Security', href: '/security' }],
+  '/compliance/frameworks': [{ label: 'Security', href: '/security' }],
+  '/audit-logs':            [{ label: 'Security', href: '/security' }],
 };
 
 /**
@@ -75,7 +96,7 @@ export function useBreadcrumbs(
 
   return useMemo(() => {
     // Remove leading/trailing slashes and split path
-    const segments = pathname.split('/').filter((s) => Boolean(s) && s !== 'app');
+    const segments = pathname.split('/').filter((s) => Boolean(s) && s !== 'app' && s !== 'compliance');
 
     // If we're on root or login, don't show breadcrumbs
     if (segments.length === 0 || segments[0] === 'login') {
