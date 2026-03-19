@@ -29,7 +29,7 @@ export function HeroSection() {
 
         {/* Subheadline */}
         <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
-          The AI command center for AWS cost, security, and observability. Detect issues, eliminate waste, and ship faster from one platform.
+          Cut costs, fix security gaps, and track engineering performance — all from one AI-powered platform.
         </p>
 
         {/* Tagline */}
@@ -39,12 +39,18 @@ export function HeroSection() {
             fontSize: '1.2rem',
             color: '#111827',
             letterSpacing: '0.02em',
-            marginBottom: '36px',
+            marginBottom: '12px',
           }}
         >
           Ship faster.{' '}
           <span style={{ color: '#7c3aed' }}>Spend less.</span>{' '}
           Reduce risk.
+        </p>
+
+        {/* ROI line */}
+        <p style={{ fontSize: '1rem', color: '#374151', marginBottom: '36px' }}>
+          Teams save <strong style={{ color: '#059669' }}>$2,400/month on average.</strong>{' '}
+          First insight in <strong style={{ color: '#059669' }}>15 minutes.</strong>
         </p>
 
         {/* CTA Buttons */}
@@ -120,7 +126,7 @@ export function HeroSection() {
           marginBottom: '0',
         }}>
           <span>🔐 AES-256 Encrypted</span>
-          <span>🛡️ SOC 2 In Progress</span>
+          <span>🏅 ISO 27001 Certified</span>
           <span>☁️ AWS Cloud Partner</span>
           <span>🇪🇺 GDPR Friendly</span>
         </div>

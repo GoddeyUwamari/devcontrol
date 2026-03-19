@@ -1,572 +1,533 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  Users,
-  Shield,
-  ArrowRight,
-  CheckCircle2,
-  Lock,
-  DollarSign,
-  AlertTriangle,
-  Lightbulb,
-  Check,
-  X,
-  Server,
-  Database,
-  Cloud,
-  GitBranch,
-  Container,
-  BarChart3,
-  Gauge,
-  Network,
-} from 'lucide-react';
-import Link from 'next/link';
-import { midMarketQuickWins } from './data/midMarketQuickWins';
-import { midMarketValueCards } from './data/midMarketValueCards';
+'use client'
 
-// ============================================
-// MID-MARKET HERO SECTION
-// ============================================
-function MidMarketHero() {
+import { useState } from 'react'
+import { DollarSign, Users, Shield, Network } from 'lucide-react'
+import { midMarketQuickWins } from './data/midMarketQuickWins'
+import { midMarketValueCards } from './data/midMarketValueCards'
+
+const problems = [
+  {
+    icon: DollarSign,
+    problem: 'Cloud costs growing faster than revenue — no visibility into which team is spending what',
+    solution: 'Cost attribution by team and project. Automated rightsizing recommendations surface $15–40K in monthly savings on average.',
+  },
+  {
+    icon: Users,
+    problem: "Engineers stepping on each other's infrastructure — no clear ownership or RBAC",
+    solution: 'Role-based access control with team namespacing. Each team owns their resources, sees their costs, manages their alerts.',
+  },
+  {
+    icon: Shield,
+    problem: 'Compliance audit in 3 months and nothing is documented',
+    solution: 'Continuous SOC 2, HIPAA, and PCI-DSS scanning with auto-generated audit evidence packages — ready in one click.',
+  },
+  {
+    icon: Network,
+    problem: 'Incidents take hours to resolve because nobody knows what depends on what',
+    solution: 'Auto-discovered dependency maps and change correlation show exactly what broke, what it affects, and who changed it.',
+  },
+]
+
+const timeline = [
+  {
+    step: '01',
+    title: 'Connect AWS & GitHub',
+    time: 'Day 1',
+    desc: 'Read-only IAM role takes 5 minutes to configure. DevControl immediately discovers all resources, pulls deployment history, and begins calculating your baseline costs and security posture.',
+  },
+  {
+    step: '02',
+    title: 'See Your Baseline',
+    time: 'Day 1',
+    desc: 'Within 15 minutes you have: full resource inventory, security posture score, cost breakdown by service, and DORA metrics calculated from your deployment history.',
+  },
+  {
+    step: '03',
+    title: 'Configure Teams & Alerts',
+    time: 'Week 1',
+    desc: 'Set up team namespaces, assign resource ownership, configure Slack alerts, and define cost budgets. Your whole org is onboarded in a day.',
+  },
+  {
+    step: '04',
+    title: 'Share with Leadership',
+    time: 'Week 2',
+    desc: 'Executive dashboards, compliance reports, and DORA benchmark comparisons are ready to share. Give your CTO and CFO the visibility they\'ve been asking for.',
+  },
+]
+
+const pricingFeatures = [
+  'Up to 500 AWS resources',
+  'Unlimited team members',
+  'Multi-team RBAC',
+  'Cost attribution & budgets',
+  'SOC 2 / HIPAA / GDPR scanning',
+  'SAML SSO integration',
+  'DORA metrics dashboard',
+  'Auto-remediation workflows',
+  'Audit logs & reporting',
+  'Slack & PagerDuty integration',
+  'Full API & webhook access',
+  'Priority support (4hr SLA)',
+]
+
+function FeatureCard({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) {
+  const [hovered, setHovered] = useState(false)
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-primary/10 py-12 lg:py-16">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center max-w-4xl mx-auto">
-          <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm">
-            Built for teams of 20-100 engineers
-          </Badge>
-
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4 leading-tight">
-            Scale with Confidence.{' '}
-            <span className="text-primary">Cut Costs 35%.</span>
-            <br />
-            Stay Compliant.
-          </h1>
-
-          <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-6 leading-relaxed">
-            DevControl gives growing engineering organizations complete visibility
-            into their AWS infrastructure—without enterprise complexity or startup limitations.
-          </p>
-
-          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-8">
-            <Button asChild size="lg" className="gap-2 px-6 h-11">
-              <Link href="/dashboard">
-                Start Free Trial
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
-              <Link href="/contact">
-                Talk to Sales
-              </Link>
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span>14-day free trial</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span>No credit card required</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span>Setup in 15 minutes</span>
-            </div>
-          </div>
-        </div>
+    <div
+      style={{
+        background: hovered ? '#faf5ff' : '#fff',
+        border: '1.5px solid #e5e7eb',
+        borderLeft: '4px solid #7c3aed',
+        borderRadius: '12px',
+        padding: '24px',
+        transition: 'all 0.2s ease',
+        boxShadow: hovered ? '0 4px 20px rgba(124,58,237,0.1)' : 'none',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div style={{
+        width: '44px', height: '44px', borderRadius: '10px',
+        background: 'rgba(124,58,237,0.08)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginBottom: '16px',
+      }}>
+        <Icon size={20} style={{ color: '#7c3aed' }} />
       </div>
-
-      <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-    </section>
-  );
+      <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.4, marginBottom: '10px' }}>
+        {title}
+      </h3>
+      <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+        {desc}
+      </p>
+    </div>
+  )
 }
 
-// ============================================
-// TRUSTED BY SECTION
-// ============================================
-function TrustedBySection() {
-  const trustIndicators = [
-    { label: 'SOC 2 Type II Certified', icon: Shield },
-    { label: 'Read-Only AWS Access', icon: Lock },
-    { label: 'HIPAA & GDPR Ready', icon: CheckCircle2 },
-    { label: '200+ Mid-Market Teams', icon: Users },
-  ];
-
+export default function MidMarketPage() {
   return (
-    <section className="py-8 border-b">
-      <div className="max-w-7xl mx-auto px-4">
-        <p className="text-center text-sm text-muted-foreground mb-5">
-          Trusted by growing engineering organizations
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {trustIndicators.map((item, index) => (
-            <div
-              key={index}
-              className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/50"
-            >
-              <item.icon className="w-5 h-5 text-primary" />
-              <span className="text-sm font-medium text-center">{item.label}</span>
+    <div style={{ minHeight: '100vh', background: '#fff' }}>
+
+      {/* HERO */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+        padding: '140px 48px 100px',
+        borderBottom: '1px solid #1e293b',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '80px', alignItems: 'center' }}>
+
+            {/* Left — text */}
+            <div>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center',
+                background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.4)',
+                borderRadius: '100px', padding: '6px 16px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa',
+                marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
+              }}>
+                Solutions · Growing Teams
+              </div>
+
+              <h1 style={{
+                fontSize: 'clamp(2rem, 4vw, 3rem)',
+                fontWeight: 800, color: '#fff',
+                lineHeight: 1.15, marginBottom: '20px',
+                letterSpacing: '-0.02em',
+              }}>
+                The AWS Control Plane Built for{' '}
+                <span style={{ color: '#a78bfa' }}>Teams of 20–100 Engineers</span>
+              </h1>
+
+              <p style={{
+                fontSize: '1.1rem', color: '#94a3b8',
+                lineHeight: 1.75, marginBottom: '36px',
+              }}>
+                Stop managing AWS like a startup. Get the visibility, cost control, and compliance automation
+                that growing engineering organizations need — without the enterprise price tag or 6-week implementation.
+              </p>
+
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '32px' }}>
+                <a href="/register" style={{
+                  background: '#7c3aed', color: '#fff',
+                  padding: '14px 32px', borderRadius: '10px',
+                  fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+                  boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+                }}>
+                  Start Free Trial →
+                </a>
+                <a href="/contact" style={{
+                  background: 'transparent', color: '#e2e8f0',
+                  padding: '14px 32px', borderRadius: '10px',
+                  fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+                  border: '1.5px solid #334155',
+                }}>
+                  Talk to Sales
+                </a>
+              </div>
+
+              <div style={{
+                display: 'flex', flexWrap: 'wrap', gap: '20px',
+                fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
+              }}>
+                {['No credit card required', 'Setup in 15 minutes', 'SOC 2 certified'].map(t => (
+                  <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#a78bfa' }}>✓</span> {t}
+                  </span>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
 
-// ============================================
-// QUICK WINS / METRICS SECTION
-// ============================================
-function QuickWinsSection() {
-  return (
-    <section className="py-12 lg:py-16 bg-muted/30">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Results That Matter
-          </h2>
-          <p className="text-muted-foreground">
-            Measurable outcomes from mid-market teams like yours
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-4">
-          {midMarketQuickWins.map((win, index) => (
-            <Card key={index} className="text-center border-0 shadow-md bg-card">
-              <CardHeader className="pb-1 pt-5">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                  <win.icon className="w-6 h-6 text-primary" />
-                </div>
-                <CardTitle className="text-4xl font-bold text-primary mb-1">
-                  {win.value}
-                </CardTitle>
-                <CardDescription className="text-base font-semibold text-foreground">
-                  {win.label}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pb-5">
-                <p className="text-sm text-muted-foreground leading-relaxed">{win.description}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// VALUE PROPOSITION CARDS
-// ============================================
-function ValuePropsSection() {
-  return (
-    <section className="py-12 lg:py-16">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Built for Growing Organizations
-          </h2>
-          <p className="text-muted-foreground">
-            Everything you need to scale without the chaos
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {midMarketValueCards.map((card, index) => (
-            <Card key={index} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-2">
-                  <card.icon className="w-5 h-5 text-primary" />
-                </div>
-                <CardTitle className="text-lg">{card.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="text-sm leading-relaxed">
-                  {card.description}
-                </CardDescription>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// MID-MARKET USE CASES
-// ============================================
-function UseCasesSection() {
-  const useCases = [
-    {
-      problem: 'Teams stepping on each other\'s infrastructure',
-      solution: 'Clear ownership with RBAC ensures teams only see and manage what they own',
-      icon: Users,
-      color: 'text-purple-500',
-    },
-    {
-      problem: 'Cloud costs growing faster than revenue',
-      solution: 'Cost attribution by team and project with automated rightsizing recommendations',
-      icon: DollarSign,
-      color: 'text-green-500',
-    },
-    {
-      problem: 'Failed compliance audit surprises',
-      solution: 'Continuous compliance monitoring with real-time violation alerts',
-      icon: Shield,
-      color: 'text-purple-500',
-    },
-    {
-      problem: 'No one knows what depends on what',
-      solution: 'Auto-discovered dependency maps show exactly how services connect',
-      icon: Network,
-      color: 'text-orange-500',
-    },
-  ];
-
-  return (
-    <section className="py-12 lg:py-16 bg-muted/30">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Growing Pains? We&apos;ve Got Solutions
-          </h2>
-          <p className="text-muted-foreground">
-            Common mid-market challenges—solved
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-4">
-          {useCases.map((useCase, index) => (
-            <Card key={index} className="overflow-hidden">
-              <CardHeader className="bg-muted/50 border-b py-4">
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg bg-background ${useCase.color}`}>
-                    <useCase.icon className="w-4 h-4" />
+            {/* Right — metrics card */}
+            <div style={{
+              background: '#0d1117',
+              borderRadius: '16px',
+              border: '1px solid #30363d',
+              padding: '32px',
+            }}>
+              {[
+                { value: '$24K', label: 'Average monthly savings found' },
+                { value: '47%', label: 'Faster incident resolution' },
+                { value: '15min', label: 'Setup to first metric' },
+              ].map(({ value, label }, i) => (
+                <div key={label}>
+                  <div style={{
+                    paddingTop: i === 0 ? 0 : '24px',
+                    paddingBottom: '24px',
+                    borderBottom: i < 2 ? '1px solid #21262d' : 'none',
+                  }}>
+                    <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>
+                      {value}
+                    </div>
+                    <div style={{ fontSize: '0.9rem', color: '#8b949e', marginTop: '6px' }}>
+                      {label}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-0.5">The Problem</p>
-                    <CardTitle className="text-base leading-snug">{useCase.problem}</CardTitle>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="py-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                    <Lightbulb className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-0.5">DevControl Solution</p>
-                    <p className="text-sm font-medium leading-snug">{useCase.solution}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// PRICING SECTION (Growth Tier Focus)
-// ============================================
-function PricingSection() {
-  const features = [
-    'Up to 500 AWS resources',
-    'Unlimited team members',
-    'Multi-team management',
-    'Role-based access control',
-    'Cost attribution & budgets',
-    'SOC 2, HIPAA, GDPR scanning',
-    'SAML SSO integration',
-    'Audit logs & reporting',
-    'DORA metrics dashboard',
-    'Priority support (4hr SLA)',
-    'Slack & PagerDuty integration',
-    'API & webhook access',
-  ];
-
-  return (
-    <section className="py-12 lg:py-16">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Transparent, Predictable Pricing
-          </h2>
-          <p className="text-muted-foreground">
-            Pay for resources, not seats—scale without surprises
-          </p>
-        </div>
-
-        <Card className="relative overflow-hidden border-2 border-primary shadow-lg max-w-3xl mx-auto">
-          <div className="absolute top-0 right-0">
-            <Badge className="rounded-none rounded-bl-lg px-3 py-1">Recommended</Badge>
-          </div>
-
-          <CardHeader className="text-center pt-8 pb-4">
-            <CardTitle className="text-xl mb-2">Growth Plan</CardTitle>
-            <div className="flex items-baseline justify-center gap-1">
-              <span className="text-4xl md:text-5xl font-bold">$299</span>
-              <span className="text-lg text-muted-foreground">/month</span>
-            </div>
-            <CardDescription className="mt-2">
-              Perfect for mid-market teams with 20-100 engineers
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="pb-8">
-            <div className="grid sm:grid-cols-2 gap-2 mb-6">
-              {features.map((feature, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-green-500 shrink-0" />
-                  <span className="text-sm">{feature}</span>
                 </div>
               ))}
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button asChild size="lg" className="gap-2 px-6">
-                <Link href="/dashboard">
-                  Start Free Trial
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="lg">
-                <Link href="/pricing">Compare All Plans</Link>
-              </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* IMPACT BAR */}
+      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{
+          maxWidth: '1400px', margin: '0 auto',
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '32px', textAlign: 'center',
+        }}>
+          {midMarketQuickWins.map(({ value, label }) => (
+            <div key={label}>
+              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+                {value}
+              </div>
+              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+                {label}
+              </div>
             </div>
+          ))}
+        </div>
+      </section>
 
-            <p className="text-center text-xs text-muted-foreground mt-4">
-              14-day free trial • No credit card required • Cancel anytime
+      {/* FEATURES */}
+      <section style={{ padding: '80px 48px', width: '100%' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Mid-Market Capabilities
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              Everything Growing Teams Need.{' '}
+              <span style={{ display: 'block' }}>None of What They Don&apos;t.</span>
+            </h2>
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+              Purpose-built for 20–100 engineer organizations scaling their AWS footprint.
             </p>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// COMPARISON TABLE
-// ============================================
-function ComparisonSection() {
-  const comparisons = [
-    { feature: 'Target audience', devcontrol: 'Mid-market focus', others: 'Enterprise-first' },
-    { feature: 'Setup time', devcontrol: '15 minutes', others: '2-6 weeks' },
-    { feature: 'Pricing model', devcontrol: '$299/mo flat', others: '$1,000+/mo' },
-    { feature: 'Agent installation', devcontrol: 'None required', others: 'Required' },
-    { feature: 'Multi-team RBAC', devcontrol: true, others: 'Enterprise only' },
-    { feature: 'Compliance automation', devcontrol: true, others: 'Add-on cost' },
-  ];
-
-  return (
-    <section className="py-12 lg:py-16 bg-muted/30">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            The Right Fit for Growing Teams
-          </h2>
-          <p className="text-muted-foreground">
-            More capable than startup tools, simpler than enterprise platforms
-          </p>
-        </div>
-
-        <Card className="overflow-hidden max-w-3xl mx-auto">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-semibold text-sm">Feature</th>
-                  <th className="text-center p-3 font-semibold text-sm text-primary">DevControl</th>
-                  <th className="text-center p-3 font-semibold text-sm text-muted-foreground">Enterprise Tools</th>
-                </tr>
-              </thead>
-              <tbody>
-                {comparisons.map((row, index) => (
-                  <tr key={index} className="border-b last:border-0">
-                    <td className="p-3 text-sm font-medium">{row.feature}</td>
-                    <td className="p-3 text-center">
-                      {typeof row.devcontrol === 'boolean' ? (
-                        <Check className="w-4 h-4 text-green-500 mx-auto" />
-                      ) : (
-                        <span className="text-sm font-semibold text-primary">{row.devcontrol}</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center text-muted-foreground">
-                      {typeof row.others === 'boolean' ? (
-                        row.others ? (
-                          <Check className="w-4 h-4 text-green-500 mx-auto" />
-                        ) : (
-                          <X className="w-4 h-4 text-red-500 mx-auto" />
-                        )
-                      ) : (
-                        <span className="text-sm">{row.others}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
-        </Card>
-      </div>
-    </section>
-  );
-}
 
-// ============================================
-// INTEGRATION SHOWCASE
-// ============================================
-function IntegrationSection() {
-  const awsServices = [
-    { name: 'EC2', icon: Server },
-    { name: 'RDS', icon: Database },
-    { name: 'Lambda', icon: Cloud },
-    { name: 'ECS/EKS', icon: Container },
-    { name: 'S3', icon: Database },
-    { name: 'CloudWatch', icon: Gauge },
-  ];
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            {midMarketValueCards.map(({ icon, title, description }) => (
+              <FeatureCard key={title} icon={icon} title={title} desc={description} />
+            ))}
+          </div>
+        </div>
+      </section>
 
-  const integrations = [
-    { name: 'GitHub / GitLab', icon: GitBranch },
-    { name: 'Slack', icon: Users },
-    { name: 'PagerDuty', icon: AlertTriangle },
-    { name: 'Jira', icon: BarChart3 },
-  ];
+      {/* PROBLEM → SOLUTION */}
+      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Common Growing Pains
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              The Problems Teams Hit at 20–100 Engineers
+            </h2>
+          </div>
 
-  return (
-    <section className="py-12 lg:py-16">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
-            Integrates With Your Stack
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            {problems.map(({ icon: Icon, problem, solution }) => (
+              <div key={problem} style={{
+                background: '#fff',
+                border: '1.5px solid #e5e7eb',
+                borderRadius: '12px',
+                overflow: 'hidden',
+              }}>
+                {/* Problem half */}
+                <div style={{
+                  background: '#f8fafc',
+                  borderBottom: '1px solid #e5e7eb',
+                  padding: '24px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '8px',
+                      background: '#fff', border: '1px solid #e5e7eb',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <Icon size={16} style={{ color: '#374151' }} />
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>
+                        The Problem
+                      </p>
+                      <p style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.5, margin: 0 }}>
+                        {problem}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {/* Solution half */}
+                <div style={{ padding: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '8px',
+                      background: 'rgba(124,58,237,0.08)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <span style={{ fontSize: '1rem' }}>⚡</span>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>
+                        DevControl Solution
+                      </p>
+                      <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6, margin: 0 }}>
+                        {solution}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* HOW IT WORKS — Vertical Timeline */}
+      <section style={{ padding: '80px 48px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Onboarding Timeline
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em',
+            }}>
+              Operational in 2 Weeks
+            </h2>
+          </div>
+
+          <div style={{ maxWidth: '700px', margin: '0 auto', position: 'relative' }}>
+            {/* Vertical line */}
+            <div style={{
+              position: 'absolute', left: '27px', top: '28px',
+              width: '2px', bottom: '28px',
+              background: 'linear-gradient(to bottom, #7c3aed, rgba(124,58,237,0.1))',
+            }} />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+              {timeline.map(({ step, title, time, desc }) => (
+                <div key={step} style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+                  <div style={{
+                    width: '56px', height: '56px', borderRadius: '50%',
+                    background: '#7c3aed', color: '#fff',
+                    fontSize: '0.85rem', fontWeight: 800, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '3px solid #fff', zIndex: 1,
+                  }}>
+                    {step}
+                  </div>
+                  <div style={{
+                    background: '#fff', border: '1.5px solid #e5e7eb',
+                    borderRadius: '12px', padding: '20px 24px', flex: 1,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+                        {title}
+                      </h3>
+                      <span style={{
+                        fontSize: '0.75rem', fontWeight: 600, color: '#7c3aed',
+                        background: 'rgba(124,58,237,0.08)', padding: '3px 10px',
+                        borderRadius: '100px',
+                      }}>
+                        {time}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+                      {desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section style={{ padding: '80px 48px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+            <div style={{
+              fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Transparent Pricing
+            </div>
+            <h2 style={{
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+            }}>
+              One Plan. No Per-Seat Surprises.
+            </h2>
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '480px', margin: '0 auto', lineHeight: 1.75 }}>
+              Pay for AWS resources monitored, not team members. Add your whole org — engineers, security, finance — at no extra cost.
+            </p>
+          </div>
+
+          <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+            <div style={{
+              border: '2px solid #7c3aed',
+              borderRadius: '20px',
+              padding: '40px',
+              boxShadow: '0 8px 40px rgba(124,58,237,0.12)',
+              background: '#fff',
+            }}>
+              <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                <div style={{
+                  fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                  textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px',
+                }}>
+                  Growth Plan
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '2.8rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>$299</span>
+                  <span style={{ fontSize: '1rem', color: '#94a3b8' }}>/month</span>
+                </div>
+                <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '8px' }}>
+                  Up to 500 AWS resources · Unlimited team members
+                </p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '32px' }}>
+                {pricingFeatures.map(feature => (
+                  <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#059669', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>✓</span>
+                    <span style={{ fontSize: '0.875rem', color: '#374151' }}>{feature}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
+                <a href="/register" style={{
+                  background: '#7c3aed', color: '#fff',
+                  padding: '14px 32px', borderRadius: '10px',
+                  fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+                  boxShadow: '0 4px 24px rgba(124,58,237,0.3)',
+                }}>
+                  Start Free Trial →
+                </a>
+                <a href="/pricing" style={{
+                  background: 'transparent', color: '#7c3aed',
+                  padding: '14px 32px', borderRadius: '10px',
+                  fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+                  border: '1.5px solid #7c3aed',
+                }}>
+                  Compare All Plans
+                </a>
+              </div>
+
+              <p style={{ textAlign: 'center', fontSize: '0.8rem', color: '#94a3b8' }}>
+                14-day free trial · No credit card required · Cancel anytime
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* BOTTOM CTA */}
+      <section style={{
+        width: '100%',
+        background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+        padding: '80px 48px', textAlign: 'center',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
+          }}>
+            Built for the Team You&apos;re Becoming
           </h2>
-          <p className="text-muted-foreground">
-            Deep AWS visibility plus seamless connections to your workflow tools
+          <p style={{
+            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
+          }}>
+            Join 200+ growing engineering organizations using DevControl to scale faster, stay compliant, and control costs.
           </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-4 max-w-4xl mx-auto">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">50+ AWS Services</CardTitle>
-              <CardDescription>Complete visibility across your AWS footprint</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-2">
-                {awsServices.map((service, index) => (
-                  <div
-                    key={index}
-                    className="flex flex-col items-center gap-1.5 p-2 rounded-lg bg-muted/50"
-                  >
-                    <service.icon className="w-5 h-5 text-primary" />
-                    <span className="text-xs font-medium">{service.name}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-3 text-center">
-                + VPC, IAM, Route53, CloudFront, and more
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">20+ Integrations</CardTitle>
-              <CardDescription>Connect to your existing workflow tools</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-2">
-                {integrations.map((integration, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-2 p-2 rounded-lg bg-muted/50"
-                  >
-                    <integration.icon className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium">{integration.name}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-3 text-center">
-                + Okta SSO, Azure AD, Datadog, and REST API
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// FINAL CTA SECTION
-// ============================================
-function FinalCTASection() {
-  return (
-    <section className="py-14 lg:py-20 bg-gradient-to-br from-primary/10 via-background to-primary/5">
-      <div className="max-w-7xl mx-auto px-4 text-center">
-        <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-foreground mb-4">
-          Ready to Scale Your Engineering Organization?
-        </h2>
-        <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
-          Join 200+ mid-market teams using DevControl to grow faster, stay compliant, and control costs.
-        </p>
-
-        <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-6">
-          <Button asChild size="lg" className="gap-2 px-6 h-11">
-            <Link href="/dashboard">
-              Start Your Free Trial
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
-            <Link href="/contact">
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/register" style={{
+              background: '#fff', color: '#7c3aed',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+            }}>
+              Start Free Trial →
+            </a>
+            <a href="/contact" style={{
+              background: 'transparent', color: '#fff',
+              padding: '14px 32px', borderRadius: '10px',
+              fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
+              border: '2px solid rgba(255,255,255,0.4)',
+            }}>
               Schedule a Demo
-            </Link>
-          </Button>
-        </div>
-
-        <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <span>14-day free trial</span>
+            </a>
           </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <span>No credit card required</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <span>Cancel anytime</span>
+          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
+            No credit card required · Read-only AWS access · Cancel anytime
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-// ============================================
-// MAIN PAGE
-// ============================================
-export default function MidMarketPage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <MidMarketHero />
-      <TrustedBySection />
-      <QuickWinsSection />
-      <ValuePropsSection />
-      <UseCasesSection />
-      <PricingSection />
-      <ComparisonSection />
-      <IntegrationSection />
-      <FinalCTASection />
     </div>
-  );
+  )
 }

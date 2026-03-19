@@ -243,7 +243,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             // Fallback: Force navigation if router.push doesn't work
             setTimeout(() => {
               if (window.location.pathname !== "/dashboard") {
-                console.log("⚠️ Router redirect failed, using window.location");
+                console.log("⚠️  Router redirect failed, using window.location");
                 window.location.href = "/dashboard";
               }
             }, 100);

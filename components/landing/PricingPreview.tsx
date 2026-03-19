@@ -128,6 +128,23 @@ export function PricingPreview() {
                   <span className="font-extrabold" style={{ fontSize: '2.25rem', color: '#111827' }}>{tier.price}</span>
                   {tier.period && <span style={{ color: '#6b7280', fontSize: '14px' }}>{tier.period}</span>}
                 </div>
+                {tier.highlighted && (
+                  <div style={{ marginTop: '12px' }}>
+                    <span style={{
+                      display: 'inline-block',
+                      marginBottom: '16px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: '#059669',
+                      background: '#ECFDF5',
+                      border: '1px solid #A7F3D0',
+                      padding: '3px 10px',
+                      borderRadius: '99px'
+                    }}>
+                      Avg. team saves $2,400/mo — 8× ROI
+                    </span>
+                  </div>
+                )}
               </div>
 
               <ul style={{ marginBottom: '24px', flex: 1 }} className="space-y-3">

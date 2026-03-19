@@ -50,16 +50,6 @@ export function SocialProofSection() {
       }}
     >
       <div style={inner}>
-        <div style={{ textAlign: 'center', marginBottom: '48px' }}>
-          <p style={eyebrow}>Results</p>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
-            Trusted by platform engineering teams
-          </h2>
-          <p style={{ fontSize: '1.15rem', color: '#374151', maxWidth: '480px', margin: '0 auto', lineHeight: 1.75 }}>
-            Real results from teams saving real money with DevControl.
-          </p>
-        </div>
-
         <div className="grid md:grid-cols-3 gap-6" style={{ marginBottom: '40px' }}>
           {stats.map((stat) => {
             const Icon = stat.icon

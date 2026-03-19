@@ -1,132 +1,612 @@
 'use client'
 
-import { Users } from 'lucide-react'
-import { TeamTemplates } from '@/components/teams/TeamTemplates'
-import { TeamDashboardPreview } from '@/components/teams/TeamDashboardPreview'
-import { TeamBenefits } from '@/components/teams/TeamBenefits'
-import { TeamUseCases } from '@/components/teams/TeamUseCases'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Users, Plus, X, ChevronRight, Slack, Trash2 } from 'lucide-react'
+import { teamsService } from '@/lib/services/teams.service'
+import type { Team, CreateTeamPayload } from '@/lib/types'
+import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+
+const DEMO_TEAMS: Team[] = [
+  {
+    id: 'team-1',
+    name: 'Platform Engineering',
+    description: 'Core infrastructure, CI/CD, and DevOps',
+    members: ['u1', 'u2', 'u3', 'u4', 'u5'],
+    slackChannel: '#platform-eng',
+    owner: 'u1',
+    createdAt: '2024-01-15T00:00:00Z',
+    updatedAt: '2024-03-01T00:00:00Z',
+  },
+  {
+    id: 'team-2',
+    name: 'Backend Services',
+    description: 'APIs, microservices, and data layer',
+    members: ['u6', 'u7', 'u8', 'u9', 'u10', 'u11', 'u12'],
+    slackChannel: '#backend',
+    owner: 'u6',
+    createdAt: '2024-01-20T00:00:00Z',
+    updatedAt: '2024-03-10T00:00:00Z',
+  },
+  {
+    id: 'team-3',
+    name: 'Frontend',
+    description: 'Web applications and design system',
+    members: ['u13', 'u14', 'u15', 'u16', 'u17', 'u18'],
+    slackChannel: '#frontend',
+    owner: 'u13',
+    createdAt: '2024-02-01T00:00:00Z',
+    updatedAt: '2024-03-12T00:00:00Z',
+  },
+  {
+    id: 'team-4',
+    name: 'Data & Analytics',
+    description: 'Data pipelines, warehousing, and BI',
+    members: ['u19', 'u20', 'u21', 'u22'],
+    slackChannel: '#data-team',
+    owner: 'u19',
+    createdAt: '2024-02-10T00:00:00Z',
+    updatedAt: '2024-03-08T00:00:00Z',
+  },
+  {
+    id: 'team-5',
+    name: 'Security',
+    description: 'Security, compliance, and IAM governance',
+    members: ['u23', 'u24', 'u25'],
+    slackChannel: '#security',
+    owner: 'u23',
+    createdAt: '2024-02-15T00:00:00Z',
+    updatedAt: '2024-03-05T00:00:00Z',
+  },
+]
 
 export default function TeamsPage() {
-  // TODO: Replace with actual data fetch when teams API is ready
-  const teams: any[] = []
-  const hasTeams = teams && teams.length > 0
+  const demoMode = useDemoMode()
+  const queryClient = useQueryClient()
+  const [showCreate, setShowCreate] = useState(false)
+  const [form, setForm] = useState<{
+    name: string
+    description: string
+    slackChannel: string
+    owner: string
+  }>({ name: '', description: '', slackChannel: '', owner: '' })
+  const [formError, setFormError] = useState('')
+
+  const { data: teamsData, isLoading } = useQuery({
+    queryKey: ['teams'],
+    queryFn: teamsService.getAll,
+    enabled: !demoMode,
+  })
+  const teams = teamsData ?? []
+
+  const displayTeams = demoMode ? DEMO_TEAMS : teams
+
+  const createMutation = useMutation({
+    mutationFn: (payload: CreateTeamPayload) => teamsService.create(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] })
+      setShowCreate(false)
+      setForm({ name: '', description: '', slackChannel: '', owner: '' })
+      setFormError('')
+    },
+    onError: () => {
+      setFormError('Failed to create team. Please try again.')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: teamsService.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] })
+    },
+  })
+
+  const handleCreate = () => {
+    if (!form.name.trim()) {
+      setFormError('Team name is required.')
+      return
+    }
+    if (!form.owner.trim()) {
+      setFormError('Owner is required.')
+      return
+    }
+    createMutation.mutate({
+      name: form.name.trim(),
+      description: form.description.trim() || undefined,
+      slackChannel: form.slackChannel.trim() || undefined,
+      owner: form.owner.trim(),
+    })
+  }
 
   return (
-    <div className="space-y-6 px-4 md:px-6 lg:px-8">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
+    <div style={{
+      padding: '40px 56px 80px',
+      maxWidth: '1400px',
+      margin: '0 auto',
+    }}>
+
+      {/* ── PAGE HEADER ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        marginBottom: '32px',
+      }}>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Teams</h1>
-          <p className="text-muted-foreground mt-2">
-            Manage teams and their service ownership
+          <h1 style={{
+            fontSize: '1.7rem',
+            fontWeight: 700,
+            color: '#0F172A',
+            letterSpacing: '-0.025em',
+            marginBottom: '6px',
+            lineHeight: 1.2,
+          }}>
+            Teams
+          </h1>
+          <p style={{
+            fontSize: '14px',
+            color: '#475569',
+            lineHeight: 1.5,
+          }}>
+            Manage team ownership, members, and service attribution.
           </p>
         </div>
-        {hasTeams && (
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors">
-            + Create Team
-          </button>
-        )}
+        <button
+          onClick={() => setShowCreate(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: '#7C3AED',
+            color: '#fff',
+            padding: '10px 20px',
+            borderRadius: '9px',
+            fontSize: '13px',
+            fontWeight: 600,
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(124,58,237,0.25)',
+          }}
+        >
+          <Plus size={15} />
+          Create Team
+        </button>
       </div>
 
-      {!hasTeams ? (
-        <div className="space-y-10">
-          {/* Enhanced Hero Section */}
-          <div className="bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 rounded-lg border border-blue-200 p-8 text-center">
-            {/* Icon */}
-            <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Users className="w-12 h-12 text-blue-600" />
-            </div>
+      {/* ── LOADING ── */}
+      {isLoading && !demoMode && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '20px',
+        }}>
+          {[...Array(3)].map((_, i) => (
+            <div key={i} style={{
+              background: '#F8FAFC',
+              borderRadius: '12px',
+              height: '160px',
+              border: '1px solid #F1F5F9',
+              animation: 'pulse 2s infinite',
+            }} />
+          ))}
+        </div>
+      )}
 
-            {/* Heading */}
-            <h2 className="text-3xl font-bold text-gray-900 mb-3">
-              Organize Services by Team
-            </h2>
-
-            {/* Description */}
-            <p className="text-lg text-gray-600 mb-2 max-w-2xl mx-auto">
-              Establish clear ownership, track performance metrics, and attribute
-              AWS costs to the right groups.
-            </p>
-
-            <p className="text-sm text-gray-500 mb-8 max-w-xl mx-auto">
-              Get full accountability across your entire platform with team-based organization.
-            </p>
-
-            {/* CTAs */}
-            <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
-              <button className="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium text-lg hover:bg-blue-700 transition-colors">
-                Create Your First Team →
-              </button>
-              <button className="px-8 py-3 bg-white border-2 border-gray-300 text-gray-700 rounded-lg font-medium text-lg hover:bg-gray-50 transition-colors">
-                View Team Templates
-              </button>
-            </div>
-
-            {/* Trust Indicators */}
-            <div className="flex items-center justify-center gap-6 text-sm text-gray-600 flex-wrap">
-              <span className="flex items-center gap-1.5">
-                <span className="text-green-500">✓</span>
-                <span>30-second setup</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="text-green-500">✓</span>
-                <span>Track unlimited teams</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="text-green-500">✓</span>
-                <span>Free on all plans</span>
-              </span>
-            </div>
+      {/* ── EMPTY STATE ── */}
+      {!isLoading && displayTeams.length === 0 && (
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #F1F5F9',
+          borderRadius: '16px',
+          padding: '64px 40px',
+          textAlign: 'center',
+          maxWidth: '480px',
+          margin: '0 auto',
+        }}>
+          <div style={{
+            width: '56px',
+            height: '56px',
+            background: '#F5F3FF',
+            borderRadius: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 20px',
+          }}>
+            <Users size={24} style={{ color: '#7C3AED' }} />
           </div>
+          <h2 style={{
+            fontSize: '1.1rem',
+            fontWeight: 700,
+            color: '#0F172A',
+            marginBottom: '8px',
+            letterSpacing: '-0.01em',
+          }}>
+            No teams yet
+          </h2>
+          <p style={{
+            fontSize: '14px',
+            color: '#64748B',
+            lineHeight: 1.6,
+            marginBottom: '24px',
+          }}>
+            Create your first team to start attributing services, costs, and
+            performance metrics to the right groups.
+          </p>
+          <button
+            onClick={() => setShowCreate(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: '#7C3AED',
+              color: '#fff',
+              padding: '10px 24px',
+              borderRadius: '9px',
+              fontSize: '13px',
+              fontWeight: 600,
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={15} />
+            Create your first team
+          </button>
+        </div>
+      )}
 
-          {/* Team Templates */}
-          <TeamTemplates />
+      {/* ── TEAMS GRID ── */}
+      {displayTeams.length > 0 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '20px',
+        }}>
+          {displayTeams.map((team) => (
+            <div
+              key={team.id}
+              style={{
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                borderRadius: '16px',
+                padding: '24px',
+                position: 'relative',
+                transition: 'box-shadow 0.15s',
+                cursor: 'default',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.07)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            >
+              {/* Team avatar + name */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                marginBottom: '16px',
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}>
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    background: '#F5F3FF',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: '#7C3AED',
+                    flexShrink: 0,
+                  }}>
+                    {(team.name ?? '?')
+                      .split(' ')
+                      .map((w: string) => w[0])
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .join('')
+                      .toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      color: '#0F172A',
+                      letterSpacing: '-0.01em',
+                    }}>
+                      {team.name}
+                    </div>
+                    <div style={{
+                      fontSize: '11px',
+                      color: '#94A3B8',
+                      marginTop: '2px',
+                    }}>
+                      {(team.members ?? []).length}{(team.members ?? []).length === 1 ? ' member' : ' members'}
+                    </div>
+                  </div>
+                </div>
 
-          {/* Dashboard Preview */}
-          <TeamDashboardPreview />
+                {/* Delete button — hidden in demo mode */}
+                {!demoMode && (
+                  <button
+                    onClick={() => deleteMutation.mutate(team.id)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#CBD5E1',
+                      padding: '4px',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.color = '#DC2626'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.color = '#CBD5E1'
+                    }}
+                    title="Delete team"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
 
-          {/* Benefits */}
-          <TeamBenefits />
-
-          {/* Use Cases */}
-          <TeamUseCases />
-
-          {/* Tip Section */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">💡</span>
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  Pro Tip: Most teams start by mapping their org chart
+              {/* Description */}
+              {team.description && (
+                <p style={{
+                  fontSize: '13px',
+                  color: '#475569',
+                  lineHeight: 1.55,
+                  marginBottom: '16px',
+                }}>
+                  {team.description}
                 </p>
-                <p className="text-sm text-gray-600">
-                  Frontend, backend, platform, data, etc.
-                </p>
+              )}
+
+              {/* Slack channel */}
+              {team.slackChannel && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '12px',
+                  color: '#64748B',
+                  marginBottom: '16px',
+                }}>
+                  <Slack size={12} />
+                  {team.slackChannel}
+                </div>
+              )}
+
+              {/* Footer — owner + view */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: '14px',
+                borderTop: '1px solid #F1F5F9',
+                marginTop: 'auto',
+              }}>
+                <span style={{
+                  fontSize: '11px',
+                  color: '#94A3B8',
+                }}>
+                  Owner: {team.owner}
+                </span>
+                <button style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#7C3AED',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}>
+                  View
+                  <ChevronRight size={13} />
+                </button>
               </div>
             </div>
-          </div>
+          ))}
+        </div>
+      )}
 
-          {/* CTA Footer */}
-          <div className="bg-blue-50 rounded-lg border border-blue-200 p-8 text-center">
-            <h3 className="text-xl font-bold text-gray-900 mb-2">
-              Ready to organize your services?
-            </h3>
-            <p className="text-gray-600 mb-6">
-              Create your first team in 30 seconds
-            </p>
-            <button className="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors">
-              Create First Team →
-            </button>
+      {/* ── CREATE TEAM MODAL ── */}
+      {showCreate && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15,23,42,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+          padding: '24px',
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '20px',
+            padding: '32px',
+            width: '100%',
+            maxWidth: '480px',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.15)',
+          }}>
+            {/* Modal header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '24px',
+            }}>
+              <h2 style={{
+                fontSize: '1.1rem',
+                fontWeight: 700,
+                color: '#0F172A',
+                letterSpacing: '-0.01em',
+              }}>
+                Create Team
+              </h2>
+              <button
+                onClick={() => {
+                  setShowCreate(false)
+                  setFormError('')
+                  setForm({ name: '', description: '', slackChannel: '', owner: '' })
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#94A3B8',
+                  display: 'flex',
+                  padding: '4px',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Form fields */}
+            {([
+              {
+                label: 'Team Name',
+                key: 'name',
+                placeholder: 'e.g. Platform Engineering',
+                required: true,
+              },
+              {
+                label: 'Description',
+                key: 'description',
+                placeholder: 'What does this team own?',
+                required: false,
+              },
+              {
+                label: 'Owner',
+                key: 'owner',
+                placeholder: 'e.g. user-id or email',
+                required: true,
+              },
+              {
+                label: 'Slack Channel',
+                key: 'slackChannel',
+                placeholder: 'e.g. #platform-eng',
+                required: false,
+              },
+            ] as const).map(({ label, key, placeholder, required }) => (
+              <div key={key} style={{ marginBottom: '16px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#374151',
+                  marginBottom: '6px',
+                }}>
+                  {label}
+                  {required && (
+                    <span style={{ color: '#DC2626', marginLeft: '3px' }}>*</span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={form[key]}
+                  onChange={e => {
+                    setForm(f => ({ ...f, [key]: e.target.value }))
+                    setFormError('')
+                  }}
+                  placeholder={placeholder}
+                  style={{
+                    width: '100%',
+                    padding: '9px 14px',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    color: '#0F172A',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    background: '#FAFAFA',
+                  }}
+                  onFocus={e => {
+                    e.target.style.border = '1px solid #7C3AED'
+                    e.target.style.background = '#FFFFFF'
+                  }}
+                  onBlur={e => {
+                    e.target.style.border = '1px solid #E2E8F0'
+                    e.target.style.background = '#FAFAFA'
+                  }}
+                />
+              </div>
+            ))}
+
+            {/* Error */}
+            {formError && (
+              <p style={{
+                fontSize: '12px',
+                color: '#DC2626',
+                marginBottom: '16px',
+              }}>
+                {formError}
+              </p>
+            )}
+
+            {/* Actions */}
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              marginTop: '8px',
+            }}>
+              <button
+                onClick={() => {
+                  setShowCreate(false)
+                  setFormError('')
+                }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '9px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: '#475569',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={createMutation.isPending}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: '#7C3AED',
+                  border: 'none',
+                  borderRadius: '9px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: '#fff',
+                  cursor: createMutation.isPending ? 'not-allowed' : 'pointer',
+                  opacity: createMutation.isPending ? 0.7 : 1,
+                }}
+              >
+                {createMutation.isPending ? 'Creating…' : 'Create Team'}
+              </button>
+            </div>
           </div>
         </div>
-      ) : (
-        <>
-          {/* Teams List - Will be shown when teams exist */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6 text-center">
-            <p className="text-gray-600">Your teams will be displayed here.</p>
-          </div>
-        </>
       )}
+
     </div>
   )
 }

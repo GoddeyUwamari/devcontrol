@@ -1,1034 +1,926 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import Link from 'next/link';
+import { useState } from 'react'
 import {
-  Code2,
-  Terminal,
-  Copy,
-  Check,
-  Book,
-  Zap,
-  Shield,
-  Clock,
-  GitBranch,
-  Webhook,
-  Key,
-  Lock,
-  Globe,
-  MessageSquare,
-  Users,
-  FileText,
-  ArrowRight,
-  CheckCircle2,
-  ExternalLink,
-  Github,
-  Cpu,
-  Activity,
-  PlayCircle,
-  Download,
-  RefreshCw,
-  HelpCircle,
-  ChevronDown,
-  ChevronUp,
-  Blocks,
-  CloudCog,
-  FileCode,
-  TerminalSquare,
-  Braces,
-} from 'lucide-react';
+  Plus, X, Copy, Check, Trash2,
+  Eye, EyeOff,
+  Github, Slack, Bell, Trello,
+} from 'lucide-react'
+import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+
+// ── LOCAL TYPES ────────────────────────────────────────────────────────────────
+
+interface ApiKey {
+  id: string
+  name: string
+  prefix: string
+  scopes: string[]
+  createdAt: string
+  lastUsedAt: string | null
+  status: 'active' | 'revoked'
+}
+
+interface WebhookEndpoint {
+  id: string
+  url: string
+  events: string[]
+  status: 'active' | 'failing' | 'disabled'
+  lastTriggeredAt: string | null
+  createdAt: string
+}
+
+interface Integration {
+  id: string
+  name: string
+  description: string
+  status: 'connected' | 'disconnected'
+  connectedAt: string | null
+  icon: React.ReactNode
+}
+
+// ── DEMO DATA ──────────────────────────────────────────────────────────────────
+
+const DEMO_API_KEYS: ApiKey[] = [
+  {
+    id: 'key-1',
+    name: 'Production CI/CD',
+    prefix: 'dc_live_k8x2',
+    scopes: ['read:metrics', 'read:costs', 'read:security'],
+    createdAt: '2024-01-15T00:00:00Z',
+    lastUsedAt: '2024-03-17T14:22:00Z',
+    status: 'active',
+  },
+  {
+    id: 'key-2',
+    name: 'Grafana Dashboard',
+    prefix: 'dc_live_m3p9',
+    scopes: ['read:metrics'],
+    createdAt: '2024-02-01T00:00:00Z',
+    lastUsedAt: '2024-03-18T09:11:00Z',
+    status: 'active',
+  },
+  {
+    id: 'key-3',
+    name: 'Internal Reporting',
+    prefix: 'dc_live_q7r1',
+    scopes: ['read:costs', 'read:deployments'],
+    createdAt: '2024-02-20T00:00:00Z',
+    lastUsedAt: null,
+    status: 'active',
+  },
+]
+
+const DEMO_WEBHOOKS: WebhookEndpoint[] = [
+  {
+    id: 'wh-1',
+    url: 'https://hooks.slack.com/services/T0.../B0.../xxx',
+    events: ['alert.triggered', 'cost.threshold_exceeded'],
+    status: 'active',
+    lastTriggeredAt: '2024-03-17T16:45:00Z',
+    createdAt: '2024-01-20T00:00:00Z',
+  },
+  {
+    id: 'wh-2',
+    url: 'https://api.pagerduty.com/webhooks/v3/xxx',
+    events: ['incident.created', 'alert.critical'],
+    status: 'active',
+    lastTriggeredAt: '2024-03-15T02:11:00Z',
+    createdAt: '2024-02-05T00:00:00Z',
+  },
+  {
+    id: 'wh-3',
+    url: 'https://internal.wayup.com/devcontrol/webhook',
+    events: ['deployment.completed', 'security.violation'],
+    status: 'failing',
+    lastTriggeredAt: '2024-03-10T11:30:00Z',
+    createdAt: '2024-03-01T00:00:00Z',
+  },
+]
+
+// ── HELPERS ────────────────────────────────────────────────────────────────────
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric',
+  })
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const h = Math.floor(diff / 1000 / 60 / 60)
+  if (h < 1) return 'just now'
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d}d ago`
+  return formatDate(iso)
+}
+
+// ── PAGE ───────────────────────────────────────────────────────────────────────
 
 export default function DevelopersPage() {
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [activeLanguage, setActiveLanguage] = useState('python');
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const { demoMode } = useDemoMode()
 
-  const handleCopy = (text: string, index: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2000);
-  };
+  // API Keys state
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>(demoMode ? DEMO_API_KEYS : [])
+  const [showNewKey, setShowNewKey] = useState(false)
+  const [newKeyName, setNewKeyName] = useState('')
+  const [newKeyError, setNewKeyError] = useState('')
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null)
+  const [showKey, setShowKey] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  const codeExamples: Record<string, { install: string; code: string }> = {
-    python: {
-      install: 'pip install devcontrol-sdk',
-      code: `from devcontrol import DevControl
+  // Webhooks state
+  const [webhooks, setWebhooks] = useState<WebhookEndpoint[]>(demoMode ? DEMO_WEBHOOKS : [])
+  const [showNewWebhook, setShowNewWebhook] = useState(false)
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [webhookError, setWebhookError] = useState('')
 
-client = DevControl(api_key="your_api_key")
-
-# Get all AWS resources with cost data
-resources = client.resources.list(
-    cloud="aws",
-    include_costs=True
-)
-
-for resource in resources:
-    print(f"{resource.name}: \${resource.monthly_cost}")`,
+  // Integrations state
+  const [integrations, setIntegrations] = useState<Integration[]>([
+    {
+      id: 'github',
+      name: 'GitHub',
+      description: 'Pull deployment events and PR data from your repositories',
+      status: demoMode ? 'connected' : 'disconnected',
+      connectedAt: demoMode ? '2024-01-15T00:00:00Z' : null,
+      icon: <Github size={20} />,
     },
-    node: {
-      install: 'npm install @devcontrol/sdk',
-      code: `import { DevControl } from '@devcontrol/sdk';
-
-const client = new DevControl({
-  apiKey: 'your_api_key'
-});
-
-// Get all AWS resources with cost data
-const resources = await client.resources.list({
-  cloud: 'aws',
-  includeCosts: true
-});
-
-resources.forEach(resource => {
-  console.log(\`\${resource.name}: $\${resource.monthlyCost}\`);
-});`,
+    {
+      id: 'slack',
+      name: 'Slack',
+      description: 'Send alerts and reports to your Slack channels',
+      status: demoMode ? 'connected' : 'disconnected',
+      connectedAt: demoMode ? '2024-01-20T00:00:00Z' : null,
+      icon: <Slack size={20} />,
     },
-    go: {
-      install: 'go get github.com/devcontrol/devcontrol-go',
-      code: `package main
+    {
+      id: 'pagerduty',
+      name: 'PagerDuty',
+      description: 'Route critical alerts to on-call engineers instantly',
+      status: demoMode ? 'connected' : 'disconnected',
+      connectedAt: demoMode ? '2024-02-01T00:00:00Z' : null,
+      icon: <Bell size={20} />,
+    },
+    {
+      id: 'jira',
+      name: 'Jira',
+      description: 'Create and link incidents to Jira issues automatically',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Trello size={20} />,
+    },
+  ])
 
-import (
-    "fmt"
-    "github.com/devcontrol/devcontrol-go"
-)
+  // ── Handlers ────────────────────────────────────────────────────────────────
 
-func main() {
-    client := devcontrol.NewClient("your_api_key")
-
-    // Get all AWS resources with cost data
-    resources, _ := client.Resources.List(&devcontrol.ListOptions{
-        Cloud:        "aws",
-        IncludeCosts: true,
-    })
-
-    for _, r := range resources {
-        fmt.Printf("%s: $%.2f\\n", r.Name, r.MonthlyCost)
+  const handleGenerateKey = () => {
+    if (!newKeyName.trim()) {
+      setNewKeyError('Key name is required.')
+      return
     }
-}`,
-    },
-    curl: {
-      install: '# No installation needed',
-      code: `curl -X GET "https://api.devcontrol.cloud/v1/resources" \\
-  -H "Authorization: Bearer your_api_key" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "cloud": "aws",
-    "include_costs": true
-  }'`,
-    },
-  };
+    const fakeKey = 'dc_live_' + Math.random().toString(36).substring(2, 18)
+    const newKey: ApiKey = {
+      id: 'key-' + Date.now(),
+      name: newKeyName.trim(),
+      prefix: fakeKey.substring(0, 12),
+      scopes: ['read:metrics', 'read:costs'],
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+      status: 'active',
+    }
+    setApiKeys(k => [...k, newKey])
+    setGeneratedKey(fakeKey)
+    setNewKeyName('')
+    setNewKeyError('')
+  }
 
-  const sdks = [
-    {
-      name: 'Python',
-      icon: '🐍',
-      package: 'devcontrol-sdk',
-      version: 'v2.4.1',
-      downloads: '45K+',
-      color: 'from-yellow-500 to-blue-500',
-    },
-    {
-      name: 'Node.js',
-      icon: '⬢',
-      package: '@devcontrol/sdk',
-      version: 'v2.4.0',
-      downloads: '38K+',
-      color: 'from-green-500 to-green-600',
-    },
-    {
-      name: 'Go',
-      icon: '🔵',
-      package: 'devcontrol-go',
-      version: 'v2.3.2',
-      downloads: '12K+',
-      color: 'from-cyan-500 to-blue-500',
-    },
-    {
-      name: 'Ruby',
-      icon: '💎',
-      package: 'devcontrol-ruby',
-      version: 'v2.2.0',
-      downloads: '8K+',
-      color: 'from-red-500 to-red-600',
-    },
-    {
-      name: 'Java',
-      icon: '☕',
-      package: 'devcontrol-java',
-      version: 'v2.3.1',
-      downloads: '15K+',
-      color: 'from-orange-500 to-red-500',
-    },
-    {
-      name: 'Terraform',
-      icon: '🏗️',
-      package: 'terraform-provider-devcontrol',
-      version: 'v1.8.0',
-      downloads: '22K+',
-      color: 'from-purple-500 to-purple-600',
-    },
-  ];
+  const handleRevokeKey = (id: string) => {
+    setApiKeys(k => k.filter(key => key.id !== id))
+  }
 
-  const apiFeatures = [
-    {
-      icon: Zap,
-      title: 'RESTful & GraphQL',
-      description: 'Choose your preferred API style. Full REST coverage with GraphQL for complex queries.',
-    },
-    {
-      icon: Key,
-      title: 'Flexible Authentication',
-      description: 'API keys, OAuth 2.0, and JWT tokens. Scoped permissions for granular access control.',
-    },
-    {
-      icon: RefreshCw,
-      title: 'Webhooks & Events',
-      description: 'Real-time notifications for resource changes, cost alerts, and security events.',
-    },
-    {
-      icon: Shield,
-      title: 'Rate Limiting',
-      description: '1,000 req/min (Pro), 10,000 req/min (Enterprise). Burst allowance included.',
-    },
-    {
-      icon: GitBranch,
-      title: 'API Versioning',
-      description: 'Stable v1 API with 24-month deprecation policy. Breaking changes announced 6 months ahead.',
-    },
-    {
-      icon: Activity,
-      title: '99.99% Uptime SLA',
-      description: 'Enterprise-grade reliability with < 50ms average response time globally.',
-    },
-  ];
+  const handleCopy = () => {
+    if (generatedKey) {
+      navigator.clipboard.writeText(generatedKey)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
 
-  const documentationLinks = [
-    {
-      icon: Book,
-      title: 'API Reference',
-      description: 'Complete endpoint documentation with request/response schemas',
-      href: '/docs/api',
-      badge: 'OpenAPI 3.0',
-    },
-    {
-      icon: PlayCircle,
-      title: 'Quickstart Guide',
-      description: 'From zero to first API call in under 5 minutes',
-      href: '/docs/quickstart',
-      badge: 'Beginner',
-    },
-    {
-      icon: FileCode,
-      title: 'Code Examples',
-      description: '50+ recipes for common integration patterns',
-      href: '/docs/examples',
-      badge: 'Updated Weekly',
-    },
-    {
-      icon: Webhook,
-      title: 'Webhooks Guide',
-      description: 'Set up real-time event notifications',
-      href: '/docs/webhooks',
-      badge: null,
-    },
-    {
-      icon: Lock,
-      title: 'Authentication',
-      description: 'API keys, OAuth flows, and security best practices',
-      href: '/docs/auth',
-      badge: null,
-    },
-    {
-      icon: RefreshCw,
-      title: 'Changelog',
-      description: 'API updates, new features, and deprecation notices',
-      href: '/changelog',
-      badge: 'v2.6.0',
-    },
-  ];
+  const handleAddWebhook = () => {
+    if (!webhookUrl.trim() || !webhookUrl.startsWith('https://')) {
+      setWebhookError('A valid HTTPS URL is required.')
+      return
+    }
+    const newWh: WebhookEndpoint = {
+      id: 'wh-' + Date.now(),
+      url: webhookUrl.trim(),
+      events: ['alert.triggered'],
+      status: 'active',
+      lastTriggeredAt: null,
+      createdAt: new Date().toISOString(),
+    }
+    setWebhooks(w => [...w, newWh])
+    setWebhookUrl('')
+    setWebhookError('')
+    setShowNewWebhook(false)
+  }
 
-  const devTools = [
-    {
-      icon: TerminalSquare,
-      title: 'DevControl CLI',
-      description: 'Powerful command-line interface for automation and scripting',
-      install: 'brew install devcontrol-cli',
-      link: '/docs/cli',
-    },
-    {
-      icon: Blocks,
-      title: 'Terraform Provider',
-      description: 'Infrastructure-as-Code for DevControl resources',
-      install: 'terraform init',
-      link: '/docs/terraform',
-    },
-    {
-      icon: CloudCog,
-      title: 'GitHub Actions',
-      description: 'Pre-built workflows for CI/CD integration',
-      install: 'uses: devcontrol/action@v2',
-      link: '/docs/github-actions',
-    },
-    {
-      icon: Braces,
-      title: 'VS Code Extension',
-      description: 'IntelliSense, snippets, and inline cost previews',
-      install: 'ext install devcontrol.vscode',
-      link: '/docs/vscode',
-    },
-  ];
+  const handleToggleIntegration = (id: string) => {
+    setIntegrations(list =>
+      list.map(i =>
+        i.id === id
+          ? {
+              ...i,
+              status: i.status === 'connected' ? 'disconnected' : 'connected',
+              connectedAt: i.status === 'connected' ? null : new Date().toISOString(),
+            }
+          : i
+      )
+    )
+  }
 
-  const securityFeatures = [
-    'TLS 1.3 encryption in transit',
-    'AES-256 encryption at rest',
-    'SOC 2 Type II certified API',
-    'HIPAA-compliant endpoints available',
-    'IP allowlisting for API access',
-    'Comprehensive audit logging',
-    'Signed webhook payloads (HMAC-SHA256)',
-    'Short-lived token support',
-  ];
-
-  const communityResources = [
-    {
-      icon: MessageSquare,
-      title: 'Discord Community',
-      description: '2,500+ developers sharing tips and getting help',
-      link: '#',
-      cta: 'Join Discord',
-    },
-    {
-      icon: Github,
-      title: 'GitHub Discussions',
-      description: 'Feature requests, bug reports, and open-source SDKs',
-      link: '#',
-      cta: 'View on GitHub',
-    },
-    {
-      icon: Users,
-      title: 'Developer Office Hours',
-      description: 'Weekly live sessions with our engineering team',
-      link: '#',
-      cta: 'Register',
-    },
-    {
-      icon: FileText,
-      title: 'Technical Blog',
-      description: 'Deep dives, tutorials, and integration guides',
-      link: '/blog',
-      cta: 'Read Blog',
-    },
-  ];
-
-  const integrationStory = {
-    company: 'Series B Fintech Startup',
-    quote: "We integrated DevControl's API into our deployment pipeline in less than a day. Now every PR shows the projected cost impact before merge.",
-    author: 'Principal Engineer',
-    metrics: [
-      { label: 'Integration Time', value: '< 1 day' },
-      { label: 'API Calls/Month', value: '2.4M' },
-      { label: 'Cost Visibility', value: '100%' },
-    ],
-  };
-
-  const apiPricing = [
-    { tier: 'Pro', calls: '100K/month', rate: '1,000/min', price: 'Included' },
-    { tier: 'Business', calls: '1M/month', rate: '5,000/min', price: 'Included' },
-    { tier: 'Enterprise', calls: 'Unlimited', rate: '10,000/min', price: 'Included' },
-  ];
-
-  const faqItems = [
-    {
-      question: 'How do I get my API keys?',
-      answer: 'API keys are available in your Dashboard under Settings → API Keys. You can create multiple keys with different scopes and permissions. Keys can be rotated or revoked at any time.',
-    },
-    {
-      question: 'What happens if I exceed the rate limit?',
-      answer: 'Requests exceeding the rate limit receive a 429 response with a Retry-After header. We include a burst allowance of 2x your limit for short spikes. Enterprise customers can request higher limits.',
-    },
-    {
-      question: 'Is the API compatible with my existing tools?',
-      answer: 'Yes. Our REST API follows OpenAPI 3.0 specification, making it compatible with any HTTP client. We also provide native SDKs for Python, Node.js, Go, Ruby, and Java, plus Terraform and Pulumi providers.',
-    },
-    {
-      question: 'How do webhooks handle failures?',
-      answer: 'Failed webhook deliveries are retried with exponential backoff (1min, 5min, 30min, 2hr, 24hr). After 5 failures, the webhook is paused and you receive an email notification. All payloads are signed with HMAC-SHA256.',
-    },
-    {
-      question: 'Can I use the API in air-gapped environments?',
-      answer: 'Enterprise customers can deploy DevControl on-premises or in a dedicated VPC. Contact our sales team for private deployment options that meet your security requirements.',
-    },
-    {
-      question: 'What is your API deprecation policy?',
-      answer: 'We maintain API versions for a minimum of 24 months. Breaking changes are announced 6 months in advance via email, changelog, and response headers. Non-breaking additions happen continuously.',
-    },
-  ];
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      {/* Hero Section */}
-      <section className="relative pt-20 pb-16 overflow-hidden">
-        <div className="absolute inset-0 bg-grid-slate-100 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.5))] dark:bg-grid-slate-700/25" />
-        <div className="relative max-w-7xl mx-auto px-6">
-          <div className="text-center max-w-4xl mx-auto">
-            <Badge variant="outline" className="mb-6 px-4 py-2 text-sm border-primary/30 bg-primary/5">
-              <Code2 className="w-4 h-4 mr-2" />
-              Developer Platform v2.6
-            </Badge>
+    <div style={{ padding: '40px 56px 80px', maxWidth: '1400px', margin: '0 auto' }}>
 
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 dark:text-white mb-6 tracking-tight">
-              Build Faster with{' '}
-              <span className="bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
-                DevControl APIs
+      {/* PAGE HEADER */}
+      <div style={{ marginBottom: '32px' }}>
+        <h1 style={{
+          fontSize: '1.7rem',
+          fontWeight: 700,
+          color: '#0F172A',
+          letterSpacing: '-0.025em',
+          marginBottom: '6px',
+          lineHeight: 1.2,
+        }}>
+          Developers
+        </h1>
+        <p style={{ fontSize: '14px', color: '#334155', lineHeight: 1.5 }}>
+          API keys, webhooks, and integrations.
+        </p>
+      </div>
+
+      {/* API USAGE BAR */}
+      {demoMode && (
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: '16px',
+          padding: '20px 28px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '24px',
+        }}>
+          <div style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            color: '#334155',
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            whiteSpace: 'nowrap',
+          }}>
+            API Usage
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginBottom: '6px',
+            }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+                14,847 requests this month
               </span>
-            </h1>
-
-            <p className="text-xl text-slate-600 dark:text-slate-300 mb-8 max-w-2xl mx-auto">
-              Integrate cloud cost intelligence into your workflows. Production-ready SDKs,
-              comprehensive docs, and a developer experience built by engineers, for engineers.
-            </p>
-
-            <div className="flex flex-wrap justify-center gap-4 mb-12">
-              <Button size="lg" asChild>
-                <Link href="/docs">
-                  <Book className="w-5 h-5 mr-2" />
-                  View Documentation
-                </Link>
-              </Button>
-              <Button size="lg" variant="outline" asChild>
-                <Link href="/dashboard/settings/api">
-                  <Key className="w-5 h-5 mr-2" />
-                  Get API Keys
-                </Link>
-              </Button>
+              <span style={{ fontSize: '13px', color: '#64748B' }}>
+                of 20,000 included
+              </span>
             </div>
-
-            {/* Quick Stats */}
-            <div className="flex flex-wrap justify-center gap-8 text-sm">
-              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                <Clock className="w-4 h-4 text-green-500" />
-                <span><strong>5 min</strong> to first API call</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                <Activity className="w-4 h-4 text-green-500" />
-                <span><strong>99.99%</strong> API uptime</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                <Zap className="w-4 h-4 text-green-500" />
-                <span><strong>&lt; 50ms</strong> avg response</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                <Globe className="w-4 h-4 text-green-500" />
-                <span><strong>6 regions</strong> worldwide</span>
-              </div>
+            <div style={{ height: '6px', background: '#F1F5F9', borderRadius: '3px' }}>
+              <div style={{
+                width: '74%',
+                height: '100%',
+                background: '#7C3AED',
+                borderRadius: '3px',
+              }} />
             </div>
           </div>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#7C3AED', whiteSpace: 'nowrap' }}>
+            74% used
+          </span>
         </div>
-      </section>
+      )}
 
-      {/* Quick Start Section */}
-      <section className="py-16 bg-slate-900 dark:bg-slate-950">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-10">
-            <h2 className="text-3xl font-bold text-white mb-4">Quick Start</h2>
-            <p className="text-slate-400">From zero to first API call in under 5 minutes</p>
-          </div>
-
-          <div className="max-w-4xl mx-auto">
-            {/* Language Tabs */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {Object.keys(codeExamples).map((lang) => (
-                <button
-                  key={lang}
-                  onClick={() => setActiveLanguage(lang)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    activeLanguage === lang
-                      ? 'bg-primary text-white'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {lang === 'node' ? 'Node.js' : lang.charAt(0).toUpperCase() + lang.slice(1)}
-                </button>
-              ))}
+      {/* API KEYS */}
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #E2E8F0',
+        borderRadius: '16px',
+        padding: '28px',
+        marginBottom: '20px',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '20px',
+        }}>
+          <div>
+            <div style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              color: '#334155',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              marginBottom: '4px',
+            }}>
+              API Keys
             </div>
-
-            {/* Install Command */}
-            <div className="bg-slate-800 rounded-t-lg border border-slate-700 p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Terminal className="w-4 h-4 text-slate-400" />
-                  <code className="text-green-400 text-sm">{codeExamples[activeLanguage].install}</code>
-                </div>
-                <button
-                  onClick={() => handleCopy(codeExamples[activeLanguage].install, 0)}
-                  className="p-2 hover:bg-slate-700 rounded transition-colors"
-                >
-                  {copiedIndex === 0 ? (
-                    <Check className="w-4 h-4 text-green-400" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-slate-400" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Code Example */}
-            <div className="bg-slate-950 rounded-b-lg border border-t-0 border-slate-700 p-4 overflow-x-auto">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-xs text-slate-500">Example: List resources with costs</span>
-                <button
-                  onClick={() => handleCopy(codeExamples[activeLanguage].code, 1)}
-                  className="p-2 hover:bg-slate-800 rounded transition-colors"
-                >
-                  {copiedIndex === 1 ? (
-                    <Check className="w-4 h-4 text-green-400" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-slate-400" />
-                  )}
-                </button>
-              </div>
-              <pre className="text-sm text-slate-300 font-mono whitespace-pre-wrap">
-                {codeExamples[activeLanguage].code}
-              </pre>
-            </div>
-
-            <div className="mt-6 text-center">
-              <Link
-                href="/docs/quickstart"
-                className="text-primary hover:underline inline-flex items-center gap-1"
-              >
-                View full quickstart guide <ArrowRight className="w-4 h-4" />
-              </Link>
+            <div style={{ fontSize: '13px', color: '#64748B' }}>
+              {apiKeys.length} active key{apiKeys.length !== 1 ? 's' : ''}
             </div>
           </div>
+          <button
+            onClick={() => setShowNewKey(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#7C3AED',
+              color: '#fff',
+              padding: '9px 18px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={14} />
+            Generate Key
+          </button>
         </div>
-      </section>
 
-      {/* SDKs Section */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-              Official SDKs & Libraries
-            </h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400">
-              Production-ready libraries maintained by the DevControl team
-            </p>
+        {apiKeys.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: '#64748B', fontSize: '14px' }}>
+            No API keys yet. Generate your first key to get started.
           </div>
+        ) : (
+          <>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '2fr 1.5fr 2fr 1fr 80px',
+              gap: '12px',
+              padding: '0 0 10px',
+              borderBottom: '1px solid #F1F5F9',
+              fontSize: '12px',
+              fontWeight: 700,
+              color: '#64748B',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}>
+              <span>Name</span>
+              <span>Key prefix</span>
+              <span>Scopes</span>
+              <span>Last used</span>
+              <span />
+            </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sdks.map((sdk) => (
-              <Card key={sdk.name} className="hover:shadow-lg transition-shadow group">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{sdk.icon}</span>
-                      <div>
-                        <CardTitle className="text-lg">{sdk.name}</CardTitle>
-                        <CardDescription className="font-mono text-xs">{sdk.package}</CardDescription>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className="text-xs">{sdk.version}</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500 flex items-center gap-1">
-                      <Download className="w-3 h-3" />
-                      {sdk.downloads} downloads
+            {apiKeys.map(key => (
+              <div key={key.id} style={{
+                display: 'grid',
+                gridTemplateColumns: '2fr 1.5fr 2fr 1fr 80px',
+                gap: '12px',
+                padding: '12px 0',
+                borderBottom: '1px solid #F1F5F9',
+                alignItems: 'center',
+              }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+                  {key.name}
+                </span>
+                <code style={{
+                  fontSize: '13px',
+                  fontFamily: 'monospace',
+                  color: '#334155',
+                  background: '#F8FAFC',
+                  padding: '3px 8px',
+                  borderRadius: '5px',
+                }}>
+                  {key.prefix}••••••••
+                </code>
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                  {key.scopes.map(s => (
+                    <span key={s} style={{
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background: '#F5F3FF',
+                      color: '#7C3AED',
+                    }}>
+                      {s}
                     </span>
-                    <Link
-                      href="#"
-                      className="text-primary hover:underline flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      View on GitHub <ExternalLink className="w-3 h-3" />
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
+                  ))}
+                </div>
+                <span style={{ fontSize: '13px', color: '#64748B' }}>
+                  {key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'Never'}
+                </span>
+                <button
+                  onClick={() => handleRevokeKey(key.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: 'none',
+                    border: '1px solid #FECACA',
+                    borderRadius: '6px',
+                    padding: '5px 10px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#DC2626',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Trash2 size={11} />
+                  Revoke
+                </button>
+              </div>
             ))}
-          </div>
-        </div>
-      </section>
+          </>
+        )}
 
-      {/* API Features */}
-      <section className="py-20 bg-slate-50 dark:bg-slate-900/50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-              API Capabilities
-            </h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400">
-              Enterprise-grade API built for reliability and scale
+        {/* Generated key reveal */}
+        {generatedKey && (
+          <div style={{
+            marginTop: '16px',
+            background: '#F0FDF4',
+            border: '1px solid #A7F3D0',
+            borderRadius: '10px',
+            padding: '16px 20px',
+          }}>
+            <p style={{ fontSize: '13px', fontWeight: 600, color: '#059669', marginBottom: '10px' }}>
+              ✓ Key generated — copy it now. It will not be shown again.
             </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {apiFeatures.map((feature) => (
-              <Card key={feature.title} className="border-0 shadow-sm">
-                <CardHeader>
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-                    <feature.icon className="w-6 h-6 text-primary" />
-                  </div>
-                  <CardTitle className="text-lg">{feature.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-slate-600 dark:text-slate-400 text-sm">{feature.description}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Documentation Hub */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-              Documentation
-            </h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400">
-              Everything you need to integrate DevControl
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {documentationLinks.map((doc) => (
-              <Link key={doc.title} href={doc.href}>
-                <Card className="h-full hover:shadow-lg hover:border-primary/50 transition-all cursor-pointer group">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                        <doc.icon className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-primary transition-colors" />
-                      </div>
-                      {doc.badge && (
-                        <Badge variant="outline" className="text-xs">{doc.badge}</Badge>
-                      )}
-                    </div>
-                    <CardTitle className="text-lg mt-4 group-hover:text-primary transition-colors">
-                      {doc.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-slate-600 dark:text-slate-400 text-sm">{doc.description}</p>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-
-          <div className="mt-10 text-center">
-            <Button variant="outline" size="lg" asChild>
-              <Link href="/docs">
-                <Book className="w-5 h-5 mr-2" />
-                Browse All Documentation
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      {/* Developer Tools */}
-      <section className="py-20 bg-slate-900 dark:bg-slate-950">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-white mb-4">
-              Developer Tools
-            </h2>
-            <p className="text-lg text-slate-400">
-              CLI, IaC providers, and IDE integrations
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            {devTools.map((tool) => (
-              <Card key={tool.title} className="bg-slate-800 border-slate-700">
-                <CardHeader>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-lg bg-slate-700 flex items-center justify-center">
-                      <tool.icon className="w-6 h-6 text-primary" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg text-white">{tool.title}</CardTitle>
-                      <CardDescription className="text-slate-400">{tool.description}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="bg-slate-900 rounded-lg p-3 flex items-center justify-between">
-                    <code className="text-green-400 text-sm">{tool.install}</code>
-                    <button
-                      onClick={() => handleCopy(tool.install, sdks.length + devTools.indexOf(tool))}
-                      className="p-2 hover:bg-slate-700 rounded transition-colors"
-                    >
-                      {copiedIndex === sdks.length + devTools.indexOf(tool) ? (
-                        <Check className="w-4 h-4 text-green-400" />
-                      ) : (
-                        <Copy className="w-4 h-4 text-slate-400" />
-                      )}
-                    </button>
-                  </div>
-                  <Link
-                    href={tool.link}
-                    className="mt-4 inline-flex items-center text-primary hover:underline text-sm"
-                  >
-                    View documentation <ArrowRight className="w-4 h-4 ml-1" />
-                  </Link>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* API Explorer Teaser */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="bg-gradient-to-br from-primary/10 via-blue-50 to-purple-50 dark:from-primary/5 dark:via-slate-900 dark:to-slate-900 rounded-2xl p-8 md:p-12 border border-primary/20">
-            <div className="grid lg:grid-cols-2 gap-8 items-center">
-              <div>
-                <Badge variant="outline" className="mb-4 border-primary/30">
-                  <PlayCircle className="w-3 h-3 mr-1" />
-                  Interactive
-                </Badge>
-                <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-                  API Explorer
-                </h2>
-                <p className="text-lg text-slate-600 dark:text-slate-400 mb-6">
-                  Test API endpoints directly in your browser. No setup required.
-                  Use your API keys or our sandbox environment.
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  <Button asChild>
-                    <Link href="/docs/explorer">
-                      <PlayCircle className="w-5 h-5 mr-2" />
-                      Open API Explorer
-                    </Link>
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <Link href="#">
-                      <ExternalLink className="w-5 h-5 mr-2" />
-                      Postman Collection
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 border">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium rounded">GET</span>
-                  <code className="text-sm text-slate-600 dark:text-slate-300">/v1/resources</code>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between text-slate-500">
-                    <span>Status</span>
-                    <span className="text-green-500 font-medium">200 OK</span>
-                  </div>
-                  <div className="flex justify-between text-slate-500">
-                    <span>Response Time</span>
-                    <span className="font-medium">42ms</span>
-                  </div>
-                  <div className="flex justify-between text-slate-500">
-                    <span>Size</span>
-                    <span className="font-medium">2.4 KB</span>
-                  </div>
-                </div>
-                <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg">
-                  <pre className="text-xs text-slate-600 dark:text-slate-400 overflow-hidden">
-{`{
-  "data": [
-    { "id": "i-abc123", "type": "ec2" },
-    { "id": "rds-xyz789", "type": "rds" }
-  ],
-  "meta": { "total": 247 }
-}`}
-                  </pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Security Section */}
-      <section className="py-20 bg-slate-50 dark:bg-slate-900/50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <Badge variant="outline" className="mb-4">
-                <Shield className="w-3 h-3 mr-1" />
-                Enterprise Security
-              </Badge>
-              <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-                API Security & Compliance
-              </h2>
-              <p className="text-lg text-slate-600 dark:text-slate-400 mb-8">
-                Built with enterprise security requirements from day one.
-                Our API meets the strictest compliance standards.
-              </p>
-              <ul className="space-y-3">
-                {securityFeatures.map((feature) => (
-                  <li key={feature} className="flex items-center gap-3 text-slate-700 dark:text-slate-300">
-                    <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-8">
-                <Button variant="outline" asChild>
-                  <Link href="/security">
-                    <FileText className="w-4 h-4 mr-2" />
-                    View Security Documentation
-                  </Link>
-                </Button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              {['SOC 2 Type II', 'HIPAA', 'ISO 27001', 'GDPR'].map((cert) => (
-                <Card key={cert} className="text-center p-6">
-                  <Shield className="w-10 h-10 text-primary mx-auto mb-3" />
-                  <p className="font-semibold text-slate-900 dark:text-white">{cert}</p>
-                  <p className="text-xs text-slate-500 mt-1">Compliant</p>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Integration Story */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-              Developer Success Story
-            </h2>
-          </div>
-
-          <Card className="max-w-4xl mx-auto bg-gradient-to-br from-slate-50 to-white dark:from-slate-800 dark:to-slate-900 border-2">
-            <CardContent className="p-8 md:p-12">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Cpu className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">{integrationStory.company}</p>
-                  <p className="text-sm text-slate-500">{integrationStory.author}</p>
-                </div>
-              </div>
-
-              <blockquote className="text-xl text-slate-700 dark:text-slate-300 mb-8 italic">
-                &ldquo;{integrationStory.quote}&rdquo;
-              </blockquote>
-
-              <div className="grid grid-cols-3 gap-6">
-                {integrationStory.metrics.map((metric) => (
-                  <div key={metric.label} className="text-center">
-                    <p className="text-2xl font-bold text-primary">{metric.value}</p>
-                    <p className="text-sm text-slate-500">{metric.label}</p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      {/* Community & Support */}
-      <section className="py-20 bg-slate-50 dark:bg-slate-900/50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-              Community & Support
-            </h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400">
-              Get help from our team and connect with other developers
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {communityResources.map((resource) => (
-              <Card key={resource.title} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
-                    <resource.icon className="w-5 h-5 text-primary" />
-                  </div>
-                  <CardTitle className="text-lg">{resource.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">{resource.description}</p>
-                  <Link
-                    href={resource.link}
-                    className="text-primary hover:underline text-sm inline-flex items-center gap-1"
-                  >
-                    {resource.cta} <ArrowRight className="w-3 h-3" />
-                  </Link>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* API Pricing */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-              API Usage by Plan
-            </h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400">
-              API access included with all plans. No per-call charges.
-            </p>
-          </div>
-
-          <div className="max-w-3xl mx-auto">
-            <Card>
-              <CardContent className="p-0">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-4 font-semibold text-slate-900 dark:text-white">Plan</th>
-                      <th className="text-left p-4 font-semibold text-slate-900 dark:text-white">Monthly Calls</th>
-                      <th className="text-left p-4 font-semibold text-slate-900 dark:text-white">Rate Limit</th>
-                      <th className="text-left p-4 font-semibold text-slate-900 dark:text-white">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {apiPricing.map((tier, index) => (
-                      <tr key={tier.tier} className={index !== apiPricing.length - 1 ? 'border-b' : ''}>
-                        <td className="p-4 font-medium text-slate-900 dark:text-white">{tier.tier}</td>
-                        <td className="p-4 text-slate-600 dark:text-slate-400">{tier.calls}</td>
-                        <td className="p-4 text-slate-600 dark:text-slate-400">{tier.rate}</td>
-                        <td className="p-4">
-                          <Badge variant="secondary">{tier.price}</Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-            <p className="text-center text-sm text-slate-500 mt-4">
-              Need higher limits? <Link href="/enterprise" className="text-primary hover:underline">Contact us for Enterprise</Link>
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Status & Reliability */}
-      <section className="py-16 bg-slate-900 dark:bg-slate-950">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid md:grid-cols-3 gap-8 text-center">
-            <div>
-              <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
-                <Activity className="w-8 h-8 text-green-400" />
-              </div>
-              <p className="text-3xl font-bold text-white mb-2">99.99%</p>
-              <p className="text-slate-400">API Uptime (Last 12 Months)</p>
-            </div>
-            <div>
-              <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center mx-auto mb-4">
-                <Zap className="w-8 h-8 text-blue-400" />
-              </div>
-              <p className="text-3xl font-bold text-white mb-2">&lt; 50ms</p>
-              <p className="text-slate-400">Average Response Time (P95)</p>
-            </div>
-            <div>
-              <div className="w-16 h-16 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-4">
-                <Globe className="w-8 h-8 text-purple-400" />
-              </div>
-              <p className="text-3xl font-bold text-white mb-2">6 Regions</p>
-              <p className="text-slate-400">Global Edge Network</p>
-            </div>
-          </div>
-          <div className="mt-10 text-center">
-            <Button variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-800" asChild>
-              <Link href="#">
-                <Activity className="w-4 h-4 mr-2" />
-                View Status Page
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ Section */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-              Frequently Asked Questions
-            </h2>
-          </div>
-
-          <div className="max-w-3xl mx-auto space-y-4">
-            {faqItems.map((faq, index) => (
-              <Card
-                key={index}
-                className={`cursor-pointer transition-all ${
-                  expandedFaq === index ? 'ring-2 ring-primary/50' : 'hover:shadow-md'
-                }`}
-                onClick={() => setExpandedFaq(expandedFaq === index ? null : index)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <code style={{
+                flex: 1,
+                fontSize: '13px',
+                fontFamily: 'monospace',
+                color: '#0F172A',
+                background: '#FFFFFF',
+                padding: '8px 12px',
+                borderRadius: '7px',
+                border: '1px solid #D1FAE5',
+                letterSpacing: '0.05em',
+              }}>
+                {showKey ? generatedKey : '•'.repeat(generatedKey.length)}
+              </code>
+              <button
+                onClick={() => setShowKey(v => !v)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#64748B',
+                  display: 'flex',
+                  padding: '4px',
+                }}
               >
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <HelpCircle className="w-5 h-5 text-primary flex-shrink-0" />
-                      <CardTitle className="text-base font-medium">{faq.question}</CardTitle>
-                    </div>
-                    {expandedFaq === index ? (
-                      <ChevronUp className="w-5 h-5 text-slate-400" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-slate-400" />
-                    )}
-                  </div>
-                </CardHeader>
-                {expandedFaq === index && (
-                  <CardContent className="pt-0">
-                    <p className="text-slate-600 dark:text-slate-400 text-sm pl-8">
-                      {faq.answer}
-                    </p>
-                  </CardContent>
-                )}
-              </Card>
-            ))}
+                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+              <button
+                onClick={handleCopy}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: copied ? '#059669' : '#7C3AED',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '7px',
+                  padding: '8px 14px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+              </button>
+              <button
+                onClick={() => setGeneratedKey(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#64748B',
+                  display: 'flex',
+                  padding: '4px',
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+        )}
+      </div>
 
-      {/* Final CTA */}
-      <section className="py-20 bg-gradient-to-br from-primary/5 via-blue-50 to-purple-50 dark:from-primary/10 dark:via-slate-900 dark:to-slate-900">
-        <div className="max-w-7xl mx-auto px-6 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-4">
-            Ready to Start Building?
-          </h2>
-          <p className="text-xl text-slate-600 dark:text-slate-400 mb-8 max-w-2xl mx-auto">
-            Get your API keys and make your first call in minutes.
-            Our team is here to help if you need anything.
-          </p>
-          <div className="flex flex-wrap justify-center gap-4">
-            <Button size="lg" asChild>
-              <Link href="/dashboard/settings/api">
-                <Key className="w-5 h-5 mr-2" />
-                Get API Keys
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link href="/docs">
-                <Book className="w-5 h-5 mr-2" />
-                Read Documentation
-              </Link>
-            </Button>
+      {/* WEBHOOKS */}
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #E2E8F0',
+        borderRadius: '16px',
+        padding: '28px',
+        marginBottom: '20px',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '20px',
+        }}>
+          <div>
+            <div style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              color: '#334155',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              marginBottom: '4px',
+            }}>
+              Webhooks
+            </div>
+            <div style={{ fontSize: '13px', color: '#64748B' }}>
+              {webhooks.length} endpoint{webhooks.length !== 1 ? 's' : ''}
+            </div>
           </div>
-          <p className="mt-6 text-sm text-slate-500">
-            Questions? <Link href="/contact" className="text-primary hover:underline">Contact our developer support team</Link>
-          </p>
+          <button
+            onClick={() => setShowNewWebhook(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#7C3AED',
+              color: '#fff',
+              padding: '9px 18px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={14} />
+            Add Endpoint
+          </button>
         </div>
-      </section>
+
+        {webhooks.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: '#64748B', fontSize: '14px' }}>
+            No webhook endpoints configured.
+          </div>
+        ) : (
+          <>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '3fr 2fr 80px 100px',
+              gap: '12px',
+              padding: '0 0 10px',
+              borderBottom: '1px solid #F1F5F9',
+              fontSize: '12px',
+              fontWeight: 700,
+              color: '#64748B',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}>
+              <span>Endpoint URL</span>
+              <span>Events</span>
+              <span>Last fired</span>
+              <span style={{ textAlign: 'center' }}>Status</span>
+            </div>
+
+            {webhooks.map(wh => (
+              <div key={wh.id} style={{
+                display: 'grid',
+                gridTemplateColumns: '3fr 2fr 80px 100px',
+                gap: '12px',
+                padding: '12px 0',
+                borderBottom: '1px solid #F1F5F9',
+                alignItems: 'center',
+              }}>
+                <code style={{
+                  fontSize: '13px',
+                  fontFamily: 'monospace',
+                  color: '#334155',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {wh.url}
+                </code>
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                  {wh.events.map(e => (
+                    <span key={e} style={{
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background: '#F8FAFC',
+                      color: '#334155',
+                    }}>
+                      {e}
+                    </span>
+                  ))}
+                </div>
+                <span style={{ fontSize: '13px', color: '#64748B' }}>
+                  {wh.lastTriggeredAt ? timeAgo(wh.lastTriggeredAt) : 'Never'}
+                </span>
+                <div style={{ textAlign: 'center' }}>
+                  <span style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    padding: '3px 10px',
+                    borderRadius: '99px',
+                    background:
+                      wh.status === 'active' ? '#ECFDF5'
+                      : wh.status === 'failing' ? '#FEF2F2'
+                      : '#F8FAFC',
+                    color:
+                      wh.status === 'active' ? '#059669'
+                      : wh.status === 'failing' ? '#DC2626'
+                      : '#64748B',
+                    textTransform: 'capitalize',
+                  }}>
+                    {wh.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* INTEGRATIONS */}
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #E2E8F0',
+        borderRadius: '16px',
+        padding: '28px',
+      }}>
+        <div style={{
+          fontSize: '11px',
+          fontWeight: 700,
+          color: '#334155',
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+          marginBottom: '20px',
+        }}>
+          Integrations
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '16px',
+        }}>
+          {integrations.map(intg => (
+            <div key={intg.id} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              padding: '18px 20px',
+              border: `1px solid ${intg.status === 'connected' ? '#DDD6FE' : '#F1F5F9'}`,
+              borderRadius: '12px',
+              background: intg.status === 'connected' ? '#FAFAF9' : '#FFFFFF',
+            }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                background: intg.status === 'connected' ? '#F5F3FF' : '#F8FAFC',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: intg.status === 'connected' ? '#7C3AED' : '#64748B',
+                flexShrink: 0,
+              }}>
+                {intg.icon}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', marginBottom: '2px' }}>
+                  {intg.name}
+                </div>
+                <div style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.4 }}>
+                  {intg.status === 'connected'
+                    ? `Connected ${intg.connectedAt ? formatDate(intg.connectedAt) : ''}`
+                    : intg.description}
+                </div>
+              </div>
+              <button
+                onClick={() => handleToggleIntegration(intg.id)}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  border: intg.status === 'connected' ? '1px solid #FECACA' : '1px solid #7C3AED',
+                  background: intg.status === 'connected' ? '#FEF2F2' : '#7C3AED',
+                  color: intg.status === 'connected' ? '#DC2626' : '#FFFFFF',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {intg.status === 'connected' ? 'Disconnect' : 'Connect'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* GENERATE KEY MODAL */}
+      {showNewKey && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15,23,42,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+          padding: '24px',
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '20px',
+            padding: '32px',
+            width: '100%',
+            maxWidth: '440px',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.15)',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '24px',
+            }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>
+                Generate API Key
+              </h2>
+              <button
+                onClick={() => { setShowNewKey(false); setNewKeyError(''); setNewKeyName(''); setGeneratedKey(null) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                Key name <span style={{ color: '#DC2626', marginLeft: '3px' }}>*</span>
+              </label>
+              <input
+                type="text"
+                value={newKeyName}
+                onChange={e => { setNewKeyName(e.target.value); setNewKeyError('') }}
+                placeholder="e.g. Production CI/CD"
+                style={{
+                  width: '100%',
+                  padding: '9px 14px',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: '#0F172A',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  background: '#FAFAFA',
+                }}
+                onFocus={e => { e.target.style.border = '1px solid #7C3AED'; e.target.style.background = '#FFFFFF' }}
+                onBlur={e => { e.target.style.border = '1px solid #E2E8F0'; e.target.style.background = '#FAFAFA' }}
+              />
+              {newKeyError && (
+                <p style={{ fontSize: '13px', color: '#DC2626', marginTop: '6px' }}>{newKeyError}</p>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => { setShowNewKey(false); setNewKeyError(''); setNewKeyName('') }}
+                style={{
+                  flex: 1, padding: '10px', background: '#F8FAFC',
+                  border: '1px solid #E2E8F0', borderRadius: '9px',
+                  fontSize: '13px', fontWeight: 600, color: '#334155', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGenerateKey}
+                style={{
+                  flex: 1, padding: '10px', background: '#7C3AED',
+                  border: 'none', borderRadius: '9px',
+                  fontSize: '13px', fontWeight: 600, color: '#fff', cursor: 'pointer',
+                }}
+              >
+                Generate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD WEBHOOK MODAL */}
+      {showNewWebhook && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15,23,42,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+          padding: '24px',
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '20px',
+            padding: '32px',
+            width: '100%',
+            maxWidth: '480px',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.15)',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '24px',
+            }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>
+                Add Webhook Endpoint
+              </h2>
+              <button
+                onClick={() => { setShowNewWebhook(false); setWebhookError(''); setWebhookUrl('') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                Endpoint URL <span style={{ color: '#DC2626', marginLeft: '3px' }}>*</span>
+              </label>
+              <input
+                type="url"
+                value={webhookUrl}
+                onChange={e => { setWebhookUrl(e.target.value); setWebhookError('') }}
+                placeholder="https://your-server.com/webhook"
+                style={{
+                  width: '100%',
+                  padding: '9px 14px',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: '#0F172A',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  background: '#FAFAFA',
+                }}
+                onFocus={e => { e.target.style.border = '1px solid #7C3AED'; e.target.style.background = '#FFFFFF' }}
+                onBlur={e => { e.target.style.border = '1px solid #E2E8F0'; e.target.style.background = '#FAFAFA' }}
+              />
+              {webhookError && (
+                <p style={{ fontSize: '13px', color: '#DC2626', marginTop: '6px' }}>{webhookError}</p>
+              )}
+              <p style={{ fontSize: '12px', color: '#64748B', marginTop: '6px' }}>
+                Must be a valid HTTPS URL. DevControl will POST JSON payloads to this endpoint.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => { setShowNewWebhook(false); setWebhookError(''); setWebhookUrl('') }}
+                style={{
+                  flex: 1, padding: '10px', background: '#F8FAFC',
+                  border: '1px solid #E2E8F0', borderRadius: '9px',
+                  fontSize: '13px', fontWeight: 600, color: '#334155', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddWebhook}
+                style={{
+                  flex: 1, padding: '10px', background: '#7C3AED',
+                  border: 'none', borderRadius: '9px',
+                  fontSize: '13px', fontWeight: 600, color: '#fff', cursor: 'pointer',
+                }}
+              >
+                Add Endpoint
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
-  );
+  )
 }

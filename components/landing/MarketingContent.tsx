@@ -8,6 +8,8 @@ import { AIFeaturesSection } from '@/components/landing/AIFeaturesSection';
 import { SocialProofSection } from '@/components/landing/SocialProofSection';
 import { PricingPreview } from '@/components/landing/PricingPreview';
 import { CTASection } from '@/components/landing/CTASection';
+import { StatsBar } from './StatsBar';
+import { TestimonialsSection } from './TestimonialsSection';
 import {
   Cloud,
   GitBranch,
@@ -57,9 +59,9 @@ const securityItems = [
   },
   {
     icon: FileCheck,
-    title: 'SOC 2 Type II Ready',
+    title: 'SOC 2 Audit Underway',
     description:
-      'Built from the ground up with compliance in mind. SOC 2 Type II audit in progress. GDPR and HIPAA-friendly architecture.',
+      'SOC 2 Type II audit in progress, built from the ground up with compliance in mind. GDPR and HIPAA-friendly architecture.',
   },
 ];
 
@@ -84,6 +86,9 @@ export function MarketingContent() {
     <>
       {/* Hero */}
       <HeroSection />
+
+      {/* Stats Bar */}
+      <StatsBar />
 
       {/* Social Proof / Logo Ticker */}
       <TrustedBySection />
@@ -244,6 +249,9 @@ export function MarketingContent() {
 
       {/* Social Proof / Stats */}
       <SocialProofSection />
+
+      {/* Testimonials */}
+      <TestimonialsSection />
 
       {/* Pricing */}
       <PricingPreview />

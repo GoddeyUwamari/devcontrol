@@ -48,6 +48,7 @@ import {
   Service,
   Team,
 } from '@/lib/types';
+import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 
 // Helper function to generate mock 30-day trend data
 // TODO: Replace with real API data when available
@@ -107,149 +108,61 @@ function exportToPDF() {
   window.print();
 }
 
-// Benchmark badge component
-function BenchmarkBadge({ level }: { level: BenchmarkLevel }) {
-  const config = {
-    elite: { label: 'Elite', className: 'bg-green-500 text-white' },
-    high: { label: 'High', className: 'bg-purple-500 text-white' },
-    medium: { label: 'Medium', className: 'bg-yellow-500 text-white' },
-    low: { label: 'Low', className: 'bg-red-500 text-white' },
-  };
+// ── DEMO DATA ──────────────────────────────────────────────────────────────
 
-  const { label, className } = config[level];
+const DEMO_DORA_METRICS = {
+  deploymentFrequency: {
+    value: 4.2,
+    unit: 'per day',
+    benchmark: 'elite' as BenchmarkLevel,
+    trend: 'improving' as TrendDirection,
+    description: 'Deployments per day across all services',
+    changeFromPrevious: +0.8,
+  },
+  leadTime: {
+    value: 1.8,
+    unit: 'hours',
+    benchmark: 'elite' as BenchmarkLevel,
+    trend: 'improving' as TrendDirection,
+    description: 'Time from commit to production deployment',
+    changeFromPrevious: -0.6,
+  },
+  changeFailureRate: {
+    value: 1.2,
+    unit: '%',
+    benchmark: 'elite' as BenchmarkLevel,
+    trend: 'improving' as TrendDirection,
+    description: 'Percentage of deployments causing incidents',
+    changeFromPrevious: -0.3,
+  },
+  mttr: {
+    value: 14,
+    unit: 'minutes',
+    benchmark: 'elite' as BenchmarkLevel,
+    trend: 'improving' as TrendDirection,
+    description: 'Mean time to restore service after incident',
+    changeFromPrevious: -22,
+  },
+};
 
-  return (
-    <Badge className={className} variant="default">
-      {label}
-    </Badge>
-  );
-}
+const DEMO_SERVICE_BREAKDOWN = [
+  { name: 'api-gateway',          env: 'production', deployFreq: '6.1/d', leadTime: '0.9h', cfr: '0.8%', mttr: '8m',  tier: 'elite' },
+  { name: 'auth-service',         env: 'production', deployFreq: '5.3/d', leadTime: '1.2h', cfr: '1.1%', mttr: '12m', tier: 'elite' },
+  { name: 'notification-service', env: 'production', deployFreq: '3.8/d', leadTime: '2.1h', cfr: '1.8%', mttr: '18m', tier: 'elite' },
+  { name: 'analytics-worker',     env: 'production', deployFreq: '2.4/d', leadTime: '3.4h', cfr: '2.2%', mttr: '24m', tier: 'high'  },
+  { name: 'data-pipeline',        env: 'production', deployFreq: '1.9/d', leadTime: '4.1h', cfr: '3.1%', mttr: '31m', tier: 'high'  },
+  { name: 'payment-processor',    env: 'production', deployFreq: '0.8/d', leadTime: '6.2h', cfr: '4.8%', mttr: '52m', tier: 'medium', attention: true },
+];
 
-// Trend indicator component
-function TrendIndicator({ trend }: { trend: TrendDirection }) {
-  const config = {
-    improving: {
-      icon: ArrowUp,
-      label: 'Improving',
-      className: 'text-green-600',
-    },
-    stable: {
-      icon: Minus,
-      label: 'Stable',
-      className: 'text-gray-600',
-    },
-    declining: {
-      icon: ArrowDown,
-      label: 'Declining',
-      className: 'text-red-600',
-    },
-  };
-
-  const { icon: Icon, label, className } = config[trend];
-
-  return (
-    <div className={`flex items-center gap-1 text-sm ${className}`}>
-      <Icon className="h-4 w-4" />
-      <span>{label}</span>
-    </div>
-  );
-}
-
-// Metric card component
-interface MetricCardProps {
-  name: string;
-  metric: DORAMetric;
-  icon: React.ElementType;
-  color?: string;
-}
-
-function MetricCard({ name, metric, icon: Icon, color = '#7c3aed' }: MetricCardProps) {
-  // Generate trend data for sparkline
-  const trendData = generateTrendData(metric.value);
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{name}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-end justify-between">
-            <div>
-              <div className="text-2xl font-bold">
-                {metric.value.toFixed(2)} {metric.unit}
-              </div>
-            </div>
-
-            {/* Sparkline */}
-            <div className="w-32 h-12">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData}>
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke={color}
-                    fill={color}
-                    fillOpacity={0.2}
-                    strokeWidth={2}
-                  />
-                  <Tooltip
-                    content={({ payload }) => {
-                      if (!payload?.[0]) return null;
-                      return (
-                        <div className="bg-white px-2 py-1 rounded shadow text-xs border">
-                          {(payload[0].value as number).toFixed(2)} {metric.unit}
-                        </div>
-                      );
-                    }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 mt-2">
-            <BenchmarkBadge level={metric.benchmark} />
-            <TrendIndicator trend={metric.trend} />
-          </div>
-          {metric.description && (
-            <p className="text-xs text-muted-foreground">{metric.description}</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Loading skeleton for metric cards
-function MetricCardSkeleton() {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-4 w-4 rounded-full" />
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-8 w-40" />
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-5 w-16" />
-            <Skeleton className="h-5 w-20" />
-          </div>
-          <Skeleton className="h-4 w-full" />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// ── PAGE COMPONENT ─────────────────────────────────────────────────────────
 
 export default function DORAMetricsPage() {
   const [dateRange, setDateRange] = useState<DateRangeOption>('30d');
   const [selectedService, setSelectedService] = useState<string>('all');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [selectedEnvironment, setSelectedEnvironment] = useState<string>('all');
-  const [showBenchmarks, setShowBenchmarks] = useState(false);
+
+  const demoMode = useDemoMode();
 
   // Fetch services for filter dropdown
   const { data: servicesData } = useQuery<{ success: boolean; data: Service[] }>({
@@ -290,545 +203,716 @@ export default function DORAMetricsPage() {
     },
   });
 
-  const metrics = metricsData?.data;
+  const metrics = demoMode ? DEMO_DORA_METRICS : (metricsData?.data ?? null);
+  const isDemoActive = demoMode;
+  const totalDeployments = demoMode ? 847 : 0;
 
-  // Clear filters handler
-  const clearFilters = () => {
-    setSelectedService('all');
-    setSelectedTeam('all');
-    setSelectedEnvironment('all');
-  };
-
-  // Calculate total deployments for data confidence
-  const totalDeployments = metrics
-    ? Object.values(metrics.deploymentFrequency.breakdown || {}).reduce(
-        (sum, val) => sum + (val || 0),
-        0
-      ) * metrics.period.days
-    : 0;
+  const services = servicesData?.data;
+  const teams = teamsData?.data;
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-bold tracking-tight">DORA Metrics Dashboard</h1>
-          <p className="text-muted-foreground">
-            Track the 4 key DevOps Research and Assessment (DORA) metrics to measure your team&apos;s
-            software delivery performance
+    <div style={{
+      padding: '40px 56px 80px',
+      maxWidth: '1400px',
+      margin: '0 auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '24px',
+    }}>
+
+      {/* ── PAGE HEADER ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        marginBottom: '4px',
+      }}>
+        <div>
+          <h1 style={{
+            fontSize: '1.7rem', fontWeight: 700,
+            color: '#0F172A', letterSpacing: '-0.025em',
+            marginBottom: '6px', lineHeight: 1.2,
+          }}>
+            Engineering Performance
+          </h1>
+          <p style={{
+            fontSize: '14px', color: '#475569',
+            lineHeight: 1.5, maxWidth: '520px',
+            marginBottom: '6px',
+          }}>
+            DORA metrics benchmarked against industry standards. Updated automatically from your
+            deployment pipeline.
           </p>
-        </div>
-
-        {/* Data Confidence & Export */}
-        {metrics && (
-          <div className="flex flex-col items-start md:items-end gap-3">
-            {/* Data Confidence */}
-            <div className="text-right">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                <span>
-                  Based on <strong>{Math.round(totalDeployments)}</strong> deployments
-                </span>
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Last updated: {new Date().toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true
-                })}
-              </div>
-            </div>
-
-            {/* Export Buttons */}
-            <div className="flex gap-2 no-print">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => exportToCSV(metrics, dateRange)}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Export CSV
-              </Button>
-              <Button variant="outline" size="sm" onClick={exportToPDF}>
-                <Download className="w-4 h-4 mr-2" />
-                Download PDF
-              </Button>
-            </div>
+          <div style={{
+            fontSize: '12px', color: '#94A3B8',
+            display: 'flex', alignItems: 'center',
+            gap: '6px',
+          }}>
+            <span style={{
+              width: '6px', height: '6px',
+              borderRadius: '50%',
+              background: '#059669',
+              display: 'inline-block',
+            }} />
+            Based on {totalDeployments} deployments ·{' '}
+            Last updated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
-        )}
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => metrics && exportToCSV(metrics, dateRange)}
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            Export CSV
+          </Button>
+          <Button
+            variant="outline" size="sm"
+            onClick={exportToPDF}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Download PDF
+          </Button>
+        </div>
       </div>
 
-      {/* Low Data Warning */}
-      {metrics && totalDeployments < 10 && (
-        <Card className="border-yellow-500 bg-yellow-50">
-          <CardContent className="flex items-start gap-3 pt-6">
-            <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
-            <div>
-              <h3 className="font-semibold text-yellow-900">Limited Data</h3>
-              <p className="text-sm text-yellow-800">
-                Metrics based on only {Math.round(totalDeployments)} deployments. More data needed
-                for reliable trends.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* ── COMPACT FILTER BAR ── */}
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #F1F5F9',
+        borderRadius: '12px',
+        padding: '12px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        flexWrap: 'wrap',
+      }}>
+        <span style={{
+          fontSize: '12px', fontWeight: 600,
+          color: '#475569', whiteSpace: 'nowrap',
+        }}>
+          Period
+        </span>
+        <div style={{
+          display: 'flex', gap: '3px',
+          background: '#F8FAFC',
+          border: '1px solid #F1F5F9',
+          borderRadius: '8px', padding: '3px',
+        }}>
+          {(['7d', '30d', '90d'] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setDateRange(r)}
+              style={{
+                padding: '5px 14px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 500,
+                border: 'none',
+                cursor: 'pointer',
+                background: dateRange === r ? '#FFFFFF' : 'transparent',
+                color: dateRange === r ? '#0F172A' : '#475569',
+                boxShadow: dateRange === r ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+              }}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+        <div style={{ width: '1px', height: '20px', background: '#E2E8F0' }} />
+        <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
+          Service
+        </span>
+        <Select value={selectedService} onValueChange={setSelectedService}>
+          <SelectTrigger style={{ width: '140px', height: '32px', fontSize: '13px' }}>
+            <SelectValue placeholder="All Services" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Services</SelectItem>
+            {services?.map((s: Service) => (
+              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
+          Team
+        </span>
+        <Select value={selectedTeam} onValueChange={setSelectedTeam}>
+          <SelectTrigger style={{ width: '120px', height: '32px', fontSize: '13px' }}>
+            <SelectValue placeholder="All Teams" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Teams</SelectItem>
+            {teams?.map((t: Team) => (
+              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      {/* Filters */}
-      <Card className="no-print">
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>Customize the metrics view with filters</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-            {/* Time Range Buttons */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Time Range</label>
-              <div className="flex gap-2">
-                <Button
-                  variant={dateRange === '7d' ? 'default' : 'outline'}
-                  onClick={() => setDateRange('7d')}
-                  size="sm"
-                >
-                  Last 7 Days
-                </Button>
-                <Button
-                  variant={dateRange === '30d' ? 'default' : 'outline'}
-                  onClick={() => setDateRange('30d')}
-                  size="sm"
-                >
-                  Last 30 Days
-                </Button>
-                <Button
-                  variant={dateRange === '90d' ? 'default' : 'outline'}
-                  onClick={() => setDateRange('90d')}
-                  size="sm"
-                >
-                  Last 90 Days
-                </Button>
-              </div>
-            </div>
-
-            {/* Filter Dropdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Service Filter */}
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Service</label>
-                <Select value={selectedService} onValueChange={setSelectedService}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Services" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Services</SelectItem>
-                    {servicesData?.data?.map((service) => (
-                      <SelectItem key={service.id} value={service.id}>
-                        {service.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Team Filter */}
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Team</label>
-                <Select value={selectedTeam} onValueChange={setSelectedTeam}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Teams" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Teams</SelectItem>
-                    {teamsData?.data?.map((team) => (
-                      <SelectItem key={team.id} value={team.id}>
-                        {team.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Environment Filter */}
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Environment</label>
-                <Select value={selectedEnvironment} onValueChange={setSelectedEnvironment}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Environments" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Environments</SelectItem>
-                    <SelectItem value="production">Production</SelectItem>
-                    <SelectItem value="staging">Staging</SelectItem>
-                    <SelectItem value="development">Development</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Clear Filters */}
-            {(selectedService !== 'all' || selectedTeam !== 'all' || selectedEnvironment !== 'all') && (
-              <div>
-                <Button variant="ghost" size="sm" onClick={clearFilters}>
-                  Clear Filters
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Error State */}
-      {error && (
-        <Card className="border-red-500">
-          <CardHeader>
-            <CardTitle className="text-red-500">Error Loading Metrics</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              {error instanceof Error ? error.message : 'An unknown error occurred'}
+      {/* ── AI INSIGHT STRIP (demo mode only) ── */}
+      {isDemoActive && (
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #F1F5F9',
+          borderRadius: '16px',
+          padding: '18px 24px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '16px',
+        }}>
+          <div style={{
+            width: '36px', height: '36px',
+            background: '#7C3AED',
+            borderRadius: '10px',
+            display: 'flex', alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '15px', flexShrink: 0,
+          }}>✨</div>
+          <div>
+            <p style={{
+              fontSize: '10px', fontWeight: 700,
+              color: '#7C3AED',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              marginBottom: '4px',
+            }}>
+              AI Performance Insight
             </p>
-            <Button onClick={() => refetch()} className="mt-4" variant="outline">
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Metric Cards Grid */}
-      {isLoading && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCardSkeleton />
-          <MetricCardSkeleton />
-          <MetricCardSkeleton />
-          <MetricCardSkeleton />
+            <p style={{
+              fontSize: '14px', color: '#1E293B',
+              lineHeight: 1.65, margin: 0,
+            }}>
+              Your team is performing at{' '}
+              <strong>Elite tier</strong> across 3 of 4 DORA metrics. Change Failure Rate at 1.2%
+              is your strongest signal — top 5% globally. Lead time improved 18% this quarter.
+              Consider addressing{' '}
+              <strong>payment-processor</strong> which is dragging deployment frequency below team
+              average.
+            </p>
+          </div>
         </div>
       )}
 
-      {!isLoading && metrics && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <MetricCard
-              name="Deployment Frequency"
-              metric={metrics.deploymentFrequency}
-              icon={TrendingUp}
-              color="#7c3aed"
-            />
-            <MetricCard
-              name="Lead Time for Changes"
-              metric={metrics.leadTime}
-              icon={Clock}
-              color="#8b5cf6"
-            />
-            <MetricCard
-              name="Change Failure Rate"
-              metric={metrics.changeFailureRate}
-              icon={AlertTriangle}
-              color="#f59e0b"
-            />
-            <MetricCard
-              name="Mean Time to Recovery"
-              metric={metrics.mttr}
-              icon={Timer}
-              color="#10b981"
-            />
-          </div>
-
-          {/* Period Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Reporting Period</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4 text-sm">
-                <div>
-                  <span className="font-medium">Start:</span> {metrics.period.start}
+      {/* ── ELITE TIER BANNER (demo mode only) ── */}
+      {isDemoActive && (
+        <div style={{
+          background: 'linear-gradient(135deg, #1a0533 0%, #2d1057 50%, #1a0533 100%)',
+          borderRadius: '16px',
+          padding: '24px 32px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <div style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '10px',
+              padding: '10px 18px',
+            }}>
+              <p style={{
+                fontSize: '10px', fontWeight: 700,
+                color: 'rgba(255,255,255,0.5)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                margin: '0 0 3px',
+              }}>
+                Overall Tier
+              </p>
+              <p style={{
+                fontSize: '1.5rem', fontWeight: 700,
+                color: 'white', margin: 0,
+                letterSpacing: '-0.02em',
+              }}>
+                Elite
+              </p>
+            </div>
+            <div>
+              <p style={{
+                fontSize: '1rem', fontWeight: 600,
+                color: 'white', margin: '0 0 4px',
+              }}>
+                Performing at Elite level
+              </p>
+              <p style={{
+                fontSize: '13px',
+                color: 'rgba(255,255,255,0.6)',
+                margin: '0 0 10px',
+              }}>
+                Top 8% of engineering teams globally · 90-day rolling average
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  fontSize: '11px',
+                  color: 'rgba(255,255,255,0.4)',
+                  whiteSpace: 'nowrap',
+                }}>
+                  Industry percentile
+                </span>
+                <div style={{
+                  width: '120px', height: '4px',
+                  background: 'rgba(255,255,255,0.15)',
+                  borderRadius: '2px',
+                }}>
+                  <div style={{
+                    width: '92%', height: '100%',
+                    background: '#A78BFA',
+                    borderRadius: '2px',
+                  }} />
                 </div>
-                <div>
-                  <span className="font-medium">End:</span> {metrics.period.end}
-                </div>
-                <div>
-                  <span className="font-medium">Days:</span> {metrics.period.days}
-                </div>
+                <span style={{
+                  fontSize: '11px',
+                  color: 'rgba(255,255,255,0.7)',
+                  whiteSpace: 'nowrap',
+                }}>
+                  92nd
+                </span>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Breakdown by Service */}
-          {metrics.deploymentFrequency.breakdown &&
-            Object.keys(metrics.deploymentFrequency.breakdown).length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Breakdown by Service</CardTitle>
-                  <CardDescription>
-                    Detailed metrics for each service in the selected period
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Service</TableHead>
-                        <TableHead className="text-right">Deployment Freq</TableHead>
-                        <TableHead className="text-right">Lead Time (hrs)</TableHead>
-                        <TableHead className="text-right">Failure Rate (%)</TableHead>
-                        <TableHead className="text-right">MTTR (min)</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {Object.keys(metrics.deploymentFrequency.breakdown).map((serviceName) => (
-                        <TableRow key={serviceName}>
-                          <TableCell className="font-medium">{serviceName}</TableCell>
-                          <TableCell className="text-right">
-                            {metrics.deploymentFrequency.breakdown?.[serviceName]?.toFixed(2) ||
-                              'N/A'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {metrics.leadTime.breakdown?.[serviceName]?.toFixed(2) || 'N/A'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {metrics.changeFailureRate.breakdown?.[serviceName]?.toFixed(2) ||
-                              'N/A'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {metrics.mttr.breakdown?.[serviceName]?.toFixed(2) || 'N/A'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            )}
-        </>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '32px' }}>
+            {[
+              { val: '↑ 18%',  label: 'Lead time improvement' },
+              { val: '847',    label: 'Deployments tracked'   },
+              { val: '6 svcs', label: 'Active services'       },
+            ].map(({ val, label }) => (
+              <div key={label} style={{ textAlign: 'right' }}>
+                <p style={{
+                  fontSize: '1.2rem', fontWeight: 700,
+                  color: 'white', margin: '0 0 3px',
+                  letterSpacing: '-0.02em',
+                }}>
+                  {val}
+                </p>
+                <p style={{
+                  fontSize: '11px',
+                  color: 'rgba(255,255,255,0.5)',
+                  margin: 0,
+                }}>
+                  {label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* Industry Benchmarks Reference */}
-      <Card>
-        <CardHeader
-          className="cursor-pointer"
-          onClick={() => setShowBenchmarks(!showBenchmarks)}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Industry Benchmarks Reference</CardTitle>
-              <CardDescription>
-                Understanding the DORA performance levels
-              </CardDescription>
-            </div>
-            {showBenchmarks ? <ChevronUp /> : <ChevronDown />}
-          </div>
-        </CardHeader>
-        {showBenchmarks && (
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Deployment Frequency */}
-              <div className="flex flex-col gap-2">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Deployment Frequency
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="elite" />
-                    <span>Multiple deploys per day (&gt;1/day)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="high" />
-                    <span>1 per day to 1 per week</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="medium" />
-                    <span>1 per week to 1 per month</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="low" />
-                    <span>Less than 1 per month</span>
-                  </div>
-                </div>
-              </div>
+      {/* ── LOADING STATE ── */}
+      {isLoading && !isDemoActive && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '20px',
+        }}>
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-4 w-32" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-10 w-24 mb-2" />
+                <Skeleton className="h-4 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
-              {/* Lead Time */}
-              <div className="flex flex-col gap-2">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  Lead Time for Changes
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="elite" />
-                    <span>Less than 1 day</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="high" />
-                    <span>1 day to 1 week</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="medium" />
-                    <span>1 week to 1 month</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="low" />
-                    <span>More than 1 month</span>
-                  </div>
-                </div>
-              </div>
+      {/* ── 4 KPI CARDS ── */}
+      {metrics && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '20px',
+        }}>
+          {[
+            {
+              label: 'Deployment Frequency',
+              metric: metrics.deploymentFrequency,
+              icon: TrendingUp,
+              formatVal: (v: number) => `${v.toFixed(1)}/day`,
+              change: isDemoActive ? '+0.8' : null,
+              changeGood: true,
+            },
+            {
+              label: 'Lead Time for Changes',
+              metric: metrics.leadTime,
+              icon: Clock,
+              formatVal: (v: number) => `${v.toFixed(1)} hrs`,
+              change: isDemoActive ? '−0.6 hrs' : null,
+              changeGood: true,
+            },
+            {
+              label: 'Change Failure Rate',
+              metric: metrics.changeFailureRate,
+              icon: AlertTriangle,
+              formatVal: (v: number) => `${v.toFixed(1)}%`,
+              change: isDemoActive ? '−0.3%' : null,
+              changeGood: true,
+            },
+            {
+              label: 'Mean Time to Recovery',
+              metric: metrics.mttr,
+              icon: Timer,
+              formatVal: (v: number) => `${Math.round(v)} min`,
+              change: isDemoActive ? '−22 min' : null,
+              changeGood: true,
+            },
+          ].map(({ label, metric, icon: Icon, formatVal, change, changeGood }) => {
+            const tierColor =
+              metric.benchmark === 'elite'  ? '#059669' :
+              metric.benchmark === 'high'   ? '#2563EB' :
+              metric.benchmark === 'medium' ? '#D97706' :
+              '#DC2626';
+            const tierBg =
+              metric.benchmark === 'elite'  ? '#ECFDF5' :
+              metric.benchmark === 'high'   ? '#EFF6FF' :
+              metric.benchmark === 'medium' ? '#FFFBEB' :
+              '#FEF2F2';
+            const tierLabel =
+              metric.benchmark === 'elite'  ? 'Elite'  :
+              metric.benchmark === 'high'   ? 'High'   :
+              metric.benchmark === 'medium' ? 'Medium' :
+              'Low';
+            const trendData = generateTrendData(metric.value);
 
-              {/* Change Failure Rate */}
-              <div className="flex flex-col gap-2">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  Change Failure Rate
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="elite" />
-                    <span>0-15%</span>
+            return (
+              <Card key={label} style={{ borderTop: `3px solid ${tierColor}`, overflow: 'hidden' }}>
+                <CardHeader style={{ paddingBottom: '8px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <CardTitle style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.1em',
+                      color: '#475569',
+                    }}>
+                      {label}
+                    </CardTitle>
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '99px',
+                      background: tierBg,
+                      color: tierColor,
+                      border: `1px solid ${tierColor}30`,
+                    }}>
+                      {tierLabel}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="high" />
-                    <span>16-30%</span>
+                </CardHeader>
+                <CardContent>
+                  <div style={{
+                    fontSize: '2.2rem',
+                    fontWeight: 700,
+                    color: '#0F172A',
+                    letterSpacing: '-0.04em',
+                    lineHeight: 1,
+                    marginBottom: '6px',
+                  }}>
+                    {formatVal(metric.value)}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="medium" />
-                    <span>31-45%</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="low" />
-                    <span>46-100%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* MTTR */}
-              <div className="flex flex-col gap-2">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Timer className="h-4 w-4" />
-                  Mean Time to Recovery
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="elite" />
-                    <span>Less than 1 hour</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="high" />
-                    <span>Less than 1 day</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="medium" />
-                    <span>1 day to 1 week</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BenchmarkBadge level="low" />
-                    <span>More than 1 week</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 p-4 bg-muted rounded-lg">
-              <p className="text-sm text-muted-foreground">
-                <strong>Note:</strong> These benchmarks are based on the DevOps Research and
-                Assessment (DORA) research. For more information, visit{' '}
-                <a
-                  href="https://dora.dev/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-purple-600 hover:underline"
-                >
-                  dora.dev
-                </a>
-              </p>
-            </div>
-          </CardContent>
-        )}
-      </Card>
-
-      {/* Enhanced Empty State */}
-      {!isLoading && !metrics && (
-        <Card className="col-span-full">
-          <CardContent className="py-12">
-            <div className="max-w-2xl mx-auto text-center">
-              <TrendingUp className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-              <h3 className="text-xl font-semibold mb-2">Start Tracking Your DORA Metrics</h3>
-              <p className="text-muted-foreground mb-6">
-                Connect your deployment pipeline to see how your team performs against industry
-                benchmarks.
-              </p>
-
-              <div className="space-y-3 mb-6 max-w-md mx-auto">
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg text-left">
-                  <div className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-sm font-semibold shrink-0">
-                    1
-                  </div>
-                  <span className="text-sm">Connect your Git repository</span>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg text-left">
-                  <div className="w-6 h-6 rounded-full bg-gray-300 text-white flex items-center justify-center text-sm font-semibold shrink-0">
-                    2
-                  </div>
-                  <span className="text-sm">Configure deployment tracking</span>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg text-left">
-                  <div className="w-6 h-6 rounded-full bg-gray-300 text-white flex items-center justify-center text-sm font-semibold shrink-0">
-                    3
-                  </div>
-                  <span className="text-sm">View your metrics</span>
-                </div>
-              </div>
-
-              <Button className="mb-6" asChild>
-                <a href="/integrations">
-                  Set Up Integration
-                  <ExternalLink className="w-4 h-4 ml-2" />
-                </a>
-              </Button>
-
-              <div className="mt-6 p-6 bg-purple-50 rounded-lg">
-                <p className="text-sm font-medium mb-3">Preview: What you&apos;ll see</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-white p-3 rounded shadow-sm">
-                    <div className="text-xs font-semibold text-gray-700">
-                      Deployment Frequency
+                  {change && (
+                    <div style={{
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      color: changeGood ? '#059669' : '#DC2626',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}>
+                      {changeGood ? '↑' : '↓'} {change} vs last period
                     </div>
-                    <div className="text-lg font-bold text-purple-600 mt-1">2.3 per day</div>
-                    <Badge className="mt-2 bg-green-500 text-white">Elite</Badge>
+                  )}
+                  {/* Sparkline */}
+                  <div style={{ height: '40px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={trendData}>
+                        <Area
+                          type="monotone"
+                          dataKey="value"
+                          stroke={tierColor}
+                          fill={tierColor}
+                          fillOpacity={0.15}
+                          strokeWidth={2}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div className="bg-white p-3 rounded shadow-sm">
-                    <div className="text-xs font-semibold text-gray-700">Lead Time</div>
-                    <div className="text-lg font-bold text-purple-600 mt-1">4.2 hours</div>
-                    <Badge className="mt-2 bg-purple-500 text-white">High</Badge>
-                  </div>
-                  <div className="bg-white p-3 rounded shadow-sm">
-                    <div className="text-xs font-semibold text-gray-700">Failure Rate</div>
-                    <div className="text-lg font-bold text-amber-600 mt-1">2.1%</div>
-                    <Badge className="mt-2 bg-green-500 text-white">Elite</Badge>
-                  </div>
-                  <div className="bg-white p-3 rounded shadow-sm">
-                    <div className="text-xs font-semibold text-gray-700">MTTR</div>
-                    <div className="text-lg font-bold text-green-600 mt-1">1.8 hours</div>
-                    <Badge className="mt-2 bg-green-500 text-white">Elite</Badge>
-                  </div>
-                </div>
-              </div>
+                  {metric.description && (
+                    <div style={{
+                      fontSize: '11px',
+                      color: '#94A3B8',
+                      marginTop: '10px',
+                      paddingTop: '10px',
+                      borderTop: '1px solid #F1F5F9',
+                    }}>
+                      {metric.description}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── BENCHMARK TABLE ── */}
+      {metrics && (
+        <Card>
+          <CardHeader>
+            <div style={{
+              fontSize: '0.68rem', fontWeight: 700,
+              color: '#475569', textTransform: 'uppercase',
+              letterSpacing: '0.1em', marginBottom: '4px',
+            }}>
+              Industry Benchmarks
             </div>
+            <CardTitle style={{ fontSize: '15px' }}>
+              Where you stand vs. industry
+            </CardTitle>
+            <CardDescription>
+              Based on the 2024 DORA State of DevOps Report · 33,000+ professionals globally
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tier</TableHead>
+                  <TableHead>Deploy Frequency</TableHead>
+                  <TableHead>Lead Time</TableHead>
+                  <TableHead>Change Failure Rate</TableHead>
+                  <TableHead>MTTR</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[
+                  {
+                    tier: 'Elite',
+                    color: '#059669', bg: '#ECFDF5',
+                    df: '>1/day', lt: '<1 hour',
+                    cfr: '<5%', mttr: '<1 hour',
+                    current: metrics.deploymentFrequency.benchmark === 'elite' && (isDemoActive || totalDeployments > 0),
+                    demoDF: '4.2/day', demoLT: '1.8 hrs',
+                    demoCFR: '1.2%', demoMTTR: '14 min',
+                  },
+                  {
+                    tier: 'High',
+                    color: '#2563EB', bg: '#EFF6FF',
+                    df: '>1/week', lt: '<1 week',
+                    cfr: '<10%', mttr: '<1 day',
+                    current: metrics.deploymentFrequency.benchmark === 'high' && (isDemoActive || totalDeployments > 0),
+                    demoDF: '', demoLT: '', demoCFR: '', demoMTTR: '',
+                  },
+                  {
+                    tier: 'Medium',
+                    color: '#D97706', bg: '#FFFBEB',
+                    df: '>1/month', lt: '<1 month',
+                    cfr: '<15%', mttr: '<1 week',
+                    current: metrics.deploymentFrequency.benchmark === 'medium' && (isDemoActive || totalDeployments > 0),
+                    demoDF: '', demoLT: '', demoCFR: '', demoMTTR: '',
+                  },
+                  {
+                    tier: 'Low',
+                    color: '#DC2626', bg: '#FEF2F2',
+                    df: '<1/month', lt: '>1 month',
+                    cfr: '>15%', mttr: '>1 week',
+                    current: metrics.deploymentFrequency.benchmark === 'low' && (isDemoActive || totalDeployments > 0),
+                    demoDF: '', demoLT: '', demoCFR: '', demoMTTR: '',
+                  },
+                ].map((row) => (
+                  <TableRow
+                    key={row.tier}
+                    style={{
+                      background: row.current ? '#F5F3FF' : undefined,
+                      fontWeight: row.current ? 600 : undefined,
+                    }}
+                  >
+                    <TableCell>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {row.current && (
+                          <span style={{
+                            width: '6px', height: '6px',
+                            borderRadius: '50%',
+                            background: '#7C3AED',
+                            display: 'inline-block',
+                            flexShrink: 0,
+                          }} />
+                        )}
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '99px',
+                          background: row.bg,
+                          color: row.color,
+                        }}>
+                          {row.tier}{row.current ? ' ← You' : ''}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell style={{ color: row.current ? row.color : undefined }}>
+                      {row.current && isDemoActive && row.demoDF ? row.demoDF : row.df}
+                    </TableCell>
+                    <TableCell style={{ color: row.current ? row.color : undefined }}>
+                      {row.current && isDemoActive && row.demoLT ? row.demoLT : row.lt}
+                    </TableCell>
+                    <TableCell style={{ color: row.current ? row.color : undefined }}>
+                      {row.current && isDemoActive && row.demoCFR ? row.demoCFR : row.cfr}
+                    </TableCell>
+                    <TableCell style={{ color: row.current ? row.color : undefined }}>
+                      {row.current && isDemoActive && row.demoMTTR ? row.demoMTTR : row.mttr}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}
 
-      {/* No Deployment Data in Period */}
-      {!isLoading && metrics && !metrics.deploymentFrequency.breakdown && (
+      {/* ── SERVICE BREAKDOWN (demo mode only) ── */}
+      {isDemoActive && (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Activity className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No deployment data found</h3>
-            <p className="text-sm text-muted-foreground text-center max-w-md">
-              There are no deployments in the selected period. Try selecting a different time range
-              or deploy some services to see DORA metrics.
+          <CardHeader>
+            <div style={{
+              fontSize: '0.68rem', fontWeight: 700,
+              color: '#475569', textTransform: 'uppercase',
+              letterSpacing: '0.1em', marginBottom: '4px',
+            }}>
+              Service Breakdown
+            </div>
+            <CardTitle style={{ fontSize: '15px' }}>
+              Performance by service · last 90 days
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Table header */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 90px',
+              gap: '12px',
+              padding: '0 0 10px',
+              borderBottom: '1px solid #F1F5F9',
+              fontSize: '10px', fontWeight: 700,
+              color: '#94A3B8',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}>
+              <span>Service</span>
+              <span style={{ textAlign: 'right' }}>Deploy Freq</span>
+              <span style={{ textAlign: 'right' }}>Lead Time</span>
+              <span style={{ textAlign: 'right' }}>Failure Rate</span>
+              <span style={{ textAlign: 'right' }}>MTTR</span>
+              <span style={{ textAlign: 'center' }}>Tier</span>
+            </div>
+            {/* Service rows */}
+            {DEMO_SERVICE_BREAKDOWN.map((svc) => {
+              const tierColor =
+                svc.tier === 'elite' ? '#059669' :
+                svc.tier === 'high'  ? '#2563EB' :
+                '#D97706';
+              const tierBg =
+                svc.tier === 'elite' ? '#ECFDF5' :
+                svc.tier === 'high'  ? '#EFF6FF' :
+                '#FFFBEB';
+              return (
+                <div
+                  key={svc.name}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 90px',
+                    gap: '12px',
+                    padding: svc.attention ? '12px' : '12px 0',
+                    borderBottom: '1px solid #F1F5F9',
+                    alignItems: 'center',
+                    background: svc.attention ? '#FFFBEB' : undefined,
+                    borderRadius: svc.attention ? '8px' : undefined,
+                  }}
+                >
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#1E293B' }}>
+                      {svc.name}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#94A3B8', marginLeft: '6px' }}>
+                      {svc.env}
+                    </span>
+                    {svc.attention && (
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        color: '#D97706',
+                        background: '#FEF3C7',
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        marginLeft: '6px',
+                      }}>
+                        ⚠ Needs attention
+                      </span>
+                    )}
+                  </div>
+                  {[svc.deployFreq, svc.leadTime, svc.cfr, svc.mttr].map((val, i) => (
+                    <div key={i} style={{
+                      textAlign: 'right',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: svc.attention ? '#D97706' : '#0F172A',
+                    }}>
+                      {val}
+                    </div>
+                  ))}
+                  <div style={{ textAlign: 'center' }}>
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '99px',
+                      background: tierBg,
+                      color: tierColor,
+                    }}>
+                      {svc.tier.charAt(0).toUpperCase() + svc.tier.slice(1)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── ERROR STATE ── */}
+      {error && !isDemoActive && (
+        <Card style={{ borderColor: '#DC2626' }}>
+          <CardContent style={{ padding: '24px' }}>
+            <p style={{ color: '#DC2626', fontSize: '14px' }}>
+              Failed to load metrics.
+              <button
+                onClick={() => refetch()}
+                style={{
+                  color: '#7C3AED',
+                  marginLeft: '8px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                }}
+              >
+                Retry →
+              </button>
             </p>
           </CardContent>
         </Card>
       )}
+
     </div>
   );
 }

@@ -54,13 +54,11 @@ import { DEMO_STATS } from '@/lib/demo-data/demo-generator'
 
 // Demo stats for dashboard metrics
 const DEMO_DASHBOARD_STATS = {
-  monthlyAwsCost: DEMO_STATS.totalMonthlyCost,
-  costChange: DEMO_STATS.costChange,
-  totalServices: 8,
-  activeDeployments: 6,
-  healthyServices: 7,
-  criticalAlerts: 1,
-  warningAlerts: 2,
+  monthlyAwsCost: 12847,
+  costChange: 8,
+  criticalAlerts: 2,
+  activeDeployments: 5,
+  securityScore: 87,
 }
 
 // Demo deployments for the Recent Deployments table
@@ -72,37 +70,37 @@ const DEMO_DEPLOYMENTS: Deployment[] = [
     environment: 'production',
     awsRegion: 'us-east-1',
     status: 'running' as DeploymentStatus,
-    costEstimate: 245.50,
+    costEstimate: 423.50,
     deployedBy: 'sarah.chen@company.com',
+    deployedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    updatedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+  },
+  {
+    id: 'demo-deploy-2',
+    serviceId: 'svc-payment-processor',
+    serviceName: 'payment-processor',
+    environment: 'production',
+    awsRegion: 'us-east-1',
+    status: 'deploying' as DeploymentStatus,
+    costEstimate: 891.20,
+    deployedBy: 'james.wilson@company.com',
     deployedAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
     createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
     updatedAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
   },
   {
-    id: 'demo-deploy-2',
+    id: 'demo-deploy-3',
     serviceId: 'svc-auth-service',
     serviceName: 'auth-service',
-    environment: 'production',
-    awsRegion: 'us-east-1',
-    status: 'running' as DeploymentStatus,
-    costEstimate: 178.00,
-    deployedBy: 'mike.johnson@company.com',
-    deployedAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    updatedAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-  },
-  {
-    id: 'demo-deploy-3',
-    serviceId: 'svc-payment-processor',
-    serviceName: 'payment-processor',
     environment: 'staging',
     awsRegion: 'us-west-2',
-    status: 'deploying' as DeploymentStatus,
-    costEstimate: 89.50,
-    deployedBy: 'alex.wong@company.com',
-    deployedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    updatedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+    status: 'running' as DeploymentStatus,
+    costEstimate: 234.80,
+    deployedBy: 'sarah.chen@company.com',
+    deployedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
   },
   {
     id: 'demo-deploy-4',
@@ -382,20 +380,30 @@ export default function DashboardPage() {
   // Derived display values
   const currentSpend = demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0);
   const costChange = demoMode ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0);
-  const securityScore = riskScoreData?.current.score ?? (demoMode ? 87 : null);
+  const securityScore = demoMode ? 87 : (riskScoreData?.current.score ?? null);
   const wasteAmount = 1922; // AI-identified; would come from optimization service
-  const efficiencyRatio = currentSpend > 0
-    ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100)
-    : null;
+  const efficiencyRatio = demoMode
+    ? Math.round(((12847 - wasteAmount) / 12847) * 100)  // = 85
+    : currentSpend > 0
+      ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100)
+      : null;
 
   const isDemoActive = demoMode || salesDemoMode;
+
+  const isAwsConnected = isDemoActive || (
+    !!stats && (
+      stats.monthlyAwsCost > 0 ||
+      stats.activeDeployments > 0 ||
+      stats.totalServices > 0
+    )
+  );
 
   // FIX 6 — Semantic delta color helpers
   const costDeltaColor = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706';
   const CostDeltaIcon = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus;
 
-  const securityDeltaColor = (securityScore !== null && securityScore >= 80) || isDemoActive ? '#059669' : '#DC2626';
-  const SecurityDeltaIcon = (securityScore !== null && securityScore >= 80) || isDemoActive ? TrendingUp : TrendingDown;
+  const securityDeltaColor = securityScore !== null && securityScore >= 80 ? '#059669' : isDemoActive ? '#059669' : securityScore !== null ? '#DC2626' : '#94A3B8';
+  const SecurityDeltaIcon = securityScore !== null && securityScore >= 80 ? TrendingUp : isDemoActive ? TrendingUp : TrendingDown;
 
   const efficiencyDeltaColor = efficiencyRatio !== null
     ? efficiencyRatio >= 90 ? '#059669' : efficiencyRatio >= 75 ? '#D97706' : '#DC2626'
@@ -418,7 +426,7 @@ export default function DashboardPage() {
           : 0
   // System status bar derived values
   const systemStatusLabel = isDemoActive
-    ? 'degraded'
+    ? 'healthy'
     : systemHealth?.status === 'operational'
       ? 'healthy'
       : systemHealth?.status === 'disrupted'
@@ -451,8 +459,8 @@ export default function DashboardPage() {
   ];
   const criticalAlerts = demoMode ? DEMO_DASHBOARD_STATS.criticalAlerts : 0;
 
-  const doraRows: { label: string; value: string; tier: 'Elite' | 'High' }[] = [
-    { label: 'Deployment Frequency', value: `${demoMode ? 12 : (stats?.activeDeployments ?? 12)}/week`, tier: 'Elite' },
+  const doraRows: { label: string; value: string; tier: 'Elite' | 'High'; showTier?: boolean }[] = [
+    { label: 'Deployment Frequency', value: demoMode ? '4.2/day' : (stats?.activeDeployments ? `${stats.activeDeployments}/week` : '—'), tier: 'Elite', showTier: demoMode || !!(stats?.activeDeployments) },
     { label: 'Lead Time for Changes', value: '2.4 hours', tier: 'Elite' },
     { label: 'Change Failure Rate', value: '8.3%', tier: 'High' },
     { label: 'Mean Time to Recovery', value: '36 min', tier: 'Elite' },
@@ -566,91 +574,271 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── NORTH STAR METRICS — 4 col ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '24px',
-        marginBottom: '32px',
-      }}>
+      {statsLoading ? null : isAwsConnected ? (
+        /* ── NORTH STAR METRICS — 4 col ── */
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '24px',
+          marginBottom: '32px',
+        }}>
 
-        {/* Total Cloud Spend */}
-        <div style={card}>
-          <p style={overline}>Total Cloud Spend</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-            {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
+          {/* Total Cloud Spend */}
+          <div style={card}>
+            <p style={overline}>Total Cloud Spend</p>
+            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+              {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
+              <span style={{ fontSize: '0.8rem', color: costDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+                {costChange > 0 ? '+' : ''}{Math.abs(costChange)}%
+              </span>
+              <span style={{ fontSize: '0.8rem', color: '#64748B', lineHeight: 1.6 }}>vs last month</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
-            <span style={{ fontSize: '0.8rem', color: costDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
-              {costChange > 0 ? '+' : ''}{Math.abs(costChange)}%
-            </span>
-            <span style={{ fontSize: '0.8rem', color: '#64748B', lineHeight: 1.6 }}>vs last month</span>
-          </div>
-        </div>
 
-        {/* Security Posture */}
-        <div style={card}>
-          <p style={overline}>Security Posture</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-            {securityScore ?? '—'}
-            <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+          {/* Security Posture */}
+          <div style={card}>
+            <p style={overline}>Security Posture</p>
+            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+              {securityScore ?? '—'}
+              <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <SecurityDeltaIcon size={14} style={{ color: securityDeltaColor }} />
+              <span style={{ fontSize: '0.8rem', color: securityDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+                {securityScore !== null && securityScore >= 80 ? 'Stable · Above benchmark' : 'Needs attention'}
+              </span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <SecurityDeltaIcon size={14} style={{ color: securityDeltaColor }} />
-            <span style={{ fontSize: '0.8rem', color: securityDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
-              {securityScore !== null && securityScore >= 80 ? 'Stable · Above benchmark' : 'Needs attention'}
-            </span>
-          </div>
-        </div>
 
-        {/* Efficiency Ratio */}
-        <div style={card}>
-          <p style={overline}>Infrastructure Efficiency</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-            {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
+          {/* Efficiency Ratio */}
+          <div style={card}>
+            <p style={overline}>Infrastructure Efficiency</p>
+            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+              {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <EfficiencyDeltaIcon size={14} style={{ color: efficiencyDeltaColor }} />
+              <span style={{ fontSize: '0.8rem', color: efficiencyDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+                ${wasteAmount.toLocaleString()} identified waste
+              </span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <EfficiencyDeltaIcon size={14} style={{ color: efficiencyDeltaColor }} />
-            <span style={{ fontSize: '0.8rem', color: efficiencyDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
-              ${wasteAmount.toLocaleString()} identified waste
-            </span>
-          </div>
-        </div>
 
-        {/* Cloud Health Score */}
-        <div style={card}>
-          <p style={overline}>Cloud Health Score</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-            {cloudHealthScore || '—'}
-            <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {[
-              { label: 'Cost', score: costScore },
-              { label: 'Security', score: securityScore_health },
-              { label: 'Reliability', score: reliabilityScore },
-            ].map(({ label, score }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
-                  <div style={{
-                    width: `${score ?? 0}%`,
-                    height: '100%',
-                    background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626',
-                    borderRadius: '2px',
-                  }} />
+          {/* Cloud Health Score */}
+          <div style={card}>
+            <p style={overline}>Cloud Health Score</p>
+            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+              {cloudHealthScore || '—'}
+              <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {[
+                { label: 'Cost', score: costScore },
+                { label: 'Security', score: securityScore_health },
+                { label: 'Reliability', score: reliabilityScore },
+              ].map(({ label, score }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
+                    <div style={{
+                      width: `${score ?? 0}%`,
+                      height: '100%',
+                      background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626',
+                      borderRadius: '2px',
+                    }} />
+                  </div>
+                  <span style={{ fontSize: '0.7rem', color: '#64748B', width: '60px', textAlign: 'right' }}>
+                    {label} {score ?? '—'}
+                  </span>
                 </div>
-                <span style={{ fontSize: '0.7rem', color: '#64748B', width: '60px', textAlign: 'right' }}>
-                  {label} {score ?? '—'}
-                </span>
-              </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ── UNCONNECTED STATE ── */
+        <div>
+
+          {/* ── CONNECT CARD ── */}
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            border: '1px solid #E2E8F0',
+            padding: '48px 40px',
+            textAlign: 'center',
+            marginBottom: '24px',
+          }}>
+            <div style={{
+              width: '52px', height: '52px',
+              background: '#F5F3FF', borderRadius: '14px',
+              display: 'flex', alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px', fontSize: '24px',
+            }}>☁️</div>
+            <h2 style={{
+              fontSize: '1.2rem', fontWeight: 700,
+              color: '#0F172A', letterSpacing: '-0.02em',
+              margin: '0 0 8px',
+            }}>
+              Connect your AWS account to unlock your dashboard
+            </h2>
+            <p style={{
+              fontSize: '14px', color: '#475569',
+              maxWidth: '460px', margin: '0 auto 28px',
+              lineHeight: 1.65,
+            }}>
+              DevControl needs read-only access to your AWS account to show costs, security posture, and infrastructure health. Setup takes 2 minutes.
+            </p>
+            <a href="/connect-aws" style={{
+              display: 'inline-flex', alignItems: 'center',
+              gap: '8px', background: '#7C3AED', color: '#FFFFFF',
+              padding: '12px 28px', borderRadius: '10px',
+              fontSize: '14px', fontWeight: 600,
+              textDecoration: 'none',
+              boxShadow: '0 4px 14px rgba(124,58,237,0.3)',
+            }}>
+              Connect AWS Account →
+            </a>
+            <p style={{
+              fontSize: '12px', color: '#94A3B8', marginTop: '14px',
+            }}>
+              Read-only IAM role · No credentials stored · Cancel anytime
+            </p>
+          </div>
+
+          {/* ── WHAT YOU'LL UNLOCK LABEL ── */}
+          <div style={{
+            fontSize: '11px', fontWeight: 600,
+            color: '#475569', letterSpacing: '0.06em',
+            textTransform: 'uppercase', marginBottom: '12px',
+          }}>
+            What you'll unlock
+          </div>
+
+          {/* ── PREVIEW KPI GRID ── */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '20px', marginBottom: '24px',
+          }}>
+            {[
+              { label: 'Total Cloud Spend',        value: '$12,847', delta: '↑ +8% vs last month' },
+              { label: 'Security Posture',          value: '87/100',  delta: '↑ Stable · Above benchmark' },
+              { label: 'Infrastructure Efficiency', value: '85%',     delta: '— $1,922 identified waste' },
+              { label: 'Cloud Health Score',        value: '87/100',  delta: 'Cost · Security · Reliability' },
+            ].map(({ label, value, delta }) => (
+              <a
+                key={label}
+                href="/connect-aws"
+                style={{ textDecoration: 'none' }}
+              >
+                <div style={{
+                  background: '#FFFFFF',
+                  borderRadius: '16px',
+                  border: '1px solid #F1F5F9',
+                  padding: '24px',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.15s, box-shadow 0.15s',
+                }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = '#DDD6FE';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(124,58,237,0.08)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = '#F1F5F9';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  {/* Gradient overlay — fades bottom to white */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: 'linear-gradient(to bottom, transparent 35%, rgba(255,255,255,0.97) 75%)',
+                    pointerEvents: 'none', zIndex: 1,
+                  }} />
+
+                  <p style={{
+                    fontSize: '0.68rem', fontWeight: 700,
+                    color: '#475569', textTransform: 'uppercase',
+                    letterSpacing: '0.1em', margin: '0 0 14px',
+                  }}>{label}</p>
+
+                  {/* Blurred value */}
+                  <div style={{
+                    fontSize: '2.2rem', fontWeight: 700,
+                    color: '#CBD5E1', letterSpacing: '-0.03em',
+                    lineHeight: 1, marginBottom: '10px',
+                    filter: 'blur(6px)',
+                    userSelect: 'none',
+                  }}>{value}</div>
+
+                  {/* Blurred delta */}
+                  <div style={{
+                    fontSize: '12px', color: '#CBD5E1',
+                    marginBottom: '20px',
+                    filter: 'blur(4px)',
+                    userSelect: 'none',
+                  }}>{delta}</div>
+
+                  {/* Lock CTA — sits above gradient */}
+                  <div style={{
+                    position: 'relative', zIndex: 2,
+                    display: 'flex', alignItems: 'center',
+                    gap: '6px', fontSize: '12px',
+                    fontWeight: 600, color: '#7C3AED',
+                  }}>
+                    <span>🔒</span> Connect to unlock
+                  </div>
+                </div>
+              </a>
             ))}
           </div>
+
+          {/* ── AI INSIGHT TEASER ── */}
+          <div style={{
+            background: '#F5F3FF',
+            border: '1px solid #DDD6FE',
+            borderRadius: '16px',
+            padding: '24px 28px',
+            display: 'flex', gap: '18px',
+            alignItems: 'flex-start',
+          }}>
+            <div style={{
+              width: '38px', height: '38px',
+              background: '#7C3AED', borderRadius: '10px',
+              display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: '16px',
+              flexShrink: 0,
+            }}>✨</div>
+            <div>
+              <p style={{
+                fontSize: '11px', fontWeight: 700,
+                color: '#7C3AED', textTransform: 'uppercase',
+                letterSpacing: '0.08em', margin: '0 0 6px',
+              }}>
+                What AI Insights looks like
+              </p>
+              <p style={{
+                fontSize: '14px', color: '#4C1D95',
+                lineHeight: 1.65, margin: 0,
+              }}>
+                After connecting, DevControl's AI will surface insights like:{' '}
+                <strong style={{ fontWeight: 600 }}>
+                  "3 EC2 instances running at 12% CPU — right-sizing saves $720/month with zero downtime risk."
+                </strong>{' '}
+                You'll get this analysis automatically, updated daily.
+              </p>
+            </div>
+          </div>
+
         </div>
-      </div>
+      )}
 
       {/* ── LAYER 2: EXECUTIVE INSIGHTS ── */}
-      {!insightDismissed && (demoMode || insightMessage) && (
+      {!insightDismissed && isAwsConnected && (demoMode || insightMessage) && (
         <div style={{ ...card, marginBottom: '32px', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
             <div style={{
@@ -687,6 +875,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── NARRATIVE — 3fr/2fr Spend Trend + Security Posture ── */}
+      {isAwsConnected && (
       <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '32px' }}>
 
         {/* Spend Trend */}
@@ -721,7 +910,7 @@ export default function DashboardPage() {
             </div>
             <div style={{ fontSize: '0.875rem', color: securityDeltaColor, fontWeight: 600, marginTop: '8px' }}>
               {riskScoreData?.current.grade ? `Grade ${riskScoreData.current.grade} · ` : ''}
-              {(securityScore !== null && securityScore >= 80) || isDemoActive ? 'Stable · Elite Tier' : 'Below threshold'}
+              {securityScore !== null && securityScore >= 80 ? 'Stable · Elite Tier' : securityScore !== null ? 'Below threshold' : isDemoActive ? 'Stable · Elite Tier' : 'No data yet'}
             </div>
           </div>
 
@@ -764,8 +953,10 @@ export default function DashboardPage() {
           </a>
         </div>
       </div>
+      )}
 
       {/* ── EXECUTIVE ROI SUMMARY ── */}
+      {isAwsConnected && (
       <div style={{ ...card, marginBottom: '32px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div>
@@ -821,8 +1012,10 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+      )}
 
       {/* ── SYSTEM STATUS BAR ── */}
+      {isAwsConnected && (
       <a href="/monitoring" style={{ textDecoration: 'none', display: 'block', marginBottom: '24px' }}>
         <div style={{
           background: statusConf.bg,
@@ -883,8 +1076,10 @@ export default function DashboardPage() {
           </div>
         </div>
       </a>
+      )}
 
       {/* ── ENGINEERING VELOCITY + AI ADVISOR + RECENT ACTIVITY ── */}
+      {isAwsConnected && (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
 
         {/* Engineering Velocity — DORA row list */}
@@ -904,21 +1099,23 @@ export default function DashboardPage() {
             </a>
           </div>
 
-          {doraRows.map(({ label, value, tier }) => (
+          {doraRows.map(({ label, value, tier, showTier }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
               <span style={bodyText}>{label}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{value}</span>
-                <span style={{
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  color: tier === 'Elite' ? '#059669' : '#D97706',
-                  background: tier === 'Elite' ? '#ECFDF5' : '#FFFBEB',
-                  padding: '2px 8px',
-                  borderRadius: '100px',
-                }}>
-                  {tier}
-                </span>
+                {(showTier === undefined || showTier) && (
+                  <span style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    color: tier === 'Elite' ? '#059669' : '#D97706',
+                    background: tier === 'Elite' ? '#ECFDF5' : '#FFFBEB',
+                    padding: '2px 8px',
+                    borderRadius: '100px',
+                  }}>
+                    {tier}
+                  </span>
+                )}
               </div>
             </div>
           ))}
@@ -1021,6 +1218,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      )}
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

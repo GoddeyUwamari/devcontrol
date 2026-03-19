@@ -19,7 +19,11 @@ const routeLabels: Record<string, string> = {
   'aws-resources': 'AWS Resources',
   teams: 'Teams',
   monitoring: 'Monitoring',
-  'dora-metrics': 'DORA Metrics',
+  'dora-metrics': 'Engineering Performance',
+  'connect-aws': 'Connect AWS',
+  'recommendations': 'Recommendations',
+  'tenants': 'Tenants',
+  'status': 'Status',
   settings: 'Settings',
   billing: 'Billing',
   integrations: 'Integrations',
@@ -27,6 +31,7 @@ const routeLabels: Record<string, string> = {
   organization: 'Organization',
   pricing: 'Pricing',
   'audit-logs': 'Audit Logs',
+  enterprise: 'Enterprise',
   alerts: 'Alerts',
   'cost-recommendations': 'Cost Recommendations',
   aws: 'AWS',
@@ -41,12 +46,22 @@ const routeLabels: Record<string, string> = {
   help: 'Help',
   support: 'Support',
   new: 'Create Service',
+  developers: 'Developers',
 };
 
-const parentPaths: Record<string, { label: string; href: string }> = {
-  '/deployments':  { label: 'Services', href: '/services' },
-  '/dependencies': { label: 'Services', href: '/services' },
-}
+const parentPaths: Record<string, { label: string; href: string }[]> = {
+  '/deployments':      [{ label: 'Infrastructure', href: '/infrastructure' }],
+  '/dependencies':     [{ label: 'Infrastructure', href: '/infrastructure' }],
+  '/recommendations':  [{ label: 'Infrastructure', href: '/infrastructure' }],
+  '/tenants':          [{ label: 'Infrastructure', href: '/infrastructure' }],
+  '/status':           [{ label: 'Observability',  href: '/observability'  }],
+  '/app/dora-metrics': [{ label: 'DevOps',         href: '/devops'         }],
+  '/dora-metrics':     [{ label: 'DevOps',         href: '/devops'         }],
+  '/connect-aws':      [],
+  '/teams':            [{ label: 'DevOps', href: '/devops' }],
+  '/enterprise':       [{ label: 'DevOps', href: '/devops' }],
+  '/developers':       [{ label: 'DevOps', href: '/devops' }],
+};
 
 /**
  * Hook to generate breadcrumbs from current pathname
@@ -60,7 +75,7 @@ export function useBreadcrumbs(
 
   return useMemo(() => {
     // Remove leading/trailing slashes and split path
-    const segments = pathname.split('/').filter(Boolean);
+    const segments = pathname.split('/').filter((s) => Boolean(s) && s !== 'app');
 
     // If we're on root or login, don't show breadcrumbs
     if (segments.length === 0 || segments[0] === 'login') {
@@ -75,13 +90,13 @@ export function useBreadcrumbs(
       },
     ]
 
-    const parent = parentPaths[pathname]
-    if (parent) {
+    const parents = parentPaths[pathname] ?? [];
+    parents.forEach((parent) => {
       breadcrumbs.push({
         label: parent.label,
         href: parent.href,
-      })
-    }
+      });
+    });
 
     // Build breadcrumbs from path segments
     let currentPath = '';

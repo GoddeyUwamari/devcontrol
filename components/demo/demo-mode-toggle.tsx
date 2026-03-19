@@ -18,7 +18,10 @@ export function DemoModeToggle() {
  * Hook to check if demo mode is enabled
  */
 export function useDemoMode() {
-  const [demoMode, setDemoMode] = useState(false);
+  const [demoMode, setDemoMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('devcontrol_demo_mode') === 'true';
+  });
 
   useEffect(() => {
     // Check initial state

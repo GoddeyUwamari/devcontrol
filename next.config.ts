@@ -21,6 +21,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: '/solutions/scaleups',
+        destination: '/solutions/mid-market',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
