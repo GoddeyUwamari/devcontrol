@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TrendingUp, TrendingDown, Users, Layers, Rocket, DollarSign, AlertCircle, Server, Shield, Activity, Database, Plus, Zap, Building2, Wifi, WifiOff, Minus, X, ChevronRight, GitBranch, MoreHorizontal, ArrowRight, CheckCircle, Sparkles } from 'lucide-react'
 import { OnboardingProgress } from '@/components/onboarding/progress-indicator'
@@ -230,6 +230,10 @@ export default function DashboardPage() {
     window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled: false } }));
   };
 
+  // Debounce ref for WebSocket-driven query invalidations — skip if same event
+  // type fired within the last 5 seconds to prevent rapid-fire re-renders.
+  const lastWsUpdateRef = useRef<Record<string, number>>({});
+
   const [dismissedInsights, setDismissedInsights] = useState<string[]>([]);
   const [costDateRange, setCostDateRange] = useState<'7d' | '30d' | '90d' | '6mo' | '1yr'>('90d');
   const [riskScoreDateRange, setRiskScoreDateRange] = useState<DateRange>('30d');
@@ -238,12 +242,18 @@ export default function DashboardPage() {
   const [insightDismissed, setInsightDismissed] = useState(false);
 
   // Fetch risk score trend data
-  const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange);
+  const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange, !demoMode && !salesDemoMode);
 
   // Fetch platform dashboard stats
   const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
     queryFn: platformStatsService.getDashboardStats,
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    retry: false,
+    enabled: !demoMode && !salesDemoMode,
   });
 
   // Fetch AI insights based on cost data (after stats are defined)
@@ -279,13 +289,23 @@ export default function DashboardPage() {
       const allDeployments = await deploymentsService.getAll();
       return allDeployments.slice(0, 5);
     },
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    retry: false,
+    enabled: !demoMode && !salesDemoMode,
   });
 
   const { data: systemHealth } = useQuery({
     queryKey: ['system-health'],
     queryFn: () => monitoringService.getSystemHealth(),
-    staleTime: 30 * 1000,
-    refetchInterval: 60 * 1000,
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    retry: false,
+    enabled: !demoMode && !salesDemoMode,
   })
 
   // WebSocket event listeners for real-time updates
@@ -294,8 +314,17 @@ export default function DashboardPage() {
 
     console.log('📡 Dashboard: Setting up WebSocket listeners...');
 
+    const WS_DEBOUNCE_MS = 5_000;
+    const shouldUpdate = (key: string) => {
+      const now = Date.now();
+      if (now - (lastWsUpdateRef.current[key] ?? 0) < WS_DEBOUNCE_MS) return false;
+      lastWsUpdateRef.current[key] = now;
+      return true;
+    };
+
     socket.on('metrics:costs', (data) => {
       console.log('💰 Costs updated:', data);
+      if (!shouldUpdate('metrics:costs')) return;
       toast.info('AWS costs updated', {
         description: `New total: $${data.totalCost.toFixed(2)}`,
       });
@@ -304,6 +333,7 @@ export default function DashboardPage() {
 
     socket.on('alert:created', (data) => {
       console.log('🚨 New alert:', data);
+      if (!shouldUpdate('alert:created')) return;
       toast.error(`New ${data.severity} Alert`, {
         description: data.message,
       });
@@ -312,6 +342,7 @@ export default function DashboardPage() {
 
     socket.on('deployment:started', (data) => {
       console.log('🚀 Deployment started:', data);
+      if (!shouldUpdate('deployment:started')) return;
       toast.info(`Deployment started: ${data.serviceName}`, {
         description: `Environment: ${data.environment} | By: ${data.deployedBy}`,
       });
@@ -321,6 +352,7 @@ export default function DashboardPage() {
 
     socket.on('deployment:completed', (data) => {
       console.log('✅ Deployment completed:', data);
+      if (!shouldUpdate('deployment:completed')) return;
       const isSuccess = data.status === 'success';
       toast[isSuccess ? 'success' : 'error'](
         `Deployment ${isSuccess ? 'succeeded' : 'failed'}: ${data.serviceName}`,
@@ -336,6 +368,7 @@ export default function DashboardPage() {
 
     socket.on('service:health', (data) => {
       console.log('💊 Service health changed:', data);
+      if (!shouldUpdate('service:health')) return;
       if (data.status !== 'healthy') {
         toast.warning(`Service ${data.serviceName} is ${data.status}`, {
           description: `Health score: ${data.healthScore}%`,

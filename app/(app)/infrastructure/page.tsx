@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Server, Database, HardDrive, Zap, Globe, Network,
   RefreshCw, ArrowRight, Sparkles, Check, Plus, AlertTriangle,
@@ -10,6 +10,7 @@ import {
 import { toast } from 'sonner'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import awsServicesService from '@/lib/services/aws-services.service'
 import type { InfrastructureResource, ResourceType } from '@/lib/types'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -26,6 +27,26 @@ const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string 
   vpc:        { icon: Network,   color: '#64748B', bg: '#F8FAFC' },
   default:    { icon: Server,    color: '#64748B', bg: '#F8FAFC' },
 }
+
+// FIX 1: All 15 resource type filter chips
+const RESOURCE_TYPE_FILTERS: { value: ResourceFilter; label: string }[] = [
+  { value: 'all',          label: 'All Types'    },
+  { value: 'ec2',          label: 'EC2'          },
+  { value: 'ecs',          label: 'ECS'          },
+  { value: 'lambda',       label: 'Lambda'       },
+  { value: 'rds',          label: 'RDS'          },
+  { value: 's3',           label: 'S3'           },
+  { value: 'eks',          label: 'EKS'          },
+  { value: 'dynamodb',     label: 'DynamoDB'     },
+  { value: 'cloudfront',   label: 'CloudFront'   },
+  { value: 'api-gateway',  label: 'API Gateway'  },
+  { value: 'elasticache',  label: 'ElastiCache'  },
+  { value: 'aurora',       label: 'Aurora'       },
+  { value: 'sqs',          label: 'SQS'          },
+  { value: 'sns',          label: 'SNS'          },
+  { value: 'elb',          label: 'Load Balancer'},
+  { value: 'vpc',          label: 'VPC'          },
+]
 
 const DEMO_RESOURCES: InfrastructureResource[] = [
   { id: 'r1', serviceId: 'svc-1', serviceName: 'api-gateway',         resourceType: 'ec2',    awsId: 'i-0a1b2c3d4e5f',    awsRegion: 'us-east-1', status: 'running', costPerMonth: 245.50, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
@@ -77,40 +98,29 @@ function InfrastructureContent() {
     router.push(`/infrastructure${queryString ? `?${queryString}` : ''}`)
   }
 
+  // FIX 1: Pass ?type= filter to the API call
   const { data: resources = [], isLoading, refetch } = useQuery({
     queryKey: ['infrastructure', resourceFilter],
     queryFn: async () => {
-      const allResources = await infrastructureService.getAll()
-      const actualResources = allResources.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
-      return resourceFilter === 'all'
-        ? actualResources
-        : actualResources.filter(r => r.resourceType === resourceFilter)
+      const allResources = await infrastructureService.getAll(
+        resourceFilter !== 'all' ? { resourceType: resourceFilter } : undefined
+      )
+      return allResources.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
     },
   })
 
-  // Keep all resources including metadata for last-sync timestamp
-  useQuery({
+  // All resources (unfiltered) — used for monthly cost in real mode
+  const { data: allResources = [] } = useQuery({
     queryKey: ['infrastructure-all'],
-    queryFn: () => infrastructureService.getAll(),
+    queryFn: async () => {
+      const all = await infrastructureService.getAll()
+      return all.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
+    },
   })
 
   const { data: recommendationsCount = 0 } = useQuery({
     queryKey: ['cost-recommendations-count'],
     queryFn: costRecommendationsService.getActiveCount,
-  })
-
-  // Preserve mutation
-  useMutation({
-    mutationFn: infrastructureService.syncAWS,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['infrastructure'] })
-      queryClient.invalidateQueries({ queryKey: ['infrastructure-all'] })
-      queryClient.invalidateQueries({ queryKey: ['cost-recommendations-count'] })
-      toast.success(`AWS resources synced successfully. Total cost: $${data.totalCost.toFixed(2)}`)
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Failed to sync AWS resources')
-    },
   })
 
   const demoMode = useDemoMode()
@@ -119,6 +129,14 @@ function InfrastructureContent() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncComplete, setSyncComplete] = useState(false)
 
+  // FIX 3: Fetch real stats from /api/services/stats when not in demo mode
+  const { data: apiStats, isLoading: statsLoading } = useQuery({
+    queryKey: ['services-stats'],
+    queryFn: awsServicesService.getStats,
+    enabled: !isDemoActive,
+  })
+
+  // FIX 2: Wire Sync AWS to real discovery endpoint
   const handleSyncAWS = async () => {
     if (isDemoActive) {
       setIsSyncing(true)
@@ -130,12 +148,18 @@ function InfrastructureContent() {
     }
     try {
       setIsSyncing(true)
-      await infrastructureService.syncAWS()
-      await refetch()
+      const result = await awsServicesService.discoverServices()
+      await Promise.all([
+        refetch(),
+        queryClient.invalidateQueries({ queryKey: ['infrastructure-all'] }),
+        queryClient.invalidateQueries({ queryKey: ['services-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-count'] }),
+      ])
+      toast.success(`Sync complete — ${result.discovered} resources discovered`)
       setSyncComplete(true)
       setTimeout(() => setSyncComplete(false), 3000)
-    } catch (e) {
-      console.error(e)
+    } catch {
+      toast.error('Sync failed — check your AWS connection')
     } finally {
       setIsSyncing(false)
     }
@@ -148,11 +172,23 @@ function InfrastructureContent() {
     return r.resourceType === resourceFilter
   })
 
-  const totalResources = displayResources.length
-  const totalMonthlyCost = displayResources.reduce((sum: number, r: InfrastructureResource) => sum + (r.costPerMonth || 0), 0)
-  const activeCount = displayResources.filter((r: InfrastructureResource) => r.status === 'running').length
-  const warningCount = displayResources.filter((r: InfrastructureResource) => r.status === 'pending' || r.status === 'stopped').length
+  // FIX 3: KPI stats — demo uses computed values, real mode uses API stats
+  const demoTotal       = DEMO_RESOURCES.length
+  const demoMonthlyCost = DEMO_RESOURCES.reduce((sum, r) => sum + (r.costPerMonth || 0), 0)
+  const demoActive      = DEMO_RESOURCES.filter(r => r.status === 'running').length
+  const demoWarning     = DEMO_RESOURCES.filter(r => r.status === 'pending' || r.status === 'stopped').length
+
+  const realMonthlyCost = allResources.reduce((sum: number, r: InfrastructureResource) => sum + (r.costPerMonth || 0), 0)
+
+  const totalResources  = isDemoActive ? demoTotal       : (statsLoading ? null : (apiStats?.total       ?? 0))
+  const totalMonthlyCost= isDemoActive ? demoMonthlyCost : realMonthlyCost
+  const activeCount     = isDemoActive ? demoActive      : (statsLoading ? null : (apiStats?.healthy      ?? 0))
+  const warningCount    = isDemoActive ? demoWarning     : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
+
   const displayRecommendationsCount = isDemoActive ? 3 : recommendationsCount
+
+  // Values shown in the AI insight banner still use displayResources for region counts
+  const regionCount = new Set(displayResources.map((r: InfrastructureResource) => r.awsRegion)).size
 
   return (
     <div style={{
@@ -211,10 +247,10 @@ function InfrastructureContent() {
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
           <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
             {isDemoActive
-              ? `${totalResources} AWS resources tracked across ${new Set(displayResources.map(r => r.awsRegion)).size} regions. Total infrastructure cost is $${Math.round(totalMonthlyCost).toLocaleString()}/mo. RDS payments instance is showing elevated connection wait times — review query performance and connection pool settings. ${displayRecommendationsCount} optimization opportunities identified.`
+              ? `${demoTotal} AWS resources tracked across ${regionCount} regions. Total infrastructure cost is $${Math.round(demoMonthlyCost).toLocaleString()}/mo. RDS payments instance is showing elevated connection wait times — review query performance and connection pool settings. ${displayRecommendationsCount} optimization opportunities identified.`
               : totalResources === 0
                 ? 'No resources found. Click "Sync AWS" to automatically discover all EC2, Lambda, RDS, and S3 resources from your connected AWS account.'
-                : `${totalResources} resources tracked with $${Math.round(totalMonthlyCost).toLocaleString()}/mo total cost. ${warningCount > 0 ? `${warningCount} resource${warningCount > 1 ? 's' : ''} need attention.` : 'All resources healthy.'} ${displayRecommendationsCount > 0 ? `${displayRecommendationsCount} optimization recommendations available.` : ''}`
+                : `${totalResources ?? '—'} resources tracked with $${Math.round(totalMonthlyCost).toLocaleString()}/mo total cost. ${(warningCount ?? 0) > 0 ? `${warningCount} resource${warningCount !== 1 ? 's' : ''} need attention.` : 'All resources healthy.'} ${displayRecommendationsCount > 0 ? `${displayRecommendationsCount} optimization recommendations available.` : ''}`
             }
           </p>
         </div>
@@ -225,13 +261,13 @@ function InfrastructureContent() {
         )}
       </div>
 
-      {/* 4 KPI CARDS */}
+      {/* 4 KPI CARDS — FIX 3 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
-          { label: 'Total Resources', value: totalResources,                                       sub: 'Across all regions',     valueColor: '#0F172A' },
-          { label: 'Monthly Cost',    value: `$${Math.round(totalMonthlyCost).toLocaleString()}`, sub: 'All resources combined', valueColor: '#0F172A' },
-          { label: 'Active',          value: activeCount,                                          sub: 'Running normally',       valueColor: '#059669' },
-          { label: 'Needs Attention', value: warningCount,                                         sub: 'Warning or stopped',     valueColor: warningCount > 0 ? '#D97706' : '#059669' },
+          { label: 'Total Resources', value: statsLoading && !isDemoActive ? '—' : (totalResources ?? '—'),                                        sub: 'Across all regions',     valueColor: '#0F172A' },
+          { label: 'Monthly Cost',    value: `$${Math.round(totalMonthlyCost).toLocaleString()}`,                                                  sub: 'All resources combined', valueColor: '#0F172A' },
+          { label: 'Active',          value: statsLoading && !isDemoActive ? '—' : (activeCount ?? '—'),                                           sub: 'Running normally',       valueColor: '#059669' },
+          { label: 'Needs Attention', value: statsLoading && !isDemoActive ? '—' : (warningCount ?? '—'),                                          sub: 'Warning or stopped',     valueColor: (warningCount !== null && (warningCount as number) > 0) ? '#D97706' : '#059669' },
         ].map(({ label, value, sub, valueColor }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
@@ -244,24 +280,24 @@ function InfrastructureContent() {
       {/* RESOURCE TABLE */}
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
 
-        {/* Table header + filter pills */}
+        {/* Table header + filter pills — FIX 1 */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Resources</p>
-            <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredResources.length} of {totalResources} resources</p>
+            <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredResources.length} of {totalResources ?? '—'} resources</p>
           </div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {(['all', 'ec2', 'lambda', 'rds', 's3', 'elb'] as const).map(type => (
+            {RESOURCE_TYPE_FILTERS.map(({ value, label }) => (
               <button
-                key={type}
-                onClick={() => handleFilterChange(type === 'all' ? 'all' : type as ResourceType)}
+                key={value}
+                onClick={() => handleFilterChange(value)}
                 style={{
                   padding: '4px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600,
                   border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-                  background: resourceFilter === type ? '#7C3AED' : '#F1F5F9',
-                  color: resourceFilter === type ? '#fff' : '#475569',
+                  background: resourceFilter === value ? '#7C3AED' : '#F1F5F9',
+                  color: resourceFilter === value ? '#fff' : '#475569',
                 }}>
-                {type === 'all' ? 'All Types' : type.toUpperCase()}
+                {label}
               </button>
             ))}
           </div>

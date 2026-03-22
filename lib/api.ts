@@ -37,31 +37,20 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor - handle 401 and 500 errors
+// Response interceptor - handle errors
+// NOTE: 401 handling is intentionally NOT done here. Individual API calls may
+// return 401 for many reasons (insufficient permissions, feature not enabled,
+// etc.) and bulk-redirecting on any 401 causes a redirect loop when the
+// middleware re-admits the user via the auth cookie. Auth token expiry is
+// handled by the AuthContext (refreshUser → logout) which also clears the
+// cookie before redirecting.
 api.interceptors.response.use(
   (response) => {
     return response;
   },
   (error: AxiosError) => {
-    if (error.response) {
-      const status = error.response.status;
-
-      // Handle 401 Unauthorized - clear auth and redirect to login
-      if (status === 401) {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('sessionId');
-        localStorage.removeItem('user');
-
-        // Only redirect if not already on login page
-        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-          window.location.href = '/login';
-        }
-      }
-
-      // Handle 500 Internal Server Error
-      if (status === 500) {
-        console.error('Server error:', error.response.data);
-      }
+    if (error.response?.status === 500) {
+      console.error('Server error:', error.response.data);
     }
 
     return Promise.reject(error);

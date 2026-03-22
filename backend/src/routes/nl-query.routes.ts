@@ -8,10 +8,12 @@ import { NLQueryController } from '../controllers/nl-query.controller';
 import { NLQueryService } from '../services/nl-query.service';
 import { authenticate as authenticateToken } from '../middleware/auth.middleware';
 import { pool } from '../config/database';
+import { NLQueryExecutorService } from '../services/nl-query-executor.service';
 
 const router = Router();
 const service = new NLQueryService(pool);
 const controller = new NLQueryController(service);
+const executor = new NLQueryExecutorService(pool);
 
 /**
  * POST /api/nl-query/parse
@@ -36,6 +38,32 @@ const controller = new NLQueryController(service);
  */
 router.post('/parse', authenticateToken, controller.parseQuery);
 router.get('/analytics', authenticateToken, controller.getAnalytics);
+
+// POST /api/nl-query/execute — parse intent AND return real data
+router.post('/execute', authenticateToken, async (req: any, res) => {
+  try {
+    const { query } = req.body;
+    const organizationId = req.user?.organizationId;
+
+    if (!query?.trim()) {
+      return res.status(400).json({ success: false, message: 'Query is required' });
+    }
+    if (!organizationId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Parse intent with Claude
+    const intent = await service.parseQuery(query, organizationId);
+
+    // Execute against real DB
+    const result = await executor.execute(intent, organizationId);
+
+    return res.json({ success: true, data: result });
+  } catch (err: any) {
+    console.error('[NL Query Execute]', err);
+    return res.status(500).json({ success: false, message: 'Failed to execute query' });
+  }
+});
 
 console.log('[NL Query] Routes initialized');
 

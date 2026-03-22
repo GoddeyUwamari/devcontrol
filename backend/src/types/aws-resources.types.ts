@@ -7,7 +7,23 @@
 // AWS RESOURCE TYPES
 // =====================================================
 
-export type ResourceType = 'ec2' | 'rds' | 's3' | 'lambda' | 'ecs' | 'elb' | 'load-balancer' | 'vpc';
+export type ResourceType =
+  | 'ec2'
+  | 'rds'
+  | 's3'
+  | 'lambda'
+  | 'ecs'
+  | 'elb'
+  | 'load-balancer'
+  | 'vpc'
+  | 'eks'
+  | 'dynamodb'
+  | 'cloudfront'
+  | 'api-gateway'
+  | 'elasticache'
+  | 'aurora'
+  | 'sqs'
+  | 'sns';
 
 export type ResourceStatus =
   | 'running'

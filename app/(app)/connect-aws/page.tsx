@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { toast } from 'sonner'
 
 const TRUST_POLICY = JSON.stringify(
   {
@@ -41,16 +43,42 @@ export default function ConnectAwsPage() {
     })
   }
 
-  function handleConnect() {
+  const handleConnect = async () => {
     if (connecting || success) return
+
+    if (!roleArn.trim()) {
+      toast.error('Role ARN is required')
+      return
+    }
+    if (!accountId.trim()) {
+      toast.error('AWS Account ID is required')
+      return
+    }
+    if (!/^\d{12}$/.test(accountId.trim())) {
+      toast.error('Account ID must be a 12-digit number')
+      return
+    }
+    if (!roleArn.trim().startsWith('arn:aws:iam::')) {
+      toast.error('Role ARN must start with arn:aws:iam::')
+      return
+    }
+
     setConnecting(true)
-    setTimeout(() => {
-      setConnecting(false)
+    try {
+      await awsAccountsService.connect({
+        roleArn: roleArn.trim(),
+        accountId: accountId.trim(),
+        nickname: nickname.trim() || undefined,
+      })
       setSuccess(true)
-      setTimeout(() => {
-        router.push('/dashboard')
-      }, 1500)
-    }, 2000)
+      toast.success('AWS account connected successfully')
+      setTimeout(() => router.push('/dashboard'), 1500)
+    } catch (err: any) {
+      const message = err?.response?.data?.message ?? 'Failed to connect AWS account. Please check your Role ARN and try again.'
+      toast.error(message)
+    } finally {
+      setConnecting(false)
+    }
   }
 
   const inputStyle = (focused: boolean): React.CSSProperties => ({

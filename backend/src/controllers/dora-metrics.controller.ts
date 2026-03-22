@@ -41,6 +41,11 @@ export class DORAMetricsController {
         filters.environment = req.query.environment as string;
       }
 
+      // Forward organization ID so the service can resolve custom benchmarks
+      filters.organizationId =
+        (req as any).organizationId ||
+        (req as any).user?.organizationId;
+
       const metrics = await this.service.getComprehensiveMetrics(filters);
 
       res.json({

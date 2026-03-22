@@ -9,7 +9,7 @@ import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import {
-  Rocket, RefreshCw, ArrowRight, Sparkles, XCircle,
+  Rocket, RefreshCw, ArrowRight, Sparkles, XCircle, X,
 } from 'lucide-react'
 
 type EnvironmentFilter = 'all' | DeploymentEnvironment
@@ -31,7 +31,7 @@ const DEMO_DEPLOYMENTS: Deployment[] = [
 const DEMO_DORA = {
   frequency:    '12/week',  frequencyTier: 'Elite',
   leadTime:     '2.4 hours', leadTimeTier: 'Elite',
-  cfr:          '8.3%',     cfrTier:      'High',
+  cfr:          '3.2%',     cfrTier:      'Elite',
   mttr:         '36 min',   mttrTier:     'Elite',
 }
 
@@ -79,12 +79,9 @@ function DeploymentsContent() {
 
   const { data: deployments = [], isLoading, error, refetch } = useQuery({
     queryKey: ['deployments', environmentFilter],
-    queryFn: async () => {
-      const allDeployments = await deploymentsService.getAll()
-      return environmentFilter === 'all'
-        ? allDeployments
-        : allDeployments.filter(d => d.environment === environmentFilter)
-    },
+    queryFn: () => deploymentsService.getAll(
+      environmentFilter !== 'all' ? { environment: environmentFilter } : undefined
+    ),
   })
 
   // WebSocket event listeners for real-time updates
@@ -120,6 +117,36 @@ function DeploymentsContent() {
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
 
+  // ─── New Deployment modal state ───────────────────────────────────────────
+  const [showModal, setShowModal] = useState(false)
+  const [modalForm, setModalForm] = useState({ serviceName: '', environment: 'production', region: 'us-east-1', version: '' })
+  const [modalSubmitting, setModalSubmitting] = useState(false)
+  const [modalError, setModalError] = useState<string | null>(null)
+  const [modalSuccess, setModalSuccess] = useState<string | null>(null)
+
+  const handleNewDeploymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!modalForm.serviceName.trim()) { setModalError('Service name is required'); return }
+    setModalSubmitting(true)
+    setModalError(null)
+    try {
+      await deploymentsService.createFromModal({
+        serviceName: modalForm.serviceName.trim(),
+        environment: modalForm.environment,
+        region:      modalForm.region,
+        version:     modalForm.version.trim() || undefined,
+      })
+      setModalSuccess(`Deployment of ${modalForm.serviceName} to ${modalForm.environment} started`)
+      queryClient.invalidateQueries({ queryKey: ['deployments'] })
+      setModalForm({ serviceName: '', environment: 'production', region: 'us-east-1', version: '' })
+      setTimeout(() => { setShowModal(false); setModalSuccess(null) }, 2000)
+    } catch (err: any) {
+      setModalError(err.message || 'Failed to create deployment')
+    } finally {
+      setModalSubmitting(false)
+    }
+  }
+
   const displayDeployments = isDemoActive ? DEMO_DEPLOYMENTS : deployments
 
   const filteredDeployments = displayDeployments.filter((d: Deployment) =>
@@ -133,6 +160,10 @@ function DeploymentsContent() {
   const deployingCount = filteredDeployments.filter((d: Deployment) => d.status === 'deploying').length
   const successRate = totalDeployments > 0 ? Math.round((successCount / totalDeployments) * 100) : 0
   const totalCost = filteredDeployments.reduce((sum: number, d: Deployment) => sum + (d.costEstimate || 0), 0)
+
+  // Demo overrides for success rate KPI
+  const displaySuccessRate = isDemoActive ? 94 : (totalDeployments > 0 ? successRate : null)
+  const displayRunning     = isDemoActive ? 7  : successCount
 
   return (
     <div style={{
@@ -160,9 +191,11 @@ function DeploymentsContent() {
             style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
             <RefreshCw size={15} /> Refresh
           </button>
-          <a href="/deployments/new" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
+          <button
+            onClick={() => { setShowModal(true); setModalError(null); setModalSuccess(null) }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
             <Rocket size={15} /> New Deployment
-          </a>
+          </button>
         </div>
       </div>
 
@@ -175,7 +208,7 @@ function DeploymentsContent() {
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
           <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
             {isDemoActive
-              ? 'Deployment frequency is Elite tier at 12/week. payment-processor has a deploying status — Lambda invocation spike may be related. auth-service failed deployment in staging 30 hours ago; consider rollback investigation.'
+              ? 'Deployment frequency is Elite tier at 12/week. All 4 DORA metrics are Elite tier — top 10% of engineering teams. payment-processor has a deploying status in staging — monitor for completion.'
               : totalDeployments === 0
                 ? 'No deployments found. Connect your CI/CD pipeline to start tracking deployment history automatically.'
                 : `${successCount} of ${totalDeployments} deployments are running successfully with ${successRate}% success rate. ${failedCount > 0 ? `${failedCount} failed deployment${failedCount > 1 ? 's' : ''} require attention.` : 'No failed deployments detected.'}`
@@ -193,7 +226,12 @@ function DeploymentsContent() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
           { label: 'Total Deployments', value: totalDeployments,                       sub: 'In selected filter',      valueColor: '#0F172A' },
-          { label: 'Success Rate',      value: `${successRate}%`,                      sub: `${successCount} running`, valueColor: successRate >= 90 ? '#059669' : successRate >= 75 ? '#D97706' : '#DC2626' },
+          {
+            label: 'Success Rate',
+            value: displaySuccessRate !== null ? `${displaySuccessRate}%` : '—',
+            sub: `${displayRunning} running`,
+            valueColor: displaySuccessRate === null ? '#0F172A' : displaySuccessRate >= 90 ? '#059669' : displaySuccessRate >= 70 ? '#D97706' : '#DC2626',
+          },
           { label: 'Active Now',        value: deployingCount,                         sub: 'Currently deploying',     valueColor: deployingCount > 0 ? '#D97706' : '#059669' },
           { label: 'Est. Cost',         value: `$${Math.round(totalCost).toLocaleString()}`, sub: 'Total cost estimate', valueColor: '#0F172A' },
         ].map(({ label, value, sub, valueColor }) => (
@@ -303,9 +341,11 @@ function DeploymentsContent() {
             <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px', lineHeight: 1.6 }}>
               Connect your CI/CD pipeline to start tracking deployments automatically.
             </p>
-            <a href="/deployments/new" style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => { setShowModal(true); setModalError(null); setModalSuccess(null) }}
+              style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
               <Rocket size={14} /> Create First Deployment
-            </a>
+            </button>
           </div>
         ) : (
           filteredDeployments.map((d: Deployment, idx: number) => {
@@ -390,6 +430,106 @@ function DeploymentsContent() {
           })
         )}
       </div>
+
+      {/* ─── NEW DEPLOYMENT MODAL ─────────────────────────────────────────── */}
+      {showModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', width: '480px', maxWidth: '90vw', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+              <div>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', margin: '0 0 4px' }}>New Deployment</h2>
+                <p style={{ fontSize: '0.8rem', color: '#64748B', margin: 0 }}>Deploy a service to an environment</p>
+              </div>
+              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: '4px' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Success state */}
+            {modalSuccess ? (
+              <div style={{ padding: '16px', background: '#F0FDF4', borderRadius: '10px', border: '1px solid #BBF7D0', textAlign: 'center' }}>
+                <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#059669', margin: 0 }}>{modalSuccess}</p>
+              </div>
+            ) : (
+              <form onSubmit={handleNewDeploymentSubmit}>
+                {/* Service Name */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Service Name</label>
+                  <input
+                    type="text"
+                    value={modalForm.serviceName}
+                    onChange={e => setModalForm(f => ({ ...f, serviceName: e.target.value }))}
+                    placeholder="e.g. api-gateway, auth-service"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {/* Environment */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Environment</label>
+                  <select
+                    value={modalForm.environment}
+                    onChange={e => setModalForm(f => ({ ...f, environment: e.target.value }))}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }}>
+                    <option value="production">Production</option>
+                    <option value="staging">Staging</option>
+                    <option value="development">Development</option>
+                  </select>
+                </div>
+
+                {/* Region */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Region</label>
+                  <select
+                    value={modalForm.region}
+                    onChange={e => setModalForm(f => ({ ...f, region: e.target.value }))}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }}>
+                    <option value="us-east-1">us-east-1 (N. Virginia)</option>
+                    <option value="us-west-2">us-west-2 (Oregon)</option>
+                    <option value="eu-west-1">eu-west-1 (Ireland)</option>
+                    <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
+                    <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+                    <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
+                  </select>
+                </div>
+
+                {/* Version */}
+                <div style={{ marginBottom: '24px' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Version <span style={{ fontWeight: 400, color: '#94A3B8' }}>(optional)</span></label>
+                  <input
+                    type="text"
+                    value={modalForm.version}
+                    onChange={e => setModalForm(f => ({ ...f, version: e.target.value }))}
+                    placeholder="e.g. v2.4.1, main@a1b2c3d"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {/* Error */}
+                {modalError && (
+                  <div style={{ marginBottom: '16px', padding: '10px 14px', background: '#FEF2F2', borderRadius: '8px', border: '1px solid #FEE2E2' }}>
+                    <p style={{ fontSize: '0.8rem', color: '#DC2626', margin: 0 }}>{modalError}</p>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={() => setShowModal(false)}
+                    style={{ padding: '9px 20px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', color: '#475569', fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={modalSubmitting}
+                    style={{ padding: '9px 20px', borderRadius: '8px', background: modalSubmitting ? '#A78BFA' : '#7C3AED', color: '#fff', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: modalSubmitting ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {modalSubmitting ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Deploying...</> : <><Rocket size={13} /> Deploy</>}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   )

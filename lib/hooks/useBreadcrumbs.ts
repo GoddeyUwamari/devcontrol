@@ -65,7 +65,7 @@ const parentPaths: Record<string, { label: string; href: string }[]> = {
   '/recommendations':  [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/tenants':          [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/infrastructure/new':             [],
-  '/infrastructure/recommendations': [{ label: 'Infrastructure', href: '/infrastructure' }],
+  '/infrastructure/recommendations': [],
   '/status':           [{ label: 'Observability',  href: '/observability'  }],
   '/app/dora-metrics': [{ label: 'DevOps',         href: '/devops'         }],
   '/dora-metrics':     [{ label: 'DevOps',         href: '/devops'         }],

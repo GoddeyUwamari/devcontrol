@@ -5,6 +5,7 @@ export interface DORAMetricsFilters {
   serviceId?: string;
   teamId?: string;
   environment?: string;
+  organizationId?: string;
 }
 
 export interface DeploymentFrequencyResult {

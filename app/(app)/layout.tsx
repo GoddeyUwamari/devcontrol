@@ -11,6 +11,7 @@ import { useOnboardingStore } from '@/lib/stores/onboarding-store';
 import { useBreadcrumbs } from '@/lib/hooks/useBreadcrumbs';
 import { DemoBanner } from '@/components/demo/DemoBanner';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
+import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 
 /**
  * App Layout - Authenticated Users Only
@@ -25,11 +26,14 @@ import { AIChatWidget } from '@/components/ai/AIChatWidget';
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const fetchStatus = useOnboardingStore((state) => state.fetchStatus);
   const breadcrumbs = useBreadcrumbs();
+  const isDemoActive = useDemoMode();
 
-  // Fetch onboarding status on mount
+  // Fetch onboarding status on mount — skip in demo mode (no auth token)
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+    if (!isDemoActive) {
+      fetchStatus();
+    }
+  }, [fetchStatus, isDemoActive]);
 
   return (
     <div className="min-h-screen bg-background">

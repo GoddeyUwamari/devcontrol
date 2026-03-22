@@ -1,44 +1,94 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { api } from '@/lib/api'
 import { Tenant } from '@/lib/types'
+import { toast } from 'sonner'
 import {
-  Search, Sparkles, RefreshCw,
+  Search, Sparkles, RefreshCw, Plus,
   Users, XCircle,
   ChevronLeft, ChevronRight
 } from 'lucide-react'
 
+// FIX 3: plan field added to each demo tenant
 const DEMO_TENANTS: Tenant[] = [
-  { id: 't1', name: 'Acme Corporation',      email: 'admin@acme.com',        status: 'active',   createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 120).toISOString() },
-  { id: 't2', name: 'TechFlow Systems',      email: 'ops@techflow.io',       status: 'active',   createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 90).toISOString()  },
-  { id: 't3', name: 'Meridian Analytics',    email: 'team@meridian.co',      status: 'active',   createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 75).toISOString()  },
-  { id: 't4', name: 'Vertex Capital Group',  email: 'devops@vertexcg.com',   status: 'active',   createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 60).toISOString()  },
-  { id: 't5', name: 'Nexus Cloud Partners',  email: 'admin@nexuscp.com',     status: 'active',   createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 45).toISOString()  },
-  { id: 't6', name: 'Pinnacle SaaS Co',      email: 'platform@pinnacle.io',  status: 'active',   createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString()  },
-  { id: 't7', name: 'Orion Digital Labs',    email: 'eng@orionlabs.dev',     status: 'inactive', createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 15).toISOString()  },
-  { id: 't8', name: 'Blueshift Ventures',    email: 'cloud@blueshift.vc',    status: 'inactive', createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()   },
+  { id: 't1', name: 'Acme Corporation',      email: 'admin@acme.com',        status: 'active',   plan: 'enterprise', createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 120).toISOString() },
+  { id: 't2', name: 'TechFlow Systems',      email: 'ops@techflow.io',       status: 'active',   plan: 'pro',        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 90).toISOString()  },
+  { id: 't3', name: 'Meridian Analytics',    email: 'team@meridian.co',      status: 'active',   plan: 'pro',        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 75).toISOString()  },
+  { id: 't4', name: 'Vertex Capital Group',  email: 'devops@vertexcg.com',   status: 'active',   plan: 'starter',    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 60).toISOString()  },
+  { id: 't5', name: 'Nexus Cloud Partners',  email: 'admin@nexuscp.com',     status: 'active',   plan: 'pro',        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 45).toISOString()  },
+  { id: 't6', name: 'Pinnacle SaaS Co',      email: 'platform@pinnacle.io',  status: 'active',   plan: 'starter',    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString()  },
+  { id: 't7', name: 'Orion Digital Labs',    email: 'eng@orionlabs.dev',     status: 'inactive', plan: 'free',       createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 15).toISOString()  },
+  { id: 't8', name: 'Blueshift Ventures',    email: 'cloud@blueshift.vc',    status: 'inactive', plan: 'starter',    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()   },
 ]
+
+// FIX 3: plan badge styles
+function PlanBadge({ plan }: { plan?: string }) {
+  const styles: Record<string, { background: string; color: string }> = {
+    free:       { background: '#F1F5F9', color: '#64748B' },
+    starter:    { background: '#EFF6FF', color: '#2563EB' },
+    pro:        { background: '#F5F3FF', color: '#7C3AED' },
+    enterprise: { background: '#FFFBEB', color: '#D97706' },
+  }
+  const s = styles[plan || 'free'] || styles.free
+  return (
+    <span style={{
+      fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px',
+      borderRadius: '100px', width: 'fit-content', display: 'inline-block',
+      background: s.background, color: s.color,
+    }}>
+      {(plan || 'free').charAt(0).toUpperCase() + (plan || 'free').slice(1)}
+    </span>
+  )
+}
 
 export default function TenantsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const debouncedSearch = useDebounce(searchQuery, 300)
   const itemsPerPage = 10
+  const queryClient = useQueryClient()
 
+  const demoMode = useDemoMode()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  const isDemoActive = demoMode || salesDemoMode
+
+  // FIX 1: corrected API path from /api/auth/tenants → /api/tenants
   const { data: tenants, isLoading, error, refetch } = useQuery<Tenant[]>({
     queryKey: ['tenants', debouncedSearch],
     queryFn: async () => {
-      const response = await api.get('/api/auth/tenants', {
+      const response = await api.get('/api/tenants', {
         params: { search: debouncedSearch || undefined }
       })
       return response.data.data || []
-    }
+    },
+    enabled: !isDemoActive,
   })
+
+  // FIX 2: Add Tenant modal state
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [addForm, setAddForm] = useState({ name: '', email: '', plan: 'free' })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleAddTenant = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setIsSubmitting(true)
+      await api.post('/api/tenants', addForm)
+      toast.success('Tenant added')
+      setIsAddModalOpen(false)
+      setAddForm({ name: '', email: '', plan: 'free' })
+      queryClient.invalidateQueries({ queryKey: ['tenants'] })
+    } catch {
+      toast.error('Failed to add tenant')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -52,10 +102,6 @@ export default function TenantsPage() {
     setSearchQuery(value)
     setCurrentPage(1)
   }
-
-  const demoMode = useDemoMode()
-  const salesDemoMode = useSalesDemo((state) => state.enabled)
-  const isDemoActive = demoMode || salesDemoMode
 
   const displayTenants = isDemoActive ? DEMO_TENANTS : (tenants || [])
 
@@ -83,6 +129,7 @@ export default function TenantsPage() {
       background: '#F9FAFB',
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
+      <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
 
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
@@ -94,11 +141,29 @@ export default function TenantsPage() {
             Manage and monitor all tenant accounts · Multi-tenant platform
           </p>
         </div>
-        <button
-          onClick={() => refetch()}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-          <RefreshCw size={15} /> Refresh
-        </button>
+        {/* FIX 2: header buttons */}
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => refetch()}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+            <RefreshCw size={15} /> Refresh
+          </button>
+          <button
+            onClick={() => !isDemoActive && setIsAddModalOpen(true)}
+            disabled={isDemoActive}
+            title={isDemoActive ? 'Not available in demo mode' : undefined}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: isDemoActive ? '#EDE9FE' : '#7C3AED',
+              color: isDemoActive ? '#A78BFA' : '#fff',
+              padding: '10px 20px', borderRadius: '8px',
+              fontSize: '0.875rem', fontWeight: 600,
+              border: 'none', cursor: isDemoActive ? 'not-allowed' : 'pointer',
+              opacity: isDemoActive ? 0.7 : 1,
+            }}>
+            <Plus size={15} /> Add Tenant
+          </button>
+        </div>
       </div>
 
       {/* AI INSIGHT BANNER */}
@@ -154,9 +219,9 @@ export default function TenantsPage() {
           </div>
         </div>
 
-        {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 120px 140px 100px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
-          {['Name', 'Email', 'Status', 'Created', 'Actions'].map(col => (
+        {/* FIX 3: Column headers — added PLAN between EMAIL and STATUS */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 100px 120px 140px 100px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+          {['Name', 'Email', 'Plan', 'Status', 'Created', 'Actions'].map(col => (
             <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
           ))}
         </div>
@@ -193,7 +258,7 @@ export default function TenantsPage() {
                 key={tenant.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 2fr 120px 140px 100px',
+                  gridTemplateColumns: '2fr 2fr 100px 120px 140px 100px',
                   padding: '14px 28px',
                   borderBottom: idx < paginatedTenants.length - 1 ? '1px solid #F8FAFC' : 'none',
                   alignItems: 'center',
@@ -207,6 +272,9 @@ export default function TenantsPage() {
 
                 {/* Email */}
                 <p style={{ fontSize: '0.82rem', color: '#475569', margin: 0 }}>{tenant.email}</p>
+
+                {/* FIX 3: Plan badge */}
+                <PlanBadge plan={tenant.plan} />
 
                 {/* Status */}
                 <span style={{
@@ -261,6 +329,74 @@ export default function TenantsPage() {
           </div>
         )}
       </div>
+
+      {/* FIX 2: Add Tenant Modal */}
+      {isAddModalOpen && (
+        <div
+          onClick={() => setIsAddModalOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, animation: 'fadeIn 0.15s ease',
+          }}>
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: '16px', padding: '32px', width: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px' }}>Add Tenant</h2>
+            <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px' }}>Register a new tenant account on this platform.</p>
+
+            <form onSubmit={handleAddTenant}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Company Name *</label>
+                <input
+                  required
+                  value={addForm.name}
+                  onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="Acme Corporation"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Admin Email *</label>
+                <input
+                  required
+                  type="email"
+                  value={addForm.email}
+                  onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
+                  placeholder="admin@company.com"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ marginBottom: '28px' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Plan</label>
+                <select
+                  value={addForm.plan}
+                  onChange={e => setAddForm(f => ({ ...f, plan: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box' }}>
+                  <option value="free">Free</option>
+                  <option value="starter">Starter</option>
+                  <option value="pro">Pro</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  style={{ padding: '9px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  style={{ padding: '9px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', background: '#7C3AED', color: '#fff', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
+                  {isSubmitting ? 'Adding...' : 'Add Tenant'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   )

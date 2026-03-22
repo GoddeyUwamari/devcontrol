@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/contexts/auth-context';
 import {
   TrendingUp,
   Activity,
@@ -154,6 +155,60 @@ const DEMO_SERVICE_BREAKDOWN = [
   { name: 'payment-processor',    env: 'production', deployFreq: '0.8/d', leadTime: '6.2h', cfr: '4.8%', mttr: '52m', tier: 'medium', attention: true },
 ];
 
+// ── BENCHMARK CONFIG ────────────────────────────────────────────────────────
+
+const BENCHMARK_API = 'http://localhost:8080/api/dora/benchmarks';
+
+interface CustomBenchmark {
+  metric_name: string;
+  target_value: number;
+  target_unit: string;
+  performance_label: string;
+}
+
+const METRIC_CONFIGS = [
+  {
+    metricKey: 'deployment_frequency',
+    label: 'Deployment Frequency',
+    unit: 'per day',
+    unitLabel: 'deployments/day',
+    higherBetter: true,
+    industryElite: 1,
+    placeholder: 'e.g. 2',
+    hint: 'Teams performing above this threshold are classified Elite.',
+  },
+  {
+    metricKey: 'lead_time',
+    label: 'Lead Time for Changes',
+    unit: 'hours',
+    unitLabel: 'hours',
+    higherBetter: false,
+    industryElite: 24,
+    placeholder: 'e.g. 4',
+    hint: 'Teams recovering faster than this threshold are classified Elite.',
+  },
+  {
+    metricKey: 'change_failure_rate',
+    label: 'Change Failure Rate',
+    unit: 'percentage',
+    unitLabel: '%',
+    higherBetter: false,
+    industryElite: 15,
+    placeholder: 'e.g. 5',
+    hint: 'Teams with a failure rate below this threshold are classified Elite.',
+  },
+  {
+    metricKey: 'recovery_time',
+    label: 'Mean Time to Recovery',
+    unit: 'minutes',
+    unitLabel: 'minutes',
+    higherBetter: false,
+    industryElite: 60,
+    placeholder: 'e.g. 30',
+    hint: 'Teams recovering faster than this threshold are classified Elite.',
+  },
+] as const;
+
 // ── PAGE COMPONENT ─────────────────────────────────────────────────────────
 
 export default function DORAMetricsPage() {
@@ -161,6 +216,16 @@ export default function DORAMetricsPage() {
   const [selectedService, setSelectedService] = useState<string>('all');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [selectedEnvironment, setSelectedEnvironment] = useState<string>('all');
+
+  // Benchmark settings state
+  const [editingMetric, setEditingMetric] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
+  const [editLabel, setEditLabel] = useState<string>('Elite');
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const { organization } = useAuth();
+  const isEnterprise = organization?.subscriptionTier === 'enterprise';
+  const queryClient = useQueryClient();
 
   const demoMode = useDemoMode();
 
@@ -202,6 +267,59 @@ export default function DORAMetricsPage() {
       return doraMetricsService.getDORAMetrics(filters);
     },
   });
+
+  // Fetch custom benchmarks (enterprise only, but always fetch — gating in UI)
+  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({
+    queryKey: ['dora-benchmarks'],
+    queryFn: async () => {
+      const res = await fetch(BENCHMARK_API);
+      return res.json();
+    },
+  });
+
+  const benchmarksMap: Record<string, CustomBenchmark> = (benchmarksData?.data || []).reduce(
+    (acc, b) => ({ ...acc, [b.metric_name]: b }),
+    {}
+  );
+
+  // Save a custom benchmark
+  const saveBenchmark = useCallback(async (metricKey: string, value: string, label: string) => {
+    setSaveError(null);
+    const parsed = parseFloat(value);
+    if (isNaN(parsed) || parsed <= 0) {
+      setSaveError('Please enter a valid positive number.');
+      return;
+    }
+    try {
+      const res = await fetch(BENCHMARK_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          metric_name: metricKey,
+          target_value: parsed,
+          performance_label: label || 'Elite',
+        }),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      await refetchBenchmarks();
+      queryClient.invalidateQueries({ queryKey: ['dora-metrics'] });
+      setEditingMetric(null);
+    } catch {
+      setSaveError('Failed to save. Please try again.');
+    }
+  }, [refetchBenchmarks, queryClient]);
+
+  // Reset a metric to industry standard
+  const resetBenchmark = useCallback(async (metricKey: string) => {
+    setSaveError(null);
+    try {
+      await fetch(`${BENCHMARK_API}/${metricKey}`, { method: 'DELETE' });
+      await refetchBenchmarks();
+      queryClient.invalidateQueries({ queryKey: ['dora-metrics'] });
+    } catch {
+      setSaveError('Failed to reset. Please try again.');
+    }
+  }, [refetchBenchmarks, queryClient]);
 
   const metrics = demoMode ? DEMO_DORA_METRICS : (metricsData?.data ?? null);
   const isDemoActive = demoMode;
@@ -594,17 +712,32 @@ export default function DORAMetricsPage() {
                     }}>
                       {label}
                     </CardTitle>
-                    <span style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: '99px',
-                      background: tierBg,
-                      color: tierColor,
-                      border: `1px solid ${tierColor}30`,
-                    }}>
-                      {tierLabel}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '99px',
+                        background: tierBg,
+                        color: tierColor,
+                        border: `1px solid ${tierColor}30`,
+                      }}>
+                        {tierLabel}
+                      </span>
+                      {(metric as DORAMetric).isCustomBenchmark && (
+                        <span style={{
+                          fontSize: '9px',
+                          fontWeight: 600,
+                          color: '#7C3AED',
+                          background: 'rgba(124,58,237,0.07)',
+                          borderRadius: '4px',
+                          padding: '1px 5px',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          Custom benchmark
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -887,6 +1020,296 @@ export default function DORAMetricsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* ── BENCHMARK SETTINGS (Enterprise only) ── */}
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #F1F5F9',
+        borderRadius: '16px',
+        overflow: 'hidden',
+      }}>
+        {/* Section header */}
+        <div style={{
+          padding: '20px 24px',
+          borderBottom: '1px solid #F1F5F9',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+        }}>
+          <div>
+            <div style={{
+              fontSize: '0.68rem', fontWeight: 700,
+              color: '#7C3AED', textTransform: 'uppercase',
+              letterSpacing: '0.1em', marginBottom: '4px',
+            }}>
+              Enterprise · Custom Benchmarks
+            </div>
+            <p style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A', margin: '0 0 4px' }}>
+              Benchmark Settings
+            </p>
+            <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>
+              Override industry-standard DORA thresholds with targets specific to your organization.
+            </p>
+          </div>
+          {isEnterprise && (
+            <span style={{
+              fontSize: '11px', fontWeight: 600,
+              color: '#059669', background: '#ECFDF5',
+              border: '1px solid #D1FAE5',
+              borderRadius: '99px', padding: '4px 12px',
+              whiteSpace: 'nowrap',
+            }}>
+              Enterprise Active
+            </span>
+          )}
+        </div>
+
+        {/* Locked state for non-enterprise */}
+        {!isEnterprise ? (
+          <div style={{
+            padding: '56px 24px',
+            textAlign: 'center',
+            background: '#F8FAFC',
+          }}>
+            <div style={{
+              width: '44px', height: '44px',
+              background: '#F1F5F9',
+              borderRadius: '12px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '20px',
+              margin: '0 auto 16px',
+            }}>
+              🔒
+            </div>
+            <p style={{
+              fontSize: '14px', fontWeight: 600,
+              color: '#0F172A', margin: '0 0 6px',
+            }}>
+              Custom DORA Benchmarking
+            </p>
+            <p style={{
+              fontSize: '13px', color: '#64748B',
+              margin: '0 0 20px', maxWidth: '380px',
+              marginLeft: 'auto', marginRight: 'auto',
+              lineHeight: 1.6,
+            }}>
+              Set custom performance thresholds per metric so your team is measured
+              against your own standards, not just industry averages.
+              Available on the Enterprise plan.
+            </p>
+            <a
+              href="/settings/billing"
+              style={{
+                display: 'inline-block',
+                padding: '9px 20px',
+                background: '#7C3AED',
+                color: '#fff',
+                borderRadius: '8px',
+                fontSize: '13px', fontWeight: 600,
+                textDecoration: 'none',
+              }}
+            >
+              Upgrade to Enterprise →
+            </a>
+          </div>
+        ) : (
+          /* Benchmark rows */
+          <div>
+            {saveError && (
+              <div style={{
+                padding: '10px 24px',
+                background: '#FEF2F2',
+                borderBottom: '1px solid #FECACA',
+                fontSize: '13px', color: '#DC2626',
+              }}>
+                {saveError}
+              </div>
+            )}
+            {METRIC_CONFIGS.map((cfg) => {
+              const custom = benchmarksMap[cfg.metricKey];
+              const isEditing = editingMetric === cfg.metricKey;
+              const hasCustom = !!custom;
+
+              return (
+                <div
+                  key={cfg.metricKey}
+                  style={{
+                    padding: '16px 24px',
+                    borderBottom: '1px solid #F8FAFC',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {/* Metric name */}
+                  <div style={{ flex: '1 1 180px', minWidth: '150px' }}>
+                    <div style={{
+                      fontSize: '13px', fontWeight: 600,
+                      color: '#0F172A', marginBottom: '2px',
+                    }}>
+                      {cfg.label}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>
+                      Unit: {cfg.unitLabel}
+                    </div>
+                  </div>
+
+                  {/* Current benchmark display */}
+                  <div style={{ flex: '1 1 200px' }}>
+                    {hasCustom ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          fontSize: '13px', fontWeight: 700, color: '#0F172A',
+                        }}>
+                          {custom.target_value} {cfg.unitLabel}
+                        </span>
+                        <span style={{
+                          fontSize: '10px', fontWeight: 700,
+                          color: '#7C3AED', background: 'rgba(124,58,237,0.08)',
+                          borderRadius: '4px', padding: '1px 6px',
+                        }}>
+                          Custom
+                        </span>
+                        <span style={{ fontSize: '11px', color: '#64748B' }}>
+                          label: &ldquo;{custom.performance_label}&rdquo;
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '13px', color: '#64748B' }}>
+                          Industry default: {cfg.industryElite} {cfg.unitLabel}
+                        </span>
+                        <span style={{
+                          fontSize: '10px', fontWeight: 600,
+                          color: '#94A3B8', background: '#F1F5F9',
+                          borderRadius: '4px', padding: '1px 6px',
+                        }}>
+                          Standard
+                        </span>
+                      </div>
+                    )}
+                    {!isEditing && (
+                      <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>
+                        {cfg.hint}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Inline edit form */}
+                  {isEditing ? (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      flex: '1 1 320px', flexWrap: 'wrap',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          placeholder={cfg.placeholder}
+                          style={{
+                            width: '88px',
+                            padding: '6px 10px',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '7px',
+                            fontSize: '13px',
+                            color: '#0F172A',
+                            outline: 'none',
+                          }}
+                        />
+                        <span style={{ fontSize: '12px', color: '#64748B' }}>
+                          {cfg.unitLabel}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '11px', color: '#94A3B8' }}>Top label:</span>
+                        <input
+                          type="text"
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                          placeholder="Elite"
+                          maxLength={30}
+                          style={{
+                            width: '80px',
+                            padding: '6px 10px',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '7px',
+                            fontSize: '13px',
+                            color: '#0F172A',
+                            outline: 'none',
+                          }}
+                        />
+                      </div>
+                      <button
+                        onClick={() => saveBenchmark(cfg.metricKey, editValue, editLabel)}
+                        style={{
+                          padding: '6px 14px',
+                          background: '#7C3AED', color: '#fff',
+                          border: 'none', borderRadius: '7px',
+                          fontSize: '12px', fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => { setEditingMetric(null); setSaveError(null); }}
+                        style={{
+                          padding: '6px 12px',
+                          background: 'transparent', color: '#64748B',
+                          border: '1px solid #E2E8F0', borderRadius: '7px',
+                          fontSize: '12px', fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    /* Action buttons */
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => {
+                          setEditingMetric(cfg.metricKey);
+                          setEditValue(custom ? String(custom.target_value) : '');
+                          setEditLabel(custom?.performance_label || 'Elite');
+                          setSaveError(null);
+                        }}
+                        style={{
+                          padding: '6px 14px',
+                          background: 'transparent', color: '#475569',
+                          border: '1px solid #E2E8F0', borderRadius: '7px',
+                          fontSize: '12px', fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {hasCustom ? 'Edit' : 'Set Custom'}
+                      </button>
+                      {hasCustom && (
+                        <button
+                          onClick={() => resetBenchmark(cfg.metricKey)}
+                          style={{
+                            padding: '6px 12px',
+                            background: 'transparent', color: '#DC2626',
+                            border: '1px solid #FECACA', borderRadius: '7px',
+                            fontSize: '12px', fontWeight: 500,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Reset to Default
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* ── ERROR STATE ── */}
       {error && !isDemoActive && (

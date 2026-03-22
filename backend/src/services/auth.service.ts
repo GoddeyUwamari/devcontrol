@@ -407,6 +407,21 @@ export class AuthService {
   }
 
   /**
+   * Generate a token pair for an authenticated user (used by SAML and other SSO flows)
+   */
+  async generateTokenPair(payload: {
+    userId: string;
+    email: string;
+    organizationId: string;
+    role: string;
+  }): Promise<{ accessToken: string; refreshToken: string }> {
+    const accessToken = this.generateAccessToken(payload);
+    const refreshToken = this.generateRefreshToken(payload);
+    await this.createSession(payload.userId, payload.organizationId, accessToken, refreshToken);
+    return { accessToken, refreshToken };
+  }
+
+  /**
    * Verify JWT token
    */
   verifyToken(token: string): JWTPayload {

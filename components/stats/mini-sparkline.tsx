@@ -79,7 +79,7 @@ export function MiniSparkline({
       height={height}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
-      className="w-full overflow-visible"
+      className="w-full overflow-hidden"
     >
       {/* Gradient Definition */}
       {showGradient && (

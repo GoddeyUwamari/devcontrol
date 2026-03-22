@@ -1,12 +1,17 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Plus, X, Copy, Check, Trash2,
   Eye, EyeOff,
   Github, Slack, Bell, Trello,
+  Cloud, Database, Server, BarChart2,
 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { useEffect } from 'react'
+import { toast } from 'sonner'
+import developersService from '@/lib/services/developers.service'
 
 // ── LOCAL TYPES ────────────────────────────────────────────────────────────────
 
@@ -118,7 +123,8 @@ function timeAgo(iso: string): string {
 // ── PAGE ───────────────────────────────────────────────────────────────────────
 
 export default function DevelopersPage() {
-  const { demoMode } = useDemoMode()
+  const demoMode = useDemoMode()
+  const router = useRouter()
 
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKey[]>(demoMode ? DEMO_API_KEYS : [])
@@ -169,33 +175,94 @@ export default function DevelopersPage() {
       connectedAt: null,
       icon: <Trello size={20} />,
     },
+    {
+      id: 'aws',
+      name: 'AWS',
+      description: 'Connect your AWS account for cost, security, and infrastructure visibility',
+      status: demoMode ? 'connected' : 'disconnected',
+      connectedAt: demoMode ? '2024-01-10T00:00:00Z' : null,
+      icon: <Cloud size={20} />,
+    },
+    {
+      id: 'datadog',
+      name: 'Datadog',
+      description: 'Sync metrics, traces, and alerts from your Datadog account',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <BarChart2 size={20} />,
+    },
+    {
+      id: 'terraform',
+      name: 'Terraform',
+      description: 'Track infrastructure-as-code changes and detect configuration drift',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Server size={20} />,
+    },
+    {
+      id: 'kubernetes',
+      name: 'Kubernetes',
+      description: 'Monitor cluster health, resource efficiency, and container costs',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Database size={20} />,
+    },
   ])
+
+  useEffect(() => {
+    if (demoMode) return
+    developersService.getKeys().then(data => setApiKeys(data as unknown as ApiKey[])).catch(() => {})
+    developersService.getWebhooks().then(data => setWebhooks(data as unknown as WebhookEndpoint[])).catch(() => {})
+  }, [demoMode])
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  const handleGenerateKey = () => {
+  const handleGenerateKey = async () => {
     if (!newKeyName.trim()) {
       setNewKeyError('Key name is required.')
       return
     }
-    const fakeKey = 'dc_live_' + Math.random().toString(36).substring(2, 18)
-    const newKey: ApiKey = {
-      id: 'key-' + Date.now(),
-      name: newKeyName.trim(),
-      prefix: fakeKey.substring(0, 12),
-      scopes: ['read:metrics', 'read:costs'],
-      createdAt: new Date().toISOString(),
-      lastUsedAt: null,
-      status: 'active',
+    if (demoMode) {
+      const fakeKey = 'dc_live_' + Math.random().toString(36).substring(2, 18)
+      const newKey: ApiKey = {
+        id: 'key-' + Date.now(),
+        name: newKeyName.trim(),
+        prefix: fakeKey.substring(0, 12),
+        scopes: ['read:metrics', 'read:costs'],
+        createdAt: new Date().toISOString(),
+        lastUsedAt: null,
+        status: 'active',
+      }
+      setApiKeys(k => [...k, newKey])
+      setGeneratedKey(fakeKey)
+      setNewKeyName('')
+      setNewKeyError('')
+      return
     }
-    setApiKeys(k => [...k, newKey])
-    setGeneratedKey(fakeKey)
-    setNewKeyName('')
-    setNewKeyError('')
+    try {
+      const key = await developersService.generateKey(newKeyName.trim())
+      setApiKeys(k => [...k, { ...key, createdAt: key.created_at, lastUsedAt: key.last_used_at }])
+      setGeneratedKey(key.raw_key ?? '')
+      setNewKeyName('')
+      setNewKeyError('')
+      toast.success('API key generated')
+    } catch (err: any) {
+      setNewKeyError(err?.response?.data?.message ?? 'Failed to generate key')
+    }
   }
 
-  const handleRevokeKey = (id: string) => {
-    setApiKeys(k => k.filter(key => key.id !== id))
+  const handleRevokeKey = async (id: string) => {
+    if (demoMode) {
+      setApiKeys(k => k.filter(key => key.id !== id))
+      return
+    }
+    try {
+      await developersService.revokeKey(id)
+      setApiKeys(k => k.filter(key => key.id !== id))
+      toast.success('API key revoked')
+    } catch {
+      toast.error('Failed to revoke key')
+    }
   }
 
   const handleCopy = () => {
@@ -206,23 +273,51 @@ export default function DevelopersPage() {
     }
   }
 
-  const handleAddWebhook = () => {
+  const handleDeleteWebhook = async (id: string) => {
+    if (demoMode) {
+      setWebhooks(w => w.filter(wh => wh.id !== id))
+      return
+    }
+    try {
+      await developersService.deleteWebhook(id)
+      setWebhooks(w => w.filter(wh => wh.id !== id))
+      toast.success('Webhook deleted')
+    } catch {
+      toast.error('Failed to delete webhook')
+    }
+  }
+
+  const handleAddWebhook = async () => {
     if (!webhookUrl.trim() || !webhookUrl.startsWith('https://')) {
       setWebhookError('A valid HTTPS URL is required.')
       return
     }
-    const newWh: WebhookEndpoint = {
-      id: 'wh-' + Date.now(),
-      url: webhookUrl.trim(),
-      events: ['alert.triggered'],
-      status: 'active',
-      lastTriggeredAt: null,
-      createdAt: new Date().toISOString(),
+    if (demoMode) {
+      const newWh: WebhookEndpoint = {
+        id: 'wh-' + Date.now(),
+        url: webhookUrl.trim(),
+        events: ['alert.triggered'],
+        status: 'active',
+        lastTriggeredAt: null,
+        createdAt: new Date().toISOString(),
+      }
+      setWebhooks(w => [...w, newWh])
+      setWebhookUrl('')
+      setWebhookError('')
+      setShowNewWebhook(false)
+      return
     }
-    setWebhooks(w => [...w, newWh])
-    setWebhookUrl('')
-    setWebhookError('')
-    setShowNewWebhook(false)
+    try {
+      const wh = await developersService.addWebhook(webhookUrl.trim())
+      setWebhooks(w => [...w, { ...wh, createdAt: wh.created_at, lastTriggeredAt: wh.last_triggered_at }])
+      setWebhookUrl('')
+      setWebhookError('')
+      setShowNewWebhook(false)
+      toast.success('Webhook endpoint registered')
+      if (wh.secret) toast.info(`Webhook secret: ${wh.secret} — save this now`)
+    } catch (err: any) {
+      setWebhookError(err?.response?.data?.message ?? 'Failed to register webhook')
+    }
   }
 
   const handleToggleIntegration = (id: string) => {
@@ -652,6 +747,13 @@ export default function DevelopersPage() {
                   }}>
                     {wh.status}
                   </span>
+                  <button
+                    onClick={() => handleDeleteWebhook(wh.id)}
+                    style={{ background: 'none', border: '1px solid #FECACA', borderRadius: '6px',
+                      padding: '4px 10px', fontSize: '0.75rem', fontWeight: 600, color: '#DC2626',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Trash2 size={11} /> Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -716,7 +818,13 @@ export default function DevelopersPage() {
                 </div>
               </div>
               <button
-                onClick={() => handleToggleIntegration(intg.id)}
+                onClick={() => {
+                  if (intg.id === 'aws' && intg.status === 'disconnected') {
+                    router.push('/connect-aws')
+                    return
+                  }
+                  handleToggleIntegration(intg.id)
+                }}
                 style={{
                   padding: '7px 16px',
                   borderRadius: '8px',

@@ -213,17 +213,68 @@ export const authRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for remediation execute endpoint
+ * Max 10 AWS executions per hour per org to prevent runaway automation
+ */
+export const remediationExecuteRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({
+      success: false,
+      error: 'Remediation execution rate limit reached. Maximum 10 executions per hour per organization.',
+      retry_after: 3600,
+    });
+  },
+});
+
+/**
+ * Rate limiter for SAML SSO initiation
+ * Prevents abuse of the IdP redirect endpoint
+ */
+export const samlInitiateRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 SSO initiations per 15 minutes per IP
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({
+      success: false,
+      error: 'Too many SSO requests. Please try again in 15 minutes.',
+      retry_after: 900,
+    });
+  },
+});
+
+/**
  * Moderate rate limiter for general API endpoints
  * More lenient than discovery but still protective
  */
 export const standardRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 60, // 60 requests per minute
+  max: 300, // 300 requests per minute
 
   standardHeaders: true,
   legacyHeaders: false,
 
   // No keyGenerator - uses default IP handler (IPv6 safe)
+
+  skip: (req: Request) => {
+    if (
+      process.env.NODE_ENV === 'development' ||
+      req.ip === '127.0.0.1' ||
+      req.ip === '::1'
+    ) {
+      return true;
+    }
+    return false;
+  },
 
   handler: (req: Request, res: Response) => {
     res.status(429).json({

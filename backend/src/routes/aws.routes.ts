@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express'
 import awsCostService from '../services/aws-cost.service'
+import { pool } from '../config/database'
+import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
 
 const router = Router()
 
@@ -56,6 +58,79 @@ router.post('/sync', async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'Failed to sync AWS resources',
       message: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+})
+
+// POST /api/aws/accounts — validate IAM role via STS then persist
+router.post('/accounts', async (req, res) => {
+  const { roleArn, accountId, nickname } = req.body
+
+  if (!roleArn || !accountId) {
+    return res.status(400).json({
+      success: false,
+      message: 'roleArn and accountId are required',
+    })
+  }
+
+  const sts = new STSClient({ region: 'us-east-1' })
+  try {
+    await sts.send(new AssumeRoleCommand({
+      RoleArn: roleArn,
+      RoleSessionName: 'devcontrol-validation',
+      DurationSeconds: 900,
+    }))
+  } catch (stsError: any) {
+    return res.status(422).json({
+      success: false,
+      message: 'AWS could not assume this role. Verify the trust policy and Role ARN are correct.',
+      detail: stsError?.message ?? null,
+    })
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO aws_accounts (role_arn, account_id, nickname, connected_at, status)
+       VALUES ($1, $2, $3, NOW(), 'active')
+       ON CONFLICT (account_id) DO UPDATE
+         SET role_arn     = EXCLUDED.role_arn,
+             nickname     = EXCLUDED.nickname,
+             connected_at = NOW(),
+             status       = 'active'
+       RETURNING id, account_id, nickname, connected_at, status`,
+      [roleArn, accountId, nickname ?? null]
+    )
+    return res.status(201).json({
+      success: true,
+      data: result.rows[0],
+      message: 'AWS account connected successfully',
+    })
+  } catch (dbError: any) {
+    console.error('[aws/accounts POST]', dbError)
+    return res.status(500).json({
+      success: false,
+      message: 'Account validated but could not be saved. Please try again.',
+    })
+  }
+})
+
+// GET /api/aws/accounts — list connected accounts
+router.get('/accounts', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, account_id, nickname, connected_at, status
+       FROM aws_accounts
+       ORDER BY connected_at DESC`
+    )
+    return res.json({
+      success: true,
+      data: result.rows,
+    })
+  } catch (err: any) {
+    console.error('[aws/accounts GET]', err)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve AWS accounts',
     })
   }
 })

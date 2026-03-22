@@ -7,8 +7,9 @@ import { DORAMetricsController } from '../controllers/dora-metrics.controller';
 const router = Router();
 
 // Initialize repository, service, and controller
+// Pass pool to service so it can resolve custom benchmarks from DB
 const repository = new DORAMetricsRepository(pool);
-const service = new DORAMetricsService(repository);
+const service = new DORAMetricsService(repository, pool);
 const controller = new DORAMetricsController(service);
 
 /**

@@ -16,7 +16,6 @@ import {
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Breadcrumb } from '@/components/navigation/breadcrumb'
 import {
   Select,
   SelectContent,
@@ -27,9 +26,103 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import { optimizationService } from '@/lib/services/optimization.service'
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types'
+import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 
 type SeverityFilter = 'all' | RecommendationSeverity
+
+// Extended type to carry confidence from both demo and real API
+type RecWithConfidence = CostRecommendation & { confidence?: number }
+
+// FIX 1: Enriched demo dataset
+const DEMO_RECOMMENDATIONS = [
+  {
+    id: '1',
+    severity: 'high',
+    type: 'EC2',
+    region: 'us-east-1',
+    title: 'Oversized Instance',
+    resource: 'prod-api-server-01',
+    description: 'EC2 instance running at 8% average CPU over 14 days. Downsizing from m5.xlarge to m5.large would save $127/mo with no performance impact.',
+    savings: 127.00,
+    confidence: 94,
+  },
+  {
+    id: '2',
+    severity: 'high',
+    type: 'RDS',
+    region: 'us-east-1',
+    title: 'Idle RDS Instance',
+    resource: 'rds-analytics-staging',
+    description: 'RDS instance has had 0 connections in the past 21 days. Stopping this staging instance would save $189/mo.',
+    savings: 189.00,
+    confidence: 97,
+  },
+  {
+    id: '3',
+    severity: 'medium',
+    type: 'EBS',
+    region: 'us-west-2',
+    title: 'Unattached EBS Volumes',
+    resource: '3 unattached volumes',
+    description: '3 EBS volumes are not attached to any instance and have not been accessed in 30+ days. Deleting or snapshotting would save $67/mo.',
+    savings: 67.00,
+    confidence: 99,
+  },
+  {
+    id: '4',
+    severity: 'medium',
+    type: 'Lambda',
+    region: 'us-east-1',
+    title: 'Over-provisioned Lambda Memory',
+    resource: 'notification-handler-fn',
+    description: 'Lambda function uses 12% of its 1024MB memory allocation. Reducing to 256MB would save $34/mo with identical performance.',
+    savings: 34.00,
+    confidence: 91,
+  },
+  {
+    id: '5',
+    severity: 'medium',
+    type: 'EC2',
+    region: 'eu-west-1',
+    title: 'Old Snapshots',
+    resource: '12 snapshots older than 90 days',
+    description: '12 EC2 snapshots older than 90 days are consuming 2.3TB of storage. Cleanup would save $52/mo.',
+    savings: 52.00,
+    confidence: 88,
+  },
+  {
+    id: '6',
+    severity: 'low',
+    type: 'EC2',
+    region: 'us-east-1',
+    title: 'Unused Elastic IPs',
+    resource: '2 unassociated Elastic IPs',
+    description: '2 Elastic IP addresses are allocated but not associated with any running instance.',
+    savings: 14.40,
+    confidence: 100,
+  },
+  {
+    id: '7',
+    severity: 'low',
+    type: 'Load Balancer',
+    region: 'us-west-2',
+    title: 'Idle Load Balancer',
+    resource: 'alb-staging-frontend',
+    description: 'Application Load Balancer has had 0 healthy targets for 18 days. Deleting it would save $16/mo.',
+    savings: 16.43,
+    confidence: 92,
+  },
+]
+
+const DEMO_STATS = {
+  totalSavings: 500.83,
+  activeIssues: 7,
+  critical: 0,
+  warnings: 2,
+}
 
 function StatsSkeleton() {
   return (
@@ -100,42 +193,66 @@ function EmptyState({ onAnalyze, isAnalyzing }: { onAnalyze: () => void; isAnaly
   )
 }
 
+// Normalize DEMO_RECOMMENDATIONS into RecWithConfidence at module level
+// so useState can use it as a stable initializer
+const DEMO_RECS_NORMALIZED: RecWithConfidence[] = DEMO_RECOMMENDATIONS.map(d => ({
+  id: d.id,
+  resourceId: d.id,
+  resourceName: d.resource,
+  resourceType: d.type,
+  issue: d.title,
+  description: d.description,
+  potentialSavings: d.savings,
+  severity: d.severity.toUpperCase() as RecommendationSeverity,
+  status: 'ACTIVE' as const,
+  awsRegion: d.region,
+  confidence: d.confidence,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+}))
+
 export default function RecommendationsPage() {
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  // ISSUE 1+2: mutable local state for demo recommendations so dismiss/resolve work without API calls
+  const [localDemoRecs, setLocalDemoRecs] = useState<RecWithConfidence[]>(DEMO_RECS_NORMALIZED)
   const queryClient = useQueryClient()
 
-  // Fetch stats
+  const demoMode = useDemoMode()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  const isDemoActive = demoMode || salesDemoMode
+
+  // Fetch stats (real mode only)
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['cost-recommendations-stats'],
     queryFn: costRecommendationsService.getStats,
+    enabled: !isDemoActive,
   })
 
-  // Fetch recommendations
+  // Fetch recommendations (real mode only)
   const { data: allRecommendations = [], isLoading, error, refetch } = useQuery({
     queryKey: ['cost-recommendations'],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
+    enabled: !isDemoActive,
   })
 
-  // Filter by severity
-  const recommendations =
-    severityFilter === 'all'
-      ? allRecommendations
-      : allRecommendations.filter((r) => r.severity === severityFilter)
-
-  // Analyze mutation
-  const analyzeMutation = useMutation({
-    mutationFn: costRecommendationsService.analyze,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] })
-      queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] })
-      toast.success(
-        `Analysis complete! Found ${data.recommendationsFound} recommendations with potential savings of $${data.totalPotentialSavings.toFixed(2)}/month`
-      )
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Failed to analyze AWS resources')
-    },
-  })
+  // FIX 3: Wire Analyze Costs to POST /api/optimizations/scan
+  const handleAnalyze = async () => {
+    if (isDemoActive) return
+    try {
+      setIsAnalyzing(true)
+      const result = await optimizationService.scan()
+      await Promise.all([
+        refetch(),
+        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
+      ])
+      toast.success(`Analysis complete — ${result.summary.totalRecommendations} recommendations found`)
+    } catch {
+      toast.error('Analysis failed — try again')
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
 
   // Resolve mutation
   const resolveMutation = useMutation({
@@ -163,15 +280,22 @@ export default function RecommendationsPage() {
     },
   })
 
-  const handleAnalyze = () => {
-    analyzeMutation.mutate()
-  }
-
+  // ISSUE 2: demo mode removes from local state; real mode calls API
   const handleResolve = (id: string) => {
+    if (isDemoActive) {
+      setLocalDemoRecs(prev => prev.filter(r => r.id !== id))
+      toast.success('Recommendation marked as resolved')
+      return
+    }
     resolveMutation.mutate(id)
   }
 
   const handleDismiss = (id: string) => {
+    if (isDemoActive) {
+      setLocalDemoRecs(prev => prev.filter(r => r.id !== id))
+      toast.success('Recommendation dismissed')
+      return
+    }
     dismissMutation.mutate(id)
   }
 
@@ -205,16 +329,22 @@ export default function RecommendationsPage() {
     }).format(amount)
   }
 
+  // ISSUE 1: use localDemoRecs (mutable state) for demo mode
+  const baseRecommendations: RecWithConfidence[] = isDemoActive
+    ? localDemoRecs
+    : (allRecommendations as RecWithConfidence[])
+
+  const recommendations =
+    severityFilter === 'all'
+      ? baseRecommendations
+      : baseRecommendations.filter((r) => r.severity === severityFilter)
+
+  const showStatsLoading = !isDemoActive && statsLoading
+  const showListLoading  = !isDemoActive && isLoading
+  const showError        = !isDemoActive && !!error
+
   return (
     <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6">
-      <Breadcrumb
-        items={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Infrastructure', href: '/infrastructure' },
-          { label: 'Cost Recommendations', current: true },
-        ]}
-      />
-
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Cost Optimization</h1>
@@ -222,18 +352,19 @@ export default function RecommendationsPage() {
             AI-powered recommendations to reduce your AWS costs
           </p>
         </div>
+        {/* FIX 3: Analyze Costs wired to /api/optimizations/scan */}
         <Button
           onClick={handleAnalyze}
-          disabled={analyzeMutation.isPending}
+          disabled={isAnalyzing || isDemoActive}
           className="gap-2"
         >
-          <RefreshCw className={`h-4 w-4 ${analyzeMutation.isPending ? 'animate-spin' : ''}`} />
-          {analyzeMutation.isPending ? 'Analyzing...' : 'Analyze Costs'}
+          <RefreshCw className={`h-4 w-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
+          {isAnalyzing ? 'Analyzing...' : 'Analyze Costs'}
         </Button>
       </div>
 
       {/* Stats Cards */}
-      {statsLoading ? (
+      {showStatsLoading ? (
         <StatsSkeleton />
       ) : (
         <div className="grid gap-4 md:grid-cols-4">
@@ -244,7 +375,7 @@ export default function RecommendationsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                {formatCurrency(stats?.totalPotentialSavings || 0)}
+                {formatCurrency(isDemoActive ? DEMO_STATS.totalSavings : (stats?.totalPotentialSavings || 0))}
               </div>
               <p className="text-xs text-muted-foreground">potential monthly savings</p>
             </CardContent>
@@ -256,7 +387,9 @@ export default function RecommendationsPage() {
               <Server className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.activeRecommendations || 0}</div>
+              <div className="text-2xl font-bold">
+                {isDemoActive ? DEMO_STATS.activeIssues : (stats?.activeRecommendations || 0)}
+              </div>
               <p className="text-xs text-muted-foreground">recommendations</p>
             </CardContent>
           </Card>
@@ -268,7 +401,7 @@ export default function RecommendationsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">
-                {stats?.bySeverity.high || 0}
+                {isDemoActive ? DEMO_STATS.critical : (stats?.bySeverity.high || 0)}
               </div>
               <p className="text-xs text-muted-foreground">high severity issues</p>
             </CardContent>
@@ -281,7 +414,7 @@ export default function RecommendationsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-yellow-600">
-                {stats?.bySeverity.medium || 0}
+                {isDemoActive ? DEMO_STATS.warnings : (stats?.bySeverity.medium || 0)}
               </div>
               <p className="text-xs text-muted-foreground">medium severity issues</p>
             </CardContent>
@@ -312,12 +445,12 @@ export default function RecommendationsPage() {
       </div>
 
       {/* Recommendations List */}
-      {isLoading ? (
+      {showListLoading ? (
         <RecommendationsSkeleton />
-      ) : error ? (
+      ) : showError ? (
         <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
       ) : recommendations.length === 0 ? (
-        <EmptyState onAnalyze={handleAnalyze} isAnalyzing={analyzeMutation.isPending} />
+        <EmptyState onAnalyze={handleAnalyze} isAnalyzing={isAnalyzing} />
       ) : (
         <div className="space-y-4">
           {recommendations.map((rec) => (
@@ -355,7 +488,13 @@ export default function RecommendationsPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">{rec.description}</p>
+                <p className="text-sm text-muted-foreground mb-1">{rec.description}</p>
+                {/* FIX 4: Confidence badge */}
+                {rec.confidence != null && (
+                  <p style={{ fontSize: '0.75rem', color: '#6B7280', marginBottom: '16px' }}>
+                    {rec.confidence}% confidence
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <Button
                     size="sm"

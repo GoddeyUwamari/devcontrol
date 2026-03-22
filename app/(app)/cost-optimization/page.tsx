@@ -1,16 +1,23 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { optimizationService } from '@/lib/services/optimization.service';
 import {
   OptimizationRecommendation,
   OptimizationSummary,
 } from '@/types/optimization.types';
-import { RefreshCw, Zap } from 'lucide-react';
+import { RefreshCw, Zap, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import { demoModeService } from '@/lib/services/demo-mode.service';
+import { useAuth } from '@/lib/contexts/auth-context';
+import { remediationService } from '@/lib/services/remediation.service';
 
 export default function CostOptimizationPage() {
+  const router = useRouter();
+  const { organization } = useAuth();
+  const isEnterprise = organization?.subscriptionTier === 'enterprise';
+  const [creatingWorkflowFor, setCreatingWorkflowFor] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<OptimizationRecommendation[]>([]);
   const [summary, setSummary] = useState<OptimizationSummary | null>(null);
   const [, setIsScanning] = useState(false);
@@ -158,6 +165,34 @@ export default function CostOptimizationPage() {
   const handleRunScan = () => runScan();
   const handleApprove = (id: string) => updateStatus(id, 'approved');
   const handleDismiss = (id: string) => updateStatus(id, 'dismissed');
+
+  const handleCreateWorkflow = async (rec: any) => {
+    setCreatingWorkflowFor(rec.id);
+    try {
+      // Map recommendation type to action type
+      const actionTypeMap: Record<string, string> = {
+        rightsizing:          'rightsize_instance',
+        idle_resource:        'stop_instance',
+        storage_optimization: 'enable_s3_lifecycle',
+        reserved_instance:    'stop_instance',
+      };
+      await remediationService.create({
+        recommendationId: rec.id,
+        resourceId: rec.resource?.split(',')[0]?.trim() || rec.id,
+        resourceType: rec.service?.toLowerCase() || 'ec2',
+        actionType: (actionTypeMap[rec.type] || 'stop_instance') as any,
+        actionParams: { region: 'us-east-1' },
+        estimatedSavings: rec.monthlySavings || 0,
+        riskLevel: rec.risk === 'safe' ? 'low' : rec.risk === 'caution' ? 'medium' : 'high',
+      });
+      toast.success('Remediation workflow created');
+      router.push('/remediation');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to create workflow');
+    } finally {
+      setCreatingWorkflowFor(null);
+    }
+  };
 
   return (
     <div style={{
@@ -383,12 +418,22 @@ export default function CostOptimizationPage() {
                       ${(rec.monthlySavings * 12)?.toLocaleString()}/yr
                     </p>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <button
                       onClick={() => handleApprove(rec.id)}
                       style={{ background: '#7C3AED', color: '#fff', padding: '7px 16px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
                       Approve
                     </button>
+                    {isEnterprise && (
+                      <button
+                        onClick={() => handleCreateWorkflow(rec)}
+                        disabled={creatingWorkflowFor === rec.id}
+                        title="Create a managed remediation workflow with approval gates and audit trail"
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#F5F3FF', color: '#7C3AED', padding: '7px 12px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, border: '1px solid #DDD6FE', cursor: 'pointer', opacity: creatingWorkflowFor === rec.id ? 0.6 : 1 }}>
+                        <Wrench size={12} />
+                        Workflow
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDismiss(rec.id)}
                       style={{ background: 'none', color: '#475569', padding: '7px 12px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>

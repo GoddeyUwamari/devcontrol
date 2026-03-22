@@ -467,7 +467,7 @@ export default function DependenciesPage() {
       <OfflineDetector onOnline={handleOnline} onOffline={handleOffline} />
 
       {/* Error Display */}
-      {pageError && !isShowingCachedData && (
+      {!demoMode && pageError && !isShowingCachedData && (
         <ErrorDisplay
           error={pageError}
           onRetry={pageError.retryable ? handleRetryError : undefined}

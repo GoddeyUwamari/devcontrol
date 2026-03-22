@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Building2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth.schema";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { Button } from "@/components/ui/button";
@@ -13,10 +14,45 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
 export default function LoginPage() {
   const { login } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [ssoEmail, setSsoEmail] = useState("");
+  const [ssoLoading, setSsoLoading] = useState(false);
+  const [ssoError, setSsoError] = useState<string | null>(null);
+  const [showSsoInput, setShowSsoInput] = useState(false);
+
+  const ssoErrorParam = searchParams?.get("error");
+  const ssoErrorMessage = searchParams?.get("message");
+
+  const handleSSOSignIn = async () => {
+    setSsoError(null);
+    const domain = ssoEmail.includes("@") ? ssoEmail.split("@")[1] : ssoEmail;
+    if (!domain) {
+      setSsoError("Enter your work email or domain.");
+      return;
+    }
+    setSsoLoading(true);
+    try {
+      const res = await fetch(`${API}/api/auth/saml/check-domain?domain=${encodeURIComponent(domain)}`);
+      const json = await res.json();
+      if (!json.data?.hasSSO) {
+        setSsoError("No SSO is configured for this domain. Contact your administrator.");
+        return;
+      }
+      // Redirect browser to SAML initiate (which issues 302 to IdP)
+      window.location.href = `${API}/api/auth/saml/initiate?orgId=${json.data.organizationId}`;
+    } catch {
+      setSsoError("Failed to look up SSO configuration. Please try again.");
+    } finally {
+      setSsoLoading(false);
+    }
+  };
 
   const {
     register,
@@ -156,6 +192,13 @@ export default function LoginPage() {
           </Button>
         </form>
 
+        {/* SSO error from callback redirect */}
+        {ssoErrorParam === "sso_failed" && (
+          <p className="text-sm text-destructive mt-2">
+            {ssoErrorMessage ? decodeURIComponent(ssoErrorMessage) : "SSO sign-in failed. Please try again."}
+          </p>
+        )}
+
         {/* Divider */}
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
@@ -168,7 +211,55 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* SSO Options (Future Implementation) */}
+        {/* SSO Sign In */}
+        <div className="mb-3">
+          {!showSsoInput ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => setShowSsoInput(true)}
+            >
+              <Building2 className="mr-2 h-4 w-4" />
+              Sign in with SSO
+            </Button>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  placeholder="your@company.com"
+                  value={ssoEmail}
+                  onChange={(e) => { setSsoEmail(e.target.value); setSsoError(null); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleSSOSignIn()}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  disabled={ssoLoading}
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  onClick={handleSSOSignIn}
+                  disabled={ssoLoading}
+                  className="shrink-0"
+                >
+                  {ssoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Continue"}
+                </Button>
+              </div>
+              {ssoError && (
+                <p className="text-xs text-destructive">{ssoError}</p>
+              )}
+              <button
+                type="button"
+                onClick={() => { setShowSsoInput(false); setSsoError(null); setSsoEmail(""); }}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Social Options (Future Implementation) */}
         <div className="grid grid-cols-2 gap-3">
           <Button
             type="button"

@@ -32,6 +32,7 @@ export class OptimizationScannerService {
       idleRDS,
       unusedEIPs,
       overProvisionedLambda,
+      idleLoadBalancers,
     ] = await Promise.all([
       this.scanIdleEC2(organizationId),
       this.scanOversizedEC2(organizationId),
@@ -40,6 +41,7 @@ export class OptimizationScannerService {
       this.scanIdleRDS(organizationId),
       this.scanUnusedElasticIPs(organizationId),
       this.scanOverProvisionedLambda(organizationId),
+      this.scanIdleLoadBalancers(organizationId),
     ]);
 
     recommendations.push(
@@ -49,7 +51,8 @@ export class OptimizationScannerService {
       ...oldSnapshots,
       ...idleRDS,
       ...unusedEIPs,
-      ...overProvisionedLambda
+      ...overProvisionedLambda,
+      ...idleLoadBalancers
     );
 
     console.log(`[Optimization Scanner] Found ${recommendations.length} recommendations`);
@@ -405,6 +408,85 @@ export class OptimizationScannerService {
       });
     } catch (error) {
       console.error('[Optimization Scanner] Error scanning unused Elastic IPs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Scan for idle load balancers
+   * Flags ALBs/NLBs where all target groups have 0 healthy targets for 14+ days,
+   * or where request count over the last 7 days is zero.
+   */
+  private async scanIdleLoadBalancers(organizationId: string): Promise<OptimizationRecommendation[]> {
+    const query = `
+      SELECT
+        resource_id,
+        resource_name,
+        region,
+        (tags->>'estimated_monthly_cost')::numeric as estimated_monthly_cost,
+        tags
+      FROM aws_resources
+      WHERE organization_id = $1
+        AND resource_type IN ('load-balancer', 'elb')
+        AND (
+          (tags->>'healthy_target_count')::int = 0
+          OR (tags->>'request_count_7d')::float = 0
+        )
+        AND (tags->>'days_without_targets')::int >= 14
+    `;
+
+    try {
+      const result = await this.pool.query(query, [organizationId]);
+
+      const costPerIdleALB = 16.43; // ALB base cost: $0.0225/hr * 730 hrs/mo
+
+      return result.rows.map((row) => {
+        const monthlyCost = parseFloat(row.estimated_monthly_cost || costPerIdleALB);
+        const healthyTargets = parseInt(row.tags?.healthy_target_count || 0);
+        const requestCount7d = parseFloat(row.tags?.request_count_7d || 0);
+        const daysWithoutTargets = parseInt(row.tags?.days_without_targets || 14);
+        const lbType = (row.tags?.load_balancer_type || 'ALB').toUpperCase();
+
+        const isZeroRequests = requestCount7d === 0;
+        const reason = isZeroRequests
+          ? `zero requests in the last 7 days`
+          : `no healthy targets for ${daysWithoutTargets} days`;
+
+        return {
+          id: uuidv4(),
+          organizationId,
+          type: 'idle_load_balancer' as OptimizationType,
+          resourceId: row.resource_id,
+          resourceType: lbType,
+          resourceName: row.resource_name || row.resource_id,
+          region: row.region,
+          currentCost: monthlyCost,
+          optimizedCost: 0,
+          monthlySavings: monthlyCost,
+          annualSavings: monthlyCost * 12,
+          risk: 'safe' as OptimizationRisk,
+          effort: 'low' as OptimizationEffort,
+          confidence: 92,
+          priority: 8,
+          title: `Idle load balancer: ${row.resource_name || row.resource_id}`,
+          description: `${lbType} has ${healthyTargets} healthy targets and ${reason}`,
+          reasoning:
+            'Load balancers with no healthy targets or zero traffic still incur hourly charges. Delete if the associated services are decommissioned.',
+          action: 'Delete load balancer after verifying no traffic is expected',
+          actionCommand: `aws elbv2 delete-load-balancer --load-balancer-arn ${row.resource_id} --region ${row.region}`,
+          status: 'pending',
+          detectedAt: new Date(),
+          utilizationMetrics: {
+            cpuAvg: 0,
+            cpuMax: 0,
+            memoryAvg: 0,
+            networkAvg: requestCount7d,
+            daysObserved: daysWithoutTargets,
+          },
+        };
+      });
+    } catch (error) {
+      console.error('[Optimization Scanner] Error scanning idle load balancers:', error);
       return [];
     }
   }

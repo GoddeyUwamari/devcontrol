@@ -9,6 +9,7 @@ export interface Organization {
   slug: string;
   displayName: string | null;
   description: string | null;
+  subscriptionTier?: 'free' | 'starter' | 'pro' | 'enterprise';
   createdAt: string;
   updatedAt: string;
 }

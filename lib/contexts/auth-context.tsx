@@ -123,14 +123,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const orgs = await organizationsService.getAll();
       setOrganizations(orgs);
 
-      // Set first organization as active if none selected
-      if (orgs.length > 0 && !organization) {
-        setOrganization(orgs[0]);
+      // Set first organization as active if none selected — use functional update
+      // to avoid capturing `organization` in deps (which would cause identity churn)
+      if (orgs.length > 0) {
+        setOrganization((prev) => prev ?? orgs[0]);
       }
     } catch (error) {
       console.error("Failed to fetch organizations:", error);
     }
-  }, [organization]);
+  }, []);
 
   /**
    * Login method
@@ -292,8 +293,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       toast.success("Logged out successfully");
 
-      // Redirect to login
-      router.push("/login");
+      // Only redirect if not already on login/signup page
+      if (typeof window !== 'undefined' &&
+          !window.location.pathname.startsWith('/login') &&
+          !window.location.pathname.startsWith('/signup')) {
+        router.push("/login");
+      }
     }
   }, [router]);
 
@@ -317,10 +322,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (userOrgs && Array.isArray(userOrgs)) {
         setOrganizations(userOrgs);
 
-        // Set first organization as active if none selected
-        if (userOrgs.length > 0 && !organization) {
-          setOrganization(userOrgs[0]);
-          console.log("🔄 Set active organization:", userOrgs[0]);
+        // Set first organization as active if none selected — use functional update
+        // to avoid capturing `organization` in deps (which would cause identity churn)
+        if (userOrgs.length > 0) {
+          setOrganization((prev) => {
+            if (!prev) console.log("🔄 Set active organization:", userOrgs[0]);
+            return prev ?? userOrgs[0];
+          });
         }
       }
     } catch (error) {
@@ -330,7 +338,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await logout();
       }
     }
-  }, [logout, organization]);
+  }, [logout]);
 
   /**
    * Create organization

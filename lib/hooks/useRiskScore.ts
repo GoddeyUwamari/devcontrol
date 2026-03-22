@@ -4,23 +4,29 @@ import { riskScoreService, DateRange, RiskScoreTrendResponse, RiskScore } from '
 /**
  * Hook to fetch risk score trend with historical data
  */
-export function useRiskScoreTrend(dateRange: DateRange = '30d') {
+export function useRiskScoreTrend(dateRange: DateRange = '30d', enabled = true) {
   return useQuery<RiskScoreTrendResponse>({
     queryKey: ['risk-score-trend', dateRange],
     queryFn: () => riskScoreService.getTrend(dateRange),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: 2,
+    staleTime: 5 * 60 * 1000,       // 5 minutes
+    refetchInterval: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+    retry: false,
+    enabled,
   });
 }
 
 /**
  * Hook to fetch current risk score only
  */
-export function useCurrentRiskScore() {
+export function useCurrentRiskScore(enabled = true) {
   return useQuery<RiskScore>({
     queryKey: ['risk-score-current'],
     queryFn: () => riskScoreService.getCurrent(),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: 2,
+    staleTime: 5 * 60 * 1000,       // 5 minutes
+    refetchInterval: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+    retry: false,
+    enabled,
   });
 }

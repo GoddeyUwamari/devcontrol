@@ -4,18 +4,21 @@ import { AnomalyDetectionService } from '../services/anomaly-detection.service';
 import { AnomalyAIService } from '../services/anomaly-ai.service';
 import { AnomalyRepository } from '../repositories/anomaly.repository';
 import { AnomalyDetection } from '../types/anomaly.types';
+import { CustomAnomalyRulesService } from '../services/custom-anomaly-rules.service';
 
 export class AnomalyDetectionJob {
   private task: ReturnType<typeof cron.schedule> | null = null;
   private detectionService: AnomalyDetectionService;
   private aiService: AnomalyAIService;
   private repository: AnomalyRepository;
+  private customRulesService: CustomAnomalyRulesService;
   private isRunning: boolean = false;
 
   constructor(private pool: Pool) {
     this.detectionService = new AnomalyDetectionService(pool);
     this.aiService = new AnomalyAIService();
     this.repository = new AnomalyRepository(pool);
+    this.customRulesService = new CustomAnomalyRulesService(pool);
 
     console.log('[Anomaly Detection Job] Initialized - runs every 15 minutes');
   }
@@ -61,8 +64,12 @@ export class AnomalyDetectionJob {
           // Auto-resolve old anomalies before scanning
           await this.autoResolveOldAnomalies(org.id);
 
-          // Detect anomalies
-          let anomalies = await this.detectionService.scanForAnomalies(org.id);
+          // Detect anomalies — statistical detectors + custom rules in parallel
+          const [statisticalAnomalies, customRuleAnomalies] = await Promise.all([
+            this.detectionService.scanForAnomalies(org.id),
+            this.customRulesService.evaluateRules(org.id),
+          ]);
+          let anomalies = [...statisticalAnomalies, ...customRuleAnomalies];
 
           // Filter out duplicates (anomalies we've already detected recently)
           anomalies = await this.filterDuplicates(anomalies);
@@ -151,8 +158,12 @@ export class AnomalyDetectionJob {
     // Auto-resolve old anomalies (older than 24 hours)
     await this.autoResolveOldAnomalies(organizationId);
 
-    // Detect new anomalies
-    let anomalies = await this.detectionService.scanForAnomalies(organizationId);
+    // Detect new anomalies — statistical detectors + custom rules in parallel
+    const [statisticalAnomalies, customRuleAnomalies] = await Promise.all([
+      this.detectionService.scanForAnomalies(organizationId),
+      this.customRulesService.evaluateRules(organizationId),
+    ]);
+    let anomalies = [...statisticalAnomalies, ...customRuleAnomalies];
 
     // Filter out duplicates (same as scheduled job)
     anomalies = await this.filterDuplicates(anomalies);

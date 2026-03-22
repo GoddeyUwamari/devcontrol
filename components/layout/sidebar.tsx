@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, Layers, Rocket, Server, Activity, Sparkles, AlertTriangle, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Layers, Rocket, Server, Activity, Sparkles, AlertTriangle, LogOut, Wrench, ShieldCheck } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -28,6 +28,8 @@ const navigation: NavigationItem[] = [
   { name: 'Teams', href: '/teams', icon: Users },
   { name: 'Monitoring', href: '/admin/monitoring', icon: Activity },
   { name: 'Anomaly Detection', href: '/anomalies', icon: AlertTriangle, badge: 'AI' },
+  { name: 'Auto-Remediation', href: '/remediation', icon: Wrench, badge: 'Enterprise' },
+  { name: 'Compliance', href: '/compliance', icon: ShieldCheck, badge: 'Enterprise' },
   { name: 'AI Reports', href: '/ai-reports', icon: Sparkles, badge: 'New' },
 ]
 

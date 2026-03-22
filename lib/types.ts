@@ -33,6 +33,7 @@ export interface Tenant {
   name: string;
   email: string;
   status: string;
+  plan?: string;
   createdAt: string;
 }
 
@@ -607,6 +608,7 @@ export interface DORAMetric {
   value: number;
   unit: string;
   benchmark: BenchmarkLevel;
+  isCustomBenchmark?: boolean;
   trend: TrendDirection;
   breakdown?: { [key: string]: number };
   description?: string;

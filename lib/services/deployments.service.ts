@@ -88,4 +88,28 @@ export const deploymentsService = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/api/deployments/${id}`);
   },
+
+  // Get deployment stats (total, running, failed, deploying, success_rate, total_cost)
+  getStats: async (environment?: string): Promise<{
+    total: number; running: number; failed: number; deploying: number;
+    success_rate: number | null; total_cost: number;
+  }> => {
+    const query = environment && environment !== 'all' ? `?environment=${environment}` : '';
+    const response = await api.get<ApiResponse<any>>(`/api/deployments/stats${query}`);
+    return handleApiResponse(response);
+  },
+
+  // Create deployment from modal (accepts serviceName instead of service_id)
+  createFromModal: async (payload: {
+    serviceName: string; environment: string; region: string; version?: string;
+  }): Promise<void> => {
+    const response = await api.post<ApiResponse<any>>('/api/deployments', {
+      service_name:  payload.serviceName,
+      environment:   payload.environment,
+      aws_region:    payload.region,
+      deployed_by:   'platform-portal',
+      ...(payload.version ? { version: payload.version } : {}),
+    });
+    handleApiResponse(response);
+  },
 };

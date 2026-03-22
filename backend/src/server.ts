@@ -7,6 +7,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import routes from './routes';
+import apiKeysRouter from './routes/api-keys.routes'
+import webhooksRouter from './routes/webhooks.routes'
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
 import { corsMiddleware } from './middleware/cors';
@@ -26,6 +28,11 @@ import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
 import { createForecastRoutes } from './routes/forecast.routes';
+import { createCustomRulesRoutes } from './routes/custom-anomaly-rules.routes';
+import { createDoraBenchmarksRoutes } from './routes/dora-benchmarks.routes';
+import { createSAMLRoutes } from './routes/saml.routes';
+import { createRemediationRoutes } from './routes/remediation.routes';
+import { createComplianceRoutes } from './routes/compliance.routes';
 
 dotenv.config();
 
@@ -143,6 +150,9 @@ app.get('/health', async (req, res) => {
 
 // API routes
 app.use('/api', routes);
+app.use('/api/keys', apiKeysRouter)
+app.use('/api/anomaly-rules', createCustomRulesRoutes(pool))
+app.use('/api/webhooks', webhooksRouter)
 
 // Anomaly detection routes (needs to be registered before 404 handler)
 // Note: Job is started in startServer(), but routes work independently
@@ -261,6 +271,22 @@ console.log('[Anomaly Detection] Routes registered');
 // Forecast routes
 app.use('/api/forecast', createForecastRoutes(pool));
 console.log('[Forecast] Routes registered');
+
+// DORA custom benchmark routes (Enterprise)
+app.use('/api/dora', createDoraBenchmarksRoutes(pool));
+console.log('[DORA Benchmarks] Routes registered');
+
+// SAML / SSO routes
+app.use('/api/auth/saml', createSAMLRoutes());
+console.log('[SAML SSO] Routes registered');
+
+// Auto-Remediation Workflows (Enterprise)
+app.use('/api/remediation', createRemediationRoutes(pool));
+console.log('[Remediation] Routes registered');
+
+// SOC 2 / HIPAA Compliance Engine (Enterprise scan, read available to all)
+app.use('/api/compliance', createComplianceRoutes(pool));
+console.log('[Compliance] Routes registered');
 
 // 404 handler
 app.use(notFoundHandler);

@@ -9,8 +9,41 @@ import {
 import {
   RDSClient,
   DescribeDBInstancesCommand,
+  DescribeDBClustersCommand,
   DBInstance,
 } from '@aws-sdk/client-rds';
+import {
+  EKSClient,
+  ListClustersCommand as EKSListClustersCommand,
+  DescribeClusterCommand as EKSDescribeClusterCommand,
+} from '@aws-sdk/client-eks';
+import {
+  DynamoDBClient,
+  ListTablesCommand,
+  DescribeTableCommand,
+} from '@aws-sdk/client-dynamodb';
+import {
+  CloudFrontClient,
+  ListDistributionsCommand,
+} from '@aws-sdk/client-cloudfront';
+import {
+  APIGatewayClient,
+  GetRestApisCommand,
+} from '@aws-sdk/client-api-gateway';
+import {
+  ElastiCacheClient,
+  DescribeCacheClustersCommand,
+} from '@aws-sdk/client-elasticache';
+import {
+  SQSClient,
+  ListQueuesCommand,
+  GetQueueAttributesCommand,
+} from '@aws-sdk/client-sqs';
+import {
+  SNSClient,
+  ListTopicsCommand,
+  GetTopicAttributesCommand,
+} from '@aws-sdk/client-sns';
 import {
   S3Client,
   ListBucketsCommand,
@@ -64,11 +97,23 @@ const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
     'ecs',           // Container orchestration
     'vpc',           // Virtual networks
     'load-balancer', // Load balancers
-    // Note: 7 types currently implemented. To reach 10, add: DynamoDB, ElastiCache, CloudFront
-    // These would require implementation of discovery methods
-  ], // 7 types (expandable to 10)
-  pro: ['ec2', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer'], // All current types
-  enterprise: ['ec2', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer'], // All current types
+    'eks',           // Kubernetes clusters
+    'dynamodb',      // NoSQL tables
+    'cloudfront',    // CDN distributions
+    'api-gateway',   // API Gateway REST APIs
+    'elasticache',   // In-memory cache clusters
+    'aurora',        // Aurora DB clusters
+    'sqs',           // SQS queues
+    'sns',           // SNS topics
+  ], // 15 types
+  pro: [
+    'ec2', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer',
+    'eks', 'dynamodb', 'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
+  ], // All 15 types
+  enterprise: [
+    'ec2', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer',
+    'eks', 'dynamodb', 'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
+  ], // All 15 types
 };
 
 export class AWSResourceDiscoveryService {
@@ -290,6 +335,166 @@ export class AWSResourceDiscoveryService {
       } else {
         console.log(`⏭️  [Discovery] Skipping VPCs (not available in ${tier} tier)`);
         skippedTypes.push('vpc');
+      }
+
+      // Discover EKS clusters
+      if (this.isResourceTypeAllowed('eks', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering EKS clusters...`);
+        try {
+          const eksResources = await this.discoverEKSClusters(organizationId, awsClients.region);
+          for (const resource of eksResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${eksResources.length} EKS clusters`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] EKS discovery failed:`, error.message);
+          errors.push(`EKS: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping EKS clusters (not available in ${tier} tier)`);
+        skippedTypes.push('eks');
+      }
+
+      // Discover DynamoDB tables
+      if (this.isResourceTypeAllowed('dynamodb', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering DynamoDB tables...`);
+        try {
+          const dynamoResources = await this.discoverDynamoDBTables(organizationId, awsClients.region);
+          for (const resource of dynamoResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${dynamoResources.length} DynamoDB tables`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] DynamoDB discovery failed:`, error.message);
+          errors.push(`DynamoDB: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping DynamoDB tables (not available in ${tier} tier)`);
+        skippedTypes.push('dynamodb');
+      }
+
+      // Discover CloudFront distributions
+      if (this.isResourceTypeAllowed('cloudfront', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering CloudFront distributions...`);
+        try {
+          const cfResources = await this.discoverCloudFrontDistributions(organizationId);
+          for (const resource of cfResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${cfResources.length} CloudFront distributions`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] CloudFront discovery failed:`, error.message);
+          errors.push(`CloudFront: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping CloudFront distributions (not available in ${tier} tier)`);
+        skippedTypes.push('cloudfront');
+      }
+
+      // Discover API Gateway REST APIs
+      if (this.isResourceTypeAllowed('api-gateway', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering API Gateway REST APIs...`);
+        try {
+          const agResources = await this.discoverAPIGatewayAPIs(organizationId, awsClients.region);
+          for (const resource of agResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${agResources.length} API Gateway REST APIs`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] API Gateway discovery failed:`, error.message);
+          errors.push(`API Gateway: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping API Gateway REST APIs (not available in ${tier} tier)`);
+        skippedTypes.push('api-gateway');
+      }
+
+      // Discover ElastiCache clusters
+      if (this.isResourceTypeAllowed('elasticache', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering ElastiCache clusters...`);
+        try {
+          const ecResources = await this.discoverElastiCacheClusters(organizationId, awsClients.region);
+          for (const resource of ecResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${ecResources.length} ElastiCache clusters`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] ElastiCache discovery failed:`, error.message);
+          errors.push(`ElastiCache: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping ElastiCache clusters (not available in ${tier} tier)`);
+        skippedTypes.push('elasticache');
+      }
+
+      // Discover Aurora clusters
+      if (this.isResourceTypeAllowed('aurora', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering Aurora clusters...`);
+        try {
+          const auroraResources = await this.discoverAuroraClusters(organizationId, awsClients.region);
+          for (const resource of auroraResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${auroraResources.length} Aurora clusters`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] Aurora discovery failed:`, error.message);
+          errors.push(`Aurora: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping Aurora clusters (not available in ${tier} tier)`);
+        skippedTypes.push('aurora');
+      }
+
+      // Discover SQS queues
+      if (this.isResourceTypeAllowed('sqs', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering SQS queues...`);
+        try {
+          const sqsResources = await this.discoverSQSQueues(organizationId, awsClients.region);
+          for (const resource of sqsResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${sqsResources.length} SQS queues`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] SQS discovery failed:`, error.message);
+          errors.push(`SQS: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping SQS queues (not available in ${tier} tier)`);
+        skippedTypes.push('sqs');
+      }
+
+      // Discover SNS topics
+      if (this.isResourceTypeAllowed('sns', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering SNS topics...`);
+        try {
+          const snsResources = await this.discoverSNSTopics(organizationId, awsClients.region);
+          for (const resource of snsResources) {
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          console.log(`✅ [Discovery] Found ${snsResources.length} SNS topics`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] SNS discovery failed:`, error.message);
+          errors.push(`SNS: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping SNS topics (not available in ${tier} tier)`);
+        skippedTypes.push('sns');
       }
 
       // Update job status
@@ -959,5 +1164,493 @@ export class AWSResourceDiscoveryService {
     }
 
     return resources;
+  }
+
+  /**
+   * Discover EKS clusters
+   */
+  private async discoverEKSClusters(
+    organizationId: string,
+    region: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const eksClient = new EKSClient({ region });
+    const resources: CreateAWSResourceInput[] = [];
+
+    try {
+      const { clusters: clusterNames } = await eksClient.send(new EKSListClustersCommand({}));
+
+      if (!clusterNames || clusterNames.length === 0) return resources;
+
+      for (const clusterName of clusterNames) {
+        try {
+          const { cluster } = await eksClient.send(
+            new EKSDescribeClusterCommand({ name: clusterName })
+          );
+
+          if (!cluster || !cluster.arn || !cluster.name) continue;
+
+          const tags = cluster.tags || {};
+
+          resources.push({
+            organization_id: organizationId,
+            resource_arn: cluster.arn,
+            resource_id: cluster.name,
+            resource_name: cluster.name,
+            resource_type: 'eks',
+            region,
+            tags,
+            metadata: {
+              kubernetes_version: cluster.version,
+              status: cluster.status,
+              endpoint: cluster.endpoint,
+              role_arn: cluster.roleArn,
+              created_at: cluster.createdAt?.toISOString(),
+            },
+            status: (cluster.status === 'ACTIVE' ? 'active' : 'inactive') as ResourceStatus,
+            estimated_monthly_cost: this.estimateEKSCost(),
+          });
+        } catch (error: any) {
+          console.error(`[EKS Discovery] Error describing cluster ${clusterName}:`, error.message);
+        }
+      }
+    } catch (error: any) {
+      console.error('[EKS Discovery] Error:', error.message);
+    }
+
+    return resources;
+  }
+
+  /**
+   * Estimate monthly cost for EKS cluster
+   */
+  private estimateEKSCost(): number {
+    // EKS control plane: $0.10/hour = $73/month
+    return 73;
+  }
+
+  /**
+   * Discover DynamoDB tables
+   */
+  private async discoverDynamoDBTables(
+    organizationId: string,
+    region: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const dynamoClient = new DynamoDBClient({ region });
+    const resources: CreateAWSResourceInput[] = [];
+
+    try {
+      const { TableNames } = await dynamoClient.send(new ListTablesCommand({}));
+
+      for (const tableName of TableNames || []) {
+        try {
+          const { Table } = await dynamoClient.send(
+            new DescribeTableCommand({ TableName: tableName })
+          );
+
+          if (!Table || !Table.TableArn || !Table.TableName) continue;
+
+          resources.push({
+            organization_id: organizationId,
+            resource_arn: Table.TableArn,
+            resource_id: Table.TableName,
+            resource_name: Table.TableName,
+            resource_type: 'dynamodb',
+            region,
+            tags: {},
+            metadata: {
+              status: Table.TableStatus,
+              item_count: Table.ItemCount,
+              table_size_bytes: Table.TableSizeBytes,
+              billing_mode: Table.BillingModeSummary?.BillingMode || 'PROVISIONED',
+              read_capacity: Table.ProvisionedThroughput?.ReadCapacityUnits,
+              write_capacity: Table.ProvisionedThroughput?.WriteCapacityUnits,
+            },
+            status: (Table.TableStatus === 'ACTIVE' ? 'active' : 'inactive') as ResourceStatus,
+            estimated_monthly_cost: this.estimateDynamoDBCost(Table),
+          });
+        } catch (error: any) {
+          console.error(`[DynamoDB Discovery] Error describing table ${tableName}:`, error.message);
+        }
+      }
+    } catch (error: any) {
+      console.error('[DynamoDB Discovery] Error:', error.message);
+    }
+
+    return resources;
+  }
+
+  /**
+   * Estimate monthly cost for DynamoDB table
+   */
+  private estimateDynamoDBCost(table: any): number {
+    // On-demand pricing estimate: $1.25 per million writes, $0.25 per million reads
+    // Provisioned: $0.00065/RCU/hour, $0.00013/WCU/hour
+    const rcu = table.ProvisionedThroughput?.ReadCapacityUnits || 5;
+    const wcu = table.ProvisionedThroughput?.WriteCapacityUnits || 5;
+    const hours = 730;
+    return (rcu * 0.00065 + wcu * 0.00013) * hours;
+  }
+
+  /**
+   * Discover CloudFront distributions
+   * CloudFront is a global service — uses us-east-1 endpoint
+   */
+  private async discoverCloudFrontDistributions(
+    organizationId: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const cfClient = new CloudFrontClient({ region: 'us-east-1' });
+    const resources: CreateAWSResourceInput[] = [];
+
+    try {
+      const { DistributionList } = await cfClient.send(new ListDistributionsCommand({}));
+
+      for (const dist of DistributionList?.Items || []) {
+        if (!dist.ARN || !dist.Id) continue;
+
+        const origins = (dist.Origins?.Items || []).map((o: any) => o.DomainName);
+
+        resources.push({
+          organization_id: organizationId,
+          resource_arn: dist.ARN,
+          resource_id: dist.Id,
+          resource_name: dist.DomainName || dist.Id,
+          resource_type: 'cloudfront',
+          region: 'global',
+          tags: {},
+          metadata: {
+            domain_name: dist.DomainName,
+            status: dist.Status,
+            price_class: dist.PriceClass,
+            origins,
+            is_enabled: dist.Enabled,
+            http_version: dist.HttpVersion,
+            last_modified: dist.LastModifiedTime?.toISOString(),
+          },
+          status: (dist.Status === 'Deployed' ? 'active' : 'inactive') as ResourceStatus,
+          is_public: true,
+          estimated_monthly_cost: this.estimateCloudFrontCost(),
+        });
+      }
+    } catch (error: any) {
+      console.error('[CloudFront Discovery] Error:', error.message);
+    }
+
+    return resources;
+  }
+
+  /**
+   * Estimate monthly cost for CloudFront distribution
+   */
+  private estimateCloudFrontCost(): number {
+    // $0.0085 per 10,000 HTTPS requests — estimate 10M requests/month
+    return 8.5;
+  }
+
+  /**
+   * Discover API Gateway REST APIs
+   */
+  private async discoverAPIGatewayAPIs(
+    organizationId: string,
+    region: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const agClient = new APIGatewayClient({ region });
+    const resources: CreateAWSResourceInput[] = [];
+
+    try {
+      const { items } = await agClient.send(new GetRestApisCommand({}));
+
+      for (const api of items || []) {
+        if (!api.id || !api.name) continue;
+
+        const arn = `arn:aws:apigateway:${region}::/restapis/${api.id}`;
+
+        resources.push({
+          organization_id: organizationId,
+          resource_arn: arn,
+          resource_id: api.id,
+          resource_name: api.name,
+          resource_type: 'api-gateway',
+          region,
+          tags: api.tags || {},
+          metadata: {
+            api_id: api.id,
+            protocol: 'REST',
+            description: api.description,
+            created_date: api.createdDate?.toISOString(),
+            endpoint_type: api.endpointConfiguration?.types?.[0],
+          },
+          status: 'active' as ResourceStatus,
+          estimated_monthly_cost: this.estimateAPIGatewayCost(),
+        });
+      }
+    } catch (error: any) {
+      console.error('[API Gateway Discovery] Error:', error.message);
+    }
+
+    return resources;
+  }
+
+  /**
+   * Estimate monthly cost for API Gateway REST API
+   */
+  private estimateAPIGatewayCost(): number {
+    // $3.50 per million API calls — estimate 1M calls/month
+    return 3.5;
+  }
+
+  /**
+   * Discover ElastiCache clusters
+   */
+  private async discoverElastiCacheClusters(
+    organizationId: string,
+    region: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const ecClient = new ElastiCacheClient({ region });
+    const resources: CreateAWSResourceInput[] = [];
+
+    try {
+      const { CacheClusters } = await ecClient.send(
+        new DescribeCacheClustersCommand({ ShowCacheNodeInfo: true })
+      );
+
+      for (const cluster of CacheClusters || []) {
+        if (!cluster.CacheClusterId) continue;
+
+        const arn = cluster.ARN || `arn:aws:elasticache:${region}:*:cluster:${cluster.CacheClusterId}`;
+
+        resources.push({
+          organization_id: organizationId,
+          resource_arn: arn,
+          resource_id: cluster.CacheClusterId,
+          resource_name: cluster.CacheClusterId,
+          resource_type: 'elasticache',
+          region,
+          tags: {},
+          metadata: {
+            engine: cluster.Engine,
+            engine_version: cluster.EngineVersion,
+            node_type: cluster.CacheNodeType,
+            num_nodes: cluster.NumCacheNodes,
+            status: cluster.CacheClusterStatus,
+            preferred_az: cluster.PreferredAvailabilityZone,
+          },
+          status: (cluster.CacheClusterStatus === 'available' ? 'available' : 'inactive') as ResourceStatus,
+          estimated_monthly_cost: this.estimateElastiCacheCost(cluster.CacheNodeType || 'cache.t3.micro'),
+        });
+      }
+    } catch (error: any) {
+      console.error('[ElastiCache Discovery] Error:', error.message);
+    }
+
+    return resources;
+  }
+
+  /**
+   * Estimate monthly cost for ElastiCache cluster
+   */
+  private estimateElastiCacheCost(nodeType: string): number {
+    const costs: Record<string, number> = {
+      'cache.t3.micro':  13,
+      'cache.t3.small':  26,
+      'cache.t3.medium': 52,
+      'cache.r6g.large': 122,
+      'cache.r6g.xlarge': 244,
+    };
+    return costs[nodeType] || 25;
+  }
+
+  /**
+   * Discover Aurora clusters
+   * Filters RDS DB clusters by Aurora engine families
+   */
+  private async discoverAuroraClusters(
+    organizationId: string,
+    region: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const rdsClient = new RDSClient({ region });
+    const resources: CreateAWSResourceInput[] = [];
+
+    try {
+      const { DBClusters } = await rdsClient.send(new DescribeDBClustersCommand({}));
+
+      const auroraEngines = new Set(['aurora', 'aurora-mysql', 'aurora-postgresql']);
+
+      for (const cluster of DBClusters || []) {
+        if (!cluster.DBClusterIdentifier || !cluster.Engine) continue;
+        if (!auroraEngines.has(cluster.Engine)) continue;
+
+        const arn = cluster.DBClusterArn || `arn:aws:rds:${region}:*:cluster:${cluster.DBClusterIdentifier}`;
+        const tags = (cluster.TagList || []).reduce((acc: Record<string, string>, tag: any) => {
+          if (tag.Key && tag.Value) acc[tag.Key] = tag.Value;
+          return acc;
+        }, {});
+
+        resources.push({
+          organization_id: organizationId,
+          resource_arn: arn,
+          resource_id: cluster.DBClusterIdentifier,
+          resource_name: cluster.DBClusterIdentifier,
+          resource_type: 'aurora',
+          region,
+          tags,
+          metadata: {
+            engine: cluster.Engine,
+            engine_version: cluster.EngineVersion,
+            status: cluster.Status,
+            multi_az: cluster.MultiAZ,
+            db_cluster_members: cluster.DBClusterMembers?.length,
+            endpoint: cluster.Endpoint,
+            reader_endpoint: cluster.ReaderEndpoint,
+          },
+          status: (cluster.Status || 'unknown') as ResourceStatus,
+          is_encrypted: cluster.StorageEncrypted || false,
+          has_backup: (cluster.BackupRetentionPeriod || 0) > 0,
+          estimated_monthly_cost: this.estimateAuroraCost(cluster),
+        });
+      }
+    } catch (error: any) {
+      console.error('[Aurora Discovery] Error:', error.message);
+    }
+
+    return resources;
+  }
+
+  /**
+   * Estimate monthly cost for Aurora cluster
+   */
+  private estimateAuroraCost(cluster: any): number {
+    // Aurora Serverless v2: ~$0.12/ACU/hour; provisioned: varies by instance class
+    // Estimate based on member count
+    const members = cluster.DBClusterMembers?.length || 1;
+    return members * 150; // ~$150/instance/month baseline
+  }
+
+  /**
+   * Discover SQS queues
+   */
+  private async discoverSQSQueues(
+    organizationId: string,
+    region: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const sqsClient = new SQSClient({ region });
+    const resources: CreateAWSResourceInput[] = [];
+
+    try {
+      const { QueueUrls } = await sqsClient.send(new ListQueuesCommand({}));
+
+      for (const queueUrl of QueueUrls || []) {
+        try {
+          const { Attributes } = await sqsClient.send(
+            new GetQueueAttributesCommand({
+              QueueUrl: queueUrl,
+              AttributeNames: [
+                'QueueArn',
+                'ApproximateNumberOfMessages',
+                'VisibilityTimeout',
+                'CreatedTimestamp',
+                'FifoQueue',
+              ],
+            })
+          );
+
+          if (!Attributes?.QueueArn) continue;
+
+          const queueName = queueUrl.split('/').pop() || queueUrl;
+
+          resources.push({
+            organization_id: organizationId,
+            resource_arn: Attributes.QueueArn,
+            resource_id: queueName,
+            resource_name: queueName,
+            resource_type: 'sqs',
+            region,
+            tags: {},
+            metadata: {
+              queue_url: queueUrl,
+              approximate_number_of_messages: parseInt(Attributes.ApproximateNumberOfMessages || '0'),
+              visibility_timeout: parseInt(Attributes.VisibilityTimeout || '30'),
+              is_fifo: queueName.endsWith('.fifo'),
+            },
+            status: 'active' as ResourceStatus,
+            estimated_monthly_cost: this.estimateSQSCost(),
+          });
+        } catch (error: any) {
+          console.error(`[SQS Discovery] Error describing queue ${queueUrl}:`, error.message);
+        }
+      }
+    } catch (error: any) {
+      console.error('[SQS Discovery] Error:', error.message);
+    }
+
+    return resources;
+  }
+
+  /**
+   * Estimate monthly cost for SQS queue
+   */
+  private estimateSQSCost(): number {
+    // $0.40 per million requests — estimate 1M requests/month
+    return 0.4;
+  }
+
+  /**
+   * Discover SNS topics
+   */
+  private async discoverSNSTopics(
+    organizationId: string,
+    region: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const snsClient = new SNSClient({ region });
+    const resources: CreateAWSResourceInput[] = [];
+
+    try {
+      const { Topics } = await snsClient.send(new ListTopicsCommand({}));
+
+      for (const topic of Topics || []) {
+        if (!topic.TopicArn) continue;
+
+        try {
+          const { Attributes } = await snsClient.send(
+            new GetTopicAttributesCommand({ TopicArn: topic.TopicArn })
+          );
+
+          const topicName = topic.TopicArn.split(':').pop() || topic.TopicArn;
+
+          resources.push({
+            organization_id: organizationId,
+            resource_arn: topic.TopicArn,
+            resource_id: topicName,
+            resource_name: topicName,
+            resource_type: 'sns',
+            region,
+            tags: {},
+            metadata: {
+              subscriptions_confirmed: parseInt(Attributes?.SubscriptionsConfirmed || '0'),
+              subscriptions_pending: parseInt(Attributes?.SubscriptionsPending || '0'),
+              display_name: Attributes?.DisplayName,
+              fifo_topic: Attributes?.FifoTopic === 'true',
+            },
+            status: 'active' as ResourceStatus,
+            estimated_monthly_cost: this.estimateSNSCost(
+              parseInt(Attributes?.SubscriptionsConfirmed || '0')
+            ),
+          });
+        } catch (error: any) {
+          console.error(`[SNS Discovery] Error describing topic ${topic.TopicArn}:`, error.message);
+        }
+      }
+    } catch (error: any) {
+      console.error('[SNS Discovery] Error:', error.message);
+    }
+
+    return resources;
+  }
+
+  /**
+   * Estimate monthly cost for SNS topic
+   */
+  private estimateSNSCost(subscriptionCount: number): number {
+    // $0.50 per million publishes — estimate 100K publishes, $0.09/1000 deliveries
+    return 0.5 + (subscriptionCount * 0.09 / 1000);
   }
 }

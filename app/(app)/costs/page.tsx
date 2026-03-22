@@ -14,7 +14,7 @@ import {
 import { forecastService } from '@/lib/services/forecast.service'
 import { optimizationService } from '@/lib/services/optimization.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
-import { nlQueryService, NLQueryIntent } from '@/lib/services/nl-query.service'
+import { nlQueryService, NLQueryIntent, NLQueryResult, NLQueryResultData } from '@/lib/services/nl-query.service'
 import { demoModeService } from '@/lib/services/demo-mode.service'
 import { OptimizationRecommendation } from '@/types/optimization.types'
 
@@ -48,7 +48,7 @@ const FALLBACK_SAVINGS = [
 export default function CostsPage() {
   const [selectedRange, setSelectedRange] = useState('30D')
   const [nlQuery, setNlQuery] = useState('')
-  const [nlResult, setNlResult] = useState<NLQueryIntent | null>(null)
+  const [nlResult, setNlResult] = useState<NLQueryResult | null>(null)
   const [nlLoading, setNlLoading] = useState(false)
   const [nlError, setNlError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -81,10 +81,10 @@ export default function CostsPage() {
     setNlError(null)
     setNlResult(null)
     try {
-      const result = await nlQueryService.parseQuery(nlQuery)
+      const result = await nlQueryService.executeQuery(nlQuery)
       setNlResult(result)
     } catch {
-      setNlError('Could not parse query. Try: "Show EC2 spend last 30 days" or "Which services cost the most?"')
+      setNlError('Could not process query. Try: "Show EC2 spend last 30 days" or "Which services cost the most?"')
     } finally {
       setNlLoading(false)
     }
@@ -229,21 +229,76 @@ export default function CostsPage() {
         </div>
 
         {nlResult && (
-          <div style={{ marginTop: '12px', background: '#fff', border: '1px solid #F1F5F9', borderRadius: '10px', padding: '16px 20px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Sparkles size={13} style={{ color: '#fff' }} />
+          <div style={{ marginTop: '12px', background: '#fff', border: '1px solid #DDD6FE', borderRadius: '12px', padding: '0', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ background: '#F5F3FF', padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '26px', height: '26px', borderRadius: '6px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Sparkles size={12} style={{ color: '#fff' }} />
+                </div>
+                <div>
+                  <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>{nlResult.intent.explanation}</p>
+                  <p style={{ fontSize: '0.72rem', color: '#6D28D9', margin: 0 }}>
+                    {nlResult.rowCount} result{nlResult.rowCount !== 1 ? 's' : ''} · {nlResult.executionMs}ms · Confidence: <strong>{nlResult.intent.confidence}</strong>
+                  </p>
+                </div>
               </div>
-              <div>
-                <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0F172A', margin: '0 0 4px' }}>{nlResult.explanation}</p>
-                <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>
-                  Action: <strong>{nlResult.action}</strong> · Target: <strong>{nlResult.target}</strong> · Confidence: <strong style={{ color: nlResult.confidence === 'high' ? '#059669' : nlResult.confidence === 'medium' ? '#D97706' : '#DC2626' }}>{nlResult.confidence}</strong>
-                </p>
-              </div>
+              <button onClick={() => setNlResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}>
+                <X size={14} />
+              </button>
             </div>
-            <button onClick={() => setNlResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}>
-              <X size={14} />
-            </button>
+
+            {/* Summary bar */}
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid #F1F5F9', background: '#FAFAF9' }}>
+              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>{nlResult.data.summary}</p>
+            </div>
+
+            {/* Results table */}
+            {nlResult.data.rows.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                {/* Column headers */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${nlResult.data.columns.length}, 1fr)`,
+                  padding: '10px 20px',
+                  background: '#F8FAFC',
+                  borderBottom: '1px solid #F1F5F9',
+                }}>
+                  {nlResult.data.columns.map(col => (
+                    <span key={col} style={{ fontSize: '0.68rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
+                  ))}
+                </div>
+                {/* Rows */}
+                {nlResult.data.rows.map((row, idx) => (
+                  <div key={idx} style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${nlResult.data.columns.length}, 1fr)`,
+                    padding: '12px 20px',
+                    borderBottom: idx < nlResult.data.rows.length - 1 ? '1px solid #F8FAFC' : 'none',
+                    alignItems: 'center',
+                  }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+                  >
+                    {Object.values(row).slice(0, nlResult.data.columns.length).map((val: any, ci) => (
+                      <span key={ci} style={{ fontSize: '0.8rem', color: '#0F172A', fontWeight: ci === 0 ? 600 : 400 }}>
+                        {val instanceof Date
+                          ? new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                          : val === null || val === undefined ? '—'
+                          : String(val)}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Empty state */}
+            {nlResult.data.rows.length === 0 && (
+              <div style={{ padding: '32px', textAlign: 'center' }}>
+                <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>No data matched your query. Try rephrasing or check your AWS connection.</p>
+              </div>
+            )}
           </div>
         )}
         {nlError && (

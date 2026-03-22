@@ -1,58 +1,202 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import awsServicesService, { AWSService, AWSServicesStats } from '@/lib/services/aws-services.service'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
 
 const _now = Date.now()
 
-const DEMO_SERVICES = [
-  { id: '1', name: 'api-gateway',         environment: 'production', region: 'us-east-1', status: 'healthy', deployments: 12, uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 45),          template: 'ECS',    owner: 'sarah.chen',   teamId: 'Platform Team',  githubUrl: 'https://github.com/wayup/api-gateway' },
-  { id: '2', name: 'auth-service',         environment: 'production', region: 'us-east-1', status: 'healthy', deployments: 8,  uptime: 99.7, lastDeployed: new Date(_now - 1000 * 60 * 120),         template: 'ECS',    owner: 'mike.johnson', teamId: 'Auth Team',      githubUrl: 'https://github.com/wayup/auth-service' },
-  { id: '3', name: 'payment-processor',    environment: 'staging',    region: 'us-west-2', status: 'warning', deployments: 5,  uptime: 98.2, lastDeployed: new Date(_now - 1000 * 60 * 5),            template: 'Lambda', owner: 'alex.wong',    teamId: 'Payments Team',  githubUrl: 'https://github.com/wayup/payment-processor' },
-  { id: '4', name: 'notification-service', environment: 'production', region: 'us-east-1', status: 'healthy', deployments: 15, uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 60 * 6),       template: 'Lambda', owner: 'emma.davis',   teamId: 'Platform Team',  githubUrl: 'https://github.com/wayup/notification-service' },
-  { id: '5', name: 'analytics-worker',     environment: 'production', region: 'eu-west-1', status: 'healthy', deployments: 3,  uptime: 99.5, lastDeployed: new Date(_now - 1000 * 60 * 60 * 24),      template: 'EC2',    owner: 'david.kim',    teamId: 'Data Team',      githubUrl: 'https://github.com/wayup/analytics-worker' },
+const DEMO_SERVICES: AWSService[] = [
+  { id: '1', name: 'api-gateway',         environment: 'production', region: 'us-east-1', status: 'healthy', type: 'ecs',     uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 45).toISOString(),          owner: 'sarah.chen',   team: 'Platform Team',  monthly_cost: null, metadata: {} } as any,
+  { id: '2', name: 'auth-service',         environment: 'production', region: 'us-east-1', status: 'healthy', type: 'ecs',     uptime: 99.7, lastDeployed: new Date(_now - 1000 * 60 * 120).toISOString(),         owner: 'mike.johnson', team: 'Auth Team',      monthly_cost: null, metadata: {} } as any,
+  { id: '3', name: 'payment-processor',    environment: 'staging',    region: 'us-west-2', status: 'warning', type: 'lambda',  uptime: 98.2, lastDeployed: new Date(_now - 1000 * 60 * 5).toISOString(),            owner: 'alex.wong',    team: 'Payments Team',  monthly_cost: null, metadata: {} } as any,
+  { id: '4', name: 'notification-service', environment: 'production', region: 'us-east-1', status: 'healthy', type: 'lambda',  uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 60 * 6).toISOString(),       owner: 'emma.davis',   team: 'Platform Team',  monthly_cost: null, metadata: {} } as any,
+  { id: '5', name: 'analytics-worker',     environment: 'production', region: 'eu-west-1', status: 'healthy', type: 'ec2',     uptime: 99.5, lastDeployed: new Date(_now - 1000 * 60 * 60 * 24).toISOString(),      owner: 'david.kim',    team: 'Data Team',      monthly_cost: null, metadata: {} } as any,
 ]
 
+const DEMO_STATS: AWSServicesStats = { total: 5, healthy: 4, needs_attention: 1, avg_uptime: 99.4 }
+
+// All 15 resource types from the discovery engine
+const RESOURCE_TYPE_CHIPS = [
+  'all',
+  'ec2', 'ecs', 'lambda', 'rds', 's3', 'eks', 'dynamodb',
+  'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
+  'load-balancer', 'vpc',
+]
+
+const TYPE_DISPLAY: Record<string, string> = {
+  'all':          'All Types',
+  'ec2':          'EC2',
+  'ecs':          'ECS',
+  'lambda':       'Lambda',
+  'rds':          'RDS',
+  's3':           'S3',
+  'eks':          'EKS',
+  'dynamodb':     'DynamoDB',
+  'cloudfront':   'CloudFront',
+  'api-gateway':  'API Gateway',
+  'elasticache':  'ElastiCache',
+  'aurora':       'Aurora',
+  'sqs':          'SQS',
+  'sns':          'SNS',
+  'load-balancer':'Load Balancer',
+  'vpc':          'VPC',
+}
+
+// Type badge colors
+const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
+  ec2:           { bg: '#F0FDF4', color: '#059669' },
+  ecs:           { bg: '#EFF6FF', color: '#1D4ED8' },
+  lambda:        { bg: '#F5F3FF', color: '#7C3AED' },
+  rds:           { bg: '#FFFBEB', color: '#D97706' },
+  s3:            { bg: '#FFF7ED', color: '#C2410C' },
+  eks:           { bg: '#F0F9FF', color: '#0369A1' },
+  dynamodb:      { bg: '#FDF4FF', color: '#A21CAF' },
+  cloudfront:    { bg: '#ECFDF5', color: '#047857' },
+  'api-gateway': { bg: '#EFF6FF', color: '#1E40AF' },
+  elasticache:   { bg: '#FFF7ED', color: '#9A3412' },
+  aurora:        { bg: '#FFFBEB', color: '#92400E' },
+  sqs:           { bg: '#FEF2F2', color: '#B91C1C' },
+  sns:           { bg: '#FDF4FF', color: '#7E22CE' },
+  'load-balancer':{ bg: '#F0FDF4', color: '#166534' },
+  elb:           { bg: '#F0FDF4', color: '#166534' },
+  vpc:           { bg: '#F8FAFC', color: '#475569' },
+}
+
+function typeStyle(t: string) {
+  return TYPE_COLORS[t] ?? { bg: '#F8FAFC', color: '#64748B' }
+}
+
 export default function ServicesPage() {
-  const [envFilter, setEnvFilter] = useState<string>('all')
+  const [envFilter,      setEnvFilter]      = useState<string>('all')
   const [templateFilter, setTemplateFilter] = useState<string>('all')
-  const [isDiscovering, setIsDiscovering] = useState(false)
+  const [search,         setSearch]         = useState<string>('')
+  const [isDiscovering,  setIsDiscovering]  = useState(false)
   const [discoveryComplete, setDiscoveryComplete] = useState(false)
+  const [discoveryMsg,   setDiscoveryMsg]   = useState<string | null>(null)
 
-  const handleAutoDiscover = async () => {
-    setIsDiscovering(true)
-    setDiscoveryComplete(false)
-    await new Promise(r => setTimeout(r, 2500))
-    setIsDiscovering(false)
-    setDiscoveryComplete(true)
-    setTimeout(() => setDiscoveryComplete(false), 4000)
-  }
+  // Real-data state
+  const [services,  setServices]  = useState<AWSService[]>([])
+  const [stats,     setStats]     = useState<AWSServicesStats | null>(null)
+  const [isLoading,     setIsLoading]     = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+  const [noAwsAccount,  setNoAwsAccount]  = useState(true)
 
-  const templateTypes = ['all', 'ECS', 'Lambda', 'EC2', 'RDS', 'Kubernetes']
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const demoMode = useDemoMode()
+  const demoMode     = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
 
-  const allServices = isDemoActive ? DEMO_SERVICES : []
-  const displayServices = allServices
+  // ── Fetch real data ──────────────────────────────────────────────────────
 
-  const filteredServices = displayServices.filter((s: any) => {
-    const matchesEnv = !envFilter || envFilter === 'all' || s.environment === envFilter
-    const matchesTemplate = templateFilter === 'all' || s.template === templateFilter
-    return matchesEnv && matchesTemplate
-  })
+  const fetchServices = useCallback(async () => {
+    if (isDemoActive) return
+    setIsLoading(true)
+    setError(null)
+    try {
+      const [svcs, st] = await Promise.all([
+        awsServicesService.getServices({
+          type:   templateFilter !== 'all' ? templateFilter : undefined,
+          env:    envFilter      !== 'all' ? envFilter      : undefined,
+          search: search.trim()  || undefined,
+        }),
+        awsServicesService.getStats(),
+      ])
+      setServices(svcs)
+      setStats(st)
+    } catch (err: any) {
+      // Check if the failure is simply because no AWS account is connected yet.
+      // If so, show the onboarding empty state instead of an error banner.
+      try {
+        const accounts = await awsAccountsService.getAccounts()
+        if (accounts.length === 0) {
+          setNoAwsAccount(true)
+          setError(null)
+        } else {
+          setNoAwsAccount(false)
+          setError(err.message || 'Failed to load services')
+        }
+      } catch {
+        // Can't confirm an account exists — default to onboarding, not error banner
+        setNoAwsAccount(true)
+        setError(null)
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }, [isDemoActive, templateFilter, envFilter, search])
 
-  const totalServices = allServices.length
-  const healthyCount = allServices.filter((s: any) => s.status === 'healthy').length
-  const warningCount = allServices.filter((s: any) => s.status === 'warning' || s.status === 'critical').length
-  const avgUptime = allServices.length > 0
-    ? (allServices.reduce((sum: number, s: any) => sum + (s.uptime || 0), 0) / allServices.length).toFixed(1)
-    : '—'
+  // Initial load + re-fetch when filters change
+  useEffect(() => {
+    fetchServices()
+  }, [fetchServices])
 
-  const isLoading = false
+  // Debounce search input
+  const handleSearchChange = (val: string) => {
+    setSearch(val)
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    searchTimeout.current = setTimeout(() => fetchServices(), 400)
+  }
+
+  // ── Auto Discover ────────────────────────────────────────────────────────
+
+  const handleAutoDiscover = async () => {
+    if (isDemoActive) {
+      // Demo: keep existing fake behavior
+      setIsDiscovering(true)
+      setDiscoveryComplete(false)
+      await new Promise(r => setTimeout(r, 2500))
+      setIsDiscovering(false)
+      setDiscoveryComplete(true)
+      setTimeout(() => setDiscoveryComplete(false), 4000)
+      return
+    }
+
+    setIsDiscovering(true)
+    setDiscoveryComplete(false)
+    setDiscoveryMsg(null)
+    try {
+      const result = await awsServicesService.discoverServices()
+      setDiscoveryMsg(result.message)
+      setDiscoveryComplete(true)
+      setTimeout(() => { setDiscoveryComplete(false); setDiscoveryMsg(null) }, 6000)
+      // Refetch services after discovery
+      await fetchServices()
+    } catch (err: any) {
+      setError(err.message || 'Discovery failed — check your AWS connection')
+    } finally {
+      setIsDiscovering(false)
+    }
+  }
+
+  // ── Derived display values ───────────────────────────────────────────────
+
+  const allServices     = isDemoActive ? DEMO_SERVICES : services
+  const displayStats    = isDemoActive ? DEMO_STATS     : stats
+
+  // In demo mode filter locally; in real mode the API filters server-side
+  const filteredServices = isDemoActive
+    ? allServices.filter((s: any) => {
+        const matchEnv  = envFilter      === 'all' || s.environment === envFilter
+        const matchType = templateFilter === 'all' || s.type        === templateFilter
+        const matchSrch = !search.trim() || s.name.toLowerCase().includes(search.toLowerCase())
+        return matchEnv && matchType && matchSrch
+      })
+    : allServices  // already filtered by API
+
+  const totalServices  = displayStats?.total          ?? allServices.length
+  const healthyCount   = displayStats?.healthy         ?? allServices.filter((s: any) => s.status === 'healthy').length
+  const warningCount   = displayStats?.needs_attention ?? allServices.filter((s: any) => s.status !== 'healthy').length
+  const avgUptime      = displayStats?.avg_uptime
+    ?? (allServices.length > 0
+      ? parseFloat((allServices.reduce((sum: number, s: any) => sum + (s.uptime || 0), 0) / allServices.length).toFixed(1))
+      : null)
+
+  const avgUptimeDisplay = avgUptime != null ? `${avgUptime}%` : '—'
 
   return (
     <div style={{
@@ -92,7 +236,7 @@ export default function ServicesPage() {
             {isDiscovering
               ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Scanning AWS...</>
               : discoveryComplete
-                ? <><Check size={15} /> Discovery Complete</>
+                ? <><Check size={15} /> {discoveryMsg ?? 'Discovery Complete'}</>
                 : <><Scan size={15} /> Auto Discover</>
             }
           </button>
@@ -102,15 +246,24 @@ export default function ServicesPage() {
         </div>
       </div>
 
+      {/* Error banner — only shown when an AWS account IS connected but the call failed */}
+      {error && !noAwsAccount && (
+        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', padding: '12px 20px', marginBottom: '20px' }}>
+          <p style={{ fontSize: '0.875rem', color: '#DC2626', margin: 0 }}>
+            Failed to load services — check your AWS connection
+          </p>
+        </div>
+      )}
+
       {/* 4 KPI CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
-          { label: 'Total Services',  value: totalServices,    sub: 'Registered',          valueColor: '#0F172A' },
-          { label: 'Healthy',         value: healthyCount,     sub: 'Operating normally',   valueColor: '#059669' },
-          { label: 'Needs Attention', value: warningCount,     sub: 'Warning or critical',  valueColor: warningCount > 0 ? '#D97706' : '#059669' },
-          { label: 'Avg Uptime',      value: `${avgUptime}%`,  sub: 'Across all services',  valueColor: '#0F172A' },
+          { label: 'Total Services',  value: isLoading && !isDemoActive ? '…' : totalServices,          sub: 'Registered',         valueColor: '#0F172A' },
+          { label: 'Healthy',         value: isLoading && !isDemoActive ? '…' : healthyCount,            sub: 'Operating normally',  valueColor: '#059669' },
+          { label: 'Needs Attention', value: isLoading && !isDemoActive ? '…' : warningCount,            sub: 'Warning or critical', valueColor: warningCount > 0 ? '#D97706' : '#059669' },
+          { label: 'Avg Uptime',      value: isLoading && !isDemoActive ? '…' : avgUptimeDisplay,        sub: 'Across all services', valueColor: '#0F172A' },
         ].map(({ label, value, sub, valueColor }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0', opacity: isLoading && !isDemoActive ? 0.6 : 1, transition: 'opacity 0.2s' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
             <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
             <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
@@ -130,7 +283,9 @@ export default function ServicesPage() {
               ? `${warningCount} service${warningCount !== 1 ? 's' : ''} need${warningCount === 1 ? 's' : ''} attention. payment-processor has a Lambda invocation spike (+178%) — this is likely driving the $864 cost increase detected this month. Recommend investigating retry logic.`
               : totalServices === 0
                 ? 'No services detected. Connect your AWS account and run Auto Discover to automatically find ECS, Lambda, EC2, and RDS services.'
-                : `${healthyCount} of ${totalServices} services are healthy with ${avgUptime}% average uptime. ${warningCount > 0 ? `${warningCount} service${warningCount > 1 ? 's' : ''} require attention.` : 'No active issues detected.'}`
+                : warningCount > 0
+                  ? `${healthyCount} of ${totalServices} services healthy. ${warningCount} service${warningCount > 1 ? 's' : ''} require${warningCount === 1 ? 's' : ''} attention — review the highlighted rows below.`
+                  : `${totalServices} services running with ${avgUptimeDisplay} average uptime. No active issues detected.`
             }
           </p>
         </div>
@@ -170,42 +325,56 @@ export default function ServicesPage() {
       {/* SERVICES TABLE */}
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
 
-        {/* Table header with dual filters */}
+        {/* Table header with filters */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', gap: '16px' }}>
             <div>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Services</p>
               <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredServices.length} of {totalServices} services</p>
             </div>
-            {/* Environment filter */}
-            <div style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px' }}>
-              {['all', 'production', 'staging'].map(f => (
-                <button key={f} onClick={() => setEnvFilter(f)}
-                  style={{
-                    padding: '5px 14px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
-                    border: 'none', cursor: 'pointer', textTransform: 'capitalize',
-                    background: (envFilter === f || (!envFilter && f === 'all')) ? '#fff' : 'transparent',
-                    color: (envFilter === f || (!envFilter && f === 'all')) ? '#0F172A' : '#64748B',
-                    boxShadow: (envFilter === f || (!envFilter && f === 'all')) ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  }}>
-                  {f === 'all' ? 'All Envs' : f}
-                </button>
-              ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {/* Search */}
+              <input
+                type="text"
+                placeholder="Search services…"
+                value={search}
+                onChange={e => handleSearchChange(e.target.value)}
+                style={{
+                  padding: '6px 12px', borderRadius: '8px', border: '1px solid #E2E8F0',
+                  fontSize: '0.82rem', color: '#0F172A', background: '#F8FAFC',
+                  outline: 'none', width: '180px',
+                }}
+              />
+              {/* Environment filter */}
+              <div style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px' }}>
+                {['all', 'production', 'staging'].map(f => (
+                  <button key={f} onClick={() => setEnvFilter(f)}
+                    style={{
+                      padding: '5px 14px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
+                      border: 'none', cursor: 'pointer', textTransform: 'capitalize',
+                      background: envFilter === f ? '#fff' : 'transparent',
+                      color:      envFilter === f ? '#0F172A' : '#64748B',
+                      boxShadow:  envFilter === f ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                    }}>
+                    {f === 'all' ? 'All Envs' : f}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Template type filter */}
+          {/* Resource type filter chips — all 15 types */}
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {templateTypes.map(t => (
+            {RESOURCE_TYPE_CHIPS.map(t => (
               <button key={t} onClick={() => setTemplateFilter(t)}
                 style={{
                   padding: '4px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600,
                   border: 'none', cursor: 'pointer',
                   background: templateFilter === t ? '#7C3AED' : '#F1F5F9',
-                  color: templateFilter === t ? '#fff' : '#475569',
+                  color:      templateFilter === t ? '#fff'    : '#475569',
                   transition: 'all 0.15s',
                 }}>
-                {t === 'all' ? 'All Types' : t}
+                {TYPE_DISPLAY[t] ?? t}
               </button>
             ))}
           </div>
@@ -221,7 +390,7 @@ export default function ServicesPage() {
         {/* Service rows */}
         {isLoading && !isDemoActive ? (
           <div style={{ padding: '48px', textAlign: 'center' }}>
-            <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
+            <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px', animation: 'spin 1s linear infinite' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading services...</p>
           </div>
         ) : filteredServices.length === 0 ? (
@@ -265,6 +434,7 @@ export default function ServicesPage() {
             const envColor    = svc.environment === 'production' ? '#059669' : svc.environment === 'staging' ? '#D97706' : '#64748B'
             const envBg       = svc.environment === 'production' ? '#F0FDF4' : svc.environment === 'staging' ? '#FFFBEB' : '#F8FAFC'
             const statusLabel = isHealthy ? 'Healthy' : isWarning ? 'Warning' : 'Critical'
+            const tc          = typeStyle(svc.type)
 
             return (
               <div
@@ -282,20 +452,19 @@ export default function ServicesPage() {
                   {/* Service name */}
                   <div>
                     <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 2px', fontFamily: 'Inter, system-ui' }}>{svc.name}</p>
-                    {svc.lastDeployed && (
+                    {svc.last_deployed && (
                       <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: 0 }}>
-                        Deployed {new Date(svc.lastDeployed).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        Synced {new Date(svc.last_deployed).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     )}
                   </div>
 
-                  {/* Template type */}
+                  {/* Resource type */}
                   <span style={{
                     fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', width: 'fit-content',
-                    background: svc.template === 'ECS' ? '#EFF6FF' : svc.template === 'Lambda' ? '#F5F3FF' : svc.template === 'EC2' ? '#F0FDF4' : svc.template === 'RDS' ? '#FFFBEB' : '#F8FAFC',
-                    color:      svc.template === 'ECS' ? '#1D4ED8' : svc.template === 'Lambda' ? '#7C3AED'  : svc.template === 'EC2' ? '#059669'  : svc.template === 'RDS' ? '#D97706'  : '#64748B',
+                    background: tc.bg, color: tc.color,
                   }}>
-                    {svc.template || '—'}
+                    {TYPE_DISPLAY[svc.type] ?? svc.type?.toUpperCase() ?? '—'}
                   </span>
 
                   {/* Environment */}
@@ -306,13 +475,13 @@ export default function ServicesPage() {
                   {/* Region */}
                   <span style={{ fontSize: '0.82rem', color: '#475569', fontFamily: 'monospace' }}>{svc.region || '—'}</span>
 
-                  {/* Owner */}
+                  {/* Owner / Team */}
                   <div>
                     <p style={{ fontSize: '0.78rem', fontWeight: 500, color: '#1E293B', margin: '0 0 1px' }}>
-                      {svc.owner?.split('@')[0] || svc.owner || '—'}
+                      {svc.owner?.split('@')[0] ?? svc.owner ?? '—'}
                     </p>
                     <p style={{ fontSize: '0.7rem', color: '#94A3B8', margin: 0 }}>
-                      {svc.teamId || ''}
+                      {svc.team ?? ''}
                     </p>
                   </div>
 
@@ -329,13 +498,6 @@ export default function ServicesPage() {
 
                   {/* Actions */}
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    {svc.githubUrl && (
-                      <a href={svc.githubUrl} target="_blank" rel="noopener noreferrer"
-                        style={{ color: '#94A3B8', display: 'flex', alignItems: 'center' }}
-                        title="View repository">
-                        <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                      </a>
-                    )}
                     <a href={`/services/${svc.id}`} style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       View <ArrowRight size={12} />
                     </a>

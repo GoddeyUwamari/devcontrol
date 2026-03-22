@@ -8,6 +8,7 @@ import {
   Building2,
   Keyboard,
   Palette,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -90,6 +91,13 @@ export function UserMenu() {
           <Link href="/settings" className="cursor-pointer">
             <Settings className="mr-2 h-4 w-4" />
             <span>Settings</span>
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/settings/sso" className="cursor-pointer">
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            <span>SSO &amp; Security</span>
+            <span className="ml-auto text-xs" style={{ color: "#7C3AED", fontWeight: 600 }}>Enterprise</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

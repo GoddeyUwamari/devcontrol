@@ -47,8 +47,8 @@ export default function SecurityPage() {
   const demoMode = demoModeService.isEnabled()
 
   // Risk score hooks
-  const { data: riskScore, isLoading: riskLoading } = useCurrentRiskScore()
-  const { data: riskTrend, isLoading: trendLoading } = useRiskScoreTrend('30d')
+  const { data: riskScore, isLoading: riskLoading } = useCurrentRiskScore(!demoMode)
+  const { data: riskTrend, isLoading: trendLoading } = useRiskScoreTrend('30d', !demoMode)
 
   // Compliance frameworks
   const { frameworks, loading: frameworksLoading } = useComplianceFrameworks()
