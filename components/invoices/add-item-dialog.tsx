@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "sonner";
-import { useMutation, useQueryClient } from "@tantml:react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { AddInvoiceItemPayload, Invoice } from "@/lib/types";
 import {
@@ -38,8 +38,8 @@ import {
 const addItemSchema = z.object({
   description: z.string().min(1, "Description is required"),
   itemType: z.enum(["subscription", "usage", "credit", "fee", "discount"]),
-  quantity: z.coerce.number().positive("Quantity must be greater than 0"),
-  unitPrice: z.coerce.number(),
+  quantity: z.number().positive("Quantity must be greater than 0"),
+  unitPrice: z.number(),
 });
 
 type AddItemFormValues = z.infer<typeof addItemSchema>;

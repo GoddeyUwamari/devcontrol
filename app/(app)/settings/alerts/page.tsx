@@ -87,7 +87,7 @@ export default function AlertSettingsPage() {
     webhook: {
       enabled: false,
       url: '',
-      headers: {},
+      headers: {} as Record<string, string>,
     },
     jira: {
       enabled: false,
@@ -119,7 +119,7 @@ export default function AlertSettingsPage() {
         setConfig({
           email: data.email || config.email,
           slack: data.slack || config.slack,
-          webhook: data.webhook || config.webhook,
+          webhook: data.webhook ? { ...data.webhook, headers: data.webhook.headers ?? {} } : config.webhook,
           jira: data.jira || config.jira,
         });
         // Merge saved alertTypes with defaults to preserve icons

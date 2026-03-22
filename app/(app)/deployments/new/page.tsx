@@ -39,7 +39,7 @@ const AWS_REGIONS = [
 const deploymentSchema = z.object({
   serviceId: z.string().uuid('Please select a service'),
   environment: z.enum(['development', 'staging', 'production'], {
-    errorMap: () => ({ message: 'Please select an environment' })
+    error: () => ({ message: 'Please select an environment' })
   }),
   awsRegion: z.string().regex(/^[a-z]{2}-[a-z]+-\d$/, 'Please select a valid AWS region'),
   deployedBy: z.string().email('Must be a valid email address'),
@@ -54,7 +54,7 @@ export default function NewDeploymentPage() {
   // Fetch services for dropdown
   const { data: services = [], isLoading: servicesLoading } = useQuery({
     queryKey: ['services'],
-    queryFn: servicesService.getAll,
+    queryFn: () => servicesService.getAll(),
   })
 
   const {

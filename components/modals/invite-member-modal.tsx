@@ -34,7 +34,7 @@ const inviteMemberSchema = z.object({
     .email("Please enter a valid email address")
     .toLowerCase(),
   role: z.enum(["admin", "member", "viewer"], {
-    required_error: "Please select a role",
+    error: "Please select a role",
   }),
 });
 

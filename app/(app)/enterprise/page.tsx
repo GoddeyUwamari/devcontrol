@@ -127,7 +127,7 @@ function roleStyle(role: OrganizationMember['role']): { background: string; colo
 // ── PAGE ───────────────────────────────────────────────────────────────────────
 
 export default function EnterprisePage() {
-  const { demoMode } = useDemoMode()
+  const demoMode = useDemoMode()
   const { organization } = useAuth()
   const orgId = organization?.id
   const queryClient = useQueryClient()

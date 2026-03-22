@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/select";
 
 const recordPaymentSchema = z.object({
-  paymentAmount: z.coerce.number().positive("Amount must be positive"),
+  paymentAmount: z.number().positive("Amount must be positive"),
   paymentMethod: z.string().min(1, "Payment method is required"),
   paymentReference: z.string().optional(),
 });

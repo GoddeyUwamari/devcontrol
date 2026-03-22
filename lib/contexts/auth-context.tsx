@@ -77,16 +77,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [user, organization, organizations, isLoading]);
 
   /**
-   * Initialize auth state on mount
-   */
-  useEffect(() => {
-    initializeAuth();
-  }, []);
-
-  /**
    * Initialize authentication state from localStorage
    */
-  const initializeAuth = async () => {
+  const initializeAuth = useCallback(async () => {
     console.log("🔐 Auth Context - Initializing...");
     try {
       const token = tokenManager.getAccessToken();
@@ -99,21 +92,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(cachedUser);
         // Re-set the auth cookie in case it was cleared (cookie can expire while localStorage persists)
         tokenManager.setAuthCookie(token);
-        console.log("🔐 Setting cached user, fetching fresh data...");
-        // Fetch fresh user data and organizations in the background
-        await Promise.all([refreshUser(), refreshOrganizations()]);
+        console.log("🔐 Setting cached user, fetching fresh data in background...");
+        // Kick off background refreshes — do NOT await them here so that
+        // isLoading drops immediately and the cached user is shown right away.
+        // Errors in these background calls must not clear the user state.
+        refreshUser().catch(console.error);
+        refreshOrganizations().catch(console.error);
       } else {
         console.log("🔐 No token or cached user, user not authenticated");
       }
     } catch (error) {
       console.error("❌ Failed to initialize auth:", error);
-      // Clear invalid auth state
-      tokenManager.clearAll();
     } finally {
       setIsLoading(false);
       console.log("🔐 Auth initialization complete");
     }
-  };
+  }, []);
+
+  /**
+   * Initialize auth state on mount
+   */
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
 
   /**
    * Refresh organizations
@@ -167,7 +168,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         refreshOrganizations().catch(console.error);
 
         toast.success("Welcome back!", {
-          description: `Logged in as ${response.data.user.email}`,
+          description: `Logged in as ${user?.email ?? email}`,
         });
 
         // Redirect to dashboard with fallback
@@ -332,13 +333,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
       }
     } catch (error) {
+      // Log the error but do NOT force-logout on 401 here.
+      // A failed background refresh does not mean the session is invalid —
+      // the user may have just logged in with a perfectly valid token and the
+      // /me endpoint is temporarily unavailable. Calling logout() here would
+      // immediately wipe the user state that was just set from cache.
       console.error("Failed to refresh user:", error);
-      // If refresh fails with 401, logout
-      if ((error as any)?.response?.status === 401) {
-        await logout();
-      }
     }
-  }, [logout]);
+  }, []);
 
   /**
    * Create organization

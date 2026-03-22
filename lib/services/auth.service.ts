@@ -1,5 +1,6 @@
 import { api } from "../api";
 import type { User } from "../types";
+import type { Organization } from "./organizations.service";
 
 /**
  * Authentication API Response Types
@@ -21,6 +22,7 @@ export interface AuthResponse {
     user: User;
     accessToken: string;
     refreshToken: string;
+    organization?: Organization;
   };
   message?: string;
 }
@@ -164,10 +166,11 @@ export const tokenManager = {
   getUser(): User | null {
     if (typeof window === "undefined") return null;
     const userStr = localStorage.getItem("user");
-    if (!userStr) return null;
+    if (!userStr || userStr === "undefined" || userStr === "null") return null;
     try {
       return JSON.parse(userStr);
     } catch {
+      localStorage.removeItem("user");
       return null;
     }
   },

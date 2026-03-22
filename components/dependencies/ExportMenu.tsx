@@ -35,7 +35,7 @@ interface CircularDependency {
 interface ExportMenuProps {
   dependencies: ServiceDependency[];
   cycles?: CircularDependency[];
-  graphRef: React.RefObject<HTMLDivElement> | null;
+  graphRef: React.RefObject<HTMLDivElement | null> | null;
   activeTab?: string;
 }
 

@@ -38,14 +38,12 @@ const AWS_REGIONS = [
 const infrastructureSchema = z.object({
   serviceId: z.string().uuid('Please select a service'),
   resourceType: z.enum(['ec2', 'rds', 'vpc', 's3', 'lambda', 'cloudfront', 'elb'], {
-    errorMap: () => ({ message: 'Please select a resource type' })
+    error: () => ({ message: 'Please select a resource type' })
   }),
   awsId: z.string().min(1, 'AWS Resource ID is required'),
   awsRegion: z.string().regex(/^[a-z]{2}-[a-z]+-\d$/, 'Please select a valid AWS region'),
   costPerMonth: z.string()
     .regex(/^\d+(\.\d{1,2})?$/, 'Must be a valid number with up to 2 decimal places')
-    .transform(val => parseFloat(val))
-    .refine(val => val >= 0, 'Cost must be non-negative')
     .optional(),
 })
 
@@ -58,7 +56,7 @@ export default function NewInfrastructurePage() {
   // Fetch services for dropdown
   const { data: services = [], isLoading: servicesLoading } = useQuery({
     queryKey: ['services'],
-    queryFn: servicesService.getAll,
+    queryFn: () => servicesService.getAll(),
   })
 
   const {
@@ -84,7 +82,7 @@ export default function NewInfrastructurePage() {
       resourceType: data.resourceType,
       awsId: data.awsId,
       awsRegion: data.awsRegion,
-      costPerMonth: data.costPerMonth,
+      costPerMonth: data.costPerMonth ? parseFloat(data.costPerMonth) : undefined,
     })
 
     toast.promise(promise, {

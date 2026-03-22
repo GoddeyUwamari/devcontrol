@@ -1,4 +1,4 @@
-import Fuse from 'fuse.js';
+import Fuse, { type IFuseOptions } from 'fuse.js';
 import type { DependencyExportData } from '@/types/export';
 
 /**
@@ -17,7 +17,7 @@ export interface SearchResult<T> {
 /**
  * Configuration for dependency search
  */
-const SEARCH_OPTIONS: Fuse.IFuseOptions<DependencyExportData> = {
+const SEARCH_OPTIONS: IFuseOptions<DependencyExportData> = {
   // Threshold: 0.0 = perfect match, 1.0 = match anything
   // 0.3 provides good balance between strict and loose matching
   threshold: 0.3,

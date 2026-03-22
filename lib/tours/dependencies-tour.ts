@@ -69,7 +69,7 @@ export const dependenciesTour: DriveStep[] = [
 
 export const tourConfig = {
   showProgress: true,
-  showButtons: ['next', 'previous', 'close'],
+  showButtons: ['next', 'previous', 'close'] as ('next' | 'previous' | 'close')[],
   nextBtnText: 'Next →',
   prevBtnText: '← Back',
   doneBtnText: 'Got it! ✓',

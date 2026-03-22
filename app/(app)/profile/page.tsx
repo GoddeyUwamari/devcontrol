@@ -239,11 +239,11 @@ export default function ProfilePage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Account Created</p>
                   <p className="font-medium">
-                    {new Date(user.createdAt).toLocaleDateString('en-US', {
+                    {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
                       month: 'long',
                       day: 'numeric',
                       year: 'numeric',
-                    })}
+                    }) : '—'}
                   </p>
                 </div>
               </div>

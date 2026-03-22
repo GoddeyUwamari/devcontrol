@@ -18,6 +18,7 @@ interface CostOptimizationWinsProps {
       title: string;
       monthlySavings: number;
       description: string;
+      icon?: string;
     }>;
     twelveMonthReduction: number;
   };

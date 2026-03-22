@@ -2,7 +2,7 @@ import axios from 'axios';
 import type {
   ServiceHealth,
   SystemHealth,
-  ServiceStatus,
+  HealthStatus,
   OverallSystemStatus,
   GatewayHealthResponse,
   MicroserviceHealthResponse,
@@ -61,9 +61,9 @@ export const DATABASE_SERVICES = [
 ];
 
 /**
- * Normalize status string to ServiceStatus type
+ * Normalize status string to HealthStatus type
  */
-const normalizeStatus = (status: string | undefined, responseTime?: number): ServiceStatus => {
+const normalizeStatus = (status: string | undefined, responseTime?: number): HealthStatus => {
   if (!status) return 'unhealthy';
 
   const statusLower = status.toLowerCase();

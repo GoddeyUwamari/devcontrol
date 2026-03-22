@@ -6,6 +6,9 @@ export interface User {
   id: string;
   email: string;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
+  organizationId?: string;
   avatarUrl?: string | null;
   isEmailVerified: boolean;
   tenantId?: string; // Optional for multi-tenant features
@@ -305,7 +308,7 @@ export interface UpdatePaymentMethodPayload {
 }
 
 // Monitoring & Health Check
-export type ServiceStatus = 'healthy' | 'unhealthy' | 'degraded';
+export type HealthStatus = 'healthy' | 'unhealthy' | 'degraded';
 export type OverallSystemStatus = 'operational' | 'degraded' | 'disrupted';
 
 // Actual backend response format (direct, not wrapped)
@@ -362,7 +365,7 @@ export interface ServiceHealth {
   name: string;
   url: string;
   port?: number;
-  status: ServiceStatus;
+  status: HealthStatus;
   responseTime: number;
   uptime: number;
   lastCheck: string;
@@ -384,7 +387,7 @@ export interface SystemHealth {
 // =====================================================
 
 // Service Types
-export type ServiceTemplate = 'api' | 'microservices';
+export type ServiceTemplate = 'api' | 'microservices' | 'frontend' | 'worker' | 'database';
 export type ServiceStatus = 'active' | 'inactive' | 'deploying' | 'failed';
 
 export interface Service {
@@ -447,7 +450,7 @@ export interface CreateDeploymentPayload {
 }
 
 // Infrastructure Types
-export type ResourceType = 'ec2' | 'rds' | 'vpc' | 's3' | 'lambda' | 'cloudfront' | 'elb';
+export type ResourceType = 'ec2' | 'rds' | 'vpc' | 's3' | 'lambda' | 'cloudfront' | 'elb' | 'ecs' | 'eks' | 'dynamodb' | 'api-gateway' | 'elasticache' | 'aurora' | 'sqs' | 'sns';
 export type ResourceStatus = 'running' | 'stopped' | 'terminated' | 'pending';
 
 export interface InfrastructureResource {
@@ -537,6 +540,7 @@ export interface ServiceFilters {
   status?: ServiceStatus;
   template?: ServiceTemplate;
   owner?: string;
+  teamId?: string;
   search?: string;
 }
 
@@ -547,6 +551,7 @@ export interface DeploymentFilters {
   status?: DeploymentStatus;
   startDate?: string;
   endDate?: string;
+  limit?: number;
 }
 
 // Infrastructure Filters

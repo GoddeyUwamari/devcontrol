@@ -1,18 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import ReactFlow, {
-  Background,
+  Background as RFBackground,
   Controls,
-  MiniMap,
+  MiniMap as RFMiniMap,
   Node,
   Edge,
   useNodesState,
   useEdgesState,
   MarkerType,
-  Panel,
+  Panel as RFPanel,
 } from 'reactflow'
+
+// ReactFlow v11 is not fully type-compatible with React 19's JSX types
+const Background = RFBackground as unknown as React.ComponentType<Record<string, unknown>>
+const MiniMap = RFMiniMap as unknown as React.ComponentType<Record<string, unknown>>
+const Panel = RFPanel as unknown as React.ComponentType<{ position: string; className?: string; children?: React.ReactNode }>
 import 'reactflow/dist/style.css'
 import { Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -39,7 +44,7 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
 
 interface DependencyGraphProps {
   onRefresh: () => void
-  graphRef?: React.RefObject<HTMLDivElement>
+  graphRef?: React.RefObject<HTMLDivElement | null>
   demoMode?: boolean
 }
 

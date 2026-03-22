@@ -35,7 +35,7 @@ const createInvoiceSchema = z.object({
   periodEnd: z.string().min(1, "Period end is required"),
   dueDate: z.string().min(1, "Due date is required"),
   issueDate: z.string().optional(),
-  currency: z.string().default("USD"),
+  currency: z.string().optional(),
   notes: z.string().optional(),
 });
 

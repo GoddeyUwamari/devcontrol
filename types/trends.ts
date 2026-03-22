@@ -5,6 +5,7 @@ export interface TrendData {
   changePercent: number;
   direction: 'up' | 'down' | 'neutral';
   label: string; // "vs last week", "vs last month", "this week"
+  value?: string; // Formatted string for display (e.g. "+12%")
   sparklineData?: number[]; // Last 7 data points for mini chart
 }
 

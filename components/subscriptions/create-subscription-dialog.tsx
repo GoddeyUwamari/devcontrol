@@ -38,12 +38,12 @@ const createSubscriptionSchema = z.object({
   tenantId: z.string().uuid("Invalid tenant ID"),
   planId: z.string().uuid("Invalid plan ID"),
   billingCycle: z.enum(["monthly", "yearly"]),
-  currentPrice: z.coerce.number().positive("Price must be positive"),
+  currentPrice: z.number().positive("Price must be positive"),
   currentPeriodEnd: z.string().min(1, "End date is required"),
-  currency: z.string().default("USD"),
+  currency: z.string().optional(),
   startedAt: z.string().optional(),
-  autoRenew: z.boolean().default(true),
-  isTrial: z.boolean().default(false),
+  autoRenew: z.boolean().optional(),
+  isTrial: z.boolean().optional(),
   trialEndsAt: z.string().optional(),
 });
 

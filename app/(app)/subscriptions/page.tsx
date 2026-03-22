@@ -118,7 +118,7 @@ export default function SubscriptionsPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
   // Fetch subscriptions with status filter
-  const { data: subscriptions = [], isLoading, error, refetch } = useQuery({
+  const { data: subscriptions = [], isLoading, error, refetch } = useQuery<Subscription[]>({
     queryKey: ['subscriptions', statusFilter],
     queryFn: async () => {
       const params = statusFilter !== 'all' ? `?status=${statusFilter}` : '';

@@ -54,10 +54,7 @@ export function middleware(request: NextRequest) {
 
   if (isProtected && !isAuthenticated) {
     console.log(`🚫 REDIRECTING: ${pathname} -> /login (user not authenticated)`);
-    const response = NextResponse.redirect(new URL('/login', request.url));
-    // Ensure stale auth cookie is cleared on protected route redirect
-    response.cookies.delete('auth-token');
-    return response;
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   console.log(`✅ ALLOWING: ${pathname}`);

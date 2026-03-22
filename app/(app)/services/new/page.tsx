@@ -30,7 +30,7 @@ const serviceSchema = z.object({
     .max(50, 'Service name must be less than 50 characters')
     .regex(/^[a-z0-9-]+$/, 'Only lowercase letters, numbers, and hyphens allowed'),
   template: z.enum(['api', 'frontend', 'worker', 'database'], {
-    errorMap: () => ({ message: 'Please select a valid template' })
+    error: () => ({ message: 'Please select a valid template' })
   }),
   owner: z.string().email('Must be a valid email address'),
   teamId: z.string().uuid('Please select a team'),

@@ -727,10 +727,7 @@ export default function DependenciesPage() {
       />
 
       {/* Welcome Modal */}
-      <WelcomeModal
-        onStartTour={startTour}
-        onDismiss={() => {}}
-      />
+      <WelcomeModal />
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>

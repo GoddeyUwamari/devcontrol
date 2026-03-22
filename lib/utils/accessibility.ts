@@ -95,17 +95,19 @@ export function getAccessibleStatDescription(element: {
   value: number | string;
   trend?: {
     direction: 'up' | 'down' | 'neutral';
-    value: string;
+    value?: string;
+    changePercent?: number;
   };
 }): string {
   let description = `${element.label}: ${element.value}`;
 
   if (element.trend) {
+    const trendValue = element.trend.value ?? (element.trend.changePercent != null ? `${Math.abs(element.trend.changePercent).toFixed(1)}%` : '');
     const trendText =
       element.trend.direction === 'up'
-        ? `increased by ${element.trend.value}`
+        ? `increased by ${trendValue}`
         : element.trend.direction === 'down'
-        ? `decreased by ${element.trend.value}`
+        ? `decreased by ${trendValue}`
         : 'no change';
     description += `, ${trendText}`;
   }
