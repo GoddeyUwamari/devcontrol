@@ -303,11 +303,13 @@ function InfrastructureContent() {
               ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Syncing AWS...</>
               : syncComplete
                 ? <><Check size={15} /> Sync Complete</>
-                : <><RefreshCw size={15} /> Sync AWS</>
+                : (!isDemoActive && allResources.length === 0)
+                  ? <><RefreshCw size={15} /> Connect AWS & Scan</>
+                  : <><RefreshCw size={15} /> Sync AWS</>
             }
           </button>
-          <a href="/infrastructure/new" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
-            <Plus size={15} /> Add Resource
+          <a href="/infrastructure/new" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#6b7280', padding: '7px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 500, textDecoration: 'none', border: '0.5px solid #e5e7eb' }}>
+            <Plus size={13} /> Add Resource
           </a>
         </div>
       </div>
@@ -321,10 +323,10 @@ function InfrastructureContent() {
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
           <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
             {isDemoActive
-              ? `${demoTotal} AWS resources tracked across ${regionCount} regions. Total infrastructure cost is $${Math.round(demoMonthlyCost).toLocaleString()}/mo. RDS payments instance is showing elevated connection wait times — review query performance and connection pool settings. ${displayRecommendationsCount} optimization opportunities identified.`
-              : totalResources === 0
-                ? 'No resources found. Click "Sync AWS" to automatically discover all EC2, Lambda, RDS, and S3 resources from your connected AWS account.'
-                : `${totalResources ?? '—'} resources tracked with $${Math.round(totalMonthlyCost).toLocaleString()}/mo total cost. ${(warningCount ?? 0) > 0 ? `${warningCount} resource${warningCount !== 1 ? 's' : ''} need${warningCount === 1 ? 's' : ''} attention.` : 'All resources healthy.'} ${displayRecommendationsCount > 0 ? `${displayRecommendationsCount} optimization recommendations available.` : ''}`
+              ? `1 resource needs attention. Optimization opportunities detected — potential savings available. Review recommendations to reduce waste and improve reliability.`
+              : allResources.length === 0
+                ? 'Connect your AWS account to start monitoring cost, health, and risk across your infrastructure.'
+                : `${warningCount ?? 0} resource(s) need attention. ${displayRecommendationsCount} optimization opportunities detected.`
             }
           </p>
         </div>
