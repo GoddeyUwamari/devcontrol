@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -158,6 +159,8 @@ function InfrastructureContent() {
   })
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncComplete, setSyncComplete] = useState(false)
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
 
   // FIX 3: Fetch real stats from /api/services/stats when not in demo mode
   const { data: apiStats, isLoading: statsLoading } = useQuery({
@@ -198,8 +201,10 @@ function InfrastructureContent() {
   const displayResources = isDemoActive ? DEMO_RESOURCES : resources
 
   const filteredResources = displayResources.filter((r: InfrastructureResource) => {
-    if (!selectedType) return true
-    return r.resourceType === selectedType
+    if (selectedType && r.resourceType !== selectedType) return false
+    if (statusFilter === 'active') return r.status === 'running'
+    if (statusFilter === 'warning') return r.status === 'pending' || r.status === 'stopped'
+    return true
   })
 
   // FIX 3: KPI stats — demo uses computed values, real mode uses API stats
@@ -226,6 +231,36 @@ function InfrastructureContent() {
       ? '—'
       : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
 
+  // Cost by service — group allResources by serviceName, sum costPerMonth
+  const DEMO_COST_BY_SERVICE = [
+    { name: 'analytics-worker',  cost: 312.80, pct: 41, barWidth: 100 },
+    { name: 'api-gateway',       cost: 245.50, pct: 32, barWidth: 78  },
+    { name: 'auth-service',      cost: 178.00, pct: 23, barWidth: 57  },
+    { name: 'payment-processor', cost: 89.50,  pct: 12, barWidth: 29  },
+    { name: 'notification-svc',  cost: 34.00,  pct:  4, barWidth: 11  },
+  ]
+
+  const costByService = (() => {
+    if (isDemoActive) return DEMO_COST_BY_SERVICE
+    const map: Record<string, number> = {}
+    for (const r of allResources) {
+      const key = (r as any).serviceName || (r as any).service_name || r.serviceId || 'Unknown'
+      map[key] = (map[key] || 0) + (r.costPerMonth || 0)
+    }
+    const total = Object.values(map).reduce((s, v) => s + v, 0)
+    if (total === 0) return []
+    const maxCost = Math.max(...Object.values(map))
+    return Object.entries(map)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([name, cost]) => ({
+        name,
+        cost,
+        pct: Math.round((cost / total) * 100),
+        barWidth: Math.round((cost / maxCost) * 100),
+      }))
+  })()
+
   // Values shown in the AI insight banner still use displayResources for region counts
   const regionCount = new Set(displayResources.map((r: InfrastructureResource) => r.awsRegion)).size
 
@@ -244,10 +279,10 @@ function InfrastructureContent() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Infrastructure
+            Infrastructure Intelligence
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            All AWS resources across your infrastructure · Real-time cost tracking
+            Real-time visibility into cost, health, and risk across your AWS infrastructure.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -300,21 +335,80 @@ function InfrastructureContent() {
         )}
       </div>
 
+      {/* COST BY SERVICE */}
+      {costByService.length > 0 && (
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', padding: '16px 20px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', color: '#6B7280', textTransform: 'uppercase' }}>Cost by Service</span>
+            <span style={{ fontSize: '0.75rem', color: '#9CA3AF' }}>Last 30 days</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {costByService.map((row) => (
+              <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 0' }}>
+                <span style={{ width: '160px', fontSize: '0.875rem', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{row.name}</span>
+                <div style={{ flex: 1, height: '6px', background: '#F3F4F6', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${row.barWidth}%`, height: '100%', background: '#7C3AED', borderRadius: '3px' }} />
+                </div>
+                <span style={{ width: '80px', textAlign: 'right', fontSize: '0.875rem', fontWeight: 600, color: '#111827', flexShrink: 0 }}>
+                  ${row.cost.toFixed(2)}
+                </span>
+                <span style={{ width: '45px', textAlign: 'right', fontSize: '0.8rem', color: '#6B7280', flexShrink: 0 }}>{row.pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 5 KPI CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
-        {[
-          { label: 'Total Resources',    value: statsLoading && !isDemoActive ? '—' : (totalResources ?? '—'),                                      sub: 'Across all regions',     valueColor: '#0F172A' },
-          { label: 'Monthly Cost',       value: `$${Math.round(totalMonthlyCost).toLocaleString()}`,                                                sub: 'All resources combined', valueColor: '#0F172A' },
-          { label: 'Active',             value: statsLoading && !isDemoActive ? '—' : (activeCount ?? '—'),                                         sub: 'Running normally',       valueColor: '#059669' },
-          { label: 'Needs Attention',    value: statsLoading && !isDemoActive ? '—' : (warningCount ?? '—'),                                        sub: 'Warning or stopped',     valueColor: (warningCount !== null && (warningCount as number) > 0) ? '#D97706' : '#059669' },
-          { label: 'Potential Savings',  value: potentialSavingsValue,                                                                              sub: 'Identified savings',     valueColor: '#16A34A' },
-        ].map(({ label, value, sub, valueColor }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
-            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
-          </div>
-        ))}
+
+        {/* Total Resources — display only */}
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Resources</p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (totalResources ?? '—')}</div>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>Across all regions</p>
+        </div>
+
+        {/* Monthly Cost — display only */}
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Monthly Cost</p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>${Math.round(totalMonthlyCost).toLocaleString()}</div>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{isDemoActive ? 'All resources combined' : 'Connect AWS to track spend'}</p>
+        </div>
+
+        {/* Active — click to filter */}
+        <div
+          style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: hoveredCard === 'active' || statusFilter === 'active' ? '0.5px solid #7C3AED' : '0.5px solid #e5e7eb', transition: 'border-color 0.15s ease', cursor: 'pointer' }}
+          onMouseEnter={() => setHoveredCard('active')}
+          onMouseLeave={() => setHoveredCard(null)}
+          onClick={() => setStatusFilter(statusFilter === 'active' ? null : 'active')}
+        >
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Active</p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (activeCount ?? '—')}</div>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>Running normally</p>
+          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Click to filter</p>
+        </div>
+
+        {/* Needs Attention — click to filter */}
+        <div
+          style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: hoveredCard === 'warning' || statusFilter === 'warning' ? '0.5px solid #7C3AED' : '0.5px solid #e5e7eb', transition: 'border-color 0.15s ease', cursor: 'pointer' }}
+          onMouseEnter={() => setHoveredCard('warning')}
+          onMouseLeave={() => setHoveredCard(null)}
+          onClick={() => setStatusFilter(statusFilter === 'warning' ? null : 'warning')}
+        >
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Needs Attention</p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: (warningCount !== null && (warningCount as number) > 0) ? '#D97706' : '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>Warning or stopped</p>
+          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Click to filter</p>
+        </div>
+
+        {/* Potential Savings — display only */}
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Potential Savings</p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#16A34A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{potentialSavingsValue}</div>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>Identified savings</p>
+        </div>
+
       </div>
 
       {/* RESOURCE TABLE */}
@@ -324,8 +418,12 @@ function InfrastructureContent() {
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
             <div>
-              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Resources</p>
-              <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredResources.length} of {totalResources ?? '—'} resources</p>
+              {isDemoActive
+                ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>19 resources (demo data)</p>
+                : (totalResources !== null && (totalResources as number) > 0)
+                  ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredResources.length} of {totalResources} resources</p>
+                  : <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>0 resources</p>
+              }
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -404,19 +502,19 @@ function InfrastructureContent() {
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading resources...</p>
           </div>
-        ) : filteredResources.length === 0 ? (
+        ) : !isDemoActive && filteredResources.length === 0 ? (
           <div style={{ padding: '64px', textAlign: 'center' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Server size={22} style={{ color: '#94A3B8' }} />
             </div>
-            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No resources found</p>
+            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No infrastructure data yet</p>
             <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px', lineHeight: 1.6 }}>
-              Sync your AWS account to automatically discover all infrastructure resources.
+              Connect your AWS account to uncover cost leaks, security risks, and performance issues in minutes.
             </p>
             <button
               onClick={handleSyncAWS}
               style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-              <RefreshCw size={14} /> Sync AWS Now
+              <RefreshCw size={14} /> Connect AWS &amp; Scan Infrastructure
             </button>
           </div>
         ) : (

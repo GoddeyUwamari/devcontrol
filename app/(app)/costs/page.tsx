@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid,
+  ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import {
   Search, Download, TrendingUp, TrendingDown,
@@ -16,6 +16,9 @@ import { optimizationService } from '@/lib/services/optimization.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { nlQueryService, NLQueryIntent, NLQueryResult, NLQueryResultData } from '@/lib/services/nl-query.service'
 import { demoModeService } from '@/lib/services/demo-mode.service'
+import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import Link from 'next/link'
 import { OptimizationRecommendation } from '@/types/optimization.types'
 
 const SERVICE_COLORS: Record<string, string> = {
@@ -45,19 +48,89 @@ const FALLBACK_SAVINGS = [
   { savings: 362 },
 ]
 
+// Demo spend chart data — fixed April story for the standalone demo chart
+const DEMO_SPEND_DATA: { date: string; actual?: number; forecast?: number }[] = [
+  { date: 'Apr 1',  actual: 218 },
+  { date: 'Apr 2',  actual: 215 },
+  { date: 'Apr 3',  actual: 220 },
+  { date: 'Apr 4',  actual: 217 },
+  { date: 'Apr 5',  actual: 214 },
+  { date: 'Apr 6',  actual: 216 },
+  { date: 'Apr 7',  actual: 213 },
+  { date: 'Apr 8',  actual: 185 },
+  { date: 'Apr 9',  actual: 187 },
+  { date: 'Apr 10', actual: 184 },
+  { date: 'Apr 11', actual: 186 },
+  { date: 'Apr 12', actual: 183 },
+  { date: 'Apr 13', actual: 188 },
+  { date: 'Apr 14', actual: 197 },
+  { date: 'Apr 15', actual: 193 },
+  { date: 'Apr 16', actual: 191 },
+  { date: 'Apr 17', actual: 194 },
+  { date: 'Apr 18', actual: 242 },
+  { date: 'Apr 19', actual: 210 },
+  { date: 'Apr 20', actual: 198 },
+  { date: 'Apr 21', actual: 192 },
+  { date: 'Apr 22', actual: 189 },
+  { date: 'Apr 23', actual: 191 },
+  { date: 'Apr 24', actual: 188 },
+  { date: 'Apr 25', actual: 186 },
+  { date: 'Apr 26', forecast: 188 },
+  { date: 'Apr 27', forecast: 185 },
+  { date: 'Apr 28', forecast: 183 },
+  { date: 'Apr 29', forecast: 187 },
+  { date: 'Apr 30', forecast: 184 },
+]
+
+// Demo chart data — fixed April story so event markers at Apr 8/14/18 are meaningful
+const DEMO_CHART_DATA: { date: string; actual: number | null; forecast: number | null }[] = [
+  { date: 'Apr 1',  actual: 215, forecast: null },
+  { date: 'Apr 2',  actual: 212, forecast: null },
+  { date: 'Apr 3',  actual: 218, forecast: null },
+  { date: 'Apr 4',  actual: 210, forecast: null },
+  { date: 'Apr 5',  actual: 216, forecast: null },
+  { date: 'Apr 6',  actual: 213, forecast: null },
+  { date: 'Apr 7',  actual: 220, forecast: null },
+  { date: 'Apr 8',  actual: 185, forecast: null },  // optimization applied — drop
+  { date: 'Apr 9',  actual: 187, forecast: null },
+  { date: 'Apr 10', actual: 188, forecast: null },
+  { date: 'Apr 11', actual: 186, forecast: null },
+  { date: 'Apr 12', actual: 190, forecast: null },
+  { date: 'Apr 13', actual: 188, forecast: null },
+  { date: 'Apr 14', actual: 195, forecast: null },  // EC2 idle detected — small uptick
+  { date: 'Apr 15', actual: 192, forecast: null },
+  { date: 'Apr 16', actual: 190, forecast: null },
+  { date: 'Apr 17', actual: 193, forecast: null },
+  { date: 'Apr 18', actual: 240, forecast: null },  // storage spike
+  { date: 'Apr 19', actual: 198, forecast: null },
+  { date: 'Apr 20', actual: 193, forecast: null },
+  { date: 'Apr 21', actual: 195, forecast: null },
+  { date: 'Apr 22', actual: 191, forecast: null },
+  { date: 'Apr 23', actual: 194, forecast: null },
+  { date: 'Apr 24', actual: 197, forecast: null },
+  { date: 'Apr 25', actual: 192, forecast: null },
+  { date: 'Apr 26', actual: null, forecast: 188 },  // forecast (dashed) begins
+  { date: 'Apr 27', actual: null, forecast: 190 },
+  { date: 'Apr 28', actual: null, forecast: 186 },
+  { date: 'Apr 29', actual: null, forecast: 192 },
+  { date: 'Apr 30', actual: null, forecast: 195 },
+]
+
 export default function CostsPage() {
   const [selectedRange, setSelectedRange] = useState('30D')
   const [nlQuery, setNlQuery] = useState('')
   const [nlResult, setNlResult] = useState<NLQueryResult | null>(null)
   const [nlLoading, setNlLoading] = useState(false)
   const [nlError, setNlError] = useState<string | null>(null)
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const demoMode = demoModeService.isEnabled()
-  const isDemoActive = demoMode
+  const demoMode = useDemoMode()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  const isDemoActive = demoMode || salesDemoMode
 
   const { data: forecast, isLoading: forecastLoading } = useQuery({
-    queryKey: ['forecast', '90d'],
+    queryKey: ['forecast', '90d', isDemoActive],
     queryFn: () => forecastService.getForecast('90d'),
     staleTime: 5 * 60 * 1000,
   })
@@ -91,7 +164,8 @@ export default function CostsPage() {
   }
 
   const selectedDays = DATE_RANGES.find(r => r.label === selectedRange)?.days ?? 30
-  const chartData = (() => {
+  const chartData = useMemo(() => {
+    if (isDemoActive) return DEMO_CHART_DATA
     if (!forecast) return []
 
     const historical = forecast.historicalData
@@ -115,7 +189,7 @@ export default function CostsPage() {
       }))
 
     return [...historical, ...predictions]
-  })()
+  }, [isDemoActive, forecast, selectedDays])
 
   const mtdSpend = forecast?.historicalTotal ?? 0
   const forecast90 = forecast?.predicted90Day ?? 0
@@ -181,6 +255,10 @@ export default function CostsPage() {
                 Demo Mode
               </span>
             )}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '10px', fontWeight: 500, background: '#F1F5F9', border: '0.5px solid #E5E7EB', borderRadius: '100px', padding: '3px 9px', color: '#475569' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
+              Synced 2 min ago
+            </span>
           </div>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Real-time AWS spend tracking, forecasting, and AI-powered savings recommendations
@@ -196,7 +274,158 @@ export default function CostsPage() {
         </div>
       </div>
 
-      {/* NL SEARCH BAR */}
+      {/* Cost Anomaly Detection Banner */}
+      {(isDemoActive || costAnomalyDetected) && (
+        <div style={{
+          background: '#FFFBEB',
+          border: '1px solid #FDE68A',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '14px',
+        }}>
+          {/* Pulsing dot */}
+          <div style={{ position: 'relative', flexShrink: 0, marginTop: '2px' }}>
+            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#D97706' }} />
+            <div style={{
+              position: 'absolute', inset: '-3px',
+              borderRadius: '50%',
+              border: '2px solid #D97706',
+              opacity: 0.4,
+              animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
+            }} />
+          </div>
+
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <p style={{ fontSize: '0.78rem', fontWeight: 700, color: '#92400E', margin: 0 }}>
+                Cost Anomaly Detected
+              </p>
+              <span style={{ fontSize: '0.68rem', fontWeight: 600, background: '#FEF3C7', color: '#B45309', padding: '1px 8px', borderRadius: '100px', border: '1px solid #FDE68A' }}>
+                AI Detected
+              </span>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: '#92400E', margin: '0 0 10px', lineHeight: 1.6 }}>
+              {isDemoActive
+                ? 'EC2 compute spending increased 35% in the last 24 hours. Possible cause: Lambda invocation spike on payment-processor triggering auto-scaling. Estimated impact: $864/month if sustained.'
+                : 'Unusual cost pattern detected in the last 24 hours. Review your recent deployments and scaling events.'
+              }
+            </p>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <a href="/anomalies" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#D97706', background: '#fff', border: '1px solid #FDE68A', padding: '5px 12px', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                Investigate <ArrowRight size={11} />
+              </a>
+              <a href="/cost-optimization" style={{ fontSize: '0.75rem', fontWeight: 600, color: '#92400E', padding: '5px 12px', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                View optimization recommendations →
+              </a>
+            </div>
+          </div>
+
+          {/* Cost impact callout */}
+          <div style={{ flexShrink: 0, textAlign: 'right', background: '#fff', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 14px' }}>
+            <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#B45309', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>Est. Impact</p>
+            <p style={{ fontSize: '1.1rem', fontWeight: 700, color: '#D97706', margin: 0, letterSpacing: '-0.02em' }}>+$864<span style={{ fontSize: '0.75rem', fontWeight: 500 }}>/mo</span></p>
+            <p style={{ fontSize: '0.68rem', color: '#B45309', margin: '2px 0 0' }}>if sustained</p>
+          </div>
+        </div>
+      )}
+
+      {/* 5 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
+        {([
+          {
+            cardKey: 'savings',
+            label: 'Identified Savings',
+            value: optimizationLoading ? '—' : `$${displaySavings.toLocaleString()}/mo`,
+            sub: `$${displayAnnual.toLocaleString()} annually · ${mtdSpend > 0 ? Math.round((displaySavings / mtdSpend) * 100) : 290}% of current spend`,
+            subColor: '#059669',
+            TrendIcon: TrendingDown,
+            trendColor: '#059669',
+            href: '/cost-optimization' as string | null,
+            cardBg: undefined as string | undefined,
+            cardBorder: undefined as string | undefined,
+            valueColor: undefined as string | undefined,
+          },
+          {
+            cardKey: 'mtd',
+            label: 'Month-to-Date Spend',
+            value: forecastLoading ? '—' : `$${mtdSpend.toLocaleString()}`,
+            sub: `${growthRate > 0 ? '+' : ''}${growthRate}% vs last period`,
+            subColor: growthRate > 10 ? '#DC2626' : growthRate > 5 ? '#D97706' : '#059669',
+            TrendIcon: growthRate > 0 ? TrendingUp : TrendingDown,
+            trendColor: growthRate > 5 ? '#D97706' : '#059669',
+            href: '/invoices' as string | null,
+            cardBg: undefined as string | undefined,
+            cardBorder: undefined as string | undefined,
+            valueColor: undefined as string | undefined,
+          },
+          {
+            cardKey: 'nextmonth',
+            label: 'Next Month Forecast',
+            value: forecastLoading && !isDemoActive ? '—' : `$${nextMonthForecast.toLocaleString()}`,
+            sub: `+9% projected · $${nextMonthBaseline.toLocaleString()} baseline`,
+            subColor: '#D97706',
+            TrendIcon: TrendingUp,
+            trendColor: '#D97706',
+            href: '/forecast' as string | null,
+            cardBg: undefined as string | undefined,
+            cardBorder: undefined as string | undefined,
+            valueColor: undefined as string | undefined,
+          },
+          {
+            cardKey: '90day',
+            label: '90-Day Forecast',
+            value: forecastLoading ? '—' : `$${forecast90.toLocaleString()}`,
+            sub: `${forecast?.confidence ?? 85}% confidence`,
+            subColor: '#475569',
+            TrendIcon: TrendingUp,
+            trendColor: '#D97706',
+            href: '/forecast' as string | null,
+            cardBg: undefined as string | undefined,
+            cardBorder: undefined as string | undefined,
+            valueColor: undefined as string | undefined,
+          },
+          {
+            cardKey: 'health',
+            label: 'System Health',
+            value: costAnomalyDetected && !isDemoActive ? '1 anomaly' : 'All clear',
+            sub: costAnomalyDetected && !isDemoActive ? 'Cost anomaly detected' : 'No anomalies · 3 policies active · Alerts on',
+            subColor: costAnomalyDetected && !isDemoActive ? '#DC2626' : '#639922',
+            TrendIcon: costAnomalyDetected && !isDemoActive ? TrendingDown : TrendingUp,
+            trendColor: costAnomalyDetected && !isDemoActive ? '#DC2626' : '#639922',
+            href: '/observability/alerts' as string | null,
+            cardBg: costAnomalyDetected && !isDemoActive ? '#FEF2F2' : '#EAF3DE',
+            cardBorder: costAnomalyDetected && !isDemoActive ? '#FCA5A5' : '#639922',
+            valueColor: costAnomalyDetected && !isDemoActive ? '#DC2626' : '#639922',
+          },
+        ]).map((card: any) => {
+          const { cardKey, label, value, sub, subColor, TrendIcon, trendColor, href, cardBg, cardBorder, valueColor } = card
+          const isHovered = hoveredCard === cardKey
+          const content = (
+            <div
+              key={label}
+              style={{ background: cardBg ?? '#fff', borderRadius: '14px', padding: '32px', border: isHovered ? '0.5px solid #7C3AED' : `0.5px solid ${cardBorder ?? '#e5e7eb'}`, transition: 'border-color 0.15s ease', cursor: 'pointer' }}
+              onMouseEnter={() => setHoveredCard(cardKey)}
+              onMouseLeave={() => setHoveredCard(null)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+                <span style={{ fontSize: 14, color: '#9ca3af', lineHeight: 1 }}>›</span>
+              </div>
+              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: valueColor ?? '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '10px' }}>{value}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <TrendIcon size={13} style={{ color: trendColor }} />
+                <span style={{ fontSize: '0.78rem', color: subColor, lineHeight: 1.6 }}>{sub}</span>
+              </div>
+            </div>
+          )
+          return <Link key={label} href={href} style={{ textDecoration: 'none' }}>{content}</Link>
+        })}
+      </div>
+
+      {/* NL SEARCH BAR / AI CO-PILOT */}
       <form onSubmit={handleNlQuery} style={{ marginBottom: '24px' }}>
         <div style={{ position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
@@ -227,6 +456,30 @@ export default function CostsPage() {
             {nlLoading ? 'Analyzing...' : 'Ask AI'}
           </button>
         </div>
+
+        {/* Quick-prompt chips */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+          {['Why is EC2 cost high?', 'What can I optimize today?', 'Show biggest waste', 'Compare vs last month'].map(chip => (
+            <button
+              key={chip}
+              type="button"
+              onClick={() => { setNlQuery(chip); if (inputRef.current) inputRef.current.focus() }}
+              style={{ fontSize: '11px', color: '#534AB7', background: '#EEEDFE', borderRadius: '100px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+
+        {/* AI insight preview — demo: static; real: replace with actual insight if available */}
+        {isDemoActive && !nlResult && (
+          <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F9FAFB', borderLeft: '2px solid #534AB7', borderRadius: '0 8px 8px 0', padding: '12px 16px', gap: '16px' }}>
+            <p style={{ fontSize: '0.8rem', color: '#475569', margin: 0, lineHeight: 1.5 }}>
+              <strong style={{ color: '#0F172A' }}>AI insight:</strong> Your EC2 instances are 38% underutilized. 3 instances running at &lt;5% CPU for 21+ days.
+            </p>
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#059669', flexShrink: 0 }}>$362/mo savings</span>
+          </div>
+        )}
 
         {nlResult && (
           <div style={{ marginTop: '12px', background: '#fff', border: '1px solid #DDD6FE', borderRadius: '12px', padding: '0', overflow: 'hidden' }}>
@@ -306,144 +559,6 @@ export default function CostsPage() {
         )}
       </form>
 
-      {/* Cost Anomaly Detection Banner */}
-      {(isDemoActive || costAnomalyDetected) && (
-        <div style={{
-          background: '#FFFBEB',
-          border: '1px solid #FDE68A',
-          borderRadius: '12px',
-          padding: '16px 20px',
-          marginBottom: '24px',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '14px',
-        }}>
-          {/* Pulsing dot */}
-          <div style={{ position: 'relative', flexShrink: 0, marginTop: '2px' }}>
-            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#D97706' }} />
-            <div style={{
-              position: 'absolute', inset: '-3px',
-              borderRadius: '50%',
-              border: '2px solid #D97706',
-              opacity: 0.4,
-              animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
-            }} />
-          </div>
-
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <p style={{ fontSize: '0.78rem', fontWeight: 700, color: '#92400E', margin: 0 }}>
-                Cost Anomaly Detected
-              </p>
-              <span style={{ fontSize: '0.68rem', fontWeight: 600, background: '#FEF3C7', color: '#B45309', padding: '1px 8px', borderRadius: '100px', border: '1px solid #FDE68A' }}>
-                AI Detected
-              </span>
-            </div>
-            <p style={{ fontSize: '0.82rem', color: '#92400E', margin: '0 0 10px', lineHeight: 1.6 }}>
-              {isDemoActive
-                ? 'EC2 compute spending increased 35% in the last 24 hours. Possible cause: Lambda invocation spike on payment-processor triggering auto-scaling. Estimated impact: $864/month if sustained.'
-                : 'Unusual cost pattern detected in the last 24 hours. Review your recent deployments and scaling events.'
-              }
-            </p>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <a href="/anomalies" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#D97706', background: '#fff', border: '1px solid #FDE68A', padding: '5px 12px', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                Investigate <ArrowRight size={11} />
-              </a>
-              <a href="/cost-optimization" style={{ fontSize: '0.75rem', fontWeight: 600, color: '#92400E', padding: '5px 12px', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                View optimization recommendations →
-              </a>
-            </div>
-          </div>
-
-          {/* Cost impact callout */}
-          <div style={{ flexShrink: 0, textAlign: 'right', background: '#fff', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 14px' }}>
-            <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#B45309', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>Est. Impact</p>
-            <p style={{ fontSize: '1.1rem', fontWeight: 700, color: '#D97706', margin: 0, letterSpacing: '-0.02em' }}>+$864<span style={{ fontSize: '0.75rem', fontWeight: 500 }}>/mo</span></p>
-            <p style={{ fontSize: '0.68rem', color: '#B45309', margin: '2px 0 0' }}>if sustained</p>
-          </div>
-        </div>
-      )}
-
-      {/* 5 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
-        {([
-          {
-            icon: DollarSign,
-            label: 'Month-to-Date Spend',
-            value: forecastLoading ? '—' : `$${mtdSpend.toLocaleString()}`,
-            sub: `${growthRate > 0 ? '+' : ''}${growthRate}% vs last period`,
-            subColor: growthRate > 10 ? '#DC2626' : growthRate > 5 ? '#D97706' : '#059669',
-            TrendIcon: growthRate > 0 ? TrendingUp : TrendingDown,
-            trendColor: growthRate > 5 ? '#D97706' : '#059669',
-            href: null as string | null,
-          },
-          {
-            icon: TrendingUp,
-            label: 'Next Month Forecast',
-            value: forecastLoading && !isDemoActive ? '—' : `$${nextMonthForecast.toLocaleString()}`,
-            sub: `+9% projected · $${nextMonthBaseline.toLocaleString()} baseline`,
-            subColor: '#D97706',
-            TrendIcon: TrendingUp,
-            trendColor: '#D97706',
-            href: '/forecast' as string | null,
-          },
-          {
-            icon: BarChart3,
-            label: '90-Day Forecast',
-            value: forecastLoading ? '—' : `$${forecast90.toLocaleString()}`,
-            sub: `${forecast?.confidence ?? 85}% confidence`,
-            subColor: '#475569',
-            TrendIcon: TrendingUp,
-            trendColor: '#D97706',
-            href: '/forecast' as string | null,
-          },
-          {
-            icon: Zap,
-            label: 'Identified Savings',
-            value: optimizationLoading ? '—' : `$${displaySavings.toLocaleString()}/mo`,
-            sub: `$${displayAnnual.toLocaleString()} annually`,
-            subColor: '#059669',
-            TrendIcon: TrendingDown,
-            trendColor: '#059669',
-            href: '/cost-optimization' as string | null,
-          },
-          {
-            icon: Target,
-            label: 'Efficiency Score',
-            value: forecastLoading ? '—' : `${efficiencyScore}%`,
-            sub: efficiencyScore >= 85 ? 'Optimal range' : 'Room to improve',
-            subColor: efficiencyScore >= 85 ? '#059669' : '#D97706',
-            TrendIcon: efficiencyScore >= 85 ? TrendingUp : TrendingDown,
-            trendColor: efficiencyScore >= 85 ? '#059669' : '#D97706',
-            href: null as string | null,
-          },
-        ] as const).map(({ icon: Icon, label, value, sub, subColor, TrendIcon, trendColor, href }) => {
-          const content = (
-            <div
-              key={label}
-              style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0', transition: 'all 0.15s', cursor: href ? 'pointer' : 'default' }}
-              onMouseEnter={e => { if (href) { e.currentTarget.style.borderColor = '#7C3AED'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(124,58,237,0.08)' } }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.boxShadow = 'none' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
-                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon size={15} style={{ color: '#64748B' }} />
-                </div>
-              </div>
-              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '10px' }}>{value}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <TrendIcon size={13} style={{ color: trendColor }} />
-                <span style={{ fontSize: '0.78rem', color: subColor, lineHeight: 1.6 }}>{sub}</span>
-              </div>
-            </div>
-          )
-          return href
-            ? <a key={label} href={href} style={{ textDecoration: 'none' }}>{content}</a>
-            : <div key={label}>{content}</div>
-        })}
-      </div>
-
       {/* SPEND TREND CHART — FIX 1: auto domain + smart tickFormatter */}
       <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', marginBottom: '28px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
@@ -507,77 +622,119 @@ export default function CostsPage() {
           ))}
         </div>
 
-        {forecastLoading ? (
-          <div style={{ height: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Loader2 size={20} style={{ color: '#94A3B8' }} />
+{isDemoActive ? (
+          /* Demo chart — pure static render, zero query dependencies */
+          <div style={{ overflow: 'visible' }}>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={DEMO_SPEND_DATA.slice(-Math.min(selectedDays, DEMO_SPEND_DATA.length))} margin={{ top: 28, right: 8, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="demoActualGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%"   stopColor="#0F172A" stopOpacity={0.12} />
+                    <stop offset="100%" stopColor="#0F172A" stopOpacity={0.01} />
+                  </linearGradient>
+                  <linearGradient id="demoForecastGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%"   stopColor="#7C3AED" stopOpacity={0.10} />
+                    <stop offset="100%" stopColor="#7C3AED" stopOpacity={0.01} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} stroke="#F1F5F9" strokeDasharray="0" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: '#64748B', fontFamily: 'Inter, system-ui' }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#64748B', fontFamily: 'Inter, system-ui' }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v}`}
+                  width={56}
+                  domain={[150, (dataMax: number) => Math.ceil(dataMax * 1.05)]}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: '#fff',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '10px',
+                    fontSize: '0.8rem',
+                    boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+                    padding: '10px 14px',
+                  }}
+                  labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }}
+                  formatter={(value: number | string | (number | string)[] | undefined, name: string | undefined) => {
+                    const display = typeof value === 'number' ? value.toLocaleString() : value != null ? String(value) : '—'
+                    return [`$${display}/mo`, name === 'actual' ? 'Actual Spend' : 'AI Forecast']
+                  }}
+                />
+                <Area type="monotone" dataKey="actual"   stroke="#0F172A" strokeWidth={2} fill="url(#demoActualGradient)"   dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
+                <Area type="monotone" dataKey="forecast" stroke="#7C3AED" strokeWidth={2} fill="url(#demoForecastGradient)" dot={false} connectNulls={false} strokeDasharray="6 3" activeDot={{ r: 4, fill: '#7C3AED', strokeWidth: 0 }} />
+                <ReferenceLine x="Apr 8"  stroke="#3B6D11" strokeDasharray="4 3" strokeWidth={1.5} ifOverflow="extendDomain" label={{ value: 'Apr 8 · Optimized', position: 'insideTopLeft' as const, fontSize: 9, fill: '#3B6D11' } as any} />
+                <ReferenceLine x="Apr 14" stroke="#EF9F27" strokeDasharray="4 3" strokeWidth={1.5} ifOverflow="extendDomain" label={{ value: 'Apr 14 · EC2 idle',  position: 'insideTopLeft' as const, fontSize: 9, fill: '#854F0B' } as any} />
+                <ReferenceLine x="Apr 18" stroke="#E24B4A" strokeDasharray="4 3" strokeWidth={1.5} ifOverflow="extendDomain" label={{ value: 'Apr 18 · Spike',      position: 'insideTopLeft' as const, fontSize: 9, fill: '#A32D2D' } as any} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id="actualGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#0F172A" stopOpacity={0.12} />
-                  <stop offset="100%" stopColor="#0F172A" stopOpacity={0.01} />
-                </linearGradient>
-                <linearGradient id="forecastGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#7C3AED" stopOpacity={0.10} />
-                  <stop offset="100%" stopColor="#7C3AED" stopOpacity={0.01} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} stroke="#F1F5F9" strokeDasharray="0" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 11, fill: '#64748B', fontFamily: 'Inter, system-ui' }}
-                axisLine={false}
-                tickLine={false}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#64748B', fontFamily: 'Inter, system-ui' }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v: number) => v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v}`}
-                width={56}
-                domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: '#fff',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '10px',
-                  fontSize: '0.8rem',
-                  boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
-                  padding: '10px 14px',
-                }}
-                labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }}
-                formatter={(value: number | string | (number | string)[] | undefined, name: string | undefined) => {
-                  const display = typeof value === 'number' ? value.toLocaleString() : value != null ? String(value) : '—'
-                  return [`$${display}/mo`, name === 'actual' ? 'Actual Spend' : 'AI Forecast']
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="actual"
-                stroke="#0F172A"
-                strokeWidth={2}
-                fill="url(#actualGradient)"
-                dot={false}
-                connectNulls={false}
-                activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }}
-              />
-              <Area
-                type="monotone"
-                dataKey="forecast"
-                stroke="#7C3AED"
-                strokeWidth={2}
-                fill="url(#forecastGradient)"
-                dot={false}
-                strokeDasharray="6 3"
-                connectNulls={false}
-                activeDot={{ r: 4, fill: '#7C3AED', strokeWidth: 0 }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          /* Real-data chart — unchanged */
+          <>
+            {forecastLoading ? (
+              <div style={{ height: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Loader2 size={20} style={{ color: '#94A3B8' }} />
+              </div>
+            ) : (
+              <div style={{ overflow: 'visible' }}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <AreaChart data={chartData} margin={{ top: 28, right: 8, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="actualGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%"   stopColor="#0F172A" stopOpacity={0.12} />
+                        <stop offset="100%" stopColor="#0F172A" stopOpacity={0.01} />
+                      </linearGradient>
+                      <linearGradient id="forecastGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%"   stopColor="#7C3AED" stopOpacity={0.10} />
+                        <stop offset="100%" stopColor="#7C3AED" stopOpacity={0.01} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} stroke="#F1F5F9" strokeDasharray="0" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 11, fill: '#64748B', fontFamily: 'Inter, system-ui' }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#64748B', fontFamily: 'Inter, system-ui' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v: number) => v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v}`}
+                      width={56}
+                      domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#fff',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '10px',
+                        fontSize: '0.8rem',
+                        boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+                        padding: '10px 14px',
+                      }}
+                      labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }}
+                      formatter={(value: number | string | (number | string)[] | undefined, name: string | undefined) => {
+                        const display = typeof value === 'number' ? value.toLocaleString() : value != null ? String(value) : '—'
+                        return [`$${display}/mo`, name === 'actual' ? 'Actual Spend' : 'AI Forecast']
+                      }}
+                    />
+                    <Area type="monotone" dataKey="actual"   stroke="#0F172A" strokeWidth={2} fill="url(#actualGradient)"   dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
+                    <Area type="monotone" dataKey="forecast" stroke="#7C3AED" strokeWidth={2} fill="url(#forecastGradient)" dot={false} connectNulls={false} strokeDasharray="6 3" activeDot={{ r: 4, fill: '#7C3AED', strokeWidth: 0 }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </>
         )}
 
         {/* Chart legend */}
@@ -622,23 +779,38 @@ export default function CostsPage() {
             </a>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {serviceBreakdown.map(({ name, amount, pct, trend, up }) => (
-              <div key={name}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: SERVICE_COLORS[name] ?? '#94A3B8', flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.82rem', color: '#1E293B', fontWeight: 500 }}>{name}</span>
+            {serviceBreakdown.map(({ name, amount, pct, trend, up }) => {
+              const totalServiceSpend = serviceBreakdown.reduce((sum, s) => sum + s.amount, 0)
+              const pctOfTotal = totalServiceSpend > 0 ? Math.round((amount / totalServiceSpend) * 100) : pct
+              const isCompute = name.startsWith('Compute')
+              const isDatabase = name.startsWith('Database')
+              const savingsFlag = isCompute
+                ? '⚠ $362 savings available · Underloaded EC2'
+                : isDatabase
+                ? '⚠ $1,335 savings via reserved pricing'
+                : null
+              return (
+                <div key={name}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: SERVICE_COLORS[name] ?? '#94A3B8', flexShrink: 0 }} />
+                      <span style={{ fontSize: '0.82rem', color: '#1E293B', fontWeight: 500 }}>{name}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 500 }}>{pctOfTotal}%</span>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 500, color: up ? '#D97706' : '#059669' }}>{trend}</span>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', minWidth: '72px', textAlign: 'right' }}>${amount.toLocaleString()}</span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 500, color: up ? '#D97706' : '#059669' }}>{trend}</span>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', minWidth: '72px', textAlign: 'right' }}>${amount.toLocaleString()}</span>
+                  <div style={{ height: '5px', background: '#F1F5F9', borderRadius: '100px' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: SERVICE_COLORS[name] ?? '#94A3B8', borderRadius: '100px', transition: 'width 0.6s ease' }} />
                   </div>
+                  {savingsFlag && (
+                    <p style={{ fontSize: '0.72rem', color: '#D97706', margin: '4px 0 0', fontWeight: 500 }}>{savingsFlag}</p>
+                  )}
                 </div>
-                <div style={{ height: '5px', background: '#F1F5F9', borderRadius: '100px' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: SERVICE_COLORS[name] ?? '#94A3B8', borderRadius: '100px', transition: 'width 0.6s ease' }} />
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
@@ -672,9 +844,12 @@ export default function CostsPage() {
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Total Identified</p>
               <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#059669', margin: 0, letterSpacing: '-0.02em' }}>${displaySavings.toLocaleString()}<span style={{ fontSize: '0.875rem', fontWeight: 500 }}>/mo</span></p>
             </div>
-            <a href="/cost-optimization" style={{ background: '#059669', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>
-              Approve All
-            </a>
+            <div style={{ textAlign: 'center' }}>
+              <a href="/cost-optimization" style={{ background: '#059669', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                Approve all — safe changes only
+              </a>
+              <p style={{ fontSize: '0.7rem', color: '#059669', margin: '4px 0 0', fontWeight: 500 }}>No downtime risk · Fully reversible</p>
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -715,9 +890,31 @@ export default function CostsPage() {
         </div>
       </div>
 
+      {/* DEVCONTROL VALUE DELIVERED */}
+      <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '0.5px solid #E5E7EB', marginBottom: '28px' }}>
+        <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#534AB7', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 20px' }}>DevControl value delivered</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px' }}>
+          {[
+            { label: 'Saved this year',        value: '$23,400' },
+            { label: 'Optimizations applied',  value: '27' },
+            { label: 'Efficiency score',        value: '100%', note: '↑ from 72%' },
+            { label: 'Anomalies caught',        value: '14' },
+            { label: 'Monthly ROI',             value: '47×' },
+            { label: 'Policies running',        value: '3' },
+            // TODO: wire to stats API in real mode
+          ].map(({ label, value, note }) => (
+            <div key={label} style={{ background: '#F9FAFB', borderRadius: '10px', padding: '16px', border: '0.5px solid #E5E7EB' }}>
+              <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 6px' }}>{label}</p>
+              <p style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</p>
+              {note && <p style={{ fontSize: '0.7rem', color: '#059669', margin: '4px 0 0', fontWeight: 500 }}>{note}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* AI COST NARRATIVE — FIX 2: stripMarkdown applied to each recommendation */}
       {forecast?.aiSummary && (
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '0.5px solid #E5E7EB', borderLeft: '3px solid #534AB7' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Sparkles size={16} style={{ color: '#fff' }} />
