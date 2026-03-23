@@ -1,8 +1,8 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   Server, Database, HardDrive, Zap, Globe, Network,
   RefreshCw, ArrowRight, Sparkles, Check, Plus, AlertTriangle,
@@ -15,8 +15,6 @@ import type { InfrastructureResource, ResourceType } from '@/lib/types'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 
-type ResourceFilter = 'all' | ResourceType
-
 const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
   ec2:        { icon: Server,    color: '#3B82F6', bg: '#EFF6FF' },
   lambda:     { icon: Zap,       color: '#D97706', bg: '#FFFBEB' },
@@ -28,24 +26,69 @@ const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string 
   default:    { icon: Server,    color: '#64748B', bg: '#F8FAFC' },
 }
 
-// FIX 1: All 15 resource type filter chips
-const RESOURCE_TYPE_FILTERS: { value: ResourceFilter; label: string }[] = [
-  { value: 'all',          label: 'All Types'    },
-  { value: 'ec2',          label: 'EC2'          },
-  { value: 'ecs',          label: 'ECS'          },
-  { value: 'lambda',       label: 'Lambda'       },
-  { value: 'rds',          label: 'RDS'          },
-  { value: 's3',           label: 'S3'           },
-  { value: 'eks',          label: 'EKS'          },
-  { value: 'dynamodb',     label: 'DynamoDB'     },
-  { value: 'cloudfront',   label: 'CloudFront'   },
-  { value: 'api-gateway',  label: 'API Gateway'  },
-  { value: 'elasticache',  label: 'ElastiCache'  },
-  { value: 'aurora',       label: 'Aurora'       },
-  { value: 'sqs',          label: 'SQS'          },
-  { value: 'sns',          label: 'SNS'          },
-  { value: 'elb',          label: 'Load Balancer'},
-  { value: 'vpc',          label: 'VPC'          },
+// Dropdown filter pills
+const DROPDOWN_PILLS: { key: string; label: string; items: { value: string | null; label: string }[] }[] = [
+  {
+    key: 'all', label: 'All',
+    items: [
+      { value: null,            label: 'All Resources' },
+      { value: 'ec2',           label: 'EC2'           },
+      { value: 'ecs',           label: 'ECS'           },
+      { value: 'lambda',        label: 'Lambda'        },
+      { value: 'eks',           label: 'EKS'           },
+      { value: 'rds',           label: 'RDS'           },
+      { value: 'aurora',        label: 'Aurora'        },
+      { value: 'dynamodb',      label: 'DynamoDB'      },
+      { value: 'elasticache',   label: 'ElastiCache'   },
+      { value: 's3',            label: 'S3'            },
+      { value: 'vpc',           label: 'VPC'           },
+      { value: 'load-balancer', label: 'Load Balancer' },
+      { value: 'cloudfront',    label: 'CloudFront'    },
+      { value: 'api-gateway',   label: 'API Gateway'   },
+      { value: 'sqs',           label: 'SQS'           },
+      { value: 'sns',           label: 'SNS'           },
+    ],
+  },
+  {
+    key: 'compute', label: 'Compute',
+    items: [
+      { value: 'ec2',    label: 'EC2'    },
+      { value: 'ecs',    label: 'ECS'    },
+      { value: 'lambda', label: 'Lambda' },
+      { value: 'eks',    label: 'EKS'    },
+    ],
+  },
+  {
+    key: 'database', label: 'Database',
+    items: [
+      { value: 'rds',         label: 'RDS'         },
+      { value: 'aurora',      label: 'Aurora'      },
+      { value: 'dynamodb',    label: 'DynamoDB'    },
+      { value: 'elasticache', label: 'ElastiCache' },
+    ],
+  },
+  {
+    key: 'storage', label: 'Storage',
+    items: [
+      { value: 's3', label: 'S3' },
+    ],
+  },
+  {
+    key: 'networking', label: 'Networking',
+    items: [
+      { value: 'vpc',           label: 'VPC'          },
+      { value: 'load-balancer', label: 'Load Balancer'},
+      { value: 'cloudfront',    label: 'CloudFront'   },
+      { value: 'api-gateway',   label: 'API Gateway'  },
+    ],
+  },
+  {
+    key: 'messaging', label: 'Messaging',
+    items: [
+      { value: 'sqs', label: 'SQS' },
+      { value: 'sns', label: 'SNS' },
+    ],
+  },
 ]
 
 const DEMO_RESOURCES: InfrastructureResource[] = [
@@ -68,42 +111,23 @@ export default function InfrastructurePage() {
 }
 
 function InfrastructureContent() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
 
-  // Initialize from URL params
-  const [resourceFilter, setResourceFilter] = useState<ResourceFilter>(
-    (searchParams.get('resourceType') as ResourceFilter) || 'all'
-  )
+  const [selectedType,  setSelectedType]  = useState<string | null>(null)
+  const [openDropdown,  setOpenDropdown]  = useState<string | null>(null)
 
-  // Sync URL params → state
+  // Close dropdown on outside click
   useEffect(() => {
-    const urlType = searchParams.get('resourceType') as ResourceFilter
-    if (urlType && urlType !== resourceFilter) {
-      setResourceFilter(urlType)
-    }
-  }, [searchParams])
+    const close = () => setOpenDropdown(null)
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
 
-  // Update URL when filter changes
-  const handleFilterChange = (filter: ResourceFilter) => {
-    setResourceFilter(filter)
-    const params = new URLSearchParams(searchParams.toString())
-    if (filter === 'all') {
-      params.delete('resourceType')
-    } else {
-      params.set('resourceType', filter)
-    }
-    const queryString = params.toString()
-    router.push(`/infrastructure${queryString ? `?${queryString}` : ''}`)
-  }
-
-  // FIX 1: Pass ?type= filter to the API call
   const { data: resources = [], isLoading, refetch } = useQuery({
-    queryKey: ['infrastructure', resourceFilter],
+    queryKey: ['infrastructure', selectedType],
     queryFn: async () => {
       const allResources = await infrastructureService.getAll(
-        resourceFilter !== 'all' ? { resourceType: resourceFilter } : undefined
+        selectedType ? { resourceType: selectedType as ResourceType } : undefined
       )
       return allResources.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
     },
@@ -126,6 +150,12 @@ function InfrastructureContent() {
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
+
+  const { data: recommendationStats, isLoading: savingsLoading } = useQuery({
+    queryKey: ['cost-recommendations-stats'],
+    queryFn: costRecommendationsService.getStats,
+    enabled: !isDemoActive,
+  })
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncComplete, setSyncComplete] = useState(false)
 
@@ -168,8 +198,8 @@ function InfrastructureContent() {
   const displayResources = isDemoActive ? DEMO_RESOURCES : resources
 
   const filteredResources = displayResources.filter((r: InfrastructureResource) => {
-    if (resourceFilter === 'all') return true
-    return r.resourceType === resourceFilter
+    if (!selectedType) return true
+    return r.resourceType === selectedType
   })
 
   // FIX 3: KPI stats — demo uses computed values, real mode uses API stats
@@ -186,6 +216,15 @@ function InfrastructureContent() {
   const warningCount    = isDemoActive ? demoWarning     : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
 
   const displayRecommendationsCount = isDemoActive ? 3 : recommendationsCount
+
+  const formatSavings = (val: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
+
+  const potentialSavingsValue = isDemoActive
+    ? '$500.83'
+    : savingsLoading
+      ? '—'
+      : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
 
   // Values shown in the AI insight banner still use displayResources for region counts
   const regionCount = new Set(displayResources.map((r: InfrastructureResource) => r.awsRegion)).size
@@ -250,7 +289,7 @@ function InfrastructureContent() {
               ? `${demoTotal} AWS resources tracked across ${regionCount} regions. Total infrastructure cost is $${Math.round(demoMonthlyCost).toLocaleString()}/mo. RDS payments instance is showing elevated connection wait times — review query performance and connection pool settings. ${displayRecommendationsCount} optimization opportunities identified.`
               : totalResources === 0
                 ? 'No resources found. Click "Sync AWS" to automatically discover all EC2, Lambda, RDS, and S3 resources from your connected AWS account.'
-                : `${totalResources ?? '—'} resources tracked with $${Math.round(totalMonthlyCost).toLocaleString()}/mo total cost. ${(warningCount ?? 0) > 0 ? `${warningCount} resource${warningCount !== 1 ? 's' : ''} need attention.` : 'All resources healthy.'} ${displayRecommendationsCount > 0 ? `${displayRecommendationsCount} optimization recommendations available.` : ''}`
+                : `${totalResources ?? '—'} resources tracked with $${Math.round(totalMonthlyCost).toLocaleString()}/mo total cost. ${(warningCount ?? 0) > 0 ? `${warningCount} resource${warningCount !== 1 ? 's' : ''} need${warningCount === 1 ? 's' : ''} attention.` : 'All resources healthy.'} ${displayRecommendationsCount > 0 ? `${displayRecommendationsCount} optimization recommendations available.` : ''}`
             }
           </p>
         </div>
@@ -261,13 +300,14 @@ function InfrastructureContent() {
         )}
       </div>
 
-      {/* 4 KPI CARDS — FIX 3 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      {/* 5 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
-          { label: 'Total Resources', value: statsLoading && !isDemoActive ? '—' : (totalResources ?? '—'),                                        sub: 'Across all regions',     valueColor: '#0F172A' },
-          { label: 'Monthly Cost',    value: `$${Math.round(totalMonthlyCost).toLocaleString()}`,                                                  sub: 'All resources combined', valueColor: '#0F172A' },
-          { label: 'Active',          value: statsLoading && !isDemoActive ? '—' : (activeCount ?? '—'),                                           sub: 'Running normally',       valueColor: '#059669' },
-          { label: 'Needs Attention', value: statsLoading && !isDemoActive ? '—' : (warningCount ?? '—'),                                          sub: 'Warning or stopped',     valueColor: (warningCount !== null && (warningCount as number) > 0) ? '#D97706' : '#059669' },
+          { label: 'Total Resources',    value: statsLoading && !isDemoActive ? '—' : (totalResources ?? '—'),                                      sub: 'Across all regions',     valueColor: '#0F172A' },
+          { label: 'Monthly Cost',       value: `$${Math.round(totalMonthlyCost).toLocaleString()}`,                                                sub: 'All resources combined', valueColor: '#0F172A' },
+          { label: 'Active',             value: statsLoading && !isDemoActive ? '—' : (activeCount ?? '—'),                                         sub: 'Running normally',       valueColor: '#059669' },
+          { label: 'Needs Attention',    value: statsLoading && !isDemoActive ? '—' : (warningCount ?? '—'),                                        sub: 'Warning or stopped',     valueColor: (warningCount !== null && (warningCount as number) > 0) ? '#D97706' : '#059669' },
+          { label: 'Potential Savings',  value: potentialSavingsValue,                                                                              sub: 'Identified savings',     valueColor: '#16A34A' },
         ].map(({ label, value, sub, valueColor }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
@@ -280,26 +320,74 @@ function InfrastructureContent() {
       {/* RESOURCE TABLE */}
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
 
-        {/* Table header + filter pills — FIX 1 */}
-        <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Resources</p>
-            <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredResources.length} of {totalResources ?? '—'} resources</p>
+        {/* Table header + dropdown filter pills */}
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+            <div>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Resources</p>
+              <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredResources.length} of {totalResources ?? '—'} resources</p>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {RESOURCE_TYPE_FILTERS.map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => handleFilterChange(value)}
-                style={{
-                  padding: '4px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600,
-                  border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-                  background: resourceFilter === value ? '#7C3AED' : '#F1F5F9',
-                  color: resourceFilter === value ? '#fff' : '#475569',
-                }}>
-                {label}
-              </button>
-            ))}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {DROPDOWN_PILLS.map((pill) => {
+              const isActive = pill.key === 'all'
+                ? selectedType === null
+                : pill.items.some(i => i.value === selectedType)
+              const isOpen = openDropdown === pill.key
+              return (
+                <div key={pill.key} style={{ position: 'relative' }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setOpenDropdown(isOpen ? null : pill.key)
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: '5px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600,
+                      border: isActive ? 'none' : '1px solid #E5E7EB',
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      background: isActive ? '#7C3AED' : '#fff',
+                      color: isActive ? '#fff' : '#374151',
+                    }}>
+                    {pill.label}
+                    <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>▼</span>
+                  </button>
+                  {isOpen && (
+                    <div
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{
+                        position: 'absolute', top: 'calc(100% + 6px)', left: 0,
+                        background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.10)', zIndex: 50,
+                        minWidth: '160px', overflow: 'hidden',
+                      }}>
+                      {pill.items.map((item) => {
+                        const isSel = item.value === null ? selectedType === null : item.value === selectedType
+                        return (
+                          <button
+                            key={item.value ?? '__all__'}
+                            onClick={() => {
+                              setSelectedType(item.value)
+                              setOpenDropdown(null)
+                            }}
+                            style={{
+                              display: 'block', width: '100%', textAlign: 'left',
+                              padding: '8px 16px', fontSize: '0.82rem', border: 'none',
+                              cursor: 'pointer', background: 'transparent',
+                              color: isSel ? '#7C3AED' : '#374151',
+                              fontWeight: isSel ? 600 : 400,
+                            }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#F9FAFB' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}>
+                            {item.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
 

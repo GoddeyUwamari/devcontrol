@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Shield, RefreshCw, Download, CheckCircle2, XCircle, MinusCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/auth-context';
+import { demoModeService } from '@/lib/services/demo-mode.service';
 import {
   complianceEngineService,
   ControlFramework,
@@ -279,9 +280,13 @@ export default function CompliancePage() {
       setSoc2Result(results.soc2);
       setHipaaResult(results.hipaa);
     } catch (err: any) {
-      // 402 = enterprise required — show locked state, not error
-      if (!err.message?.includes('402') && !err.message?.includes('Subscription')) {
-        setError(err.message);
+      // 402 = enterprise required, 404/Not Found = no data yet — show empty state, not error
+      const msg: string = err.message ?? '';
+      const isSuppressed =
+        msg.includes('402') || msg.includes('Subscription') ||
+        msg.includes('404') || msg.toLowerCase().includes('not found');
+      if (!isSuppressed) {
+        setError(msg);
       }
     } finally {
       setLoading(false);
@@ -343,6 +348,8 @@ export default function CompliancePage() {
   const combinedScore = totalControls > 0 ? Math.round((totalPassed / totalControls) * 100) : 0;
 
   const hasResults = soc2Result !== null || hipaaResult !== null;
+  const isDemoActive = demoModeService.isEnabled();
+  const displayError = isDemoActive ? null : error;
 
   return (
     <div style={{
@@ -401,12 +408,12 @@ export default function CompliancePage() {
       </div>
 
       {/* ── Error Banner ── */}
-      {error && (
+      {displayError && (
         <div style={{
           background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px',
           padding: '14px 20px', marginBottom: '24px',
         }}>
-          <p style={{ fontSize: '0.875rem', color: '#DC2626', margin: 0 }}>{error}</p>
+          <p style={{ fontSize: '0.875rem', color: '#DC2626', margin: 0 }}>{displayError}</p>
         </div>
       )}
 
@@ -418,7 +425,7 @@ export default function CompliancePage() {
         </div>
       )}
 
-      {!loading && !hasResults && !error && (
+      {!loading && !hasResults && !displayError && (
         <div style={{ marginBottom: '28px' }}>
           {/* Show enterprise gated state or empty state */}
           <div style={{

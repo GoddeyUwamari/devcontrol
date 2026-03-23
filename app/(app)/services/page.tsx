@@ -215,8 +215,8 @@ export default function ServicesPage() {
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
             Application Services
           </h1>
-          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Manage and monitor all services, deployments, and dependencies
+          <p style={{ fontSize: '0.876rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            Your AWS infrastructure · cost, health, and risks in one place
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -261,7 +261,7 @@ export default function ServicesPage() {
           { label: 'Total Services',  value: isLoading && !isDemoActive ? '…' : totalServices,          sub: 'Registered',         valueColor: '#0F172A' },
           { label: 'Healthy',         value: isLoading && !isDemoActive ? '…' : healthyCount,            sub: 'Operating normally',  valueColor: '#059669' },
           { label: 'Needs Attention', value: isLoading && !isDemoActive ? '…' : warningCount,            sub: 'Warning or critical', valueColor: warningCount > 0 ? '#D97706' : '#059669' },
-          { label: 'Avg Uptime',      value: isLoading && !isDemoActive ? '…' : avgUptimeDisplay,        sub: 'Across all services', valueColor: '#0F172A' },
+          { label: 'Est. Monthly Cost', value: isLoading && !isDemoActive ? '…' : (avgUptime != null ? avgUptimeDisplay : '$0'), sub: 'Infrastructure spend', valueColor: '#0F172A' },
         ].map(({ label, value, sub, valueColor }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0', opacity: isLoading && !isDemoActive ? 0.6 : 1, transition: 'opacity 0.2s' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
@@ -282,7 +282,7 @@ export default function ServicesPage() {
             {isDemoActive
               ? `${warningCount} service${warningCount !== 1 ? 's' : ''} need${warningCount === 1 ? 's' : ''} attention. payment-processor has a Lambda invocation spike (+178%) — this is likely driving the $864 cost increase detected this month. Recommend investigating retry logic.`
               : totalServices === 0
-                ? 'No services detected. Connect your AWS account and run Auto Discover to automatically find ECS, Lambda, EC2, and RDS services.'
+                ? 'Connect AWS to unlock real-time cost insights, security risks, and performance signals. Most teams uncover 20–40% wasted spend in their first scan.'
                 : warningCount > 0
                   ? `${healthyCount} of ${totalServices} services healthy. ${warningCount} service${warningCount > 1 ? 's' : ''} require${warningCount === 1 ? 's' : ''} attention — review the highlighted rows below.`
                   : `${totalServices} services running with ${avgUptimeDisplay} average uptime. No active issues detected.`
@@ -398,15 +398,15 @@ export default function ServicesPage() {
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Layers size={22} style={{ color: '#94A3B8' }} />
             </div>
-            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>Get started in 3 steps</p>
+            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>Connect AWS to See What&apos;s Costing You Money</p>
             <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 28px', lineHeight: 1.6 }}>
-              Connect your AWS account to start monitoring services automatically.
+              Secure read-only access — no changes made to your infrastructure.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', maxWidth: '600px', margin: '0 auto 28px', textAlign: 'left' }}>
               {[
-                { step: '1', title: 'Connect AWS',       desc: 'Link your AWS account with read-only IAM permissions',     color: '#7C3AED' },
-                { step: '2', title: 'Discover Services', desc: 'Auto-scan ECS, Lambda, EC2, and RDS resources',             color: '#059669' },
-                { step: '3', title: 'Monitor & Act',     desc: 'Track deployments, health, and costs in real time',         color: '#0EA5E9' },
+                { step: '1', title: 'Connect AWS',       desc: 'Secure read-only access — no changes made to your infrastructure',  color: '#7C3AED' },
+                { step: '2', title: 'Discover Services', desc: 'Automatically map your infrastructure, costs, and dependencies',        color: '#059669' },
+                { step: '3', title: 'Monitor & Act',     desc: 'Uncover cost waste, security gaps, and performance risks instantly',    color: '#0EA5E9' },
               ].map(({ step, title, desc, color }) => (
                 <div key={step} style={{ padding: '16px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #F1F5F9' }}>
                   <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
@@ -418,11 +418,17 @@ export default function ServicesPage() {
               ))}
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button onClick={handleAutoDiscover} style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                <Scan size={14} /> Auto Discover
-              </button>
+              {noAwsAccount ? (
+                <a href="/connect-aws" style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
+                  Connect AWS Account →
+                </a>
+              ) : (
+                <button onClick={handleAutoDiscover} style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <Scan size={14} /> Auto Discover
+                </button>
+              )}
               <a href="/services/new" style={{ background: '#fff', color: '#475569', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                <Plus size={14} /> Add Manually
+                + Add Manually
               </a>
             </div>
           </div>

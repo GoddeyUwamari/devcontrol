@@ -21,7 +21,11 @@ export function useComplianceFrameworks() {
       const data = await complianceFrameworksService.getFrameworks();
       setFrameworks(data);
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch frameworks');
+      // Check actual HTTP status, not just the message string
+      const status = err?.response?.status ?? err?.status ?? 0
+      if (status !== 404 && status !== 0) {
+        setError(err.message || 'Failed to fetch frameworks')
+      }
       console.error('Error fetching frameworks:', err);
     } finally {
       setLoading(false);
@@ -167,7 +171,10 @@ export function useComplianceScans(autoRefresh = false) {
       const data = await complianceFrameworksService.getScans(50);
       setScans(data);
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch scans');
+      const status = err?.response?.status ?? err?.status ?? 0
+      if (status !== 404 && status !== 0) {
+        setError(err.message || 'Failed to fetch scans')
+      }
       console.error('Error fetching scans:', err);
     } finally {
       setLoading(false);

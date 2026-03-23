@@ -82,7 +82,7 @@ export default function AnomaliesPage() {
 
   useEffect(() => {
     loadAnomalies();
-    const interval = setInterval(loadAnomalies, 30000);
+    const interval = setInterval(loadAnomalies, 300000);
     return () => clearInterval(interval);
   }, [loadAnomalies]);
 
@@ -189,7 +189,7 @@ export default function AnomaliesPage() {
             Anomaly Detection
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0, lineHeight: 1.6 }}>
-            AI-powered threat detection across your AWS infrastructure · Auto-refreshes every 30s
+            AI-powered threat detection across your AWS infrastructure · Auto-refreshes every 5 minutes
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>

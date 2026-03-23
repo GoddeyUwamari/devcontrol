@@ -326,26 +326,34 @@ export default function SecurityPage() {
         <div style={card}>
           <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 24px', letterSpacing: '-0.01em' }}>Security Checks</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {riskFactors.map(({ label, score: s, status }) => (
-              <div key={label}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '0.82rem', color: '#374151', fontWeight: 500 }}>{label}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0F172A' }}>{s}</span>
-                    <span style={{
-                      fontSize: '0.7rem', fontWeight: 600, padding: '2px 8px', borderRadius: '100px',
-                      background: status === 'Pass' ? '#F0FDF4' : '#FFFBEB',
-                      color: status === 'Pass' ? '#059669' : '#D97706',
-                    }}>
-                      {status}
-                    </span>
+            {riskFactors.map(({ label, score: s, status }) => {
+              const hasScore = s !== null && s !== undefined && s > 0
+              const displayScore = hasScore ? s : '—'
+              const displayStatus = hasScore ? status : 'Pending'
+              const statusBg = hasScore ? (status === 'Pass' ? '#F0FDF4' : '#FFFBEB') : '#F3F4F6'
+              const statusColor = hasScore ? (status === 'Pass' ? '#059669' : '#D97706') : '#9CA3AF'
+              const barColor = hasScore ? (status === 'Pass' ? '#059669' : '#D97706') : '#D1D5DB'
+              return (
+                <div key={label}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '0.82rem', color: '#374151', fontWeight: 500 }}>{label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0F172A' }}>{displayScore}</span>
+                      <span style={{
+                        fontSize: '0.7rem', fontWeight: 600, padding: '2px 8px', borderRadius: '100px',
+                        background: statusBg,
+                        color: statusColor,
+                      }}>
+                        {displayStatus}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ height: '4px', background: '#F1F5F9', borderRadius: '100px' }}>
+                    <div style={{ height: '100%', width: `${hasScore ? s : 0}%`, background: barColor, borderRadius: '100px', transition: 'width 0.6s ease' }} />
                   </div>
                 </div>
-                <div style={{ height: '4px', background: '#F1F5F9', borderRadius: '100px' }}>
-                  <div style={{ height: '100%', width: `${s}%`, background: status === 'Pass' ? '#059669' : '#D97706', borderRadius: '100px', transition: 'width 0.6s ease' }} />
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>
