@@ -21,11 +21,12 @@ export function HeroSection() {
       <div style={{ ...inner, width: '100%', textAlign: 'center', position: 'relative', zIndex: 1 }}>
 
         {/* Headline */}
-        <h1 className="font-extrabold leading-tight" style={{ fontSize: 'clamp(2.5rem, 6vw, 4.4rem)', marginBottom: '20px' }}>
-          <span style={{ color: '#7c3aed' }}>Your AWS Is Leaking Money.</span>
-          <br />
-          <span style={{ color: '#111827' }}>DevControl Shows You Exactly Where.</span>
-        </h1>
+       <h1 className="font-extrabold leading-tight" style={{ fontSize: 'clamp(2.5rem, 6vw, 4rem)', marginBottom: '20px' }}>
+  <span style={{ color: '#7c3aed' }}>Your AWS Is Leaking Money.</span>
+  <div style={{ marginTop: '-18px' }}>
+    <span style={{ color: '#111827', fontSize: 'clamp(2rem, 5vw, 2.6rem)' }}>DevControl Shows You Exactly Where.</span>
+  </div>
+</h1>
 
         {/* Subheadline */}
         <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
