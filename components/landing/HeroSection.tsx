@@ -24,12 +24,12 @@ export function HeroSection() {
         <h1 className="font-extrabold leading-tight" style={{ fontSize: 'clamp(2.5rem, 6vw, 4.4rem)', marginBottom: '20px' }}>
           <span style={{ color: '#7c3aed' }}>Your AWS Is Leaking Money.</span>
           <br />
-          <span style={{ color: '#111827' }}>We Show You Exactly Where.</span>
+          <span style={{ color: '#111827' }}>DevControl Shows You Exactly Where.</span>
         </h1>
 
         {/* Subheadline */}
         <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
-          Cut cloud costs, detect risks early, and fix bottlenecks — all from one AI-powered control layer.
+          Cut cloud costs, detect risks early, and eliminate infrastructure blind spots — from one AI-powered command center.
         </p>
 
         {/* Tagline */}
