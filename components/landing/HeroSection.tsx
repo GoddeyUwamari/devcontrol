@@ -22,14 +22,14 @@ export function HeroSection() {
 
         {/* Headline */}
         <h1 className="font-extrabold leading-tight" style={{ fontSize: 'clamp(2.5rem, 6vw, 4.4rem)', marginBottom: '20px' }}>
-          <span style={{ color: '#7c3aed' }}>Stop Firefighting</span>
+          <span style={{ color: '#7c3aed' }}>Your AWS Is Leaking Money.</span>
           <br />
-          <span style={{ color: '#111827' }}>Your AWS Infrastructure</span>
+          <span style={{ color: '#111827' }}>We Show You Exactly Where.</span>
         </h1>
 
         {/* Subheadline */}
         <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
-          Cut costs, fix security gaps, and track engineering performance — all from one AI-powered platform.
+          Cut cloud costs, detect risks early, and fix bottlenecks — all from one AI-powered control layer.
         </p>
 
         {/* Tagline */}
@@ -49,8 +49,11 @@ export function HeroSection() {
 
         {/* ROI line */}
         <p style={{ fontSize: '1rem', color: '#374151', marginBottom: '36px' }}>
-          Teams save <strong style={{ color: '#059669' }}>$2,400/month on average.</strong>{' '}
-          First insight in <strong style={{ color: '#059669' }}>15 minutes.</strong>
+          <strong style={{ color: '#059669' }}>$2,400/month avg savings</strong>
+          {' · '}
+          First insight in <strong style={{ color: '#059669' }}>15 min</strong>
+          {' · '}
+          Read-only, zero risk to your infra
         </p>
 
         {/* CTA Buttons */}
@@ -82,7 +85,7 @@ export function HeroSection() {
               e.currentTarget.style.transform = 'translateY(0)'
             }}
           >
-            See My AWS Costs Free
+            Scan My AWS for Waste
             <ArrowRight size={18} />
           </a>
 
@@ -126,7 +129,7 @@ export function HeroSection() {
           marginBottom: '0',
         }}>
           <span>🔐 AES-256 Encrypted</span>
-          <span>🏅 ISO 27001 Certified</span>
+          <span>🏅 SOC 2 Ready</span>
           <span>☁️ AWS Cloud Partner</span>
           <span>🇪🇺 GDPR Friendly</span>
         </div>
