@@ -134,6 +134,30 @@ export class AnomalyController {
   };
 
   /**
+   * GET /api/anomalies/last-scan
+   * Return the timestamp of the most recently updated anomaly for this org
+   */
+  getLastScan = async (req: Request, res: Response) => {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+
+      if (!organizationId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const lastScan = await this.repository.getLastScan(organizationId);
+
+      res.json({
+        success: true,
+        lastScan,
+      });
+    } catch (error: any) {
+      console.error('[Anomaly Controller] Get last scan error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  /**
    * GET /api/anomalies/stats
    * Get anomaly statistics
    */

@@ -1,18 +1,96 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { optimizationService } from '@/lib/services/optimization.service';
 import {
   OptimizationRecommendation,
   OptimizationSummary,
 } from '@/types/optimization.types';
-import { RefreshCw, Zap, Wrench, DollarSign, Server, ShieldCheck, Tag } from 'lucide-react';
+import { RefreshCw, Zap, Wrench, DollarSign, Server, ShieldCheck, Tag, CheckCircle, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { remediationService } from '@/lib/services/remediation.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+
+// ── New AI cost optimization API helpers ──────────────────────────────────────
+const COST_OPT_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization`;
+
+function getAuthHeaders(): HeadersInit {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('accessToken');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+async function startAIScan(): Promise<string> {
+  const res = await fetch(`${COST_OPT_BASE}/scan`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to start scan');
+  const data = await res.json();
+  return data.scanId as string;
+}
+
+async function pollScanStatus(scanId: string): Promise<{ status: string; opportunityCount: number | null; totalSavings: number | null }> {
+  const res = await fetch(`${COST_OPT_BASE}/status/${scanId}`, {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to poll scan status');
+  const data = await res.json();
+  return {
+    status: data.scan?.status ?? 'running',
+    opportunityCount: data.scan?.opportunityCount ?? null,
+    totalSavings: data.scan?.totalSavings ?? null,
+  };
+}
+
+async function loadAIResults(): Promise<any[]> {
+  const res = await fetch(`${COST_OPT_BASE}/results`, {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.results ?? [];
+}
+
+function mapAIResultToRec(r: any): any {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description || '',
+    type: 'rightsizing',
+    service: r.resourceType || 'AWS',
+    resource: r.resourceId || '',
+    region: 'us-east-1',
+    monthlySavings: parseFloat(r.monthlySavings) || 0,
+    annualSavings: parseFloat(r.annualSavings) || 0,
+    risk: r.riskLevel === 'Low' ? 'safe' : r.riskLevel === 'Medium' ? 'caution' : 'high',
+    effort: 'low',
+    estimatedTime: '~2 minutes',
+    downtime: r.riskLevel === 'Low' ? 'Zero downtime' : 'Brief restart',
+    status: r.status ?? 'pending',
+    confidence: 90,
+    impactLabel: r.impactLabel,
+  };
+}
+
+// ── Scan progress stepper ─────────────────────────────────────────────────────
+const SCAN_STEPS = [
+  'Connecting to AWS',
+  'Discovering resources',
+  'Analyzing costs',
+  'Generating recommendations',
+] as const;
+
+type ScanState = 'idle' | 'scanning' | 'complete';
 
 export default function CostOptimizationPage() {
   const router = useRouter();
@@ -27,6 +105,102 @@ export default function CostOptimizationPage() {
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [approvingAll, setApprovingAll] = useState(false);
   const [loadError, setLoadError] = useState<any>(null);
+  const [actionInProgress, setActionInProgress] = useState<Set<string>>(new Set());
+  const [demoStatusOverrides, setDemoStatusOverrides] = useState<Record<string, string>>({});
+  const [showAll, setShowAll] = useState(false);
+
+  // ── AI scan state ────────────────────────────────────────────────────────────
+  const [scanState, setScanState] = useState<ScanState>('idle');
+  const [scanStep, setScanStep] = useState(0);
+  const [scanId, setScanId] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (stepRef.current) { clearInterval(stepRef.current); stepRef.current = null; }
+  };
+
+  // Advance visual stepper independently of poll
+  const startStepperAnimation = () => {
+    setScanStep(0);
+    let step = 0;
+    const delays = [800, 2200, 4000]; // ms between steps
+    stepRef.current = setInterval(() => {
+      step++;
+      if (step < SCAN_STEPS.length - 1) {
+        setScanStep(step);
+      } else {
+        if (stepRef.current) clearInterval(stepRef.current);
+      }
+    }, delays[step] ?? 2000);
+  };
+
+  const handleAIScan = async () => {
+    setScanState('scanning');
+    setScanStep(0);
+    startStepperAnimation();
+
+    let id: string;
+    try {
+      id = await startAIScan();
+      setScanId(id);
+    } catch (err: any) {
+      stopPolling();
+      setScanState('idle');
+      toast.error(err.message || 'Failed to start scan');
+      return;
+    }
+
+    // Poll every 3 seconds
+    pollRef.current = setInterval(async () => {
+      try {
+        const { status, opportunityCount, totalSavings } = await pollScanStatus(id);
+
+        if (status === 'complete') {
+          stopPolling();
+          setScanStep(SCAN_STEPS.length - 1);
+
+          // Brief pause so user sees the final step, then transition
+          setTimeout(async () => {
+            const raw = await loadAIResults();
+            if (raw.length > 0) {
+              const mapped = raw.map(mapAIResultToRec);
+              setRecommendations(mapped as any);
+              setSummary({
+                totalRecommendations: mapped.length,
+                totalMonthlySavings: mapped.reduce((s: number, r: any) => s + r.monthlySavings, 0),
+                totalAnnualSavings: mapped.reduce((s: number, r: any) => s + r.annualSavings, 0),
+              } as any);
+            }
+            setScanState('complete');
+            if (opportunityCount !== null) {
+              toast.success(
+                `Scan complete — ${opportunityCount} opportunit${opportunityCount !== 1 ? 'ies' : 'y'} found${totalSavings ? `, $${Number(totalSavings).toLocaleString()}/mo in savings` : ''}`,
+                { duration: 6000 }
+              );
+            }
+          }, 900);
+        } else if (status === 'failed') {
+          stopPolling();
+          setScanState('idle');
+          toast.error('Scan failed. Please try again.');
+        }
+      } catch {
+        // silently ignore transient poll errors
+      }
+    }, 3000);
+  };
+
+  useEffect(() => {
+    return () => stopPolling();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowRiskModal(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     loadRecommendations();
@@ -84,7 +258,7 @@ export default function CostOptimizationPage() {
   const demoMode = isDemoActive; // backward compat for modal
   const httpStatus: number | undefined = (loadError as any)?.response?.status;
   const isConnected: boolean = isDemoActive ? true : httpStatus !== 401 && httpStatus !== 403;
-  const hasScanData: boolean = recommendations?.length > 0 || isDemoActive;
+  const hasScanData: boolean = recommendations?.length > 0 || isDemoActive || scanState === 'complete';
 
   const DEMO_RECOMMENDATIONS = [
     {
@@ -152,33 +326,117 @@ export default function CostOptimizationPage() {
     },
   ];
 
-  const displayRecs = isDemoActive ? DEMO_RECOMMENDATIONS : (recommendations || []);
+  const displayRecs = isDemoActive
+    ? DEMO_RECOMMENDATIONS.map((r: any) => ({ ...r, status: demoStatusOverrides[r.id] ?? r.status }))
+    : (recommendations || []);
+
+  // Client-side filter so rows disappear immediately after approve/dismiss
+  // without waiting for a server round-trip
+  const filteredDisplayRecs = filter === ''
+    ? displayRecs
+    : displayRecs.filter((r: any) => {
+        if (filter === 'pending')  return r.status === 'pending';
+        if (filter === 'approved' || filter === 'applied') return r.status === 'applied' || r.status === 'approved';
+        return true;
+      });
+
   const totalOpportunities = isDemoActive ? 7 : (summary?.totalRecommendations ?? 0);
   const monthlySavings = isDemoActive ? 1697 : (summary?.totalMonthlySavings ?? 0);
   const annualSavings = isDemoActive ? 20364 : (summary?.totalAnnualSavings ?? 0);
   const zeroRiskCount = isDemoActive ? 4 : displayRecs.filter((r: any) => r.risk === 'safe').length;
 
+  // ── AI-powered approve / ignore ───────────────────────────────────────────────
+  const aiApprove = async (id: string) => {
+    if (actionInProgress.has(id)) return;
+    if (isDemoActive) {
+      setDemoStatusOverrides(prev => ({ ...prev, [id]: 'applied' }));
+      toast.success('Recommendation approved');
+      return;
+    }
+    setActionInProgress(prev => new Set([...prev, id]));
+    try {
+      const res = await fetch(`${COST_OPT_BASE}/apply/${id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to approve');
+      setRecommendations(prev => prev.map((r: any) => r.id === id ? { ...r, status: 'applied' } : r) as any);
+      toast.success('Recommendation approved');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to approve');
+    } finally {
+      setActionInProgress(prev => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  };
+
+  const aiIgnore = async (id: string) => {
+    if (actionInProgress.has(id)) return;
+    if (isDemoActive) {
+      setDemoStatusOverrides(prev => ({ ...prev, [id]: 'ignored' }));
+      toast.success('Recommendation dismissed');
+      return;
+    }
+    setActionInProgress(prev => new Set([...prev, id]));
+    try {
+      const res = await fetch(`${COST_OPT_BASE}/ignore/${id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to dismiss');
+      setRecommendations(prev => prev.map((r: any) => r.id === id ? { ...r, status: 'ignored' } : r) as any);
+      toast.success('Recommendation dismissed');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to dismiss');
+    } finally {
+      setActionInProgress(prev => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  };
+
   const handleApproveAllClick = () => setShowRiskModal(true);
 
   const handleConfirmApproveAll = async () => {
+    const pendingLowRisk = displayRecs.filter((r: any) => r.status === 'pending' && r.risk === 'safe');
+    if (pendingLowRisk.length === 0) { setShowRiskModal(false); return; }
+
     setApprovingAll(true);
     try {
+      if (isDemoActive) {
+        const overrides: Record<string, string> = {};
+        pendingLowRisk.forEach((r: any) => { overrides[r.id] = 'applied'; });
+        setDemoStatusOverrides(prev => ({ ...prev, ...overrides }));
+      } else {
+        await Promise.all(
+          pendingLowRisk.map((r: any) =>
+            fetch(`${COST_OPT_BASE}/apply/${r.id}`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: getAuthHeaders(),
+            })
+          )
+        );
+        const approvedIds = new Set(pendingLowRisk.map((r: any) => r.id));
+        setRecommendations(prev =>
+          prev.map((r: any) => approvedIds.has(r.id) ? { ...r, status: 'applied' } : r) as any
+        );
+      }
       setShowRiskModal(false);
-    } catch (e) {
-      console.error(e);
+      toast.success(`${pendingLowRisk.length} change${pendingLowRisk.length !== 1 ? 's' : ''} approved`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to approve all');
     } finally {
       setApprovingAll(false);
     }
   };
 
   const handleRunScan = () => runScan();
-  const handleApprove = (id: string) => updateStatus(id, 'approved');
-  const handleDismiss = (id: string) => updateStatus(id, 'dismissed');
+  const handleApprove = (id: string) => aiApprove(id);
+  const handleDismiss = (id: string) => aiIgnore(id);
 
   const handleCreateWorkflow = async (rec: any) => {
     setCreatingWorkflowFor(rec.id);
     try {
-      // Map recommendation type to action type
       const actionTypeMap: Record<string, string> = {
         rightsizing:          'rightsize_instance',
         idle_resource:        'stop_instance',
@@ -215,18 +473,37 @@ export default function CostOptimizationPage() {
 
       {/* RISK ASSESSMENT MODAL */}
       {showRiskModal && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1000, padding: '24px',
-        }}>
-          <div style={{
-            background: '#fff', borderRadius: '20px', padding: '40px',
-            maxWidth: '560px', width: '100%',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.15)',
+        <div
+          onClick={() => setShowRiskModal(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: '24px',
           }}>
-            {/* Modal header */}
-            <div style={{ marginBottom: '28px' }}>
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: '20px',
+              maxWidth: '560px', width: '100%',
+              maxHeight: '80vh',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.15)',
+              position: 'relative',
+              display: 'flex', flexDirection: 'column',
+            }}>
+
+            {/* ── Fixed header ─────────────────────────────────────────── */}
+            <div style={{ padding: '32px 40px 20px', flexShrink: 0 }}>
+              {/* X close button */}
+              <button
+                onClick={() => setShowRiskModal(false)}
+                style={{
+                  position: 'absolute', top: '16px', right: '16px',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#94A3B8', padding: '4px', borderRadius: '4px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                <X size={18} />
+              </button>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', margin: '0 0 8px', letterSpacing: '-0.02em' }}>
                 Review Changes Before Approving
               </h2>
@@ -235,62 +512,66 @@ export default function CostOptimizationPage() {
               </p>
             </div>
 
-            {/* Change list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '28px' }}>
-              {(demoMode ? DEMO_RECOMMENDATIONS : displayRecs.filter((r: any) => r.status === 'pending')).map((rec: any) => (
-                <div key={rec.id} style={{
-                  padding: '14px 16px',
-                  borderRadius: '10px',
-                  background: rec.risk === 'safe' ? '#F0FDF4' : '#FFFBEB',
-                  border: `1px solid ${rec.risk === 'safe' ? '#BBF7D0' : '#FDE68A'}`,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '14px' }}>{rec.risk === 'safe' ? '✅' : '⚠️'}</span>
-                      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{rec.title}</span>
+            {/* ── Scrollable change list ────────────────────────────────── */}
+            <div style={{ overflowY: 'auto', padding: '4px 40px 20px', flex: 1 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {(demoMode ? DEMO_RECOMMENDATIONS : displayRecs.filter((r: any) => r.status === 'pending')).map((rec: any) => (
+                  <div key={rec.id} style={{
+                    padding: '14px 16px',
+                    borderRadius: '10px',
+                    background: rec.risk === 'safe' ? '#F0FDF4' : '#FFFBEB',
+                    border: `1px solid ${rec.risk === 'safe' ? '#BBF7D0' : '#FDE68A'}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '14px' }}>{rec.risk === 'safe' ? '✅' : '⚠️'}</span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{rec.title}</span>
+                      </div>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#059669', flexShrink: 0 }}>
+                        ${rec.monthlySavings.toLocaleString()}/mo
+                      </span>
                     </div>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#059669', flexShrink: 0 }}>
-                      ${rec.monthlySavings.toLocaleString()}/mo
-                    </span>
+                    <div style={{ display: 'flex', gap: '16px', paddingLeft: '22px' }}>
+                      <span style={{ fontSize: '0.75rem', color: rec.risk === 'safe' ? '#059669' : '#D97706', fontWeight: 500 }}>
+                        {rec.downtime}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748B' }}>·</span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748B' }}>{rec.estimatedTime}</span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748B' }}>·</span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748B', fontFamily: 'monospace' }}>{rec.resource?.split(',')[0]}{rec.resource?.includes(',') ? '...' : ''}</span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '16px', paddingLeft: '22px' }}>
-                    <span style={{ fontSize: '0.75rem', color: rec.risk === 'safe' ? '#059669' : '#D97706', fontWeight: 500 }}>
-                      {rec.downtime}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: '#64748B' }}>·</span>
-                    <span style={{ fontSize: '0.75rem', color: '#64748B' }}>{rec.estimatedTime}</span>
-                    <span style={{ fontSize: '0.75rem', color: '#64748B' }}>·</span>
-                    <span style={{ fontSize: '0.75rem', color: '#64748B', fontFamily: 'monospace' }}>{rec.resource?.split(',')[0]}{rec.resource?.includes(',') ? '...' : ''}</span>
-                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Fixed footer ─────────────────────────────────────────── */}
+            <div style={{ padding: '16px 40px 32px', flexShrink: 0, borderTop: '1px solid #F1F5F9' }}>
+              {/* Risk summary */}
+              <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Overall Risk</p>
+                  <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#D97706', margin: 0 }}>Low · 3 zero-risk, 1 requires brief restart</p>
                 </div>
-              ))}
-            </div>
-
-            {/* Overall risk summary */}
-            <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px 16px', marginBottom: '28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Overall Risk</p>
-                <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#D97706', margin: 0 }}>Low · 3 zero-risk, 1 requires brief restart</p>
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Annual Impact</p>
+                  <p style={{ fontSize: '0.875rem', fontWeight: 700, color: '#059669', margin: 0 }}>${annualSavings.toLocaleString()}</p>
+                </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Annual Impact</p>
-                <p style={{ fontSize: '0.875rem', fontWeight: 700, color: '#059669', margin: 0 }}>${annualSavings.toLocaleString()}</p>
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setShowRiskModal(false)}
+                  style={{ flex: 1, padding: '12px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, color: '#475569', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmApproveAll}
+                  disabled={approvingAll}
+                  style={{ flex: 2, padding: '12px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, color: '#fff', background: approvingAll ? '#A78BFA' : '#7C3AED', border: 'none', cursor: approvingAll ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  {approvingAll ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Approving...</> : 'Approve All Changes →'}
+                </button>
               </div>
-            </div>
-
-            {/* Modal actions */}
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => setShowRiskModal(false)}
-                style={{ flex: 1, padding: '12px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, color: '#475569', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmApproveAll}
-                disabled={approvingAll}
-                style={{ flex: 2, padding: '12px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, color: '#fff', background: approvingAll ? '#A78BFA' : '#7C3AED', border: 'none', cursor: approvingAll ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                {approvingAll ? <><RefreshCw size={14} /> Applying...</> : 'Approve All Changes →'}
-              </button>
             </div>
           </div>
         </div>
@@ -359,60 +640,173 @@ export default function CostOptimizationPage() {
       ) : !hasScanData ? (
         /* ── STATE 2: CONNECTED, NO SCAN YET ────────────────────────── */
         <>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '24px', marginBottom: '32px' }}>
             <div>
-              <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-                Cost Optimization
+              <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 8px', letterSpacing: '-0.02em' }}>
+                Reduce Your AWS Spend with AI-Driven Optimization
               </h1>
-              <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-                AI-powered savings recommendations for your AWS infrastructure
+              <p style={{ fontSize: '0.9375rem', color: '#475569', margin: 0, lineHeight: 1.6, maxWidth: '640px' }}>
+                Identify wasted resources, right-size infrastructure, and unlock immediate cost savings.
               </p>
             </div>
-            <button onClick={handleRunScan} style={{ background: '#534AB7', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
-              Run your first scan →
+            <button
+              onClick={handleAIScan}
+              disabled={scanState === 'scanning'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '8px', flexShrink: 0,
+                background: scanState === 'scanning' ? '#6D64C8' : '#534AB7',
+                color: '#fff', fontSize: '14px', fontWeight: 600,
+                padding: '11px 22px', borderRadius: '8px', border: 'none',
+                cursor: scanState === 'scanning' ? 'not-allowed' : 'pointer',
+                transition: 'background 0.15s',
+              }}>
+              {scanState === 'scanning'
+                ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Scanning...</>
+                : 'Run Cost Optimization Scan →'}
             </button>
           </div>
 
+          {/* KPI Cards — outcome-driven placeholders */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
-            <div style={{ background: '#fff', borderRadius: '0 12px 12px 0', padding: '32px', border: '1px solid #E2E8F0', borderLeft: '2px solid #534AB7' }}>
-              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Monthly Savings</p>
-              <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#9ca3af', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>—</div>
-              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>Run a scan to unlock</p>
+            <div style={{ background: '#fff', borderRadius: '0 12px 12px 0', padding: '28px 32px', border: '1px solid #E2E8F0', borderLeft: '2px solid #534AB7' }}>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>Monthly Savings</p>
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', lineHeight: 1.3, marginBottom: '6px' }}>Unlock potential savings</div>
+              <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>Run scan to estimate</p>
             </div>
             {([
-              { label: 'Annual Projection',   sub: 'If all applied' },
-              { label: 'Total Opportunities', sub: 'Pending first scan' },
-              { label: 'Zero-Risk Changes',   sub: 'Safe to apply now' },
-            ] as const).map(({ label, sub }) => (
-              <div key={label} style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0' }}>
-                <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
-                <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#9ca3af', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>—</div>
-                <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>{sub}</p>
+              { label: 'Annual Projection',   heading: 'Estimate yearly impact',        sub: 'Based on usage patterns' },
+              { label: 'Total Opportunities', heading: 'Discover optimization actions', sub: 'Across all services' },
+              { label: 'Zero-Risk Changes',   heading: 'Safe optimizations available',  sub: 'No downtime required' },
+            ] as const).map(({ label, heading, sub }) => (
+              <div key={label} style={{ background: '#fff', borderRadius: '12px', padding: '28px 32px', border: '1px solid #E2E8F0' }}>
+                <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>{label}</p>
+                <div style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', lineHeight: 1.3, marginBottom: '6px' }}>{heading}</div>
+                <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{sub}</p>
               </div>
             ))}
           </div>
 
-          <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '32px' }}>
-            <div>
-              <p style={{ fontSize: '16px', fontWeight: 500, color: '#0F172A', margin: '0 0 6px' }}>Your AWS account is connected</p>
-              <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, margin: '0 0 16px', maxWidth: '420px' }}>
-                Run your first scan to discover savings opportunities across all your AWS resources. Most teams find savings within the first 2 minutes.
-              </p>
-              <button onClick={handleRunScan} style={{ background: '#534AB7', color: '#fff', fontSize: '13px', fontWeight: 600, padding: '10px 20px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>
-                Run your first scan →
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: '16px', flexShrink: 0 }}>
-              {([
-                { value: '20–40%', label: 'Avg savings found' },
-                { value: '<2 min', label: 'First insights' },
-                { value: 'Zero',  label: 'Risk to infra' },
-              ] as const).map(({ value, label }) => (
-                <div key={label} style={{ background: '#F8FAFC', borderRadius: '8px', padding: '10px 16px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '18px', fontWeight: 500, color: '#0F172A', margin: '0 0 2px' }}>{value}</p>
-                  <p style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{label}</p>
+          {/* AWS Connected banner + what we scan for */}
+          <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '16px', overflow: 'hidden', marginBottom: '20px' }}>
+
+            {/* Top: connected + CTA */}
+            <div style={{ padding: '36px 40px', borderBottom: '1px solid #F1F5F9' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '32px' }}>
+                <div style={{ flex: 1 }}>
+                  {/* Connected indicator */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#16A34A' }}>AWS account connected</span>
+                  </div>
+
+                  {/* Urgency line */}
+                  <p style={{ fontSize: '14px', color: '#64748B', margin: '0 0 24px', lineHeight: 1.6 }}>
+                    Most AWS accounts have <strong style={{ color: '#0F172A' }}>20–40% in unused or overprovisioned resources.</strong>
+                  </p>
+
+                  {/* CTA button */}
+                  <button
+                    onClick={handleAIScan}
+                    disabled={scanState === 'scanning'}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '8px',
+                      background: scanState === 'scanning' ? '#6D64C8' : '#534AB7',
+                      color: '#fff', fontSize: '14px', fontWeight: 600,
+                      padding: '12px 24px', borderRadius: '8px', border: 'none',
+                      cursor: scanState === 'scanning' ? 'not-allowed' : 'pointer',
+                      transition: 'background 0.15s',
+                    }}>
+                    {scanState === 'scanning' ? (
+                      <>
+                        <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />
+                        Scanning your infrastructure...
+                      </>
+                    ) : (
+                      'Run Cost Optimization Scan →'
+                    )}
+                  </button>
+
+                  {/* Subtext */}
+                  {scanState !== 'scanning' && (
+                    <p style={{ fontSize: '12px', color: '#94A3B8', margin: '10px 0 0' }}>
+                      Takes ~2 minutes · No changes applied automatically
+                    </p>
+                  )}
+
+                  {/* Progress stepper */}
+                  {scanState === 'scanning' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '20px', flexWrap: 'wrap' }}>
+                      {SCAN_STEPS.map((step, i) => {
+                        const isDone = i < scanStep;
+                        const isActive = i === scanStep;
+                        return (
+                          <div key={step} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {i > 0 && (
+                              <div style={{
+                                width: '20px', height: '1px',
+                                background: isDone ? '#22C55E' : '#E2E8F0',
+                              }} />
+                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              {isDone ? (
+                                <CheckCircle size={13} color="#22C55E" />
+                              ) : isActive ? (
+                                <Loader2 size={13} color="#534AB7" style={{ animation: 'spin 1s linear infinite' }} />
+                              ) : (
+                                <div style={{ width: '13px', height: '13px', borderRadius: '50%', border: '1.5px solid #CBD5E1' }} />
+                              )}
+                              <span style={{
+                                fontSize: '12px',
+                                fontWeight: isActive ? 600 : 400,
+                                color: isDone ? '#22C55E' : isActive ? '#0F172A' : '#94A3B8',
+                              }}>
+                                {step}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              ))}
+
+                {/* Right: stat trio */}
+                <div style={{ display: 'flex', gap: '16px', flexShrink: 0 }}>
+                  {([
+                    { value: '20–40%', label: 'Avg savings found' },
+                    { value: '~2 min', label: 'To first insight' },
+                    { value: 'Zero',   label: 'Risk to infra' },
+                  ] as const).map(({ value, label }) => (
+                    <div key={label} style={{ background: '#F8FAFC', borderRadius: '8px', padding: '12px 18px', textAlign: 'center' }}>
+                      <p style={{ fontSize: '18px', fontWeight: 600, color: '#0F172A', margin: '0 0 2px' }}>{value}</p>
+                      <p style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom: What we scan for */}
+            <div style={{ padding: '24px 40px', background: '#FAFAFA' }}>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px' }}>
+                We scan for
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px 32px' }}>
+                {([
+                  'Idle and underutilized EC2 instances',
+                  'Overprovisioned RDS and ElastiCache',
+                  'Unused EBS volumes and snapshots',
+                  'Savings plan and reserved instance opportunities',
+                  'Data transfer inefficiencies',
+                  'Orphaned load balancers and unused IPs',
+                ] as const).map((item) => (
+                  <div key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#534AB7', flexShrink: 0, marginTop: '7px' }} />
+                    <span style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>{item}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </>
@@ -435,9 +829,9 @@ export default function CostOptimizationPage() {
               </button>
               <button
                 onClick={handleApproveAllClick}
-                disabled={displayRecs.length === 0}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px', background: displayRecs.length === 0 ? '#A78BFA' : '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: displayRecs.length === 0 ? 'not-allowed' : 'pointer', opacity: displayRecs.length === 0 ? 0.6 : 1 }}>
-                <Zap size={15} /> ⚡ Approve all changes
+                disabled={approvingAll || displayRecs.filter((r: any) => r.status === 'pending').length === 0}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', background: approvingAll || displayRecs.filter((r: any) => r.status === 'pending').length === 0 ? '#A78BFA' : '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: approvingAll || displayRecs.filter((r: any) => r.status === 'pending').length === 0 ? 'not-allowed' : 'pointer', opacity: approvingAll || displayRecs.filter((r: any) => r.status === 'pending').length === 0 ? 0.6 : 1 }}>
+                {approvingAll ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Approving...</> : <><Zap size={15} /> Approve all changes</>}
               </button>
             </div>
           </div>
@@ -472,7 +866,7 @@ export default function CostOptimizationPage() {
               {(['pending', 'approved', 'applied', 'all'] as const).map(f => (
                 <button
                   key={f}
-                  onClick={() => setFilter(f === 'all' ? '' : f)}
+                  onClick={() => { setFilter(f === 'all' ? '' : f); setShowAll(false); }}
                   style={{
                     padding: '7px 18px', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 600,
                     border: 'none', cursor: 'pointer', transition: 'all 0.15s', textTransform: 'capitalize',
@@ -484,9 +878,9 @@ export default function CostOptimizationPage() {
                 </button>
               ))}
             </div>
-            {displayRecs.length > 0 && (
+            {filteredDisplayRecs.length > 0 && (
               <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>
-                {displayRecs.length} recommendation{displayRecs.length !== 1 ? 's' : ''}
+                {filteredDisplayRecs.length} recommendation{filteredDisplayRecs.length !== 1 ? 's' : ''}
               </p>
             )}
           </div>
@@ -499,7 +893,7 @@ export default function CostOptimizationPage() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {displayRecs.map((rec: any) => {
+              {(showAll ? filteredDisplayRecs : filteredDisplayRecs.slice(0, 5)).map((rec: any) => {
                 const isSafe = rec.risk === 'safe';
                 const isCaution = rec.risk === 'caution';
                 const riskLabel = isSafe ? 'Zero risk' : isCaution ? 'Low risk' : 'Med risk';
@@ -553,33 +947,69 @@ export default function CostOptimizationPage() {
                       )}
 
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={() => isSafe ? handleApprove(rec.id) : undefined}
-                          style={{ background: '#EEEDFE', color: '#534AB7', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
-                          {isSafe ? 'Approve' : 'Review'}
-                        </button>
-                        {isEnterprise && (
-                          <button
-                            onClick={() => handleCreateWorkflow(rec)}
-                            disabled={creatingWorkflowFor === rec.id}
-                            style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#F5F3FF', color: '#7C3AED', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, border: '1px solid #DDD6FE', cursor: 'pointer', opacity: creatingWorkflowFor === rec.id ? 0.6 : 1 }}>
-                            <Wrench size={11} /> Workflow
-                          </button>
+                        {rec.status === 'applied' || rec.status === 'approved' ? (
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#16A34A', background: '#F0FDF4', padding: '4px 10px', borderRadius: '4px', border: '1px solid #BBF7D0' }}>
+                            ✓ Approved
+                          </span>
+                        ) : rec.status === 'ignored' ? (
+                          <span style={{ fontSize: '11px', color: '#94A3B8', padding: '4px 10px' }}>
+                            Dismissed
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleApprove(rec.id)}
+                              disabled={actionInProgress.has(rec.id)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#EEEDFE', color: '#534AB7', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, border: 'none', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1 }}>
+                              {actionInProgress.has(rec.id) ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : null}
+                              {isSafe ? 'Approve' : 'Review'}
+                            </button>
+                            {isEnterprise && (
+                              <button
+                                onClick={() => handleCreateWorkflow(rec)}
+                                disabled={creatingWorkflowFor === rec.id}
+                                style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#F5F3FF', color: '#7C3AED', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, border: '1px solid #DDD6FE', cursor: 'pointer', opacity: creatingWorkflowFor === rec.id ? 0.6 : 1 }}>
+                                <Wrench size={11} /> Workflow
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDismiss(rec.id)}
+                              disabled={actionInProgress.has(rec.id)}
+                              style={{ background: 'none', color: '#475569', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 500, border: '1px solid #E2E8F0', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1 }}>
+                              Dismiss
+                            </button>
+                          </>
                         )}
-                        <button
-                          onClick={() => handleDismiss(rec.id)}
-                          style={{ background: 'none', color: '#475569', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-                          Dismiss
-                        </button>
                       </div>
                     </div>
                   </div>
                 );
               })}
+
+              {/* Show more / show less toggle */}
+              {filteredDisplayRecs.length > 5 && (
+                <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '16px', textAlign: 'center' }}>
+                  {!showAll && (
+                    <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: '0 0 10px' }}>
+                      Showing 5 of {filteredDisplayRecs.length} recommendations
+                    </p>
+                  )}
+                  <button
+                    onClick={() => setShowAll(v => !v)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: '#64748B', padding: '4px 12px' }}>
+                    {showAll
+                      ? 'Show less ↑'
+                      : `Show all ${filteredDisplayRecs.length} recommendations ↓`}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>
       )}
+
+      {/* Spinner keyframe */}
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
 
     </div>
   );

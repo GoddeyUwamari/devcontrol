@@ -34,6 +34,12 @@ export const createAnomalyRoutes = (
   router.get('/stats', controller.getStats);
 
   /**
+   * GET /api/anomalies/last-scan
+   * Get timestamp of most recent scan
+   */
+  router.get('/last-scan', controller.getLastScan);
+
+  /**
    * PATCH /api/anomalies/:id/acknowledge
    * Acknowledge anomaly
    */

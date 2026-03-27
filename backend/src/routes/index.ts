@@ -27,6 +27,7 @@ import aiChatRoutes from './ai-chat.routes';
 import nlQueryRoutes from './nl-query.routes';
 import aiReportsRoutes from './ai-reports.routes';
 import optimizationRoutes from './optimization.routes';
+import costOptimizationAIRoutes from './cost-optimization-ai.routes';
 import userPreferencesRoutes from './user-preferences.routes';
 import tenantsRoutes from './tenants.routes';
 
@@ -64,6 +65,7 @@ router.use('/ai-chat', aiChatRoutes);
 router.use('/nl-query', nlQueryRoutes);
 router.use('/ai-reports', aiReportsRoutes);
 router.use('/optimizations', optimizationRoutes);
+router.use('/cost-optimization', costOptimizationAIRoutes);
 router.use('/user/preferences', userPreferencesRoutes);
 router.use('/tenants', tenantsRoutes);
 router.use('/', logsRoutes);

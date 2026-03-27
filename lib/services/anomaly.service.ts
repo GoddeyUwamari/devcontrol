@@ -146,6 +146,27 @@ class AnomalyService {
   }
 
   /**
+   * Get timestamp of most recent scan for this org
+   */
+  async getLastScan(): Promise<Date | null> {
+    if (demoModeService.isEnabled()) {
+      return new Date(Date.now() - 1000 * 60 * 8); // 8 minutes ago in demo
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/last-scan`, {
+        credentials: 'include',
+        headers: this.getHeaders(),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.lastScan ? new Date(data.lastScan) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Get stats
    */
   async getStats(): Promise<AnomalyStats> {

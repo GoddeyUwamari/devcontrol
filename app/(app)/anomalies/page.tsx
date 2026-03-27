@@ -33,6 +33,12 @@ const severityConfig: Record<string, { color: string; bg: string; border: string
   info:     { color: '#64748B', bg: '#F8FAFC', border: '#F1F5F9', label: 'Info'     },
 };
 
+const confidenceLabel = (score: number): string => {
+  if (score >= 80) return 'High'
+  if (score >= 50) return 'Medium'
+  return 'Low'
+}
+
 const overline: React.CSSProperties = {
   fontSize: '0.72rem',
   fontWeight: 600,
@@ -54,6 +60,9 @@ export default function AnomaliesPage() {
   // ── ADDED STATE ──────────────────────────────────────────────────────────
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
+  const [lastScanLoading, setLastScanLoading] = useState(true);
   const [rules, setRules] = useState<CustomAnomalyRule[]>([])
   const [showRulesPanel, setShowRulesPanel] = useState(false)
   const [showCreateRule, setShowCreateRule] = useState(false)
@@ -86,7 +95,18 @@ export default function AnomaliesPage() {
     return () => clearInterval(interval);
   }, [loadAnomalies]);
 
+  // Close overflow menu on outside click
   useEffect(() => {
+    if (!openMenuId) return
+    const close = () => setOpenMenuId(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [openMenuId])
+
+  useEffect(() => {
+    anomalyService.getLastScan()
+      .then(t => { setLastScanTime(t); setLastScanLoading(false) })
+      .catch(() => setLastScanLoading(false))
     customAnomalyRulesService.getRules()
       .then(setRules)
       .catch(() => {})
@@ -98,6 +118,7 @@ export default function AnomaliesPage() {
     try {
       const result = await anomalyService.triggerScan();
       setLastScanResult(result.message);
+      setLastScanTime(new Date());
       await loadAnomalies();
     } catch (error) {
       console.error('Scan failed:', error);
@@ -181,15 +202,16 @@ export default function AnomaliesPage() {
       background: '#F9FAFB',
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
 
       {/* ── PAGE HEADER ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Anomaly Detection
+            Detect Cost, Security, and Infrastructure Anomalies in Real Time
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0, lineHeight: 1.6 }}>
-            AI-powered threat detection across your AWS infrastructure · Auto-refreshes every 5 minutes
+            AI continuously analyzes your AWS activity to surface unusual spend, misconfigurations, and performance risks · AI scans run every 15 minutes
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -210,11 +232,45 @@ export default function AnomaliesPage() {
             }}
           >
             {isScanning
-              ? <><RefreshCw size={15} /> Scanning...</>
+              ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Scanning...</>
               : <><RefreshCw size={15} /> Run Scan</>
             }
           </button>
         </div>
+      </div>
+
+      {/* ── SYSTEM STATUS BAR ── */}
+      <div style={{
+        background: '#fff', borderRadius: '12px', border: '1px solid #F1F5F9',
+        padding: '14px 20px', marginBottom: '28px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22C55E', display: 'inline-block', boxShadow: '0 0 0 3px #DCFCE7' }} />
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0F172A' }}>Monitoring Active</span>
+          </div>
+          <span style={{ color: '#E2E8F0', fontSize: '0.75rem' }}>|</span>
+          <span style={{ fontSize: '0.82rem', color: '#64748B' }}>
+            Last scan:{' '}
+            <span style={{ fontWeight: 600, color: '#374151' }}>
+              {isScanning
+                ? 'Scan in progress…'
+                : lastScanLoading
+                  ? 'Checking…'
+                  : lastScanTime
+                    ? lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : 'Pending first scan'}
+            </span>
+          </span>
+          <span style={{ color: '#E2E8F0', fontSize: '0.75rem' }}>|</span>
+          <span style={{ fontSize: '0.82rem', color: '#64748B' }}>
+            Next scan in <span style={{ fontWeight: 600, color: '#374151' }}>~15 min</span>
+          </span>
+        </div>
+        <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+          Analyzing resources across EC2, S3, RDS, IAM, Lambda
+        </span>
       </div>
 
       {/* ── 4 KPI CARDS ── */}
@@ -287,18 +343,52 @@ export default function AnomaliesPage() {
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading anomalies...</p>
           </div>
         ) : anomalies.length === 0 ? (
-          <div style={{ background: '#fff', borderRadius: '16px', padding: '64px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
-            <CheckCircle2 size={32} style={{ color: '#059669', margin: '0 auto 16px' }} />
-            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No anomalies detected</p>
-            <p style={{ fontSize: '0.875rem', color: '#64748B', margin: '0 0 20px', lineHeight: 1.6 }}>
-              Your infrastructure is clean. Run a scan to check for new threats.
-            </p>
-            <button
-              onClick={triggerScan}
-              style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
-            >
-              Run Scan Now
-            </button>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '48px 56px', border: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px' }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                <CheckCircle2 size={22} style={{ color: '#16A34A' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px' }}>
+                  No anomalies detected — your infrastructure looks healthy
+                </p>
+                <p style={{ fontSize: '0.875rem', color: '#64748B', margin: '0 0 20px', lineHeight: 1.7 }}>
+                  We continuously monitor for:
+                </p>
+                <ul style={{ margin: '0 0 20px', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                  {[
+                    'Unusual cost spikes and budget overruns',
+                    'Suspicious access patterns and IAM changes',
+                    'Security misconfigurations and open ports',
+                    'Infrastructure performance anomalies',
+                  ].map(item => (
+                    <li key={item} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.855rem', color: '#374151' }}>
+                      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#7C3AED', flexShrink: 0, display: 'inline-block' }} />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                  <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>
+                    Last scan completed:{' '}
+                    <span style={{ fontWeight: 600, color: '#64748B' }}>
+                      {lastScanLoading
+                        ? 'Checking…'
+                        : lastScanTime
+                          ? lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : 'Pending first scan'}
+                    </span>
+                  </p>
+                  <button
+                    onClick={triggerScan}
+                    disabled={isScanning}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#7C3AED', color: '#fff', padding: '8px 18px', borderRadius: '7px', fontSize: '0.82rem', fontWeight: 600, border: 'none', cursor: isScanning ? 'not-allowed' : 'pointer' }}
+                  >
+                    {isScanning ? <><RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> Scanning…</> : <><RefreshCw size={12} /> Run Scan Now</>}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           anomalies.map((anomaly: AnomalyDetection) => {
@@ -368,58 +458,71 @@ export default function AnomaliesPage() {
                     </div>
                     <div style={{ textAlign: 'center', padding: '6px 12px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #F1F5F9' }}>
                       <div style={{ fontSize: '0.68rem', color: '#94A3B8', marginBottom: '2px' }}>Confidence</div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A' }}>{anomaly.confidence}%</div>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A' }}>{confidenceLabel(anomaly.confidence)}</div>
                     </div>
                   </div>
 
                   {/* Actions */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                     {anomaly.status === 'active' && (
-                      <>
-                        <button
-                          onClick={() => handleAcknowledge(anomaly.id)}
-                          disabled={actionLoading === anomaly.id + '-ack'}
-                          style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#374151', cursor: 'pointer' }}
-                        >
-                          {actionLoading === anomaly.id + '-ack' ? <RefreshCw size={11} /> : <Eye size={11} />}
-                          Acknowledge
-                        </button>
-                        <button
-                          onClick={() => handleResolve(anomaly.id)}
-                          disabled={actionLoading === anomaly.id + '-res'}
-                          style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#059669', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#fff', cursor: 'pointer' }}
-                        >
-                          {actionLoading === anomaly.id + '-res' ? <RefreshCw size={11} /> : <CheckCheck size={11} />}
-                          Resolve
-                        </button>
-                      </>
-                    )}
-                    {anomaly.status === 'acknowledged' && (
                       <button
-                        onClick={() => handleResolve(anomaly.id)}
-                        disabled={actionLoading === anomaly.id + '-res'}
-                        style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#059669', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#fff', cursor: 'pointer' }}
+                        onClick={() => handleAcknowledge(anomaly.id)}
+                        disabled={actionLoading === anomaly.id + '-ack'}
+                        style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#374151', cursor: 'pointer' }}
                       >
-                        {actionLoading === anomaly.id + '-res' ? <RefreshCw size={11} /> : <CheckCheck size={11} />}
-                        Resolve
+                        {actionLoading === anomaly.id + '-ack' ? <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Eye size={11} />}
+                        Acknowledge
                       </button>
                     )}
-                    {(anomaly.status === 'active' || anomaly.status === 'acknowledged') && (
+
+                    {/* ⋯ overflow menu */}
+                    <div style={{ position: 'relative' }}>
                       <button
-                        onClick={() => handleFalsePositive(anomaly.id)}
-                        disabled={actionLoading === anomaly.id + '-fp'}
-                        style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 500, color: '#94A3B8', cursor: 'pointer' }}
+                        onClick={e => { e.stopPropagation(); setOpenMenuId(openMenuId === anomaly.id ? null : anomaly.id) }}
+                        style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 8px', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center' }}
                       >
-                        {actionLoading === anomaly.id + '-fp' ? <RefreshCw size={11} /> : <Flag size={11} />}
-                        False Positive
+                        <MoreHorizontal size={14} />
                       </button>
-                    )}
-                    <button
-                      onClick={() => setExpandedId(isExpanded ? null : anomaly.id)}
-                      style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 8px', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center' }}
-                    >
-                      <ChevronDown size={14} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-                    </button>
+                      {openMenuId === anomaly.id && (
+                        <div
+                          onClick={e => e.stopPropagation()}
+                          style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', boxShadow: '0 6px 20px rgba(0,0,0,0.10)', zIndex: 50, minWidth: '178px', padding: '4px' }}
+                        >
+                          <button
+                            onClick={() => { setExpandedId(isExpanded ? null : anomaly.id); setOpenMenuId(null) }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', borderRadius: '5px', border: 'none', background: 'none', fontSize: '0.8rem', color: '#374151', cursor: 'pointer', textAlign: 'left', fontWeight: 500 }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#F8FAFC')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                          >
+                            <ChevronDown size={13} style={{ color: '#6B7280', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }} />
+                            View Details
+                          </button>
+                          {(anomaly.status === 'active' || anomaly.status === 'acknowledged') && (
+                            <>
+                              <div style={{ height: '1px', background: '#F1F5F9', margin: '3px 0' }} />
+                              <button
+                                onClick={() => { handleResolve(anomaly.id); setOpenMenuId(null) }}
+                                disabled={actionLoading === anomaly.id + '-res'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', borderRadius: '5px', border: 'none', background: 'none', fontSize: '0.8rem', color: '#059669', cursor: 'pointer', textAlign: 'left', fontWeight: 500 }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#F0FDF4')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                              >
+                                <CheckCheck size={13} /> Mark as Resolved
+                              </button>
+                              <button
+                                onClick={() => { handleFalsePositive(anomaly.id); setOpenMenuId(null) }}
+                                disabled={actionLoading === anomaly.id + '-fp'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', borderRadius: '5px', border: 'none', background: 'none', fontSize: '0.8rem', color: '#64748B', cursor: 'pointer', textAlign: 'left', fontWeight: 500 }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#F8FAFC')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                              >
+                                <Flag size={13} /> Mark as False Positive
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -590,7 +693,18 @@ export default function AnomaliesPage() {
               <Settings size={20} style={{ color: '#7C3AED' }} />
             </div>
             <p style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No custom rules yet</p>
-            <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '0 0 20px', lineHeight: 1.6 }}>Define thresholds specific to your infrastructure. Rules run alongside AI detection on every scan.</p>
+            <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '0 0 16px', lineHeight: 1.6 }}>Define thresholds specific to your infrastructure. Rules run alongside AI detection on every scan.</p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
+              {[
+                'Alert if EC2 cost increases > 30% in 24h',
+                'Flag any public S3 buckets created',
+                'Detect logins from new geographic regions',
+              ].map(example => (
+                <span key={example} style={{ fontSize: '0.75rem', color: '#64748B', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '6px', padding: '5px 12px', lineHeight: 1.4 }}>
+                  e.g. {example}
+                </span>
+              ))}
+            </div>
             <button onClick={() => setShowCreateRule(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#7C3AED', color: '#fff', padding: '9px 20px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
               <Plus size={13} /> Create First Rule
             </button>

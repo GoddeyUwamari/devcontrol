@@ -20,7 +20,9 @@ export class AnomalyRepository {
         title, description, ai_explanation, impact, recommendation, confidence,
         status
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-      ON CONFLICT ON CONSTRAINT unique_active_anomaly DO NOTHING
+      ON CONFLICT (organization_id, type, COALESCE(resource_id, ''), metric)
+      WHERE status = 'active'
+      DO NOTHING
     `;
 
     const client = await this.pool.connect();
@@ -238,6 +240,17 @@ export class AnomalyRepository {
     ]);
 
     return result.rows[0]?.exists || false;
+  }
+
+  /**
+   * Get the timestamp of the most recently updated anomaly for an org
+   */
+  async getLastScan(organizationId: string): Promise<Date | null> {
+    const result = await this.pool.query(
+      `SELECT MAX(updated_at) AS last_scan FROM anomaly_detections WHERE organization_id = $1`,
+      [organizationId]
+    );
+    return result.rows[0]?.last_scan ?? null;
   }
 
   /**
