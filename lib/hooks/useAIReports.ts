@@ -67,6 +67,23 @@ export function useAIReports() {
   }, []);
 
   /**
+   * Bulk delete reports
+   */
+  const bulkDeleteReports = useCallback(async (ids: string[]): Promise<number> => {
+    setError(null);
+
+    try {
+      const deleted = await aiReportsService.bulkDeleteReports(ids);
+      return deleted;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to delete reports';
+      setError(errorMessage);
+      console.error('[useAIReports] Bulk delete error:', err);
+      return 0;
+    }
+  }, []);
+
+  /**
    * Delete a report
    */
   const deleteReport = useCallback(async (reportId: string): Promise<boolean> => {
@@ -88,6 +105,7 @@ export function useAIReports() {
     getReportHistory,
     getReport,
     deleteReport,
+    bulkDeleteReports,
     isGenerating,
     isFetchingHistory,
     error

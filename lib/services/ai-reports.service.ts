@@ -184,6 +184,30 @@ class AIReportsServiceClient {
   }
 
   /**
+   * Bulk delete reports
+   */
+  async bulkDeleteReports(ids: string[]): Promise<number> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('Authentication required');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/ai-reports/bulk`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ ids }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to delete reports' }));
+      throw new Error(error.error || 'Failed to delete reports');
+    }
+
+    const result = await response.json();
+    return result.data.deleted;
+  }
+
+  /**
    * Delete a report
    */
   async deleteReport(reportId: string): Promise<void> {

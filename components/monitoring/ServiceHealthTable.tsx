@@ -89,8 +89,8 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
                         {service.name}
                       </h4>
                       {service.critical && (
-                        <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">
-                          Critical
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">
+                          Core Service
                         </span>
                       )}
                     </div>
@@ -144,10 +144,16 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
               </div>
 
               {/* Recent Incidents (if any) */}
-              {service.recentIncidents && service.recentIncidents > 0 && (
-                <div className="mt-2 ml-7 text-xs text-yellow-700 bg-yellow-50 rounded px-2 py-1 inline-block">
-                  {service.recentIncidents} incident
-                  {service.recentIncidents > 1 ? 's' : ''} in last 24h
+              {service.recentIncidents !== undefined && (
+                <div className={`mt-2 ml-7 text-xs rounded px-2 py-1 inline-block ${
+                  service.recentIncidents > 0
+                    ? 'text-yellow-700 bg-yellow-50'
+                    : 'text-gray-400 bg-gray-50'
+                }`}>
+                  {service.recentIncidents === 0
+                    ? '0 incidents in last 24h'
+                    : `${service.recentIncidents} incident${service.recentIncidents > 1 ? 's' : ''} in last 24h`
+                  }
                 </div>
               )}
             </div>

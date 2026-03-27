@@ -65,7 +65,7 @@ export default function SLODashboardPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            SLO Dashboard
+            Service Reliability Targets
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Service Level Objectives — reliability targets and error budget tracking
@@ -86,7 +86,7 @@ export default function SLODashboardPage() {
           <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
             {isDemoActive
               ? 'Data Pipeline Freshness SLO is breached — error budget 280% consumed. Immediate investigation required. Error Rate SLO is at risk with 120% budget consumed. 4 of 6 SLOs are healthy. Payment Processing maintaining 99.96% — exceeding target.'
-              : 'Connect your monitoring stack to start tracking SLOs. SLO data will automatically populate from Prometheus metrics.'
+              : 'Track reliability before it impacts customers. Connect your monitoring stack to automatically measure uptime and performance targets, track error budgets in real time, and detect when services are at risk — before your customers feel it.'
             }
           </p>
         </div>
@@ -100,18 +100,115 @@ export default function SLODashboardPage() {
       {/* 4 KPI CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
-          { label: 'SLOs Meeting Target', value: `${displayStats.met}/${displayStats.total}`,                                                                       sub: 'Within defined targets',   valueColor: '#059669' },
-          { label: 'At Risk',             value: displayStats.atRisk,                                                                                               sub: 'Error budget > 50% used',  valueColor: displayStats.atRisk > 0 ? '#D97706' : '#059669' },
-          { label: 'Breached',            value: displayStats.breached,                                                                                             sub: 'Require immediate action', valueColor: displayStats.breached > 0 ? '#DC2626' : '#059669' },
-          { label: 'Avg Compliance',      value: displayStats.total > 0 ? `${displayStats.avgCompliance.toFixed(2)}%` : 'N/A',                                     sub: 'Across all SLOs',          valueColor: displayStats.avgCompliance >= 99 ? '#059669' : '#D97706' },
-        ].map(({ label, value, sub, valueColor }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
+          {
+            label: 'SLOs Meeting Target',
+            value: displayStats.total > 0 ? `${displayStats.met}/${displayStats.total}` : null,
+            empty: 'No SLOs defined yet',
+            sub: 'Within defined targets',
+            valueColor: '#0F172A',
+            hero: false,
+          },
+          {
+            label: 'At Risk',
+            value: displayStats.total > 0 ? displayStats.atRisk : null,
+            empty: 'Available after tracking begins',
+            sub: 'Error budget > 50% used',
+            valueColor: displayStats.atRisk > 0 ? '#D97706' : '#0F172A',
+            hero: false,
+          },
+          {
+            label: 'Breached',
+            value: displayStats.total > 0 ? displayStats.breached : null,
+            empty: 'Will appear when thresholds are exceeded',
+            sub: 'Require immediate action',
+            valueColor: displayStats.breached > 0 ? '#DC2626' : '#0F172A',
+            hero: false,
+          },
+          {
+            label: 'Avg Compliance',
+            value: displayStats.total > 0 ? `${displayStats.avgCompliance.toFixed(2)}%` : null,
+            empty: 'Calculated after SLO data is collected',
+            sub: 'Across all SLOs',
+            valueColor: displayStats.avgCompliance >= 99 ? '#059669' : '#D97706',
+            hero: true,
+          },
+        ].map(({ label, value, empty, sub, valueColor, hero }) => (
+          <div key={label} style={{
+            background: '#fff',
+            borderRadius: '14px',
+            padding: '32px',
+            border: '1px solid #E2E8F0',
+            borderLeft: hero ? '2px solid #534AB7' : '1px solid #E2E8F0',
+          }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569',
+              textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+              {label}
+            </p>
+            {value !== null ? (
+              <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor,
+                letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+                {value}
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#9ca3af',
+                marginBottom: '8px', paddingTop: '6px', lineHeight: 1.5 }}>
+                {empty}
+              </div>
+            )}
             <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
           </div>
         ))}
       </div>
+
+      {!isDemoActive && (
+        <>
+          {/* Why SLOs matter */}
+          <div style={{
+            background: '#F8FAFC',
+            borderRadius: '12px',
+            border: '1px solid #E2E8F0',
+            padding: '24px 28px',
+            marginBottom: '20px',
+          }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569',
+              textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>
+              What are SLOs?
+            </p>
+            <p style={{ fontSize: '0.875rem', color: '#0F172A', fontWeight: 600, margin: '0 0 6px' }}>
+              Service Level Objectives define how reliable your system should be — e.g. 99.9% uptime, under 500ms latency.
+            </p>
+            <p style={{ fontSize: '0.82rem', color: '#64748B', margin: 0, lineHeight: 1.6 }}>
+              DevControl tracks this automatically so you know when you're at risk before customers feel it.
+            </p>
+          </div>
+
+          {/* What you'll get */}
+          <div style={{
+            background: '#F8FAFC',
+            borderRadius: '12px',
+            border: '1px solid #E2E8F0',
+            padding: '24px 28px',
+            marginBottom: '28px',
+          }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569',
+              textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px' }}>
+              Once connected, you'll see
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px 32px' }}>
+              {[
+                'Uptime and latency targets per service',
+                'Error budget consumption in real time',
+                'Services at risk of breaching targets',
+                'Reliability trends over 30-day rolling window',
+              ].map(item => (
+                <p key={item} style={{ fontSize: '0.82rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+                  → {item}
+                </p>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* SLO CARDS */}
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
@@ -141,12 +238,12 @@ export default function SLODashboardPage() {
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Target size={22} style={{ color: '#94A3B8' }} />
             </div>
-            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No SLOs configured</p>
+            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>You're not tracking reliability yet</p>
             <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px', lineHeight: 1.6 }}>
-              Connect your Prometheus instance to automatically track SLOs against your services.
+              Without SLOs, you don't know when your system is close to failure, whether you're meeting uptime expectations, or how much risk you're carrying. Define your first reliability target to start tracking in real time.
             </p>
             <a href="/monitoring" style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-              <Activity size={14} /> Go to Monitoring
+              <Activity size={14} /> Set Up SLO Tracking
             </a>
           </div>
         ) : (

@@ -30,10 +30,11 @@ export function TimeRangeSelector({ selected, onChange, onRefresh }: TimeRangeSe
         <button
           key={range.value}
           onClick={() => onChange(range.value)}
+          style={selected === range.value ? { backgroundColor: '#7C3AED', color: '#fff' } : {}}
           className={cn(
             "px-3 py-1.5 text-sm rounded transition-colors",
             selected === range.value
-              ? "bg-blue-600 text-white"
+              ? "text-white"
               : "text-gray-600 hover:bg-gray-100"
           )}
         >

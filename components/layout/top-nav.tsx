@@ -182,12 +182,11 @@ export function TopNav() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                      'flex items-center gap-1.5 px-3 py-2 text-base font-medium rounded-md transition-colors',
                       'hover:bg-accent hover:text-[#0F172A]',
                       isActive ? 'bg-accent text-foreground' : 'text-[#1E293B]'
                     )}
                   >
-                    <Icon className="h-4 w-4" />
                     {item.label}
                   </Link>
                 );
@@ -203,12 +202,11 @@ export function TopNav() {
                 >
                   <button
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                      'flex items-center gap-1.5 px-3 py-2 text-base font-medium rounded-md transition-colors',
                       'hover:bg-accent hover:text-[#0F172A]',
                       isActive ? 'bg-accent text-foreground' : 'text-[#1E293B]'
                     )}
                   >
-                    <Icon className="h-4 w-4" />
                     {item.label}
                     <ChevronDown className={cn('h-3 w-3 transition-transform', activeDropdown === item.label ? 'rotate-180' : '')} />
                   </button>

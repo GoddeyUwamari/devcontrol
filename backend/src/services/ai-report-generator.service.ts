@@ -122,45 +122,16 @@ export class AIReportGeneratorService {
     this.costRecommendationsRepo = new CostRecommendationsRepository();
   }
 
-  async generateWeeklyReport(data: ReportData): Promise<GeneratedReport> {
+  async generateWeeklyReport(data: ReportData, reportType: string = 'weekly_summary'): Promise<GeneratedReport> {
     if (!process.env.ANTHROPIC_API_KEY) {
       console.warn('[AI Report Generator] ANTHROPIC_API_KEY not set - using fallback report');
-      return this.generateFallbackReport(data);
+      return this.generateFallbackReport(data, reportType);
     }
 
-    const systemPrompt = `You are an AI infrastructure analyst for DevControl.
+    const systemPrompt = this.buildSystemPrompt(reportType);
+    const reportLabel = this.buildReportLabel(reportType, data.dateRange);
 
-Generate executive-ready reports that analyze AWS infrastructure data and provide actionable insights.
-
-REPORT STYLE:
-- Professional, concise, data-driven
-- Focus on business impact, not just technical details
-- Highlight trends and changes (not just current state)
-- Provide specific, actionable recommendations
-- Use percentages and dollar amounts for impact
-- Flag urgent issues clearly
-
-REPORT STRUCTURE:
-1. Executive Summary (2-3 sentences)
-2. Key Highlights (3-5 bullet points)
-3. Cost Analysis (trends, recommendations)
-4. Security Analysis (risks, recommendations)
-5. Performance Analysis (DORA metrics, recommendations)
-6. Top Recommendations (prioritized by impact)
-
-TONE:
-- Clear and direct
-- Emphasize positive changes AND areas for improvement
-- Balance technical accuracy with business language
-- Avoid jargon unless necessary
-
-RECOMMENDATIONS:
-- Prioritize by ROI (cost savings or risk reduction)
-- Include estimated impact ($ or %)
-- Specify effort level (low/medium/high)
-- Make them specific and actionable`;
-
-    const userPrompt = `Generate a weekly infrastructure report for the period ${data.dateRange.from} to ${data.dateRange.to}.
+    const userPrompt = `Generate a ${reportLabel} for the period ${data.dateRange.from} to ${data.dateRange.to}.
 
 COST DATA:
 - Current spending: $${data.costs.current.toLocaleString()}/month
@@ -229,18 +200,21 @@ Return JSON with this structure:
     try {
       console.log('[AI Report Generator] Generating report with Claude API...');
 
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        temperature: 0.3,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
-      });
+      const response = await anthropic.messages.create(
+        {
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          temperature: 0.3,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: userPrompt,
+            },
+          ],
+        },
+        { timeout: 60000 }
+      );
 
       const content = response.content[0];
       if (content.type !== 'text') {
@@ -262,11 +236,89 @@ Return JSON with this structure:
     } catch (error: any) {
       console.error('[AI Report Generator] Error:', error.message);
       console.log('[AI Report Generator] Falling back to basic report');
-      return this.generateFallbackReport(data);
+      return this.generateFallbackReport(data, reportType);
     }
   }
 
-  private generateFallbackReport(data: ReportData): GeneratedReport {
+  private buildSystemPrompt(reportType: string): string {
+    const base = `You are an AI infrastructure analyst for DevControl.
+
+REPORT STYLE:
+- Professional, concise, data-driven
+- Highlight trends and changes (not just current state)
+- Provide specific, actionable recommendations
+- Use percentages and dollar amounts for impact
+- Flag urgent issues clearly
+
+TONE:
+- Clear and direct
+- Balance technical accuracy with business language
+
+RECOMMENDATIONS:
+- Prioritize by ROI (cost savings or risk reduction)
+- Include estimated impact ($ or %)
+- Specify effort level (low/medium/high)`;
+
+    switch (reportType) {
+      case 'cost_analysis':
+        return `${base}
+
+FOCUS: Cost optimization and cloud spend efficiency.
+- Lead every section with dollar impact and savings potential
+- Identify rightsizing opportunities, idle resources, and Reserved Instance candidates
+- Rank recommendations by estimated monthly savings
+- Downplay security and deployment details — mention only if they have direct cost impact`;
+
+      case 'security_insights':
+        return `${base}
+
+FOCUS: Security posture, vulnerabilities, and compliance risk.
+- Lead every section with risk severity and blast radius
+- Map each finding to a specific remediation action and SLA
+- Rank recommendations by risk reduction impact (critical → high → medium)
+- Downplay cost and deployment details — mention only if they introduce security exposure`;
+
+      case 'infrastructure_health':
+        return `${base}
+
+FOCUS: Operational reliability and deployment quality.
+- Lead every section with availability, error rates, and DORA metrics
+- Identify deployment failure patterns and alert noise sources
+- Rank recommendations by reliability improvement (MTTR reduction, failure rate)
+- Downplay cost details — mention only if resource sprawl affects stability`;
+
+      case 'executive_summary':
+        return `${base}
+
+FOCUS: Board-ready executive summary with business impact.
+- Use business language, not technical jargon
+- Lead with financial and risk headline numbers
+- Keep each section to 2-3 sentences maximum
+- Recommendations must include business outcome, not just technical action`;
+
+      default:
+        // weekly_summary, monthly_summary — comprehensive review
+        return `${base}
+
+FOCUS: Comprehensive infrastructure review across cost, security, and reliability.
+- Cover all dimensions: cost trends, security posture, deployment performance
+- Provide a balanced view of wins and areas for improvement
+- Include an executive summary suitable for non-technical stakeholders`;
+    }
+  }
+
+  private buildReportLabel(reportType: string, dateRange: { from: string; to: string }): string {
+    switch (reportType) {
+      case 'cost_analysis':       return 'cost analysis report';
+      case 'security_insights':   return 'security insights report';
+      case 'infrastructure_health': return 'infrastructure health report';
+      case 'executive_summary':   return 'executive summary report';
+      case 'monthly_summary':     return 'monthly infrastructure report';
+      default:                    return 'weekly infrastructure report';
+    }
+  }
+
+  private generateFallbackReport(data: ReportData, reportType: string = 'weekly_summary'): GeneratedReport {
     const costChange = data.costs.changePercent > 0 ? 'increased' : 'decreased';
     const costChangeAbs = Math.abs(data.costs.changePercent);
 
@@ -412,19 +464,31 @@ Return JSON with this structure:
 
   async fetchReportData(
     organizationId: string,
-    dateRange: { from: string; to: string }
+    dateRange: { from: string; to: string },
+    reportType: string = 'weekly_summary'
   ): Promise<ReportData> {
-    console.log(`[AI Report Generator] Fetching real data for org ${organizationId} from ${dateRange.from} to ${dateRange.to}`);
+    const fetchStart = Date.now();
+    console.log(`[AI Report Generator] Fetching data... (org=${organizationId}, type=${reportType}, range=${dateRange.from}→${dateRange.to})`);
+
+    // Determine which data sources are needed for this report type
+    const needsCost       = ['cost_analysis', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
+    const needsSecurity   = ['security_insights', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
+    const needsDeploys    = ['infrastructure_health', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
+    const needsResources  = ['cost_analysis', 'infrastructure_health', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
+    const needsAlerts     = ['infrastructure_health', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
+
+    const fallback = this.getFallbackReportData(organizationId, dateRange);
 
     try {
-      // Fetch all data in parallel
       const [costs, security, deployments, resources, alerts] = await Promise.all([
-        this.fetchCostData(organizationId, dateRange),
-        this.fetchSecurityData(organizationId, dateRange),
-        this.fetchDeploymentData(organizationId, dateRange),
-        this.fetchResourceData(organizationId, dateRange),
-        this.fetchAlertData(organizationId, dateRange),
+        needsCost      ? this.fetchCostData(organizationId, dateRange)       : Promise.resolve(fallback.costs),
+        needsSecurity  ? this.fetchSecurityData(organizationId, dateRange)   : Promise.resolve(fallback.security),
+        needsDeploys   ? this.fetchDeploymentData(organizationId, dateRange) : Promise.resolve(fallback.deployments),
+        needsResources ? this.fetchResourceData(organizationId, dateRange)   : Promise.resolve(fallback.resources),
+        needsAlerts    ? this.fetchAlertData(organizationId, dateRange)      : Promise.resolve(fallback.alerts),
       ]);
+
+      console.log(`[AI Report Generator] Data fetched in ${Date.now() - fetchStart}ms (cost=${needsCost}, security=${needsSecurity}, deploys=${needsDeploys}, resources=${needsResources}, alerts=${needsAlerts})`);
 
       return {
         organizationId,
@@ -437,8 +501,7 @@ Return JSON with this structure:
       };
     } catch (error: any) {
       console.error('[AI Report Generator] Error fetching report data:', error.message);
-      // Return minimal fallback data if queries fail
-      return this.getFallbackReportData(organizationId, dateRange);
+      return fallback;
     }
   }
 
@@ -586,7 +649,7 @@ Return JSON with this structure:
 
     // Get deployments in the date range
     const deploymentsResult = await this.pool.query(
-      `SELECT status, deployed_at
+      `SELECT d.status, d.deployed_at
        FROM deployments d
        JOIN services s ON d.service_id = s.id
        WHERE s.organization_id = $1

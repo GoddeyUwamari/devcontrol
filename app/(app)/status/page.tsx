@@ -119,10 +119,10 @@ export default function StatusPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Platform Status
+            Infrastructure Health Overview
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Real-time operational status across all DevControl services and regions
+            Real-time health, uptime, and performance across your monitored services and regions
           </p>
         </div>
         <a href="/monitoring" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
@@ -158,10 +158,10 @@ export default function StatusPage() {
             fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.02em', margin: '0 0 4px',
             color: overallStatus === 'operational' ? '#059669' : overallStatus === 'degraded' ? '#D97706' : '#DC2626',
           }}>
-            {overallStatus === 'operational' ? 'All Systems Operational' : overallStatus === 'degraded' ? 'Partial Service Degradation' : 'Service Disruption Detected'}
+            {overallStatus === 'operational' ? 'Your Infrastructure Is Healthy' : overallStatus === 'degraded' ? 'Partial Service Degradation' : 'Service Disruption Detected'}
           </h2>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0 }}>
-            DevControl platform status · Last updated: {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
+            No active risks, incidents, or cost anomalies detected · Last updated: {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
           </p>
         </div>
       </div>
@@ -173,9 +173,16 @@ export default function StatusPage() {
         </div>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
-          <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
-            All 6 services operating within SLA parameters across 4 global regions. Platform uptime is 99.98% over the last 30 days — Elite tier reliability. 3 minor incidents resolved in the last 30 days with an average resolution time of 18 minutes. No active incidents or anomalies detected.
-          </p>
+          <div style={{ fontSize: '0.875rem', color: '#1E293B', lineHeight: 1.7 }}>
+            <p style={{ margin: '0 0 8px', fontWeight: 500 }}>All systems operating within SLA. No active risks or anomalies detected.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '10px' }}>
+              <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem' }}>→ Uptime stable at 99.98% — Elite tier (last 30 days)</p>
+              <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem' }}>→ 3 minor incidents resolved · avg resolution 18 minutes</p>
+              <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem' }}>→ No performance degradation across regions</p>
+              <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem' }}>→ No cost anomalies or waste linked to incidents</p>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: '#059669' }}>No action required.</p>
+          </div>
         </div>
         <a href="/monitoring/slos" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
           View SLOs <ArrowRight size={12} />
@@ -185,14 +192,22 @@ export default function StatusPage() {
       {/* 4 KPI CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
-          { label: 'Platform Uptime',   value: '99.98%', sub: 'Last 30 days',            valueColor: '#059669' },
-          { label: 'Avg Response Time', value: '45ms',   sub: 'Across all endpoints',    valueColor: '#059669' },
-          { label: 'Incidents (30d)',   value: '3',      sub: 'All resolved · 0 active', valueColor: '#0F172A' },
-          { label: 'Global Regions',    value: '4',      sub: 'All regions operational', valueColor: '#0F172A' },
-        ].map(({ label, value, sub, valueColor }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
+          { label: 'Platform Uptime',   value: '99.98%', sub: 'Last 30 days',            valueColor: '#059669', hero: true  },
+          { label: 'Avg Response Time', value: '45ms',   sub: 'Across all endpoints',    valueColor: '#0F172A', hero: false },
+          { label: 'Incidents (30d)',   value: '3',      sub: 'All resolved · 0 active', valueColor: '#0F172A', hero: false },
+          { label: 'Global Regions',    value: '4',      sub: 'All regions operational', valueColor: '#0F172A', hero: false },
+        ].map(({ label, value, sub, valueColor, hero }) => (
+          <div key={label} style={{
+            background: '#fff',
+            borderRadius: '14px',
+            padding: '32px',
+            border: '1px solid #E2E8F0',
+            borderLeft: hero ? '2px solid #534AB7' : '1px solid #E2E8F0',
+          }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569',
+              textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
+            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor,
+              letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
             <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
           </div>
         ))}
@@ -243,7 +258,7 @@ export default function StatusPage() {
       {/* 7-DAY UPTIME HISTORY */}
       <div style={{ background: '#fff', borderRadius: '16px', padding: '28px 32px', border: '1px solid #F1F5F9', marginBottom: '24px' }}>
         <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>7-Day Uptime History</p>
-        <p style={{ fontSize: '0.875rem', color: '#0F172A', fontWeight: 600, margin: '0 0 24px' }}>Overall platform availability</p>
+        <p style={{ fontSize: '0.875rem', color: '#0F172A', fontWeight: 600, margin: '0 0 24px' }}>No downtime in the last 7 days · 100% availability across all monitored services</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
           {uptimeHistory.map(({ day, value }) => (
             <div key={day} style={{ textAlign: 'center' }}>
@@ -265,7 +280,7 @@ export default function StatusPage() {
           <Globe size={16} style={{ color: '#475569' }} />
           <div>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>Regional Status</p>
-            <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>Status by geographic region</p>
+            <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>All regions operational · No latency anomalies detected</p>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
@@ -293,7 +308,7 @@ export default function StatusPage() {
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>Incident History</p>
-          <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>Past incidents from the last 30 days · {incidents.filter(i => i.status === 'resolved').length} resolved</p>
+          <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{incidents.filter(i => i.status === 'resolved').length} incidents in the last 30 days — all minor, no customer impact</p>
         </div>
         {incidents.map((incident, idx) => {
           const isExpanded = expandedIncidents.includes(incident.id)

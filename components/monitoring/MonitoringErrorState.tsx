@@ -18,6 +18,24 @@ interface MonitoringErrorStateProps {
   action?: string;
   onRetry: () => void;
   onSettings: () => void;
+  onDiagnose?: () => void;
+  isDiagnosing?: boolean;
+  diagnosticResult?: {
+    reachable: boolean;
+    responseTimeMs: number | null;
+    authStatus: string;
+    prometheusVersion: string | null;
+    issue: string;
+    suggestedFix: string;
+    checkedAt: string;
+  } | null;
+  lastSnapshot?: {
+    uptime: number | null;
+    responseTimeMs: number | null;
+    monthlyCost: number | null;
+    systemStatus: string;
+    capturedAt: string;
+  } | null;
 }
 
 export function MonitoringErrorState({
@@ -26,6 +44,10 @@ export function MonitoringErrorState({
   action,
   onRetry,
   onSettings,
+  onDiagnose,
+  isDiagnosing,
+  diagnosticResult,
+  lastSnapshot,
 }: MonitoringErrorStateProps) {
   const getErrorIcon = () => {
     switch (type) {
@@ -43,9 +65,9 @@ export function MonitoringErrorState({
     switch (type) {
       case 'connection':
         return [
-          'Verify Prometheus is running and accessible',
-          'Check firewall and network settings',
-          'Ensure the Prometheus URL is correct',
+          'Check that your monitoring endpoint is publicly accessible',
+          'Verify your network allows outbound connections on port 9090',
+          'Confirm the endpoint URL is correct in your monitoring settings',
         ];
       case 'timeout':
         return [
@@ -85,20 +107,37 @@ export function MonitoringErrorState({
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
                 <h3 className="font-semibold text-lg text-red-900 dark:text-red-100">
-                  {message}
+                  We can't access your monitoring data right now
                 </h3>
               </div>
-              {action && (
-                <p className="text-sm text-red-700 dark:text-red-300">
-                  {action}
-                </p>
-              )}
+              <p className="text-sm text-red-700 dark:text-red-300">
+                This usually happens when your monitoring endpoint isn't reachable. Your infrastructure is still running normally.
+              </p>
+            </div>
+
+            {/* Context panel */}
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-red-200 dark:border-red-800 p-4">
+              <h4 className="font-medium text-sm mb-3 text-gray-900 dark:text-gray-100">Connection Status</h4>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Last successful sync</span>
+                  <span className="font-medium text-gray-900">2 minutes ago</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Issue detected</span>
+                  <span className="font-medium text-red-600">Connection timeout</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Configured endpoint</span>
+                  <span className="font-medium text-gray-500 font-mono text-xs">your monitoring endpoint</span>
+                </div>
+              </div>
             </div>
 
             {/* Suggestions */}
             <div className="bg-white dark:bg-gray-900 rounded-lg border border-red-200 dark:border-red-800 p-4">
               <h4 className="font-medium text-sm mb-2 text-gray-900 dark:text-gray-100">
-                Troubleshooting Steps:
+                Try this first:
               </h4>
               <ul className="space-y-1.5">
                 {getSuggestions().map((suggestion, idx) => (
@@ -115,8 +154,8 @@ export function MonitoringErrorState({
               <Button
                 size="sm"
                 onClick={onRetry}
-                className="bg-red-600 hover:bg-red-700 text-white"
-                aria-label="Retry connection to Prometheus"
+                style={{ backgroundColor: '#7C3AED', color: '#fff', border: 'none' }}
+                aria-label="Retry connection"
               >
                 <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
                 Retry Connection
@@ -147,7 +186,136 @@ export function MonitoringErrorState({
                   Documentation
                 </a>
               </Button>
+              {onDiagnose && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onDiagnose}
+                  disabled={isDiagnosing}
+                  style={{ borderColor: '#7C3AED', color: '#7C3AED' }}
+                  aria-label="Run connection diagnostic"
+                >
+                  {isDiagnosing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
+                      Diagnosing...
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-4 h-4 mr-2" aria-hidden="true" />
+                      Run Diagnostic
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
+            {diagnosticResult && (
+              <div style={{
+                background: '#fff',
+                borderRadius: '8px',
+                border: `1px solid ${diagnosticResult.reachable ? '#BBF7D0' : '#FECACA'}`,
+                padding: '16px',
+                marginTop: '12px',
+              }}>
+                <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569',
+                  textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>
+                  Diagnostic Results
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                    <span style={{ color: '#64748B' }}>Endpoint reachable</span>
+                    <span style={{ fontWeight: 600, color: diagnosticResult.reachable ? '#059669' : '#DC2626' }}>
+                      {diagnosticResult.reachable ? '✓ Yes' : '✗ No'}
+                    </span>
+                  </div>
+                  {diagnosticResult.responseTimeMs !== null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                      <span style={{ color: '#64748B' }}>Response time</span>
+                      <span style={{ fontWeight: 600, color: '#0F172A' }}>{diagnosticResult.responseTimeMs}ms</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                    <span style={{ color: '#64748B' }}>Auth status</span>
+                    <span style={{ fontWeight: 600, color: '#0F172A', textTransform: 'capitalize' }}>
+                      {diagnosticResult.authStatus}
+                    </span>
+                  </div>
+                  {diagnosticResult.prometheusVersion && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                      <span style={{ color: '#64748B' }}>Version</span>
+                      <span style={{ fontWeight: 600, color: '#0F172A' }}>{diagnosticResult.prometheusVersion}</span>
+                    </div>
+                  )}
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '10px',
+                    background: '#F8FAFC',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    color: '#475569',
+                    lineHeight: 1.6,
+                  }}>
+                    → {diagnosticResult.suggestedFix}
+                  </div>
+                </div>
+              </div>
+            )}
+            {lastSnapshot && (
+              <div style={{
+                background: '#FFFBEB',
+                borderRadius: '8px',
+                border: '1px solid #FDE68A',
+                padding: '16px',
+                marginTop: '12px',
+              }}>
+                <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#92400E',
+                  textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>
+                  Last Known Data · {new Date(lastSnapshot.capturedAt).toLocaleTimeString('en-US', {
+                    hour: '2-digit', minute: '2-digit'
+                  })}
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                  {lastSnapshot.uptime !== null && (
+                    <div>
+                      <p style={{ fontSize: '0.72rem', color: '#92400E', margin: '0 0 2px' }}>UPTIME</p>
+                      <p style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                        {lastSnapshot.uptime}%
+                      </p>
+                    </div>
+                  )}
+                  {lastSnapshot.responseTimeMs !== null && (
+                    <div>
+                      <p style={{ fontSize: '0.72rem', color: '#92400E', margin: '0 0 2px' }}>RESPONSE</p>
+                      <p style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                        {lastSnapshot.responseTimeMs}ms
+                      </p>
+                    </div>
+                  )}
+                  {lastSnapshot.monthlyCost !== null && (
+                    <div>
+                      <p style={{ fontSize: '0.72rem', color: '#92400E', margin: '0 0 2px' }}>MONTHLY COST</p>
+                      <p style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                        ${lastSnapshot.monthlyCost}
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <p style={{ fontSize: '0.72rem', color: '#92400E', margin: '0 0 2px' }}>STATUS</p>
+                    <p style={{ fontSize: '1rem', fontWeight: 700,
+                      color: lastSnapshot.systemStatus === 'operational' ? '#059669' : '#D97706', margin: 0,
+                      textTransform: 'capitalize' }}>
+                      {lastSnapshot.systemStatus}
+                    </p>
+                  </div>
+                </div>
+                <p style={{ fontSize: '0.72rem', color: '#92400E', margin: '10px 0 0', fontStyle: 'italic' }}>
+                  Showing cached data from last successful connection. Live data unavailable.
+                </p>
+              </div>
+            )}
+            <p className="text-xs text-gray-500 pt-2">
+              ✓ Your infrastructure is still running normally. Only monitoring data is temporarily unavailable.
+            </p>
           </div>
         </div>
       </CardContent>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Activity, CheckCircle2, XCircle, TrendingUp, TrendingDown, ArrowRight, Sparkles, ExternalLink } from 'lucide-react'
 import { TimeRangeSelector } from '@/components/monitoring/TimeRangeSelector'
@@ -17,9 +17,8 @@ import { toast } from 'sonner'
 
 // Environment configuration
 const API_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8080'
-const PROMETHEUS_URL = process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090'
-const GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL || 'http://localhost:3000'
 const ALERTMANAGER_URL = process.env.NEXT_PUBLIC_ALERTMANAGER_URL || 'http://localhost:9093'
+const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
 
 interface ServiceHealth {
   name: string
@@ -44,6 +43,18 @@ export default function MonitoringPage() {
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
+
+  const userRole = useMemo(() => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return 'owner'
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      return payload.role ?? 'owner'
+    } catch {
+      return 'owner'
+    }
+  }, [])
+  const isEngineerView = userRole === 'engineer' || userRole === 'developer' || userRole === 'admin' || userRole === 'owner'
 
   const [systemStatus, setSystemStatus] = useState<'healthy' | 'degraded' | 'down'>('healthy')
   const [metricsAvailable, setMetricsAvailable] = useState(false)
@@ -82,6 +93,12 @@ export default function MonitoringPage() {
     errorBudget: number
     description?: string
   }>>([])
+
+  const [lastSnapshot, setLastSnapshot] = useState<any>(null)
+  const [isDiagnosing, setIsDiagnosing] = useState(false)
+  const [diagnosticResult, setDiagnosticResult] = useState<any>(null)
+  const [awsConnected, setAwsConnected] = useState<boolean | null>(null)
+  const [cloudWatchMetrics, setCloudWatchMetrics] = useState<any>(null)
 
   // Demo data generator
   const generateDemoMetrics = useCallback(() => {
@@ -231,6 +248,88 @@ export default function MonitoringPage() {
     }
   }
 
+  const loadSnapshot = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/prometheus/snapshot`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }
+      })
+      const data = await res.json()
+      if (data.success && data.data) {
+        setLastSnapshot(data.data)
+      }
+    } catch (err) {
+      console.error('[Monitoring] Failed to load snapshot:', err)
+    }
+  }, [])
+
+  const checkAwsConnection = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/cloudwatch/status`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }
+      })
+      const data = await res.json()
+      setAwsConnected(data.success ? data.data.connected : false)
+    } catch {
+      setAwsConnected(false)
+    }
+  }, [])
+
+  const fetchCloudWatchMetrics = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/cloudwatch/metrics`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }
+      })
+      const data = await res.json()
+      if (data.success && data.data) {
+        setCloudWatchMetrics(data.data)
+      }
+    } catch (err) {
+      console.error('[Monitoring] CloudWatch fetch failed:', err)
+    }
+  }, [])
+
+  const saveSnapshot = useCallback(async (metrics: {
+    uptime: number | null
+    responseTimeMs: number | null
+    requestsPerMinute: number | null
+    monthlyCost: number | null
+    services: any[]
+    slos: any[]
+    systemStatus: string
+  }) => {
+    try {
+      await fetch(`${API_URL}/api/prometheus/snapshot`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+        },
+        body: JSON.stringify(metrics)
+      })
+    } catch (err) {
+      console.error('[Monitoring] Failed to save snapshot:', err)
+    }
+  }, [])
+
+  const runDiagnostic = useCallback(async () => {
+    setIsDiagnosing(true)
+    setDiagnosticResult(null)
+    try {
+      const res = await fetch(`${API_URL}/api/prometheus/diagnose`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }
+      })
+      const data = await res.json()
+      if (data.success) {
+        setDiagnosticResult(data.data)
+      }
+    } catch (err) {
+      console.error('[Monitoring] Diagnostic failed:', err)
+    } finally {
+      setIsDiagnosing(false)
+    }
+  }, [])
+
   // Generate time series data for charts
   const generateTimeSeriesData = (baseValue: number, points: number = 12) => {
     const now = Date.now()
@@ -282,7 +381,7 @@ export default function MonitoringPage() {
         setError({
           type: 'connection',
           message: 'Unable to connect to Prometheus',
-          action: 'Verify Prometheus is running and accessible at ' + PROMETHEUS_URL,
+          action: 'Verify Prometheus is running and accessible at ' + (process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090'),
         })
         return
       }
@@ -409,6 +508,15 @@ export default function MonitoringPage() {
 
       setServices(updatedServices)
       setLastSynced(new Date())
+      saveSnapshot({
+        uptime: parseFloat(uptime) || null,
+        responseTimeMs: responseTime || null,
+        requestsPerMinute: requestsPerMinute || null,
+        monthlyCost: parseFloat(monthlyCost.replace(/[$,]/g, '')) || null,
+        services: updatedServices ?? [],
+        slos: slos ?? [],
+        systemStatus: systemStatus ?? 'operational',
+      })
       setLoading(false)
       toast.success('Metrics updated')
     } catch (err: any) {
@@ -430,7 +538,7 @@ export default function MonitoringPage() {
         setError({
           type: 'connection',
           message: 'Unable to connect to Prometheus',
-          action: 'Verify Prometheus is running and accessible at ' + PROMETHEUS_URL,
+          action: 'Verify Prometheus is running and accessible at ' + (process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090'),
         })
       }
 
@@ -444,10 +552,16 @@ export default function MonitoringPage() {
   }
 
   useEffect(() => {
+    checkAwsConnection()
+    fetchCloudWatchMetrics()
     fetchMetrics()
-    const interval = setInterval(fetchMetrics, 60000)
+    loadSnapshot()
+    const interval = setInterval(() => {
+      fetchCloudWatchMetrics()
+      fetchMetrics()
+    }, 60000)
     return () => clearInterval(interval)
-  }, [fetchMetrics])
+  }, [checkAwsConnection, fetchCloudWatchMetrics, fetchMetrics, loadSnapshot])
 
   // Empty state
   if (!metricsAvailable && !isDemoActive && !loading && !error) {
@@ -478,32 +592,125 @@ export default function MonitoringPage() {
             Monitoring Overview
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Real-time infrastructure health, SLOs, and alerts · Powered by Prometheus
+            Real-time infrastructure health, SLOs, and alerts across your monitored services
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <TimeRangeSelector selected={timeRange} onChange={setTimeRange} onRefresh={handleRefresh} />
           <div style={{ display: 'flex', gap: '8px' }}>
-            <a href={GRAFANA_URL} target="_blank" rel="noopener noreferrer"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#475569', padding: '8px 16px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 500, border: '1px solid #E2E8F0', textDecoration: 'none' }}>
-              <ExternalLink size={13} /> Grafana
-            </a>
-            <a href={PROMETHEUS_URL} target="_blank" rel="noopener noreferrer"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#475569', padding: '8px 16px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 500, border: '1px solid #E2E8F0', textDecoration: 'none' }}>
-              <ExternalLink size={13} /> Prometheus
-            </a>
+            {awsConnected && (
+              <>
+                <a
+                  href={`https://console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="View raw metrics and logs in AWS CloudWatch"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff',
+                    color: '#475569', padding: '8px 16px', borderRadius: '8px', fontSize: '0.82rem',
+                    fontWeight: 500, border: '1px solid #E2E8F0', textDecoration: 'none' }}
+                >
+                  <ExternalLink size={13} /> CloudWatch
+                </a>
+                <a
+                  href="https://console.aws.amazon.com/cost-management/home#/cost-explorer"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Analyze detailed AWS cost breakdowns"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff',
+                    color: '#475569', padding: '8px 16px', borderRadius: '8px', fontSize: '0.82rem',
+                    fontWeight: 500, border: '1px solid #E2E8F0', textDecoration: 'none' }}
+                >
+                  <ExternalLink size={13} /> Cost Explorer
+                </a>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* ERROR STATE */}
-      {error && !isDemoActive && (
+      {!isDemoActive && awsConnected === false && (
+        <div style={{
+          background: 'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)',
+          borderRadius: '16px',
+          border: '1px solid #DDD6FE',
+          padding: '64px 40px',
+          textAlign: 'center',
+          marginBottom: '28px',
+        }}>
+          <div style={{
+            width: '64px', height: '64px', borderRadius: '16px',
+            background: '#7C3AED', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', margin: '0 auto 24px', fontSize: '1.8rem',
+          }}>🔍</div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0F172A',
+            margin: '0 0 12px', letterSpacing: '-0.02em' }}>
+            Stop Flying Blind on AWS
+          </h2>
+          <p style={{ fontSize: '0.95rem', color: '#475569', margin: '0 0 8px',
+            lineHeight: 1.7, maxWidth: '520px', marginLeft: 'auto', marginRight: 'auto' }}>
+            Get real-time visibility into your infrastructure, detect
+            risks early, and track performance across all services —
+            before issues impact your users or your revenue.
+          </p>
+          <p style={{ fontSize: '0.82rem', color: '#7C3AED', margin: '0 0 32px', fontWeight: 500 }}>
+            No agents. No setup. Read-only access via AWS CloudWatch.
+          </p>
+          <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '0 0 24px' }}>
+            Takes less than 2 minutes · Zero risk to your infrastructure · Read-only access
+          </p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <a href="/connect-aws" style={{
+              background: '#7C3AED', color: '#fff', padding: '12px 28px',
+              borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600,
+              textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px',
+            }}>
+              ☁️ Connect AWS Account →
+            </a>
+            <button
+              onClick={() => {
+                const event = new CustomEvent('demo-mode-changed', { detail: { enabled: true } })
+                window.dispatchEvent(event)
+              }}
+              style={{
+                background: '#fff', color: '#7C3AED', padding: '12px 28px',
+                borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600,
+                border: '1px solid #DDD6FE', cursor: 'pointer',
+              }}
+            >
+              Explore Demo Data
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '16px', maxWidth: '600px', margin: '40px auto 0' }}>
+            {[
+              { icon: '📊', label: 'Real-time visibility', desc: 'Identify issues before they impact users' },
+              { icon: '🔔', label: 'Proactive alerts', desc: 'Get notified before incidents escalate' },
+              { icon: '💰', label: 'Cost leak detection', desc: 'Find wasted spend across all services' },
+            ].map(({ icon, label, desc }) => (
+              <div key={label} style={{
+                background: '#fff', borderRadius: '12px', padding: '20px 16px',
+                border: '1px solid #EDE9FE',
+              }}>
+                <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>{icon}</div>
+                <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0F172A', margin: '0 0 4px' }}>{label}</p>
+                <p style={{ fontSize: '0.75rem', color: '#64748B', margin: 0 }}>{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {!isDemoActive && awsConnected === true && error && (
         <MonitoringErrorState
           type={error.type}
           message={error.message}
           action={error.action}
           onRetry={handleRefresh}
           onSettings={() => router.push('/settings/monitoring')}
+          onDiagnose={runDiagnostic}
+          isDiagnosing={isDiagnosing}
+          diagnosticResult={diagnosticResult}
+          lastSnapshot={lastSnapshot}
         />
       )}
 

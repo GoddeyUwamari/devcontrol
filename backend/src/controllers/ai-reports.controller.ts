@@ -11,12 +11,12 @@ const generateReportSchema = z.object({
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
   }).optional(),
-  reportType: z.enum(['weekly_summary', 'monthly_summary', 'executive_summary']).optional()
+  reportType: z.enum(['weekly_summary', 'monthly_summary', 'executive_summary', 'cost_analysis', 'security_insights', 'infrastructure_health']).optional()
 });
 
 const getHistorySchema = z.object({
   limit: z.string().regex(/^\d+$/).optional(),
-  reportType: z.enum(['weekly_summary', 'monthly_summary', 'executive_summary']).optional()
+  reportType: z.enum(['weekly_summary', 'monthly_summary', 'executive_summary', 'cost_analysis', 'security_insights', 'infrastructure_health']).optional()
 });
 
 export class AIReportsController {
@@ -54,12 +54,12 @@ export class AIReportsController {
 
       console.log('[AI Reports] Generating report for organization:', organizationId);
 
-      // Fetch data
-      const data = await service.fetchReportData(organizationId, dateRange || defaultDateRange);
+      // Fetch data (pass reportType so irrelevant queries are skipped)
+      const data = await service.fetchReportData(organizationId, dateRange || defaultDateRange, reportType || 'weekly_summary');
 
       // Generate report
       const startTime = Date.now();
-      const report = await service.generateWeeklyReport(data);
+      const report = await service.generateWeeklyReport(data, reportType || 'weekly_summary');
       const generationTime = Date.now() - startTime;
 
       // Save to database
@@ -218,6 +218,48 @@ export class AIReportsController {
         success: false,
         error: 'Failed to fetch report'
       });
+    }
+  }
+
+  /**
+   * Bulk delete reports
+   * DELETE /api/ai-reports/bulk
+   */
+  async bulkDeleteReports(req: Request, res: Response) {
+    try {
+      const organizationId = req.user?.organizationId;
+
+      if (!organizationId) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const bulkDeleteSchema = z.object({
+        ids: z.array(z.string().uuid()).min(1).max(100),
+      });
+
+      const validation = bulkDeleteSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid request',
+          details: validation.error.issues,
+        });
+      }
+
+      const { ids } = validation.data;
+
+      const result = await pool.query(
+        'DELETE FROM generated_reports WHERE id = ANY($1::uuid[]) AND organization_id = $2 RETURNING id',
+        [ids, organizationId]
+      );
+
+      return res.json({
+        success: true,
+        data: { deleted: result.rows.length },
+      });
+    } catch (error: any) {
+      console.error('[AI Reports] Bulk delete error:', error);
+      return res.status(500).json({ success: false, error: 'Failed to delete reports' });
     }
   }
 
