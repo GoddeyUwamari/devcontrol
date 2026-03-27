@@ -74,6 +74,47 @@ export interface GeneratedReport {
   };
 }
 
+// The actual shape returned by GET /api/ai-reports/:id (matches backend GeneratedReport)
+export interface ReportDetail {
+  id: string;
+  reportType: string;
+  dateRange: { from: string; to: string };
+  summary: string;
+  executiveSummary: string;
+  keyHighlights: string[];
+  costAnalysis?: {
+    overview: string;
+    trends: string;
+    recommendations: string[];
+  };
+  securityAnalysis?: {
+    overview: string;
+    topRisks: string;
+    recommendations: string[];
+  };
+  performanceAnalysis?: {
+    overview: string;
+    doraMetrics: string;
+    recommendations: string[];
+  };
+  topRecommendations: Array<{
+    title: string;
+    impact: 'high' | 'medium' | 'low';
+    description: string;
+    estimatedSavings?: number;
+    effort: 'low' | 'medium' | 'high';
+  }>;
+  metadata: {
+    aiModel: string;
+    generationTime: number;
+    wasFallback: boolean;
+    createdAt: string;
+    sentTo: string | null;
+    sentAt: string | null;
+    deliveryStatus: string | null;
+  };
+}
+
 export interface ReportHistoryItem {
   id: string;
   report_type: string;
@@ -181,6 +222,29 @@ class AIReportsServiceClient {
 
     const result = await response.json();
     return result.data;
+  }
+
+  /**
+   * Get full report detail (correctly typed for the detail page)
+   */
+  async getReportDetail(reportId: string): Promise<ReportDetail> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('Authentication required');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/ai-reports/${reportId}`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Report not found' }));
+      throw new Error(error.error || 'Report not found');
+    }
+
+    const result = await response.json();
+    return result.data as ReportDetail;
   }
 
   /**

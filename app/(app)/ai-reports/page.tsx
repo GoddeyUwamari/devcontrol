@@ -299,7 +299,7 @@ export default function AIReportsPage() {
   const isLoading = isFetchingHistory
 
   const handleViewReport = (id: string) => router.push(`/ai-reports/${id}`)
-  const handleDownloadReport = (id: string) => console.log('Download', id)
+  const handleDownloadReport = (id: string) => router.push(`/ai-reports/${id}?print=1`)
 
   return (
     <div style={{
