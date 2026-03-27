@@ -2,17 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { optimizationService } from '@/lib/services/optimization.service';
-import {
-  OptimizationRecommendation,
-  OptimizationSummary,
-} from '@/types/optimization.types';
 import { RefreshCw, Zap, Wrench, DollarSign, Server, ShieldCheck, Tag, CheckCircle, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { remediationService } from '@/lib/services/remediation.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+import RecommendationDrawer from '@/components/cost-optimization/RecommendationDrawer';
 
 // ── New AI cost optimization API helpers ──────────────────────────────────────
 const COST_OPT_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization`;
@@ -97,9 +93,8 @@ export default function CostOptimizationPage() {
   const { organization } = useAuth();
   const isEnterprise = organization?.subscriptionTier === 'enterprise';
   const [creatingWorkflowFor, setCreatingWorkflowFor] = useState<string | null>(null);
-  const [recommendations, setRecommendations] = useState<OptimizationRecommendation[]>([]);
-  const [summary, setSummary] = useState<OptimizationSummary | null>(null);
-  const [, setIsScanning] = useState(false);
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<string>('pending');
   const [showRiskModal, setShowRiskModal] = useState(false);
@@ -108,6 +103,7 @@ export default function CostOptimizationPage() {
   const [actionInProgress, setActionInProgress] = useState<Set<string>>(new Set());
   const [demoStatusOverrides, setDemoStatusOverrides] = useState<Record<string, string>>({});
   const [showAll, setShowAll] = useState(false);
+  const [selectedRecommendation, setSelectedRecommendation] = useState<any | null>(null);
 
   // ── AI scan state ────────────────────────────────────────────────────────────
   const [scanState, setScanState] = useState<ScanState>('idle');
@@ -196,58 +192,56 @@ export default function CostOptimizationPage() {
     return () => stopPolling();
   }, []);
 
+  // Load existing results on mount so a returning user sees data immediately
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    loadAIResults().then(raw => {
+      if (raw && raw.length > 0) {
+        const mapped = raw.map(mapAIResultToRec);
+        setRecommendations(mapped);
+        const totalSavings = mapped.reduce((s: number, r: any) => s + r.monthlySavings, 0);
+        setSummary({
+          totalRecommendations: mapped.length,
+          totalMonthlySavings: totalSavings,
+          totalAnnualSavings: totalSavings * 12,
+        });
+        setScanState('complete');
+      } else {
+        setScanState('idle');
+      }
+      setIsLoading(false);
+    }).catch(() => {
+      setScanState('idle');
+      setIsLoading(false);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowRiskModal(false); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  useEffect(() => {
-    loadRecommendations();
-  }, [filter]);
-
   const loadRecommendations = async () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const data = await optimizationService.getRecommendations(filter);
-      setRecommendations(data.recommendations);
-      setSummary(data.summary);
+      const raw = await loadAIResults();
+      const mapped = raw.map(mapAIResultToRec);
+      setRecommendations(mapped);
+      const totalSavings = mapped.reduce((s: number, r: any) => s + r.monthlySavings, 0);
+      setSummary({
+        totalRecommendations: mapped.length,
+        totalMonthlySavings: totalSavings,
+        totalAnnualSavings: totalSavings * 12,
+      });
+      setScanState(mapped.length > 0 ? 'complete' : 'idle');
     } catch (error: any) {
       setLoadError(error);
+      setScanState('idle');
       console.error('Failed to load recommendations:', error);
-      toast.error('Failed to load recommendations');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const runScan = async () => {
-    setIsScanning(true);
-    try {
-      const data = await optimizationService.scan();
-      setRecommendations(data.recommendations);
-      setSummary(data.summary);
-      toast.success(
-        `Found ${data.recommendations.length} optimization opportunities! Potential savings: $${data.summary.totalMonthlySavings.toFixed(2)}/month`,
-        { duration: 5000 }
-      );
-    } catch (error: any) {
-      console.error('Scan failed:', error);
-      toast.error(error.message || 'Scan failed');
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const updateStatus = async (id: string, status: 'approved' | 'applied' | 'dismissed') => {
-    try {
-      await optimizationService.updateStatus(id, status);
-      toast.success(`Recommendation ${status}`);
-      loadRecommendations();
-    } catch (error: any) {
-      console.error('Failed to update status:', error);
-      toast.error('Failed to update status');
     }
   };
 
@@ -430,7 +424,7 @@ export default function CostOptimizationPage() {
     }
   };
 
-  const handleRunScan = () => runScan();
+  const handleRunScan = () => { if (scanState !== 'scanning') handleAIScan(); };
   const handleApprove = (id: string) => aiApprove(id);
   const handleDismiss = (id: string) => aiIgnore(id);
 
@@ -905,9 +899,10 @@ export default function CostOptimizationPage() {
 
                 return (
                   <div key={rec.id}
-                    style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: '0.5px solid #e5e7eb', display: 'grid', gridTemplateColumns: '1fr auto', gap: '24px', alignItems: 'start' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#7C3AED'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#e5e7eb'; }}>
+                    onClick={() => setSelectedRecommendation(rec)}
+                    style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: '0.5px solid #e5e7eb', display: 'grid', gridTemplateColumns: '1fr auto', gap: '24px', alignItems: 'start', cursor: 'pointer' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#7C3AED'; (e.currentTarget as HTMLDivElement).style.background = '#FAFBFF'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#e5e7eb'; (e.currentTarget as HTMLDivElement).style.background = '#fff'; }}>
 
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
@@ -922,10 +917,10 @@ export default function CostOptimizationPage() {
                       <p style={{ fontSize: '0.82rem', color: '#475569', margin: '0 0 12px', lineHeight: 1.6 }}>
                         {rec.description}
                       </p>
-                      <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem', color: '#64748B', flexWrap: 'wrap' }}>
-                        {rec.estimatedTime && <span>⏱ {rec.estimatedTime}</span>}
-                        {rec.downtime && <span>· {rec.downtime}</span>}
-                        {rec.region && <span style={{ fontFamily: 'monospace', color: '#94A3B8' }}>· {rec.region}</span>}
+                      <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {rec.estimatedTime && <span style={{ color: '#7C3AED', cursor: 'pointer' }} onMouseEnter={e => { (e.target as HTMLElement).style.textDecoration = 'underline'; (e.target as HTMLElement).style.color = '#5B21B6'; }} onMouseLeave={e => { (e.target as HTMLElement).style.textDecoration = 'none'; (e.target as HTMLElement).style.color = '#7C3AED'; }}>⏱ {rec.estimatedTime}</span>}
+                        {rec.downtime && <><span style={{ color: '#CBD5E1' }}>·</span><span style={{ color: '#7C3AED', cursor: 'pointer' }} onMouseEnter={e => { (e.target as HTMLElement).style.textDecoration = 'underline'; (e.target as HTMLElement).style.color = '#5B21B6'; }} onMouseLeave={e => { (e.target as HTMLElement).style.textDecoration = 'none'; (e.target as HTMLElement).style.color = '#7C3AED'; }}>{rec.downtime}</span></>}
+                        {rec.region && <><span style={{ color: '#CBD5E1' }}>·</span><span style={{ color: '#7C3AED', cursor: 'pointer', fontFamily: 'monospace' }} onMouseEnter={e => { (e.target as HTMLElement).style.textDecoration = 'underline'; (e.target as HTMLElement).style.color = '#5B21B6'; }} onMouseLeave={e => { (e.target as HTMLElement).style.textDecoration = 'none'; (e.target as HTMLElement).style.color = '#7C3AED'; }}>{rec.region}</span></>}
                       </div>
                     </div>
 
@@ -946,7 +941,7 @@ export default function CostOptimizationPage() {
                         </div>
                       )}
 
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         {rec.status === 'applied' || rec.status === 'approved' ? (
                           <span style={{ fontSize: '11px', fontWeight: 600, color: '#16A34A', background: '#F0FDF4', padding: '4px 10px', borderRadius: '4px', border: '1px solid #BBF7D0' }}>
                             ✓ Approved
@@ -958,9 +953,11 @@ export default function CostOptimizationPage() {
                         ) : (
                           <>
                             <button
-                              onClick={() => handleApprove(rec.id)}
+                              onClick={() => isSafe ? handleApprove(rec.id) : setSelectedRecommendation(rec)}
                               disabled={actionInProgress.has(rec.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#EEEDFE', color: '#534AB7', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, border: 'none', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1 }}>
+                              style={{ display: 'flex', alignItems: 'center', gap: '4px', background: isSafe ? '#16A34A' : 'transparent', color: isSafe ? '#fff' : '#7C3AED', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, border: isSafe ? 'none' : '1px solid #7C3AED', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1, transition: 'background 0.15s, color 0.15s' }}
+                              onMouseEnter={e => { if (!actionInProgress.has(rec.id)) { const el = e.currentTarget; el.style.background = isSafe ? '#15803D' : '#F5F3FF'; } }}
+                              onMouseLeave={e => { const el = e.currentTarget; el.style.background = isSafe ? '#16A34A' : 'transparent'; }}>
                               {actionInProgress.has(rec.id) ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : null}
                               {isSafe ? 'Approve' : 'Review'}
                             </button>
@@ -975,7 +972,9 @@ export default function CostOptimizationPage() {
                             <button
                               onClick={() => handleDismiss(rec.id)}
                               disabled={actionInProgress.has(rec.id)}
-                              style={{ background: 'none', color: '#475569', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 500, border: '1px solid #E2E8F0', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1 }}>
+                              style={{ background: 'transparent', color: '#6B7280', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 500, border: '1px solid #D1D5DB', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1, transition: 'background 0.15s' }}
+                              onMouseEnter={e => { if (!actionInProgress.has(rec.id)) e.currentTarget.style.background = '#F9FAFB'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
                               Dismiss
                             </button>
                           </>
@@ -1007,6 +1006,22 @@ export default function CostOptimizationPage() {
           )}
         </>
       )}
+
+      {/* Detail drawer */}
+      <RecommendationDrawer
+        recommendation={selectedRecommendation}
+        onClose={() => setSelectedRecommendation(null)}
+        onApprove={(id) => {
+          setRecommendations((prev: any[]) => prev.map((r: any) => r.id === id ? { ...r, status: 'approved' } : r));
+          setSelectedRecommendation(null);
+          toast.success('Recommendation approved');
+        }}
+        onDismiss={(id) => {
+          setRecommendations((prev: any[]) => prev.map((r: any) => r.id === id ? { ...r, status: 'ignored' } : r));
+          setSelectedRecommendation(null);
+          toast.success('Recommendation dismissed');
+        }}
+      />
 
       {/* Spinner keyframe */}
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
