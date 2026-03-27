@@ -10,6 +10,36 @@ import type { Invoice } from '@/lib/types'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 
+function WhatYoullSee() {
+  const features = [
+    { icon: '📈', text: 'Track monthly spend trends' },
+    { icon: '🔔', text: 'Detect unusual billing spikes' },
+    { icon: '🔍', text: 'Analyze service-level costs' },
+    { icon: '📄', text: 'Export detailed invoices' },
+  ]
+  return (
+    <div style={{ marginTop: '24px', padding: '24px', background: '#F9FAFB', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+      <p style={{ fontSize: '13px', fontWeight: 600, color: '#374151', margin: '0 0 16px' }}>
+        Once connected, you&apos;ll be able to:
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+        {features.map(item => (
+          <div key={item.text} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#4B5563' }}>
+            <span>{item.icon}</span>
+            <span>{item.text}</span>
+          </div>
+        ))}
+      </div>
+      <button
+        style={{ background: '#7C3AED', color: '#fff', border: 'none', borderRadius: '8px', padding: '9px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#6D28D9'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = '#7C3AED'; }}>
+        Connect AWS Account →
+      </button>
+    </div>
+  )
+}
+
 export default function InvoicesPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -143,17 +173,13 @@ export default function InvoicesPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>
-              Billing Intelligence
+              {hasData ? 'Billing Intelligence' : 'Connect AWS to Unlock Billing Intelligence'}
             </h1>
-            {(isDemoActive || (isConnected && displayInvoices.length > 0)) && (
-              <span style={{ fontSize: '10px', background: '#F0FDF4', border: '0.5px solid #BBF7D0', borderRadius: '100px', padding: '3px 9px', color: '#059669', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22C55E', display: 'inline-block' }} />
-                Synced 2 min ago
-              </span>
-            )}
           </div>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            AWS invoice history, spend trends, and billing anomaly detection
+            {hasData
+              ? 'AWS invoice history, spend trends, and billing anomaly detection'
+              : 'Analyze invoices, track spend trends, and detect anomalies across your AWS account.'}
           </p>
         </div>
         <button
@@ -187,11 +213,11 @@ export default function InvoicesPage() {
         {/* This Month — hero card with left accent */}
         <div style={{ background: '#fff', borderRadius: '0 14px 14px 0', padding: '32px', border: '1px solid #E2E8F0', borderLeft: '2px solid #534AB7' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>This Month</p>
-          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#0F172A' : '#9ca3af', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
-            {hasData ? `$${totalThisMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
+          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#0F172A' : '#D1D5DB', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+            {hasData ? `$${totalThisMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 6px', lineHeight: 1.6 }}>
-            {hasData ? 'Current billing period' : 'Connect AWS to track spend'}
+          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#9CA3AF', margin: '0 0 6px', lineHeight: 1.6 }}>
+            {hasData ? 'Current billing period' : 'No billing data available'}
           </p>
           {isDemoActive && (
             <p style={{ fontSize: '11px', color: '#A32D2D', margin: 0 }}>↑ 14.4% vs last month</p>
@@ -206,26 +232,41 @@ export default function InvoicesPage() {
         {/* Total Paid */}
         <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Paid</p>
-          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#3B6D11' : '#9ca3af', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
-            {hasData ? `$${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
+          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#3B6D11' : '#D1D5DB', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+            {hasData ? `$${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            {hasData ? 'All time paid invoices' : 'No data yet'}
+          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#9CA3AF', margin: 0, lineHeight: 1.6 }}>
+            {hasData ? 'All time paid invoices' : 'No billing data available'}
           </p>
         </div>
 
         {/* Outstanding */}
         <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Outstanding</p>
-          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? (outstanding > 0 ? '#DC2626' : '#3B6D11') : '#9ca3af', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
-            {hasData ? `$${outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
+          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? (outstanding > 0 ? '#DC2626' : '#3B6D11') : '#D1D5DB', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+            {hasData ? `$${outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            {hasData ? (outstanding > 0 ? 'Requires payment' : 'All invoices paid') : 'No data yet'}
+          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#9CA3AF', margin: 0, lineHeight: 1.6 }}>
+            {hasData ? (outstanding > 0 ? 'Requires payment' : 'All invoices paid') : 'No billing data available'}
           </p>
         </div>
 
       </div>
+
+      {/* SYNC STATUS BAR */}
+      {(isConnected || isDemoActive) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', color: '#64748B', padding: '10px 0', borderBottom: '1px solid #F1F5F9', marginBottom: '20px' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: displayError ? '#FBBF24' : '#22C55E', flexShrink: 0 }} />
+          {displayError ? (
+            <>
+              <span>Billing data sync issue · Last successful sync: unavailable</span>
+              <span style={{ color: '#94A3B8' }}>· Next retry in ~5 minutes</span>
+            </>
+          ) : (
+            <span>Billing data synced · Last updated: {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+          )}
+        </div>
+      )}
 
       {/* STATUS FILTER — hidden in state 2, collapsed in state 4 */}
       {(() => {
@@ -235,7 +276,7 @@ export default function InvoicesPage() {
         if (hideFilters) return null
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px' }}>
+            <div title={!hasData ? 'Available after billing data loads' : undefined} style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px', opacity: !hasData ? 0.4 : 1, pointerEvents: !hasData ? 'none' : 'auto' }}>
               {(collapseFilters ? ['all'] : ['all', 'paid', 'outstanding', 'overdue']).map(f => (
                 <button
                   key={f}
@@ -272,6 +313,7 @@ export default function InvoicesPage() {
       ) : !isConnected ? (
 
         /* STATE 2 — Not connected */
+        <>
         <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: '64px 48px', textAlign: 'center' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <FileText size={22} style={{ color: '#94A3B8' }} />
@@ -296,38 +338,46 @@ export default function InvoicesPage() {
             Connect AWS &amp; import invoices
           </button>
         </div>
+        <WhatYoullSee />
+        </>
 
       ) : isConnected && displayError && displayInvoices.length === 0 ? (
 
-        /* STATE 3 — Error (inside table card) */
-        <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
-          <div style={{ background: '#FCEBEB', border: '0.5px solid #F09595', borderRadius: '8px', padding: '14px 16px', margin: '16px 20px' }}>
-            <p style={{ fontSize: '13px', fontWeight: 500, color: '#791F1F', margin: '0 0 6px' }}>Unable to load invoices</p>
-            <p style={{ fontSize: '12px', color: '#A32D2D', margin: '0 0 12px', lineHeight: 1.5 }}>
-              We couldn&apos;t fetch your billing data. This may be a temporary connection issue with the AWS Billing API.
-            </p>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => refetch()}
-                style={{ background: '#fff', border: '0.5px solid #F09595', color: '#791F1F', fontSize: '11px', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer' }}>
-                ↺ Retry
-              </button>
-              <button style={{ background: '#fff', border: '0.5px solid #F09595', color: '#791F1F', fontSize: '11px', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer' }}>
-                Reconnect AWS
-              </button>
+        /* STATE 3 — Error */
+        <>
+          <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '12px', padding: '16px 20px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <span style={{ fontSize: '16px', flexShrink: 0, marginTop: '1px' }}>⚠️</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: '13px', fontWeight: 600, color: '#92400E', margin: '0 0 4px' }}>
+                Having trouble fetching billing data
+              </p>
+              <p style={{ fontSize: '12px', color: '#B45309', margin: '0 0 12px', lineHeight: 1.5 }}>
+                This is usually temporary. Check your AWS connection or try again.
+              </p>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => refetch()}
+                  style={{ background: 'transparent', border: '1px solid #FCD34D', color: '#92400E', fontSize: '12px', fontWeight: 500, borderRadius: '6px', padding: '6px 14px', cursor: 'pointer' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#FEF3C7'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                  ↺ Retry
+                </button>
+                <button
+                  style={{ background: 'transparent', border: '1px solid #FCD34D', color: '#92400E', fontSize: '12px', fontWeight: 500, borderRadius: '6px', padding: '6px 14px', cursor: 'pointer' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#FEF3C7'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                  Reconnect AWS
+                </button>
+              </div>
             </div>
           </div>
-          <div style={{ padding: '16px 28px 32px', textAlign: 'center' }}>
-            <p style={{ fontSize: '13px', fontWeight: 500, color: '#0F172A', margin: '0 0 6px' }}>No invoices loaded</p>
-            <p style={{ fontSize: '12px', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-              Resolve the connection error above to view your billing history.
-            </p>
-          </div>
-        </div>
+          <WhatYoullSee />
+        </>
 
       ) : isConnected && !displayError && displayInvoices.length === 0 ? (
 
         /* STATE 4 — Connected, no invoices yet */
+        <>
         <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: '64px 48px', textAlign: 'center' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <FileText size={22} style={{ color: '#94A3B8' }} />
@@ -337,6 +387,8 @@ export default function InvoicesPage() {
             Your AWS account is connected. Invoices will appear here after your first billing cycle completes — typically within 24–48 hours.
           </p>
         </div>
+        <WhatYoullSee />
+        </>
 
       ) : (
 
