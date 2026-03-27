@@ -70,6 +70,21 @@ export class CostOptimizationAIService {
    * Start a new scan — creates record, fires background job, returns scanId immediately.
    */
   async startScan(orgId: string): Promise<string> {
+    // Return existing scan ID if one is already running for this org
+    const running = await this.pool.query(
+      `SELECT id FROM cost_optimization_scans WHERE org_id = $1 AND status = 'running' LIMIT 1`,
+      [orgId]
+    );
+    if (running.rows.length > 0) {
+      return running.rows[0].id as string;
+    }
+
+    // Clear all previous results for this org before starting fresh
+    await this.pool.query(
+      'DELETE FROM cost_optimization_results WHERE org_id = $1',
+      [orgId]
+    );
+
     const scanId = uuidv4();
 
     await this.pool.query(

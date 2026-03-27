@@ -109,6 +109,7 @@ export default function CostOptimizationPage() {
   const [scanState, setScanState] = useState<ScanState>('idle');
   const [scanStep, setScanStep] = useState(0);
   const [scanId, setScanId] = useState<string | null>(null);
+  const isScanningRef = useRef(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stepRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -133,6 +134,13 @@ export default function CostOptimizationPage() {
   };
 
   const handleAIScan = async () => {
+    if (isScanningRef.current) return;
+    isScanningRef.current = true;
+
+    // Clear stale intervals and previous results immediately
+    stopPolling();
+    setRecommendations([]);
+    setSummary(null);
     setScanState('scanning');
     setScanStep(0);
     startStepperAnimation();
@@ -144,6 +152,7 @@ export default function CostOptimizationPage() {
     } catch (err: any) {
       stopPolling();
       setScanState('idle');
+      isScanningRef.current = false;
       toast.error(err.message || 'Failed to start scan');
       return;
     }
@@ -170,6 +179,7 @@ export default function CostOptimizationPage() {
               } as any);
             }
             setScanState('complete');
+            isScanningRef.current = false;
             if (opportunityCount !== null) {
               toast.success(
                 `Scan complete — ${opportunityCount} opportunit${opportunityCount !== 1 ? 'ies' : 'y'} found${totalSavings ? `, $${Number(totalSavings).toLocaleString()}/mo in savings` : ''}`,
@@ -180,6 +190,7 @@ export default function CostOptimizationPage() {
         } else if (status === 'failed') {
           stopPolling();
           setScanState('idle');
+          isScanningRef.current = false;
           toast.error('Scan failed. Please try again.');
         }
       } catch {
@@ -571,8 +582,14 @@ export default function CostOptimizationPage() {
         </div>
       )}
 
-      {/* ── STATE 1: NOT CONNECTED ─────────────────────────────────── */}
-      {!isConnected ? (
+      {/* ── LOADING STATE ────────────────────────────────────────────── */}
+      {isLoading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '256px' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '2px solid #EDE9FE', borderBottomColor: '#7C3AED', animation: 'spin 0.75s linear infinite' }} />
+        </div>
+
+      ) : !isConnected ? (
+      /* ── STATE 1: NOT CONNECTED ─────────────────────────────────── */
         <>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
             <div>
@@ -638,10 +655,10 @@ export default function CostOptimizationPage() {
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '24px', marginBottom: '32px' }}>
             <div>
               <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 8px', letterSpacing: '-0.02em' }}>
-                Reduce Your AWS Spend with AI-Driven Optimization
+                AWS Cost Optimization, Powered by Real Usage Data
               </h1>
               <p style={{ fontSize: '0.9375rem', color: '#475569', margin: 0, lineHeight: 1.6, maxWidth: '640px' }}>
-                Identify wasted resources, right-size infrastructure, and unlock immediate cost savings.
+                Discover savings opportunities across compute, storage, and networking with actionable recommendations.
               </p>
             </div>
             <button
@@ -808,17 +825,17 @@ export default function CostOptimizationPage() {
       ) : (
         /* ── STATE 3: ACTIVE / DEMO ──────────────────────────────────── */
         <>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '24px', marginBottom: '32px' }}>
             <div>
-              <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-                Cost Optimization
+              <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 8px', letterSpacing: '-0.02em' }}>
+                AWS Cost Optimization, Powered by Real Usage Data
               </h1>
-              <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-                AI-powered savings recommendations for your AWS infrastructure
+              <p style={{ fontSize: '0.9375rem', color: '#475569', margin: 0, lineHeight: 1.6, maxWidth: '640px' }}>
+                Discover savings opportunities across compute, storage, and networking with actionable recommendations.
               </p>
             </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button onClick={handleRunScan} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+              <button onClick={handleRunScan} disabled={scanState === 'scanning'} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: scanState === 'scanning' ? 'not-allowed' : 'pointer', opacity: scanState === 'scanning' ? 0.5 : 1 }}>
                 <RefreshCw size={15} /> ↺ Run new scan
               </button>
               <button
