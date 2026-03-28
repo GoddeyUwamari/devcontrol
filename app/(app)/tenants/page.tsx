@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -47,6 +48,7 @@ function PlanBadge({ plan }: { plan?: string }) {
 }
 
 export default function TenantsPage() {
+  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const debouncedSearch = useDebounce(searchQuery, 300)
@@ -120,6 +122,8 @@ export default function TenantsPage() {
   const activeCount   = displayTenants.filter(t => t.status === 'active').length
   const inactiveCount = displayTenants.filter(t => t.status === 'inactive').length
 
+  const isAuthError = !isDemoActive && !!error && ((error as any)?.response?.status === 401 || (error as any)?.status === 401)
+
   return (
     <div style={{
       padding: '40px 56px 64px',
@@ -138,7 +142,7 @@ export default function TenantsPage() {
             Tenants
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Manage and monitor all tenant accounts · Multi-tenant platform
+            Monitor tenant health, usage, and activity across your SaaS platform
           </p>
         </div>
         {/* FIX 2: header buttons */}
@@ -161,10 +165,42 @@ export default function TenantsPage() {
               border: 'none', cursor: isDemoActive ? 'not-allowed' : 'pointer',
               opacity: isDemoActive ? 0.7 : 1,
             }}>
-            <Plus size={15} /> Add Tenant
+            <Plus size={15} /> {displayTenants.length === 0 ? 'Add Your First Tenant' : 'Add Tenant'}
           </button>
         </div>
       </div>
+
+      {/* AUTH ERROR BANNER */}
+      {isAuthError && (
+        <div style={{
+          background: '#FEF2F2',
+          border: '0.5px solid #FECACA',
+          borderRadius: '8px',
+          padding: '14px 16px',
+          marginBottom: '20px',
+          display: 'flex',
+          gap: '10px',
+          alignItems: 'flex-start',
+        }}>
+          <div style={{ width: '28px', height: '28px', background: '#FEE2E2', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#DC2626', fontSize: '14px' }}>
+            ⚠
+          </div>
+          <div>
+            <p style={{ fontSize: '13px', fontWeight: 500, color: '#991B1B', margin: '0 0 3px' }}>
+              Session expired or unauthorized
+            </p>
+            <p style={{ fontSize: '12px', color: '#B91C1C', margin: '0 0 10px' }}>
+              Your session has expired. Sign in again to continue managing tenants.
+            </p>
+            <button
+              onClick={() => router.push('/login')}
+              style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '7px 14px', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
+            >
+              Sign in again
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* AI INSIGHT BANNER */}
       <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 24px', border: '1px solid #F1F5F9', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
@@ -177,7 +213,19 @@ export default function TenantsPage() {
             {isDemoActive
               ? `${activeCount} of ${displayTenants.length} tenants are active. 2 tenants moved to inactive status in the last 7 days. Acme Corporation and TechFlow Systems are your highest-usage tenants by deployment frequency.`
               : displayTenants.length === 0
-                ? 'No tenants found. Add your first tenant to start tracking multi-tenant usage and activity.'
+                ? (
+                  <span>
+                    <span style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
+                      Once tenants are added, DevControl will detect
+                    </span>
+                    <span style={{ display: 'block', fontSize: '0.875rem', color: '#1E293B', marginBottom: '2px' }}>
+                      Unusual usage spikes · High-cost tenants impacting infrastructure · Churn risk based on activity patterns
+                    </span>
+                    <span style={{ display: 'block', fontSize: '0.82rem', color: '#64748B' }}>
+                      AI insights update automatically as tenant activity grows.
+                    </span>
+                  </span>
+                )
                 : `${activeCount} active and ${inactiveCount} inactive tenants. ${inactiveCount > 0 ? `${inactiveCount} tenant${inactiveCount > 1 ? 's' : ''} may require attention.` : 'All tenants are active.'}`
             }
           </p>
@@ -187,9 +235,9 @@ export default function TenantsPage() {
       {/* 3 KPI CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
-          { label: 'Total Tenants', value: displayTenants.length, sub: 'Registered accounts',    valueColor: '#0F172A' },
-          { label: 'Active',        value: activeCount,           sub: 'Operating normally',      valueColor: '#059669' },
-          { label: 'Inactive',      value: inactiveCount,         sub: 'Suspended or churned',    valueColor: inactiveCount > 0 ? '#D97706' : '#059669' },
+          { label: 'Total Tenants', value: displayTenants.length, sub: 'Registered accounts',    valueColor: displayTenants.length === 0 ? '#9ca3af' : '#0F172A' },
+          { label: 'Active',        value: activeCount,           sub: 'Operating normally',      valueColor: activeCount === 0 ? '#9ca3af' : '#059669' },
+          { label: 'Inactive',      value: inactiveCount,         sub: 'Suspended or churned',    valueColor: inactiveCount === 0 ? '#9ca3af' : '#D97706' },
         ].map(({ label, value, sub, valueColor }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
@@ -232,7 +280,7 @@ export default function TenantsPage() {
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading tenants...</p>
           </div>
-        ) : error && !isDemoActive ? (
+        ) : error && !isDemoActive && !isAuthError ? (
           <div style={{ padding: '48px', textAlign: 'center' }}>
             <XCircle size={22} style={{ color: '#DC2626', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.875rem', color: '#DC2626', margin: '0 0 16px' }}>{(error as Error).message}</p>
@@ -240,15 +288,38 @@ export default function TenantsPage() {
               Retry
             </button>
           </div>
-        ) : paginatedTenants.length === 0 ? (
-          <div style={{ padding: '64px', textAlign: 'center' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-              <Users size={22} style={{ color: '#94A3B8' }} />
-            </div>
-            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No tenants found</p>
-            <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-              {searchQuery ? 'No tenants match your search. Try a different query.' : 'No tenant accounts registered yet.'}
+        ) : paginatedTenants.length === 0 && !searchQuery ? (
+          <div style={{ padding: '48px 32px', textAlign: 'center' }}>
+            <p style={{ fontSize: '16px', fontWeight: 500, color: '#0F172A', margin: '0 0 8px' }}>
+              No tenants added yet
             </p>
+            <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, margin: '0 auto 24px', maxWidth: '400px' }}>
+              Add your first tenant to start tracking usage, billing, and activity across your platform.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', maxWidth: '480px', margin: '0 auto 24px', textAlign: 'left' }}>
+              {['Tenant usage trends', 'Billing & plan distribution', 'Activity & health signals', 'AI-detected anomalies'].map(item => (
+                <div key={item} style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#534AB7', flexShrink: 0 }} />
+                  {item}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+              <button
+                onClick={() => !isDemoActive && setIsAddModalOpen(true)}
+                disabled={isDemoActive}
+                style={{ background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: 500, cursor: isDemoActive ? 'not-allowed' : 'pointer', opacity: isDemoActive ? 0.7 : 1 }}
+              >
+                + Add Your First Tenant
+              </button>
+              <button style={{ background: 'none', border: '0.5px solid #E2E8F0', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', color: '#475569', cursor: 'pointer' }}>
+                Import tenants
+              </button>
+            </div>
+          </div>
+        ) : paginatedTenants.length === 0 ? (
+          <div style={{ padding: '48px', textAlign: 'center' }}>
+            <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0 }}>No tenants match your search. Try a different query.</p>
           </div>
         ) : (
           paginatedTenants.map((tenant, idx) => {

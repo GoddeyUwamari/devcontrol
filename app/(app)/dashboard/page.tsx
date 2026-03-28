@@ -709,16 +709,16 @@ export default function DashboardPage() {
             gap: '10px',
           }}>
             <div style={{ width: '28px', height: '28px', background: '#EEEDFE', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: '#534AB7', fontSize: '14px' }}>✦</span>
+              <span style={{ color: '#534AB7', fontSize: '16px' }}>✦</span>
             </div>
             <div>
-              <p style={{ fontSize: '11px', fontWeight: 500, color: '#534AB7', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>
+              <p style={{ fontSize: '13px', fontWeight: 500, color: '#534AB7', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>
                 Example insight you'll get in 2 minutes
               </p>
-              <p style={{ fontSize: '13px', color: '#0F172A', lineHeight: 1.5, margin: 0 }}>
+              <p style={{ fontSize: '15px', color: '#0F172A', lineHeight: 1.5, margin: 0 }}>
                 "3 EC2 instances running at 12% CPU — right-sizing saves $720/month with zero downtime risk"
               </p>
-              <p style={{ fontSize: '12px', color: '#475569', margin: '3px 0 0' }}>
+              <p style={{ fontSize: '14px', color: '#475569', margin: '3px 0 0' }}>
                 DevControl surfaces insights like this automatically, updated daily.
               </p>
             </div>
@@ -741,14 +741,14 @@ export default function DashboardPage() {
               margin: '0 auto 20px', fontSize: '24px',
             }}>☁️</div>
             <h2 style={{
-              fontSize: '1.2rem', fontWeight: 700,
+              fontSize: '21px', fontWeight: 700,
               color: '#0F172A', letterSpacing: '-0.02em',
               margin: '0 0 8px',
             }}>
               Connect your AWS account to uncover cost leaks and infrastructure risks
             </h2>
             <p style={{
-              fontSize: '14px', color: '#475569',
+              fontSize: '16px', color: '#475569',
               maxWidth: '460px', margin: '0 auto 28px',
               lineHeight: 1.65,
             }}>
@@ -758,14 +758,14 @@ export default function DashboardPage() {
               display: 'inline-flex', alignItems: 'center',
               gap: '8px', background: '#7C3AED', color: '#FFFFFF',
               padding: '12px 28px', borderRadius: '10px',
-              fontSize: '14px', fontWeight: 600,
+              fontSize: '16px', fontWeight: 600,
               textDecoration: 'none',
               boxShadow: '0 4px 14px rgba(124,58,237,0.3)',
             }}>
               Connect AWS Account (2 min setup) →
             </a>
             <p style={{
-              fontSize: '12px', color: '#94A3B8', marginTop: '14px',
+              fontSize: '14px', color: '#94A3B8', marginTop: '14px',
             }}>
               ✓ Read-only IAM role&nbsp;&nbsp;✓ No credentials stored&nbsp;&nbsp;✓ No changes to infrastructure&nbsp;&nbsp;✓ Cancel anytime
             </p>
@@ -777,7 +777,7 @@ export default function DashboardPage() {
             borderRadius: '8px',
             padding: '12px 16px',
             textAlign: 'center',
-            fontSize: '12px',
+            fontSize: '14px',
             color: '#475569',
             margin: '0 0 24px',
           }}>
@@ -788,7 +788,7 @@ export default function DashboardPage() {
 
           {/* ── WHAT YOU'LL UNLOCK LABEL ── */}
           <div style={{
-            fontSize: '11px', fontWeight: 600,
+            fontSize: '13px', fontWeight: 600,
             color: '#475569', letterSpacing: '0.06em',
             textTransform: 'uppercase', marginBottom: '12px',
           }}>
@@ -839,14 +839,14 @@ export default function DashboardPage() {
                   }} />
 
                   <p style={{
-                    fontSize: '0.68rem', fontWeight: 700,
+                    fontSize: '0.8rem', fontWeight: 700,
                     color: '#475569', textTransform: 'uppercase',
                     letterSpacing: '0.1em', margin: '0 0 14px',
                   }}>{label}</p>
 
                   {/* Blurred value */}
                   <div style={{
-                    fontSize: '2.2rem', fontWeight: 700,
+                    fontSize: '2.325rem', fontWeight: 700,
                     color: '#CBD5E1', letterSpacing: '-0.03em',
                     lineHeight: 1, marginBottom: '10px',
                     filter: 'blur(6px)',
@@ -855,7 +855,7 @@ export default function DashboardPage() {
 
                   {/* Blurred delta */}
                   <div style={{
-                    fontSize: '12px', color: '#CBD5E1',
+                    fontSize: '14px', color: '#CBD5E1',
                     marginBottom: '20px',
                     filter: 'blur(4px)',
                     userSelect: 'none',
@@ -865,7 +865,7 @@ export default function DashboardPage() {
                   <div style={{
                     position: 'relative', zIndex: 2,
                     display: 'flex', alignItems: 'center',
-                    gap: '6px', fontSize: '12px',
+                    gap: '6px', fontSize: '14px',
                     fontWeight: 600, color: '#7C3AED',
                   }}>
                     <span>🔒</span> <span style={{ color: '#534AB7' }}>Connect to unlock</span>
@@ -893,14 +893,14 @@ export default function DashboardPage() {
             }}>✨</div>
             <div>
               <p style={{
-                fontSize: '11px', fontWeight: 700,
+                fontSize: '13px', fontWeight: 700,
                 color: '#7C3AED', textTransform: 'uppercase',
                 letterSpacing: '0.08em', margin: '0 0 6px',
               }}>
                 What AI Insights looks like
               </p>
               <p style={{
-                fontSize: '14px', color: '#4C1D95',
+                fontSize: '16px', color: '#4C1D95',
                 lineHeight: 1.65, margin: 0,
               }}>
                 After connecting, DevControl's AI will surface insights like:{' '}
