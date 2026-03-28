@@ -2,11 +2,11 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import {
   Plus,
   X,
   Crown,
-  CheckCircle,
 } from 'lucide-react'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { organizationsService } from '@/lib/services/organizations.service'
@@ -77,6 +77,15 @@ const DEMO_MEMBERS: OrganizationMember[] = [
   },
 ]
 
+// Demo last-active + status per member
+const DEMO_MEMBER_META: Record<string, { lastActive: string; status: 'active' | 'inactive' }> = {
+  'm1': { lastActive: '2 hours ago',  status: 'active'   },
+  'm2': { lastActive: 'Today',        status: 'active'   },
+  'm3': { lastActive: 'Yesterday',    status: 'active'   },
+  'm4': { lastActive: '3 days ago',   status: 'active'   },
+  'm5': { lastActive: '18 days ago',  status: 'inactive' },
+}
+
 const DEMO_INVOICES = [
   {
     id: 'inv-1',
@@ -124,9 +133,20 @@ function roleStyle(role: OrganizationMember['role']): { background: string; colo
   return map[role] ?? map.viewer
 }
 
+const securityControls = [
+  { name: 'SOC 2 Type II',    status: 'active',  detail: 'Certified · Annual audit' },
+  { name: 'GDPR',             status: 'active',  detail: 'Compliant · DPA available' },
+  { name: 'HIPAA',            status: 'active',  detail: 'Ready · BAA on request' },
+  { name: 'SSO / SAML',       status: 'warning', detail: 'Not configured · Available in Enterprise' },
+  { name: 'Audit Log',        status: 'active',  detail: '2-year retention · Live' },
+  { name: 'Data Encryption',  status: 'active',  detail: 'AES-256 at rest · TLS 1.3' },
+  { name: 'MFA Enforcement',  status: 'warning', detail: 'Not enforced · Recommended' },
+]
+
 // ── PAGE ───────────────────────────────────────────────────────────────────────
 
 export default function EnterprisePage() {
+  const router = useRouter()
   const demoMode = useDemoMode()
   const { organization } = useAuth()
   const orgId = organization?.id
@@ -186,23 +206,25 @@ export default function EnterprisePage() {
     inviteMutation.mutate({ email: inviteForm.email.trim(), role: inviteForm.role })
   }
 
+  const adminCount = displayMembers.filter(m => m.role === 'admin' || m.role === 'owner').length
+
   return (
     <div style={{ padding: '40px 56px 80px', maxWidth: '1400px', margin: '0 auto' }}>
 
       {/* PAGE HEADER */}
       <div style={{ marginBottom: '32px' }}>
         <h1 style={{
-          fontSize: '1.7rem',
+          fontSize: '2.1rem',
           fontWeight: 700,
           color: '#0F172A',
           letterSpacing: '-0.025em',
           marginBottom: '6px',
           lineHeight: 1.2,
         }}>
-          Enterprise
+          Enterprise Governance &amp; Control
         </h1>
-        <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.5 }}>
-          Plan, organisation, members, and compliance settings.
+        <p style={{ fontSize: '18px', color: '#475569', lineHeight: 1.5 }}>
+          Secure your platform, manage access, and maintain full visibility across teams, cost, and infrastructure.
         </p>
       </div>
 
@@ -222,7 +244,7 @@ export default function EnterprisePage() {
           padding: '28px',
         }}>
           <div style={{
-            fontSize: '11px',
+            fontSize: '17px',
             fontWeight: 700,
             color: '#334155',
             textTransform: 'uppercase',
@@ -253,7 +275,7 @@ export default function EnterprisePage() {
                 </div>
                 <div>
                   <div style={{
-                    fontSize: '1.2rem',
+                    fontSize: '1.35rem',
                     fontWeight: 700,
                     color: '#0F172A',
                     letterSpacing: '-0.02em',
@@ -274,7 +296,7 @@ export default function EnterprisePage() {
                       display: 'inline-block',
                     }} />
                     <span style={{
-                      fontSize: '13px',
+                      fontSize: '17px',
                       color: '#334155',
                       textTransform: 'capitalize',
                     }}>
@@ -318,10 +340,10 @@ export default function EnterprisePage() {
                     borderRadius: '8px',
                     padding: '12px 14px',
                   }}>
-                    <div style={{ fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '18px', color: '#94A3B8', marginBottom: '4px' }}>
                       {label}
                     </div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+                    <div style={{ fontSize: '17px', fontWeight: 600, color: '#0F172A' }}>
                       {value}
                     </div>
                   </div>
@@ -335,7 +357,7 @@ export default function EnterprisePage() {
                   background: '#7C3AED',
                   border: 'none',
                   borderRadius: '8px',
-                  fontSize: '13px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   color: '#fff',
                   cursor: 'pointer',
@@ -348,7 +370,7 @@ export default function EnterprisePage() {
                   background: '#F8FAFC',
                   border: '1px solid #E2E8F0',
                   borderRadius: '8px',
-                  fontSize: '13px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   color: '#334155',
                   cursor: 'pointer',
@@ -358,14 +380,117 @@ export default function EnterprisePage() {
               </div>
             </>
           ) : (
-            <div style={{
-              textAlign: 'center',
-              padding: '32px 0',
-              color: '#64748B',
-              fontSize: '14px',
-            }}>
-              No active subscription found.
-            </div>
+            /* No subscription — show Free / Pro / Enterprise upgrade cards */
+            <>
+              {/* Free — current */}
+              <div style={{
+                padding: '16px',
+                background: '#F8FAFC',
+                borderRadius: '8px',
+                marginBottom: '12px',
+              }}>
+                <p style={{ fontSize: '17px', fontWeight: 500, color: '#0F172A', margin: '0 0 4px' }}>Free</p>
+                <p style={{ fontSize: '18px', color: '#64748B', margin: '0 0 12px' }}>
+                  1 AWS account · 5 AI reports/month · Community support
+                </p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{
+                    fontSize: '17px',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    background: '#EEEDFE',
+                    color: '#3C3489',
+                    fontWeight: 500,
+                  }}>
+                    Current plan
+                  </span>
+                </div>
+              </div>
+
+              {/* Pro — upgrade */}
+              <div style={{
+                padding: '16px',
+                border: '2px solid #534AB7',
+                borderRadius: '8px',
+                marginBottom: '12px',
+              }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  marginBottom: '8px',
+                }}>
+                  <div>
+                    <p style={{ fontSize: '17px', fontWeight: 500, color: '#0F172A', margin: '0 0 2px' }}>Pro</p>
+                    <p style={{ fontSize: '18px', color: '#64748B', margin: 0 }}>
+                      Ideal for scaling teams with advanced compliance features
+                    </p>
+                  </div>
+                  <span style={{
+                    fontSize: '17px',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    background: '#EEEDFE',
+                    color: '#534AB7',
+                    fontWeight: 500,
+                    flexShrink: 0,
+                    marginLeft: '8px',
+                  }}>
+                    Most popular
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '12px 0' }}>
+                  {['Unlimited AWS accounts', 'SOC 2 & automated audits', 'Unlimited AI reports', 'Priority support'].map(f => (
+                    <div key={f} style={{
+                      fontSize: '18px',
+                      color: '#475569',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}>
+                      <span style={{ color: '#059669', fontSize: '18px' }}>✓</span> {f}
+                    </div>
+                  ))}
+                </div>
+                <button style={{
+                  background: '#534AB7',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 20px',
+                  fontSize: '17px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  width: '100%',
+                }}>
+                  Upgrade to Pro →
+                </button>
+              </div>
+
+              {/* Enterprise */}
+              <div style={{
+                padding: '16px',
+                border: '1px solid #E2E8F0',
+                borderRadius: '8px',
+              }}>
+                <p style={{ fontSize: '17px', fontWeight: 500, color: '#0F172A', margin: '0 0 2px' }}>Enterprise</p>
+                <p style={{ fontSize: '18px', color: '#64748B', margin: '0 0 12px' }}>
+                  SSO, priority support, tailored security, and custom contracts
+                </p>
+                <button style={{
+                  background: 'none',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  padding: '8px 20px',
+                  fontSize: '17px',
+                  color: '#0F172A',
+                  cursor: 'pointer',
+                  width: '100%',
+                }}>
+                  Contact Sales →
+                </button>
+              </div>
+            </>
           )}
         </div>
 
@@ -377,53 +502,77 @@ export default function EnterprisePage() {
           padding: '28px',
         }}>
           <div style={{
-            fontSize: '11px',
+            fontSize: '17px',
             fontWeight: 700,
             color: '#334155',
             textTransform: 'uppercase',
             letterSpacing: '0.1em',
             marginBottom: '20px',
           }}>
-            Security & Compliance
+            Security &amp; Compliance
           </div>
 
-          {[
-            { label: 'SOC 2 Type II',      desc: 'Certified · Annual audit' },
-            { label: 'GDPR',               desc: 'Compliant · DPA available' },
-            { label: 'HIPAA',              desc: 'Ready · BAA on request' },
-            { label: 'SSO / SAML',         desc: 'Okta, Azure AD, any SAML 2.0' },
-            { label: 'Audit Log',          desc: '2-year retention' },
-            { label: 'Data Encryption',    desc: 'AES-256 at rest · TLS 1.3' },
-          ].map(({ label, desc }) => (
-            <div key={label} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '10px 0',
-              borderBottom: '1px solid #F1F5F9',
-            }}>
-              <CheckCircle size={15} style={{ color: '#059669', flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
-                  {label}
-                </span>
-                <span style={{ fontSize: '13px', color: '#94A3B8', marginLeft: '8px' }}>
-                  {desc}
-                </span>
+          {securityControls.map(({ name, status, detail }) => {
+            const isActive = status === 'active'
+            return (
+              <div key={name} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 0',
+                borderBottom: '1px solid #F1F5F9',
+              }}>
+                {isActive
+                  ? <span style={{ color: '#059669', fontSize: '18px', flexShrink: 0, lineHeight: 1 }}>✓</span>
+                  : <span style={{ color: '#D97706', fontSize: '18px', flexShrink: 0, lineHeight: 1 }}>⚠</span>
+                }
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: '17px', fontWeight: 600, color: '#0F172A' }}>
+                    {name}
+                  </span>
+                  <span style={{
+                    fontSize: '17px',
+                    color: isActive ? '#94A3B8' : '#D97706',
+                    marginLeft: '8px',
+                  }}>
+                    {detail}
+                  </span>
+                </div>
+                <button style={{
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  color: '#7C3AED',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  flexShrink: 0,
+                }}>
+                  Docs →
+                </button>
               </div>
-              <button style={{
-                fontSize: '12px',
-                fontWeight: 600,
-                color: '#7C3AED',
+            )
+          })}
+
+          <div style={{
+            borderTop: '1px solid #F1F5F9',
+            paddingTop: '12px',
+            marginTop: '4px',
+          }}>
+            <button
+              onClick={() => router.push('/audit-logs')}
+              style={{
+                fontSize: '18px',
+                color: '#534AB7',
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
                 padding: 0,
-              }}>
-                Docs →
-              </button>
-            </div>
-          ))}
+              }}
+            >
+              View Security Audit Logs → Last 30 days
+            </button>
+          </div>
         </div>
       </div>
 
@@ -439,11 +588,11 @@ export default function EnterprisePage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '20px',
+          marginBottom: '16px',
         }}>
           <div>
             <div style={{
-              fontSize: '11px',
+              fontSize: '17px',
               fontWeight: 700,
               color: '#334155',
               textTransform: 'uppercase',
@@ -452,7 +601,7 @@ export default function EnterprisePage() {
             }}>
               Organisation Members
             </div>
-            <div style={{ fontSize: '13px', color: '#94A3B8' }}>
+            <div style={{ fontSize: '17px', color: '#94A3B8' }}>
               {displayMembers.length} member{displayMembers.length !== 1 ? 's' : ''}
             </div>
           </div>
@@ -466,7 +615,7 @@ export default function EnterprisePage() {
               color: '#fff',
               padding: '9px 18px',
               borderRadius: '8px',
-              fontSize: '13px',
+              fontSize: '17px',
               fontWeight: 600,
               border: 'none',
               cursor: 'pointer',
@@ -480,11 +629,11 @@ export default function EnterprisePage() {
         {/* Table header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2fr 2fr 1fr 100px',
+          gridTemplateColumns: '2fr 2fr 130px 90px 100px',
           gap: '12px',
           padding: '0 0 10px',
           borderBottom: '1px solid #F1F5F9',
-          fontSize: '12px',
+          fontSize: '18px',
           fontWeight: 700,
           color: '#64748B',
           textTransform: 'uppercase',
@@ -492,13 +641,30 @@ export default function EnterprisePage() {
         }}>
           <span>Member</span>
           <span>Email</span>
-          <span>Joined</span>
+          <span>Last Active</span>
+          <span>Status</span>
           <span style={{ textAlign: 'center' }}>Role</span>
         </div>
+
+        {/* Admin insight */}
+        {adminCount <= 1 && (
+          <div style={{
+            fontSize: '18px',
+            color: '#D97706',
+            background: '#FFFBEB',
+            border: '1px solid #FDE68A',
+            borderRadius: '6px',
+            padding: '8px 12px',
+            margin: '8px 0',
+          }}>
+            ⚠ Only {adminCount} admin configured. Consider adding backup admins to reduce access risk.
+          </div>
+        )}
 
         {/* Member rows */}
         {displayMembers.map((m) => {
           const rs = roleStyle(m.role)
+          const meta = DEMO_MEMBER_META[m.id]
           const initials = m.user
             ? (m.user.fullName ?? m.user.email ?? '?')
                 .split(' ')
@@ -508,10 +674,13 @@ export default function EnterprisePage() {
                 .join('')
                 .toUpperCase()
             : '?'
+          const lastActive = demoMode && meta ? meta.lastActive : '—'
+          const memberStatus = demoMode && meta ? meta.status : null
+
           return (
             <div key={m.id} style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 2fr 1fr 100px',
+              gridTemplateColumns: '2fr 2fr 130px 90px 100px',
               gap: '12px',
               padding: '12px 0',
               borderBottom: '1px solid #F1F5F9',
@@ -526,22 +695,39 @@ export default function EnterprisePage() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '12px',
+                  fontSize: '18px',
                   fontWeight: 700,
                   color: '#7C3AED',
                   flexShrink: 0,
                 }}>
                   {initials}
                 </div>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
-                  {m.user?.fullName || '—'}
+                <span style={{ fontSize: '17px', fontWeight: 600, color: '#0F172A' }}>
+                  {m.user?.fullName || m.user?.email || '—'}
                 </span>
               </div>
-              <span style={{ fontSize: '13px', color: '#475569' }}>{m.user?.email ?? '—'}</span>
-              <span style={{ fontSize: '13px', color: '#94A3B8' }}>{formatDate(m.joinedAt)}</span>
+              <span style={{ fontSize: '17px', color: '#475569' }}>{m.user?.email ?? '—'}</span>
+              <span style={{ fontSize: '17px', color: '#94A3B8' }}>{lastActive}</span>
+              <div>
+                {memberStatus ? (
+                  <span style={{
+                    fontSize: '17px',
+                    fontWeight: 600,
+                    padding: '3px 8px',
+                    borderRadius: '99px',
+                    background: memberStatus === 'active' ? '#F0FDF4' : '#F8FAFC',
+                    color: memberStatus === 'active' ? '#059669' : '#94A3B8',
+                    textTransform: 'capitalize',
+                  }}>
+                    {memberStatus}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '17px', color: '#9ca3af' }}>—</span>
+                )}
+              </div>
               <div style={{ textAlign: 'center' }}>
                 <span style={{
-                  fontSize: '12px',
+                  fontSize: '18px',
                   fontWeight: 700,
                   padding: '3px 10px',
                   borderRadius: '99px',
@@ -555,9 +741,28 @@ export default function EnterprisePage() {
             </div>
           )
         })}
+
+        {/* Invite multiple */}
+        <button
+          onClick={() => setShowInvite(true)}
+          style={{
+            fontSize: '18px',
+            color: '#534AB7',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            marginTop: '12px',
+            padding: 0,
+          }}
+        >
+          Invite Multiple Members →
+        </button>
       </div>
 
-      {/* INVOICES */}
+      {/* BILLING / INVOICES */}
       <div style={{
         background: '#FFFFFF',
         border: '1px solid #E2E8F0',
@@ -565,25 +770,38 @@ export default function EnterprisePage() {
         padding: '28px',
       }}>
         <div style={{
-          fontSize: '11px',
+          fontSize: '17px',
           fontWeight: 700,
           color: '#334155',
           textTransform: 'uppercase',
           letterSpacing: '0.1em',
           marginBottom: '20px',
         }}>
-          Invoices
+          Invoices &amp; Billing
         </div>
 
         {displayInvoices.length === 0 ? (
-          <p style={{
-            fontSize: '14px',
-            color: '#64748B',
-            textAlign: 'center',
-            padding: '24px 0',
-          }}>
-            No invoices yet.
-          </p>
+          <div>
+            <p style={{ fontSize: '17px', color: '#0F172A', margin: '0 0 4px' }}>
+              Your next invoice: <strong>$0</strong> · Free plan
+            </p>
+            <p style={{ fontSize: '18px', color: '#64748B', margin: '0 0 12px' }}>
+              Upgrade to Pro to unlock billing history and downloadable invoices.
+            </p>
+            <button
+              onClick={() => router.push('/billing')}
+              style={{
+                fontSize: '18px',
+                color: '#534AB7',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              View billing details →
+            </button>
+          </div>
         ) : (
           <>
             <div style={{
@@ -592,7 +810,7 @@ export default function EnterprisePage() {
               gap: '12px',
               padding: '0 0 10px',
               borderBottom: '1px solid #F1F5F9',
-              fontSize: '12px',
+              fontSize: '18px',
               fontWeight: 700,
               color: '#64748B',
               textTransform: 'uppercase',
@@ -613,17 +831,17 @@ export default function EnterprisePage() {
                 borderBottom: '1px solid #F1F5F9',
                 alignItems: 'center',
               }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+                <span style={{ fontSize: '17px', fontWeight: 600, color: '#0F172A' }}>
                   {inv.number ?? inv.id}
                 </span>
-                <span style={{ fontSize: '13px', color: '#475569' }}>
+                <span style={{ fontSize: '17px', color: '#475569' }}>
                   {formatDate(inv.createdAt)}
                 </span>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+                <span style={{ fontSize: '17px', fontWeight: 600, color: '#0F172A' }}>
                   {formatCurrency(inv.amount, inv.currency)}
                 </span>
                 <span style={{
-                  fontSize: '12px',
+                  fontSize: '18px',
                   fontWeight: 700,
                   padding: '3px 10px',
                   borderRadius: '99px',
@@ -666,7 +884,7 @@ export default function EnterprisePage() {
               marginBottom: '24px',
             }}>
               <h2 style={{
-                fontSize: '1.1rem',
+                fontSize: '1.25rem',
                 fontWeight: 700,
                 color: '#0F172A',
                 letterSpacing: '-0.01em',
@@ -692,7 +910,7 @@ export default function EnterprisePage() {
             <div style={{ marginBottom: '16px' }}>
               <label style={{
                 display: 'block',
-                fontSize: '13px',
+                fontSize: '17px',
                 fontWeight: 600,
                 color: '#374151',
                 marginBottom: '6px',
@@ -713,7 +931,7 @@ export default function EnterprisePage() {
                   padding: '9px 14px',
                   border: '1px solid #E2E8F0',
                   borderRadius: '8px',
-                  fontSize: '13px',
+                  fontSize: '17px',
                   color: '#0F172A',
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -734,7 +952,7 @@ export default function EnterprisePage() {
             <div style={{ marginBottom: '20px' }}>
               <label style={{
                 display: 'block',
-                fontSize: '13px',
+                fontSize: '17px',
                 fontWeight: 600,
                 color: '#374151',
                 marginBottom: '6px',
@@ -753,7 +971,7 @@ export default function EnterprisePage() {
                         flex: 1,
                         padding: '8px',
                         borderRadius: '8px',
-                        fontSize: '13px',
+                        fontSize: '17px',
                         fontWeight: 600,
                         border: selected ? `2px solid ${rs.color}` : '2px solid #E2E8F0',
                         background: selected ? rs.background : '#F8FAFC',
@@ -770,7 +988,7 @@ export default function EnterprisePage() {
             </div>
 
             {inviteError && (
-              <p style={{ fontSize: '13px', color: '#DC2626', marginBottom: '16px' }}>
+              <p style={{ fontSize: '17px', color: '#DC2626', marginBottom: '16px' }}>
                 {inviteError}
               </p>
             )}
@@ -784,7 +1002,7 @@ export default function EnterprisePage() {
                   background: '#F8FAFC',
                   border: '1px solid #E2E8F0',
                   borderRadius: '9px',
-                  fontSize: '13px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   color: '#334155',
                   cursor: 'pointer',
@@ -801,7 +1019,7 @@ export default function EnterprisePage() {
                   background: '#7C3AED',
                   border: 'none',
                   borderRadius: '9px',
-                  fontSize: '13px',
+                  fontSize: '17px',
                   fontWeight: 600,
                   color: '#fff',
                   cursor: inviteMutation.isPending ? 'not-allowed' : 'pointer',

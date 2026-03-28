@@ -334,6 +334,70 @@ export default function DevelopersPage() {
     )
   }
 
+  const isAwsConnected = integrations.find(i => i.id === 'aws')?.status === 'connected'
+
+  const handleConnect = (id: string) => {
+    if (id === 'aws') { router.push('/connect-aws'); return }
+    handleToggleIntegration(id)
+  }
+
+  const setupSteps = [
+    {
+      number: 1,
+      title: 'Connect AWS',
+      description: 'Unlock cost, security, and infrastructure insights',
+      status: isAwsConnected ? 'connected' : 'pending',
+      cta: isAwsConnected ? 'Connected ✓' : 'Connect AWS →',
+      onClick: () => router.push('/connect-aws'),
+    },
+    {
+      number: 2,
+      title: 'Connect Observability',
+      description: 'Sync metrics, traces, and performance data',
+      status: 'pending' as const,
+      cta: 'Connect Datadog →',
+      onClick: () => handleConnect('datadog'),
+    },
+    {
+      number: 3,
+      title: 'Set up Alerts',
+      description: 'Send real-time alerts to your team',
+      status: 'pending' as const,
+      cta: 'Connect Slack →',
+      onClick: () => handleConnect('slack'),
+    },
+  ]
+
+  const integrationGroups = [
+    {
+      label: 'Core infrastructure',
+      items: ['aws', 'kubernetes', 'terraform'],
+    },
+    {
+      label: 'Observability',
+      items: ['datadog'],
+    },
+    {
+      label: 'Alerts & incidents',
+      items: ['slack', 'pagerduty'],
+    },
+    {
+      label: 'Dev workflow',
+      items: ['github', 'jira'],
+    },
+  ]
+
+  const integrationMeta: Record<string, { desc: string; recommended: boolean }> = {
+    aws:        { desc: 'Connect your AWS account for cost, security, and infrastructure visibility', recommended: true },
+    kubernetes: { desc: 'Monitor cluster health, resource efficiency, and container costs', recommended: false },
+    terraform:  { desc: 'Track infrastructure-as-code changes and detect configuration drift', recommended: false },
+    datadog:    { desc: 'Sync metrics, traces, and alerts from your Datadog account', recommended: true },
+    slack:      { desc: 'Send real-time alerts and reports to your Slack channels', recommended: true },
+    pagerduty:  { desc: 'Route critical alerts to on-call engineers instantly', recommended: false },
+    github:     { desc: 'Pull deployment events and PR data from your repositories', recommended: false },
+    jira:       { desc: 'Create and link incidents to Jira issues automatically', recommended: false },
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -342,18 +406,82 @@ export default function DevelopersPage() {
       {/* PAGE HEADER */}
       <div style={{ marginBottom: '32px' }}>
         <h1 style={{
-          fontSize: '1.7rem',
+          fontSize: '1.9rem',
           fontWeight: 700,
           color: '#0F172A',
           letterSpacing: '-0.025em',
           marginBottom: '6px',
           lineHeight: 1.2,
         }}>
-          Developers
+          DevControl Integration Layer
         </h1>
-        <p style={{ fontSize: '14px', color: '#334155', lineHeight: 1.5 }}>
-          API keys, webhooks, and integrations.
+        <p style={{ fontSize: '16px', color: '#334155', lineHeight: 1.5 }}>
+          Connect your stack, ingest real-time data, and power insights across your infrastructure.
         </p>
+      </div>
+
+      {/* GET STARTED */}
+      <div style={{ marginBottom: '28px' }}>
+        <p style={{
+          fontSize: '15px',
+          fontWeight: 500,
+          color: '#64748B',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          margin: '0 0 12px',
+        }}>
+          Get DevControl fully connected
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px' }}>
+          {setupSteps.map(step => (
+            <div key={step.number} style={{
+              background: '#FFFFFF',
+              border: step.status === 'connected' ? '1px solid #059669' : '1px solid #E2E8F0',
+              borderRadius: '12px',
+              padding: '16px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <div style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  background: step.status === 'connected' ? '#059669' : '#534AB7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '15px',
+                  color: '#fff',
+                  fontWeight: 500,
+                  flexShrink: 0,
+                }}>
+                  {step.status === 'connected' ? '✓' : step.number}
+                </div>
+                <p style={{ fontSize: '15px', fontWeight: 500, color: '#0F172A', margin: 0 }}>
+                  {step.title}
+                </p>
+              </div>
+              <p style={{ fontSize: '16px', color: '#64748B', margin: '0 0 12px', lineHeight: 1.4 }}>
+                {step.description}
+              </p>
+              <button
+                onClick={step.onClick}
+                disabled={step.status === 'connected'}
+                style={{
+                  fontSize: '16px',
+                  color: step.status === 'connected' ? '#059669' : '#534AB7',
+                  background: 'none',
+                  border: `1px solid ${step.status === 'connected' ? '#059669' : '#534AB7'}`,
+                  borderRadius: '6px',
+                  padding: '5px 10px',
+                  cursor: step.status === 'connected' ? 'default' : 'pointer',
+                  width: '100%',
+                }}
+              >
+                {step.cta}
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* API USAGE BAR */}
@@ -369,7 +497,7 @@ export default function DevelopersPage() {
           gap: '24px',
         }}>
           <div style={{
-            fontSize: '11px',
+            fontSize: '15px',
             fontWeight: 700,
             color: '#334155',
             textTransform: 'uppercase',
@@ -384,10 +512,10 @@ export default function DevelopersPage() {
               justifyContent: 'space-between',
               marginBottom: '6px',
             }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+              <span style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>
                 14,847 requests this month
               </span>
-              <span style={{ fontSize: '13px', color: '#64748B' }}>
+              <span style={{ fontSize: '15px', color: '#64748B' }}>
                 of 20,000 included
               </span>
             </div>
@@ -400,7 +528,7 @@ export default function DevelopersPage() {
               }} />
             </div>
           </div>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#7C3AED', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: '15px', fontWeight: 700, color: '#7C3AED', whiteSpace: 'nowrap' }}>
             74% used
           </span>
         </div>
@@ -422,7 +550,7 @@ export default function DevelopersPage() {
         }}>
           <div>
             <div style={{
-              fontSize: '11px',
+              fontSize: '15px',
               fontWeight: 700,
               color: '#334155',
               textTransform: 'uppercase',
@@ -431,7 +559,7 @@ export default function DevelopersPage() {
             }}>
               API Keys
             </div>
-            <div style={{ fontSize: '13px', color: '#64748B' }}>
+            <div style={{ fontSize: '15px', color: '#64748B' }}>
               {apiKeys.length} active key{apiKeys.length !== 1 ? 's' : ''}
             </div>
           </div>
@@ -445,7 +573,7 @@ export default function DevelopersPage() {
               color: '#fff',
               padding: '9px 18px',
               borderRadius: '8px',
-              fontSize: '13px',
+              fontSize: '15px',
               fontWeight: 600,
               border: 'none',
               cursor: 'pointer',
@@ -457,8 +585,49 @@ export default function DevelopersPage() {
         </div>
 
         {apiKeys.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px 0', color: '#64748B', fontSize: '14px' }}>
-            No API keys yet. Generate your first key to get started.
+          <div style={{ textAlign: 'center', padding: '32px 24px' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              background: '#EEEDFE',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 12px',
+              fontSize: '18px',
+            }}>
+              🔑
+            </div>
+            <p style={{ fontSize: '16px', fontWeight: 500, color: '#0F172A', margin: '0 0 6px' }}>
+              No API keys yet
+            </p>
+            <p style={{
+              fontSize: '16px',
+              color: '#64748B',
+              margin: '0 0 16px',
+              lineHeight: 1.5,
+              maxWidth: '320px',
+              marginLeft: 'auto',
+              marginRight: 'auto',
+            }}>
+              Generate an API key to integrate DevControl into your internal tools, CI/CD pipelines, and workflows.
+            </p>
+            <button
+              onClick={() => setShowNewKey(true)}
+              style={{
+                background: '#534AB7',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 16px',
+                fontSize: '15px',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              + Generate API Key
+            </button>
           </div>
         ) : (
           <>
@@ -468,7 +637,7 @@ export default function DevelopersPage() {
               gap: '12px',
               padding: '0 0 10px',
               borderBottom: '1px solid #F1F5F9',
-              fontSize: '12px',
+              fontSize: '16px',
               fontWeight: 700,
               color: '#64748B',
               textTransform: 'uppercase',
@@ -490,11 +659,11 @@ export default function DevelopersPage() {
                 borderBottom: '1px solid #F1F5F9',
                 alignItems: 'center',
               }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+                <span style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>
                   {key.name}
                 </span>
                 <code style={{
-                  fontSize: '13px',
+                  fontSize: '15px',
                   fontFamily: 'monospace',
                   color: '#334155',
                   background: '#F8FAFC',
@@ -506,7 +675,7 @@ export default function DevelopersPage() {
                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                   {key.scopes.map(s => (
                     <span key={s} style={{
-                      fontSize: '12px',
+                      fontSize: '16px',
                       fontWeight: 600,
                       padding: '2px 6px',
                       borderRadius: '4px',
@@ -517,7 +686,7 @@ export default function DevelopersPage() {
                     </span>
                   ))}
                 </div>
-                <span style={{ fontSize: '13px', color: '#64748B' }}>
+                <span style={{ fontSize: '15px', color: '#64748B' }}>
                   {key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'Never'}
                 </span>
                 <button
@@ -530,7 +699,7 @@ export default function DevelopersPage() {
                     border: '1px solid #FECACA',
                     borderRadius: '6px',
                     padding: '5px 10px',
-                    fontSize: '12px',
+                    fontSize: '16px',
                     fontWeight: 600,
                     color: '#DC2626',
                     cursor: 'pointer',
@@ -553,13 +722,13 @@ export default function DevelopersPage() {
             borderRadius: '10px',
             padding: '16px 20px',
           }}>
-            <p style={{ fontSize: '13px', fontWeight: 600, color: '#059669', marginBottom: '10px' }}>
+            <p style={{ fontSize: '15px', fontWeight: 600, color: '#059669', marginBottom: '10px' }}>
               ✓ Key generated — copy it now. It will not be shown again.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <code style={{
                 flex: 1,
-                fontSize: '13px',
+                fontSize: '15px',
                 fontFamily: 'monospace',
                 color: '#0F172A',
                 background: '#FFFFFF',
@@ -594,7 +763,7 @@ export default function DevelopersPage() {
                   border: 'none',
                   borderRadius: '7px',
                   padding: '8px 14px',
-                  fontSize: '13px',
+                  fontSize: '15px',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
@@ -635,7 +804,7 @@ export default function DevelopersPage() {
         }}>
           <div>
             <div style={{
-              fontSize: '11px',
+              fontSize: '15px',
               fontWeight: 700,
               color: '#334155',
               textTransform: 'uppercase',
@@ -644,7 +813,7 @@ export default function DevelopersPage() {
             }}>
               Webhooks
             </div>
-            <div style={{ fontSize: '13px', color: '#64748B' }}>
+            <div style={{ fontSize: '15px', color: '#64748B' }}>
               {webhooks.length} endpoint{webhooks.length !== 1 ? 's' : ''}
             </div>
           </div>
@@ -658,7 +827,7 @@ export default function DevelopersPage() {
               color: '#fff',
               padding: '9px 18px',
               borderRadius: '8px',
-              fontSize: '13px',
+              fontSize: '15px',
               fontWeight: 600,
               border: 'none',
               cursor: 'pointer',
@@ -670,8 +839,49 @@ export default function DevelopersPage() {
         </div>
 
         {webhooks.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px 0', color: '#64748B', fontSize: '14px' }}>
-            No webhook endpoints configured.
+          <div style={{ textAlign: 'center', padding: '32px 24px' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              background: '#EEEDFE',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 12px',
+              fontSize: '18px',
+            }}>
+              ⚡
+            </div>
+            <p style={{ fontSize: '16px', fontWeight: 500, color: '#0F172A', margin: '0 0 6px' }}>
+              No webhooks configured
+            </p>
+            <p style={{
+              fontSize: '16px',
+              color: '#64748B',
+              margin: '0 0 16px',
+              lineHeight: 1.5,
+              maxWidth: '320px',
+              marginLeft: 'auto',
+              marginRight: 'auto',
+            }}>
+              Add a webhook endpoint to stream real-time events — alerts, cost changes, deployments — directly to your systems.
+            </p>
+            <button
+              onClick={() => setShowNewWebhook(true)}
+              style={{
+                background: '#534AB7',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 16px',
+                fontSize: '15px',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              + Add Webhook
+            </button>
           </div>
         ) : (
           <>
@@ -681,7 +891,7 @@ export default function DevelopersPage() {
               gap: '12px',
               padding: '0 0 10px',
               borderBottom: '1px solid #F1F5F9',
-              fontSize: '12px',
+              fontSize: '16px',
               fontWeight: 700,
               color: '#64748B',
               textTransform: 'uppercase',
@@ -703,7 +913,7 @@ export default function DevelopersPage() {
                 alignItems: 'center',
               }}>
                 <code style={{
-                  fontSize: '13px',
+                  fontSize: '15px',
                   fontFamily: 'monospace',
                   color: '#334155',
                   overflow: 'hidden',
@@ -715,7 +925,7 @@ export default function DevelopersPage() {
                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                   {wh.events.map(e => (
                     <span key={e} style={{
-                      fontSize: '12px',
+                      fontSize: '16px',
                       fontWeight: 600,
                       padding: '2px 6px',
                       borderRadius: '4px',
@@ -726,12 +936,12 @@ export default function DevelopersPage() {
                     </span>
                   ))}
                 </div>
-                <span style={{ fontSize: '13px', color: '#64748B' }}>
+                <span style={{ fontSize: '15px', color: '#64748B' }}>
                   {wh.lastTriggeredAt ? timeAgo(wh.lastTriggeredAt) : 'Never'}
                 </span>
                 <div style={{ textAlign: 'center' }}>
                   <span style={{
-                    fontSize: '12px',
+                    fontSize: '16px',
                     fontWeight: 700,
                     padding: '3px 10px',
                     borderRadius: '99px',
@@ -750,7 +960,7 @@ export default function DevelopersPage() {
                   <button
                     onClick={() => handleDeleteWebhook(wh.id)}
                     style={{ background: 'none', border: '1px solid #FECACA', borderRadius: '6px',
-                      padding: '4px 10px', fontSize: '0.75rem', fontWeight: 600, color: '#DC2626',
+                      padding: '4px 10px', fontSize: '0.875rem', fontWeight: 600, color: '#DC2626',
                       cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Trash2 size={11} /> Delete
                   </button>
@@ -769,76 +979,117 @@ export default function DevelopersPage() {
         padding: '28px',
       }}>
         <div style={{
-          fontSize: '11px',
+          fontSize: '15px',
           fontWeight: 700,
           color: '#334155',
           textTransform: 'uppercase',
           letterSpacing: '0.1em',
-          marginBottom: '20px',
+          marginBottom: '24px',
         }}>
           Integrations
         </div>
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: '16px',
-        }}>
-          {integrations.map(intg => (
-            <div key={intg.id} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '16px',
-              padding: '18px 20px',
-              border: `1px solid ${intg.status === 'connected' ? '#DDD6FE' : '#F1F5F9'}`,
-              borderRadius: '12px',
-              background: intg.status === 'connected' ? '#FAFAF9' : '#FFFFFF',
-            }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                background: intg.status === 'connected' ? '#F5F3FF' : '#F8FAFC',
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: intg.status === 'connected' ? '#7C3AED' : '#64748B',
-                flexShrink: 0,
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+          {integrationGroups.map(group => (
+            <div key={group.label}>
+              <p style={{
+                fontSize: '15px',
+                fontWeight: 600,
+                color: '#94A3B8',
+                textTransform: 'uppercase',
+                letterSpacing: '0.07em',
+                margin: '0 0 12px',
               }}>
-                {intg.icon}
+                {group.label}
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                {group.items.map(id => {
+                  const intg = integrations.find(i => i.id === id)
+                  if (!intg) return null
+                  const meta = integrationMeta[id]
+                  const isConnected = intg.status === 'connected'
+                  return (
+                    <div key={id} style={{
+                      background: '#FFFFFF',
+                      border: isConnected ? '1px solid #059669' : '1px solid #E2E8F0',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{
+                            width: '32px',
+                            height: '32px',
+                            background: isConnected ? '#F0FDF4' : '#F8FAFC',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: isConnected ? '#059669' : '#64748B',
+                            flexShrink: 0,
+                          }}>
+                            {intg.icon}
+                          </div>
+                          <p style={{ fontSize: '15px', fontWeight: 500, color: '#0F172A', margin: 0 }}>
+                            {intg.name}
+                          </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          {meta?.recommended && !isConnected && (
+                            <span style={{
+                              fontSize: '16px',
+                              fontWeight: 500,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#EEEDFE',
+                              color: '#3C3489',
+                            }}>
+                              Recommended
+                            </span>
+                          )}
+                          {isConnected && (
+                            <span style={{
+                              fontSize: '16px',
+                              fontWeight: 500,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#F0FDF4',
+                              color: '#166534',
+                            }}>
+                              Connected
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <p style={{ fontSize: '16px', color: '#64748B', margin: 0, lineHeight: 1.4 }}>
+                        {meta?.desc ?? intg.description}
+                      </p>
+                      <button
+                        onClick={() => {
+                          if (id === 'aws' && !isConnected) { router.push('/connect-aws'); return }
+                          handleToggleIntegration(id)
+                        }}
+                        style={{
+                          marginTop: '4px',
+                          fontSize: '16px',
+                          color: isConnected ? '#059669' : '#534AB7',
+                          background: 'none',
+                          border: `1px solid ${isConnected ? '#059669' : '#534AB7'}`,
+                          borderRadius: '6px',
+                          padding: '5px 10px',
+                          cursor: 'pointer',
+                          alignSelf: 'flex-start',
+                        }}
+                      >
+                        {isConnected ? 'Manage →' : 'Connect →'}
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', marginBottom: '2px' }}>
-                  {intg.name}
-                </div>
-                <div style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.4 }}>
-                  {intg.status === 'connected'
-                    ? `Connected ${intg.connectedAt ? formatDate(intg.connectedAt) : ''}`
-                    : intg.description}
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  if (intg.id === 'aws' && intg.status === 'disconnected') {
-                    router.push('/connect-aws')
-                    return
-                  }
-                  handleToggleIntegration(intg.id)
-                }}
-                style={{
-                  padding: '7px 16px',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  border: intg.status === 'connected' ? '1px solid #FECACA' : '1px solid #7C3AED',
-                  background: intg.status === 'connected' ? '#FEF2F2' : '#7C3AED',
-                  color: intg.status === 'connected' ? '#DC2626' : '#FFFFFF',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {intg.status === 'connected' ? 'Disconnect' : 'Connect'}
-              </button>
             </div>
           ))}
         </div>
@@ -870,7 +1121,7 @@ export default function DevelopersPage() {
               justifyContent: 'space-between',
               marginBottom: '24px',
             }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>
                 Generate API Key
               </h2>
               <button
@@ -882,7 +1133,7 @@ export default function DevelopersPage() {
             </div>
 
             <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '15px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
                 Key name <span style={{ color: '#DC2626', marginLeft: '3px' }}>*</span>
               </label>
               <input
@@ -895,7 +1146,7 @@ export default function DevelopersPage() {
                   padding: '9px 14px',
                   border: '1px solid #E2E8F0',
                   borderRadius: '8px',
-                  fontSize: '13px',
+                  fontSize: '15px',
                   color: '#0F172A',
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -905,7 +1156,7 @@ export default function DevelopersPage() {
                 onBlur={e => { e.target.style.border = '1px solid #E2E8F0'; e.target.style.background = '#FAFAFA' }}
               />
               {newKeyError && (
-                <p style={{ fontSize: '13px', color: '#DC2626', marginTop: '6px' }}>{newKeyError}</p>
+                <p style={{ fontSize: '15px', color: '#DC2626', marginTop: '6px' }}>{newKeyError}</p>
               )}
             </div>
 
@@ -915,7 +1166,7 @@ export default function DevelopersPage() {
                 style={{
                   flex: 1, padding: '10px', background: '#F8FAFC',
                   border: '1px solid #E2E8F0', borderRadius: '9px',
-                  fontSize: '13px', fontWeight: 600, color: '#334155', cursor: 'pointer',
+                  fontSize: '15px', fontWeight: 600, color: '#334155', cursor: 'pointer',
                 }}
               >
                 Cancel
@@ -925,7 +1176,7 @@ export default function DevelopersPage() {
                 style={{
                   flex: 1, padding: '10px', background: '#7C3AED',
                   border: 'none', borderRadius: '9px',
-                  fontSize: '13px', fontWeight: 600, color: '#fff', cursor: 'pointer',
+                  fontSize: '15px', fontWeight: 600, color: '#fff', cursor: 'pointer',
                 }}
               >
                 Generate
@@ -961,7 +1212,7 @@ export default function DevelopersPage() {
               justifyContent: 'space-between',
               marginBottom: '24px',
             }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>
                 Add Webhook Endpoint
               </h2>
               <button
@@ -973,7 +1224,7 @@ export default function DevelopersPage() {
             </div>
 
             <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '15px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
                 Endpoint URL <span style={{ color: '#DC2626', marginLeft: '3px' }}>*</span>
               </label>
               <input
@@ -986,7 +1237,7 @@ export default function DevelopersPage() {
                   padding: '9px 14px',
                   border: '1px solid #E2E8F0',
                   borderRadius: '8px',
-                  fontSize: '13px',
+                  fontSize: '15px',
                   color: '#0F172A',
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -996,9 +1247,9 @@ export default function DevelopersPage() {
                 onBlur={e => { e.target.style.border = '1px solid #E2E8F0'; e.target.style.background = '#FAFAFA' }}
               />
               {webhookError && (
-                <p style={{ fontSize: '13px', color: '#DC2626', marginTop: '6px' }}>{webhookError}</p>
+                <p style={{ fontSize: '15px', color: '#DC2626', marginTop: '6px' }}>{webhookError}</p>
               )}
-              <p style={{ fontSize: '12px', color: '#64748B', marginTop: '6px' }}>
+              <p style={{ fontSize: '16px', color: '#64748B', marginTop: '6px' }}>
                 Must be a valid HTTPS URL. DevControl will POST JSON payloads to this endpoint.
               </p>
             </div>
@@ -1009,7 +1260,7 @@ export default function DevelopersPage() {
                 style={{
                   flex: 1, padding: '10px', background: '#F8FAFC',
                   border: '1px solid #E2E8F0', borderRadius: '9px',
-                  fontSize: '13px', fontWeight: 600, color: '#334155', cursor: 'pointer',
+                  fontSize: '15px', fontWeight: 600, color: '#334155', cursor: 'pointer',
                 }}
               >
                 Cancel
@@ -1019,7 +1270,7 @@ export default function DevelopersPage() {
                 style={{
                   flex: 1, padding: '10px', background: '#7C3AED',
                   border: 'none', borderRadius: '9px',
-                  fontSize: '13px', fontWeight: 600, color: '#fff', cursor: 'pointer',
+                  fontSize: '15px', fontWeight: 600, color: '#fff', cursor: 'pointer',
                 }}
               >
                 Add Endpoint

@@ -23,7 +23,7 @@ const isMac = () => {
  */
 const isTypingInInput = (event: KeyboardEvent): boolean => {
   const target = event.target as HTMLElement;
-  const tagName = target.tagName.toLowerCase();
+  const tagName = target?.tagName?.toLowerCase() ?? '';
 
   // Ignore shortcuts when typing in inputs, textareas, or contenteditable elements
   return (
@@ -76,6 +76,8 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement)?.closest?.('[role="dialog"]')) return;
+
       // Always allow "?" for help, even in inputs
       if (event.key === '?' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
         // Only trigger if Shift is held (to type "?")
