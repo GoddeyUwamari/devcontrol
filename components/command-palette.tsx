@@ -175,10 +175,20 @@ export function CommandPalette() {
                 </div>
               ) : (
                 nlResult.data.rows.slice(0, 8).map((row, idx) => {
-                  const vals = Object.values(row).slice(0, 3)
-                  const label = String(vals[0] ?? '—')
-                  const sub1  = String(vals[1] ?? '')
-                  const sub2  = String(vals[2] ?? '')
+                  const label = String(
+                    row.resource_name ?? row.name ?? row.service_name ??
+                    row.alert_name ?? row.title ?? Object.values(row)[0] ?? '—'
+                  )
+                  const sub1 = String(
+                    row.resource_type ?? row.type ?? row.service_type ??
+                    row.severity ?? Object.values(row)[1] ?? ''
+                  )
+                  const sub2 = String(
+                    row.monthly_cost
+                      ? '$' + Number(row.monthly_cost).toLocaleString() + '/mo'
+                      : row.region ?? row.status ?? row.environment ??
+                        Object.values(row)[2] ?? ''
+                  )
                   return (
                     <CommandItem key={idx} onSelect={() => {
                       setOpen(false)
