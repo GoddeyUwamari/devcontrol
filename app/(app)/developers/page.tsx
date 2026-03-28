@@ -6,7 +6,7 @@ import {
   Plus, X, Copy, Check, Trash2,
   Eye, EyeOff,
   Github, Slack, Bell, Trello,
-  Cloud, Database, Server, BarChart2,
+  Cloud, Database, Server, BarChart2, Activity, Mail,
 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useEffect } from 'react'
@@ -207,6 +207,70 @@ export default function DevelopersPage() {
       connectedAt: null,
       icon: <Database size={20} />,
     },
+    {
+      id: 'cloudwatch',
+      name: 'CloudWatch',
+      description: 'Monitor AWS resources and stream metrics, logs, and alarms into DevControl.',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Activity size={20} />,
+    },
+    {
+      id: 'grafana',
+      name: 'Grafana',
+      description: 'Sync dashboards, alerts, and performance data from your Grafana instance.',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <BarChart2 size={20} />,
+    },
+    {
+      id: 'gitlab',
+      name: 'GitLab',
+      description: 'Pull merge request events and CI/CD pipeline data from your GitLab repositories.',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Github size={20} />,
+    },
+    {
+      id: 'prometheus',
+      name: 'Prometheus',
+      description: 'Scrape metrics and monitor service health across your infrastructure in real time.',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Server size={20} />,
+    },
+    {
+      id: 'newrelic',
+      name: 'New Relic',
+      description: 'Stream APM, error tracking, and infrastructure data from New Relic into DevControl.',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <BarChart2 size={20} />,
+    },
+    {
+      id: 'opsgenie',
+      name: 'OpsGenie',
+      description: 'Route critical alerts to on-call teams with escalation policies and schedules.',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Bell size={20} />,
+    },
+    {
+      id: 'email',
+      name: 'Email',
+      description: 'Send alert notifications directly to your team via SMTP with custom recipients.',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Mail size={20} />,
+    },
+    {
+      id: 'linear',
+      name: 'Linear',
+      description: 'Create and link issues in Linear automatically from alerts and anomaly detections.',
+      status: 'disconnected',
+      connectedAt: null,
+      icon: <Trello size={20} />,
+    },
   ])
 
   useEffect(() => {
@@ -371,19 +435,19 @@ export default function DevelopersPage() {
   const integrationGroups = [
     {
       label: 'Core infrastructure',
-      items: ['aws', 'kubernetes', 'terraform'],
+      items: ['aws', 'kubernetes', 'terraform', 'cloudwatch'],
     },
     {
       label: 'Observability',
-      items: ['datadog'],
+      items: ['datadog', 'grafana', 'prometheus', 'newrelic'],
     },
     {
       label: 'Alerts & incidents',
-      items: ['slack', 'pagerduty'],
+      items: ['slack', 'pagerduty', 'opsgenie', 'email'],
     },
     {
       label: 'Dev workflow',
-      items: ['github', 'jira'],
+      items: ['github', 'jira', 'gitlab', 'linear'],
     },
   ]
 
@@ -396,6 +460,14 @@ export default function DevelopersPage() {
     pagerduty:  { desc: 'Route critical alerts to on-call engineers instantly', recommended: false },
     github:     { desc: 'Pull deployment events and PR data from your repositories', recommended: false },
     jira:       { desc: 'Create and link incidents to Jira issues automatically', recommended: false },
+    cloudwatch: { desc: 'Monitor AWS resources and stream metrics, logs, and alarms into DevControl.', recommended: false },
+    grafana:    { desc: 'Sync dashboards, alerts, and performance data from your Grafana instance.', recommended: false },
+    gitlab:     { desc: 'Pull merge request events and CI/CD pipeline data from your GitLab repositories.', recommended: false },
+    prometheus: { desc: 'Scrape metrics and monitor service health across your infrastructure in real time.', recommended: false },
+    newrelic:   { desc: 'Stream APM, error tracking, and infrastructure data from New Relic into DevControl.', recommended: false },
+    opsgenie:   { desc: 'Route critical alerts to on-call teams with escalation policies and schedules.', recommended: false },
+    email:      { desc: 'Send alert notifications directly to your team via SMTP with custom recipients.', recommended: false },
+    linear:     { desc: 'Create and link issues in Linear automatically from alerts and anomaly detections.', recommended: false },
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -413,7 +485,7 @@ export default function DevelopersPage() {
           marginBottom: '6px',
           lineHeight: 1.2,
         }}>
-          DevControl Integration Layer
+          Integrations & API
         </h1>
         <p style={{ fontSize: '16px', color: '#334155', lineHeight: 1.5 }}>
           Connect your stack, ingest real-time data, and power insights across your infrastructure.
@@ -423,11 +495,11 @@ export default function DevelopersPage() {
       {/* GET STARTED */}
       <div style={{ marginBottom: '28px' }}>
         <p style={{
-          fontSize: '15px',
+          fontSize: '10px',
           fontWeight: 500,
-          color: '#64748B',
+          color: '#6b7280',
           textTransform: 'uppercase',
-          letterSpacing: '0.08em',
+          letterSpacing: '0.07em',
           margin: '0 0 12px',
         }}>
           Get DevControl fully connected
@@ -467,9 +539,9 @@ export default function DevelopersPage() {
                 onClick={step.onClick}
                 disabled={step.status === 'connected'}
                 style={{
-                  fontSize: '16px',
-                  color: step.status === 'connected' ? '#059669' : '#534AB7',
-                  background: 'none',
+                  fontSize: '14px',
+                  color: step.status === 'connected' ? '#059669' : 'white',
+                  background: step.status === 'connected' ? 'none' : '#534AB7',
                   border: `1px solid ${step.status === 'connected' ? '#059669' : '#534AB7'}`,
                   borderRadius: '6px',
                   padding: '5px 10px',
@@ -585,7 +657,7 @@ export default function DevelopersPage() {
         </div>
 
         {apiKeys.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px 24px' }}>
+          <div style={{ textAlign: 'center', padding: '24px 20px' }}>
             <div style={{
               width: '40px',
               height: '40px',
@@ -839,7 +911,7 @@ export default function DevelopersPage() {
         </div>
 
         {webhooks.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px 24px' }}>
+          <div style={{ textAlign: 'center', padding: '24px 20px' }}>
             <div style={{
               width: '40px',
               height: '40px',
@@ -880,7 +952,7 @@ export default function DevelopersPage() {
                 cursor: 'pointer',
               }}
             >
-              + Add Webhook
+              + Add Endpoint
             </button>
           </div>
         ) : (
@@ -993,16 +1065,16 @@ export default function DevelopersPage() {
           {integrationGroups.map(group => (
             <div key={group.label}>
               <p style={{
-                fontSize: '15px',
-                fontWeight: 600,
-                color: '#94A3B8',
+                fontSize: '10px',
+                fontWeight: 500,
+                color: '#6b7280',
                 textTransform: 'uppercase',
                 letterSpacing: '0.07em',
                 margin: '0 0 12px',
               }}>
                 {group.label}
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
                 {group.items.map(id => {
                   const intg = integrations.find(i => i.id === id)
                   if (!intg) return null
@@ -1040,12 +1112,13 @@ export default function DevelopersPage() {
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                           {meta?.recommended && !isConnected && (
                             <span style={{
-                              fontSize: '16px',
+                              fontSize: 10,
                               fontWeight: 500,
-                              padding: '2px 6px',
-                              borderRadius: '4px',
+                              padding: '2px 8px',
+                              borderRadius: 4,
                               background: '#EEEDFE',
                               color: '#3C3489',
+                              border: '0.5px solid #AFA9EC',
                             }}>
                               Recommended
                             </span>
@@ -1074,12 +1147,12 @@ export default function DevelopersPage() {
                         }}
                         style={{
                           marginTop: '4px',
-                          fontSize: '16px',
+                          fontSize: 11,
                           color: isConnected ? '#059669' : '#534AB7',
-                          background: 'none',
-                          border: `1px solid ${isConnected ? '#059669' : '#534AB7'}`,
-                          borderRadius: '6px',
-                          padding: '5px 10px',
+                          background: isConnected ? 'none' : '#EEEDFE',
+                          border: isConnected ? '1px solid #059669' : 'none',
+                          borderRadius: 4,
+                          padding: '5px 12px',
                           cursor: 'pointer',
                           alignSelf: 'flex-start',
                         }}
