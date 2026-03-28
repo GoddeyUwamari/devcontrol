@@ -531,7 +531,7 @@ export default function DashboardPage() {
               margin: 0,
               letterSpacing: '-0.02em',
             }}>
-              Your AI Command Center for Cost, Security & Performance
+              Find AWS Waste, Security Risks, and Performance Bottlenecks — in Minutes
             </h1>
           </div>
           <p style={{
@@ -540,24 +540,28 @@ export default function DashboardPage() {
             margin: 0,
             lineHeight: 1.6,
           }}>
-            WayUP Technology · 3 AWS accounts · Last synced {formatDistanceToNow(lastSynced, { addSuffix: true })}
+            {isAwsConnected
+              ? `WayUP Technology · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}`
+              : 'Connect your AWS account to get started · Setup takes 2 minutes'}
           </p>
         </div>
-        <a href="/cost-optimization" style={{
-          background: '#7C3AED',
-          color: '#fff',
-          padding: '10px 24px',
-          borderRadius: '8px',
-          fontSize: '0.875rem',
-          fontWeight: 600,
-          textDecoration: 'none',
-          letterSpacing: '-0.01em',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-        }}>
-          Approve Savings <ArrowRight size={14} />
-        </a>
+        {isAwsConnected && (
+          <a href="/cost-optimization" style={{
+            background: '#7C3AED',
+            color: '#fff',
+            padding: '10px 24px',
+            borderRadius: '8px',
+            fontSize: '0.875rem',
+            fontWeight: 600,
+            textDecoration: 'none',
+            letterSpacing: '-0.01em',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}>
+            Approve Savings <ArrowRight size={14} />
+          </a>
+        )}
       </div>
 
       {/* ── RISK ALERT BANNER ── */}
@@ -694,6 +698,32 @@ export default function DashboardPage() {
         /* ── UNCONNECTED STATE ── */
         <div>
 
+          {/* ── AI INSIGHT BANNER ── */}
+          <div style={{
+            border: '0.5px solid #E2E8F0',
+            borderLeft: '2px solid #534AB7',
+            borderRadius: '8px',
+            padding: '12px 16px',
+            marginBottom: '24px',
+            display: 'flex',
+            gap: '10px',
+          }}>
+            <div style={{ width: '28px', height: '28px', background: '#EEEDFE', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: '#534AB7', fontSize: '14px' }}>✦</span>
+            </div>
+            <div>
+              <p style={{ fontSize: '11px', fontWeight: 500, color: '#534AB7', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>
+                Example insight you'll get in 2 minutes
+              </p>
+              <p style={{ fontSize: '13px', color: '#0F172A', lineHeight: 1.5, margin: 0 }}>
+                "3 EC2 instances running at 12% CPU — right-sizing saves $720/month with zero downtime risk"
+              </p>
+              <p style={{ fontSize: '12px', color: '#475569', margin: '3px 0 0' }}>
+                DevControl surfaces insights like this automatically, updated daily.
+              </p>
+            </div>
+          </div>
+
           {/* ── CONNECT CARD ── */}
           <div style={{
             background: '#FFFFFF',
@@ -715,14 +745,14 @@ export default function DashboardPage() {
               color: '#0F172A', letterSpacing: '-0.02em',
               margin: '0 0 8px',
             }}>
-              Connect your AWS account to unlock your dashboard
+              Connect your AWS account to uncover cost leaks and infrastructure risks
             </h2>
             <p style={{
               fontSize: '14px', color: '#475569',
               maxWidth: '460px', margin: '0 auto 28px',
               lineHeight: 1.65,
             }}>
-              DevControl needs read-only access to your AWS account to show costs, security posture, and infrastructure health. Setup takes 2 minutes.
+              DevControl uses read-only access to analyze your AWS environment and surface savings, risks, and inefficiencies — no changes made to your infrastructure.
             </p>
             <a href="/connect-aws" style={{
               display: 'inline-flex', alignItems: 'center',
@@ -732,13 +762,28 @@ export default function DashboardPage() {
               textDecoration: 'none',
               boxShadow: '0 4px 14px rgba(124,58,237,0.3)',
             }}>
-              Connect AWS Account →
+              Connect AWS Account (2 min setup) →
             </a>
             <p style={{
               fontSize: '12px', color: '#94A3B8', marginTop: '14px',
             }}>
-              Read-only IAM role · No credentials stored · Cancel anytime
+              ✓ Read-only IAM role&nbsp;&nbsp;✓ No credentials stored&nbsp;&nbsp;✓ No changes to infrastructure&nbsp;&nbsp;✓ Cancel anytime
             </p>
+          </div>
+
+          {/* ── SOCIAL PROOF ── */}
+          <div style={{
+            background: '#F8FAFC',
+            borderRadius: '8px',
+            padding: '12px 16px',
+            textAlign: 'center',
+            fontSize: '12px',
+            color: '#475569',
+            margin: '0 0 24px',
+          }}>
+            Teams typically find{' '}
+            <strong style={{ color: '#0F172A', fontWeight: 500 }}>20–40% savings</strong>
+            {' '}in unused or overprovisioned AWS resources on their first scan.
           </div>
 
           {/* ── WHAT YOU'LL UNLOCK LABEL ── */}
@@ -757,10 +802,10 @@ export default function DashboardPage() {
             gap: '20px', marginBottom: '24px',
           }}>
             {[
-              { label: 'Total Cloud Spend',        value: '$12,847', delta: '↑ +8% vs last month' },
-              { label: 'Security Posture',          value: '87/100',  delta: '↑ Stable · Above benchmark' },
-              { label: 'Infrastructure Efficiency', value: '85%',     delta: '— $1,922 identified waste' },
-              { label: 'Cloud Health Score',        value: '87/100',  delta: 'Cost · Security · Reliability' },
+              { label: 'Total Cloud Spend',         value: '$12,480/mo', delta: '↑ +8% vs last month' },
+              { label: 'Potential Savings',          value: '$3,200/mo',  delta: '↓ Identified waste' },
+              { label: 'Security Posture',           value: '74 / 100',   delta: '↑ Stable · Above benchmark' },
+              { label: 'Resources Underutilized',    value: '42%',        delta: '— Right-size to save' },
             ].map(({ label, value, delta }) => (
               <a
                 key={label}
@@ -823,7 +868,7 @@ export default function DashboardPage() {
                     gap: '6px', fontSize: '12px',
                     fontWeight: 600, color: '#7C3AED',
                   }}>
-                    <span>🔒</span> Connect to unlock
+                    <span>🔒</span> <span style={{ color: '#534AB7' }}>Connect to unlock</span>
                   </div>
                 </div>
               </a>

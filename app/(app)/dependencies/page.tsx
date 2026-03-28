@@ -495,10 +495,10 @@ export default function DependenciesPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-                Service Dependencies
+                Service Dependency Mapping
               </h1>
               <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-                Visualize and manage service dependency relationships
+                Analyze critical paths, detect bottlenecks, and understand system-wide impact.
               </p>
             </div>
           </div>
@@ -591,10 +591,10 @@ export default function DependenciesPage() {
         <div className="flex items-start justify-between">
           <div>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-              Service Dependencies
+              Service Dependency Mapping
             </h1>
             <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-              Visualize and manage service dependency relationships
+              Analyze critical paths, detect bottlenecks, and understand system-wide impact.
             </p>
           </div>
           <div className="flex items-center gap-3">
