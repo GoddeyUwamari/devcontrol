@@ -262,40 +262,43 @@ export default function AlertSettingsPage() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         {/* Hero Section - Outcome Focused */}
-        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-8 text-white">
+        <div className="rounded-xl p-8" style={{ background: '#EEEDFE', border: '0.5px solid #AFA9EC' }}>
           <div className="flex items-start justify-between">
             <div className="max-w-2xl">
               <div className="flex items-center gap-2 mb-4">
-                <Bell className="h-6 w-6" />
-                <span className="text-blue-200 font-medium">Alert Configuration</span>
+                <Bell className="h-6 w-6" style={{ color: '#534AB7' }} />
+                <span style={{ color: '#534AB7', fontWeight: 500 }}>Alert Configuration</span>
               </div>
-              <h1 className="text-3xl font-bold mb-3">
+              <h1 className="text-3xl font-bold mb-3" style={{ color: '#3C3489' }}>
                 Never Miss a Critical Issue Again
               </h1>
-              <p className="text-blue-100 text-lg mb-6">
+              <p className="text-lg mb-6" style={{ color: '#534AB7' }}>
                 Get instant notifications when costs spike, security vulnerabilities appear,
                 or compliance issues arise. Resolve problems before they become incidents.
               </p>
               <div className="flex flex-wrap gap-4">
-                <div className="flex items-center gap-2 bg-white/10 rounded-lg px-4 py-2">
-                  <Clock className="h-5 w-5 text-green-300" />
+                <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'white', color: '#534AB7', border: '0.5px solid #AFA9EC', borderRadius: 100 }}>
+                  <Clock className="h-5 w-5" style={{ color: '#534AB7' }} />
                   <span className="text-sm">Average 4-hour faster response time</span>
                 </div>
-                <div className="flex items-center gap-2 bg-white/10 rounded-lg px-4 py-2">
-                  <TrendingDown className="h-5 w-5 text-green-300" />
+                <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'white', color: '#534AB7', border: '0.5px solid #AFA9EC', borderRadius: 100 }}>
+                  <TrendingDown className="h-5 w-5" style={{ color: '#534AB7' }} />
                   <span className="text-sm">67% fewer escalations</span>
                 </div>
               </div>
             </div>
             <div className="hidden lg:block">
-              <div className="bg-white/10 backdrop-blur rounded-xl p-6 border border-white/20">
+              <div className="rounded-xl p-6" style={{ background: 'white', border: '0.5px solid #AFA9EC' }}>
                 <div className="text-center mb-4">
-                  <div className="text-4xl font-bold">{enabledChannelsCount}</div>
-                  <div className="text-sm text-blue-200">Channels Active</div>
+                  <div className="text-4xl" style={{ color: '#3C3489', fontWeight: 500 }}>{enabledChannelsCount}</div>
+                  <div style={{ fontSize: '0.875rem', color: '#7F77DD' }}>Channels Active</div>
+                  {enabledChannelsCount === 0 && (
+                    <div style={{ fontSize: 11, color: '#854F0B', marginTop: 2 }}>Connect at least one channel</div>
+                  )}
                 </div>
                 <div className="text-center">
-                  <div className="text-4xl font-bold">{enabledAlertTypesCount}</div>
-                  <div className="text-sm text-blue-200">Alert Types Enabled</div>
+                  <div className="text-4xl" style={{ color: '#3C3489', fontWeight: 500 }}>{enabledAlertTypesCount}</div>
+                  <div style={{ fontSize: '0.875rem', color: '#7F77DD' }}>Alert Types Enabled</div>
                 </div>
               </div>
             </div>
@@ -322,7 +325,7 @@ export default function AlertSettingsPage() {
         {/* Alert Types Section */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2" style={{ fontSize: '0.72rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#6b7280' }}>
               <Zap className="h-5 w-5 text-amber-500" />
               What to Get Alerted About
             </CardTitle>
@@ -337,20 +340,17 @@ export default function AlertSettingsPage() {
                 return (
                   <div
                     key={alertType.id}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      alertType.enabled
-                        ? 'border-blue-200 bg-blue-50'
-                        : 'border-gray-200 bg-white'
-                    }`}
+                    className="p-4 transition-all"
+                    style={{
+                      borderRadius: 12,
+                      border: alertType.enabled ? '0.5px solid #AFA9EC' : '0.5px solid #e5e7eb',
+                      background: alertType.enabled ? '#FAFAFE' : 'white',
+                    }}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${
-                          alertType.enabled ? 'bg-blue-100' : 'bg-gray-100'
-                        }`}>
-                          <Icon className={`h-5 w-5 ${
-                            alertType.enabled ? 'text-blue-600' : 'text-gray-500'
-                          }`} />
+                        <div className="p-2 rounded-lg" style={{ background: alertType.enabled ? '#EEEDFE' : '#f3f4f6' }}>
+                          <Icon className="h-5 w-5" style={{ color: alertType.enabled ? '#534AB7' : '#6b7280' }} />
                         </div>
                         <div>
                           <h4 className="font-semibold text-gray-900">{alertType.name}</h4>
@@ -364,7 +364,7 @@ export default function AlertSettingsPage() {
                     </div>
 
                     {alertType.enabled && alertType.threshold !== undefined && (
-                      <div className="mt-3 pt-3 border-t border-blue-200">
+                      <div className="mt-3 pt-3 border-t" style={{ borderColor: '#AFA9EC' }}>
                         <Label className="text-sm text-gray-700">Threshold</Label>
                         <div className="flex items-center gap-2 mt-1">
                           <Input
@@ -381,18 +381,18 @@ export default function AlertSettingsPage() {
                     {alertType.enabled && (
                       <div className="mt-3 flex gap-1">
                         {alertType.severities.map((severity) => (
-                          <Badge
+                          <span
                             key={severity}
-                            className={
+                            style={
                               severity === 'critical'
-                                ? 'bg-red-100 text-red-700'
+                                ? { background: '#FCEBEB', color: '#791F1F', border: '0.5px solid #F09595', fontSize: 10, fontWeight: 500, borderRadius: 4, padding: '2px 8px' }
                                 : severity === 'warning'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-blue-100 text-blue-700'
+                                ? { background: '#FAEEDA', color: '#633806', border: '0.5px solid #BA7517', fontSize: 10, fontWeight: 500, borderRadius: 4, padding: '2px 8px' }
+                                : { background: '#E6F1FB', color: '#0C447C', border: '0.5px solid #85B7EB', fontSize: 10, fontWeight: 500, borderRadius: 4, padding: '2px 8px' }
                             }
                           >
                             {severity}
-                          </Badge>
+                          </span>
                         ))}
                       </div>
                     )}
@@ -406,7 +406,7 @@ export default function AlertSettingsPage() {
         {/* Channel Configuration */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2" style={{ fontSize: '0.72rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#6b7280' }}>
               <ArrowRight className="h-5 w-5 text-blue-500" />
               Where to Send Alerts
             </CardTitle>
@@ -436,7 +436,13 @@ export default function AlertSettingsPage() {
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-2">
-                      <Icon className="h-4 w-4" />
+                      <Icon className="h-4 w-4" style={{
+                        color: status === 'disabled' ? '#9ca3af'
+                          : key === 'email' ? '#534AB7'
+                          : key === 'slack' ? '#4A154B'
+                          : key === 'jira' ? '#0052CC'
+                          : '#1D9E75'
+                      }} />
                       <span className="font-medium">{name}</span>
                     </div>
                     <div className="flex items-center gap-1 text-sm">
@@ -452,8 +458,8 @@ export default function AlertSettingsPage() {
                         </>
                       ) : (
                         <>
-                          <XCircle className="h-4 w-4 text-gray-400" />
-                          <span className="text-gray-500">Disabled</span>
+                          <XCircle className="h-4 w-4" style={{ color: '#9ca3af' }} />
+                          <span style={{ color: '#9ca3af' }}>Disabled</span>
                         </>
                       )}
                     </div>
@@ -928,7 +934,7 @@ export default function AlertSettingsPage() {
         </Card>
 
         {/* Save Button */}
-        <div className="flex items-center justify-between p-4 bg-white rounded-lg border shadow-sm">
+        <div className="flex items-center justify-between p-4 bg-white rounded-lg" style={{ border: '0.5px solid #e5e7eb' }}>
           <div>
             <p className="font-medium text-gray-900">Ready to save your configuration?</p>
             <p className="text-sm text-gray-500">
@@ -941,7 +947,8 @@ export default function AlertSettingsPage() {
             onClick={handleSave}
             disabled={isSaving}
             size="lg"
-            className="bg-blue-600 hover:bg-blue-700 gap-2"
+            className="gap-2"
+            style={{ background: '#534AB7', color: 'white', borderRadius: 6, fontWeight: 500 }}
           >
             {isSaving ? (
               <Loader2 className="h-4 w-4 animate-spin" />

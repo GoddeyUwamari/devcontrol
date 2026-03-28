@@ -68,6 +68,7 @@ export function UserDropdown({ user, onLogout }: UserDropdownProps) {
                   <DropdownMenuItem key={item.href} asChild className="p-0">
                     <Link
                       href={item.href}
+                      {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer w-full',
                         'hover:bg-accent',

@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 interface FooterLink {
   label: string;
   href: string;
+  external?: boolean;
 }
 
 interface FooterSection {
@@ -44,7 +45,7 @@ const footerData: FooterColumn[] = [
           { label: 'Monitoring & Alerts', href: '/product/monitoring' },
           { label: 'DORA Metrics', href: '/product/dora-metrics' },
           { label: 'AWS Integration', href: '/product/aws-integration' },
-          { label: "What's New", href: '/changelog' },
+          { label: "What's New", href: '/changelog', external: true },
           { label: 'Roadmap', href: '/product/roadmap' },
         ],
       },
@@ -87,7 +88,7 @@ const footerData: FooterColumn[] = [
       {
         title: '',
         links: [
-          { label: 'Documentation', href: '/docs' },
+          { label: 'Documentation', href: '/docs', external: true },
           { label: 'Getting Started', href: '/docs/getting-started' },
           { label: 'API Reference', href: '/docs/api' },
           { label: 'CLI Tool', href: '/developers/cli' },
@@ -214,6 +215,7 @@ function FooterColumn({ column, isMobile }: { column: FooterColumn; isMobile?: b
                     <li key={linkIdx}>
                       <Link
                         href={link.href}
+                        {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                         className="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200"
                       >
                         {link.label}
@@ -246,6 +248,7 @@ function FooterColumn({ column, isMobile }: { column: FooterColumn; isMobile?: b
               <li key={linkIdx}>
                 <Link
                   href={link.href}
+                  {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                   className="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block"
                 >
                   {link.label}

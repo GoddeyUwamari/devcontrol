@@ -34,6 +34,7 @@ export interface NavItem {
   icon?: LucideIcon;
   badge?: string | number;
   description?: string;
+  external?: boolean;
 }
 
 export interface NavSection {
@@ -315,11 +316,13 @@ export const userNavSections: NavSection[] = [
         label: 'Documentation',
         href: '/docs',
         icon: Book,
+        external: true,
       },
       {
         label: "What's New",
         href: '/changelog',
         icon: Sparkles,
+        external: true,
       },
     ],
   },
