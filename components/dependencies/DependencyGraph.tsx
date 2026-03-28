@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ReactFlow, Background, Controls, MiniMap, Node, Edge, useNodesState, useEdgesState, MarkerType, Panel } from '@xyflow/react'
+import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Node, Edge, useNodesState, useEdgesState, MarkerType, Panel } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -32,9 +32,18 @@ interface DependencyGraphProps {
   graphRef?: React.RefObject<HTMLDivElement | null>
   demoMode?: boolean
   onNodeClick?: (node: Node) => void
+  onEdgeClick?: (edge: Edge) => void
 }
 
-export function DependencyGraph({ onRefresh, graphRef, demoMode = false, onNodeClick }: DependencyGraphProps) {
+export function DependencyGraph(props: DependencyGraphProps) {
+  return (
+    <ReactFlowProvider>
+      <DependencyGraphInner {...props} />
+    </ReactFlowProvider>
+  )
+}
+
+function DependencyGraphInner({ onRefresh, graphRef, demoMode = false, onNodeClick, onEdgeClick }: DependencyGraphProps) {
   const internalRef = useRef<HTMLDivElement>(null)
   const activeRef = graphRef || internalRef
   const [nodes, setNodes, onNodesChange] = useNodesState([])
@@ -53,7 +62,6 @@ export function DependencyGraph({ onRefresh, graphRef, demoMode = false, onNodeC
   // Update nodes and edges when data changes
   useEffect(() => {
     if (graphData) {
-      // Transform edges with styling
       const transformedEdges = graphData.edges.map((edge) => ({
         ...edge,
         markerEnd: {
@@ -70,7 +78,6 @@ export function DependencyGraph({ onRefresh, graphRef, demoMode = false, onNodeC
         },
       }))
 
-      // Apply layout
       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
         graphData.nodes,
         transformedEdges
@@ -137,13 +144,30 @@ export function DependencyGraph({ onRefresh, graphRef, demoMode = false, onNodeC
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
+        zoomOnScroll={false}
+        zoomOnPinch={true}
+        panOnScroll={false}
         onNodeClick={(event, node) => onNodeClick?.(node)}
+        onEdgeClick={(event, edge) => onEdgeClick?.(edge)}
         fitView
         attributionPosition="bottom-left"
       >
         <Background />
         <Controls />
-        <MiniMap />
+        <MiniMap
+          nodeColor={(n) => {
+            const label = String(n.data?.label ?? '')
+            if (label.toLowerCase().includes('database')) return '#3B82F6'
+            if (label.toLowerCase().includes('queue')) return '#F97316'
+            if (label.toLowerCase().includes('gateway') || label.toLowerCase().includes('api')) return '#7C3AED'
+            if (label.toLowerCase().includes('frontend')) return '#22C55E'
+            return '#64748B'
+          }}
+          maskColor="rgba(241,245,249,0.7)"
+          style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px' }}
+          pannable
+          zoomable
+        />
         <Panel position="top-right" className="bg-white p-4 rounded-lg shadow-md space-y-2">
           <div className="text-sm font-semibold">Legend</div>
           <div className="flex items-center gap-2 text-xs">

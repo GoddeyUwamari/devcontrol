@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Network, List, Activity, AlertTriangle, Plus, Command, Play, Clock, RefreshCw } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -39,7 +40,7 @@ import { DataFreshnessIndicator } from '@/components/ui/data-freshness-indicator
 import { SecurityBadge } from '@/components/ui/security-badge'
 import { SyncHealthStatus } from '@/components/ui/sync-health-status'
 import dynamic from 'next/dynamic'
-import type { Node } from '@xyflow/react'
+import type { Node, Edge } from '@xyflow/react'
 
 // Dynamically import React Flow component to avoid SSR issues
 const DependencyGraph = dynamic(
@@ -62,15 +63,81 @@ const AddDependencyDialog = dynamic(
   { ssr: false }
 )
 
+// --- Intelligence Panel helpers (module-level for stable references) ---
+
+function hashStr(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
+  return Math.abs(h)
+}
+
+function detectServiceType(id: string): string {
+  const l = id.toLowerCase()
+  if (l.includes('db') || l.includes('database') || l.includes('postgres') || l.includes('mysql') || l.includes('mongo')) return 'database'
+  if (l.includes('queue') || l.includes('kafka') || l.includes('rabbit') || l.includes('sqs')) return 'queue'
+  if (l.includes('ui') || l.includes('frontend') || l.includes('web') || l.includes('client')) return 'frontend'
+  if (l.includes('gateway') || l.includes('proxy') || l.includes('nginx')) return 'gateway'
+  return 'api'
+}
+
+function getServiceMetrics(nodeId: string) {
+  const h = hashStr(nodeId)
+  return {
+    latency: 50 + (h % 200),
+    errorRate: ((h % 30) / 10).toFixed(1),
+    reqVolume: 500 + (h % 5000),
+    costPerMonth: 200 + (h % 2000),
+    type: detectServiceType(nodeId),
+    environment: 'production',
+    isOnCriticalPath: nodeId.toLowerCase().includes('payment') || nodeId.toLowerCase().includes('auth') || nodeId.toLowerCase().includes('gateway'),
+  }
+}
+
+function getAIInsights(_label: string): string[] {
+  return [
+    'Latency increased 32% over the last 24h',
+    'High dependency concentration detected',
+    'Failure here would impact customer-facing checkout flow',
+  ]
+}
+
+function getRecommendations(_label: string): { action: string; impact: string; confidence: number }[] {
+  return [
+    { action: 'Introduce caching for API responses', impact: '-18% latency', confidence: 87 },
+    { action: 'Decouple synchronous Email Queue dependency', impact: '-45ms avg', confidence: 92 },
+  ]
+}
+
+function getEdgeMetrics(edgeId: string) {
+  const h = hashStr(edgeId)
+  return {
+    reqVolume: 500 + (h % 5000),
+    latency: 10 + (h % 80),
+    errorRate: ((h % 20) / 10).toFixed(1),
+  }
+}
+
+const SECTION_HEADER: React.CSSProperties = {
+  fontSize: '0.68rem', color: '#475569', fontWeight: 600,
+  textTransform: 'uppercase', letterSpacing: '0.06em',
+  margin: '0 0 10px', paddingBottom: '6px', borderBottom: '1px solid #F1F5F9',
+}
+
+// --- End helpers ---
+
 const DEMO_MODE_KEY = 'devcontrol_demo_mode'
 const CACHE_KEY = 'dependencies_cache'
 const CACHE_TIMESTAMP_KEY = 'dependencies_cache_timestamp'
 
 export default function DependenciesPage() {
+  const router = useRouter()
   const globalDemoMode = useDemoMode()
   const [localDemoMode, setLocalDemoMode] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
+  const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null)
+  const [alertToast, setAlertToast] = useState<string | null>(null)
+  const panelOpen = selectedNode !== null || selectedEdge !== null
   const [activeTab, setActiveTab] = useState('graph')
   const [showShortcuts, setShowShortcuts] = useState(false)
   const graphRef = useRef<HTMLDivElement>(null)
@@ -390,10 +457,10 @@ export default function DependenciesPage() {
     announceToScreenReader('Connection lost. Showing cached data.', 'assertive')
   }, [])
 
-  // Close node detail panel on Escape
+  // Close intelligence panel on Escape
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelectedNode(null)
+      if (e.key === 'Escape') { setSelectedNode(null); setSelectedEdge(null) }
     }
     window.addEventListener('keydown', handleEsc)
     return () => window.removeEventListener('keydown', handleEsc)
@@ -692,7 +759,10 @@ export default function DependenciesPage() {
         </TabsList>
 
         <TabsContent value="graph" className="space-y-4">
-          <div className={demoMode ? 'relative' : ''}>
+          <div
+            className={demoMode ? 'relative' : ''}
+            style={{ opacity: panelOpen ? 0.6 : 1, transition: 'opacity 0.3s ease', pointerEvents: panelOpen ? 'none' : undefined }}
+          >
             {demoMode && (
               <div className="absolute top-3 right-3 z-10">
                 <span className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
@@ -705,47 +775,224 @@ export default function DependenciesPage() {
               onRefresh={refetch}
               graphRef={graphRef}
               demoMode={demoMode || displayDependencies === DEMO_DEPENDENCIES}
-              onNodeClick={(node) => setSelectedNode(node)}
+              onNodeClick={(node) => { setSelectedNode(node); setSelectedEdge(null) }}
+              onEdgeClick={(edge) => { setSelectedEdge(edge); setSelectedNode(null) }}
             />
           </div>
-          {selectedNode && (
-            <div style={{
-              position: 'fixed', right: 0, top: 0, height: '100vh', width: '420px',
-              background: '#fff', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
-              zIndex: 50, padding: '32px 28px', overflowY: 'auto',
-              transform: 'translateX(0)', transition: 'transform 0.3s ease'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-                  {String(selectedNode.data?.label ?? selectedNode.id)}
-                </h2>
-                <button onClick={() => setSelectedNode(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#64748B' }}>✕</button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '16px' }}>
-                  <p style={{ fontSize: '0.75rem', color: '#64748B', margin: '0 0 4px', fontWeight: 600, textTransform: 'uppercase' }}>Service ID</p>
-                  <p style={{ fontSize: '0.875rem', color: '#0F172A', margin: 0 }}>{selectedNode.id}</p>
-                </div>
-                <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '16px' }}>
-                  <p style={{ fontSize: '0.75rem', color: '#64748B', margin: '0 0 8px', fontWeight: 600, textTransform: 'uppercase' }}>Health</p>
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    {[['Error Rate', '1.2%'], ['Latency', '145ms'], ['Uptime', '99.7%']].map(([k, v]) => (
-                      <div key={k}>
-                        <p style={{ fontSize: '0.68rem', color: '#94A3B8', margin: '0 0 2px' }}>{k}</p>
-                        <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>{v}</p>
-                      </div>
-                    ))}
+
+          {/* Backdrop */}
+          {panelOpen && (
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 49 }}
+              onClick={() => { setSelectedNode(null); setSelectedEdge(null) }}
+            />
+          )}
+
+          {/* Intelligence Panel */}
+          {panelOpen && (() => {
+            const isNode = selectedNode !== null
+            const panelLabel = isNode
+              ? String(selectedNode!.data?.label ?? selectedNode!.id)
+              : `${selectedEdge!.source} → ${selectedEdge!.target}`
+            const metrics = isNode ? getServiceMetrics(selectedNode!.id) : null
+            const edgeMetrics = !isNode && selectedEdge ? getEdgeMetrics(selectedEdge.id) : null
+            const isCriticalEdge = !isNode && !!(selectedEdge?.data?.isCritical)
+
+            return (
+              <div
+                style={{
+                  position: 'fixed', right: 0, top: 0, height: '100vh', width: '420px',
+                  background: '#fff', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
+                  zIndex: 50, overflowY: 'auto',
+                  transform: 'translateX(0)', transition: 'transform 0.3s ease',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid #F1F5F9' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                    <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3, flex: 1 }}>
+                      {panelLabel}
+                    </h2>
+                    <button
+                      onClick={() => { setSelectedNode(null); setSelectedEdge(null) }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: '1.1rem', lineHeight: 1, flexShrink: 0, marginLeft: '8px', padding: '2px' }}
+                    >✕</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {isNode && metrics && (
+                      <>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', background: '#EFF6FF', color: '#3B82F6', textTransform: 'uppercase' as const }}>{metrics.type}</span>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', background: '#F0FDF4', color: '#16A34A', textTransform: 'uppercase' as const }}>{metrics.environment}</span>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', background: '#F0FDF4', color: '#16A34A', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16A34A', display: 'inline-block' }} />
+                          Healthy
+                        </span>
+                      </>
+                    )}
+                    {!isNode && (
+                      <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', background: isCriticalEdge ? '#FEF2F2' : '#F8FAFC', color: isCriticalEdge ? '#EF4444' : '#64748B', textTransform: 'uppercase' as const }}>
+                        {isCriticalEdge ? 'Critical' : 'Runtime'} dependency
+                      </span>
+                    )}
                   </div>
                 </div>
-                <button
-                  onClick={() => setSelectedNode(null)}
-                  style={{ marginTop: '8px', padding: '10px', background: '#7C3AED', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
-                >
-                  Close
-                </button>
+
+                {/* Body */}
+                <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {isNode && metrics ? (
+                    <>
+                      {/* Key Metrics */}
+                      <div>
+                        <p style={SECTION_HEADER}>Key Metrics</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px' }}>
+                          {[
+                            ['Avg Latency', `${metrics.latency}ms`],
+                            ['Error Rate', `${metrics.errorRate}%`],
+                            ['Req Volume', `${metrics.reqVolume.toLocaleString()}/m`],
+                            ['Cost Impact', `$${metrics.costPerMonth.toLocaleString()}/mo`],
+                          ].map(([lbl, val]) => (
+                            <div key={lbl} style={{ background: '#F8FAFC', borderRadius: '8px', padding: '10px 6px', textAlign: 'center' }}>
+                              <p style={{ fontSize: '0.6rem', color: '#94A3B8', margin: '0 0 4px', fontWeight: 600, textTransform: 'uppercase', lineHeight: 1.2 }}>{lbl}</p>
+                              <p style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>{val}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Critical Path */}
+                      {metrics.isOnCriticalPath && (
+                        <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '10px', padding: '12px 14px' }}>
+                          <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#92400E', margin: '0 0 6px' }}>⚠️ Critical Path</p>
+                          <p style={{ fontSize: '0.77rem', color: '#B45309', margin: '0 0 8px' }}>
+                            This service is part of a high-risk execution path
+                          </p>
+                          <p style={{ fontSize: '0.72rem', color: '#92400E', margin: '0 0 6px', fontFamily: 'monospace', background: '#FEF3C7', padding: '4px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                            Auth Service → {panelLabel} → Email Queue
+                          </p>
+                          <p style={{ fontSize: '0.7rem', color: '#B45309', margin: 0 }}>Combined latency: 340ms · Risk: High</p>
+                        </div>
+                      )}
+
+                      {/* Upstream */}
+                      <div>
+                        <p style={SECTION_HEADER}>Upstream Dependencies</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {[['→ Auth Service', '23ms', '0.3% errors'], ['→ User Database', '45ms', '0.1% errors']].map(([name, lat, err]) => (
+                            <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#F8FAFC', borderRadius: '8px' }}>
+                              <span style={{ fontSize: '0.8rem', color: '#0F172A', fontWeight: 500 }}>{name}</span>
+                              <span style={{ fontSize: '0.72rem', color: '#64748B' }}>{lat} · {err}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Downstream */}
+                      <div>
+                        <p style={SECTION_HEADER}>Downstream Impact</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {[['← Email Queue', 'affects: Notifications'], ['← Payment Gateway', 'affects: Checkout flow']].map(([name, affect]) => (
+                            <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#F8FAFC', borderRadius: '8px' }}>
+                              <span style={{ fontSize: '0.8rem', color: '#0F172A', fontWeight: 500 }}>{name}</span>
+                              <span style={{ fontSize: '0.72rem', color: '#64748B' }}>{affect}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* AI Analysis */}
+                      <div>
+                        <p style={SECTION_HEADER}>AI Analysis</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {getAIInsights(panelLabel).map((insight, i) => (
+                            <div key={i} style={{ borderLeft: '3px solid #7C3AED', paddingLeft: '10px', paddingTop: '2px', paddingBottom: '2px' }}>
+                              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, fontStyle: 'italic' }}>
+                                <span style={{ color: '#7C3AED', marginRight: '4px' }}>✦</span>{insight}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Recommendations */}
+                      <div>
+                        <p style={SECTION_HEADER}>Recommended Actions</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {getRecommendations(panelLabel).map((rec, i) => (
+                            <div key={i} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                                <span style={{ fontSize: '0.9rem' }}>💡</span>
+                                <div>
+                                  <p style={{ fontSize: '0.78rem', color: '#0F172A', fontWeight: 600, margin: '0 0 2px' }}>{rec.action}</p>
+                                  <p style={{ fontSize: '0.72rem', color: '#64748B', margin: 0 }}>Est. impact: {rec.impact}</p>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
+                                  <div style={{ width: `${rec.confidence}%`, height: '100%', background: '#7C3AED', borderRadius: '2px' }} />
+                                </div>
+                                <span style={{ fontSize: '0.68rem', color: '#7C3AED', fontWeight: 600 }}>{rec.confidence}%</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div>
+                        <p style={SECTION_HEADER}>Actions</p>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <button onClick={() => { setSelectedNode(null); router.push('/services') }} style={{ padding: '8px 14px', background: '#7C3AED', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>View Full Service</button>
+                          <button onClick={() => { setSelectedNode(null); handleViewChange('impact') }} style={{ padding: '8px 14px', background: '#fff', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>Analyze Impact</button>
+                          <button onClick={() => { const name = String(selectedNode?.data?.label ?? 'this service'); setAlertToast(`Alert added for ${name}`); setTimeout(() => setAlertToast(null), 3000) }} style={{ padding: '8px 14px', background: '#fff', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>Add Alert</button>
+                        </div>
+                      </div>
+                    </>
+                  ) : edgeMetrics ? (
+                    <>
+                      {/* Edge Metrics */}
+                      <div>
+                        <p style={SECTION_HEADER}>Connection Metrics</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {[
+                            ['Request Volume', `${edgeMetrics.reqVolume.toLocaleString()} req/min`],
+                            ['Latency', `${edgeMetrics.latency}ms avg`],
+                            ['Error Rate', `${edgeMetrics.errorRate}%`],
+                            ['Failure Impact', isCriticalEdge ? 'Critical' : 'Moderate'],
+                          ].map(([k, v]) => (
+                            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#F8FAFC', borderRadius: '8px' }}>
+                              <span style={{ fontSize: '0.8rem', color: '#64748B', fontWeight: 500 }}>{k}</span>
+                              <span style={{ fontSize: '0.8rem', color: '#0F172A', fontWeight: 600 }}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* AI Insight */}
+                      <div>
+                        <p style={SECTION_HEADER}>AI Insight</p>
+                        <div style={{ borderLeft: '3px solid #7C3AED', paddingLeft: '10px' }}>
+                          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, fontStyle: 'italic' }}>
+                            <span style={{ color: '#7C3AED', marginRight: '4px' }}>✦</span>
+                            This connection contributes 45% of total request latency in the checkout flow
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div>
+                        <p style={SECTION_HEADER}>Actions</p>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <button style={{ padding: '8px 14px', background: '#7C3AED', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>View Source Service</button>
+                          <button style={{ padding: '8px 14px', background: '#fff', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>View Target Service</button>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </TabsContent>
 
         <TabsContent value="list" className="space-y-4">
@@ -782,6 +1029,18 @@ export default function DependenciesPage() {
 
       {/* Welcome Modal */}
       <WelcomeModal />
+
+      {alertToast && (
+        <div style={{
+          position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
+          background: '#0F172A', color: '#fff', padding: '12px 20px',
+          borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500,
+          zIndex: 100, boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          display: 'flex', alignItems: 'center', gap: '8px'
+        }}>
+          ✓ {alertToast}
+        </div>
+      )}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
