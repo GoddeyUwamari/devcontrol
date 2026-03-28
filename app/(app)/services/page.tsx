@@ -74,6 +74,8 @@ export default function ServicesPage() {
   const [envFilter,      setEnvFilter]      = useState<string>('all')
   const [templateFilter, setTemplateFilter] = useState<string>('all')
   const [search,         setSearch]         = useState<string>('')
+  const [showAll,        setShowAll]        = useState(false)
+  const INITIAL_VISIBLE = 4
   const [isDiscovering,  setIsDiscovering]  = useState(false)
   const [discoveryComplete, setDiscoveryComplete] = useState(false)
   const [discoveryMsg,   setDiscoveryMsg]   = useState<string | null>(null)
@@ -198,6 +200,16 @@ export default function ServicesPage() {
 
   const avgUptimeDisplay = avgUptime != null ? `${avgUptime}%` : '—'
 
+  const visibleServices = showAll ? filteredServices : filteredServices.slice(0, INITIAL_VISIBLE)
+
+  // Reset show-all when filters or search change
+  useEffect(() => {
+    setShowAll(false)
+  }, [envFilter, templateFilter, search])
+
+  const totalMonthlyCost = allServices.reduce((sum: number, s: any) => sum + (s.monthly_cost || 0), 0)
+  const costDisplay = '$' + totalMonthlyCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+
   return (
     <div style={{
       padding: '40px 56px 64px',
@@ -213,10 +225,10 @@ export default function ServicesPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Application Services
+            Service Overview & Health
           </h1>
           <p style={{ fontSize: '0.876rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Your AWS infrastructure · cost, health, and risks in one place
+            Track performance, dependencies, cost, and risk across your services.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -261,7 +273,7 @@ export default function ServicesPage() {
           { label: 'Total Services',  value: isLoading && !isDemoActive ? '…' : totalServices,          sub: 'Registered',         valueColor: '#0F172A' },
           { label: 'Healthy',         value: isLoading && !isDemoActive ? '…' : healthyCount,            sub: 'Operating normally',  valueColor: '#059669' },
           { label: 'Needs Attention', value: isLoading && !isDemoActive ? '…' : warningCount,            sub: 'Warning or critical', valueColor: warningCount > 0 ? '#D97706' : '#059669' },
-          { label: 'Est. Monthly Cost', value: isLoading && !isDemoActive ? '…' : (avgUptime != null ? avgUptimeDisplay : '$0'), sub: 'Infrastructure spend', valueColor: '#0F172A' },
+          { label: 'Est. Monthly Cost', value: isLoading && !isDemoActive ? '…' : costDisplay, sub: 'Infrastructure spend', valueColor: '#0F172A' },
         ].map(({ label, value, sub, valueColor }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0', opacity: isLoading && !isDemoActive ? 0.6 : 1, transition: 'opacity 0.2s' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
@@ -433,7 +445,7 @@ export default function ServicesPage() {
             </div>
           </div>
         ) : (
-          filteredServices.map((svc: any, idx: number) => {
+          visibleServices.map((svc: any, idx: number) => {
             const isHealthy = svc.status === 'healthy'
             const isWarning = svc.status === 'warning'
             const statusColor = isHealthy ? '#059669' : isWarning ? '#D97706' : '#DC2626'
@@ -447,7 +459,7 @@ export default function ServicesPage() {
                 key={svc.id}
                 style={{
                   padding: '16px 28px',
-                  borderBottom: idx < filteredServices.length - 1 ? '1px solid #F8FAFC' : 'none',
+                  borderBottom: idx < visibleServices.length - 1 ? '1px solid #F8FAFC' : 'none',
                   transition: 'background 0.1s',
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
@@ -530,6 +542,32 @@ export default function ServicesPage() {
               </div>
             )
           })
+        )}
+        {filteredServices.length > INITIAL_VISIBLE && (
+          <div style={{
+            textAlign: 'center',
+            padding: '14px 0',
+            borderTop: '0.5px solid #e5e7eb',
+          }}>
+            <button
+              onClick={() => setShowAll(prev => !prev)}
+              style={{
+                fontSize: '13px',
+                color: '#534AB7',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: 500,
+              }}
+            >
+              {showAll
+                ? `Show less ↑`
+                : `See all ${filteredServices.length} services ↓`}
+            </button>
+          </div>
         )}
       </div>
 
