@@ -38,7 +38,7 @@ function PlanBadge({ plan }: { plan?: string }) {
   const s = styles[plan || 'free'] || styles.free
   return (
     <span style={{
-      fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px',
+      fontSize: '0.85rem', fontWeight: 700, padding: '3px 10px',
       borderRadius: '100px', width: 'fit-content', display: 'inline-block',
       background: s.background, color: s.color,
     }}>
@@ -138,10 +138,10 @@ export default function TenantsPage() {
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '1.875rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
             Tenants
           </h1>
-          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: '1rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Monitor tenant health, usage, and activity across your SaaS platform
           </p>
         </div>
@@ -149,7 +149,7 @@ export default function TenantsPage() {
         <div style={{ display: 'flex', gap: '12px' }}>
           <button
             onClick={() => refetch()}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '1rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
             <RefreshCw size={15} /> Refresh
           </button>
           <button
@@ -161,7 +161,7 @@ export default function TenantsPage() {
               background: isDemoActive ? '#EDE9FE' : '#7C3AED',
               color: isDemoActive ? '#A78BFA' : '#fff',
               padding: '10px 20px', borderRadius: '8px',
-              fontSize: '0.875rem', fontWeight: 600,
+              fontSize: '1rem', fontWeight: 600,
               border: 'none', cursor: isDemoActive ? 'not-allowed' : 'pointer',
               opacity: isDemoActive ? 0.7 : 1,
             }}>
@@ -182,19 +182,19 @@ export default function TenantsPage() {
           gap: '10px',
           alignItems: 'flex-start',
         }}>
-          <div style={{ width: '28px', height: '28px', background: '#FEE2E2', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#DC2626', fontSize: '14px' }}>
+          <div style={{ width: '28px', height: '28px', background: '#FEE2E2', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#DC2626', fontSize: '18px' }}>
             ⚠
           </div>
           <div>
-            <p style={{ fontSize: '13px', fontWeight: 500, color: '#991B1B', margin: '0 0 3px' }}>
+            <p style={{ fontSize: '15px', fontWeight: 500, color: '#991B1B', margin: '0 0 3px' }}>
               Session expired or unauthorized
             </p>
-            <p style={{ fontSize: '12px', color: '#B91C1C', margin: '0 0 10px' }}>
+            <p style={{ fontSize: '18px', color: '#B91C1C', margin: '0 0 10px' }}>
               Your session has expired. Sign in again to continue managing tenants.
             </p>
             <button
               onClick={() => router.push('/login')}
-              style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '7px 14px', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
+              style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '7px 14px', fontSize: '18px', fontWeight: 500, cursor: 'pointer' }}
             >
               Sign in again
             </button>
@@ -208,20 +208,20 @@ export default function TenantsPage() {
           <Sparkles size={14} style={{ color: '#fff' }} />
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
-          <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
+          <p style={{ fontSize: '1rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
             {isDemoActive
               ? `${activeCount} of ${displayTenants.length} tenants are active. 2 tenants moved to inactive status in the last 7 days. Acme Corporation and TechFlow Systems are your highest-usage tenants by deployment frequency.`
               : displayTenants.length === 0
                 ? (
                   <span>
-                    <span style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
+                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
                       Once tenants are added, DevControl will detect
                     </span>
-                    <span style={{ display: 'block', fontSize: '0.875rem', color: '#1E293B', marginBottom: '2px' }}>
+                    <span style={{ display: 'block', fontSize: '1rem', color: '#1E293B', marginBottom: '2px' }}>
                       Unusual usage spikes · High-cost tenants impacting infrastructure · Churn risk based on activity patterns
                     </span>
-                    <span style={{ display: 'block', fontSize: '0.82rem', color: '#64748B' }}>
+                    <span style={{ display: 'block', fontSize: '0.95rem', color: '#64748B' }}>
                       AI insights update automatically as tenant activity grows.
                     </span>
                   </span>
@@ -240,9 +240,9 @@ export default function TenantsPage() {
           { label: 'Inactive',      value: inactiveCount,         sub: 'Suspended or churned',    valueColor: inactiveCount === 0 ? '#9ca3af' : '#D97706' },
         ].map(({ label, value, sub, valueColor }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
-            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
+            <div style={{ fontSize: '2.625rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
+            <p style={{ fontSize: '0.9rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
           </div>
         ))}
       </div>
@@ -253,8 +253,8 @@ export default function TenantsPage() {
         {/* Table header + search */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
           <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Tenants</p>
-            <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredTenants.length} accounts</p>
+            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Tenants</p>
+            <p style={{ fontSize: '0.9rem', color: '#94A3B8', margin: 0 }}>{filteredTenants.length} accounts</p>
           </div>
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
@@ -262,7 +262,7 @@ export default function TenantsPage() {
               value={searchQuery}
               onChange={e => handleSearchChange(e.target.value)}
               placeholder="Search by name or email..."
-              style={{ paddingLeft: '32px', paddingRight: '12px', paddingTop: '8px', paddingBottom: '8px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.82rem', color: '#0F172A', outline: 'none', width: '240px', background: '#F8FAFC' }}
+              style={{ paddingLeft: '32px', paddingRight: '12px', paddingTop: '8px', paddingBottom: '8px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.95rem', color: '#0F172A', outline: 'none', width: '240px', background: '#F8FAFC' }}
             />
           </div>
         </div>
@@ -270,7 +270,7 @@ export default function TenantsPage() {
         {/* FIX 3: Column headers — added PLAN between EMAIL and STATUS */}
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 100px 120px 140px 100px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
           {['Name', 'Email', 'Plan', 'Status', 'Created', 'Actions'].map(col => (
-            <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
+            <span key={col} style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
           ))}
         </div>
 
@@ -278,27 +278,27 @@ export default function TenantsPage() {
         {isLoading && !isDemoActive ? (
           <div style={{ padding: '48px', textAlign: 'center' }}>
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
-            <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading tenants...</p>
+            <p style={{ fontSize: '1rem', color: '#64748B', margin: 0 }}>Loading tenants...</p>
           </div>
         ) : error && !isDemoActive && !isAuthError ? (
           <div style={{ padding: '48px', textAlign: 'center' }}>
             <XCircle size={22} style={{ color: '#DC2626', margin: '0 auto 12px' }} />
-            <p style={{ fontSize: '0.875rem', color: '#DC2626', margin: '0 0 16px' }}>{(error as Error).message}</p>
-            <button onClick={() => refetch()} style={{ background: '#7C3AED', color: '#fff', padding: '8px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+            <p style={{ fontSize: '1rem', color: '#DC2626', margin: '0 0 16px' }}>{(error as Error).message}</p>
+            <button onClick={() => refetch()} style={{ background: '#7C3AED', color: '#fff', padding: '8px 20px', borderRadius: '8px', fontSize: '1rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
               Retry
             </button>
           </div>
         ) : paginatedTenants.length === 0 && !searchQuery ? (
           <div style={{ padding: '48px 32px', textAlign: 'center' }}>
-            <p style={{ fontSize: '16px', fontWeight: 500, color: '#0F172A', margin: '0 0 8px' }}>
+            <p style={{ fontSize: '18px', fontWeight: 500, color: '#0F172A', margin: '0 0 8px' }}>
               No tenants added yet
             </p>
-            <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, margin: '0 auto 24px', maxWidth: '400px' }}>
+            <p style={{ fontSize: '15px', color: '#475569', lineHeight: 1.6, margin: '0 auto 24px', maxWidth: '400px' }}>
               Add your first tenant to start tracking usage, billing, and activity across your platform.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', maxWidth: '480px', margin: '0 auto 24px', textAlign: 'left' }}>
               {['Tenant usage trends', 'Billing & plan distribution', 'Activity & health signals', 'AI-detected anomalies'].map(item => (
-                <div key={item} style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div key={item} style={{ fontSize: '18px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#534AB7', flexShrink: 0 }} />
                   {item}
                 </div>
@@ -308,18 +308,18 @@ export default function TenantsPage() {
               <button
                 onClick={() => !isDemoActive && setIsAddModalOpen(true)}
                 disabled={isDemoActive}
-                style={{ background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: 500, cursor: isDemoActive ? 'not-allowed' : 'pointer', opacity: isDemoActive ? 0.7 : 1 }}
+                style={{ background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '15px', fontWeight: 500, cursor: isDemoActive ? 'not-allowed' : 'pointer', opacity: isDemoActive ? 0.7 : 1 }}
               >
                 + Add Your First Tenant
               </button>
-              <button style={{ background: 'none', border: '0.5px solid #E2E8F0', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', color: '#475569', cursor: 'pointer' }}>
+              <button style={{ background: 'none', border: '0.5px solid #E2E8F0', borderRadius: '8px', padding: '8px 16px', fontSize: '15px', color: '#475569', cursor: 'pointer' }}>
                 Import tenants
               </button>
             </div>
           </div>
         ) : paginatedTenants.length === 0 ? (
           <div style={{ padding: '48px', textAlign: 'center' }}>
-            <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0 }}>No tenants match your search. Try a different query.</p>
+            <p style={{ fontSize: '1rem', color: '#475569', margin: 0 }}>No tenants match your search. Try a different query.</p>
           </div>
         ) : (
           paginatedTenants.map((tenant, idx) => {
@@ -339,17 +339,17 @@ export default function TenantsPage() {
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               >
                 {/* Name */}
-                <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>{tenant.name}</p>
+                <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>{tenant.name}</p>
 
                 {/* Email */}
-                <p style={{ fontSize: '0.82rem', color: '#475569', margin: 0 }}>{tenant.email}</p>
+                <p style={{ fontSize: '0.95rem', color: '#475569', margin: 0 }}>{tenant.email}</p>
 
                 {/* FIX 3: Plan badge */}
                 <PlanBadge plan={tenant.plan} />
 
                 {/* Status */}
                 <span style={{
-                  fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '100px', width: 'fit-content',
+                  fontSize: '0.85rem', fontWeight: 700, padding: '3px 10px', borderRadius: '100px', width: 'fit-content',
                   background: isActive ? '#F0FDF4' : '#F8FAFC',
                   color: isActive ? '#059669' : '#64748B',
                 }}>
@@ -357,18 +357,18 @@ export default function TenantsPage() {
                 </span>
 
                 {/* Created */}
-                <span style={{ fontSize: '0.78rem', color: '#475569' }}>{formatDate(tenant.createdAt)}</span>
+                <span style={{ fontSize: '0.9rem', color: '#475569' }}>{formatDate(tenant.createdAt)}</span>
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button
                     onClick={() => console.log('View', tenant.id)}
-                    style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', background: '#F5F3FF', border: '1px solid #DDD6FE', padding: '3px 10px', borderRadius: '6px', cursor: 'pointer' }}>
+                    style={{ fontSize: '0.85rem', fontWeight: 600, color: '#7C3AED', background: '#F5F3FF', border: '1px solid #DDD6FE', padding: '3px 10px', borderRadius: '6px', cursor: 'pointer' }}>
                     View
                   </button>
                   <button
                     onClick={() => console.log('Edit', tenant.id)}
-                    style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '3px 10px', borderRadius: '6px', cursor: 'pointer' }}>
+                    style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '3px 10px', borderRadius: '6px', cursor: 'pointer' }}>
                     Edit
                   </button>
                 </div>
@@ -380,20 +380,20 @@ export default function TenantsPage() {
         {/* Pagination */}
         {totalPages > 1 && (
           <div style={{ padding: '16px 28px', borderTop: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <p style={{ fontSize: '0.78rem', color: '#64748B', margin: 0 }}>
+            <p style={{ fontSize: '0.9rem', color: '#64748B', margin: 0 }}>
               Showing {((currentPage - 1) * itemsPerPage) + 1}–{Math.min(currentPage * itemsPerPage, filteredTenants.length)} of {filteredTenants.length} tenants
             </p>
             <div style={{ display: 'flex', gap: '6px' }}>
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, border: '1px solid #E2E8F0', background: '#fff', color: currentPage === 1 ? '#CBD5E1' : '#475569', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 600, border: '1px solid #E2E8F0', background: '#fff', color: currentPage === 1 ? '#CBD5E1' : '#475569', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}>
                 <ChevronLeft size={14} /> Prev
               </button>
               <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, border: '1px solid #E2E8F0', background: '#fff', color: currentPage === totalPages ? '#CBD5E1' : '#475569', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 600, border: '1px solid #E2E8F0', background: '#fff', color: currentPage === totalPages ? '#CBD5E1' : '#475569', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}>
                 Next <ChevronRight size={14} />
               </button>
             </div>
@@ -413,37 +413,37 @@ export default function TenantsPage() {
           <div
             onClick={e => e.stopPropagation()}
             style={{ background: '#fff', borderRadius: '16px', padding: '32px', width: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px' }}>Add Tenant</h2>
-            <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px' }}>Register a new tenant account on this platform.</p>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px' }}>Add Tenant</h2>
+            <p style={{ fontSize: '1rem', color: '#475569', margin: '0 0 24px' }}>Register a new tenant account on this platform.</p>
 
             <form onSubmit={handleAddTenant}>
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Company Name *</label>
+                <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Company Name *</label>
                 <input
                   required
                   value={addForm.name}
                   onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="Acme Corporation"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '1rem', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Admin Email *</label>
+                <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Admin Email *</label>
                 <input
                   required
                   type="email"
                   value={addForm.email}
                   onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="admin@company.com"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '1rem', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
               <div style={{ marginBottom: '28px' }}>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Plan</label>
+                <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Plan</label>
                 <select
                   value={addForm.plan}
                   onChange={e => setAddForm(f => ({ ...f, plan: e.target.value }))}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box' }}>
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '1rem', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box' }}>
                   <option value="free">Free</option>
                   <option value="starter">Starter</option>
                   <option value="pro">Pro</option>
@@ -454,13 +454,13 @@ export default function TenantsPage() {
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  style={{ padding: '9px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', cursor: 'pointer' }}>
+                  style={{ padding: '9px 20px', borderRadius: '8px', fontSize: '1rem', fontWeight: 600, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', cursor: 'pointer' }}>
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  style={{ padding: '9px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', background: '#7C3AED', color: '#fff', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
+                  style={{ padding: '9px 20px', borderRadius: '8px', fontSize: '1rem', fontWeight: 600, border: 'none', background: '#7C3AED', color: '#fff', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
                   {isSubmitting ? 'Adding...' : 'Add Tenant'}
                 </button>
               </div>

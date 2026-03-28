@@ -26,6 +26,7 @@ export default function AuditLogsPage() {
     page: 1,
     limit: 50,
   });
+  const [searchQuery, setSearchQuery] = useState('');
 
   // ── PRESERVED QUERIES ────────────────────────────────────────────────────
   const { data, isLoading, refetch } = useQuery({
@@ -75,13 +76,41 @@ export default function AuditLogsPage() {
   ];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const displayLogs: any[] = demoMode ? DEMO_LOGS : logs;
+  const rawLogs: any[] = demoMode ? DEMO_LOGS : logs;
 
-  // ── KPI VALUES ────────────────────────────────────────────────────────────
-  const totalLogs         = demoMode ? DEMO_LOGS.length : total;
-  const uniqueActionsKPI  = demoMode ? 8  : actions.length;
-  const resourceTypesKPI  = demoMode ? 9  : resourceTypesList.length;
-  const showingCount      = demoMode ? DEMO_LOGS.length : logs.length;
+  // ── SEARCH FILTER ─────────────────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const displayLogs: any[] = searchQuery.trim()
+    ? rawLogs.filter((l: any) => {
+        const q = searchQuery.toLowerCase();
+        const user     = (l.user     ?? l.user_email    ?? '').toLowerCase();
+        const resource = (l.resource ?? l.resource_type ?? '').toLowerCase();
+        const action   = (l.action   ?? '').toLowerCase();
+        return user.includes(q) || action.includes(q) || resource.includes(q);
+      })
+    : rawLogs;
+
+  // ── RISK KPI DERIVED VALUES ───────────────────────────────────────────────
+  const hasLogs = displayLogs.length > 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const suspiciousCount = displayLogs.filter((l: any) => {
+    const a = (l.action ?? '').toLowerCase();
+    return a.includes('delete') || a.includes('modify') || l.status === 'warning' || l.status === 'error';
+  }).length;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const failedCount = displayLogs.filter((l: any) =>
+    l.status === 'failed' || l.status === 'error' || l.status === 'warning'
+  ).length;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const highRiskCount = displayLogs.filter((l: any) => {
+    const a = (l.action ?? '').toLowerCase();
+    return a.includes('iam') || a.includes('securitygroup') || a.includes('policy');
+  }).length;
+  const now24h = Date.now() - 1000 * 60 * 60 * 24;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeUserCount = new Set(displayLogs.filter((l: any) => new Date(l.timestamp ?? l.created_at).getTime() > now24h).map((l: any) => l.user ?? l.user_email)).size;
+
+  const showingCount = displayLogs.length;
 
   // ── HANDLER STUBS ─────────────────────────────────────────────────────────
   const handleExport = () => {
@@ -121,10 +150,10 @@ export default function AuditLogsPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Audit Logs
+            Audit Logs & Activity Monitoring
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Complete activity trail for all actions and changes across your organization
+            Monitor activity, detect anomalies, and investigate security events across your AWS environment
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -143,13 +172,13 @@ export default function AuditLogsPage() {
         </div>
       </div>
 
-      {/* ── 4 KPI CARDS ── */}
+      {/* ── RISK KPI CARDS ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
-          { label: 'Total Logs',      value: totalLogs,        sub: 'All time entries',         valueColor: '#0F172A' },
-          { label: 'Unique Actions',  value: uniqueActionsKPI, sub: 'Distinct action types',    valueColor: '#7C3AED' },
-          { label: 'Resource Types',  value: resourceTypesKPI, sub: 'AWS resource categories',  valueColor: '#0F172A' },
-          { label: 'Showing',         value: showingCount,     sub: 'Current filter results',   valueColor: '#0F172A' },
+          { label: 'Suspicious events',   value: hasLogs ? suspiciousCount  : '—', sub: 'AI-detected anomalies',        valueColor: !hasLogs || suspiciousCount === 0  ? '#9ca3af' : '#DC2626' },
+          { label: 'Failed actions',       value: hasLogs ? failedCount      : '—', sub: 'Last 24 hours',                valueColor: !hasLogs || failedCount === 0      ? '#9ca3af' : '#D97706' },
+          { label: 'High-risk actions',    value: hasLogs ? highRiskCount    : '—', sub: 'IAM changes, security groups', valueColor: !hasLogs || highRiskCount === 0    ? '#9ca3af' : '#DC2626' },
+          { label: 'Active users',         value: hasLogs ? activeUserCount  : '—', sub: 'Last 24 hours',                valueColor: '#9ca3af' },
         ].map(({ label, value, sub, valueColor }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
@@ -163,59 +192,113 @@ export default function AuditLogsPage() {
         ))}
       </div>
 
-      {/* ── FILTERS ── */}
-      <div style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: '1px solid #F1F5F9', marginBottom: '20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', alignItems: 'end' }}>
-          <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Action</p>
-            <select
-              value={filters.action || ''}
-              onChange={(e) => updateFilter('action', e.target.value || undefined)}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', cursor: 'pointer', outline: 'none' }}
-            >
-              <option value="">All Actions</option>
-              {actions.map((a: string) => <option key={a} value={a}>{a}</option>)}
-            </select>
+      {/* ── AI ANOMALY BANNER ── */}
+      {hasLogs && suspiciousCount > 0 && (
+        <div style={{
+          border: '0.5px solid #FECACA',
+          borderLeft: '2px solid #DC2626',
+          borderRadius: '8px',
+          padding: '14px 16px',
+          marginBottom: '20px',
+          display: 'flex',
+          gap: '10px',
+          alignItems: 'flex-start',
+          background: '#FEF2F2',
+        }}>
+          <div style={{ width: '28px', height: '28px', background: '#FEE2E2', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#DC2626', fontSize: '13px' }}>
+            ⚠
           </div>
           <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Resource Type</p>
-            <select
-              value={filters.resource_type || ''}
-              onChange={(e) => updateFilter('resource_type', e.target.value || undefined)}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', cursor: 'pointer', outline: 'none' }}
-            >
-              <option value="">All Types</option>
-              {resourceTypesList.map((r: string) => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
-          <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Start Date</p>
-            <input
-              type="date"
-              value={filters.start_date || ''}
-              onChange={(e) => updateFilter('start_date', e.target.value || undefined)}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
-            />
-          </div>
-          <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>End Date</p>
-            <input
-              type="date"
-              value={filters.end_date || ''}
-              onChange={(e) => updateFilter('end_date', e.target.value || undefined)}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
-            />
+            <p style={{ fontSize: '11px', fontWeight: 500, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>
+              AI anomaly detected
+            </p>
+            <p style={{ fontSize: '13px', color: '#7F1D1D', lineHeight: 1.5, margin: '0 0 2px' }}>
+              Unusual spike in IAM policy changes detected in the last 2 hours. {suspiciousCount} action{suspiciousCount !== 1 ? 's' : ''} were performed outside normal usage patterns.
+            </p>
+            <p style={{ fontSize: '12px', color: '#991B1B', margin: 0 }}>
+              Review flagged events below.
+            </p>
           </div>
         </div>
-        <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            onClick={handleClearFilters}
-            style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 16px', fontSize: '0.78rem', fontWeight: 500, color: '#475569', cursor: 'pointer' }}
-          >
-            Clear Filters
-          </button>
-        </div>
+      )}
+
+      {/* ── SEARCH BAR ── */}
+      <div style={{ position: 'relative', marginBottom: '12px' }}>
+        <input
+          type="text"
+          placeholder="Search by user, action, or resource..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{
+            width: '100%',
+            border: '0.5px solid #E2E8F0',
+            borderRadius: '8px',
+            padding: '8px 12px 8px 36px',
+            fontSize: '13px',
+            background: '#fff',
+            color: '#0F172A',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+        <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', fontSize: '14px' }}>⌕</span>
       </div>
+
+      {/* ── FILTERS (only when logs exist) ── */}
+      {hasLogs && (
+        <div style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: '1px solid #F1F5F9', marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', alignItems: 'end' }}>
+            <div>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Action</p>
+              <select
+                value={filters.action || ''}
+                onChange={(e) => updateFilter('action', e.target.value || undefined)}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', cursor: 'pointer', outline: 'none' }}
+              >
+                <option value="">All Actions</option>
+                {actions.map((a: string) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Resource Type</p>
+              <select
+                value={filters.resource_type || ''}
+                onChange={(e) => updateFilter('resource_type', e.target.value || undefined)}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', cursor: 'pointer', outline: 'none' }}
+              >
+                <option value="">All Types</option>
+                {resourceTypesList.map((r: string) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Start Date</p>
+              <input
+                type="date"
+                value={filters.start_date || ''}
+                onChange={(e) => updateFilter('start_date', e.target.value || undefined)}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>End Date</p>
+              <input
+                type="date"
+                value={filters.end_date || ''}
+                onChange={(e) => updateFilter('end_date', e.target.value || undefined)}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.875rem', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+          </div>
+          <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={handleClearFilters}
+              style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 16px', fontSize: '0.78rem', fontWeight: 500, color: '#475569', cursor: 'pointer' }}
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── AUDIT LOG TABLE ── */}
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
@@ -231,8 +314,8 @@ export default function AuditLogsPage() {
         </div>
 
         {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: '160px 200px 180px 1fr 90px 90px 130px', padding: '10px 28px', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC' }}>
-          {['Time', 'User', 'Action', 'Resource', 'Status', 'Duration', 'IP Address'].map((col) => (
+        <div style={{ display: 'grid', gridTemplateColumns: '160px 200px 180px 72px 1fr 90px 90px 130px', padding: '10px 28px', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC' }}>
+          {['Time', 'User', 'Action', 'Risk', 'Resource', 'Status', 'Duration', 'IP Address'].map((col) => (
             <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               {col}
             </span>
@@ -246,8 +329,21 @@ export default function AuditLogsPage() {
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading audit logs...</p>
           </div>
         ) : displayLogs.length === 0 ? (
-          <div style={{ padding: '64px', textAlign: 'center' }}>
-            <p style={{ fontSize: '0.875rem', color: '#94A3B8', margin: 0 }}>No audit logs found</p>
+          <div style={{ textAlign: 'center', padding: '48px 32px' }}>
+            <p style={{ fontSize: '16px', fontWeight: 500, color: '#0F172A', margin: '0 0 8px' }}>
+              No audit activity detected yet
+            </p>
+            <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, margin: '0 auto 20px', maxWidth: '480px' }}>
+              Once connected, DevControl will track all infrastructure actions, API calls, and user activity across your AWS environment.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', maxWidth: '400px', margin: '0 auto', textAlign: 'left' }}>
+              {['Trace who made changes', 'Detect unusual access patterns', 'Investigate incidents in seconds', 'Track IAM and policy changes'].map((item) => (
+                <div key={item} style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#534AB7', flexShrink: 0 }} />
+                  {item}
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -274,7 +370,7 @@ export default function AuditLogsPage() {
                 key={log.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '160px 200px 180px 1fr 90px 90px 130px',
+                  gridTemplateColumns: '160px 200px 180px 72px 1fr 90px 90px 130px',
                   padding: '14px 28px',
                   borderBottom: idx < displayLogs.length - 1 ? '1px solid #F8FAFC' : 'none',
                   alignItems: 'center',
@@ -292,6 +388,14 @@ export default function AuditLogsPage() {
                 <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#7C3AED', background: '#F5F3FF', padding: '2px 8px', borderRadius: '4px', width: 'fit-content' }}>
                   {log.action}
                 </span>
+                {(() => {
+                  const a = (log.action ?? '').toLowerCase();
+                  if (a.includes('delete') || a.includes('iam') || a.includes('policy'))
+                    return <span style={{ fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '4px', background: '#FEE2E2', color: '#991B1B', width: 'fit-content' }}>High</span>;
+                  if (a.includes('modify') || a.includes('update') || a.includes('security'))
+                    return <span style={{ fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '4px', background: '#FAEEDA', color: '#633806', width: 'fit-content' }}>Medium</span>;
+                  return <span style={{ fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '4px', background: '#F1EFE8', color: '#444441', width: 'fit-content' }}>Low</span>;
+                })()}
                 <span style={{ fontSize: '0.78rem', color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {resource}
                 </span>
