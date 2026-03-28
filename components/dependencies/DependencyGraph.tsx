@@ -1,24 +1,9 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import ReactFlow, {
-  Background as RFBackground,
-  Controls,
-  MiniMap as RFMiniMap,
-  Node,
-  Edge,
-  useNodesState,
-  useEdgesState,
-  MarkerType,
-  Panel as RFPanel,
-} from 'reactflow'
-
-// ReactFlow v11 is not fully type-compatible with React 19's JSX types
-const Background = RFBackground as unknown as React.ComponentType<Record<string, unknown>>
-const MiniMap = RFMiniMap as unknown as React.ComponentType<Record<string, unknown>>
-const Panel = RFPanel as unknown as React.ComponentType<{ position: string; className?: string; children?: React.ReactNode }>
-import 'reactflow/dist/style.css'
+import { ReactFlow, Background, Controls, MiniMap, Node, Edge, useNodesState, useEdgesState, MarkerType, Panel } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import { Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { dependenciesService } from '@/lib/services/dependencies.service'
@@ -46,9 +31,10 @@ interface DependencyGraphProps {
   onRefresh: () => void
   graphRef?: React.RefObject<HTMLDivElement | null>
   demoMode?: boolean
+  onNodeClick?: (node: Node) => void
 }
 
-export function DependencyGraph({ onRefresh, graphRef, demoMode = false }: DependencyGraphProps) {
+export function DependencyGraph({ onRefresh, graphRef, demoMode = false, onNodeClick }: DependencyGraphProps) {
   const internalRef = useRef<HTMLDivElement>(null)
   const activeRef = graphRef || internalRef
   const [nodes, setNodes, onNodesChange] = useNodesState([])
@@ -148,6 +134,10 @@ export function DependencyGraph({ onRefresh, graphRef, demoMode = false }: Depen
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={true}
+        onNodeClick={(event, node) => onNodeClick?.(node)}
         fitView
         attributionPosition="bottom-left"
       >

@@ -149,7 +149,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response, next: Nex
 
     if (env && env !== 'all') {
       conditions.push(
-        `(LOWER(COALESCE(r.environment, r.tags->>'environment', 'production')) = LOWER($${p++}))`
+        `(LOWER(COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production')) = LOWER($${p++}))`
       );
       values.push(env);
     }
@@ -168,10 +168,10 @@ router.get('/', authenticateToken, async (req: Request, res: Response, next: Nex
          COALESCE(r.resource_name, r.resource_id)           AS name,
          r.resource_id,
          r.resource_type                                     AS type,
-         COALESCE(r.environment, r.tags->>'environment', 'production') AS environment,
-         r.region,
+         COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production') AS environment,
+         COALESCE(r.tags->>'region', r.metadata->>'region')  AS region,
          r.status                                            AS raw_status,
-         r.estimated_monthly_cost                            AS monthly_cost,
+         CAST(r.metadata->>'monthly_cost' AS numeric)        AS monthly_cost,
          r.tags->>'owner'                                    AS owner,
          r.tags->>'team'                                     AS team,
          r.metadata->>'last_deployed'                        AS last_deployed,

@@ -158,7 +158,7 @@ export const ExportMenu = forwardRef<HTMLButtonElement, ExportMenuProps>(
             <>
               <Download className="h-4 w-4 mr-2" />
               Export
-              <kbd className="hidden md:inline-block ml-2 px-1.5 py-0.5 text-xs bg-muted/50 border border-border rounded">
+              <kbd suppressHydrationWarning className="hidden md:inline-block ml-2 px-1.5 py-0.5 text-xs bg-muted/50 border border-border rounded">
                 {modSymbol}E
               </kbd>
             </>

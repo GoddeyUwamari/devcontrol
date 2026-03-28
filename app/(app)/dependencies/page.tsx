@@ -39,6 +39,7 @@ import { DataFreshnessIndicator } from '@/components/ui/data-freshness-indicator
 import { SecurityBadge } from '@/components/ui/security-badge'
 import { SyncHealthStatus } from '@/components/ui/sync-health-status'
 import dynamic from 'next/dynamic'
+import type { Node } from '@xyflow/react'
 
 // Dynamically import React Flow component to avoid SSR issues
 const DependencyGraph = dynamic(
@@ -69,6 +70,7 @@ export default function DependenciesPage() {
   const globalDemoMode = useDemoMode()
   const [localDemoMode, setLocalDemoMode] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [activeTab, setActiveTab] = useState('graph')
   const [showShortcuts, setShowShortcuts] = useState(false)
   const graphRef = useRef<HTMLDivElement>(null)
@@ -388,6 +390,15 @@ export default function DependenciesPage() {
     announceToScreenReader('Connection lost. Showing cached data.', 'assertive')
   }, [])
 
+  // Close node detail panel on Escape
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedNode(null)
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [])
+
   // Enable demo mode function (for empty state)
   const enableDemoMode = () => {
     toggleDemoMode(true)
@@ -690,8 +701,51 @@ export default function DependenciesPage() {
                 </span>
               </div>
             )}
-            <DependencyGraph onRefresh={refetch} graphRef={graphRef} demoMode={demoMode || displayDependencies === DEMO_DEPENDENCIES} />
+            <DependencyGraph
+              onRefresh={refetch}
+              graphRef={graphRef}
+              demoMode={demoMode || displayDependencies === DEMO_DEPENDENCIES}
+              onNodeClick={(node) => setSelectedNode(node)}
+            />
           </div>
+          {selectedNode && (
+            <div style={{
+              position: 'fixed', right: 0, top: 0, height: '100vh', width: '420px',
+              background: '#fff', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
+              zIndex: 50, padding: '32px 28px', overflowY: 'auto',
+              transform: 'translateX(0)', transition: 'transform 0.3s ease'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  {String(selectedNode.data?.label ?? selectedNode.id)}
+                </h2>
+                <button onClick={() => setSelectedNode(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#64748B' }}>✕</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '16px' }}>
+                  <p style={{ fontSize: '0.75rem', color: '#64748B', margin: '0 0 4px', fontWeight: 600, textTransform: 'uppercase' }}>Service ID</p>
+                  <p style={{ fontSize: '0.875rem', color: '#0F172A', margin: 0 }}>{selectedNode.id}</p>
+                </div>
+                <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '16px' }}>
+                  <p style={{ fontSize: '0.75rem', color: '#64748B', margin: '0 0 8px', fontWeight: 600, textTransform: 'uppercase' }}>Health</p>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    {[['Error Rate', '1.2%'], ['Latency', '145ms'], ['Uptime', '99.7%']].map(([k, v]) => (
+                      <div key={k}>
+                        <p style={{ fontSize: '0.68rem', color: '#94A3B8', margin: '0 0 2px' }}>{k}</p>
+                        <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>{v}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedNode(null)}
+                  style={{ marginTop: '8px', padding: '10px', background: '#7C3AED', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="list" className="space-y-4">

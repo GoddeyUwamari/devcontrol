@@ -110,7 +110,7 @@ export const DependencySearch = forwardRef<DependencySearchHandle, DependencySea
         {/* Keyboard Hint */}
         {!isFocused && !hasQuery && (
           <div className="absolute right-12 top-1/2 -translate-y-1/2 hidden md:flex items-center gap-1 pointer-events-none">
-            <kbd className="px-2 py-1 text-xs font-semibold text-muted-foreground bg-muted border border-border rounded shadow-sm">
+            <kbd suppressHydrationWarning className="px-2 py-1 text-xs font-semibold text-muted-foreground bg-muted border border-border rounded shadow-sm">
               {modSymbol}K
             </kbd>
           </div>

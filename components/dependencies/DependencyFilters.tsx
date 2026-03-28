@@ -54,7 +54,7 @@ export const DependencyFilters = forwardRef<DependencyFiltersHandle, DependencyF
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Filter className="h-4 w-4" />
           <span className="font-medium">Filters:</span>
-          <kbd className="hidden md:inline-block px-1.5 py-0.5 text-xs bg-muted border border-border rounded">
+          <kbd suppressHydrationWarning className="hidden md:inline-block px-1.5 py-0.5 text-xs bg-muted border border-border rounded">
             {modSymbol}⇧F
           </kbd>
         </div>

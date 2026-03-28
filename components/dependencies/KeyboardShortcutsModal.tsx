@@ -138,7 +138,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
                     <div className="flex items-center gap-1">
                       {shortcut.keys.map((key, keyIndex) => (
                         <span key={keyIndex} className="flex items-center gap-1">
-                          <kbd className="px-2 py-1.5 text-xs font-semibold text-foreground bg-muted border border-border rounded shadow-sm min-w-[2rem] text-center">
+                          <kbd suppressHydrationWarning className="px-2 py-1.5 text-xs font-semibold text-foreground bg-muted border border-border rounded shadow-sm min-w-[2rem] text-center">
                             {key}
                           </kbd>
                           {keyIndex < shortcut.keys.length - 1 && (

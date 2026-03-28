@@ -213,10 +213,10 @@ export default function InvoicesPage() {
         {/* This Month — hero card with left accent */}
         <div style={{ background: '#fff', borderRadius: '0 14px 14px 0', padding: '32px', border: '1px solid #E2E8F0', borderLeft: '2px solid #534AB7' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>This Month</p>
-          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#0F172A' : '#D1D5DB', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#0F172A' : '#9CA3AF', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {hasData ? `$${totalThisMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </div>
-          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#9CA3AF', margin: '0 0 6px', lineHeight: 1.6 }}>
+          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#6B7280', margin: '0 0 6px', lineHeight: 1.6 }}>
             {hasData ? 'Current billing period' : 'No billing data available'}
           </p>
           {isDemoActive && (
@@ -232,10 +232,10 @@ export default function InvoicesPage() {
         {/* Total Paid */}
         <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Paid</p>
-          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#3B6D11' : '#D1D5DB', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#3B6D11' : '#9CA3AF', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {hasData ? `$${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </div>
-          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#9CA3AF', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#6B7280', margin: 0, lineHeight: 1.6 }}>
             {hasData ? 'All time paid invoices' : 'No billing data available'}
           </p>
         </div>
@@ -243,10 +243,10 @@ export default function InvoicesPage() {
         {/* Outstanding */}
         <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Outstanding</p>
-          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? (outstanding > 0 ? '#DC2626' : '#3B6D11') : '#D1D5DB', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+          <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? (outstanding > 0 ? '#DC2626' : '#3B6D11') : '#9CA3AF', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {hasData ? `$${outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </div>
-          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#9CA3AF', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: '0.78rem', color: hasData ? '#475569' : '#6B7280', margin: 0, lineHeight: 1.6 }}>
             {hasData ? (outstanding > 0 ? 'Requires payment' : 'All invoices paid') : 'No billing data available'}
           </p>
         </div>
@@ -259,8 +259,7 @@ export default function InvoicesPage() {
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: displayError ? '#FBBF24' : '#22C55E', flexShrink: 0 }} />
           {displayError ? (
             <>
-              <span>Billing data sync issue · Last successful sync: unavailable</span>
-              <span style={{ color: '#94A3B8' }}>· Next retry in ~5 minutes</span>
+              <span style={{ color: '#475569' }}>Billing data sync issue · Last successful sync: unavailable · Next retry in ~5 minutes</span>
             </>
           ) : (
             <span>Billing data synced · Last updated: {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
@@ -276,7 +275,7 @@ export default function InvoicesPage() {
         if (hideFilters) return null
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <div title={!hasData ? 'Available after billing data loads' : undefined} style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px', opacity: !hasData ? 0.4 : 1, pointerEvents: !hasData ? 'none' : 'auto' }}>
+            <div title={!hasData ? 'Available after billing data loads' : undefined} style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px', opacity: !hasData ? 0.6 : 1, pointerEvents: !hasData ? 'none' : 'auto' }}>
               {(collapseFilters ? ['all'] : ['all', 'paid', 'outstanding', 'overdue']).map(f => (
                 <button
                   key={f}
