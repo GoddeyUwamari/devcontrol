@@ -64,19 +64,39 @@ router.post('/sync', async (req: Request, res: Response) => {
 
 // POST /api/aws/accounts — validate IAM role via STS then persist
 router.post('/accounts', async (req, res) => {
-  const { roleArn, accountId, nickname } = req.body
+  const { roleArn, nickname } = req.body
 
-  if (!roleArn || !accountId) {
+  const decodedRoleArn = roleArn
+    ?.replace(/&#x2F;/g, '/')
+    ?.replace(/&amp;/g, '&')
+    ?.replace(/&lt;/g, '<')
+    ?.replace(/&gt;/g, '>')
+
+  if (!decodedRoleArn) {
     return res.status(400).json({
       success: false,
-      message: 'roleArn and accountId are required',
+      message: 'roleArn is required',
     })
   }
+  const arnMatch = decodedRoleArn.match(/arn:aws:iam::(\d+):role\//)
+  if (!arnMatch) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid Role ARN format',
+    })
+  }
+  const accountId = arnMatch[1]
 
-  const sts = new STSClient({ region: 'us-east-1' })
+  const sts = new STSClient({
+    region: process.env.AWS_REGION ?? 'us-east-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    },
+  })
   try {
     await sts.send(new AssumeRoleCommand({
-      RoleArn: roleArn,
+      RoleArn: decodedRoleArn,
       RoleSessionName: 'devcontrol-validation',
       DurationSeconds: 900,
     }))
@@ -98,7 +118,7 @@ router.post('/accounts', async (req, res) => {
              connected_at = NOW(),
              status       = 'active'
        RETURNING id, account_id, nickname, connected_at, status`,
-      [roleArn, accountId, nickname ?? null]
+      [decodedRoleArn, accountId, nickname ?? null]
     )
     return res.status(201).json({
       success: true,

@@ -26,15 +26,21 @@ export default function ConnectAwsPage() {
   const router = useRouter()
 
   const [roleArn, setRoleArn] = useState('')
-  const [accountId, setAccountId] = useState('')
   const [nickname, setNickname] = useState('')
   const [connecting, setConnecting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const [roleArnFocused, setRoleArnFocused] = useState(false)
-  const [accountIdFocused, setAccountIdFocused] = useState(false)
   const [nicknameFocused, setNicknameFocused] = useState(false)
+
+  function extractAccountId(arn: string): string {
+    const match = arn.match(/arn:aws:iam::(\d{12}):role\//)
+    return match ? match[1] : ''
+  }
+
+  const arnValid = /^arn:aws:iam::\d{12}:role\/\S+$/.test(roleArn.trim())
+  const extractedId = extractAccountId(roleArn.trim())
 
   function handleCopy() {
     navigator.clipboard.writeText(TRUST_POLICY).then(() => {
@@ -50,16 +56,8 @@ export default function ConnectAwsPage() {
       toast.error('Role ARN is required')
       return
     }
-    if (!accountId.trim()) {
-      toast.error('AWS Account ID is required')
-      return
-    }
-    if (!/^\d{12}$/.test(accountId.trim())) {
-      toast.error('Account ID must be a 12-digit number')
-      return
-    }
-    if (!roleArn.trim().startsWith('arn:aws:iam::')) {
-      toast.error('Role ARN must start with arn:aws:iam::')
+    if (!arnValid) {
+      toast.error('Role ARN must match format: arn:aws:iam::123456789012:role/RoleName')
       return
     }
 
@@ -67,7 +65,6 @@ export default function ConnectAwsPage() {
     try {
       await awsAccountsService.connect({
         roleArn: roleArn.trim(),
-        accountId: accountId.trim(),
         nickname: nickname.trim() || undefined,
       })
       setSuccess(true)
@@ -368,30 +365,13 @@ export default function ConnectAwsPage() {
                       placeholder="arn:aws:iam::YOUR_ACCOUNT_ID:role/DevControlRole"
                       style={inputStyle(roleArnFocused)}
                     />
-                  </div>
-
-                  {/* Account ID input */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <label
-                      style={{
-                        display: 'block',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        color: '#475569',
-                        marginBottom: '6px',
-                      }}
-                    >
-                      AWS Account ID
-                    </label>
-                    <input
-                      type="text"
-                      value={accountId}
-                      onChange={(e) => setAccountId(e.target.value)}
-                      onFocus={() => setAccountIdFocused(true)}
-                      onBlur={() => setAccountIdFocused(false)}
-                      placeholder="123456789012"
-                      style={inputStyle(accountIdFocused)}
-                    />
+                    {roleArn.trim() && (
+                      <p style={{ margin: '6px 0 0', fontSize: '11px', lineHeight: 1.4, color: arnValid ? '#3B6D11' : '#854F0B' }}>
+                        {arnValid
+                          ? `✓ Valid ARN format · Account ID: ${extractedId}`
+                          : 'Expected format: arn:aws:iam::123456789012:role/RoleName'}
+                      </p>
+                    )}
                   </div>
 
                   {/* Nickname input */}
