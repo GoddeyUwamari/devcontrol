@@ -421,15 +421,32 @@ export default function DashboardPage() {
       ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100)
       : null;
 
+  const { data: awsAccounts } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: async () => {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/aws/accounts`,
+        { credentials: 'include' }
+      )
+      const json = await res.json()
+      return json.data ?? []
+    },
+    staleTime: 30000,
+  })
+
   const isDemoActive = demoMode || salesDemoMode;
 
-  const isAwsConnected = isDemoActive || (
-    !!stats && (
+  const isAwsConnected = isDemoActive ||
+    (awsAccounts && awsAccounts.length > 0) ||
+    (!!stats && (
       stats.monthlyAwsCost > 0 ||
       stats.activeDeployments > 0 ||
       stats.totalServices > 0
-    )
-  );
+    ));
+
+  const hasBillingData = !isDemoActive && !!stats && stats.monthlyAwsCost > 0
+  const hasPartialData = !isDemoActive && !!stats && stats.monthlyAwsCost === 0 && stats.totalServices > 0
+  const isBillingSyncing = !isDemoActive && isAwsConnected && !statsLoading && !!stats && stats.monthlyAwsCost === 0 && stats.totalServices === 0
 
   // FIX 6 — Semantic delta color helpers
   const costDeltaColor = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706';
@@ -486,9 +503,9 @@ export default function DashboardPage() {
 
   const cloudHealthScore = Math.round((costScore + securityScore_health + reliabilityScore) / 3) || null;
   const topRecs = [
-    { label: 'Right-size 3 EC2 instances', savings: '$720/mo', effort: 'Low' },
-    { label: 'Delete unattached EBS volumes', savings: '$210/mo', effort: 'Low' },
-    { label: 'Enable S3 Intelligent-Tiering', savings: '$340/mo', effort: 'Medium' },
+    { label: 'Right-size 3 EC2 instances', savings: '$720/mo', effort: 'Low', time: '~15 min' },
+    { label: 'Delete unattached EBS volumes', savings: '$210/mo', effort: 'Low', time: '~5 min' },
+    { label: 'Enable S3 Intelligent-Tiering', savings: '$340/mo', effort: 'Medium', time: '~10 min' },
   ];
   const criticalAlerts = demoMode ? DEMO_DASHBOARD_STATS.criticalAlerts : 0;
 
@@ -530,8 +547,9 @@ export default function DashboardPage() {
               color: '#0F172A',
               margin: 0,
               letterSpacing: '-0.02em',
+              lineHeight: 1.3,
             }}>
-              Find AWS Waste, Security Risks, and Performance Bottlenecks — in Minutes
+              Detect and Fix AWS Waste, Security Risks, and Performance Bottlenecks — in Minutes
             </h1>
           </div>
           <p style={{
@@ -558,8 +576,9 @@ export default function DashboardPage() {
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
+            whiteSpace: 'nowrap',
           }}>
-            Approve Savings <ArrowRight size={14} />
+            {isBillingSyncing ? 'Approve actions (3) →' : 'Review & Approve Savings (3) →'}
           </a>
         )}
       </div>
@@ -596,7 +615,7 @@ export default function DashboardPage() {
               · Lambda invocation spike on payment-processor (+178%), CPU overload on production-worker
             </span>
           </div>
-          <a href="/security" style={{
+          <a href="/observability/alerts" style={{
             fontSize: '0.78rem',
             fontWeight: 600,
             color: '#D97706',
@@ -612,88 +631,449 @@ export default function DashboardPage() {
       )}
 
       {statsLoading ? null : isAwsConnected ? (
-        /* ── NORTH STAR METRICS — 4 col ── */
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: '24px',
-          marginBottom: '32px',
-        }}>
-
-          {/* Total Cloud Spend */}
-          <div style={card}>
-            <p style={overline}>Total Cloud Spend</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-              {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
-              <span style={{ fontSize: '0.8rem', color: costDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
-                {costChange > 0 ? '+' : ''}{Math.abs(costChange)}%
-              </span>
-              <span style={{ fontSize: '0.8rem', color: '#64748B', lineHeight: 1.6 }}>vs last month</span>
-            </div>
-          </div>
-
-          {/* Security Posture */}
-          <div style={card}>
-            <p style={overline}>Security Posture</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-              {securityScore ?? '—'}
-              <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <SecurityDeltaIcon size={14} style={{ color: securityDeltaColor }} />
-              <span style={{ fontSize: '0.8rem', color: securityDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
-                {securityScore !== null && securityScore >= 80 ? 'Stable · Above benchmark' : 'Needs attention'}
-              </span>
-            </div>
-          </div>
-
-          {/* Efficiency Ratio */}
-          <div style={card}>
-            <p style={overline}>Infrastructure Efficiency</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-              {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <EfficiencyDeltaIcon size={14} style={{ color: efficiencyDeltaColor }} />
-              <span style={{ fontSize: '0.8rem', color: efficiencyDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
-                ${wasteAmount.toLocaleString()} identified waste
-              </span>
-            </div>
-          </div>
-
-          {/* Cloud Health Score */}
-          <div style={card}>
-            <p style={overline}>Cloud Health Score</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-              {cloudHealthScore || '—'}
-              <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {[
-                { label: 'Cost', score: costScore },
-                { label: 'Security', score: securityScore_health },
-                { label: 'Reliability', score: reliabilityScore },
-              ].map(({ label, score }) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
-                    <div style={{
-                      width: `${score ?? 0}%`,
-                      height: '100%',
-                      background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626',
-                      borderRadius: '2px',
-                    }} />
+        isBillingSyncing ? (
+          /* ── STATE 1: BILLING SYNCING ── */
+          <>
+            {/* CHANGE 2 — Unified banner card */}
+            <div style={{
+              background: '#FFFFFF',
+              borderRadius: '16px',
+              padding: '20px 28px',
+              border: '1px solid #F1F5F9',
+              marginBottom: '16px',
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'flex-start',
+                gap: '16px',
+              }}>
+                <div style={{
+                  width: '36px', height: '36px',
+                  borderRadius: '9px', background: '#EEEDFE',
+                  flexShrink: 0, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24"
+                    fill="none" stroke="#7C3AED" strokeWidth="2"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{
+                    fontSize: '0.875rem', fontWeight: 600,
+                    color: '#0F172A', margin: '0 0 3px',
+                  }}>
+                    Infrastructure and security insights are ready.
+                  </p>
+                  <p style={{
+                    fontSize: '0.82rem', color: '#475569',
+                    margin: '0 0 14px', lineHeight: 1.5,
+                  }}>
+                    Billing data is syncing and typically becomes
+                    available within 24–48 hours after your first
+                    AWS connection.
+                  </p>
+                  <div style={{
+                    display: 'flex', alignItems: 'center',
+                    gap: '6px', flexWrap: 'wrap',
+                  }}>
+                    {[
+                      {
+                        label: '✓ Infrastructure',
+                        color: '#059669',
+                        bg: '#F0FDF4',
+                        border: '#BBF7D0',
+                      },
+                      {
+                        label: '✓ Security',
+                        color: '#059669',
+                        bg: '#F0FDF4',
+                        border: '#BBF7D0',
+                      },
+                      {
+                        label: '⏳ Billing syncing',
+                        color: '#D97706',
+                        bg: '#FFFBEB',
+                        border: '#FDE68A',
+                      },
+                    ].map(({ label, color, bg, border }) => (
+                      <span key={label} style={{
+                        fontSize: '0.72rem', fontWeight: 500,
+                        color, background: bg,
+                        border: `1px solid ${border}`,
+                        padding: '3px 10px',
+                        borderRadius: '100px',
+                        display: 'inline-flex',
+                        alignItems: 'center', gap: '4px',
+                      }}>
+                        {label}
+                      </span>
+                    ))}
                   </div>
-                  <span style={{ fontSize: '0.7rem', color: '#64748B', width: '60px', textAlign: 'right' }}>
-                    {label} {score ?? '—'}
+                </div>
+              </div>
+            </div>
+
+            {/* CHANGE 3 — KPI placeholder row */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '24px',
+              marginBottom: '16px',
+            }}>
+              {/* Card 1 — Cloud Spend placeholder */}
+              <div style={{
+                background: '#FFFFFF', borderRadius: '16px',
+                padding: '32px', border: '1px solid #F1F5F9',
+                borderLeft: '3px solid #7C3AED',
+                paddingLeft: '29px',
+              }}>
+                <p style={{
+                  fontSize: '0.7rem', fontWeight: 700,
+                  color: '#475569', textTransform: 'uppercase',
+                  letterSpacing: '0.1em', margin: '0 0 16px',
+                }}>Total Cloud Spend</p>
+                <div style={{
+                  fontSize: '1.1rem', fontWeight: 600,
+                  color: '#64748B', letterSpacing: '-0.01em',
+                  lineHeight: 1.3, marginBottom: '6px',
+                }}>
+                  Syncing billing data
+                </div>
+                <p style={{
+                  fontSize: '0.75rem', color: '#94A3B8',
+                  margin: 0, lineHeight: 1.5,
+                }}>
+                  Available within 24–48h
+                </p>
+              </div>
+
+              {/* Card 2 — Savings Actions */}
+              <div style={{
+                background: '#FFFFFF', borderRadius: '16px',
+                padding: '32px', border: '1px solid #F1F5F9',
+              }}>
+                <p style={{
+                  fontSize: '0.7rem', fontWeight: 700,
+                  color: '#475569', textTransform: 'uppercase',
+                  letterSpacing: '0.1em', margin: '0 0 16px',
+                }}>Savings Actions</p>
+                <div style={{
+                  fontSize: '1.1rem', fontWeight: 600,
+                  color: '#0F172A', letterSpacing: '-0.01em',
+                  lineHeight: 1.3, marginBottom: '6px',
+                }}>
+                  3 actions ready
+                </div>
+                <p style={{
+                  fontSize: '0.75rem', color: '#64748B',
+                  margin: 0, lineHeight: 1.5,
+                }}>
+                  Cost impact pending billing sync
+                </p>
+              </div>
+
+              {/* Card 3 — Security Posture */}
+              <div style={card}>
+                <p style={overline}>Security Posture</p>
+                <div style={{
+                  fontSize: '2.5rem',
+                  fontWeight: 700,
+                  color: '#0F172A',
+                  letterSpacing: '-0.03em',
+                  lineHeight: 1,
+                  marginBottom: '12px',
+                }}>
+                  {securityScore !== null ? securityScore : (
+                    isDemoActive ? 87 : '—'
+                  )}
+                  <span style={{
+                    fontSize: '1.25rem',
+                    color: '#64748B',
+                    fontWeight: 400,
+                  }}>/100</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <TrendingUp size={14} style={{ color: securityScore !== null && securityScore >= 80 ? '#059669' : securityScore !== null ? '#D97706' : '#94A3B8' }} />
+                  <span style={{
+                    fontSize: '0.8rem',
+                    color: securityScore !== null && securityScore >= 80
+                      ? '#059669'
+                      : securityScore !== null
+                      ? '#D97706'
+                      : '#94A3B8',
+                    fontWeight: 600,
+                  }}>
+                    {securityScore !== null && securityScore >= 80
+                      ? 'Elite Tier'
+                      : securityScore !== null && securityScore >= 60
+                      ? 'Above baseline'
+                      : 'Scan in progress'}
                   </span>
                 </div>
-              ))}
+              </div>
+
+              {/* Card 4 — Cloud Health Score */}
+              <div style={{
+                background: '#FFFFFF', borderRadius: '16px',
+                padding: '32px', border: '1px solid #F1F5F9',
+              }}>
+                <p style={{
+                  fontSize: '0.7rem', fontWeight: 700,
+                  color: '#475569', textTransform: 'uppercase',
+                  letterSpacing: '0.1em', margin: '0 0 16px',
+                }}>Cloud Health Score</p>
+                <div style={{
+                  fontSize: '2.5rem', fontWeight: 700,
+                  color: '#0F172A', letterSpacing: '-0.03em',
+                  lineHeight: 1, marginBottom: '12px',
+                }}>
+                  {cloudHealthScore || '—'}
+                  <span style={{
+                    fontSize: '1.25rem', color: '#64748B',
+                    fontWeight: 400,
+                  }}>/100</span>
+                </div>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                }}>
+                  {cloudHealthScore && cloudHealthScore > 0 ? (
+                    <span style={{
+                      fontSize: '0.8rem',
+                      color: cloudHealthScore >= 80
+                        ? '#059669'
+                        : cloudHealthScore >= 60
+                        ? '#D97706' : '#DC2626',
+                      fontWeight: 600,
+                    }}>
+                      {cloudHealthScore >= 80
+                        ? 'Stable'
+                        : cloudHealthScore >= 60
+                        ? 'Fair'
+                        : 'Improving as data syncs'}
+                    </span>
+                  ) : (
+                    <span style={{
+                      fontSize: '0.8rem',
+                      color: '#94A3B8',
+                      fontWeight: 500,
+                    }}>
+                      Updating as data syncs
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        ) : (
+        /* ── NORTH STAR METRICS — 4 col ── */
+        <>
+          {hasPartialData && (
+            <>
+              {/* Partial data warning banner */}
+              <div style={{
+                background: '#FFFBEB',
+                border: '1px solid #FDE68A',
+                borderRadius: '12px',
+                padding: '12px 20px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span style={{ fontSize: '0.82rem', color: '#92400E' }}>
+                  Historical billing data is still syncing. Infrastructure scanning and security analysis are fully operational — cost totals will be available within 24–48 hours.
+                </span>
+              </div>
+
+              {/* ── DATA STATUS BLOCK ── */}
+              <div style={{
+                background: '#FFFFFF',
+                border: '1px solid #F1F5F9',
+                borderRadius: '16px',
+                padding: '32px',
+                marginBottom: '32px',
+              }}>
+                <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 20px' }}>Data Status</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {[
+                    { label: 'AWS account connected', done: true },
+                    { label: 'Infrastructure inventory mapped', done: true },
+                    { label: 'Security posture scanned', done: true },
+                    { label: 'Savings opportunities identified', done: true },
+                    { label: 'Historical billing data syncing', done: false },
+                    { label: 'Cost insights and forecasts', done: false },
+                  ].map(({ label, done }) => (
+                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '20px', height: '20px', borderRadius: '50%',
+                        background: done ? '#ECFDF5' : '#F9FAFB',
+                        border: done ? '1px solid #BBF7D0' : '1px solid #E2E8F0',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        {done ? (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>
+                        ) : (
+                          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#D97706' }}/>
+                        )}
+                      </div>
+                      <span style={{ fontSize: '0.875rem', color: done ? '#1E293B' : '#94A3B8', fontWeight: done ? 500 : 400 }}>
+                        {label}
+                      </span>
+                      {!done && (
+                        <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#D97706', background: '#FFFBEB', border: '1px solid #FDE68A', padding: '1px 8px', borderRadius: '100px', marginLeft: 'auto' }}>
+                          Syncing
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* KPI grid — gated on data state */}
+          {(isDemoActive || hasBillingData) ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px', marginBottom: '32px' }}>
+              {/* Total Cloud Spend */}
+              <div style={{ ...card, borderLeft: '3px solid #7C3AED', paddingLeft: '29px' }}>
+                <p style={overline}>Total Cloud Spend</p>
+                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                  {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
+                  <span style={{ fontSize: '0.8rem', color: costDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+                    {costChange > 0 ? '+' : ''}{Math.abs(costChange)}%
+                  </span>
+                  <span style={{ fontSize: '0.8rem', color: '#64748B', lineHeight: 1.6 }}>vs last month</span>
+                </div>
+              </div>
+
+              {/* Security Posture KPI */}
+              <div style={card}>
+                <p style={overline}>Security Posture</p>
+                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                  {securityScore ?? '—'}
+                  <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <SecurityDeltaIcon size={14} style={{ color: securityDeltaColor }} />
+                  <span style={{ fontSize: '0.8rem', color: securityDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+                    {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : securityScore !== null ? 'Needs attention' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Cost Efficiency */}
+              <div style={card}>
+                <p style={overline}>Cost Efficiency</p>
+                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                  {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <TrendingUp size={14} style={{ color: '#059669' }} />
+                  <span style={{ fontSize: '0.8rem', color: '#059669', fontWeight: 600, lineHeight: 1.6 }}>
+                    ${wasteAmount.toLocaleString()}/month in savings opportunities
+                  </span>
+                </div>
+              </div>
+
+              {/* Cloud Health Score */}
+              <div style={card}>
+                <p style={overline}>Cloud Health Score</p>
+                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                  {cloudHealthScore || '—'}
+                  <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+                </div>
+                <p style={{ fontSize: '0.65rem', color: '#94A3B8', margin: '0 0 10px', lineHeight: 1.5 }}>
+                  Cost + Security + Reliability ÷ 3
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {[
+                    { label: 'Cost', score: costScore },
+                    { label: 'Security', score: securityScore_health },
+                    { label: 'Reliability', score: reliabilityScore },
+                  ].map(({ label, score }) => (
+                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
+                        <div style={{ width: `${score ?? 0}%`, height: '100%', background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626', borderRadius: '2px' }} />
+                      </div>
+                      <span style={{ fontSize: '0.7rem', color: '#64748B', width: '60px', textAlign: 'right' }}>
+                        {label} {score ?? '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : isAwsConnected && (isBillingSyncing || hasPartialData) ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '24px', marginBottom: '32px' }}>
+              {/* Placeholder — Cloud Spend */}
+              <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', borderLeft: '3px solid #7C3AED', paddingLeft: '29px' }}>
+                <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 16px' }}>Total Cloud Spend</p>
+                <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#94A3B8', letterSpacing: '-0.01em', lineHeight: 1.3, marginBottom: '10px' }}>Calculating...</div>
+                <p style={{ fontSize: '0.75rem', color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>Available once billing syncs</p>
+              </div>
+              {/* Placeholder — Savings Opportunity */}
+              <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+                <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 16px' }}>Savings Opportunity</p>
+                <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#94A3B8', letterSpacing: '-0.01em', lineHeight: 1.3, marginBottom: '10px' }}>Analyzing...</div>
+                <p style={{ fontSize: '0.75rem', color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>Infrastructure scan in progress</p>
+              </div>
+              {/* Security Posture KPI — real data */}
+              <div style={card}>
+                <p style={overline}>Security Posture</p>
+                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                  {securityScore ?? '—'}
+                  <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <SecurityDeltaIcon size={14} style={{ color: securityDeltaColor }} />
+                  <span style={{ fontSize: '0.8rem', color: securityDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
+                    {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : securityScore !== null ? 'Needs attention' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
+                  </span>
+                </div>
+              </div>
+              {/* Cloud Health Score — real data */}
+              <div style={card}>
+                <p style={overline}>Cloud Health Score</p>
+                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                  {cloudHealthScore || '—'}
+                  <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+                </div>
+                <p style={{ fontSize: '0.65rem', color: '#94A3B8', margin: '0 0 10px', lineHeight: 1.5 }}>
+                  Cost + Security + Reliability ÷ 3
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {[
+                    { label: 'Cost', score: costScore },
+                    { label: 'Security', score: securityScore_health },
+                    { label: 'Reliability', score: reliabilityScore },
+                  ].map(({ label, score }) => (
+                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
+                        <div style={{ width: `${score ?? 0}%`, height: '100%', background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626', borderRadius: '2px' }} />
+                      </div>
+                      <span style={{ fontSize: '0.7rem', color: '#64748B', width: '60px', textAlign: 'right' }}>
+                        {label} {score ?? '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
+        )
       ) : (
         /* ── UNCONNECTED STATE ── */
         <div>
@@ -916,29 +1296,40 @@ export default function DashboardPage() {
       )}
 
       {/* ── LAYER 2: EXECUTIVE INSIGHTS ── */}
-      {!insightDismissed && isAwsConnected && (demoMode || insightMessage) && (
-        <div style={{ ...card, marginBottom: '32px', position: 'relative' }}>
+      {!insightDismissed && isAwsConnected && !isBillingSyncing && !hasPartialData && (demoMode || insightMessage) && (
+        <div style={{
+          background: '#F8FAFC',
+          border: '1px solid #E2E8F0',
+          borderLeft: '2px solid #7C3AED',
+          borderRadius: '8px',
+          padding: '14px 18px',
+          marginBottom: '32px',
+          position: 'relative',
+        }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
             <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              background: '#7C3AED',
+              width: '28px',
+              height: '28px',
+              borderRadius: '8px',
+              background: '#EEEDFE',
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}>
-              <Sparkles size={16} style={{ color: '#fff' }} />
+              <Sparkles size={13} style={{ color: '#7C3AED' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <p style={{ ...overline, margin: '0 0 8px', color: '#7C3AED' }}>
+              <p style={{ ...overline, margin: '0 0 8px', fontSize: '0.68rem', color: '#7C3AED' }}>
                 Executive Insights
               </p>
-              <p style={{ fontSize: '0.975rem', color: '#1E293B', lineHeight: 1.7, margin: 0, fontWeight: 400 }}>
-                {insightMessage
-                  ? insightMessage
-                  : `Your infrastructure efficiency is up 12% this month. We identified $${wasteAmount.toLocaleString()} in immediate savings with zero risk. Security posture is stable${securityScore ? ` at ${securityScore}%` : ''}, and engineering velocity remains Elite across all DORA metrics.`
+              <p style={{ fontSize: '0.875rem', color: '#1E293B', lineHeight: 1.65, margin: 0, fontWeight: 400 }}>
+                {demoMode
+                  ? <>Compute costs are driving spend ($5,200, +12%).{' '}
+                    <a href="/cost-optimization" style={{ color: '#7C3AED', fontWeight: 600, textDecoration: 'none' }}>
+                      Review optimization opportunities →
+                    </a></>
+                  : (insightMessage || `Your infrastructure efficiency is up 12% this month. We identified $${wasteAmount.toLocaleString()} in immediate savings with zero risk. Security posture is stable${securityScore ? ` at ${securityScore}%` : ''}, and engineering velocity remains Elite across all DORA metrics.`)
                 }
               </p>
             </div>
@@ -952,89 +1343,353 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── NARRATIVE — 3fr/2fr Spend Trend + Security Posture ── */}
+      {/* ── NARRATIVE — 3fr/2fr Spend Trend + Security Posture / 2-col AI+Security ── */}
       {isAwsConnected && (
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '32px' }}>
-
-        {/* Spend Trend */}
-        <div style={card}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
-            <div>
-              <p style={overline}>Spend Trend</p>
-              <p style={sectionTitle}>Infrastructure cost over time</p>
-            </div>
-            <a href="/costs" style={{ color: '#94A3B8', display: 'flex', lineHeight: 1 }}>
-              <MoreHorizontal size={16} />
-            </a>
-          </div>
-          <CostBreakdownBarList
-            data={generateCostBreakdownData()}
-            totalCost={demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : generateCostBreakdownData().reduce((sum, item) => sum + item.value, 0)}
-            isLoading={!demoMode && statsLoading}
-            dateRange={costDateRange}
-            onDateRangeChange={setCostDateRange}
-            onExport={() => { toast.success('Exporting cost data...'); }}
-          />
-        </div>
-
-        {/* Security Posture Detail */}
-        <div style={card}>
-          <p style={overline}>Security Posture</p>
-
-          {/* Large score */}
-          <div style={{ textAlign: 'center', padding: '20px 0', borderBottom: '1px solid #F1F5F9', marginBottom: '20px' }}>
-            <div style={{ fontSize: '4rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1 }}>
-              {securityScore ?? '87'}
-            </div>
-            <div style={{ fontSize: '0.875rem', color: securityDeltaColor, fontWeight: 600, marginTop: '8px' }}>
-              {riskScoreData?.current.grade ? `Grade ${riskScoreData.current.grade} · ` : ''}
-              {securityScore !== null && securityScore >= 80 ? 'Stable · Elite Tier' : securityScore !== null ? 'Below threshold' : isDemoActive ? 'Stable · Elite Tier' : 'No data yet'}
-            </div>
-          </div>
-
-          {/* Risk detail rows */}
-          {securityRows.map(({ label, value, status }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F1F5F9' }}>
-              <span style={bodyText}>{label}</span>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: status === 'good' ? '#059669' : '#D97706' }}>
-                {value}
-              </span>
-            </div>
-          ))}
-
-          {/* ── NEW: Compliance Status row ── */}
-          <div style={{ padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={bodyText}>Compliance Status</span>
-              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#059669' }}>3 / 3 passing</span>
-            </div>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {['SOC2', 'CIS AWS', 'GDPR'].map((framework) => (
-                <span key={framework} style={{
-                  fontSize: '0.68rem',
-                  fontWeight: 600,
-                  color: '#059669',
-                  background: '#F0FDF4',
-                  border: '1px solid #BBF7D0',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  letterSpacing: '0.02em',
+        isBillingSyncing ? (
+          /* CHANGE 4 — 2-col AI Advisor + Security Posture */
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '24px',
+            marginBottom: '16px',
+          }}>
+            {/* LEFT: AI Advisor */}
+            <div style={{
+              background: '#FFFFFF', borderRadius: '16px',
+              padding: '32px', border: '1px solid #F1F5F9',
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'flex-start',
+                justifyContent: 'space-between', marginBottom: '4px',
+              }}>
+                <div>
+                  <p style={{
+                    fontSize: '0.7rem', fontWeight: 700,
+                    color: '#475569', textTransform: 'uppercase',
+                    letterSpacing: '0.1em', margin: '0 0 16px',
+                  }}>AI Advisor</p>
+                  <p style={{
+                    fontSize: '1rem', fontWeight: 600,
+                    color: '#1E293B', margin: 0,
+                  }}>
+                    Actions ready for approval
+                  </p>
+                </div>
+                <a href="/cost-optimization" style={{
+                  fontSize: '0.78rem', fontWeight: 600,
+                  color: '#7C3AED', textDecoration: 'none',
+                  whiteSpace: 'nowrap',
                 }}>
-                  {framework}
-                </span>
+                  All →
+                </a>
+              </div>
+
+              <p style={{
+                fontSize: '0.75rem', color: '#475569',
+                margin: '0 0 16px', lineHeight: 1.5,
+              }}>
+                <strong style={{ color: '#0F172A' }}>
+                  3 actions · 0 risk · &lt;15 min effort
+                </strong>
+                {' · '}No operational risk · ready for approval
+              </p>
+
+              {topRecs.map((rec, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'flex-start',
+                  gap: '12px', padding: '12px 0',
+                  borderBottom: '1px solid #F1F5F9',
+                }}>
+                  <div style={{
+                    width: '28px', height: '28px',
+                    borderRadius: '8px', background: '#F3F0FF',
+                    display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', flexShrink: 0,
+                  }}>
+                    <Sparkles size={13} style={{ color: '#7C3AED' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: '0.82rem', fontWeight: 600,
+                      color: '#1E293B', marginBottom: '4px',
+                    }}>
+                      {rec.label}
+                    </div>
+                    <div style={{
+                      fontSize: '0.78rem', color: '#64748B',
+                      fontStyle: 'normal', fontWeight: 500,
+                      marginBottom: '4px',
+                    }}>
+                      Cost impact pending billing sync
+                    </div>
+                    <div style={{
+                      display: 'flex', gap: '5px', flexWrap: 'wrap',
+                    }}>
+                      {i < 2 ? (
+                        <>
+                          <span style={{
+                            fontSize: '0.65rem', fontWeight: 600,
+                            color: '#059669', background: '#F0FDF4',
+                            border: '1px solid #BBF7D0',
+                            padding: '1px 6px', borderRadius: '4px',
+                          }}>Low risk</span>
+                          <span style={{
+                            fontSize: '0.65rem', fontWeight: 600,
+                            color: '#059669', background: '#F0FDF4',
+                            border: '1px solid #BBF7D0',
+                            padding: '1px 6px', borderRadius: '4px',
+                          }}>No downtime</span>
+                        </>
+                      ) : (
+                        <span style={{
+                          fontSize: '0.65rem', fontWeight: 600,
+                          color: '#D97706', background: '#FFFBEB',
+                          border: '1px solid #FDE68A',
+                          padding: '1px 6px', borderRadius: '4px',
+                        }}>Low risk</span>
+                      )}
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 600,
+                        color: '#475569', background: '#F8FAFC',
+                        border: '1px solid #E2E8F0',
+                        padding: '1px 6px', borderRadius: '4px',
+                      }}>
+                        {rec.time}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               ))}
+
+              <div style={{
+                marginTop: '16px', padding: '14px 16px',
+                background: '#F8FAFC', borderRadius: '8px',
+                border: '1px solid #F1F5F9',
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <div>
+                  <div style={{
+                    fontSize: '0.72rem', fontWeight: 600,
+                    color: '#475569', marginBottom: '2px',
+                  }}>
+                    Estimated impact
+                  </div>
+                  <div style={{
+                    fontSize: '0.78rem', color: '#94A3B8',
+                    fontStyle: 'italic',
+                  }}>
+                    Savings estimate available once billing
+                    sync completes
+                  </div>
+                </div>
+                <a href="/cost-optimization" style={{
+                  background: '#7C3AED', color: '#fff',
+                  borderRadius: '8px', padding: '8px 16px',
+                  fontSize: '0.78rem', fontWeight: 600,
+                  textDecoration: 'none', whiteSpace: 'nowrap',
+                  marginLeft: '16px',
+                }}>
+                  Approve actions (3) →
+                </a>
+              </div>
+            </div>
+
+            {/* RIGHT: Security Posture */}
+            <div style={{
+              background: '#FFFFFF', borderRadius: '16px',
+              padding: '32px', border: '1px solid #F1F5F9',
+            }}>
+              <p style={{
+                fontSize: '0.7rem', fontWeight: 700,
+                color: '#475569', textTransform: 'uppercase',
+                letterSpacing: '0.1em', margin: '0 0 16px',
+              }}>Security Posture</p>
+
+              <div style={{
+                textAlign: 'center', padding: '12px 0',
+                borderBottom: '1px solid #F1F5F9',
+                marginBottom: '14px',
+              }}>
+                <div style={{
+                  fontSize: '3rem', fontWeight: 700,
+                  color: '#0F172A', letterSpacing: '-0.03em',
+                  lineHeight: 1,
+                }}>
+                  {securityScore ?? '87'}
+                  <span style={{
+                    fontSize: '1rem', color: '#94A3B8',
+                    fontWeight: 400,
+                  }}> (preliminary)</span>
+                </div>
+                <div style={{
+                  fontSize: '0.72rem', color: '#94A3B8',
+                  marginTop: '4px',
+                }}>
+                  Scan in progress
+                </div>
+                <div style={{
+                  fontSize: '0.78rem', color: '#059669',
+                  fontWeight: 600, marginTop: '3px',
+                }}>
+                  Elite Tier
+                </div>
+              </div>
+
+              {securityRows.map(({ label, value, status }) => (
+                <div key={label} style={{
+                  display: 'flex', alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 0', borderBottom: '1px solid #F1F5F9',
+                }}>
+                  <span style={{
+                    fontSize: '0.82rem', color: '#475569',
+                    lineHeight: 1.6,
+                  }}>{label}</span>
+                  <span style={{
+                    fontSize: '0.82rem', fontWeight: 700,
+                    color: status === 'good' ? '#059669' : '#D97706',
+                  }}>
+                    {value}
+                  </span>
+                </div>
+              ))}
+
+              <div style={{ padding: '8px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center',
+                  justifyContent: 'space-between', marginBottom: '6px',
+                }}>
+                  <span style={{
+                    fontSize: '0.82rem', color: '#475569', lineHeight: 1.6,
+                  }}>Compliance Status</span>
+                  <span style={{
+                    fontSize: '0.78rem', fontWeight: 700, color: '#059669',
+                  }}>3 / 3 passing</span>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {['SOC2', 'CIS AWS', 'GDPR'].map((f) => (
+                    <span key={f} style={{
+                      fontSize: '0.68rem', fontWeight: 600,
+                      color: '#059669', background: '#F0FDF4',
+                      border: '1px solid #BBF7D0',
+                      padding: '2px 8px', borderRadius: '4px',
+                    }}>{f}</span>
+                  ))}
+                </div>
+              </div>
+
+              <a href="/security" style={{
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'center', gap: '6px',
+                marginTop: '14px', fontSize: '0.82rem',
+                fontWeight: 600, color: '#7C3AED',
+                textDecoration: 'none',
+              }}>
+                View Security Report →
+              </a>
             </div>
           </div>
+        ) : (
+          /* Existing 3fr/2fr Spend Trend + Security Posture */
+          <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '32px' }}>
 
-          <a href="/security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '20px', fontSize: '0.82rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>
-            View Security Report <ArrowRight size={13} />
-          </a>
-        </div>
-      </div>
+            {/* Spend Trend */}
+            <div style={card}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+                <div>
+                  <p style={overline}>Spend Trend</p>
+                  <p style={sectionTitle}>Infrastructure cost over time</p>
+                </div>
+                <a href="/costs" style={{ color: '#94A3B8', display: 'flex', lineHeight: 1 }}>
+                  <MoreHorizontal size={16} />
+                </a>
+              </div>
+              <CostBreakdownBarList
+                data={generateCostBreakdownData()}
+                totalCost={demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : generateCostBreakdownData().reduce((sum, item) => sum + item.value, 0)}
+                isLoading={!demoMode && statsLoading}
+                dateRange={costDateRange}
+                onDateRangeChange={setCostDateRange}
+                onExport={() => { toast.success('Exporting cost data...'); }}
+              />
+            </div>
+
+            {/* Security Posture Detail */}
+            <div style={card}>
+              <p style={overline}>Security Posture</p>
+
+              {/* Large score */}
+              <div style={{ textAlign: 'center', padding: '20px 0', borderBottom: '1px solid #F1F5F9', marginBottom: '20px' }}>
+                <div style={{ fontSize: '4rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1 }}>
+                  {securityScore ?? '87'}
+                </div>
+                <div style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  marginTop: '8px',
+                  color: securityScore !== null && securityScore >= 80
+                    ? '#059669'
+                    : securityScore !== null && securityScore >= 60
+                    ? '#D97706'
+                    : '#94A3B8',
+                }}>
+                  {securityScore !== null && securityScore >= 80
+                    ? 'Elite Tier'
+                    : securityScore !== null && securityScore >= 60
+                    ? 'Above baseline'
+                    : securityScore !== null
+                    ? 'Needs attention'
+                    : isDemoActive
+                    ? 'Elite Tier'
+                    : 'Scan in progress'}
+                </div>
+              </div>
+
+              {/* Risk detail rows */}
+              {securityRows.map(({ label, value, status }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F1F5F9' }}>
+                  <span style={bodyText}>{label}</span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: status === 'good' ? '#059669' : '#D97706' }}>
+                    {value}
+                  </span>
+                </div>
+              ))}
+
+              {/* ── NEW: Compliance Status row ── */}
+              <div style={{ padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={bodyText}>Compliance Status</span>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#059669' }}>3 / 3 passing</span>
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {['SOC2', 'CIS AWS', 'GDPR'].map((framework) => (
+                    <span key={framework} style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      color: '#059669',
+                      background: '#F0FDF4',
+                      border: '1px solid #BBF7D0',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      letterSpacing: '0.02em',
+                    }}>
+                      {framework}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <a href="/security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '20px', fontSize: '0.82rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>
+                View Security Report <ArrowRight size={13} />
+              </a>
+            </div>
+          </div>
+        )
       )}
 
       {/* ── EXECUTIVE ROI SUMMARY ── */}
-      {isAwsConnected && (
+      {isAwsConnected && !isBillingSyncing && !hasPartialData && (
       <div style={{ ...card, marginBottom: '32px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div>
@@ -1094,10 +1749,10 @@ export default function DashboardPage() {
 
       {/* ── SYSTEM STATUS BAR ── */}
       {isAwsConnected && (
-      <a href="/monitoring" style={{ textDecoration: 'none', display: 'block', marginBottom: '24px' }}>
+      <a href="/monitoring" style={{ textDecoration: 'none', display: 'block', marginBottom: isBillingSyncing ? '16px' : '24px' }}>
         <div style={{
-          background: statusConf.bg,
-          border: `1px solid ${statusConf.border}`,
+          background: systemAlertCount > 0 ? '#FFFBEB' : statusConf.bg,
+          border: systemAlertCount > 0 ? '1px solid #FDE68A' : `1px solid ${statusConf.border}`,
           borderRadius: '12px',
           padding: '14px 24px',
           display: 'flex',
@@ -1110,7 +1765,7 @@ export default function DashboardPage() {
         >
           {/* Pulsing status dot */}
           <div style={{ position: 'relative', flexShrink: 0 }}>
-            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: statusConf.dot }} />
+            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: systemAlertCount > 0 ? '#D97706' : statusConf.dot }} />
             {systemStatusLabel !== 'healthy' && (
               <div style={{
                 position: 'absolute', inset: '-3px',
@@ -1123,34 +1778,50 @@ export default function DashboardPage() {
           </div>
 
           {/* Status label */}
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: statusConf.color }}>
-            {statusConf.label}
+          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: systemAlertCount > 0 ? '#92400E' : statusConf.color }}>
+            {systemAlertCount > 0
+              ? 'Systems operational'
+              : systemStatusLabel === 'healthy'
+                ? 'All systems operational — no action required across monitored infrastructure'
+                : statusConf.label}
           </span>
 
           {/* Divider */}
-          <div style={{ width: '1px', height: '16px', background: statusConf.border, flexShrink: 0 }} />
+          <div style={{ width: '1px', height: '16px', background: systemAlertCount > 0 ? '#FDE68A' : statusConf.border, flexShrink: 0 }} />
 
           {/* Metrics */}
           <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.82rem', color: statusConf.color }}>
-              Avg response <strong>{systemResponseTime}</strong>
-            </span>
-            <span style={{ fontSize: '0.82rem', color: statusConf.color }}>
-              Uptime <strong>{systemUptimeAvg}</strong>
-            </span>
             {systemAlertCount > 0 && (
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', padding: '2px 10px', borderRadius: '100px' }}>
-                {systemAlertCount} alert{systemAlertCount !== 1 ? 's' : ''}
+              <span style={{
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                background: '#FEF2F2',
+                color: '#DC2626',
+                border: '1px solid #FECACA',
+                padding: '2px 10px',
+                borderRadius: '100px',
+              }}>
+                {systemAlertCount} active alert{systemAlertCount !== 1 ? 's' : ''}
+              </span>
+            )}
+            {systemResponseTime !== '—' && (
+              <span style={{ fontSize: '0.82rem', color: systemAlertCount > 0 ? '#92400E' : statusConf.color }}>
+                Avg response <strong>{systemResponseTime}</strong>
+              </span>
+            )}
+            {systemUptimeAvg !== '—' && (
+              <span style={{ fontSize: '0.82rem', color: systemAlertCount > 0 ? '#92400E' : statusConf.color }}>
+                Uptime <strong>{systemUptimeAvg}</strong>
               </span>
             )}
           </div>
 
           {/* Right side — link */}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: statusConf.color }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: systemAlertCount > 0 ? '#92400E' : statusConf.color }}>
               View observability
             </span>
-            <ArrowRight size={13} style={{ color: statusConf.color }} />
+            <ArrowRight size={13} style={{ color: systemAlertCount > 0 ? '#92400E' : statusConf.color }} />
           </div>
         </div>
       </a>
@@ -1158,6 +1829,210 @@ export default function DashboardPage() {
 
       {/* ── ENGINEERING VELOCITY + AI ADVISOR + RECENT ACTIVITY ── */}
       {isAwsConnected && (
+      isBillingSyncing ? (
+        /* CHANGE 6 — Syncing state bottom 3-col */
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
+
+          {/* LEFT: Engineering Health (muted) */}
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+              <div>
+                <p style={{ ...overline, color: '#94A3B8' }}>Engineering Health</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600, color: '#64748B' }}>Elite</span>
+                </div>
+              </div>
+              <a href="/app/dora-metrics" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#94A3B8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                Full report <ArrowRight size={12} />
+              </a>
+            </div>
+
+            {doraRows.filter(r => ['Lead Time for Changes', 'Change Failure Rate', 'Mean Time to Recovery'].includes(r.label)).map(({ label, value }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ fontSize: '0.82rem', color: '#64748B', lineHeight: 1.6 }}>{label}</span>
+                <span style={{
+                  fontSize: '0.82rem', fontWeight: 500,
+                  color: label === 'Change Failure Rate' ? '#D97706' : '#475569',
+                }}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* CENTER: What You Can Do Now */}
+          <div style={{
+            background: '#FFFFFF', borderRadius: '16px',
+            padding: '32px', border: '1px solid #F1F5F9',
+          }}>
+            <p style={{
+              fontSize: '0.7rem', fontWeight: 700,
+              color: '#475569', textTransform: 'uppercase',
+              letterSpacing: '0.1em', margin: '0 0 16px',
+            }}>What You Can Do Now</p>
+
+            {/* Item 1 — highlighted */}
+            <a href="/cost-optimization" style={{
+              display: 'flex', alignItems: 'center',
+              gap: '12px', padding: '14px 16px',
+              border: '1px solid #DDD6FE',
+              textDecoration: 'none', cursor: 'pointer',
+              background: '#FAFAFF', borderRadius: '10px',
+              marginBottom: '8px',
+            }}>
+              <div style={{
+                width: '32px', height: '32px',
+                borderRadius: '8px', background: '#EEEDFE',
+                flexShrink: 0, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <CheckCircle size={14} style={{ color: '#7C3AED' }} />
+              </div>
+              <div>
+                <div style={{
+                  fontSize: '0.875rem', fontWeight: 700,
+                  color: '#1E293B', marginBottom: '2px',
+                }}>
+                  Approve actions (3)
+                </div>
+                <div style={{
+                  fontSize: '0.72rem', color: '#7C3AED',
+                  fontWeight: 500,
+                }}>
+                  Low risk · No downtime
+                </div>
+              </div>
+              <span style={{
+                marginLeft: 'auto', fontSize: '0.75rem',
+                color: '#7C3AED', fontWeight: 700,
+              }}>→</span>
+            </a>
+
+            {/* Items 2–4 */}
+            {[
+              {
+                href: '/security',
+                iconBg: '#F0FDF4',
+                iconColor: '#059669',
+                title: 'Explore security report',
+                sub: '87 score · 3 anomalies',
+              },
+              {
+                href: '/deployments',
+                iconBg: '#F8FAFC',
+                iconColor: '#475569',
+                title: 'Connect CI/CD pipeline',
+                sub: 'Track deployments · velocity',
+              },
+              {
+                href: '/costs',
+                iconBg: '#FFFBEB',
+                iconColor: '#D97706',
+                title: 'Monitor billing sync',
+                sub: 'Cost data within 24–48h',
+              },
+            ].map(({ href, iconBg, iconColor, title, sub }, i) => (
+              <a key={href} href={href} style={{
+                display: 'flex', alignItems: 'center',
+                gap: '12px', padding: '10px 0',
+                borderBottom: i < 2 ? '1px solid #F1F5F9' : 'none',
+                textDecoration: 'none', cursor: 'pointer',
+              }}>
+                <div style={{
+                  width: '30px', height: '30px',
+                  borderRadius: '8px', background: iconBg,
+                  flexShrink: 0, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <ArrowRight size={13} style={{ color: iconColor }} />
+                </div>
+                <div>
+                  <div style={{
+                    fontSize: '0.875rem', fontWeight: 600,
+                    color: '#1E293B', marginBottom: '1px',
+                  }}>{title}</div>
+                  <div style={{
+                    fontSize: '0.78rem', color: '#64748B',
+                  }}>{sub}</div>
+                </div>
+                <span style={{
+                  marginLeft: 'auto', fontSize: '0.875rem',
+                  color: '#7C3AED', fontWeight: 600,
+                }}>→</span>
+              </a>
+            ))}
+          </div>
+
+          {/* RIGHT: Recent Activity — existing card */}
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+              <p style={{ ...overline, margin: 0 }}>Recent Activity</p>
+              <a href="/deployments" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                View all <ArrowRight size={12} />
+              </a>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {activeDeployments.slice(0, 5).map((d: Deployment) => (
+                <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      background: getDeploymentStatusColor(d.status),
+                    }} />
+                    <div>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', lineHeight: 1.4 }}>
+                        {d.serviceName || d.serviceId.slice(0, 8)}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#94A3B8', lineHeight: 1.6 }}>{d.environment}</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: getDeploymentStatusColor(d.status), textTransform: 'capitalize' }}>
+                      {d.status}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                      {formatDistanceToNow(new Date(d.deployedAt), { addSuffix: true })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {activeDeployments.length === 0 && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '40px 16px',
+                  color: '#94A3B8',
+                  fontSize: '0.875rem',
+                  lineHeight: 1.6,
+                  minHeight: '200px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}>
+                  <p style={{ margin: 0, color: '#475569', fontWeight: 500, fontSize: '0.875rem' }}>
+                    No deployment data yet
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#94A3B8', lineHeight: 1.6 }}>
+                    Connect your CI/CD pipeline to track release velocity and incident impact
+                  </p>
+                  <a href="/deployments" style={{
+                    marginTop: '8px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    color: '#7C3AED',
+                    textDecoration: 'none',
+                  }}>
+                    Set up deployments →
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
 
         {/* Engineering Velocity — DORA row list */}
@@ -1176,6 +2051,15 @@ export default function DashboardPage() {
               Full report <ArrowRight size={12} />
             </a>
           </div>
+
+          <p style={{
+            fontSize: '0.75rem',
+            color: '#94A3B8',
+            margin: '0 0 20px',
+            lineHeight: 1.5,
+          }}>
+            Elite performance across all 4 DORA metrics
+          </p>
 
           {doraRows.map(({ label, value, tier, showTier }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
@@ -1200,6 +2084,9 @@ export default function DashboardPage() {
         </div>
 
         {/* AI Advisor Feed */}
+        {(() => {
+          const showSavingsDollars = isDemoActive || hasBillingData;
+          return (
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
             <div>
@@ -1230,10 +2117,35 @@ export default function DashboardPage() {
                   <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', lineHeight: 1.4, marginBottom: '2px' }}>
                     {rec.label}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#059669' }}>{rec.savings}</span>
-                    <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>·</span>
-                    <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>Effort: {rec.effort}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', marginTop: '4px' }}>
+                    {showSavingsDollars ? (
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#059669' }}>{rec.savings}</span>
+                    ) : (
+                      <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontStyle: 'italic' }}>Cost impact pending billing sync</span>
+                    )}
+                    {i < 2 ? (
+                      <>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#059669', background: '#F0FDF4', border: '1px solid #BBF7D0', padding: '1px 6px', borderRadius: '4px' }}>Low risk</span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#059669', background: '#F0FDF4', border: '1px solid #BBF7D0', padding: '1px 6px', borderRadius: '4px' }}>No downtime</span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#1D4ED8', background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '1px 6px', borderRadius: '4px' }}>High confidence</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#D97706', background: '#FFFBEB', border: '1px solid #FDE68A', padding: '1px 6px', borderRadius: '4px' }}>Low risk</span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#475569', background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '1px 6px', borderRadius: '4px' }}>Effort: Medium</span>
+                      </>
+                    )}
+                    <span style={{
+                      fontSize: '0.65rem',
+                      fontWeight: 600,
+                      color: '#475569',
+                      background: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                    }}>
+                      {rec.time}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1242,11 +2154,19 @@ export default function DashboardPage() {
 
           <div style={{ marginTop: '16px', padding: '12px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #F1F5F9' }}>
             <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginBottom: '2px' }}>Total potential</div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.01em' }}>
-              ${topRecs.reduce((sum, r) => sum + parseInt(r.savings.replace(/[^0-9]/g, '')), 0).toLocaleString()}/mo
-            </div>
+            {showSavingsDollars ? (
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.01em' }}>
+                $1,270/mo
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.82rem', color: '#94A3B8', fontStyle: 'italic' }}>
+                Calculated once billing syncs
+              </div>
+            )}
           </div>
         </div>
+          );
+        })()}
 
         {/* Recent Activity */}
         <div style={card}>
@@ -1286,17 +2206,40 @@ export default function DashboardPage() {
               </div>
             ))}
             {activeDeployments.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '32px 0', color: '#94A3B8', fontSize: '0.875rem', lineHeight: 1.6 }}>
-                No recent deployments ·{' '}
-                <a href="/deployments/new" style={{ color: '#7C3AED', fontWeight: 600, textDecoration: 'none' }}>
-                  Create one
+              <div style={{
+                textAlign: 'center',
+                padding: '40px 16px',
+                color: '#94A3B8',
+                fontSize: '0.875rem',
+                lineHeight: 1.6,
+                minHeight: '200px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}>
+                <p style={{ margin: 0, color: '#475569', fontWeight: 500, fontSize: '0.875rem' }}>
+                  No deployment data yet
+                </p>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: '#94A3B8', lineHeight: 1.6 }}>
+                  Connect your CI/CD pipeline to track release velocity and incident impact
+                </p>
+                <a href="/deployments" style={{
+                  marginTop: '8px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  color: '#7C3AED',
+                  textDecoration: 'none',
+                }}>
+                  Set up deployments →
                 </a>
               </div>
             )}
           </div>
         </div>
       </div>
-      )}
+      ))}
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
