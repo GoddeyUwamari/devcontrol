@@ -76,6 +76,7 @@ export default function AnomaliesPage() {
     timeWindow: '1h',
     severity: 'warning',
   })
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   // ── PRESERVED LOGIC ─────────────────────────────────────────────────────
   const loadAnomalies = useCallback(async () => {
@@ -513,12 +514,23 @@ export default function AnomaliesPage() {
           <input type="checkbox" style={{
             width: '13px', height: '13px',
             accentColor: '#7C3AED',
-          }}/>
+          }}
+          onChange={(e) => {
+            setSelectedIds(e.target.checked
+              ? anomalies.map(a => a.id)
+              : [])
+          }}
+          checked={selectedIds.length === anomalies.length && anomalies.length > 0}
+          />
           Select all
         </label>
         <span style={{ color: '#E2E8F0' }}>|</span>
         <button
-          onClick={() => {/* bulk resolve */}}
+          onClick={async () => {
+            await Promise.all(selectedIds.map(id => handleResolve(id)))
+            setSelectedIds([])
+          }}
+          disabled={selectedIds.length === 0}
           style={{
             padding: '4px 12px', borderRadius: '6px',
             border: '1px solid #BBF7D0',
@@ -529,13 +541,19 @@ export default function AnomaliesPage() {
         >
           Resolve selected
         </button>
-        <button style={{
-          padding: '4px 12px', borderRadius: '6px',
-          border: '1px solid #E2E8F0',
-          background: '#fff', fontSize: '0.82rem',
-          fontWeight: 500, color: '#64748B',
-          cursor: 'pointer', opacity: 0.8,
-        }}>
+        <button
+          onClick={async () => {
+            await Promise.all(selectedIds.map(id => handleFalsePositive(id)))
+            setSelectedIds([])
+          }}
+          disabled={selectedIds.length === 0}
+          style={{
+            padding: '4px 12px', borderRadius: '6px',
+            border: '1px solid #E2E8F0',
+            background: '#fff', fontSize: '0.82rem',
+            fontWeight: 500, color: '#64748B',
+            cursor: 'pointer', opacity: 0.8,
+          }}>
           Ignore selected
         </button>
         <button style={{
@@ -663,7 +681,15 @@ export default function AnomaliesPage() {
                 <div style={{ padding: '20px 22px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
 
                   {/* Checkbox */}
-                  <input type="checkbox" style={{ width: '13px', height: '13px', accentColor: '#7C3AED', marginTop: '5px', flexShrink: 0 }} />
+                  <input type="checkbox" style={{ width: '13px', height: '13px', accentColor: '#7C3AED', marginTop: '5px', flexShrink: 0 }}
+                    onChange={(e) => {
+                      setSelectedIds(prev =>
+                        e.target.checked
+                          ? [...prev, anomaly.id]
+                          : prev.filter(id => id !== anomaly.id))
+                    }}
+                    checked={selectedIds.includes(anomaly.id)}
+                  />
 
                   {/* Center content */}
                   <div style={{ flex: 1, minWidth: 0 }}>
