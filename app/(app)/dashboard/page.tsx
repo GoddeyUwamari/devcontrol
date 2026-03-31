@@ -618,7 +618,7 @@ export default function DashboardPage() {
   const securityRows: { label: string; value: string | number; status: 'good' | 'warn' }[] = [
     { label: 'Critical Vulnerabilities', value: demoMode ? 0 : 0, status: 'good' },
     { label: 'Compliance Frameworks', value: '4/4', status: 'good' },
-    { label: 'Active Anomalies', value: demoMode ? 3 : (statsLoading ? '—' : 3), status: 'warn' },
+    { label: 'Active Risks', value: demoMode ? 3 : (statsLoading ? '—' : 3), status: 'warn' },
   ];
 
   return (
@@ -769,9 +769,10 @@ export default function DashboardPage() {
                     fontSize: '0.82rem', color: '#475569',
                     margin: '0 0 14px', lineHeight: 1.5,
                   }}>
-                    Billing data is syncing and typically becomes
-                    available within 24–48 hours after your first
-                    AWS connection.
+                    We&apos;ve already identified optimization
+                    opportunities — full savings and cost
+                    breakdown unlock once billing sync
+                    completes (24–48 hours).
                   </p>
                   <div style={{
                     display: 'flex', alignItems: 'center',
@@ -825,8 +826,6 @@ export default function DashboardPage() {
               <div style={{
                 background: '#FFFFFF', borderRadius: '16px',
                 padding: '32px', border: '1px solid #F1F5F9',
-                borderLeft: '3px solid #7C3AED',
-                paddingLeft: '29px',
               }}>
                 <p style={{
                   fontSize: '0.7rem', fontWeight: 700,
@@ -865,12 +864,25 @@ export default function DashboardPage() {
                 }}>
                   3 actions ready
                 </div>
-                <p style={{
-                  fontSize: '0.75rem', color: '#64748B',
-                  margin: 0, lineHeight: 1.5,
+                <div style={{
+                  marginTop: '6px',
                 }}>
-                  Cost impact pending billing sync
-                </p>
+                  <p style={{
+                    fontSize: '0.72rem',
+                    color: '#059669',
+                    fontWeight: 600,
+                    margin: '0 0 2px',
+                  }}>
+                    Est. $800 – $2,400/mo savings
+                  </p>
+                  <p style={{
+                    fontSize: '0.68rem',
+                    color: '#94A3B8',
+                    margin: 0,
+                  }}>
+                    Finalizing with billing data
+                  </p>
+                </div>
               </div>
 
               {/* Card 3 — Security Posture */}
@@ -936,9 +948,36 @@ export default function DashboardPage() {
                     fontWeight: 400,
                   }}>/100</span>
                 </div>
-                <p style={{ fontSize: '0.65rem', color: '#94A3B8', margin: '0 0 10px', lineHeight: 1.5 }}>
-                  {displayIntelligence?.status ?? 'Computing...'}
-                </p>
+                <div style={{ margin: '0 0 10px' }}>
+                  <span style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    color:
+                      (displayIntelligence
+                        ?.system_score ?? 0) >= 85
+                        ? '#059669'
+                        : (displayIntelligence
+                            ?.system_score ?? 0) >= 70
+                          ? '#D97706'
+                          : '#DC2626',
+                  }}>
+                    {displayIntelligence?.status ?? 'Computing...'}
+                  </span>
+                  {displayIntelligence
+                    ?.system_score &&
+                    displayIntelligence
+                      .system_score < 85 && (
+                    <p style={{
+                      fontSize: '0.68rem',
+                      color: '#94A3B8',
+                      margin: '2px 0 0',
+                      lineHeight: 1.4,
+                    }}>
+                      Top teams: 85+ · Improve to
+                      unlock full efficiency
+                    </p>
+                  )}
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {displayIntelligence
                     ? Object.values(
@@ -1102,7 +1141,7 @@ export default function DashboardPage() {
           {(isDemoActive || hasBillingData) ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px', marginBottom: '32px' }}>
               {/* Total Cloud Spend */}
-              <div style={{ ...card, borderLeft: '3px solid #7C3AED', paddingLeft: '29px' }}>
+              <div style={{ ...card }}>
                 <p style={overline}>Total Cloud Spend</p>
                 <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
                   {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
@@ -1154,9 +1193,36 @@ export default function DashboardPage() {
                     ?? '—'}
                   <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
                 </div>
-                <p style={{ fontSize: '0.65rem', color: '#94A3B8', margin: '0 0 10px', lineHeight: 1.5 }}>
-                  {displayIntelligence?.status ?? 'Computing...'}
-                </p>
+                <div style={{ margin: '0 0 10px' }}>
+                  <span style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    color:
+                      (displayIntelligence
+                        ?.system_score ?? 0) >= 85
+                        ? '#059669'
+                        : (displayIntelligence
+                            ?.system_score ?? 0) >= 70
+                          ? '#D97706'
+                          : '#DC2626',
+                  }}>
+                    {displayIntelligence?.status ?? 'Computing...'}
+                  </span>
+                  {displayIntelligence
+                    ?.system_score &&
+                    displayIntelligence
+                      .system_score < 85 && (
+                    <p style={{
+                      fontSize: '0.68rem',
+                      color: '#94A3B8',
+                      margin: '2px 0 0',
+                      lineHeight: 1.4,
+                    }}>
+                      Top teams: 85+ · Improve to
+                      unlock full efficiency
+                    </p>
+                  )}
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {displayIntelligence
                     ? Object.values(
@@ -1278,9 +1344,36 @@ export default function DashboardPage() {
                     ?? '—'}
                   <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
                 </div>
-                <p style={{ fontSize: '0.65rem', color: '#94A3B8', margin: '0 0 10px', lineHeight: 1.5 }}>
-                  {displayIntelligence?.status ?? 'Computing...'}
-                </p>
+                <div style={{ margin: '0 0 10px' }}>
+                  <span style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    color:
+                      (displayIntelligence
+                        ?.system_score ?? 0) >= 85
+                        ? '#059669'
+                        : (displayIntelligence
+                            ?.system_score ?? 0) >= 70
+                          ? '#D97706'
+                          : '#DC2626',
+                  }}>
+                    {displayIntelligence?.status ?? 'Computing...'}
+                  </span>
+                  {displayIntelligence
+                    ?.system_score &&
+                    displayIntelligence
+                      .system_score < 85 && (
+                    <p style={{
+                      fontSize: '0.68rem',
+                      color: '#94A3B8',
+                      margin: '2px 0 0',
+                      lineHeight: 1.4,
+                    }}>
+                      Top teams: 85+ · Improve to
+                      unlock full efficiency
+                    </p>
+                  )}
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {displayIntelligence
                     ? Object.values(
@@ -1846,7 +1939,13 @@ export default function DashboardPage() {
                     <a href="/cost-optimization" style={{ color: '#7C3AED', fontWeight: 600, textDecoration: 'none' }}>
                       Review optimization opportunities →
                     </a></>
-                  : (insightMessage || `Your infrastructure efficiency is up 12% this month. We identified $${wasteAmount.toLocaleString()} in immediate savings with zero risk. Security posture is stable${securityScore ? ` at ${securityScore}%` : ''}, and engineering velocity remains Elite across all DORA metrics.`)
+                  : (insightMessage || `Your infrastructure is being actively analyzed. ${
+                      displayIntelligence?.top_drivers?.[0]?.message
+                        ? displayIntelligence.top_drivers[0].message +
+                          ' — ' +
+                          displayIntelligence.top_drivers[0].consequence
+                        : '3 optimization opportunities identified with zero downtime risk.'
+                    }`)
                 }
               </p>
             </div>
@@ -1905,10 +2004,9 @@ export default function DashboardPage() {
                 fontSize: '0.75rem', color: '#475569',
                 margin: '0 0 16px', lineHeight: 1.5,
               }}>
-                <strong style={{ color: '#0F172A' }}>
-                  3 actions · 0 risk · &lt;15 min effort
-                </strong>
-                {' · '}No operational risk · ready for approval
+                These 3 changes reduce AWS waste
+                immediately · zero downtime ·
+                fully reversible · takes &lt; 15 min
               </p>
 
               {topRecs.map((rec, i) => (
@@ -2390,36 +2488,36 @@ export default function DashboardPage() {
             <a href="/cost-optimization" style={{
               display: 'flex', alignItems: 'center',
               gap: '12px', padding: '14px 16px',
-              border: '1px solid #DDD6FE',
+              border: '1px solid #6D28D9',
               textDecoration: 'none', cursor: 'pointer',
-              background: '#FAFAFF', borderRadius: '10px',
+              background: '#7C3AED', borderRadius: '10px',
               marginBottom: '8px',
             }}>
               <div style={{
                 width: '32px', height: '32px',
-                borderRadius: '8px', background: '#EEEDFE',
+                borderRadius: '8px', background: 'rgba(255,255,255,0.15)',
                 flexShrink: 0, display: 'flex',
                 alignItems: 'center', justifyContent: 'center',
               }}>
-                <CheckCircle size={14} style={{ color: '#7C3AED' }} />
+                <CheckCircle size={14} style={{ color: '#fff' }} />
               </div>
               <div>
                 <div style={{
                   fontSize: '0.875rem', fontWeight: 700,
-                  color: '#1E293B', marginBottom: '2px',
+                  color: '#fff', marginBottom: '2px',
                 }}>
                   Approve actions (3)
                 </div>
                 <div style={{
-                  fontSize: '0.72rem', color: '#7C3AED',
+                  fontSize: '0.72rem', color: '#DDD6FE',
                   fontWeight: 500,
                 }}>
-                  Low risk · No downtime
+                  Zero downtime · fully reversible · &lt; 5 min
                 </div>
               </div>
               <span style={{
                 marginLeft: 'auto', fontSize: '0.75rem',
-                color: '#7C3AED', fontWeight: 700,
+                color: '#fff', fontWeight: 700,
               }}>→</span>
             </a>
 
@@ -2533,7 +2631,7 @@ export default function DashboardPage() {
                     No deployment data yet
                   </p>
                   <p style={{ margin: 0, fontSize: '0.82rem', color: '#94A3B8', lineHeight: 1.6 }}>
-                    Connect your CI/CD pipeline to track release velocity and incident impact
+                    Connect your CI/CD pipeline to unlock deployment velocity insights, change failure rate tracking, and incident impact analysis
                   </p>
                   <a href="/deployments" style={{
                     marginTop: '8px',
@@ -2542,7 +2640,7 @@ export default function DashboardPage() {
                     color: '#7C3AED',
                     textDecoration: 'none',
                   }}>
-                    Set up deployments →
+                    Connect CI/CD pipeline →
                   </a>
                 </div>
               )}
@@ -2616,6 +2714,20 @@ export default function DashboardPage() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+            <p style={{
+              fontSize: '0.78rem',
+              color: '#475569',
+              margin: '0 0 12px',
+              lineHeight: 1.5,
+              padding: '10px 12px',
+              background: '#F0FDF4',
+              borderRadius: '8px',
+              border: '1px solid #BBF7D0',
+            }}>
+              These {topRecs.length} changes
+              reduce AWS waste immediately —
+              zero downtime · fully reversible
+            </p>
             {topRecs.map((rec, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
                 <div style={{
@@ -2740,7 +2852,7 @@ export default function DashboardPage() {
                   No deployment data yet
                 </p>
                 <p style={{ margin: 0, fontSize: '0.82rem', color: '#94A3B8', lineHeight: 1.6 }}>
-                  Connect your CI/CD pipeline to track release velocity and incident impact
+                  Connect your CI/CD pipeline to unlock deployment velocity insights, change failure rate tracking, and incident impact analysis
                 </p>
                 <a href="/deployments" style={{
                   marginTop: '8px',
@@ -2749,7 +2861,7 @@ export default function DashboardPage() {
                   color: '#7C3AED',
                   textDecoration: 'none',
                 }}>
-                  Set up deployments →
+                  Connect CI/CD pipeline →
                 </a>
               </div>
             )}
