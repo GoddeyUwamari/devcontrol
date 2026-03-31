@@ -353,7 +353,7 @@ export default function CostOptimizationPage() {
       ).length;
   const monthlySavings = isDemoActive ? 1697 : Math.round(summary?.totalMonthlySavings ?? 0);
   const annualSavings = isDemoActive ? 20364 : Math.round(summary?.totalAnnualSavings ?? 0);
-  const zeroRiskCount = isDemoActive ? 4 : displayRecs.filter((r: any) => r.risk === 'safe').length;
+  const zeroRiskCount = displayRecs.filter((r: any) => r.risk === 'safe' && r.status === 'pending').length;
 
   // ── AI-powered approve / ignore ───────────────────────────────────────────────
   const aiApprove = async (id: string) => {
@@ -443,6 +443,18 @@ export default function CostOptimizationPage() {
   const handleRunScan = () => { if (scanState !== 'scanning') handleAIScan(); };
   const handleApprove = (id: string) => aiApprove(id);
   const handleDismiss = (id: string) => aiIgnore(id);
+
+  const handleRestore = (id: string) => {
+    if (isDemoActive) {
+      setDemoStatusOverrides(prev => ({ ...prev, [id]: 'pending' }));
+      toast.success('Recommendation restored');
+      return;
+    }
+    setRecommendations(prev =>
+      prev.map((r: any) => r.id === id ? { ...r, status: 'pending' } : r)
+    );
+    toast.success('Recommendation restored');
+  };
 
   const handleCreateWorkflow = async (rec: any) => {
     setCreatingWorkflowFor(rec.id);
@@ -1000,12 +1012,35 @@ export default function CostOptimizationPage() {
                     : first + (first.endsWith('.') ? '' : '.');
                 })();
 
+                const isDismissed = rec.status === 'ignored' || rec.status === 'dismissed';
+
                 return (
                   <div key={rec.id}
-                    onClick={() => setSelectedRecommendation(rec)}
-                    style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: isTopPriority ? '2px solid #E2E8F0' : '0.5px solid #e5e7eb', display: 'grid', gridTemplateColumns: '1fr auto', gap: '24px', alignItems: 'start', cursor: 'pointer' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#7C3AED'; (e.currentTarget as HTMLDivElement).style.background = '#FAFBFF'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = isTopPriority ? '#E2E8F0' : '#e5e7eb'; (e.currentTarget as HTMLDivElement).style.background = '#fff'; }}>
+                    onClick={() => { if (!isDismissed) setSelectedRecommendation(rec); }}
+                    style={{
+                      background: isDismissed ? '#F8FAFC' : '#fff',
+                      borderRadius: '14px',
+                      padding: '24px 28px',
+                      border: isDismissed ? '0.5px solid #F1F5F9' : isTopPriority ? '2px solid #E2E8F0' : '0.5px solid #e5e7eb',
+                      opacity: isDismissed ? 0.5 : 1,
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto',
+                      gap: '24px',
+                      alignItems: 'start',
+                      cursor: isDismissed ? 'default' : 'pointer',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isDismissed) {
+                        (e.currentTarget as HTMLDivElement).style.borderColor = '#7C3AED';
+                        (e.currentTarget as HTMLDivElement).style.background = '#FAFBFF';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isDismissed) {
+                        (e.currentTarget as HTMLDivElement).style.borderColor = isTopPriority ? '#E2E8F0' : '#e5e7eb';
+                        (e.currentTarget as HTMLDivElement).style.background = '#fff';
+                      }
+                    }}>
 
                     <div>
                       {isTopPriority && (
@@ -1075,9 +1110,41 @@ export default function CostOptimizationPage() {
                             ✓ Approved
                           </span>
                         ) : rec.status === 'ignored' ? (
-                          <span style={{ fontSize: '11px', color: '#94A3B8', padding: '4px 10px' }}>
-                            Dismissed
-                          </span>
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'flex-end',
+                            gap: '6px',
+                          }}>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 600,
+                              color: '#94A3B8',
+                              background: '#F1F5F9',
+                              padding: '3px 10px',
+                              borderRadius: '100px',
+                              letterSpacing: '0.05em',
+                            }}>
+                              DISMISSED
+                            </span>
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleRestore(rec.id);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                fontSize: '0.72rem',
+                                color: '#7C3AED',
+                                cursor: 'pointer',
+                                padding: '2px 0',
+                                fontWeight: 500,
+                              }}
+                            >
+                              Restore →
+                            </button>
+                          </div>
                         ) : (
                           <>
                             <button
