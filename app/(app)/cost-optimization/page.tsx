@@ -345,9 +345,14 @@ export default function CostOptimizationPage() {
         return true;
       });
 
-  const totalOpportunities = isDemoActive ? 7 : (summary?.totalRecommendations ?? 0);
-  const monthlySavings = isDemoActive ? 1697 : (summary?.totalMonthlySavings ?? 0);
-  const annualSavings = isDemoActive ? 20364 : (summary?.totalAnnualSavings ?? 0);
+  const totalOpportunities = isDemoActive
+    ? DEMO_RECOMMENDATIONS.length
+    : displayRecs.filter((r: any) =>
+        r.status !== 'ignored' &&
+        r.status !== 'dismissed'
+      ).length;
+  const monthlySavings = isDemoActive ? 1697 : Math.round(summary?.totalMonthlySavings ?? 0);
+  const annualSavings = isDemoActive ? 20364 : Math.round(summary?.totalAnnualSavings ?? 0);
   const zeroRiskCount = isDemoActive ? 4 : displayRecs.filter((r: any) => r.risk === 'safe').length;
 
   // ── AI-powered approve / ignore ───────────────────────────────────────────────
@@ -842,36 +847,102 @@ export default function CostOptimizationPage() {
                 onClick={handleApproveAllClick}
                 disabled={approvingAll || displayRecs.filter((r: any) => r.status === 'pending').length === 0}
                 style={{ display: 'flex', alignItems: 'center', gap: '8px', background: approvingAll || displayRecs.filter((r: any) => r.status === 'pending').length === 0 ? '#A78BFA' : '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: approvingAll || displayRecs.filter((r: any) => r.status === 'pending').length === 0 ? 'not-allowed' : 'pointer', opacity: approvingAll || displayRecs.filter((r: any) => r.status === 'pending').length === 0 ? 0.6 : 1 }}>
-                {approvingAll ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Approving...</> : <><Zap size={15} /> Approve all changes</>}
+                {approvingAll ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Approving...</> : <><Zap size={15} /> Approve {zeroRiskCount} zero-risk change{zeroRiskCount !== 1 ? 's' : ''} →</>}
               </button>
             </div>
           </div>
 
+          {/* Decision banner */}
+          {zeroRiskCount > 0 && (
+            <div style={{
+              background: '#fff',
+              border: '1px solid #E2E8F0',
+              borderLeft: '4px solid #059669',
+              borderRadius: '12px',
+              padding: '16px 20px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '32px', height: '32px',
+                  borderRadius: '8px',
+                  background: '#F0FDF4',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <CheckCircle size={15} style={{ color: '#059669' }} />
+                </div>
+                <div>
+                  <p style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', margin: '0 0 2px' }}>
+                    {zeroRiskCount} zero-risk change{zeroRiskCount !== 1 ? 's' : ''}{' '}ready — no downtime required
+                  </p>
+                  <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>
+                    Approve now to save ${monthlySavings.toLocaleString()}/mo · fully reversible · takes ~{zeroRiskCount * 2} minutes
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleApproveAllClick}
+                disabled={approvingAll}
+                style={{
+                  background: '#059669',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '9px 18px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: approvingAll ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                Approve {zeroRiskCount} changes →
+              </button>
+            </div>
+          )}
+
           {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
-            <div style={{ background: '#fff', borderRadius: '0 12px 12px 0', padding: '32px', border: '1px solid #E2E8F0', borderLeft: '2px solid #534AB7' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0', borderTop: '3px solid #059669' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Monthly Savings</p>
-              <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#3B6D11', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>${monthlySavings.toLocaleString()}</div>
+              <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>${monthlySavings.toLocaleString()}</div>
               <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>AI-identified waste</p>
             </div>
             <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Annual Projection</p>
-              <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#3B6D11', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>${annualSavings.toLocaleString()}</div>
-              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>If all recommendations applied</p>
+              <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>${annualSavings.toLocaleString()}</div>
+              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>${Math.round(annualSavings / 1000)}k/year if all applied</p>
             </div>
             <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Opportunities</p>
               <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{totalOpportunities}</div>
-              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>Ready to action</p>
+              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>{displayRecs.filter((r: any) => r.status === 'pending').length} pending · {zeroRiskCount} zero-risk</p>
             </div>
             <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Zero-Risk Changes</p>
               <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{zeroRiskCount}</div>
-              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>Safe to apply now</p>
+              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>No downtime · fully reversible</p>
             </div>
           </div>
 
           {/* Filter Tabs */}
+          {(() => {
+            const pendingCount = displayRecs.filter((r: any) => r.status === 'pending').length;
+            const approvedCount = displayRecs.filter((r: any) => r.status === 'applied' || r.status === 'approved').length;
+            const tabLabels: Record<string, string> = {
+              pending: `Pending (${pendingCount})`,
+              approved: `Approved (${approvedCount})`,
+              applied: 'Applied',
+              all: `All (${displayRecs.length})`,
+            };
+            return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
             <div style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px' }}>
               {(['pending', 'approved', 'applied', 'all'] as const).map(f => (
@@ -880,12 +951,12 @@ export default function CostOptimizationPage() {
                   onClick={() => { setFilter(f === 'all' ? '' : f); setShowAll(false); }}
                   style={{
                     padding: '7px 18px', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 600,
-                    border: 'none', cursor: 'pointer', transition: 'all 0.15s', textTransform: 'capitalize',
+                    border: 'none', cursor: 'pointer', transition: 'all 0.15s',
                     background: (f === 'all' ? filter === '' : filter === f) ? '#fff' : 'transparent',
                     color: (f === 'all' ? filter === '' : filter === f) ? '#0F172A' : '#64748B',
                     boxShadow: (f === 'all' ? filter === '' : filter === f) ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                   }}>
-                  {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+                  {tabLabels[f]}
                 </button>
               ))}
             </div>
@@ -895,6 +966,8 @@ export default function CostOptimizationPage() {
               </p>
             )}
           </div>
+            );
+          })()}
 
           {/* Recommendations */}
           {isLoading && !isDemoActive ? (
@@ -904,7 +977,7 @@ export default function CostOptimizationPage() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {(showAll ? filteredDisplayRecs : filteredDisplayRecs.slice(0, 5)).map((rec: any) => {
+              {(showAll ? filteredDisplayRecs : filteredDisplayRecs.slice(0, 5)).map((rec: any, index: number) => {
                 const isSafe = rec.risk === 'safe';
                 const isCaution = rec.risk === 'caution';
                 const riskLabel = isSafe ? 'Zero risk' : isCaution ? 'Low risk' : 'Med risk';
@@ -914,14 +987,52 @@ export default function CostOptimizationPage() {
                   ? { background: '#FAEEDA', color: '#633806', border: '0.5px solid #BA7517' }
                   : { background: '#FCEBEB', color: '#791F1F', border: '0.5px solid #F09595' };
 
+                const isTopPriority =
+                  index === 0 &&
+                  (filter === 'pending' || filter === '') &&
+                  rec.status === 'pending';
+
+                const compressedDesc = (() => {
+                  const d = rec.description ?? '';
+                  const first = d.split(/\.\s+/)[0];
+                  return first.length > 100
+                    ? first.slice(0, 97) + '...'
+                    : first + (first.endsWith('.') ? '' : '.');
+                })();
+
                 return (
                   <div key={rec.id}
                     onClick={() => setSelectedRecommendation(rec)}
-                    style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: '0.5px solid #e5e7eb', display: 'grid', gridTemplateColumns: '1fr auto', gap: '24px', alignItems: 'start', cursor: 'pointer' }}
+                    style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: isTopPriority ? '2px solid #E2E8F0' : '0.5px solid #e5e7eb', display: 'grid', gridTemplateColumns: '1fr auto', gap: '24px', alignItems: 'start', cursor: 'pointer' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#7C3AED'; (e.currentTarget as HTMLDivElement).style.background = '#FAFBFF'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#e5e7eb'; (e.currentTarget as HTMLDivElement).style.background = '#fff'; }}>
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = isTopPriority ? '#E2E8F0' : '#e5e7eb'; (e.currentTarget as HTMLDivElement).style.background = '#fff'; }}>
 
                     <div>
+                      {isTopPriority && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          marginBottom: '12px',
+                          paddingBottom: '12px',
+                          borderBottom: '1px solid #F1F5F9',
+                        }}>
+                          <span style={{
+                            fontSize: '0.62rem',
+                            fontWeight: 700,
+                            color: '#059669',
+                            background: '#F0FDF4',
+                            padding: '2px 8px',
+                            borderRadius: '100px',
+                            letterSpacing: '0.05em',
+                          }}>
+                            HIGHEST SAVINGS
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                            #1 of {filteredDisplayRecs.length} — act on this first
+                          </span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                         <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0F172A' }}>{rec.title}</span>
                         <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 8px', borderRadius: '100px', ...riskStyle }}>
@@ -931,8 +1042,8 @@ export default function CostOptimizationPage() {
                           {rec.service}
                         </span>
                       </div>
-                      <p style={{ fontSize: '0.82rem', color: '#475569', margin: '0 0 12px', lineHeight: 1.6 }}>
-                        {rec.description}
+                      <p style={{ fontSize: '0.82rem', color: '#475569', margin: '0 0 10px', lineHeight: 1.5 }}>
+                        {compressedDesc}
                       </p>
                       <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
                         {rec.estimatedTime && <span style={{ color: '#7C3AED', cursor: 'pointer' }} onMouseEnter={e => { (e.target as HTMLElement).style.textDecoration = 'underline'; (e.target as HTMLElement).style.color = '#5B21B6'; }} onMouseLeave={e => { (e.target as HTMLElement).style.textDecoration = 'none'; (e.target as HTMLElement).style.color = '#7C3AED'; }}>⏱ {rec.estimatedTime}</span>}
@@ -972,9 +1083,9 @@ export default function CostOptimizationPage() {
                             <button
                               onClick={() => isSafe ? handleApprove(rec.id) : setSelectedRecommendation(rec)}
                               disabled={actionInProgress.has(rec.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: '4px', background: isSafe ? '#16A34A' : 'transparent', color: isSafe ? '#fff' : '#7C3AED', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, border: isSafe ? 'none' : '1px solid #7C3AED', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1, transition: 'background 0.15s, color 0.15s' }}
-                              onMouseEnter={e => { if (!actionInProgress.has(rec.id)) { const el = e.currentTarget; el.style.background = isSafe ? '#15803D' : '#F5F3FF'; } }}
-                              onMouseLeave={e => { const el = e.currentTarget; el.style.background = isSafe ? '#16A34A' : 'transparent'; }}>
+                              style={{ display: 'flex', alignItems: 'center', gap: '4px', background: isSafe ? '#059669' : 'transparent', color: isSafe ? '#fff' : '#7C3AED', padding: '6px 14px', borderRadius: '7px', fontSize: '0.78rem', fontWeight: 700, border: isSafe ? 'none' : '1px solid #7C3AED', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1, transition: 'background 0.15s, color 0.15s' }}
+                              onMouseEnter={e => { if (!actionInProgress.has(rec.id)) { const el = e.currentTarget; el.style.background = isSafe ? '#047857' : '#F5F3FF'; } }}
+                              onMouseLeave={e => { const el = e.currentTarget; el.style.background = isSafe ? '#059669' : 'transparent'; }}>
                               {actionInProgress.has(rec.id) ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : null}
                               {isSafe ? 'Approve' : 'Review'}
                             </button>
@@ -982,14 +1093,14 @@ export default function CostOptimizationPage() {
                               <button
                                 onClick={() => handleCreateWorkflow(rec)}
                                 disabled={creatingWorkflowFor === rec.id}
-                                style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#F5F3FF', color: '#7C3AED', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, border: '1px solid #DDD6FE', cursor: 'pointer', opacity: creatingWorkflowFor === rec.id ? 0.6 : 1 }}>
+                                style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#F5F3FF', color: '#7C3AED', padding: '6px 14px', borderRadius: '7px', fontSize: '0.78rem', fontWeight: 600, border: '1px solid #DDD6FE', cursor: 'pointer', opacity: creatingWorkflowFor === rec.id ? 0.6 : 1 }}>
                                 <Wrench size={11} /> Workflow
                               </button>
                             )}
                             <button
                               onClick={() => handleDismiss(rec.id)}
                               disabled={actionInProgress.has(rec.id)}
-                              style={{ background: 'transparent', color: '#6B7280', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 500, border: '1px solid #D1D5DB', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1, transition: 'background 0.15s' }}
+                              style={{ background: 'transparent', color: '#6B7280', padding: '6px 12px', borderRadius: '7px', fontSize: '0.75rem', fontWeight: 500, border: '1px solid #D1D5DB', cursor: actionInProgress.has(rec.id) ? 'not-allowed' : 'pointer', opacity: actionInProgress.has(rec.id) ? 0.6 : 1, transition: 'background 0.15s' }}
                               onMouseEnter={e => { if (!actionInProgress.has(rec.id)) e.currentTarget.style.background = '#F9FAFB'; }}
                               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
                               Dismiss
