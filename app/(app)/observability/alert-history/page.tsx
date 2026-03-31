@@ -8,7 +8,7 @@ import { alertHistoryService } from '@/lib/services/alert-history.service'
 import { Alert, AlertFilters, DateRangeOption } from '@/lib/types'
 import {
   Sparkles, ArrowRight, RefreshCw,
-  Clock, Bell, TrendingDown, Filter
+  Clock, Bell, TrendingDown, Filter, Shield
 } from 'lucide-react'
 
 const DEMO_HISTORY = [
@@ -183,7 +183,7 @@ export default function AlertHistoryPage() {
             borderRadius: '14px',
             padding: '32px',
             border: '1px solid #E2E8F0',
-            borderLeft: hero ? '2px solid #534AB7' : '1px solid #E2E8F0',
+            borderLeft: hero ? '3px solid #7C3AED' : '1px solid #E2E8F0',
           }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569',
               textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
@@ -292,7 +292,7 @@ export default function AlertHistoryPage() {
             <div style={{ width: '48px', height: '48px', borderRadius: '12px',
               background: '#F5F3FF', display: 'flex', alignItems: 'center',
               justifyContent: 'center', margin: '0 auto 16px' }}>
-              <span style={{ fontSize: '1.4rem' }}>🛡️</span>
+              <Shield size={22} style={{ color: '#7C3AED' }} />
             </div>
             <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 8px' }}>
               No incidents recorded yet
