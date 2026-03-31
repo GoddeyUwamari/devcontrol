@@ -32,7 +32,8 @@ import { createCustomRulesRoutes } from './routes/custom-anomaly-rules.routes';
 import { createDoraBenchmarksRoutes } from './routes/dora-benchmarks.routes';
 import { createSAMLRoutes } from './routes/saml.routes';
 import { createRemediationRoutes } from './routes/remediation.routes';
-import { createComplianceRoutes } from './routes/compliance.routes';
+import { createComplianceRoutes } from './routes/compliance.routes'
+import observabilityRoutes from './routes/observability.routes';
 
 dotenv.config();
 
@@ -287,6 +288,11 @@ console.log('[Remediation] Routes registered');
 // SOC 2 / HIPAA Compliance Engine (Enterprise scan, read available to all)
 app.use('/api/compliance', createComplianceRoutes(pool));
 console.log('[Compliance] Routes registered');
+
+// Observability Readiness
+app.use('/api/observability', observabilityRoutes);
+app.use('/api/system', observabilityRoutes);
+console.log('[Observability] Routes registered');
 
 // 404 handler
 app.use(notFoundHandler);
