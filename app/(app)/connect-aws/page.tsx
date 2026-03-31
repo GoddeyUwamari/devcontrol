@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
 import { toast } from 'sonner'
 
@@ -24,6 +25,7 @@ const TRUST_POLICY = JSON.stringify(
 
 export default function ConnectAwsPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
 
   const [roleArn, setRoleArn] = useState('')
   const [nickname, setNickname] = useState('')
@@ -68,6 +70,7 @@ export default function ConnectAwsPage() {
         nickname: nickname.trim() || undefined,
       })
       setSuccess(true)
+      queryClient.invalidateQueries({ queryKey: ['aws-accounts'] })
       toast.success('AWS account connected successfully')
       setTimeout(() => router.push('/dashboard'), 1500)
     } catch (err: any) {

@@ -28,6 +28,19 @@ export function DemoModeBanner({ onExit }: DemoModeBannerProps) {
                 <h3 className="font-semibold text-lg">Demo Mode Active</h3>
                 <span className="text-sm text-purple-200">—</span>
                 <span className="text-sm text-purple-100">Viewing Sample Data</span>
+                <span style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 600,
+                  color: '#7C3AED',
+                  background: '#EEEDFE',
+                  border: '1px solid #AFA9EC',
+                  padding: '2px 8px',
+                  borderRadius: '100px',
+                  marginLeft: '8px',
+                  letterSpacing: '0.04em',
+                }}>
+                  Simulated Data
+                </span>
               </div>
             </div>
           </div>

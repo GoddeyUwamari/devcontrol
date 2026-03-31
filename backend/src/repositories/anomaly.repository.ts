@@ -22,7 +22,20 @@ export class AnomalyRepository {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       ON CONFLICT (organization_id, type, COALESCE(resource_id, ''), metric)
       WHERE status = 'active'
-      DO NOTHING
+      DO UPDATE SET
+        severity             = EXCLUDED.severity,
+        current_value        = EXCLUDED.current_value,
+        expected_value       = EXCLUDED.expected_value,
+        deviation            = EXCLUDED.deviation,
+        historical_average   = EXCLUDED.historical_average,
+        historical_std_dev   = EXCLUDED.historical_std_dev,
+        title                = EXCLUDED.title,
+        description          = EXCLUDED.description,
+        ai_explanation       = EXCLUDED.ai_explanation,
+        impact               = EXCLUDED.impact,
+        recommendation       = EXCLUDED.recommendation,
+        confidence           = EXCLUDED.confidence,
+        updated_at           = NOW()
     `;
 
     const client = await this.pool.connect();
