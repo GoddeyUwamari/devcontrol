@@ -123,6 +123,7 @@ export default function CostsPage() {
   const [nlLoading, setNlLoading] = useState(false)
   const [nlError, setNlError] = useState<string | null>(null)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
+  const [narrativeExpanded, setNarrativeExpanded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const demoMode = useDemoMode()
@@ -259,6 +260,26 @@ export default function CostsPage() {
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
               Synced 2 min ago
             </span>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              fontSize: '10px',
+              fontWeight: 500,
+              background: costAnomalyDetected && !isDemoActive ? '#FEF2F2' : '#F0FDF4',
+              border: `0.5px solid ${costAnomalyDetected && !isDemoActive ? '#FCA5A5' : '#BBF7D0'}`,
+              borderRadius: '100px',
+              padding: '3px 9px',
+              color: costAnomalyDetected && !isDemoActive ? '#DC2626' : '#059669',
+            }}>
+              <span style={{
+                width: '6px', height: '6px',
+                borderRadius: '50%',
+                background: costAnomalyDetected && !isDemoActive ? '#DC2626' : '#22C55E',
+                flexShrink: 0,
+              }}/>
+              {costAnomalyDetected && !isDemoActive ? '1 anomaly detected' : 'All systems clear'}
+            </span>
           </div>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Real-time AWS spend tracking, forecasting, and AI-powered savings recommendations
@@ -332,8 +353,8 @@ export default function CostsPage() {
         </div>
       )}
 
-      {/* 5 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      {/* 4 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
         {([
           {
             cardKey: 'savings',
@@ -346,7 +367,9 @@ export default function CostsPage() {
             href: '/cost-optimization' as string | null,
             cardBg: undefined as string | undefined,
             cardBorder: undefined as string | undefined,
-            valueColor: undefined as string | undefined,
+            cardBorderTop: '3px solid #059669' as string | undefined,
+            valueColor: '#059669' as string | undefined,
+            valueFontSize: '2.25rem' as string | undefined,
           },
           {
             cardKey: 'mtd',
@@ -359,7 +382,9 @@ export default function CostsPage() {
             href: '/invoices' as string | null,
             cardBg: undefined as string | undefined,
             cardBorder: undefined as string | undefined,
+            cardBorderTop: undefined as string | undefined,
             valueColor: undefined as string | undefined,
+            valueFontSize: undefined as string | undefined,
           },
           {
             cardKey: 'nextmonth',
@@ -372,7 +397,9 @@ export default function CostsPage() {
             href: '/forecast' as string | null,
             cardBg: undefined as string | undefined,
             cardBorder: undefined as string | undefined,
+            cardBorderTop: undefined as string | undefined,
             valueColor: undefined as string | undefined,
+            valueFontSize: undefined as string | undefined,
           },
           {
             cardKey: '90day',
@@ -385,28 +412,17 @@ export default function CostsPage() {
             href: '/forecast' as string | null,
             cardBg: undefined as string | undefined,
             cardBorder: undefined as string | undefined,
+            cardBorderTop: undefined as string | undefined,
             valueColor: undefined as string | undefined,
-          },
-          {
-            cardKey: 'health',
-            label: 'System Health',
-            value: costAnomalyDetected && !isDemoActive ? '1 anomaly' : 'All clear',
-            sub: costAnomalyDetected && !isDemoActive ? 'Cost anomaly detected' : 'No anomalies · 3 policies active · Alerts on',
-            subColor: costAnomalyDetected && !isDemoActive ? '#DC2626' : '#639922',
-            TrendIcon: costAnomalyDetected && !isDemoActive ? TrendingDown : TrendingUp,
-            trendColor: costAnomalyDetected && !isDemoActive ? '#DC2626' : '#639922',
-            href: '/observability/alerts' as string | null,
-            cardBg: costAnomalyDetected && !isDemoActive ? '#FEF2F2' : '#EAF3DE',
-            cardBorder: costAnomalyDetected && !isDemoActive ? '#FCA5A5' : '#639922',
-            valueColor: costAnomalyDetected && !isDemoActive ? '#DC2626' : '#639922',
+            valueFontSize: undefined as string | undefined,
           },
         ]).map((card: any) => {
-          const { cardKey, label, value, sub, subColor, TrendIcon, trendColor, href, cardBg, cardBorder, valueColor } = card
+          const { cardKey, label, value, sub, subColor, TrendIcon, trendColor, href, cardBg, cardBorder, cardBorderTop, valueColor, valueFontSize } = card
           const isHovered = hoveredCard === cardKey
           const content = (
             <div
               key={label}
-              style={{ background: cardBg ?? '#fff', borderRadius: '14px', padding: '32px', border: isHovered ? '0.5px solid #7C3AED' : `0.5px solid ${cardBorder ?? '#e5e7eb'}`, transition: 'border-color 0.15s ease', cursor: 'pointer' }}
+              style={{ background: cardBg ?? '#fff', borderRadius: '14px', padding: '32px', border: isHovered ? '0.5px solid #7C3AED' : `0.5px solid ${cardBorder ?? '#e5e7eb'}`, ...(cardBorderTop ? { borderTop: cardBorderTop } : {}), transition: 'border-color 0.15s ease', cursor: 'pointer' }}
               onMouseEnter={() => setHoveredCard(cardKey)}
               onMouseLeave={() => setHoveredCard(null)}
             >
@@ -414,7 +430,7 @@ export default function CostsPage() {
                 <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
                 <span style={{ fontSize: 14, color: '#9ca3af', lineHeight: 1 }}>›</span>
               </div>
-              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: valueColor ?? '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '10px' }}>{value}</div>
+              <div style={{ fontSize: valueFontSize ?? '1.875rem', fontWeight: 700, color: valueColor ?? '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '10px' }}>{value}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <TrendIcon size={13} style={{ color: trendColor }} />
                 <span style={{ fontSize: '0.78rem', color: subColor, lineHeight: 1.6 }}>{sub}</span>
@@ -560,7 +576,7 @@ export default function CostsPage() {
       </form>
 
       {/* SPEND TREND CHART — FIX 1: auto domain + smart tickFormatter */}
-      <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', marginBottom: '28px' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div>
             <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 4px', letterSpacing: '-0.01em' }}>Spend Trend</h2>
@@ -711,7 +727,10 @@ export default function CostsPage() {
                       tickLine={false}
                       tickFormatter={(v: number) => v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v}`}
                       width={56}
-                      domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]}
+                      domain={[
+                        (dataMin: number) => Math.max(0, Math.floor(dataMin * 0.85)),
+                        (dataMax: number) => Math.ceil(dataMax * 1.15),
+                      ]}
                     />
                     <Tooltip
                       contentStyle={{
@@ -730,6 +749,19 @@ export default function CostsPage() {
                     />
                     <Area type="monotone" dataKey="actual"   stroke="#0F172A" strokeWidth={2} fill="url(#actualGradient)"   dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
                     <Area type="monotone" dataKey="forecast" stroke="#7C3AED" strokeWidth={2} fill="url(#forecastGradient)" dot={false} connectNulls={false} strokeDasharray="6 3" activeDot={{ r: 4, fill: '#7C3AED', strokeWidth: 0 }} />
+                    {/* Baseline reference line */}
+                    <ReferenceLine
+                      y={mtdSpend}
+                      stroke="#94A3B8"
+                      strokeDasharray="4 3"
+                      strokeWidth={1}
+                      label={{
+                        value: `$${mtdSpend}/mo baseline`,
+                        position: 'insideTopRight',
+                        fontSize: 10,
+                        fill: '#94A3B8',
+                      } as any}
+                    />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -768,7 +800,7 @@ export default function CostsPage() {
       </div>
 
       {/* COST BY SERVICE + TOP SAVINGS */}
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '20px' }}>
 
         {/* Cost by Service */}
         <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
@@ -815,9 +847,9 @@ export default function CostsPage() {
         </div>
 
         {/* Top Savings Opportunities */}
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #BBF7D0', borderTop: '3px solid #059669' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-            <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: 0, letterSpacing: '-0.01em' }}>Top Savings</h2>
+            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#059669', margin: 0, letterSpacing: '-0.01em' }}>Top Savings</h2>
             <a href="/cost-optimization" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
               View all <ChevronRight size={13} />
             </a>
@@ -842,10 +874,10 @@ export default function CostsPage() {
           <div style={{ background: '#F0FDF4', borderRadius: '10px', padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Total Identified</p>
-              <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#059669', margin: 0, letterSpacing: '-0.02em' }}>${displaySavings.toLocaleString()}<span style={{ fontSize: '0.875rem', fontWeight: 500 }}>/mo</span></p>
+              <p style={{ fontSize: '1.75rem', fontWeight: 800, color: '#059669', margin: 0, letterSpacing: '-0.02em' }}>${displaySavings.toLocaleString()}<span style={{ fontSize: '0.875rem', fontWeight: 500 }}>/mo</span></p>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <a href="/cost-optimization" style={{ background: '#059669', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap', display: 'inline-block' }}>
+              <a href="/cost-optimization" style={{ background: '#059669', color: '#fff', padding: '10px 18px', borderRadius: '9px', fontSize: '0.875rem', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', display: 'inline-block' }}>
                 Approve all — safe changes only
               </a>
               <p style={{ fontSize: '0.7rem', color: '#059669', margin: '4px 0 0', fontWeight: 500 }}>No downtime risk · Fully reversible</p>
@@ -891,8 +923,8 @@ export default function CostsPage() {
       </div>
 
       {/* DEVCONTROL VALUE DELIVERED */}
-      <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '0.5px solid #E5E7EB', marginBottom: '28px' }}>
-        <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#534AB7', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 20px' }}>DevControl value delivered</p>
+      <div style={{ background: '#F9FAFB', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', marginBottom: '16px' }}>
+        <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 20px' }}>DevControl value delivered</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px' }}>
           {[
             { label: 'Saved this year',        value: '$23,400' },
@@ -903,7 +935,7 @@ export default function CostsPage() {
             { label: 'Policies running',        value: '3' },
             // TODO: wire to stats API in real mode
           ].map(({ label, value, note }) => (
-            <div key={label} style={{ background: '#F9FAFB', borderRadius: '10px', padding: '16px', border: '0.5px solid #E5E7EB' }}>
+            <div key={label} style={{ background: '#fff', borderRadius: '10px', padding: '16px', border: '1px solid #F1F5F9' }}>
               <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 6px' }}>{label}</p>
               <p style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</p>
               {note && <p style={{ fontSize: '0.7rem', color: '#059669', margin: '4px 0 0', fontWeight: 500 }}>{note}</p>}
@@ -923,10 +955,32 @@ export default function CostsPage() {
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>
                 AI Cost Narrative
               </p>
-              <p style={{ fontSize: '0.975rem', color: '#0F172A', lineHeight: 1.7, margin: '0 0 16px' }}>
-                {forecast.aiSummary}
+              <p style={{
+                fontSize: '0.875rem',
+                color: '#0F172A',
+                lineHeight: 1.7,
+                margin: '0 0 12px',
+              }}>
+                {narrativeExpanded
+                  ? forecast.aiSummary
+                  : forecast.aiSummary.split('.')[0] + '.'}
               </p>
-              {(forecast.aiRecommendations?.length ?? 0) > 0 && (
+              <button
+                onClick={() => setNarrativeExpanded(!narrativeExpanded)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  color: '#7C3AED',
+                  cursor: 'pointer',
+                  padding: 0,
+                  marginBottom: narrativeExpanded ? '16px' : 0,
+                }}
+              >
+                {narrativeExpanded ? 'Show less ↑' : 'Read full analysis →'}
+              </button>
+              {narrativeExpanded && (forecast.aiRecommendations?.length ?? 0) > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {forecast.aiRecommendations.slice(0, 3).map((rec, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
