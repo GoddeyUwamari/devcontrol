@@ -8,7 +8,8 @@ import { alertHistoryService } from '@/lib/services/alert-history.service'
 import { Alert, AlertFilters, DateRangeOption } from '@/lib/types'
 import {
   Sparkles, ArrowRight, RefreshCw,
-  Clock, Bell, TrendingDown, Filter, Shield
+  Clock, Bell, TrendingDown, Filter, Shield,
+  CheckCircle2, AlertTriangle, XCircle, ChevronRight,
 } from 'lucide-react'
 
 const DEMO_HISTORY = [
@@ -35,6 +36,28 @@ type LocalDateRange = '24h' | DateRangeOption
 
 function toServiceRange(r: LocalDateRange): DateRangeOption {
   return r === '24h' ? '7d' : r
+}
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL
+  || 'http://localhost:8080'
+
+async function fetchReadiness() {
+  const token =
+    typeof window !== 'undefined'
+      ? localStorage.getItem('accessToken')
+      : null
+  const res = await fetch(
+    `${API_URL}/api/observability/readiness`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }
+  )
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.success ? data.data : null
 }
 
 export default function AlertHistoryPage() {
@@ -68,6 +91,13 @@ export default function AlertHistoryPage() {
     refetchInterval: 60000,
   })
 
+  const { data: readinessData } = useQuery({
+    queryKey: ['observability-readiness'],
+    queryFn: fetchReadiness,
+    refetchInterval: 120000,
+    enabled: !isDemoActive,
+  })
+
   const displayAlerts: Alert[] = isDemoActive
     ? DEMO_HISTORY
     : (historyData?.data || [])
@@ -80,6 +110,56 @@ export default function AlertHistoryPage() {
         avgResolutionTime: statsData?.data?.avgResolutionTime || 0,
         mttr: statsData?.data?.avgResolutionTime || 0,
       }
+
+  const DEMO_READINESS = {
+    readiness_score: 72,
+    status: 'Partially Ready',
+    components: {
+      alert_coverage: {
+        score: 100,
+        label: 'Alert Coverage',
+        detail: '5 of 5 services have alerts',
+        status: 'good',
+      },
+      monitoring_coverage: {
+        score: 80,
+        label: 'Monitoring Coverage',
+        detail: '4 of 5 services reporting',
+        status: 'good',
+      },
+      critical_service_coverage: {
+        score: 100,
+        label: 'Critical Coverage',
+        detail: '3 of 3 critical services covered',
+        status: 'good',
+      },
+      signal_freshness: {
+        score: 80,
+        label: 'Signal Freshness',
+        detail: 'Metrics up to date',
+        status: 'good',
+      },
+      response_config: {
+        score: 0,
+        label: 'Response Setup',
+        detail: 'No alert destinations configured',
+        status: 'risk',
+      },
+    },
+    top_gaps: [
+      {
+        type: 'response_config',
+        severity: 'medium',
+        message: 'No on-call routing configured — team will not be notified of incidents',
+        action: 'Configure destinations',
+        actionPath: '/settings/notifications',
+      },
+    ],
+  }
+
+  const displayReadiness = isDemoActive
+    ? DEMO_READINESS
+    : readinessData
 
   const filteredAlerts = displayAlerts.filter((a: Alert) => {
     if (selectedSeverity !== 'all' && a.severity !== selectedSeverity) return false
@@ -133,7 +213,21 @@ export default function AlertHistoryPage() {
           <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
             {isDemoActive
               ? '4 critical alerts resolved in the last 72 hours. RDS Failover and S3 Bucket Policy Change had the fastest resolution times (8m and 3m). Average MTTR is 17 minutes — Elite tier performance. No recurring alert patterns detected.'
-              : 'Your system has no recorded incidents yet. Once monitoring is active, this panel will surface MTTR trends, recurring failure patterns, and engineering response performance — the metrics that separate reactive teams from reliable ones.'
+              : displayReadiness
+                ? (() => {
+                    const score = displayReadiness.readiness_score
+                    const gaps = displayReadiness.top_gaps
+                    const worstGap = gaps[0]
+
+                    if (score >= 85) {
+                      return 'System is fully prepared for incident detection. All services have alert coverage and metrics are reporting normally.'
+                    }
+                    if (score >= 65) {
+                      return `System is ${Math.round(score)}% ready for incident detection. ${worstGap ? worstGap.message + '. Fix this to improve response time.' : 'Minor gaps exist in coverage.'}`
+                    }
+                    return `Incident detection is at risk (${Math.round(score)}/100). ${worstGap ? worstGap.message : 'Multiple coverage gaps detected.'} Resolve gaps before the next incident occurs.`
+                  })()
+                : 'Connect your AWS account to begin incident readiness monitoring.'
             }
           </p>
         </div>
@@ -142,90 +236,459 @@ export default function AlertHistoryPage() {
         </a>
       </div>
 
-      {/* 4 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
-        {[
-          {
-            label: 'Total Resolved',
-            value: displayStats.total > 0 ? displayStats.total : null,
-            empty: 'No incidents yet',
-            sub: `Last ${dateRange}`,
-            valueColor: '#0F172A',
-            hero: false,
-          },
-          {
-            label: 'Critical Resolved',
-            value: displayStats.critical > 0 ? displayStats.critical : null,
-            empty: 'No incidents yet',
-            sub: 'High severity incidents',
-            valueColor: '#0F172A',
-            hero: false,
-          },
-          {
-            label: 'Avg Resolution',
-            value: displayStats.avgResolutionTime ? `${displayStats.avgResolutionTime}m` : null,
-            empty: 'Available after first incident',
-            sub: 'Mean time to resolve',
-            valueColor: '#0F172A',
-            hero: false,
-          },
-          {
-            label: 'MTTR',
-            value: displayStats.mttr ? `${displayStats.mttr}m` : null,
-            empty: 'Available after first incident',
-            sub: isDemoActive ? 'vs 45m industry avg · Elite' : 'Mean time to recovery',
-            valueColor: '#0F172A',
-            hero: true,
-          },
-        ].map(({ label, value, empty, sub, valueColor, hero }) => (
-          <div key={label} style={{
-            background: '#fff',
-            borderRadius: '14px',
-            padding: '32px',
-            border: '1px solid #E2E8F0',
-            borderLeft: hero ? '3px solid #7C3AED' : '1px solid #E2E8F0',
-          }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569',
-              textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-              {label}
-            </p>
-            {value !== null ? (
-              <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor,
-                letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
-                {value}
-              </div>
-            ) : (
-              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#9ca3af',
-                marginBottom: '8px', paddingTop: '6px' }}>
-                {empty}
-              </div>
-            )}
-            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {!isDemoActive && (
+      {/* READINESS BANNER */}
+      {displayReadiness && (
         <div style={{
-          background: '#F8FAFC',
-          borderRadius: '12px',
+          background: '#fff',
+          borderRadius: '14px',
           border: '1px solid #E2E8F0',
           padding: '24px 28px',
-          marginBottom: '28px',
+          marginBottom: '20px',
         }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569',
-            textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px' }}>
-            Why this matters
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '20px',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+            }}>
+              {/* Score circle */}
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background:
+                  displayReadiness.readiness_score >= 80
+                    ? '#F0FDF4'
+                    : displayReadiness.readiness_score >= 65
+                      ? '#FFFBEB'
+                      : '#FEF2F2',
+                border: `2px solid ${
+                  displayReadiness.readiness_score >= 80
+                    ? '#059669'
+                    : displayReadiness.readiness_score >= 65
+                      ? '#D97706'
+                      : '#DC2626'
+                }`,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <span style={{
+                  fontSize: '1.25rem',
+                  fontWeight: 700,
+                  color:
+                    displayReadiness.readiness_score >= 80
+                      ? '#059669'
+                      : displayReadiness.readiness_score >= 65
+                        ? '#D97706'
+                        : '#DC2626',
+                  lineHeight: 1,
+                }}>
+                  {displayReadiness.readiness_score}
+                </span>
+                <span style={{
+                  fontSize: '0.55rem',
+                  color: '#94A3B8',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}>
+                  /100
+                </span>
+              </div>
+              <div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '4px',
+                }}>
+                  <p style={{
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    color: '#0F172A',
+                    margin: 0,
+                  }}>
+                    Incident Readiness
+                  </p>
+                  <span style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    padding: '2px 9px',
+                    borderRadius: '100px',
+                    background:
+                      displayReadiness.readiness_score >= 80
+                        ? '#F0FDF4'
+                        : displayReadiness.readiness_score >= 65
+                          ? '#FFFBEB'
+                          : '#FEF2F2',
+                    color:
+                      displayReadiness.readiness_score >= 80
+                        ? '#059669'
+                        : displayReadiness.readiness_score >= 65
+                          ? '#D97706'
+                          : '#DC2626',
+                  }}>
+                    {displayReadiness.status}
+                  </span>
+                </div>
+                <p style={{
+                  fontSize: '0.82rem',
+                  color: '#475569',
+                  margin: 0,
+                }}>
+                  {displayReadiness.top_gaps.length === 0
+                    ? 'All systems ready — full incident detection coverage'
+                    : `${displayReadiness.top_gaps.length} gap${displayReadiness.top_gaps.length !== 1 ? 's' : ''} reducing detection capability`
+                  }
+                </p>
+                {displayReadiness.readiness_score < 80 && (
+                  <p style={{
+                    fontSize: '0.72rem',
+                    color:
+                      displayReadiness.readiness_score < 65
+                        ? '#DC2626' : '#D97706',
+                    margin: '4px 0 0',
+                    fontWeight: 500,
+                  }}>
+                    {displayReadiness.readiness_score < 65
+                      ? 'Incidents may go undetected — immediate action required'
+                      : 'Detection and response may be delayed for critical failures'
+                    }
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Top gap CTA */}
+            {displayReadiness.top_gaps[0] && (
+              <a
+                href={displayReadiness.top_gaps[0].actionPath}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: '#7C3AED',
+                  color: '#fff',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                  flexShrink: 0,
+                }}
+              >
+                {displayReadiness.top_gaps[0].action} →
+              </a>
+            )}
+          </div>
+
+          {/* Component cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(5, 1fr)',
+            gap: '12px',
+          }}>
+            {Object.values(displayReadiness.components).map((comp: any) => {
+              const cardSeverityStyle = (status: string) => {
+                if (status === 'risk') return {
+                  background: '#FEF2F2',
+                  border: '1px solid #FECACA',
+                  borderLeft: '3px solid #DC2626',
+                }
+                if (status === 'warning') return {
+                  background: '#FFFBEB',
+                  border: '1px solid #FDE68A',
+                  borderLeft: '3px solid #D97706',
+                }
+                return {
+                  background: '#F8FAFC',
+                  border: '1px solid #F1F5F9',
+                  borderLeft: '1px solid #F1F5F9',
+                }
+              }
+              return (
+              <div key={comp.label} style={{
+                borderRadius: '10px',
+                padding: '14px 16px',
+                ...cardSeverityStyle(comp.status),
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '8px',
+                }}>
+                  <p style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    color: '#475569',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.07em',
+                    margin: 0,
+                  }}>
+                    {comp.label}
+                  </p>
+                  {comp.status === 'good'
+                    ? <CheckCircle2 size={13} style={{ color: '#059669', flexShrink: 0 }} />
+                    : comp.status === 'warning'
+                      ? <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
+                      : <XCircle size={13} style={{ color: '#DC2626', flexShrink: 0 }} />
+                  }
+                </div>
+                <div style={{
+                  fontSize: '1.5rem',
+                  fontWeight: 700,
+                  color:
+                    comp.status === 'good'
+                      ? '#059669'
+                      : comp.status === 'warning'
+                        ? '#D97706'
+                        : '#DC2626',
+                  lineHeight: 1,
+                  marginBottom: '6px',
+                  letterSpacing: '-0.02em',
+                }}>
+                  {comp.score}%
+                </div>
+                <p style={{
+                  fontSize: '0.7rem',
+                  color: '#64748B',
+                  margin: 0,
+                  lineHeight: 1.4,
+                }}>
+                  {comp.detail}
+                </p>
+              </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 4 KPI CARDS — only in demo mode or when incidents exist */}
+      {(isDemoActive || displayStats.total > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+          {[
+            {
+              label: 'Total Resolved',
+              value: displayStats.total > 0 ? displayStats.total : null,
+              empty: 'No incidents yet',
+              sub: `Last ${dateRange}`,
+              valueColor: '#0F172A',
+              hero: false,
+            },
+            {
+              label: 'Critical Resolved',
+              value: displayStats.critical > 0 ? displayStats.critical : null,
+              empty: 'No incidents yet',
+              sub: 'High severity incidents',
+              valueColor: '#0F172A',
+              hero: false,
+            },
+            {
+              label: 'Avg Resolution',
+              value: displayStats.avgResolutionTime ? `${displayStats.avgResolutionTime}m` : null,
+              empty: 'Available after first incident',
+              sub: 'Mean time to resolve',
+              valueColor: '#0F172A',
+              hero: false,
+            },
+            {
+              label: 'MTTR',
+              value: displayStats.mttr ? `${displayStats.mttr}m` : null,
+              empty: 'Available after first incident',
+              sub: isDemoActive ? 'vs 45m industry avg · Elite' : 'Mean time to recovery',
+              valueColor: '#0F172A',
+              hero: true,
+            },
+          ].map(({ label, value, empty, sub, valueColor, hero }) => (
+            <div key={label} style={{
+              background: '#fff',
+              borderRadius: '14px',
+              padding: '32px',
+              border: '1px solid #E2E8F0',
+              borderLeft: hero ? '3px solid #7C3AED' : '1px solid #E2E8F0',
+            }}>
+              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569',
+                textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+                {label}
+              </p>
+              {value !== null ? (
+                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor,
+                  letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+                  {value}
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#9ca3af',
+                  marginBottom: '8px', paddingTop: '6px' }}>
+                  {empty}
+                </div>
+              )}
+              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* TOP PRIORITY ACTION */}
+      {displayReadiness && (
+        displayReadiness.components.response_config.score === 0 ||
+        displayReadiness.components.monitoring_coverage.score < 50
+      ) && (
+        <div style={{
+          background: '#FEF2F2',
+          border: '1px solid #FECACA',
+          borderLeft: '4px solid #DC2626',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+        }}>
+          <div>
+            <p style={{
+              fontSize: '0.62rem',
+              fontWeight: 700,
+              color: '#DC2626',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              margin: '0 0 4px',
+            }}>
+              Top Priority
+            </p>
+            <p style={{
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              color: '#0F172A',
+              margin: '0 0 2px',
+            }}>
+              {displayReadiness.components.response_config.score === 0
+                ? 'Configure alert destinations'
+                : 'Restore metric reporting for 2 services'
+              }
+            </p>
+            <p style={{
+              fontSize: '0.78rem',
+              color: '#DC2626',
+              margin: 0,
+            }}>
+              {displayReadiness.components.response_config.score === 0
+                ? 'Without this, your team will not be notified when incidents occur'
+                : 'Services are not sending metrics — incidents may go undetected'
+              }
+            </p>
+          </div>
+          <a
+            href={
+              displayReadiness.components.response_config.score === 0
+                ? '/settings/notifications'
+                : '/admin/monitoring'
+            }
+            style={{
+              background: '#DC2626',
+              color: '#fff',
+              padding: '9px 18px',
+              borderRadius: '8px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            Fix now →
+          </a>
+        </div>
+      )}
+
+      {/* TOP GAPS */}
+      {displayReadiness?.top_gaps?.length > 0 && (
+        <div style={{
+          background: '#fff',
+          borderRadius: '12px',
+          border: '1px solid #E2E8F0',
+          padding: '20px 24px',
+          marginBottom: '24px',
+        }}>
+          <p style={{
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            color: '#475569',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            margin: '0 0 14px',
+          }}>
+            Coverage Gaps
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-            {[
-              { label: 'MTTR', desc: 'How fast your team detects and resolves incidents. Elite teams resolve in under 1 hour.' },
-              { label: 'Incident frequency', desc: 'How often issues occur. Declining frequency signals system stability and engineering maturity.' },
-              { label: 'Resolution patterns', desc: 'Recurring alerts reveal systemic issues. Spotting patterns prevents the next incident before it happens.' },
-            ].map(({ label, desc }) => (
-              <div key={label}>
-                <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>→ {label}</p>
-                <p style={{ fontSize: '0.78rem', color: '#64748B', margin: 0, lineHeight: 1.6 }}>{desc}</p>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}>
+            {[...displayReadiness.top_gaps]
+              .sort((a: any, b: any) => {
+                const order = { high: 0, medium: 1, low: 2 }
+                return (
+                  (order[a.severity as keyof typeof order] ?? 2) -
+                  (order[b.severity as keyof typeof order] ?? 2)
+                )
+              })
+              .map((gap: any, i: number) => (
+              <div key={i} style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: '16px',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                background: gap.severity === 'high' ? '#FEF2F2' : '#FFFBEB',
+                border: `1px solid ${gap.severity === 'high' ? '#FECACA' : '#FDE68A'}`,
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                }}>
+                  <AlertTriangle
+                    size={14}
+                    style={{
+                      color: gap.severity === 'high' ? '#DC2626' : '#D97706',
+                      flexShrink: 0,
+                      marginTop: '1px',
+                    }}
+                  />
+                  <p style={{
+                    fontSize: '0.82rem',
+                    color: '#374151',
+                    margin: 0,
+                    lineHeight: 1.5,
+                  }}>
+                    {gap.message}
+                  </p>
+                </div>
+                <a
+                  href={gap.actionPath}
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: '#7C3AED',
+                    textDecoration: 'none',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                >
+                  {gap.action} →
+                </a>
               </div>
             ))}
           </div>
