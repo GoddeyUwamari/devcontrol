@@ -183,6 +183,89 @@ function getDeploymentStatusColor(status: DeploymentStatus): string {
   }
 }
 
+const INTELLIGENCE_API =
+  process.env.NEXT_PUBLIC_API_URL
+  || 'http://localhost:8080'
+
+async function fetchSystemIntelligence() {
+  const token =
+    typeof window !== 'undefined'
+      ? localStorage.getItem('accessToken')
+      : null
+  if (!token) return null
+  const res = await fetch(
+    `${INTELLIGENCE_API}/api/system/intelligence`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }
+  )
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.success ? data.data : null
+}
+
+const DEMO_INTELLIGENCE = {
+  system_score: 81,
+  status: 'Stable',
+  components: {
+    cost: {
+      score: 72,
+      label: 'Cost Efficiency',
+      detail: '$1,922/mo savings identified · 7 opportunities',
+      severity: 'medium',
+      status: 'warning',
+    },
+    security: {
+      score: 87,
+      label: 'Security Posture',
+      detail: 'Score 87/100 · No critical issues',
+      severity: 'healthy',
+      status: 'good',
+    },
+    observability: {
+      score: 72,
+      label: 'Observability',
+      detail: 'Partially Ready · 1 gap identified',
+      severity: 'medium',
+      status: 'warning',
+    },
+  },
+  top_action: {
+    message: '$1,922/mo savings identified · 7 opportunities',
+    consequence: 'Cost inefficiency is reducing system score and budget runway',
+    path: '/costs/cost-optimization',
+    severity: 'medium',
+  },
+  top_drivers: [
+    {
+      id: 'cost-efficiency',
+      type: 'cost',
+      severity: 'medium',
+      message: '$1,922/mo savings identified · 7 opportunities',
+      consequence: 'Cost inefficiency is reducing system score and budget runway',
+      impact_score: 8,
+      action: {
+        label: 'Review savings',
+        path: '/costs/cost-optimization',
+      },
+    },
+    {
+      id: 'observability-readiness',
+      type: 'observability',
+      severity: 'medium',
+      message: 'Alert destinations not configured',
+      consequence: 'Incidents will not notify your team',
+      impact_score: 8,
+      action: {
+        label: 'Fix coverage gaps',
+        path: '/observability/alert-history',
+      },
+    },
+  ],
+}
+
 // Shared card style
 const card: React.CSSProperties = {
   background: '#FFFFFF',
@@ -307,6 +390,7 @@ export default function DashboardPage() {
     retry: false,
     enabled: !demoMode && !salesDemoMode,
   })
+
 
   // WebSocket event listeners for real-time updates
   useEffect(() => {
@@ -448,6 +532,21 @@ export default function DashboardPage() {
   const hasPartialData = !isDemoActive && !!stats && stats.monthlyAwsCost === 0 && stats.totalServices > 0
   const isBillingSyncing = !isDemoActive && isAwsConnected && !statsLoading && !!stats && stats.monthlyAwsCost === 0 && stats.totalServices === 0
 
+  const {
+    data: systemIntelligence,
+  } = useQuery({
+    queryKey: ['system-intelligence'],
+    queryFn: fetchSystemIntelligence,
+    refetchInterval: 120000,
+    staleTime: 60000,
+    enabled: !isDemoActive && isAwsConnected,
+  })
+
+  const displayIntelligence =
+    isDemoActive
+      ? DEMO_INTELLIGENCE
+      : systemIntelligence ?? null
+
   // FIX 6 — Semantic delta color helpers
   const costDeltaColor = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706';
   const CostDeltaIcon = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus;
@@ -549,7 +648,7 @@ export default function DashboardPage() {
               letterSpacing: '-0.02em',
               lineHeight: 1.3,
             }}>
-              Detect and Fix AWS Waste, Security Risks, and Performance Bottlenecks — in Minutes
+              Your AWS Command Center for Cost, Risk, and System Intelligence
             </h1>
           </div>
           <p style={{
@@ -814,7 +913,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Card 4 — Cloud Health Score */}
+              {/* Card 4 — System Intelligence */}
               <div style={{
                 background: '#FFFFFF', borderRadius: '16px',
                 padding: '32px', border: '1px solid #F1F5F9',
@@ -823,45 +922,104 @@ export default function DashboardPage() {
                   fontSize: '0.7rem', fontWeight: 700,
                   color: '#475569', textTransform: 'uppercase',
                   letterSpacing: '0.1em', margin: '0 0 16px',
-                }}>Cloud Health Score</p>
+                }}>System Intelligence</p>
                 <div style={{
                   fontSize: '2.5rem', fontWeight: 700,
                   color: '#0F172A', letterSpacing: '-0.03em',
                   lineHeight: 1, marginBottom: '12px',
                 }}>
-                  {cloudHealthScore || '—'}
+                  {displayIntelligence?.system_score
+                    ?? cloudHealthScore
+                    ?? '—'}
                   <span style={{
                     fontSize: '1.25rem', color: '#64748B',
                     fontWeight: 400,
                   }}>/100</span>
                 </div>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                }}>
-                  {cloudHealthScore && cloudHealthScore > 0 ? (
-                    <span style={{
-                      fontSize: '0.8rem',
-                      color: cloudHealthScore >= 80
-                        ? '#059669'
-                        : cloudHealthScore >= 60
-                        ? '#D97706' : '#DC2626',
-                      fontWeight: 600,
-                    }}>
-                      {cloudHealthScore >= 80
-                        ? 'Stable'
-                        : cloudHealthScore >= 60
-                        ? 'Fair'
-                        : 'Improving as data syncs'}
-                    </span>
-                  ) : (
-                    <span style={{
-                      fontSize: '0.8rem',
-                      color: '#94A3B8',
-                      fontWeight: 500,
-                    }}>
-                      Updating as data syncs
-                    </span>
-                  )}
+                <p style={{ fontSize: '0.65rem', color: '#94A3B8', margin: '0 0 10px', lineHeight: 1.5 }}>
+                  {displayIntelligence?.status ?? 'Computing...'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {displayIntelligence
+                    ? Object.values(
+                        displayIntelligence.components
+                      ).map((comp: any) => (
+                        <div key={comp.label} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginBottom: '2px',
+                        }}>
+                          <div style={{
+                            flex: 1, height: '4px',
+                            background: '#F1F5F9',
+                            borderRadius: '2px',
+                          }}>
+                            <div style={{
+                              width: `${comp.score}%`,
+                              height: '100%',
+                              background:
+                                comp.score >= 80
+                                  ? '#059669'
+                                  : comp.score >= 60
+                                    ? '#D97706'
+                                    : '#DC2626',
+                              borderRadius: '2px',
+                              transition: 'width 0.3s ease',
+                            }} />
+                          </div>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            color: '#64748B',
+                            width: '76px',
+                            textAlign: 'right',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}>
+                            {comp.label.split(' ')[0]}
+                            {' '}{comp.score}
+                          </span>
+                        </div>
+                      ))
+                    : [{label:'Cost',score:costScore},
+                       {label:'Security',score:securityScore_health},
+                       {label:'Reliability',score:reliabilityScore}
+                      ].map(({label, score}) => (
+                        <div key={label} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginBottom: '2px',
+                        }}>
+                          <div style={{
+                            flex: 1, height: '4px',
+                            background: '#F1F5F9',
+                            borderRadius: '2px',
+                          }}>
+                            <div style={{
+                              width: `${score ?? 0}%`,
+                              height: '100%',
+                              background:
+                                (score??0) >= 80
+                                  ? '#059669'
+                                  : (score??0) >= 60
+                                    ? '#D97706'
+                                    : '#DC2626',
+                              borderRadius: '2px',
+                            }} />
+                          </div>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            color: '#64748B',
+                            width: '76px',
+                            textAlign: 'right',
+                            flexShrink: 0,
+                          }}>
+                            {label} {score ?? '—'}
+                          </span>
+                        </div>
+                      ))
+                  }
                 </div>
               </div>
             </div>
@@ -987,31 +1145,99 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Cloud Health Score */}
+              {/* System Intelligence */}
               <div style={card}>
-                <p style={overline}>Cloud Health Score</p>
+                <p style={overline}>System Intelligence</p>
                 <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-                  {cloudHealthScore || '—'}
+                  {displayIntelligence?.system_score
+                    ?? cloudHealthScore
+                    ?? '—'}
                   <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
                 </div>
                 <p style={{ fontSize: '0.65rem', color: '#94A3B8', margin: '0 0 10px', lineHeight: 1.5 }}>
-                  Cost + Security + Reliability ÷ 3
+                  {displayIntelligence?.status ?? 'Computing...'}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {[
-                    { label: 'Cost', score: costScore },
-                    { label: 'Security', score: securityScore_health },
-                    { label: 'Reliability', score: reliabilityScore },
-                  ].map(({ label, score }) => (
-                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
-                        <div style={{ width: `${score ?? 0}%`, height: '100%', background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626', borderRadius: '2px' }} />
-                      </div>
-                      <span style={{ fontSize: '0.7rem', color: '#64748B', width: '60px', textAlign: 'right' }}>
-                        {label} {score ?? '—'}
-                      </span>
-                    </div>
-                  ))}
+                  {displayIntelligence
+                    ? Object.values(
+                        displayIntelligence.components
+                      ).map((comp: any) => (
+                        <div key={comp.label} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginBottom: '2px',
+                        }}>
+                          <div style={{
+                            flex: 1, height: '4px',
+                            background: '#F1F5F9',
+                            borderRadius: '2px',
+                          }}>
+                            <div style={{
+                              width: `${comp.score}%`,
+                              height: '100%',
+                              background:
+                                comp.score >= 80
+                                  ? '#059669'
+                                  : comp.score >= 60
+                                    ? '#D97706'
+                                    : '#DC2626',
+                              borderRadius: '2px',
+                              transition: 'width 0.3s ease',
+                            }} />
+                          </div>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            color: '#64748B',
+                            width: '76px',
+                            textAlign: 'right',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}>
+                            {comp.label.split(' ')[0]}
+                            {' '}{comp.score}
+                          </span>
+                        </div>
+                      ))
+                    : [{label:'Cost',score:costScore},
+                       {label:'Security',score:securityScore_health},
+                       {label:'Reliability',score:reliabilityScore}
+                      ].map(({label, score}) => (
+                        <div key={label} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginBottom: '2px',
+                        }}>
+                          <div style={{
+                            flex: 1, height: '4px',
+                            background: '#F1F5F9',
+                            borderRadius: '2px',
+                          }}>
+                            <div style={{
+                              width: `${score ?? 0}%`,
+                              height: '100%',
+                              background:
+                                (score??0) >= 80
+                                  ? '#059669'
+                                  : (score??0) >= 60
+                                    ? '#D97706'
+                                    : '#DC2626',
+                              borderRadius: '2px',
+                            }} />
+                          </div>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            color: '#64748B',
+                            width: '76px',
+                            textAlign: 'right',
+                            flexShrink: 0,
+                          }}>
+                            {label} {score ?? '—'}
+                          </span>
+                        </div>
+                      ))
+                  }
                 </div>
               </div>
             </div>
@@ -1043,31 +1269,99 @@ export default function DashboardPage() {
                   </span>
                 </div>
               </div>
-              {/* Cloud Health Score — real data */}
+              {/* System Intelligence — real data */}
               <div style={card}>
-                <p style={overline}>Cloud Health Score</p>
+                <p style={overline}>System Intelligence</p>
                 <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
-                  {cloudHealthScore || '—'}
+                  {displayIntelligence?.system_score
+                    ?? cloudHealthScore
+                    ?? '—'}
                   <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
                 </div>
                 <p style={{ fontSize: '0.65rem', color: '#94A3B8', margin: '0 0 10px', lineHeight: 1.5 }}>
-                  Cost + Security + Reliability ÷ 3
+                  {displayIntelligence?.status ?? 'Computing...'}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {[
-                    { label: 'Cost', score: costScore },
-                    { label: 'Security', score: securityScore_health },
-                    { label: 'Reliability', score: reliabilityScore },
-                  ].map(({ label, score }) => (
-                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
-                        <div style={{ width: `${score ?? 0}%`, height: '100%', background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626', borderRadius: '2px' }} />
-                      </div>
-                      <span style={{ fontSize: '0.7rem', color: '#64748B', width: '60px', textAlign: 'right' }}>
-                        {label} {score ?? '—'}
-                      </span>
-                    </div>
-                  ))}
+                  {displayIntelligence
+                    ? Object.values(
+                        displayIntelligence.components
+                      ).map((comp: any) => (
+                        <div key={comp.label} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginBottom: '2px',
+                        }}>
+                          <div style={{
+                            flex: 1, height: '4px',
+                            background: '#F1F5F9',
+                            borderRadius: '2px',
+                          }}>
+                            <div style={{
+                              width: `${comp.score}%`,
+                              height: '100%',
+                              background:
+                                comp.score >= 80
+                                  ? '#059669'
+                                  : comp.score >= 60
+                                    ? '#D97706'
+                                    : '#DC2626',
+                              borderRadius: '2px',
+                              transition: 'width 0.3s ease',
+                            }} />
+                          </div>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            color: '#64748B',
+                            width: '76px',
+                            textAlign: 'right',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}>
+                            {comp.label.split(' ')[0]}
+                            {' '}{comp.score}
+                          </span>
+                        </div>
+                      ))
+                    : [{label:'Cost',score:costScore},
+                       {label:'Security',score:securityScore_health},
+                       {label:'Reliability',score:reliabilityScore}
+                      ].map(({label, score}) => (
+                        <div key={label} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginBottom: '2px',
+                        }}>
+                          <div style={{
+                            flex: 1, height: '4px',
+                            background: '#F1F5F9',
+                            borderRadius: '2px',
+                          }}>
+                            <div style={{
+                              width: `${score ?? 0}%`,
+                              height: '100%',
+                              background:
+                                (score??0) >= 80
+                                  ? '#059669'
+                                  : (score??0) >= 60
+                                    ? '#D97706'
+                                    : '#DC2626',
+                              borderRadius: '2px',
+                            }} />
+                          </div>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            color: '#64748B',
+                            width: '76px',
+                            textAlign: 'right',
+                            flexShrink: 0,
+                          }}>
+                            {label} {score ?? '—'}
+                          </span>
+                        </div>
+                      ))
+                  }
                 </div>
               </div>
             </div>
@@ -1292,6 +1586,229 @@ export default function DashboardPage() {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* ── SYSTEM INTELLIGENCE BLOCK ── */}
+      {displayIntelligence &&
+        isAwsConnected &&
+        !isBillingSyncing &&
+        !hasPartialData && (
+        <div style={{
+          background: '#fff',
+          borderRadius: '14px',
+          border: '1px solid #E2E8F0',
+          padding: '20px 24px',
+          marginBottom: '24px',
+        }}>
+
+          {/* Top Priority Action */}
+          {displayIntelligence.top_action && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              padding: '14px 16px',
+              background:
+                displayIntelligence
+                  .top_action.severity
+                  === 'critical'
+                  ? '#FEF2F2'
+                  : '#FFFBEB',
+              border: `1px solid ${
+                displayIntelligence
+                  .top_action.severity
+                  === 'critical'
+                  ? '#FECACA'
+                  : '#FDE68A'
+              }`,
+              borderLeft: `4px solid ${
+                displayIntelligence
+                  .top_action.severity
+                  === 'critical'
+                  ? '#DC2626'
+                  : '#D97706'
+              }`,
+              borderRadius: '10px',
+              marginBottom: '16px',
+            }}>
+              <div>
+                <p style={{
+                  fontSize: '0.62rem',
+                  fontWeight: 700,
+                  color:
+                    displayIntelligence
+                      .top_action.severity
+                      === 'critical'
+                      ? '#DC2626'
+                      : '#D97706',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  margin: '0 0 3px',
+                }}>
+                  Top Priority
+                </p>
+                <p style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: '#0F172A',
+                  margin: '0 0 2px',
+                }}>
+                  {displayIntelligence
+                    .top_action.message}
+                </p>
+                <p style={{
+                  fontSize: '0.75rem',
+                  color:
+                    displayIntelligence
+                      .top_action.severity
+                      === 'critical'
+                      ? '#DC2626'
+                      : '#D97706',
+                  margin: 0,
+                  fontWeight: 500,
+                }}>
+                  {displayIntelligence
+                    .top_action.consequence}
+                </p>
+              </div>
+              <a
+                href={displayIntelligence
+                  .top_action.path}
+                style={{
+                  background:
+                    displayIntelligence
+                      .top_action.severity
+                      === 'critical'
+                      ? '#DC2626'
+                      : '#7C3AED',
+                  color: '#fff',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                Fix now →
+              </a>
+            </div>
+          )}
+
+          {/* Ranked drivers list */}
+          {displayIntelligence
+            .top_drivers?.length > 0 && (
+            <div>
+              <p style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                color: '#94A3B8',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                margin: '0 0 10px',
+              }}>
+                System Score Drivers
+              </p>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}>
+                {displayIntelligence
+                  .top_drivers
+                  .map((driver: any,
+                    i: number) => (
+                  <div
+                    key={driver.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                      padding: '10px 14px',
+                      background: '#F8FAFC',
+                      borderRadius: '8px',
+                      border: '1px solid #F1F5F9',
+                    }}
+                  >
+                    {/* Rank */}
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      color: '#94A3B8',
+                      width: '16px',
+                      flexShrink: 0,
+                    }}>
+                      #{i + 1}
+                    </span>
+
+                    {/* Severity dot */}
+                    <div style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      background:
+                        driver.severity
+                          === 'critical'
+                          ? '#DC2626'
+                          : driver.severity
+                            === 'high'
+                            ? '#D97706'
+                            : '#F59E0B',
+                    }} />
+
+                    {/* Content */}
+                    <div style={{ flex: 1 }}>
+                      <p style={{
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        color: '#0F172A',
+                        margin: '0 0 1px',
+                      }}>
+                        {driver.message}
+                      </p>
+                      <p style={{
+                        fontSize: '0.72rem',
+                        color: '#64748B',
+                        margin: 0,
+                      }}>
+                        {driver.consequence}
+                      </p>
+                    </div>
+
+                    {/* Impact */}
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      color: '#059669',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                    }}>
+                      +{driver.impact_score}pts
+                    </span>
+
+                    {/* Action */}
+                    <a
+                      href={driver.action.path}
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        color: '#7C3AED',
+                        textDecoration: 'none',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {driver.action.label} →
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
