@@ -963,7 +963,7 @@ export default function CostsPage() {
               }}>
                 {narrativeExpanded
                   ? forecast.aiSummary
-                  : forecast.aiSummary.split('.')[0] + '.'}
+                  : forecast.aiSummary.split(/\.\s+/)[0] + '.'}
               </p>
               <button
                 onClick={() => setNarrativeExpanded(!narrativeExpanded)}

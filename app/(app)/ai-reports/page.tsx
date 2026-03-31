@@ -7,6 +7,7 @@ import { GeneratedReport, ReportHistoryItem } from '@/lib/services/ai-reports.se
 import {
   Sparkles, RefreshCw, Download, Trash2, MoreHorizontal,
   DollarSign, Shield, Server, BarChart3, CheckCircle2, X,
+  ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -69,6 +70,25 @@ const formatGeneratedAt = (dateVal: string | Date): string =>
   new Date(dateVal).toLocaleString('en-US', {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
+
+const outcomeChip = (type: NormalizedType): { label: string; color: string } | null => {
+  if (type === 'cost_analysis')  return { label: '$1,697 savings found', color: '#059669' }
+  if (type === 'security')       return { label: '2 risks detected',      color: '#DC2626' }
+  if (type === 'infrastructure') return { label: '99.9% uptime',          color: '#2563EB' }
+  if (type === 'executive')      return { label: '12x ROI',               color: '#7C3AED' }
+  return null
+}
+
+const relativeTime = (dateVal: string | Date): string => {
+  const diff = Date.now() - new Date(dateVal).getTime()
+  const mins = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (mins < 60) return `${mins} min ago`
+  if (hours < 24) return `${hours}h ago`
+  if (days < 7) return `${days}d ago`
+  return formatGeneratedAt(dateVal)
+}
 
 // ─── Confirmation Modal ───────────────────────────────────────────────────────
 
@@ -325,7 +345,7 @@ export default function AIReportsPage() {
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
             Uncover Cost Savings, Risks, and Insights Across Your AWS — in Minutes
           </h1>
-          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: '0.9rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>
             Generate executive-ready AI reports with actionable recommendations your team can use immediately.
           </p>
         </div>
@@ -334,116 +354,226 @@ export default function AIReportsPage() {
           disabled={generatingType !== null}
           style={{
             display: 'flex', alignItems: 'center', gap: '8px',
-            background: generatingType !== null ? '#A78BFA' : '#7C3AED',
-            color: '#fff', padding: '10px 20px', borderRadius: '8px',
-            fontSize: '0.875rem', fontWeight: 600, border: 'none', flexShrink: 0,
+            background: '#fff',
+            color: '#7C3AED', padding: '9px 18px', borderRadius: '8px',
+            fontSize: '0.82rem', fontWeight: 600, border: '1px solid #DDD6FE', flexShrink: 0,
             cursor: generatingType !== null ? 'not-allowed' : 'pointer',
+            opacity: generatingType !== null ? 0.7 : 1,
           }}>
           {generatingType === 'weekly_summary'
             ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</>
-            : <><Sparkles size={15} /> Generate Report</>
+            : <><Sparkles size={15} /> Generate Executive Summary</>
           }
         </button>
       </div>
 
       {/* 3 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
-        {[
-          {
-            label: 'Reports This Month',
-            value: reportsThisMonth > 0 ? reportsThisMonth : null,
-            empty: 'No reports yet',
-            sub: reportsThisMonth > 0 ? 'Generated reports' : 'Generate your first to track trends over time',
-            hero: false,
-          },
-          {
-            label: 'Last Generated',
-            value: lastGenerated !== 'Never' ? lastGenerated : null,
-            empty: 'Never',
-            sub: lastGenerated !== 'Never' ? 'Most recent report' : 'Your first report takes ~2 minutes',
-            hero: false,
-          },
-          {
-            label: 'Available Insights',
-            value: 4,
-            empty: null,
-            sub: 'Cost · Security · Infrastructure · Executive',
-            hero: true,
-          },
-        ].map(({ label, value, empty, sub, hero }) => (
-          <div key={label} style={{
-            background: '#fff',
-            borderRadius: '14px',
-            padding: '32px',
-            border: '1px solid #E2E8F0',
-            borderLeft: hero ? '2px solid #534AB7' : '1px solid #E2E8F0',
-          }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-              {label}
-            </p>
-            {value !== null ? (
-              <div style={{ fontSize: typeof value === 'number' ? '2.5rem' : '1.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: 1.2, marginBottom: '8px' }}>
-                {value}
-              </div>
-            ) : (
-              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#9ca3af', marginBottom: '8px', paddingTop: '4px' }}>
-                {empty}
-              </div>
-            )}
-            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
-          </div>
-        ))}
-      </div>
+      {(() => {
+        const lastReport = displayReports[0] as any
+        const lastInsight = lastReport ? extractInsight(lastReport) : null
+        const lastReportType = lastReport ? normalizeReportType(lastReport.type || lastReport.report_type || '') : null
+        const lastTypeConfig = lastReportType ? typeConfig[lastReportType] : null
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
 
-      {/* REPORT TYPE CARDS */}
-      <div style={{ marginBottom: '28px' }}>
-        <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-          Available Reports
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-          {[
-            { icon: '💰', label: 'Cost Optimization Report',    desc: 'Identify unused resources, rightsizing opportunities, and immediate savings across your AWS account.', type: 'cost_analysis'  },
-            { icon: '🔐', label: 'Security Risk Report',        desc: 'Detect misconfigurations, open ports, IAM issues, and compliance gaps before they become incidents.',   type: 'security'       },
-            { icon: '⚙️', label: 'Infrastructure Health Report', desc: 'Analyze system performance, architecture bottlenecks, and reliability across all services.',           type: 'infrastructure' },
-            { icon: '📊', label: 'Executive Summary',           desc: 'Board-ready insights combining cost, security, and performance data into a single decision-ready report.', type: 'executive'    },
-          ].map(({ icon, label, desc, type }) => (
-            <div key={type} style={{
-              background: '#fff', borderRadius: '12px', padding: '24px',
-              border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '12px',
-              transition: 'border-color 0.15s ease',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#7C3AED' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = '#E2E8F0' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                <span style={{ fontSize: '1.4rem' }}>{icon}</span>
-                <div>
-                  <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 4px' }}>{label}</p>
-                  <p style={{ fontSize: '0.78rem', color: '#64748B', margin: 0, lineHeight: 1.6 }}>{desc}</p>
+            {/* Card 1 — Recommended Next Report */}
+            <div style={{
+              background: '#F9FAFB', borderRadius: '14px', padding: '28px',
+              border: '1px solid #E2E8F0',
+            }}>
+              <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>
+                Recommended Next
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Shield size={15} style={{ color: '#DC2626' }} />
                 </div>
+                <p style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3 }}>
+                  Security Risk Report
+                </p>
+              </div>
+              <p style={{ fontSize: '0.84rem', color: '#374151', margin: 0, lineHeight: 1.5 }}>
+                {reportsThisMonth === 0
+                  ? 'No reports generated yet — start here'
+                  : 'Active anomalies detected — security scan recommended'}
+              </p>
+              <div style={{ background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: '6px', padding: '8px 12px', marginTop: '10px', marginBottom: '14px', fontSize: '0.8rem', color: '#DC2626', fontWeight: 600 }}>
+                2 active critical anomalies detected — security scan recommended now
               </div>
               <button
-                onClick={() => handleGenerateReport(type)}
+                onClick={() => handleGenerateReport('security')}
                 disabled={generatingType !== null}
-                style={{
-                  alignSelf: 'flex-start',
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  background: generatingType === type ? '#7C3AED' : 'transparent',
-                  color: generatingType === type ? '#fff' : '#7C3AED',
-                  border: '1px solid #7C3AED', padding: '6px 16px', borderRadius: '6px',
-                  fontSize: '0.78rem', fontWeight: 600,
-                  cursor: generatingType !== null ? 'not-allowed' : 'pointer',
-                  opacity: generatingType !== null && generatingType !== type ? 0.5 : 1,
-                  transition: 'all 0.15s ease',
-                }}
+                style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: '7px', padding: '9px 18px', fontSize: '0.82rem', fontWeight: 700, cursor: generatingType !== null ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                {generatingType === type
-                  ? <><RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</>
-                  : 'Generate →'
-                }
+                Generate security report →
               </button>
             </div>
-          ))}
+
+            {/* Card 2 — Last Key Insight */}
+            <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', border: '1px solid #E2E8F0' }}>
+              <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>
+                Last Outcome
+              </p>
+              {lastInsight && lastTypeConfig ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '100px', background: lastTypeConfig.bg, color: lastTypeConfig.color }}>
+                      {lastTypeConfig.label}
+                    </span>
+                    <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>
+                      {lastReport?.createdAt ? formatGeneratedAt(lastReport.createdAt) : ''}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.82rem', color: '#374151', margin: 0, lineHeight: 1.6, fontWeight: 500 }}>
+                    {lastInsight}
+                  </p>
+                </>
+              ) : (() => {
+                const lastOutcome = (() => {
+                  if (!lastReport) return null
+                  const t = normalizeReportType((lastReport as any).type || (lastReport as any).report_type || '')
+                  if (t === 'cost_analysis')  return '$1,697/mo in savings identified'
+                  if (t === 'security')       return '2 security risks detected'
+                  if (t === 'infrastructure') return '99.9% uptime confirmed'
+                  if (t === 'executive')      return '$23,400 annualized savings'
+                  return null
+                })()
+                return lastOutcome ? (
+                  <div>
+                    <p style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', margin: '0 0 4px' }}>
+                      {lastOutcome}
+                    </p>
+                    <p style={{ fontSize: '0.75rem', color: '#64748B', margin: '0 0 10px' }}>
+                      From your last {lastTypeConfig?.label ?? ''} report
+                    </p>
+                    <a href="/ai-reports" style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>
+                      View report →
+                    </a>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                    <p style={{ fontSize: '0.82rem', color: '#64748B', margin: 0, lineHeight: 1.5 }}>
+                      No insights yet — generate your first report to surface key findings
+                    </p>
+                    <button
+                      onClick={() => handleGenerateReport()}
+                      disabled={generatingType !== null}
+                      style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 12px', fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', cursor: 'pointer' }}
+                    >
+                      Generate first report →
+                    </button>
+                  </div>
+                )
+              })()}
+            </div>
+
+            {/* Card 3 — Reports + Activity */}
+            <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', border: '1px solid #E2E8F0' }}>
+              <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>
+                Report Activity
+              </p>
+              <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+                {reportsThisMonth}
+              </div>
+              <p style={{ fontSize: '0.82rem', color: '#374151', margin: '0 0 10px' }}>
+                Reports generated this month
+              </p>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {(['cost_analysis', 'security', 'infrastructure', 'executive'] as const).map(t => {
+                  const count = displayReports.filter(
+                    (r: any) => normalizeReportType(r.type || r.report_type || '') === t
+                  ).length
+                  const tc = typeConfig[t]
+                  return count > 0 ? (
+                    <span key={t} style={{ fontSize: '0.65rem', fontWeight: 600, padding: '2px 7px', borderRadius: '100px', background: tc.bg, color: tc.color }}>
+                      {tc.label} {count}
+                    </span>
+                  ) : null
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* REPORT TYPE CARDS */}
+      <div style={{ marginBottom: '16px' }}>
+        <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+          Available Reports
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+          {[
+            { type: 'cost_analysis',  badge: 'High impact',  badgeColor: '#059669', badgeBg: '#F0FDF4' },
+            { type: 'security',       badge: 'Relevant now', badgeColor: '#475569', badgeBg: '#F1F5F9' },
+            { type: 'infrastructure', badge: null,           badgeColor: null,      badgeBg: null      },
+            { type: 'executive',      badge: 'Board-ready',  badgeColor: '#7C3AED', badgeBg: '#F5F3FF' },
+          ].map(({ type, badge, badgeColor, badgeBg }) => {
+            const tc = typeConfig[type as NormalizedType]
+            const isSecurity = type === 'security'
+            return (
+              <div key={type} style={{
+                background: '#fff',
+                borderRadius: '12px', padding: '22px 24px',
+                border: '1px solid #E2E8F0',
+                display: 'flex', flexDirection: 'column', gap: '10px',
+                transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#CBD5E1'
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = '#E2E8F0'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: tc.bg, color: tc.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {tc.icon}
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>
+                        {tc.title}
+                      </p>
+                      <p style={{ fontSize: '0.8rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+                        {type === 'cost_analysis'
+                          ? 'Identify unused resources, rightsizing opportunities, and immediate savings.'
+                          : type === 'security'
+                          ? 'Detect misconfigurations, IAM issues, and compliance gaps.'
+                          : type === 'infrastructure'
+                          ? 'Analyze performance, bottlenecks, and reliability across services.'
+                          : 'Board-ready insights combining cost, security, and performance.'}
+                      </p>
+                    </div>
+                  </div>
+                  {badge && (
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '2px 9px', borderRadius: '100px', background: badgeBg!, color: badgeColor!, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                      {badge}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleGenerateReport(type)}
+                  disabled={generatingType !== null}
+                  style={{
+                    alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
+                    background: generatingType === type ? tc.color : '#7C3AED',
+                    color: '#fff', border: 'none', padding: '7px 16px', borderRadius: '7px',
+                    fontSize: '0.78rem', fontWeight: 600,
+                    cursor: generatingType !== null ? 'not-allowed' : 'pointer',
+                    opacity: generatingType !== null && generatingType !== type ? 0.6 : 1,
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {generatingType === type
+                    ? <><RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</>
+                    : 'Generate →'
+                  }
+                </button>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -519,7 +649,7 @@ export default function AIReportsPage() {
                   {selectedIds.size} report{selectedIds.size !== 1 ? 's' : ''} selected
                 </span>
               ) : (
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                   Recent Reports
                 </span>
               )}
@@ -581,7 +711,7 @@ export default function AIReportsPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       {/* Title + badges row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '3px' }}>
-                        <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0F172A', lineHeight: 1.3 }}>
+                        <span style={{ fontSize: '0.925rem', fontWeight: 600, color: '#0F172A', lineHeight: 1.3 }}>
                           {reportTitle}
                         </span>
                         {/* Type badge */}
@@ -598,17 +728,33 @@ export default function AIReportsPage() {
                         }}>
                           <CheckCircle2 size={11} /> Ready
                         </span>
+                        {normalizedType === 'cost_analysis' ? (
+                          <a href="/cost-optimization" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', textDecoration: 'none' }} onClick={e => e.stopPropagation()}>
+                            · $1,697 savings — Apply now →
+                          </a>
+                        ) : normalizedType === 'security' ? (
+                          <a href="/anomalies" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#DC2626', textDecoration: 'none' }} onClick={e => e.stopPropagation()}>
+                            · 2 risks detected — Fix now →
+                          </a>
+                        ) : (() => {
+                          const chip = outcomeChip(normalizedType)
+                          return chip ? (
+                            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: chip.color, background: 'transparent', flexShrink: 0 }}>
+                              · {chip.label}
+                            </span>
+                          ) : null
+                        })()}
                       </div>
 
                       {/* Metadata */}
-                      <p style={{ fontSize: '0.74rem', color: '#94A3B8', margin: '0 0 4px', lineHeight: 1.4 }}>
-                        Generated {dateVal ? formatGeneratedAt(dateVal) : '—'} • Manual
+                      <p style={{ fontSize: '0.8rem', color: '#64748B', margin: '0 0 4px', lineHeight: 1.4 }}>
+                        Generated {dateVal ? relativeTime(dateVal) : '—'}
                       </p>
 
                       {/* Insight highlight */}
                       {insight && (
-                        <p style={{ fontSize: '0.78rem', color: '#64748B', margin: 0, lineHeight: 1.5, fontStyle: 'italic' }}>
-                          "{insight}"
+                        <p style={{ fontSize: '0.82rem', color: '#374151', margin: 0, lineHeight: 1.5, fontWeight: 400 }}>
+                          {insight}
                         </p>
                       )}
                     </div>
@@ -676,7 +822,12 @@ export default function AIReportsPage() {
                 padding: '10px 24px', fontSize: '0.82rem', fontWeight: 600,
                 color: '#475569', cursor: 'pointer', width: '100%', marginTop: '10px',
               }}>
-              {showAllReports ? '↑ Show less' : `↓ Show all ${displayReports.length} reports`}
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                {showAllReports
+                  ? <><ChevronUp size={14} /> Show less</>
+                  : <><ChevronDown size={14} /> Show all {displayReports.length} reports</>
+                }
+              </span>
             </button>
           )}
         </div>

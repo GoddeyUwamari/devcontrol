@@ -404,8 +404,11 @@ export default function ReportDetailPage() {
 
           {/* Executive Summary */}
           <div style={{
-            background: 'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)',
-            borderRadius: '14px', border: '1px solid #DDD6FE', padding: '24px 28px',
+            background: '#fff',
+            borderRadius: '12px',
+            border: '1px solid #E2E8F0',
+            borderLeft: '4px solid #7C3AED',
+            padding: '24px 28px',
           }}>
             <h2 style={{ fontSize: '0.78rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>
               Executive Summary
@@ -552,7 +555,7 @@ export default function ReportDetailPage() {
           <div style={{ padding: '16px 20px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #F1F5F9' }}>
             <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
               {[
-                { label: 'Model', value: report.metadata.aiModel || 'Claude AI' },
+                { label: 'Model', value: 'DevControl AI' },
                 { label: 'Generation time', value: report.metadata.generationTime ? `${(report.metadata.generationTime / 1000).toFixed(1)}s` : '—' },
                 { label: 'Source', value: report.metadata.wasFallback ? 'Fallback' : 'AI-generated' },
                 { label: 'Report ID', value: report.id.slice(0, 8) + '…' },
