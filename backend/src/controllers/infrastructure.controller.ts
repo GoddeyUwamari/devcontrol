@@ -1,15 +1,84 @@
 import { Request, Response } from 'express';
+import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { InfrastructureRepository } from '../repositories/infrastructure.repository';
 import { CreateInfrastructureRequest, InfrastructureFilters, ApiResponse } from '../types';
 import awsCostService from '../services/aws-cost.service';
 import { pool } from '../config/database';
 
 const repository = new InfrastructureRepository();
+const awsRepository = new AWSResourcesRepository(pool);
 
 export class InfrastructureController {
   async getAll(req: Request, res: Response): Promise<void> {
     try {
-      const filters: InfrastructureFilters = {
+      const organizationId = (req as any).user?.organizationId;
+
+      if (organizationId) {
+        const filters: any = {};
+        if (req.query.resource_type) {
+          filters.resource_type = req.query.resource_type as string;
+        }
+        if (req.query.status) {
+          filters.status = req.query.status as string;
+        }
+
+        const result = await awsRepository.findAll(organizationId, filters);
+
+        const mapped = result.resources.map((r: any) => ({
+          id: r.id,
+          serviceId: r.id,
+          serviceName:
+            r.resource_name ||
+            r.resourceName ||
+            r.resource_id ||
+            r.resourceId ||
+            r.resource_type ||
+            'Unknown',
+          resourceType:
+            r.resource_type ||
+            r.resourceType ||
+            'unknown',
+          awsId:
+            r.resource_id ||
+            r.resourceId ||
+            r.resource_arn ||
+            r.resourceArn ||
+            '—',
+          awsRegion:
+            r.region ||
+            r.aws_region ||
+            r.awsRegion ||
+            '—',
+          status:
+            (() => {
+              const s = (
+                r.status ||
+                r.resource_status ||
+                ''
+              ).toLowerCase()
+              return s === 'available' ||
+                s === 'running' ||
+                s === 'active' ||
+                s === 'in-use'
+                  ? 'running'
+                  : s === 'stopped'
+                    ? 'stopped'
+                    : s
+                      ? 'pending'
+                      : 'running'
+            })(),
+          costPerMonth: parseFloat(r.estimated_monthly_cost) || 0,
+          metadata: r.metadata,
+          createdAt: r.created_at || new Date().toISOString(),
+          updatedAt: r.updated_at || new Date().toISOString(),
+        }));
+
+        res.json({ success: true, data: mapped });
+        return;
+      }
+
+      // Fallback to original repository for unauthenticated or legacy
+      const infraFilters: InfrastructureFilters = {
         service_id: req.query.service_id as string,
         resource_type: req.query.resource_type as string,
         status: req.query.status as string,
@@ -17,21 +86,15 @@ export class InfrastructureController {
         offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
       };
 
-      const resources = await repository.findAll(filters);
+      const resources = await repository.findAll(infraFilters);
 
-      const response: ApiResponse = {
-        success: true,
-        data: resources,
-      };
-
-      res.json(response);
+      res.json({ success: true, data: resources });
     } catch (error) {
-      console.error('Error fetching infrastructure resources:', error);
-      const response: ApiResponse = {
+      console.error('Error fetching infrastructure:', error);
+      res.status(500).json({
         success: false,
         error: 'Failed to fetch infrastructure resources',
-      };
-      res.status(500).json(response);
+      });
     }
   }
 

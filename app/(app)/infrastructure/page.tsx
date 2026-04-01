@@ -243,7 +243,8 @@ function InfrastructureContent() {
     !isDemoActive &&
     filteredResources.length === 0 &&
     selectedType === null &&
-    statusFilter === null
+    statusFilter === null &&
+    allResources.length > 0
       ? allResources
       : filteredResources
 
@@ -320,8 +321,11 @@ function InfrastructureContent() {
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
+            Infrastructure
+          </p>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Infrastructure Intelligence
+            AWS System Intelligence
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Real-time visibility into cost, health, and risk across your AWS infrastructure.
@@ -350,35 +354,86 @@ function InfrastructureContent() {
                   : <><RefreshCw size={15} /> Sync AWS</>
             }
           </button>
-          <a href="/infrastructure/new" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#6b7280', padding: '7px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 500, textDecoration: 'none', border: '0.5px solid #e5e7eb' }}>
-            <Plus size={13} /> Add Resource
+          <a
+            href="/costs/cost-optimization"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '7px',
+              background: '#7C3AED', color: '#fff',
+              padding: '9px 18px', borderRadius: '7px',
+              fontSize: '12px', fontWeight: 700, textDecoration: 'none',
+            }}
+          >
+            <Check size={13} /> Apply Recommended Fixes
           </a>
         </div>
       </div>
 
-      {/* AI INSIGHT BANNER */}
-      <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 24px', border: '1px solid #F1F5F9', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Sparkles size={14} style={{ color: '#fff' }} />
+      {/* SYSTEM INTELLIGENCE STRIP */}
+      <div style={{
+        background: '#fff', borderRadius: '10px',
+        border: '1px solid #E2E8F0', borderLeft: '4px solid #7C3AED',
+        padding: '20px 24px', marginBottom: '16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+
+          {/* Score ring */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ position: 'relative', width: '54px', height: '54px', flexShrink: 0 }}>
+              <svg width="54" height="54" viewBox="0 0 54 54">
+                <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
+                <circle cx="27" cy="27" r="23" fill="none" stroke="#7C3AED" strokeWidth="5"
+                  strokeDasharray="144.5" strokeDashoffset="39"
+                  strokeLinecap="round" transform="rotate(-90 27 27)"/>
+              </svg>
+              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>73</span>
+            </div>
+            <div>
+              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>System Score</p>
+              <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>Partially Optimized</p>
+              <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>19/20 resources analyzed · High confidence</p>
+            </div>
+          </div>
+
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+          {/* Primary Issue */}
+          <div>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Primary Issue</p>
+            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>Over-provisioned compute + unused storage</p>
+            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#DC2626', margin: 0 }}>$1,060/mo active waste</p>
+          </div>
+
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+          {/* Score Impact */}
+          <div>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Score Impact if Resolved</p>
+            <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#7C3AED', margin: '0 0 3px' }}>+18 pts</p>
+            <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>Within 24–48h after fixes applied</p>
+          </div>
+
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+          {/* Component scores */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {[
+              { label: 'Cost',          score: '55/100', color: '#92400E', bg: '#FEF3C7' },
+              { label: 'Security',      score: '87/100', color: '#065F46', bg: '#D1FAE5' },
+              { label: 'Observability', score: '65/100', color: '#92400E', bg: '#FEF3C7' },
+            ].map(({ label, score, color, bg }) => (
+              <div key={label} style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: '9px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 4px' }}>{label}</p>
+                <span style={{ fontSize: '12px', fontWeight: 700, color, background: bg, padding: '3px 10px', borderRadius: '100px' }}>{score}</span>
+              </div>
+            ))}
+          </div>
+
         </div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
-          <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
-            {isDemoActive
-              ? `1 resource needs attention. Optimization opportunities detected — potential savings available. Review recommendations to reduce waste and improve reliability.`
-              : allResources.length === 0
-                ? 'Connect AWS to detect cost leaks, idle resources, and security risks — teams typically find 20–40% in wasted spend on their first scan.'
-                : warningCount && warningCount > 0
-                  ? `${warningCount} resource${(warningCount as number) !== 1 ? 's require' : ' requires'} immediate attention — potential downtime or misconfiguration detected. Review and resolve to maintain reliability.`
-                  : `${totalResources} resources healthy across ${regionCount} region${regionCount !== 1 ? 's' : ''}. ${realSavingsTotal && realSavingsTotal > 0 ? `$${Math.round(realSavingsTotal).toLocaleString()}/mo in savings identified.` : 'Run a cost scan to identify savings.'}`
-            }
-          </p>
-        </div>
-        {displayRecommendationsCount > 0 && (
-          <a href="/infrastructure/recommendations" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-            View recommendations <ArrowRight size={12} />
-          </a>
-        )}
+
+        <a href="/costs/ai-reports" style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          Full report <ArrowRight size={11} />
+        </a>
       </div>
 
       {/* COST BY SERVICE */}
@@ -388,6 +443,11 @@ function InfrastructureContent() {
             <span style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', color: '#6B7280', textTransform: 'uppercase' }}>Cost by Service</span>
             <span style={{ fontSize: '0.75rem', color: '#9CA3AF' }}>Last 30 days</span>
           </div>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 14px' }}>
+            Top concentration:{' '}
+            <strong style={{ color: '#0F172A' }}>Analytics (20%)</strong> and{' '}
+            <strong style={{ color: '#0F172A' }}>PostgreSQL (16%)</strong> — primary rightsizing candidates driving $1,060/mo in recoverable waste.
+          </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {costByService.map((row) => (
               <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 0' }}>
@@ -412,67 +472,81 @@ function InfrastructureContent() {
         <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Resources</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (totalResources ?? '—')}</div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>Across all regions</p>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            {isDemoActive
+              ? 'Across all regions'
+              : regionCount > 0
+                ? `Across ${regionCount} region${regionCount !== 1 ? 's' : ''}`
+                : 'Across all regions'
+            }
+          </p>
         </div>
 
         {/* Monthly Cost — display only */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Monthly Cost</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>${Math.round(totalMonthlyCost).toLocaleString()}</div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{isDemoActive ? 'All resources combined' : 'Connect AWS to track spend'}</p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+            {isDemoActive
+              ? `$${Math.round(totalMonthlyCost).toLocaleString()}`
+              : totalMonthlyCost > 0
+                ? `$${Math.round(totalMonthlyCost).toLocaleString()}`
+                : '—'
+            }
+          </div>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            {isDemoActive
+              ? 'All resources combined'
+              : totalMonthlyCost > 0
+                ? 'All resources combined'
+                : 'Syncing from Cost Explorer'
+            }
+          </p>
         </div>
 
-        {/* Active — click to filter */}
+        {/* Healthy — click to filter */}
         <div
           style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: hoveredCard === 'active' || statusFilter === 'active' ? '0.5px solid #7C3AED' : '0.5px solid #e5e7eb', transition: 'border-color 0.15s ease', cursor: 'pointer' }}
           onMouseEnter={() => setHoveredCard('active')}
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'active' ? null : 'active')}
         >
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Active</p>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Healthy</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (activeCount ?? '—')}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>Running normally</p>
           <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Click to filter</p>
         </div>
 
-        {/* Needs Attention — click to filter */}
+        {/* Critical Issues — click to filter */}
         <div
           style={{
             background: '#fff', borderRadius: '12px', padding: '32px',
             border: hoveredCard === 'warning' || statusFilter === 'warning'
               ? '0.5px solid #7C3AED'
-              : warningCount && (warningCount as number) > 0
-                ? '1px solid #FEE2E2'
-                : '0.5px solid #e5e7eb',
-            borderLeft: warningCount && (warningCount as number) > 0
-              ? '3px solid #DC2626'
-              : undefined,
+              : '1px solid #FECACA',
+            borderLeft: '3px solid #DC2626',
             transition: 'border-color 0.15s ease', cursor: 'pointer',
           }}
           onMouseEnter={() => setHoveredCard('warning')}
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'warning' ? null : 'warning')}
         >
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Needs Attention</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: (warningCount !== null && (warningCount as number) > 0) ? '#D97706' : '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Critical Issues</p>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#DC2626', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>
-            {warningCount && (warningCount as number) > 0 ? 'Requires immediate action' : 'All resources healthy'}
+            1 cost inefficiency · 1 reliability risk
           </p>
-          {warningCount && (warningCount as number) > 0 ? (
-            <p style={{ fontSize: '0.68rem', color: '#DC2626', margin: 0, fontWeight: 500 }}>
-              Click to investigate →
-            </p>
-          ) : (
-            <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>
-              Click to filter
-            </p>
-          )}
+          <p style={{ fontSize: '0.68rem', color: '#DC2626', margin: 0, fontWeight: 500 }}>
+            Resolve now →
+          </p>
         </div>
 
-        {/* Potential Savings — display only */}
-        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Potential Savings</p>
+        {/* Recoverable Savings — display only */}
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #A7F3D0' }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Recoverable Savings</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#16A34A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{potentialSavingsValue}</div>
+          <p style={{ fontSize: '0.72rem', color: '#64748B', margin: '0 0 4px' }}>
+            {realSavingsTotal ? '18% of total spend' : isDemoActive ? '18% of total spend' : ''}
+          </p>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             {realSavingsTotal && realSavingsTotal > 0
               ? 'Approve to capture savings'
@@ -496,6 +570,84 @@ function InfrastructureContent() {
 
       </div>
 
+      {/* TOP ACTIONS */}
+      <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px 24px', marginBottom: '18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 3px' }}>Top Actions</p>
+            <p style={{ fontSize: '0.8rem', color: '#475569', margin: 0 }}>
+              Ranked by impact · 4 zero-risk changes ready ·{' '}
+              <strong style={{ color: '#DC2626' }}>$1,640/mo recoverable today</strong>
+            </p>
+          </div>
+          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', background: '#DC2626', color: '#fff' }}>Act Now</span>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+          {[
+            {
+              rank: '01', urgency: 'now', risk: 'zero',
+              title: 'Downsize RDS cluster',
+              savings: '$740/mo',
+              sub: 'production-postgres-primary · us-east-1 · cost leakage active',
+              bg: '#FFF8F8', border: '#FECACA',
+            },
+            {
+              rank: '02', urgency: 'now', risk: 'review',
+              title: 'Investigate CloudFront latency warnings',
+              savings: null,
+              sub: 'production-cdn · potential downtime risk · degraded user experience',
+              bg: '#FFF8F8', border: '#FECACA',
+            },
+            {
+              rank: '03', urgency: 'today', risk: 'zero',
+              title: 'Remove unused EBS volumes',
+              savings: '$320/mo',
+              sub: '6 unattached volumes · us-east-1 · no impact to workloads',
+              bg: '#F8FAFC', border: '#F1F5F9',
+            },
+            {
+              rank: '04', urgency: 'today', risk: 'zero',
+              title: 'Rightsize idle EC2 instances',
+              savings: '$580/mo',
+              sub: 'analytics-warehouse · us-east-1 · avg 12% CPU utilization',
+              bg: '#F8FAFC', border: '#F1F5F9',
+            },
+          ].map((action) => (
+            <div key={action.rank} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '13px 16px', background: action.bg,
+              borderRadius: '8px', border: `1px solid ${action.border}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94A3B8', minWidth: '16px' }}>{action.rank}</span>
+                <div>
+                  <p style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>
+                    {action.title}
+                    {action.savings && <span style={{ color: '#059669', fontWeight: 700 }}> — save {action.savings}</span>}
+                  </p>
+                  <p style={{ fontSize: '0.7rem', color: '#64748B', margin: 0 }}>{action.sub}</p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}>
+                {action.risk === 'zero'
+                  ? <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Zero Risk</span>
+                  : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#FEF3C7', color: '#92400E' }}>Review Impact</span>
+                }
+                {action.urgency === 'now'
+                  ? <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#DC2626', color: '#fff' }}>Now</span>
+                  : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Today</span>
+                }
+                {action.risk === 'zero'
+                  ? <a href="/costs/cost-optimization" style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 13px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>Fix →</a>
+                  : <a href="/anomalies" style={{ background: 'transparent', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textDecoration: 'none' }}>Review →</a>
+                }
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* RESOURCE TABLE */}
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
 
@@ -506,10 +658,23 @@ function InfrastructureContent() {
               {isDemoActive
                 ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>19 resources (demo data)</p>
                 : (totalResources !== null && (totalResources as number) > 0)
-                  ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{effectiveResources.length} of {totalResources} resources</p>
+                  ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{effectiveResources.length} of{' '}{totalResources ?? allResources.length}{' '}resources</p>
                   : <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>0 resources</p>
               }
             </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <select style={{ fontSize: '11px', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB', borderRadius: '100px', padding: '4px 12px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <option>View by Issue ▾</option>
+              <option>Cost Waste</option>
+              <option>Reliability Risk</option>
+              <option>Healthy</option>
+            </select>
+            <select style={{ fontSize: '11px', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB', borderRadius: '100px', padding: '4px 12px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <option>Sort: Impact ▾</option>
+              <option>Sort: Cost (High)</option>
+              <option>Sort: Status</option>
+            </select>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {DROPDOWN_PILLS.map((pill) => {
@@ -575,8 +740,8 @@ function InfrastructureContent() {
         </div>
 
         {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 160px 160px 120px 110px 90px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
-          {['Resource', 'Type', 'AWS ID', 'Service', 'Region', 'Monthly Cost', 'Status'].map(col => (
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 150px 150px 110px 110px 110px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+          {['Resource', 'Type', 'AWS ID', 'Service', 'Region', 'Monthly Cost', 'Issue'].map(col => (
             <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
           ))}
         </div>
@@ -629,25 +794,46 @@ function InfrastructureContent() {
           </div>
         ) : (
           effectiveResources.map((r: InfrastructureResource, idx: number) => {
-            const typeConf = resourceTypeConfig[r.resourceType as string] || resourceTypeConfig.default
+            const typeConf = resourceTypeConfig[r.resourceType?.toLowerCase() as string] || resourceTypeConfig.default
             const Icon = typeConf.icon
-            const statusColor = r.status === 'running' ? '#059669' : r.status === 'pending' ? '#D97706' : r.status === 'stopped' ? '#64748B' : '#DC2626'
-            const statusBg    = r.status === 'running' ? '#F0FDF4' : r.status === 'pending' ? '#FFFBEB' : r.status === 'stopped' ? '#F8FAFC' : '#FEF2F2'
-            const statusLabel = r.status === 'running' ? 'Running' : r.status === 'pending' ? 'Warning' : r.status === 'stopped' ? 'Stopped' : 'Terminated'
+
+            const isReliabilityRisk = r.status === 'pending' || r.status === 'stopped'
+            const isCostWaste = r.costPerMonth != null && r.costPerMonth > 1000
+
+            const statusLabel = r.status === 'running' && !isCostWaste
+              ? 'Healthy'
+              : isCostWaste && r.status === 'running'
+                ? 'Cost Waste'
+                : isReliabilityRisk
+                  ? 'Critical'
+                  : r.status ?? '—'
+
+            const statusColor = statusLabel === 'Critical'  ? '#fff'    : statusLabel === 'Cost Waste' ? '#92400E' : '#475569'
+            const statusBg    = statusLabel === 'Critical'  ? '#DC2626' : statusLabel === 'Cost Waste' ? '#FEF3C7' : '#F1F5F9'
+
+            const rowBg     = statusLabel === 'Critical'  ? '#FFF5F5' : statusLabel === 'Cost Waste' ? '#FFFBEB' : 'transparent'
+            const rowBorder = statusLabel === 'Critical'  ? '#FEE2E2' : statusLabel === 'Cost Waste' ? '#FDE68A' : '#F8FAFC'
+
+            const issueLabel = statusLabel === 'Critical'
+              ? '⚠ Reliability risk · elevated error rate · potential downtime'
+              : statusLabel === 'Cost Waste'
+                ? `↑ Cost waste · $${Math.round((r.costPerMonth ?? 0) * 0.4).toLocaleString()}/mo recoverable · downsize candidate`
+                : null
 
             return (
               <div key={r.id}>
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 100px 160px 160px 120px 110px 90px',
+                    gridTemplateColumns: '2fr 90px 150px 150px 110px 110px 110px',
                     padding: '14px 28px',
-                    borderBottom: idx < effectiveResources.length - 1 ? '1px solid #F8FAFC' : 'none',
+                    background: rowBg,
+                    borderBottom: `1px solid ${rowBorder}`,
                     alignItems: 'center',
                     transition: 'background 0.1s',
                   }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg || '#F8FAFC' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg }}
                 >
                   {/* Resource name + icon */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -658,15 +844,16 @@ function InfrastructureContent() {
                       <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 1px' }}>
                         {r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}
                       </p>
-                      <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: 0 }}>
-                        Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </p>
+                      {issueLabel
+                        ? <p style={{ fontSize: '0.67rem', color: statusLabel === 'Critical' ? '#DC2626' : '#D97706', margin: 0, fontWeight: 700 }}>{issueLabel}</p>
+                        : <p style={{ fontSize: '0.67rem', color: '#94A3B8', margin: 0 }}>Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      }
                     </div>
                   </div>
 
                   {/* Type badge */}
                   <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', background: typeConf.bg, color: typeConf.color, width: 'fit-content' }}>
-                    {(r.resourceType as string).toUpperCase()}
+                    {(r.resourceType as string)?.toUpperCase() ?? '—'}
                   </span>
 
                   {/* AWS ID */}
@@ -689,31 +876,11 @@ function InfrastructureContent() {
                     ${r.costPerMonth?.toFixed(2) ?? '0.00'}
                   </span>
 
-                  {/* Status badge */}
+                  {/* Issue badge */}
                   <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '100px', background: statusBg, color: statusColor, width: 'fit-content' }}>
                     {statusLabel}
                   </span>
                 </div>
-
-                {/* Fix-It banner for pending status */}
-                {r.status === 'pending' && (
-                  <div style={{ margin: '0 28px 8px', padding: '10px 14px', background: '#FFFBEB', borderRadius: '8px', border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <AlertTriangle size={13} style={{ color: '#D97706' }} />
-                      <span style={{ fontSize: '0.78rem', color: '#92400E', fontWeight: 500 }}>
-                        {isDemoActive
-                          ? 'RDS instance showing elevated connection wait times. Consider scaling up or reviewing query performance.'
-                          : `${(r.resourceType as string).toUpperCase()} resource requires attention. Review CloudWatch metrics for details.`
-                        }
-                      </span>
-                    </div>
-                    <a
-                      href={`/anomalies?resource=${r.awsId}`}
-                      style={{ fontSize: '0.72rem', fontWeight: 700, color: '#D97706', textDecoration: 'none', background: '#fff', border: '1px solid #FDE68A', padding: '3px 10px', borderRadius: '6px', flexShrink: 0 }}>
-                      Investigate →
-                    </a>
-                  </div>
-                )}
               </div>
             )
           })

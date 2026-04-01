@@ -21,16 +21,16 @@ export const infrastructureService = {
     // Transform backend snake_case to frontend camelCase
     return (result || []).map((r: any) => ({
       id: r.id,
-      serviceId: r.service_id,
-      serviceName: r.service_name,
-      resourceType: r.resource_type,
-      awsId: r.aws_id,
-      awsRegion: r.aws_region,
-      status: r.status,
-      costPerMonth: parseFloat(r.cost_per_month) || 0,
+      serviceId: r.serviceId || r.service_id || r.id,
+      serviceName: r.serviceName || r.service_name || r.resource_name || r.resourceType || 'Unknown',
+      resourceType: r.resourceType || r.resource_type || 'unknown',
+      awsId: r.awsId || r.aws_id || r.resource_id || '—',
+      awsRegion: r.awsRegion || r.aws_region || r.region || '—',
+      status: r.status || 'running',
+      costPerMonth: parseFloat(r.costPerMonth || r.cost_per_month || '0') || 0,
       metadata: r.metadata,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
+      createdAt: r.createdAt || r.created_at || new Date().toISOString(),
+      updatedAt: r.updatedAt || r.updated_at || new Date().toISOString(),
     }));
   },
 
