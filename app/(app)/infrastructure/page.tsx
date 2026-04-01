@@ -400,7 +400,7 @@ function InfrastructureContent() {
   const intelObsScore      = intelComponents.observability.score
   const intelScoreDelta    = isDemoActive ? 18 : (intel.system_score > 0 ? Math.min(Math.round((100 - intel.system_score) * 0.55), 25) : 0)
   const intelWaste         = realSavingsTotal ?? (isDemoActive ? 1060 : 0)
-  const intelAnalyzed      = isDemoActive ? DEMO_RESOURCES.length : (allResources.length || 0)
+  const intelAnalyzed      = isDemoActive ? 19 : allResources.length
   const intelTotal         = isDemoActive ? 20 : ((totalResources as number) || intelAnalyzed)
   const scoreCircumference = 144.5
   const scoreOffset        = intelScore > 0
