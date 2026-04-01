@@ -18,6 +18,8 @@ import {
   Download,
   FileText,
   ExternalLink,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -50,6 +52,7 @@ import {
   Team,
 } from '@/lib/types';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
+import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 
 // Helper function to generate mock 30-day trend data
 // TODO: Replace with real API data when available
@@ -228,6 +231,7 @@ export default function DORAMetricsPage() {
   const queryClient = useQueryClient();
 
   const demoMode = useDemoMode();
+  const salesDemoMode = useSalesDemo((state) => state.enabled);
 
   // Fetch services for filter dropdown
   const { data: servicesData } = useQuery<{ success: boolean; data: Service[] }>({
@@ -322,8 +326,27 @@ export default function DORAMetricsPage() {
   }, [refetchBenchmarks, queryClient]);
 
   const metrics = demoMode ? DEMO_DORA_METRICS : (metricsData?.data ?? null);
-  const isDemoActive = demoMode;
-  const totalDeployments = demoMode ? 847 : 0;
+  const isDemoActive = demoMode || salesDemoMode;
+  const totalDeployments = isDemoActive ? 847 : 0;
+
+  const dataState: 'inactive' | 'insufficient' | 'active' =
+    !isDemoActive && totalDeployments === 0
+      ? 'inactive'
+      : !isDemoActive && totalDeployments < 5
+        ? 'insufficient'
+        : 'active';
+
+  const dataStateLabel =
+    dataState === 'inactive'      ? 'Pipeline inactive — no delivery activity in selected period'
+    : dataState === 'insufficient' ? 'Insufficient data for benchmarking — fewer than 5 deployments detected'
+    : `Based on ${totalDeployments} deployments`;
+
+  const dataStateColor =
+    dataState === 'inactive'      ? '#DC2626'
+    : dataState === 'insufficient' ? '#D97706'
+    : '#059669';
+
+  const healthyCount = 0;
 
   const services = servicesData?.data;
   const teams = teamsData?.data;
@@ -346,34 +369,26 @@ export default function DORAMetricsPage() {
         marginBottom: '4px',
       }}>
         <div>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
+            DevOps
+          </p>
           <h1 style={{
             fontSize: '1.7rem', fontWeight: 700,
             color: '#0F172A', letterSpacing: '-0.025em',
             marginBottom: '6px', lineHeight: 1.2,
           }}>
-            Engineering Performance
+            Engineering Intelligence
           </h1>
           <p style={{
             fontSize: '14px', color: '#475569',
             lineHeight: 1.5, maxWidth: '520px',
             marginBottom: '6px',
           }}>
-            DORA metrics benchmarked against industry standards. Updated automatically from your
-            deployment pipeline.
+            DORA metrics benchmarked against industry standards · updated automatically from your deployment pipeline.
           </p>
-          <div style={{
-            fontSize: '12px', color: '#94A3B8',
-            display: 'flex', alignItems: 'center',
-            gap: '6px',
-          }}>
-            <span style={{
-              width: '6px', height: '6px',
-              borderRadius: '50%',
-              background: '#059669',
-              display: 'inline-block',
-            }} />
-            Based on {totalDeployments} deployments ·{' '}
-            Last updated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          <div style={{ fontSize: '12px', color: dataStateColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dataStateColor, display: 'inline-block' }} />
+            {dataStateLabel} · Last updated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -468,149 +483,237 @@ export default function DORAMetricsPage() {
         </Select>
       </div>
 
-      {/* ── AI INSIGHT STRIP (demo mode only) ── */}
-      {isDemoActive && (
+      {/* ENGINEERING INTELLIGENCE STRIP */}
+      <div style={{
+        background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0',
+        padding: '20px 24px', marginBottom: '0',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: '16px',
+      }}>
+        {(isDemoActive || dataState === 'active') ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+
+            {/* Percentile ring */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ position: 'relative', width: '54px', height: '54px', flexShrink: 0 }}>
+                <svg width="54" height="54" viewBox="0 0 54 54">
+                  <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
+                  <circle cx="27" cy="27" r="23" fill="none"
+                    stroke={isDemoActive ? '#059669' : '#D97706'}
+                    strokeWidth="5"
+                    strokeDasharray="144.5"
+                    strokeDashoffset={isDemoActive ? 12 : 58}
+                    strokeLinecap="round"
+                    transform="rotate(-90 27 27)"/>
+                </svg>
+                <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: isDemoActive ? '#059669' : '#D97706' }}>
+                  {isDemoActive ? '92nd' : 'N/A'}
+                </span>
+              </div>
+              <div>
+                <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Engineering Score</p>
+                <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>
+                  {isDemoActive ? 'Elite Tier — Top 8%' : 'Calculating...'}
+                </p>
+                <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>
+                  {isDemoActive
+                    ? '92nd percentile vs SaaS teams · 33,000+ data points'
+                    : `${totalDeployments} deployments · ${dateRange} window`
+                  }
+                </p>
+              </div>
+            </div>
+
+            <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+            {/* Performance drivers */}
+            <div>
+              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 6px' }}>Performance Drivers</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                {isDemoActive ? (
+                  <>
+                    <p style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 600, margin: 0 }}>● Change Failure Rate 1.2% — top 5% globally</p>
+                    <p style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 500, margin: 0 }}>● Lead time improved 18% this quarter</p>
+                    <p style={{ fontSize: '0.75rem', color: '#D97706', fontWeight: 500, margin: 0 }}>● Payment Processor constraining deploy frequency</p>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, margin: 0 }}>● {healthyCount ?? 0} services with sufficient deployment data</p>
+                    <p style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, margin: 0 }}>● Benchmarking active for this period</p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+            {/* Business impact */}
+            <div>
+              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Business Impact</p>
+              <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>
+                {isDemoActive ? 'Delivery velocity at Elite — feature release cadence strong' : 'Impact analysis requires more deployment data'}
+              </p>
+              <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#059669', margin: 0 }}>
+                {isDemoActive
+                  ? `Operational risk: LOW · high confidence, based on ${isDemoActive ? 847 : totalDeployments} deployments`
+                  : 'Connect deployment pipeline to enable impact analysis'
+                }
+              </p>
+            </div>
+
+            <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+            {/* To stay elite / gap */}
+            <div>
+              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>To Stay Elite</p>
+              <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#D97706', margin: '0 0 3px' }}>
+                {isDemoActive ? '1 service lagging' : 'Insufficient baseline'}
+              </p>
+              <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>
+                {isDemoActive
+                  ? 'Maintain ≥3.5 deploys/day · <5% failure rate'
+                  : '+1.6 deploys/day required to reach top 10%'
+                }
+              </p>
+            </div>
+
+          </div>
+        ) : (
+          /* Inactive / insufficient state */
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#F8FAFC', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div>
+              <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>
+                {dataState === 'inactive' ? 'Pipeline Inactive' : 'Insufficient Data for Benchmarking'}
+              </p>
+              <p style={{ fontSize: '0.75rem', color: '#64748B', margin: 0 }}>
+                {dataState === 'inactive'
+                  ? 'No deployment activity detected in the selected period. Connect your CI/CD pipeline to begin tracking.'
+                  : `Only ${totalDeployments} deployment${totalDeployments !== 1 ? 's' : ''} detected — minimum 5 required for reliable benchmarking.`
+                }
+              </p>
+            </div>
+          </div>
+        )}
+        <a href="/costs/ai-reports" style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          Full report <ArrowRight size={11} />
+        </a>
+      </div>
+
+      {/* DECISION INTELLIGENCE */}
+      {(isDemoActive || dataState === 'active') && (
         <div style={{
-          background: '#FFFFFF',
-          border: '1px solid #F1F5F9',
-          borderRadius: '16px',
-          padding: '18px 24px',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '16px',
+          background: '#fff', borderRadius: '12px', padding: '14px 20px',
+          border: '1px solid #E2E8F0',
+          display: 'flex', alignItems: 'flex-start', gap: '14px',
         }}>
-          <div style={{
-            width: '36px', height: '36px',
-            background: '#7C3AED',
-            borderRadius: '10px',
-            display: 'flex', alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '15px', flexShrink: 0,
-          }}>✨</div>
-          <div>
-            <p style={{
-              fontSize: '10px', fontWeight: 700,
-              color: '#7C3AED',
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              marginBottom: '4px',
-            }}>
-              AI Performance Insight
-            </p>
-            <p style={{
-              fontSize: '14px', color: '#1E293B',
-              lineHeight: 1.65, margin: 0,
-            }}>
-              Your team is performing at{' '}
-              <strong>Elite tier</strong> across 3 of 4 DORA metrics. Change Failure Rate at 1.2%
-              is your strongest signal — top 5% globally. Lead time improved 18% this quarter.
-              Consider addressing{' '}
-              <strong>payment-processor</strong> which is dragging deployment frequency below team
-              average.
+          <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Sparkles size={12} style={{ color: '#fff' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Decision Intelligence</p>
+            <p style={{ fontSize: '0.84rem', color: '#1E293B', margin: 0, lineHeight: 1.7 }}>
+              {isDemoActive ? (
+                <>
+                  Team performing at <strong style={{ color: '#059669' }}>Elite tier</strong> across 3 of 4 DORA metrics — 92nd percentile vs SaaS teams. Primary constraint: <strong style={{ color: '#DC2626' }}>Payment Processor</strong> (high confidence) — 0.8 deploys/day vs team average 3.8/day.
+                  <span style={{ display: 'block', marginTop: '4px', fontSize: '0.78rem', color: '#64748B' }}>
+                    Contributing factors: low deployment throughput · high lead time (6.2h) · likely CI queue time or manual approval gating. Resolving this bottleneck could increase overall frequency by ~18% and maintain Elite standing.
+                  </span>
+                  <span style={{ display: 'block', marginTop: '4px', fontSize: '0.78rem', color: '#475569', fontWeight: 600 }}>
+                    Recommended: investigate CI queue time and remove manual approval gates in Payment Processor pipeline.
+                  </span>
+                </>
+              ) : (
+                <>
+                  {totalDeployments} deployments analyzed in the selected period.
+                  {metrics?.deploymentFrequency?.benchmark === 'elite'
+                    ? <> Team is performing at <strong style={{ color: '#059669' }}>Elite tier</strong> — maintain current deployment cadence and failure rate targets.</>
+                    : <> Connect more services to your deployment pipeline to enable full cross-metric synthesis and gap analysis.</>
+                  }
+                  <span style={{ display: 'block', marginTop: '4px', fontSize: '0.78rem', color: '#64748B' }}>
+                    Cross-metric synthesis and causal analysis available with more deployment data.
+                  </span>
+                </>
+              )}
             </p>
           </div>
+          {isDemoActive && (
+            <a href="/deployments" style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+              Resolve bottleneck <ArrowRight size={11} />
+            </a>
+          )}
         </div>
       )}
 
-      {/* ── ELITE TIER BANNER (demo mode only) ── */}
-      {isDemoActive && (
-        <div style={{
-          background: 'linear-gradient(135deg, #1a0533 0%, #2d1057 50%, #1a0533 100%)',
-          borderRadius: '16px',
-          padding: '24px 32px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <div style={{
-              background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '10px',
-              padding: '10px 18px',
-            }}>
-              <p style={{
-                fontSize: '10px', fontWeight: 700,
-                color: 'rgba(255,255,255,0.5)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                margin: '0 0 3px',
-              }}>
-                Overall Tier
-              </p>
-              <p style={{
-                fontSize: '1.5rem', fontWeight: 700,
-                color: 'white', margin: 0,
-                letterSpacing: '-0.02em',
-              }}>
-                Elite
-              </p>
-            </div>
+      {/* PERFORMANCE POSITIONING */}
+      {(isDemoActive || dataState === 'active') && (
+        <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '20px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div>
-              <p style={{
-                fontSize: '1rem', fontWeight: 600,
-                color: 'white', margin: '0 0 4px',
-              }}>
-                Performing at Elite level
+              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 3px' }}>Performance Positioning</p>
+              <p style={{ fontSize: '0.8rem', color: '#475569', margin: 0 }}>
+                Where you stand vs. industry · 2024 DORA State of DevOps Report · 33,000+ professionals
               </p>
-              <p style={{
-                fontSize: '13px',
-                color: 'rgba(255,255,255,0.6)',
-                margin: '0 0 10px',
-              }}>
-                Top 8% of engineering teams globally · 90-day rolling average
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{
-                  fontSize: '11px',
-                  color: 'rgba(255,255,255,0.4)',
-                  whiteSpace: 'nowrap',
-                }}>
-                  Industry percentile
-                </span>
-                <div style={{
-                  width: '120px', height: '4px',
-                  background: 'rgba(255,255,255,0.15)',
-                  borderRadius: '2px',
-                }}>
-                  <div style={{
-                    width: '92%', height: '100%',
-                    background: '#A78BFA',
-                    borderRadius: '2px',
-                  }} />
-                </div>
-                <span style={{
-                  fontSize: '11px',
-                  color: 'rgba(255,255,255,0.7)',
-                  whiteSpace: 'nowrap',
-                }}>
-                  92nd
-                </span>
-              </div>
             </div>
-          </div>
-          <div style={{ display: 'flex', gap: '32px' }}>
-            {[
-              { val: '↑ 18%',  label: 'Lead time improvement' },
-              { val: '847',    label: 'Deployments tracked'   },
-              { val: '6 svcs', label: 'Active services'       },
-            ].map(({ val, label }) => (
-              <div key={label} style={{ textAlign: 'right' }}>
-                <p style={{
-                  fontSize: '1.2rem', fontWeight: 700,
-                  color: 'white', margin: '0 0 3px',
-                  letterSpacing: '-0.02em',
-                }}>
-                  {val}
-                </p>
-                <p style={{
-                  fontSize: '11px',
-                  color: 'rgba(255,255,255,0.5)',
-                  margin: 0,
-                }}>
-                  {label}
-                </p>
+            {isDemoActive && (
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#059669', background: '#ECFDF5', padding: '3px 10px', borderRadius: '100px' }}>92nd Percentile</span>
+                <p style={{ fontSize: '10px', color: '#64748B', margin: '4px 0 0', textAlign: 'right' }}>8 pts below top decile · +1.6 deploys/day to reach top 10%</p>
               </div>
+            )}
+          </div>
+
+          {/* Positioning bar */}
+          {isDemoActive && (
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ fontSize: '11px', color: '#DC2626' }}>Low</span>
+                <span style={{ fontSize: '11px', color: '#D97706' }}>Medium</span>
+                <span style={{ fontSize: '11px', color: '#2563EB' }}>High</span>
+                <span style={{ fontSize: '11px', color: '#059669' }}>Elite</span>
+              </div>
+              <div style={{ height: '8px', background: '#F1F5F9', borderRadius: '100px', position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, width: '15%', height: '100%', background: '#FEE2E2', borderRadius: '100px 0 0 100px' }} />
+                <div style={{ position: 'absolute', left: '15%', top: 0, width: '25%', height: '100%', background: '#FEF3C7' }} />
+                <div style={{ position: 'absolute', left: '40%', top: 0, width: '30%', height: '100%', background: '#DBEAFE' }} />
+                <div style={{ position: 'absolute', left: '70%', top: 0, width: '30%', height: '100%', background: '#D1FAE5', borderRadius: '0 100px 100px 0' }} />
+                <div style={{ position: 'absolute', left: '91%', top: '50%', transform: 'translate(-50%,-50%)', width: '16px', height: '16px', background: '#059669', border: '3px solid #fff', borderRadius: '50%', boxShadow: '0 0 0 2px #059669' }} />
+              </div>
+              <p style={{ fontSize: '11px', fontWeight: 700, color: '#059669', margin: '8px 0 0', textAlign: 'right', paddingRight: '4%' }}>← You are here (92nd percentile)</p>
+            </div>
+          )}
+
+          {/* Benchmark table — inline, no shadcn Table */}
+          <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr 1fr 1fr', gap: 0, border: '1px solid #F1F5F9', borderRadius: '8px', overflow: 'hidden' }}>
+            {['Tier', 'Deploy Freq', 'Lead Time', 'Failure Rate', 'MTTR'].map(h => (
+              <div key={h} style={{ padding: '9px 12px', background: '#F8FAFC', fontSize: '10px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</div>
+            ))}
+            {[
+              {
+                tier: 'Elite', tierColor: '#059669', tierBg: '#ECFDF5',
+                df: isDemoActive ? '4.2/day' : '>1/day',
+                lt: isDemoActive ? '1.8 hrs' : '<1 hour',
+                cfr: isDemoActive ? '1.2%' : '<5%',
+                mttr: isDemoActive ? '14 min' : '<1 hour',
+                isYou: isDemoActive,
+              },
+              { tier: 'High', tierColor: '#1E40AF', tierBg: '#EFF6FF', df: '>1/week', lt: '<1 week', cfr: '<10%', mttr: '<1 day', isYou: false },
+              { tier: 'Medium', tierColor: '#92400E', tierBg: '#FEF3C7', df: '>1/month', lt: '<1 month', cfr: '<15%', mttr: '<1 week', isYou: false },
+              { tier: 'Low', tierColor: '#991B1B', tierBg: '#FEE2E2', df: '<1/month', lt: '>1 month', cfr: '>15%', mttr: '>1 week', isYou: false },
+            ].map(row => (
+              <>
+                <div key={`${row.tier}-tier`} style={{ padding: '10px 12px', background: row.isYou ? '#F0FDF4' : '#fff', borderTop: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {row.isYou && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#7C3AED', display: 'inline-block', flexShrink: 0 }} />}
+                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: row.tierBg, color: row.tierColor }}>
+                    {row.tier}{row.isYou ? ' ← You' : ''}
+                  </span>
+                </div>
+                {[row.df, row.lt, row.cfr, row.mttr].map((val, i) => (
+                  <div key={`${row.tier}-${i}`} style={{ padding: '10px 12px', background: row.isYou ? '#F0FDF4' : '#fff', borderTop: '1px solid #F1F5F9', fontSize: row.isYou ? '13px' : '12px', fontWeight: row.isYou ? 700 : 400, color: row.isYou ? row.tierColor : '#475569' }}>{val}</div>
+                ))}
+              </>
             ))}
           </div>
         </div>
@@ -650,7 +753,7 @@ export default function DORAMetricsPage() {
               metric: metrics.deploymentFrequency,
               icon: TrendingUp,
               formatVal: (v: number) => `${v.toFixed(1)}/day`,
-              change: isDemoActive ? '+0.8' : null,
+              change: isDemoActive ? '+0.8 deploys/day · pipeline throughput increasing' : null,
               changeGood: true,
             },
             {
@@ -658,7 +761,7 @@ export default function DORAMetricsPage() {
               metric: metrics.leadTime,
               icon: Clock,
               formatVal: (v: number) => `${v.toFixed(1)} hrs`,
-              change: isDemoActive ? '−0.6 hrs' : null,
+              change: isDemoActive ? '−0.6 hrs · CI queue time reducing' : null,
               changeGood: true,
             },
             {
@@ -666,7 +769,7 @@ export default function DORAMetricsPage() {
               metric: metrics.changeFailureRate,
               icon: AlertTriangle,
               formatVal: (v: number) => `${v.toFixed(1)}%`,
-              change: isDemoActive ? '−0.3%' : null,
+              change: isDemoActive ? '−0.3% · test coverage improving' : null,
               changeGood: true,
             },
             {
@@ -674,7 +777,7 @@ export default function DORAMetricsPage() {
               metric: metrics.mttr,
               icon: Timer,
               formatVal: (v: number) => `${Math.round(v)} min`,
-              change: isDemoActive ? '−22 min' : null,
+              change: isDemoActive ? '−22 min · incident response process maturing' : null,
               changeGood: true,
             },
           ].map(({ label, metric, icon: Icon, formatVal, change, changeGood }) => {
@@ -779,137 +882,25 @@ export default function DORAMetricsPage() {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
-                  {metric.description && (
-                    <div style={{
-                      fontSize: '11px',
-                      color: '#94A3B8',
-                      marginTop: '10px',
-                      paddingTop: '10px',
-                      borderTop: '1px solid #F1F5F9',
-                    }}>
-                      {metric.description}
-                    </div>
-                  )}
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #F1F5F9' }}>
+                    {metric.benchmark === 'elite'
+                      ? `Exceeds Elite benchmark — no immediate action required`
+                      : metric.benchmark === 'high'
+                        ? `Above industry median — monitor for regression`
+                        : metric.benchmark === 'medium'
+                          ? `Below Elite threshold — review pipeline constraints`
+                          : dataState === 'inactive'
+                            ? 'Pipeline inactive — no activity detected in this period'
+                            : dataState === 'insufficient'
+                              ? 'Insufficient data — fewer than 5 deployments for reliable benchmarking'
+                              : metric.description
+                    }
+                  </div>
                 </CardContent>
               </Card>
             );
           })}
         </div>
-      )}
-
-      {/* ── BENCHMARK TABLE ── */}
-      {metrics && (
-        <Card>
-          <CardHeader>
-            <div style={{
-              fontSize: '0.68rem', fontWeight: 700,
-              color: '#475569', textTransform: 'uppercase',
-              letterSpacing: '0.1em', marginBottom: '4px',
-            }}>
-              Industry Benchmarks
-            </div>
-            <CardTitle style={{ fontSize: '15px' }}>
-              Where you stand vs. industry
-            </CardTitle>
-            <CardDescription>
-              Based on the 2024 DORA State of DevOps Report · 33,000+ professionals globally
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tier</TableHead>
-                  <TableHead>Deploy Frequency</TableHead>
-                  <TableHead>Lead Time</TableHead>
-                  <TableHead>Change Failure Rate</TableHead>
-                  <TableHead>MTTR</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[
-                  {
-                    tier: 'Elite',
-                    color: '#059669', bg: '#ECFDF5',
-                    df: '>1/day', lt: '<1 hour',
-                    cfr: '<5%', mttr: '<1 hour',
-                    current: metrics.deploymentFrequency.benchmark === 'elite' && (isDemoActive || totalDeployments > 0),
-                    demoDF: '4.2/day', demoLT: '1.8 hrs',
-                    demoCFR: '1.2%', demoMTTR: '14 min',
-                  },
-                  {
-                    tier: 'High',
-                    color: '#2563EB', bg: '#EFF6FF',
-                    df: '>1/week', lt: '<1 week',
-                    cfr: '<10%', mttr: '<1 day',
-                    current: metrics.deploymentFrequency.benchmark === 'high' && (isDemoActive || totalDeployments > 0),
-                    demoDF: '', demoLT: '', demoCFR: '', demoMTTR: '',
-                  },
-                  {
-                    tier: 'Medium',
-                    color: '#D97706', bg: '#FFFBEB',
-                    df: '>1/month', lt: '<1 month',
-                    cfr: '<15%', mttr: '<1 week',
-                    current: metrics.deploymentFrequency.benchmark === 'medium' && (isDemoActive || totalDeployments > 0),
-                    demoDF: '', demoLT: '', demoCFR: '', demoMTTR: '',
-                  },
-                  {
-                    tier: 'Low',
-                    color: '#DC2626', bg: '#FEF2F2',
-                    df: '<1/month', lt: '>1 month',
-                    cfr: '>15%', mttr: '>1 week',
-                    current: metrics.deploymentFrequency.benchmark === 'low' && (isDemoActive || totalDeployments > 0),
-                    demoDF: '', demoLT: '', demoCFR: '', demoMTTR: '',
-                  },
-                ].map((row) => (
-                  <TableRow
-                    key={row.tier}
-                    style={{
-                      background: row.current ? '#F5F3FF' : undefined,
-                      fontWeight: row.current ? 600 : undefined,
-                    }}
-                  >
-                    <TableCell>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        {row.current && (
-                          <span style={{
-                            width: '6px', height: '6px',
-                            borderRadius: '50%',
-                            background: '#7C3AED',
-                            display: 'inline-block',
-                            flexShrink: 0,
-                          }} />
-                        )}
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: '99px',
-                          background: row.bg,
-                          color: row.color,
-                        }}>
-                          {row.tier}{row.current ? ' ← You' : ''}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell style={{ color: row.current ? row.color : undefined }}>
-                      {row.current && isDemoActive && row.demoDF ? row.demoDF : row.df}
-                    </TableCell>
-                    <TableCell style={{ color: row.current ? row.color : undefined }}>
-                      {row.current && isDemoActive && row.demoLT ? row.demoLT : row.lt}
-                    </TableCell>
-                    <TableCell style={{ color: row.current ? row.color : undefined }}>
-                      {row.current && isDemoActive && row.demoCFR ? row.demoCFR : row.cfr}
-                    </TableCell>
-                    <TableCell style={{ color: row.current ? row.color : undefined }}>
-                      {row.current && isDemoActive && row.demoMTTR ? row.demoMTTR : row.mttr}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
       )}
 
       {/* ── SERVICE BREAKDOWN (demo mode only) ── */}
@@ -925,6 +916,9 @@ export default function DORAMetricsPage() {
             </div>
             <CardTitle style={{ fontSize: '15px' }}>
               Performance by service · last 90 days
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#D97706', background: '#FEF3C7', padding: '2px 8px', borderRadius: '4px', marginLeft: '8px' }}>
+                1 service needs attention
+              </span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -988,8 +982,13 @@ export default function DORAMetricsPage() {
                         borderRadius: '4px',
                         marginLeft: '6px',
                       }}>
-                        ⚠ Needs attention
+                        ⚠ Pipeline bottleneck
                       </span>
+                    )}
+                    {svc.attention && (
+                      <div style={{ marginTop: '4px', fontSize: '11px', color: '#D97706', fontWeight: 600 }}>
+                        Primary bottleneck · affects ~22% of deployments · upstream dependency for 3 critical services
+                      </div>
                     )}
                   </div>
                   {[svc.deployFreq, svc.leadTime, svc.cfr, svc.mttr].map((val, i) => (
@@ -1039,7 +1038,7 @@ export default function DORAMetricsPage() {
           <div>
             <div style={{
               fontSize: '0.68rem', fontWeight: 700,
-              color: '#7C3AED', textTransform: 'uppercase',
+              color: '#64748B', textTransform: 'uppercase',
               letterSpacing: '0.1em', marginBottom: '4px',
             }}>
               Enterprise · Custom Benchmarks
