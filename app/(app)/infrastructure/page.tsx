@@ -130,26 +130,26 @@ async function fetchRealSavings(): Promise<number | null> {
 }
 
 async function fetchSystemIntelligence(): Promise<{
-  score: number
+  system_score: number
   status: string
   top_action: string
-  cost_score: number
-  security_score: number
-  observability_score: number
-  score_delta: number
-  waste_amount: number
-  resources_analyzed: number
-  resources_total: number
+  top_drivers: any[]
+  components: {
+    cost:          { score: number; detail: string; status: string }
+    security:      { score: number; detail: string; status: string }
+    observability: { score: number; detail: string; status: string }
+  }
 } | null> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   if (!token) return null
   try {
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/system/intelligence`,
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/observability/intelligence`,
       { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }
     )
     if (!res.ok) return null
-    return await res.json()
+    const json = await res.json()
+    return json.data ?? null
   } catch {
     return null
   }
@@ -373,33 +373,39 @@ function InfrastructureContent() {
   const warningCount    = isDemoActive ? demoWarning     : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
 
   const DEMO_INTELLIGENCE = {
-    score: 73,
-    status: 'Partially Optimized',
-    top_action: 'Over-provisioned compute + unused storage',
-    cost_score: 55,
-    security_score: 87,
-    observability_score: 65,
-    score_delta: 18,
-    waste_amount: 1060,
-    resources_analyzed: 19,
-    resources_total: 20,
+    system_score: 73,
+    status: 'warning',
+    top_action: { message: 'Over-provisioned compute + unused storage', consequence: '', path: '/costs/cost-optimization', severity: 'high' },
+    top_drivers: [],
+    components: {
+      cost:          { score: 55, detail: '$2,039/mo savings identified', status: 'warning' },
+      security:      { score: 87, detail: 'No critical issues',           status: 'good'    },
+      observability: { score: 65, detail: '11 alarms configured',         status: 'warning' },
+    },
   }
 
-  const intel = isDemoActive ? DEMO_INTELLIGENCE : systemIntelligence ?? DEMO_INTELLIGENCE
+  const intel = isDemoActive
+    ? DEMO_INTELLIGENCE
+    : (systemIntelligence ?? DEMO_INTELLIGENCE)
 
-  const intelScore            = intel.score
-  const intelStatus           = intel.status
-  const intelTopAction        = intel.top_action
-  const intelCostScore        = intel.cost_score
-  const intelSecurityScore    = intel.security_score
-  const intelObsScore         = intel.observability_score
-  const intelScoreDelta       = intel.score_delta
-  const intelWaste            = intel.waste_amount
-  const intelAnalyzed         = isDemoActive ? (allResources.length || 19) : (systemIntelligence?.resources_analyzed ?? allResources.length)
-  const intelTotal            = isDemoActive ? 20 : (systemIntelligence?.resources_total ?? (totalResources ?? allResources.length))
+  const intelComponents = intel.components ?? DEMO_INTELLIGENCE.components
 
-  const scoreCircumference    = 144.5
-  const scoreOffset           = scoreCircumference - (intelScore / 100) * scoreCircumference
+  const intelScore         = intel.system_score
+  const intelStatus        = intel.status === 'good' ? 'Healthy' : intel.status === 'warning' ? 'Partially Optimized' : 'At Risk'
+  const intelTopAction = typeof intel.top_action === 'string'
+    ? intel.top_action
+    : intel.top_action?.message ?? 'Over-provisioned compute + unused storage'
+  const intelCostScore     = intelComponents.cost.score
+  const intelSecurityScore = intelComponents.security.score
+  const intelObsScore      = intelComponents.observability.score
+  const intelScoreDelta    = isDemoActive ? 18 : (intel.system_score > 0 ? Math.min(Math.round((100 - intel.system_score) * 0.55), 25) : 0)
+  const intelWaste         = realSavingsTotal ?? (isDemoActive ? 1060 : 0)
+  const intelAnalyzed      = isDemoActive ? DEMO_RESOURCES.length : (allResources.length || 0)
+  const intelTotal         = isDemoActive ? 20 : ((totalResources as number) || intelAnalyzed)
+  const scoreCircumference = 144.5
+  const scoreOffset        = intelScore > 0
+    ? scoreCircumference - (intelScore / 100) * scoreCircumference
+    : scoreCircumference
 
   const scoreChip = (score: number) => ({
     color: score >= 80 ? '#065F46' : '#92400E',
