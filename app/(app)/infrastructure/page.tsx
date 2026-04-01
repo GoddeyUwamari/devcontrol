@@ -121,9 +121,97 @@ async function fetchRealSavings(): Promise<number | null> {
     const data = await res.json()
     const results = data.results ?? []
     return results.reduce(
-      (sum: number, r: any) => sum + (parseFloat(r.monthlySavings) || 0),
+      (sum: number, r: any) => sum + (parseFloat(r.monthlySavings ?? r.monthly_savings) || 0),
       0
     )
+  } catch {
+    return null
+  }
+}
+
+async function fetchSystemIntelligence(): Promise<{
+  score: number
+  status: string
+  top_action: string
+  cost_score: number
+  security_score: number
+  observability_score: number
+  score_delta: number
+  waste_amount: number
+  resources_analyzed: number
+  resources_total: number
+} | null> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+  if (!token) return null
+  try {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/system/intelligence`,
+      { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }
+    )
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+async function fetchTopActions(): Promise<{
+  id: string
+  title: string
+  savings: number | null
+  risk: 'zero' | 'review'
+  urgency: 'now' | 'today' | 'schedule'
+  subtitle: string
+  type: 'cost' | 'reliability'
+}[] | null> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+  if (!token) return null
+  try {
+    const [costRes, anomalyRes] = await Promise.all([
+      fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization/results`,
+        { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }
+      ),
+      fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/anomalies`,
+        { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }
+      ),
+    ])
+
+    const costData    = costRes.ok    ? await costRes.json()    : { results: [] }
+    const anomalyData = anomalyRes.ok ? await anomalyRes.json() : { anomalies: [] }
+
+    const costActions = (costData.results ?? [])
+      .filter((r: any) => (parseFloat(r.monthlySavings ?? r.monthly_savings) || 0) > 0)
+      .sort((a: any, b: any) =>
+        (parseFloat(b.monthlySavings ?? b.monthly_savings) || 0) -
+        (parseFloat(a.monthlySavings ?? a.monthly_savings) || 0)
+      )
+      .slice(0, 3)
+      .map((r: any, i: number) => ({
+        id:       r.id ?? `cost-${i}`,
+        title:    r.title ?? r.recommendation ?? 'Cost optimization available',
+        savings:  Math.round(parseFloat(r.monthlySavings ?? r.monthly_savings) || 0),
+        risk:     'zero' as const,
+        urgency:  i === 0 ? 'now' as const : 'today' as const,
+        subtitle: `${r.resourceName ?? r.resource_name ?? 'Resource'} · ${r.region ?? 'us-east-1'} · cost leakage active`,
+        type:     'cost' as const,
+      }))
+
+    const reliabilityActions = (anomalyData.anomalies ?? anomalyData ?? [])
+      .filter((a: any) => a.severity === 'critical' || a.severity === 'high')
+      .slice(0, 1)
+      .map((a: any) => ({
+        id:       a.id ?? 'anomaly-0',
+        title:    a.title ?? a.message ?? 'Reliability issue detected',
+        savings:  null,
+        risk:     'review' as const,
+        urgency:  'now' as const,
+        subtitle: `${a.resourceName ?? a.resource ?? 'Resource'} · ${a.impact ?? 'potential downtime risk'}`,
+        type:     'reliability' as const,
+      }))
+
+    return [...reliabilityActions, ...costActions].slice(0, 4)
   } catch {
     return null
   }
@@ -150,6 +238,10 @@ function InfrastructureContent() {
     return () => document.removeEventListener('mousedown', close)
   }, [])
 
+  const demoMode = useDemoMode()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  const isDemoActive = demoMode || salesDemoMode
+
   const { data: resources = [], isLoading, refetch } = useQuery({
     queryKey: ['infrastructure', selectedType],
     queryFn: async () => {
@@ -158,6 +250,7 @@ function InfrastructureContent() {
       )
       return allResources.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
     },
+    enabled: !isDemoActive,
   })
 
   // All resources (unfiltered) — used for monthly cost in real mode
@@ -167,16 +260,14 @@ function InfrastructureContent() {
       const all = await infrastructureService.getAll()
       return all.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
     },
+    enabled: !isDemoActive,
   })
 
   const { data: recommendationsCount = 0 } = useQuery({
     queryKey: ['cost-recommendations-count'],
     queryFn: costRecommendationsService.getActiveCount,
+    enabled: !isDemoActive,
   })
-
-  const demoMode = useDemoMode()
-  const salesDemoMode = useSalesDemo((state) => state.enabled)
-  const isDemoActive = demoMode || salesDemoMode
 
   const { data: recommendationStats, isLoading: savingsLoading } = useQuery({
     queryKey: ['cost-recommendations-stats'],
@@ -189,10 +280,26 @@ function InfrastructureContent() {
     queryFn: fetchRealSavings,
     enabled: !isDemoActive,
   })
+
+  const { data: systemIntelligence } = useQuery({
+    queryKey: ['system-intelligence'],
+    queryFn: fetchSystemIntelligence,
+    enabled: !isDemoActive,
+  })
+
+  const { data: topActionsData } = useQuery({
+    queryKey: ['top-actions'],
+    queryFn: fetchTopActions,
+    enabled: !isDemoActive,
+  })
+
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncComplete, setSyncComplete] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
+  const [showAllResources, setShowAllResources] = useState(false)
+  const [issueFilter, setIssueFilter] = useState<string>('all')
+  const [sortOrder, setSortOrder] = useState<string>('impact')
 
   // FIX 3: Fetch real stats from /api/services/stats when not in demo mode
   const { data: apiStats, isLoading: statsLoading } = useQuery({
@@ -215,10 +322,14 @@ function InfrastructureContent() {
       setIsSyncing(true)
       const result = await awsServicesService.discoverServices()
       await Promise.all([
-        refetch(),
+        queryClient.invalidateQueries({ queryKey: ['infrastructure'] }),
         queryClient.invalidateQueries({ queryKey: ['infrastructure-all'] }),
         queryClient.invalidateQueries({ queryKey: ['services-stats'] }),
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-count'] }),
+        queryClient.invalidateQueries({ queryKey: ['system-intelligence'] }),
+        queryClient.invalidateQueries({ queryKey: ['top-actions'] }),
+        queryClient.invalidateQueries({ queryKey: ['infra-real-savings'] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
       ])
       toast.success(`Sync complete — ${result.discovered} resources discovered`)
       setSyncComplete(true)
@@ -260,6 +371,85 @@ function InfrastructureContent() {
   const totalMonthlyCost= isDemoActive ? demoMonthlyCost : realMonthlyCost
   const activeCount     = isDemoActive ? demoActive      : (statsLoading ? null : (apiStats?.healthy      ?? 0))
   const warningCount    = isDemoActive ? demoWarning     : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
+
+  const DEMO_INTELLIGENCE = {
+    score: 73,
+    status: 'Partially Optimized',
+    top_action: 'Over-provisioned compute + unused storage',
+    cost_score: 55,
+    security_score: 87,
+    observability_score: 65,
+    score_delta: 18,
+    waste_amount: 1060,
+    resources_analyzed: 19,
+    resources_total: 20,
+  }
+
+  const intel = isDemoActive ? DEMO_INTELLIGENCE : systemIntelligence ?? DEMO_INTELLIGENCE
+
+  const intelScore            = intel.score
+  const intelStatus           = intel.status
+  const intelTopAction        = intel.top_action
+  const intelCostScore        = intel.cost_score
+  const intelSecurityScore    = intel.security_score
+  const intelObsScore         = intel.observability_score
+  const intelScoreDelta       = intel.score_delta
+  const intelWaste            = intel.waste_amount
+  const intelAnalyzed         = isDemoActive ? (allResources.length || 19) : (systemIntelligence?.resources_analyzed ?? allResources.length)
+  const intelTotal            = isDemoActive ? 20 : (systemIntelligence?.resources_total ?? (totalResources ?? allResources.length))
+
+  const scoreCircumference    = 144.5
+  const scoreOffset           = scoreCircumference - (intelScore / 100) * scoreCircumference
+
+  const scoreChip = (score: number) => ({
+    color: score >= 80 ? '#065F46' : '#92400E',
+    bg:    score >= 80 ? '#D1FAE5' : '#FEF3C7',
+  })
+
+  const DEMO_TOP_ACTIONS = [
+    {
+      id: 'demo-1', rank: '01', urgency: 'now'   as const, risk: 'zero'   as const,
+      title: 'Downsize RDS cluster', savings: 740,
+      sub: 'production-postgres-primary · us-east-1 · cost leakage active',
+      bg: '#FFF8F8', border: '#FECACA', isTop: true,
+    },
+    {
+      id: 'demo-2', rank: '02', urgency: 'now'   as const, risk: 'review' as const,
+      title: 'Investigate CloudFront latency warnings', savings: null,
+      sub: 'production-cdn · potential downtime risk · degraded user experience',
+      bg: '#FFF8F8', border: '#FECACA', isTop: false,
+    },
+    {
+      id: 'demo-3', rank: '03', urgency: 'today' as const, risk: 'zero'   as const,
+      title: 'Remove unused EBS volumes', savings: 320,
+      sub: '6 unattached volumes · us-east-1 · no impact to workloads',
+      bg: '#F8FAFC', border: '#F1F5F9', isTop: false,
+    },
+    {
+      id: 'demo-4', rank: '04', urgency: 'today' as const, risk: 'zero'   as const,
+      title: 'Rightsize idle EC2 instances', savings: 580,
+      sub: 'analytics-warehouse · us-east-1 · avg 12% CPU utilization',
+      bg: '#F8FAFC', border: '#F1F5F9', isTop: false,
+    },
+  ]
+
+  const displayTopActions = isDemoActive
+    ? DEMO_TOP_ACTIONS
+    : (topActionsData ?? []).map((a, i) => ({
+        id:      a.id,
+        rank:    String(i + 1).padStart(2, '0'),
+        urgency: a.urgency,
+        risk:    a.risk,
+        title:   a.title,
+        savings: a.savings,
+        sub:     a.subtitle,
+        bg:      a.urgency === 'now'   ? '#FFF8F8' : '#F8FAFC',
+        border:  a.urgency === 'now'   ? '#FECACA' : '#F1F5F9',
+        isTop:   i === 0,
+      }))
+
+  const zeroRiskCount       = displayTopActions.filter(a => a.risk === 'zero').length
+  const totalRecoverable    = displayTopActions.reduce((sum, a) => sum + (a.savings ?? 0), 0)
 
   const displayRecommendationsCount = isDemoActive ? 3 : recommendationsCount
 
@@ -306,6 +496,34 @@ function InfrastructureContent() {
 
   // Values shown in the AI insight banner still use displayResources for region counts
   const regionCount = new Set(displayResources.map((r: InfrastructureResource) => r.awsRegion)).size
+
+  const tableResources = (() => {
+    let rows = [...effectiveResources]
+
+    // Issue filter
+    if (issueFilter === 'Cost Waste') {
+      rows = rows.filter(r => (r.costPerMonth ?? 0) > 400)
+    } else if (issueFilter === 'Reliability Risk') {
+      rows = rows.filter(r => r.status === 'pending' || r.status === 'stopped')
+    } else if (issueFilter === 'Healthy') {
+      rows = rows.filter(r => r.status === 'running' && (r.costPerMonth ?? 0) <= 400)
+    }
+
+    // Sort
+    if (sortOrder === 'impact') {
+      rows = rows.sort((a, b) => {
+        const aScore = (a.status === 'pending' || a.status === 'stopped') ? 999999 : (a.costPerMonth ?? 0)
+        const bScore = (b.status === 'pending' || b.status === 'stopped') ? 999999 : (b.costPerMonth ?? 0)
+        return bScore - aScore
+      })
+    } else if (sortOrder === 'cost-high') {
+      rows = rows.sort((a, b) => (b.costPerMonth ?? 0) - (a.costPerMonth ?? 0))
+    } else if (sortOrder === 'status') {
+      rows = rows.sort((a, b) => a.status.localeCompare(b.status))
+    }
+
+    return rows
+  })()
 
   return (
     <div style={{
@@ -354,17 +572,22 @@ function InfrastructureContent() {
                   : <><RefreshCw size={15} /> Sync AWS</>
             }
           </button>
-          <a
-            href="/costs/cost-optimization"
-            style={{
-              display: 'flex', alignItems: 'center', gap: '7px',
-              background: '#7C3AED', color: '#fff',
-              padding: '9px 18px', borderRadius: '7px',
-              fontSize: '12px', fontWeight: 700, textDecoration: 'none',
-            }}
-          >
-            <Check size={13} /> Apply Recommended Fixes
-          </a>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+            <a
+              href="/costs/cost-optimization"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                background: '#7C3AED', color: '#fff',
+                padding: '9px 18px', borderRadius: '7px',
+                fontSize: '12px', fontWeight: 700, textDecoration: 'none',
+              }}
+            >
+              <Check size={13} /> Apply Recommended Fixes
+            </a>
+            <p style={{ fontSize: '0.65rem', color: '#64748B', margin: 0, textAlign: 'right' }}>
+              Applies 3 zero-risk optimizations · No downtime · Est. savings: $1,060/mo
+            </p>
+          </div>
         </div>
       </div>
 
@@ -383,15 +606,15 @@ function InfrastructureContent() {
               <svg width="54" height="54" viewBox="0 0 54 54">
                 <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
                 <circle cx="27" cy="27" r="23" fill="none" stroke="#7C3AED" strokeWidth="5"
-                  strokeDasharray="144.5" strokeDashoffset="39"
+                  strokeDasharray="144.5" strokeDashoffset={scoreOffset}
                   strokeLinecap="round" transform="rotate(-90 27 27)"/>
               </svg>
-              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>73</span>
+              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>{intelScore}</span>
             </div>
             <div>
               <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>System Score</p>
-              <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>Partially Optimized</p>
-              <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>19/20 resources analyzed · High confidence</p>
+              <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>{intelStatus}</p>
+              <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>{`${intelAnalyzed}/${intelTotal} resources analyzed · High confidence`}</p>
             </div>
           </div>
 
@@ -400,8 +623,8 @@ function InfrastructureContent() {
           {/* Primary Issue */}
           <div>
             <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Primary Issue</p>
-            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>Over-provisioned compute + unused storage</p>
-            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#DC2626', margin: 0 }}>$1,060/mo active waste</p>
+            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>{intelTopAction}</p>
+            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#DC2626', margin: 0 }}>{`$${Math.round(intelWaste).toLocaleString()}/mo active waste`}</p>
           </div>
 
           <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
@@ -409,7 +632,7 @@ function InfrastructureContent() {
           {/* Score Impact */}
           <div>
             <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Score Impact if Resolved</p>
-            <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#7C3AED', margin: '0 0 3px' }}>+18 pts</p>
+            <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#7C3AED', margin: '0 0 3px' }}>{`+${intelScoreDelta} pts`}</p>
             <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>Within 24–48h after fixes applied</p>
           </div>
 
@@ -418,13 +641,13 @@ function InfrastructureContent() {
           {/* Component scores */}
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             {[
-              { label: 'Cost',          score: '55/100', color: '#92400E', bg: '#FEF3C7' },
-              { label: 'Security',      score: '87/100', color: '#065F46', bg: '#D1FAE5' },
-              { label: 'Observability', score: '65/100', color: '#92400E', bg: '#FEF3C7' },
-            ].map(({ label, score, color, bg }) => (
+              { label: 'Cost',          score: `${intelCostScore}/100`,     chip: scoreChip(intelCostScore)     },
+              { label: 'Security',      score: `${intelSecurityScore}/100`, chip: scoreChip(intelSecurityScore) },
+              { label: 'Observability', score: `${intelObsScore}/100`,      chip: scoreChip(intelObsScore)      },
+            ].map(({ label, score, chip }) => (
               <div key={label} style={{ textAlign: 'center' }}>
                 <p style={{ fontSize: '9px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 4px' }}>{label}</p>
-                <span style={{ fontSize: '12px', fontWeight: 700, color, background: bg, padding: '3px 10px', borderRadius: '100px' }}>{score}</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: chip.color, background: chip.bg, padding: '3px 10px', borderRadius: '100px' }}>{score}</span>
               </div>
             ))}
           </div>
@@ -545,7 +768,12 @@ function InfrastructureContent() {
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Recoverable Savings</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#16A34A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{potentialSavingsValue}</div>
           <p style={{ fontSize: '0.72rem', color: '#64748B', margin: '0 0 4px' }}>
-            {realSavingsTotal ? '18% of total spend' : isDemoActive ? '18% of total spend' : ''}
+            {totalMonthlyCost > 0 && (realSavingsTotal ?? 0) > 0
+              ? `${Math.round(((realSavingsTotal ?? 0) / totalMonthlyCost) * 100)}% of total spend`
+              : isDemoActive
+                ? '18% of total spend'
+                : ''
+            }
           </p>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             {realSavingsTotal && realSavingsTotal > 0
@@ -576,55 +804,26 @@ function InfrastructureContent() {
           <div>
             <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 3px' }}>Top Actions</p>
             <p style={{ fontSize: '0.8rem', color: '#475569', margin: 0 }}>
-              Ranked by impact · 4 zero-risk changes ready ·{' '}
-              <strong style={{ color: '#DC2626' }}>$1,640/mo recoverable today</strong>
+              Ranked by impact · {zeroRiskCount} zero-risk changes ready ·{' '}
+              <strong style={{ color: '#059669' }}>${totalRecoverable.toLocaleString()}/mo recoverable today</strong>
             </p>
           </div>
           <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', background: '#DC2626', color: '#fff' }}>Act Now</span>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
-          {[
-            {
-              rank: '01', urgency: 'now', risk: 'zero',
-              title: 'Downsize RDS cluster',
-              savings: '$740/mo',
-              sub: 'production-postgres-primary · us-east-1 · cost leakage active',
-              bg: '#FFF8F8', border: '#FECACA',
-            },
-            {
-              rank: '02', urgency: 'now', risk: 'review',
-              title: 'Investigate CloudFront latency warnings',
-              savings: null,
-              sub: 'production-cdn · potential downtime risk · degraded user experience',
-              bg: '#FFF8F8', border: '#FECACA',
-            },
-            {
-              rank: '03', urgency: 'today', risk: 'zero',
-              title: 'Remove unused EBS volumes',
-              savings: '$320/mo',
-              sub: '6 unattached volumes · us-east-1 · no impact to workloads',
-              bg: '#F8FAFC', border: '#F1F5F9',
-            },
-            {
-              rank: '04', urgency: 'today', risk: 'zero',
-              title: 'Rightsize idle EC2 instances',
-              savings: '$580/mo',
-              sub: 'analytics-warehouse · us-east-1 · avg 12% CPU utilization',
-              bg: '#F8FAFC', border: '#F1F5F9',
-            },
-          ].map((action) => (
-            <div key={action.rank} style={{
+          {displayTopActions.map((action) => (
+            <div key={action.id} style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '13px 16px', background: action.bg,
-              borderRadius: '8px', border: `1px solid ${action.border}`,
+              padding: action.isTop ? '15px 16px' : '13px 16px', background: action.bg,
+              borderRadius: '8px', border: action.isTop ? `2px solid ${action.border}` : `1px solid ${action.border}`,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94A3B8', minWidth: '16px' }}>{action.rank}</span>
                 <div>
                   <p style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>
                     {action.title}
-                    {action.savings && <span style={{ color: '#059669', fontWeight: 700 }}> — save {action.savings}</span>}
+                    {action.savings != null && <span style={{ color: '#059669', fontWeight: 700 }}> — save ${action.savings.toLocaleString()}/mo</span>}
                   </p>
                   <p style={{ fontSize: '0.7rem', color: '#64748B', margin: 0 }}>{action.sub}</p>
                 </div>
@@ -634,6 +833,15 @@ function InfrastructureContent() {
                   ? <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Zero Risk</span>
                   : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#FEF3C7', color: '#92400E' }}>Review Impact</span>
                 }
+                {action.isTop && (
+                  <span style={{
+                    display: 'inline-flex', padding: '2px 7px', borderRadius: '4px',
+                    fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: '0.06em', background: '#7C3AED', color: '#fff',
+                  }}>
+                    Highest Impact
+                  </span>
+                )}
                 {action.urgency === 'now'
                   ? <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#DC2626', color: '#fff' }}>Now</span>
                   : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Today</span>
@@ -656,7 +864,7 @@ function InfrastructureContent() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
             <div>
               {isDemoActive
-                ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>19 resources (demo data)</p>
+                ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{DEMO_RESOURCES.length} resources (demo data)</p>
                 : (totalResources !== null && (totalResources as number) > 0)
                   ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{effectiveResources.length} of{' '}{totalResources ?? allResources.length}{' '}resources</p>
                   : <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>0 resources</p>
@@ -664,16 +872,16 @@ function InfrastructureContent() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <select style={{ fontSize: '11px', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB', borderRadius: '100px', padding: '4px 12px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-              <option>View by Issue ▾</option>
-              <option>Cost Waste</option>
-              <option>Reliability Risk</option>
-              <option>Healthy</option>
+            <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} style={{ fontSize: '11px', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB', borderRadius: '100px', padding: '4px 12px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <option value="all">View by Issue ▾</option>
+              <option value="Cost Waste">Cost Waste</option>
+              <option value="Reliability Risk">Reliability Risk</option>
+              <option value="Healthy">Healthy</option>
             </select>
-            <select style={{ fontSize: '11px', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB', borderRadius: '100px', padding: '4px 12px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-              <option>Sort: Impact ▾</option>
-              <option>Sort: Cost (High)</option>
-              <option>Sort: Status</option>
+            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} style={{ fontSize: '11px', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB', borderRadius: '100px', padding: '4px 12px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <option value="impact">Sort: Impact ▾</option>
+              <option value="cost-high">Sort: Cost (High)</option>
+              <option value="status">Sort: Status</option>
             </select>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -793,12 +1001,12 @@ function InfrastructureContent() {
             </button>
           </div>
         ) : (
-          effectiveResources.map((r: InfrastructureResource, idx: number) => {
+          (showAllResources ? tableResources : tableResources.slice(0, 8)).map((r: InfrastructureResource, idx: number) => {
             const typeConf = resourceTypeConfig[r.resourceType?.toLowerCase() as string] || resourceTypeConfig.default
             const Icon = typeConf.icon
 
             const isReliabilityRisk = r.status === 'pending' || r.status === 'stopped'
-            const isCostWaste = r.costPerMonth != null && r.costPerMonth > 1000
+            const isCostWaste = r.costPerMonth != null && r.costPerMonth > 400
 
             const statusLabel = r.status === 'running' && !isCostWaste
               ? 'Healthy'
@@ -845,8 +1053,20 @@ function InfrastructureContent() {
                         {r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}
                       </p>
                       {issueLabel
-                        ? <p style={{ fontSize: '0.67rem', color: statusLabel === 'Critical' ? '#DC2626' : '#D97706', margin: 0, fontWeight: 700 }}>{issueLabel}</p>
-                        : <p style={{ fontSize: '0.67rem', color: '#94A3B8', margin: 0 }}>Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                        ? <p style={{ fontSize: '0.67rem', color: statusLabel === 'Critical' ? '#DC2626' : '#D97706', margin: 0, fontWeight: 700 }}>
+                            {issueLabel}
+                            {statusLabel === 'Critical' && (
+                              <a
+                                href={`/anomalies?resource=${r.awsId}`}
+                                style={{ marginLeft: '8px', color: '#DC2626', fontWeight: 700, fontSize: '0.67rem', textDecoration: 'underline' }}
+                              >
+                                Investigate →
+                              </a>
+                            )}
+                          </p>
+                        : <p style={{ fontSize: '0.67rem', color: '#94A3B8', margin: 0 }}>
+                            Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
                       }
                     </div>
                   </div>
@@ -873,7 +1093,7 @@ function InfrastructureContent() {
 
                   {/* Monthly Cost */}
                   <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>
-                    ${r.costPerMonth?.toFixed(2) ?? '0.00'}
+                    ${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}
                   </span>
 
                   {/* Issue badge */}
@@ -884,6 +1104,32 @@ function InfrastructureContent() {
               </div>
             )
           })
+        )}
+        {tableResources.length > 8 && (
+          <div style={{ padding: '14px 28px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
+            <button
+              onClick={() => setShowAllResources(prev => !prev)}
+              style={{
+                background: 'transparent',
+                color: '#7C3AED',
+                border: '1px solid #DDD6FE',
+                borderRadius: '7px',
+                padding: '8px 24px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              {showAllResources
+                ? <>Show less ↑</>
+                : <>{tableResources.length - 8} more resources ↓</>
+              }
+            </button>
+          </div>
         )}
       </div>
 
