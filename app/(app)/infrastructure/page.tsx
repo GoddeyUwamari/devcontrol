@@ -1025,7 +1025,7 @@ function InfrastructureContent() {
             const statusColor = statusLabel === 'Critical'  ? '#fff'    : statusLabel === 'Cost Waste' ? '#92400E' : '#475569'
             const statusBg    = statusLabel === 'Critical'  ? '#DC2626' : statusLabel === 'Cost Waste' ? '#FEF3C7' : '#F1F5F9'
 
-            const rowBg     = statusLabel === 'Critical'  ? '#FFF5F5' : statusLabel === 'Cost Waste' ? '#FFFBEB' : 'transparent'
+            const rowBg     = statusLabel === 'Critical'  ? '#FFF5F5' : statusLabel === 'Cost Waste' ? '#FFFBEB' : '#FFFFFF'
             const rowBorder = statusLabel === 'Critical'  ? '#FEE2E2' : statusLabel === 'Cost Waste' ? '#FDE68A' : '#F8FAFC'
 
             const issueLabel = statusLabel === 'Critical'
@@ -1045,6 +1045,7 @@ function InfrastructureContent() {
                     borderBottom: `1px solid ${rowBorder}`,
                     alignItems: 'center',
                     transition: 'background 0.1s',
+                    marginBottom: '4px',
                   }}
                   onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg || '#F8FAFC' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg }}
