@@ -118,8 +118,11 @@ export default function StatusPage() {
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
+            Observability
+          </p>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Infrastructure Health Overview
+            Status Intelligence
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Real-time health, uptime, and performance across your monitored services and regions
@@ -158,34 +161,37 @@ export default function StatusPage() {
             fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.02em', margin: '0 0 4px',
             color: overallStatus === 'operational' ? '#059669' : overallStatus === 'degraded' ? '#D97706' : '#DC2626',
           }}>
-            {overallStatus === 'operational' ? 'Your Infrastructure Is Healthy' : overallStatus === 'degraded' ? 'Partial Service Degradation' : 'Service Disruption Detected'}
+            {overallStatus === 'operational' ? 'System Healthy — No Action Required' : overallStatus === 'degraded' ? 'Partial Service Degradation' : 'Service Disruption Detected'}
           </h2>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0 }}>
-            No active risks, incidents, or cost anomalies detected · Last updated: {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
+            {overallStatus === 'operational'
+              ? `System risk: NONE · all services within SLA · last updated: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}`
+              : overallStatus === 'degraded'
+                ? `System risk: ELEVATED · service degradation detected · last updated: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}`
+                : `System risk: CRITICAL · active outage detected · last updated: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}`
+            }
           </p>
         </div>
       </div>
 
-      {/* AI INSIGHT BANNER */}
-      <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 24px', border: '1px solid #F1F5F9', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Sparkles size={14} style={{ color: '#fff' }} />
+      {/* DECISION INTELLIGENCE */}
+      <div style={{ background: '#fff', borderRadius: '12px', padding: '14px 20px', border: '1px solid #E2E8F0', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+        <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Sparkles size={12} style={{ color: '#fff' }} />
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
-          <div style={{ fontSize: '0.875rem', color: '#1E293B', lineHeight: 1.7 }}>
-            <p style={{ margin: '0 0 8px', fontWeight: 500 }}>All systems operating within SLA. No active risks or anomalies detected.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '10px' }}>
-              <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem' }}>→ Uptime stable at 99.98% — Elite tier (last 30 days)</p>
-              <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem' }}>→ 3 minor incidents resolved · avg resolution 18 minutes</p>
-              <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem' }}>→ No performance degradation across regions</p>
-              <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem' }}>→ No cost anomalies or waste linked to incidents</p>
-            </div>
-            <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: '#059669' }}>No action required.</p>
-          </div>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Decision Intelligence</p>
+          <p style={{ fontSize: '0.84rem', color: '#1E293B', margin: 0, lineHeight: 1.7 }}>
+            {overallStatus === 'operational'
+              ? <><strong style={{ color: '#059669' }}>All systems operating within SLA.</strong> Uptime stable at 99.98% — Elite tier (last 30 days). 3 minor incidents resolved · avg resolution 18 minutes. No performance degradation across regions · no cost anomalies linked to incidents.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>No action required — system is healthy.</span></>
+              : overallStatus === 'degraded'
+                ? <><strong style={{ color: '#D97706' }}>Partial service degradation detected.</strong> One or more services are operating below threshold. Review highlighted services and check recent deployments for root cause.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#D97706', fontWeight: 600 }}>Action required — investigate degraded services.</span></>
+                : <><strong style={{ color: '#DC2626' }}>Service disruption detected.</strong> One or more services are experiencing an outage. Escalate immediately and review incident timeline for impact scope.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#DC2626', fontWeight: 600 }}>Critical — escalate now.</span></>
+            }
+          </p>
         </div>
-        <a href="/monitoring/slos" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-          View SLOs <ArrowRight size={12} />
+        <a href="/monitoring/slos" style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+          View SLOs <ArrowRight size={11} />
         </a>
       </div>
 
@@ -204,8 +210,8 @@ export default function StatusPage() {
             border: '1px solid #E2E8F0',
             borderLeft: hero ? '2px solid #534AB7' : '1px solid #E2E8F0',
           }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569',
-              textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B',
+              textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 14px' }}>{label}</p>
             <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor,
               letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
             <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
@@ -216,7 +222,7 @@ export default function StatusPage() {
       {/* SERVICE STATUS */}
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', marginBottom: '24px' }}>
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>Service Status</p>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 2px' }}>Service Status</p>
           <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{services.filter(s => s.status === 'operational').length}/{services.length} services operational</p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1px', background: '#F1F5F9' }}>
@@ -257,7 +263,7 @@ export default function StatusPage() {
 
       {/* 7-DAY UPTIME HISTORY */}
       <div style={{ background: '#fff', borderRadius: '16px', padding: '28px 32px', border: '1px solid #F1F5F9', marginBottom: '24px' }}>
-        <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>7-Day Uptime History</p>
+        <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px' }}>7-Day Uptime History</p>
         <p style={{ fontSize: '0.875rem', color: '#0F172A', fontWeight: 600, margin: '0 0 24px' }}>No downtime in the last 7 days · 100% availability across all monitored services</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
           {uptimeHistory.map(({ day, value }) => (
@@ -279,7 +285,7 @@ export default function StatusPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
           <Globe size={16} style={{ color: '#475569' }} />
           <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>Regional Status</p>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 2px' }}>Regional Status</p>
             <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>All regions operational · No latency anomalies detected</p>
           </div>
         </div>
@@ -307,7 +313,7 @@ export default function StatusPage() {
       {/* INCIDENT HISTORY */}
       <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>Incident History</p>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 2px' }}>Incident History</p>
           <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{incidents.filter(i => i.status === 'resolved').length} incidents in the last 30 days — all minor, no customer impact</p>
         </div>
         {incidents.map((incident, idx) => {
