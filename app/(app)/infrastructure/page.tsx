@@ -103,6 +103,32 @@ const DEMO_RESOURCES: InfrastructureResource[] = [
   { id: 'r8', serviceId: 'svc-3', serviceName: 'payment-processor',    resourceType: 'rds',    awsId: 'rds-payments-01',    awsRegion: 'us-west-2', status: 'pending', costPerMonth: 398.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
 ]
 
+async function fetchRealSavings(): Promise<number | null> {
+  const token =
+    typeof window !== 'undefined'
+      ? localStorage.getItem('accessToken')
+      : null
+  if (!token) return null
+  try {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization/results`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` },
+        credentials: 'include',
+      }
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const results = data.results ?? []
+    return results.reduce(
+      (sum: number, r: any) => sum + (parseFloat(r.monthlySavings) || 0),
+      0
+    )
+  } catch {
+    return null
+  }
+}
+
 export default function InfrastructurePage() {
   return (
     <Suspense fallback={<div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>Loading...</div>}>
@@ -157,6 +183,12 @@ function InfrastructureContent() {
     queryFn: costRecommendationsService.getStats,
     enabled: !isDemoActive,
   })
+
+  const { data: realSavingsTotal } = useQuery({
+    queryKey: ['infra-real-savings'],
+    queryFn: fetchRealSavings,
+    enabled: !isDemoActive,
+  })
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncComplete, setSyncComplete] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
@@ -207,6 +239,14 @@ function InfrastructureContent() {
     return true
   })
 
+  const effectiveResources =
+    !isDemoActive &&
+    filteredResources.length === 0 &&
+    selectedType === null &&
+    statusFilter === null
+      ? allResources
+      : filteredResources
+
   // FIX 3: KPI stats — demo uses computed values, real mode uses API stats
   const demoTotal       = DEMO_RESOURCES.length
   const demoMonthlyCost = DEMO_RESOURCES.reduce((sum, r) => sum + (r.costPerMonth || 0), 0)
@@ -226,10 +266,12 @@ function InfrastructureContent() {
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
 
   const potentialSavingsValue = isDemoActive
-    ? '$500.83'
-    : savingsLoading
-      ? '—'
-      : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
+    ? '$1,697/mo'
+    : realSavingsTotal != null && realSavingsTotal > 0
+      ? `$${Math.round(realSavingsTotal).toLocaleString()}/mo`
+      : savingsLoading
+        ? '—'
+        : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
 
   // Cost by service — group allResources by serviceName, sum costPerMonth
   const DEMO_COST_BY_SERVICE = [
@@ -304,7 +346,7 @@ function InfrastructureContent() {
               : syncComplete
                 ? <><Check size={15} /> Sync Complete</>
                 : (!isDemoActive && allResources.length === 0)
-                  ? <><RefreshCw size={15} /> Connect AWS & Scan</>
+                  ? <><RefreshCw size={15} /> Scan My AWS for Cost & Risk</>
                   : <><RefreshCw size={15} /> Sync AWS</>
             }
           </button>
@@ -325,8 +367,10 @@ function InfrastructureContent() {
             {isDemoActive
               ? `1 resource needs attention. Optimization opportunities detected — potential savings available. Review recommendations to reduce waste and improve reliability.`
               : allResources.length === 0
-                ? 'Connect your AWS account to start monitoring cost, health, and risk across your infrastructure.'
-                : `${warningCount ?? 0} resource(s) need attention. ${displayRecommendationsCount} optimization opportunities detected.`
+                ? 'Connect AWS to detect cost leaks, idle resources, and security risks — teams typically find 20–40% in wasted spend on their first scan.'
+                : warningCount && warningCount > 0
+                  ? `${warningCount} resource${(warningCount as number) !== 1 ? 's require' : ' requires'} immediate attention — potential downtime or misconfiguration detected. Review and resolve to maintain reliability.`
+                  : `${totalResources} resources healthy across ${regionCount} region${regionCount !== 1 ? 's' : ''}. ${realSavingsTotal && realSavingsTotal > 0 ? `$${Math.round(realSavingsTotal).toLocaleString()}/mo in savings identified.` : 'Run a cost scan to identify savings.'}`
             }
           </p>
         </div>
@@ -393,22 +437,61 @@ function InfrastructureContent() {
 
         {/* Needs Attention — click to filter */}
         <div
-          style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: hoveredCard === 'warning' || statusFilter === 'warning' ? '0.5px solid #7C3AED' : '0.5px solid #e5e7eb', transition: 'border-color 0.15s ease', cursor: 'pointer' }}
+          style={{
+            background: '#fff', borderRadius: '12px', padding: '32px',
+            border: hoveredCard === 'warning' || statusFilter === 'warning'
+              ? '0.5px solid #7C3AED'
+              : warningCount && (warningCount as number) > 0
+                ? '1px solid #FEE2E2'
+                : '0.5px solid #e5e7eb',
+            borderLeft: warningCount && (warningCount as number) > 0
+              ? '3px solid #DC2626'
+              : undefined,
+            transition: 'border-color 0.15s ease', cursor: 'pointer',
+          }}
           onMouseEnter={() => setHoveredCard('warning')}
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'warning' ? null : 'warning')}
         >
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Needs Attention</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: (warningCount !== null && (warningCount as number) > 0) ? '#D97706' : '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>Warning or stopped</p>
-          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Click to filter</p>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>
+            {warningCount && (warningCount as number) > 0 ? 'Requires immediate action' : 'All resources healthy'}
+          </p>
+          {warningCount && (warningCount as number) > 0 ? (
+            <p style={{ fontSize: '0.68rem', color: '#DC2626', margin: 0, fontWeight: 500 }}>
+              Click to investigate →
+            </p>
+          ) : (
+            <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>
+              Click to filter
+            </p>
+          )}
         </div>
 
         {/* Potential Savings — display only */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Potential Savings</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#16A34A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{potentialSavingsValue}</div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>Identified savings</p>
+          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+            {realSavingsTotal && realSavingsTotal > 0
+              ? 'Approve to capture savings'
+              : isDemoActive
+                ? 'Approve to capture savings'
+                : 'Run scan to identify savings'}
+          </p>
+          {(isDemoActive || (realSavingsTotal && realSavingsTotal > 0)) && (
+            <a
+              href="/costs/cost-optimization"
+              style={{
+                fontSize: '0.72rem', fontWeight: 600, color: '#059669',
+                textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
+                gap: '3px', marginTop: '6px',
+              }}
+            >
+              Review opportunities →
+            </a>
+          )}
         </div>
 
       </div>
@@ -423,7 +506,7 @@ function InfrastructureContent() {
               {isDemoActive
                 ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>19 resources (demo data)</p>
                 : (totalResources !== null && (totalResources as number) > 0)
-                  ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredResources.length} of {totalResources} resources</p>
+                  ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{effectiveResources.length} of {totalResources} resources</p>
                   : <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>0 resources</p>
               }
             </div>
@@ -504,23 +587,48 @@ function InfrastructureContent() {
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading resources...</p>
           </div>
-        ) : !isDemoActive && filteredResources.length === 0 ? (
+        ) : !isDemoActive && effectiveResources.length === 0 ? (
           <div style={{ padding: '64px', textAlign: 'center' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Server size={22} style={{ color: '#94A3B8' }} />
             </div>
-            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>No infrastructure data yet</p>
-            <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px', lineHeight: 1.6 }}>
-              Connect your AWS account to uncover cost leaks, security risks, and performance issues in minutes.
-            </p>
+            <div style={{ marginBottom: '24px' }}>
+              <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>
+                No infrastructure data yet
+              </p>
+              <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 20px', lineHeight: 1.6 }}>
+                Connect your AWS account to uncover cost leaks, security risks, and idle resources — first insights in under 2 minutes.
+              </p>
+              <div style={{
+                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px',
+                maxWidth: '480px', margin: '0 auto 24px', textAlign: 'left',
+              }}>
+                {[
+                  '💸 Idle EC2 instances draining budget',
+                  '🗄️ Underutilized RDS databases',
+                  '🔒 Misconfigured security groups',
+                  '📦 Unused S3 storage accumulating',
+                ].map(item => (
+                  <div key={item} style={{
+                    fontSize: '0.78rem', color: '#475569', background: '#F8FAFC',
+                    borderRadius: '8px', padding: '10px 12px', border: '1px solid #F1F5F9',
+                  }}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: '0.75rem', color: '#94A3B8', margin: '12px 0 0' }}>
+                Read-only access · No changes to infrastructure · Cancel anytime
+              </p>
+            </div>
             <button
               onClick={handleSyncAWS}
               style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-              <RefreshCw size={14} /> Connect AWS &amp; Scan Infrastructure
+              <RefreshCw size={14} /> Scan My AWS for Cost &amp; Risk
             </button>
           </div>
         ) : (
-          filteredResources.map((r: InfrastructureResource, idx: number) => {
+          effectiveResources.map((r: InfrastructureResource, idx: number) => {
             const typeConf = resourceTypeConfig[r.resourceType as string] || resourceTypeConfig.default
             const Icon = typeConf.icon
             const statusColor = r.status === 'running' ? '#059669' : r.status === 'pending' ? '#D97706' : r.status === 'stopped' ? '#64748B' : '#DC2626'
@@ -534,7 +642,7 @@ function InfrastructureContent() {
                     display: 'grid',
                     gridTemplateColumns: '2fr 100px 160px 160px 120px 110px 90px',
                     padding: '14px 28px',
-                    borderBottom: idx < filteredResources.length - 1 ? '1px solid #F8FAFC' : 'none',
+                    borderBottom: idx < effectiveResources.length - 1 ? '1px solid #F8FAFC' : 'none',
                     alignItems: 'center',
                     transition: 'background 0.1s',
                   }}
