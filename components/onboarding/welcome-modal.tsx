@@ -54,55 +54,46 @@ export function WelcomeModal() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-2xl">Welcome to DevControl 👋</DialogTitle>
+          <DialogTitle className="text-2xl">Let's find your AWS cost waste 👋</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           <p className="text-gray-600 dark:text-gray-400">
-            DevControl helps you manage AWS infrastructure, track deployments, and optimize
-            costs — all in one place.
+            Most AWS environments have <strong>$500–$2,000/month in recoverable waste</strong>. DevControl finds it automatically — idle resources, oversized instances, security gaps — and tells you exactly what to fix first.
           </p>
 
           <div className="grid grid-cols-3 gap-4 py-4">
             <div className="text-center">
-              <div className="text-3xl mb-2" aria-hidden="true">
-                🚀
-              </div>
-              <h4 className="font-semibold text-sm mb-1">Track Services</h4>
+              <div className="text-3xl mb-2" aria-hidden="true">💸</div>
+              <h4 className="font-semibold text-sm mb-1">Find Cost Waste</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Monitor all your microservices
+                See exactly where AWS money is being wasted — idle resources, oversized instances, unused storage
               </p>
             </div>
-
             <div className="text-center">
-              <div className="text-3xl mb-2" aria-hidden="true">
-                💰
-              </div>
-              <h4 className="font-semibold text-sm mb-1">AWS Costs</h4>
+              <div className="text-3xl mb-2" aria-hidden="true">⚡</div>
+              <h4 className="font-semibold text-sm mb-1">Detect Risks Early</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Real-time spend tracking
+                Catch security gaps, cost spikes, and reliability issues before they become incidents
               </p>
             </div>
-
             <div className="text-center">
-              <div className="text-3xl mb-2" aria-hidden="true">
-                📊
-              </div>
-              <h4 className="font-semibold text-sm mb-1">DORA Metrics</h4>
+              <div className="text-3xl mb-2" aria-hidden="true">🎯</div>
+              <h4 className="font-semibold text-sm mb-1">Act on Intelligence</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Measure DevOps performance
+                Ranked recommendations with one-click fixes — not raw data dumps
               </p>
             </div>
           </div>
 
-          <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
-            <h4 className="font-semibold text-sm mb-2">Quick Setup (5 minutes)</h4>
-            <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-1 ml-4 list-decimal">
-              <li>Create your first service</li>
-              <li>Log a deployment</li>
-              <li>Connect your AWS account</li>
-              <li>Discover resources</li>
+          <div className="bg-purple-50 dark:bg-purple-950 p-4 rounded-lg">
+            <h4 className="font-semibold text-sm mb-2">Get your first insight in 5 minutes:</h4>
+            <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-2 ml-4 list-decimal">
+              <li><strong>Connect AWS</strong> — read-only access, no changes to your infrastructure</li>
+              <li><strong>Run a scan</strong> — DevControl finds cost waste and risks automatically</li>
+              <li><strong>See your savings</strong> — ranked list of fixes with estimated impact</li>
             </ol>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">⏱ Takes ~5 minutes · 🔒 Read-only · No infrastructure changes</p>
           </div>
         </div>
 
@@ -110,7 +101,7 @@ export function WelcomeModal() {
           <Button variant="outline" onClick={handleSkip}>
             I'll Do This Later
           </Button>
-          <Button onClick={handleGetStarted}>Get Started</Button>
+          <Button onClick={handleGetStarted}>Connect AWS & Find Savings →</Button>
         </div>
       </DialogContent>
     </Dialog>

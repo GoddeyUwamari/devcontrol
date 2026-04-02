@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -48,7 +47,6 @@ function PlanBadge({ plan }: { plan?: string }) {
 }
 
 export default function TenantsPage() {
-  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const debouncedSearch = useDebounce(searchQuery, 300)
@@ -138,11 +136,14 @@ export default function TenantsPage() {
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
+            Infrastructure
+          </p>
           <h1 style={{ fontSize: '1.875rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Tenants
+            Tenant Intelligence
           </h1>
           <p style={{ fontSize: '1rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Monitor tenant health, usage, and activity across your SaaS platform
+            Monitor revenue, churn risk, and expansion signals across your tenant base.
           </p>
         </div>
         {/* FIX 2: header buttons */}
@@ -170,81 +171,180 @@ export default function TenantsPage() {
         </div>
       </div>
 
+      {/* TENANT INTELLIGENCE STRIP */}
+      <div style={{
+        background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0',
+        padding: '20px 24px', marginBottom: '16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: '16px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+
+          {/* Active rate ring */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ position: 'relative', width: '54px', height: '54px', flexShrink: 0 }}>
+              <svg width="54" height="54" viewBox="0 0 54 54">
+                <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
+                <circle cx="27" cy="27" r="23" fill="none"
+                  stroke={isDemoActive ? '#059669' : '#94A3B8'}
+                  strokeWidth="5"
+                  strokeDasharray="144.5"
+                  strokeDashoffset={isDemoActive ? 29 : 144.5}
+                  strokeLinecap="round"
+                  transform="rotate(-90 27 27)"/>
+              </svg>
+              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: isDemoActive ? '#059669' : '#94A3B8' }}>
+                {isDemoActive ? '75%' : 'N/A'}
+              </span>
+            </div>
+            <div>
+              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Active Rate</p>
+              <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>
+                {isDemoActive ? `${activeCount} of ${displayTenants.length} active` : 'No tenant data'}
+              </p>
+              <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>
+                {isDemoActive ? '↓ from 87% last month · 2 churned' : 'Add tenants to begin tracking'}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+          {/* Est. MRR */}
+          <div>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Est. MRR</p>
+            <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>
+              {isDemoActive ? '$12,400/mo' : '—'}
+            </p>
+            <p style={{ fontSize: '0.68rem', color: isDemoActive ? '#DC2626' : '#64748B', fontWeight: isDemoActive ? 600 : 400, margin: 0 }}>
+              {isDemoActive ? '$1,800/mo at risk (2 inactive)' : 'Connect billing to track MRR'}
+            </p>
+          </div>
+
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+          {/* Concentration risk */}
+          <div>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Concentration Risk</p>
+            <p style={{ fontSize: '0.95rem', fontWeight: 700, color: isDemoActive ? '#D97706' : '#0F172A', margin: '0 0 3px' }}>
+              {isDemoActive ? 'Top 2 = 46% of usage' : '—'}
+            </p>
+            <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>
+              {isDemoActive ? 'Acme + TechFlow dominate usage' : 'Usage data not yet available'}
+            </p>
+          </div>
+
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+
+          {/* Churn signal */}
+          <div>
+            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Churn Signal</p>
+            <p style={{ fontSize: '0.95rem', fontWeight: 700, color: isDemoActive ? '#DC2626' : '#0F172A', margin: '0 0 3px' }}>
+              {isDemoActive ? '2 accounts at risk' : '—'}
+            </p>
+            <p style={{ fontSize: '0.68rem', color: isDemoActive ? '#DC2626' : '#64748B', fontWeight: isDemoActive ? 600 : 400, margin: 0 }}>
+              {isDemoActive ? 'Inactive in last 7 days · outreach recommended' : 'No churn signals detected'}
+            </p>
+          </div>
+
+        </div>
+        <a href="/settings/billing" style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          Billing overview
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
+      </div>
+
       {/* AUTH ERROR BANNER */}
       {isAuthError && (
         <div style={{
-          background: '#FEF2F2',
-          border: '0.5px solid #FECACA',
-          borderRadius: '8px',
-          padding: '14px 16px',
-          marginBottom: '20px',
-          display: 'flex',
-          gap: '10px',
-          alignItems: 'flex-start',
+          background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px',
+          padding: '12px 16px', marginBottom: '16px',
+          display: 'flex', alignItems: 'center', gap: '10px',
         }}>
-          <div style={{ width: '28px', height: '28px', background: '#FEE2E2', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#DC2626', fontSize: '18px' }}>
-            ⚠
-          </div>
-          <div>
-            <p style={{ fontSize: '15px', fontWeight: 500, color: '#991B1B', margin: '0 0 3px' }}>
-              Session expired or unauthorized
-            </p>
-            <p style={{ fontSize: '18px', color: '#B91C1C', margin: '0 0 10px' }}>
-              Your session has expired. Sign in again to continue managing tenants.
-            </p>
-            <button
-              onClick={() => router.push('/login')}
-              style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '7px 14px', fontSize: '18px', fontWeight: 500, cursor: 'pointer' }}
-            >
-              Sign in again
-            </button>
-          </div>
+          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#D97706', flexShrink: 0 }} />
+          <p style={{ fontSize: '0.82rem', color: '#475569', margin: 0 }}>
+            Session expired — <a href="/login?reason=session_expired" style={{ color: '#7C3AED', fontWeight: 600 }}>sign in again</a> to manage tenants.
+          </p>
         </div>
       )}
 
-      {/* AI INSIGHT BANNER */}
-      <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 24px', border: '1px solid #F1F5F9', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Sparkles size={14} style={{ color: '#fff' }} />
+      {/* DECISION INTELLIGENCE */}
+      <div style={{
+        background: '#fff', borderRadius: '12px', padding: '14px 20px',
+        border: '1px solid #E2E8F0', marginBottom: '24px',
+        display: 'flex', alignItems: 'flex-start', gap: '14px',
+      }}>
+        <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Sparkles size={12} style={{ color: '#fff' }} />
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
-          <p style={{ fontSize: '1rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Decision Intelligence</p>
+          <p style={{ fontSize: '0.84rem', color: '#1E293B', margin: 0, lineHeight: 1.7 }}>
             {isDemoActive
-              ? `${activeCount} of ${displayTenants.length} tenants are active. 2 tenants moved to inactive status in the last 7 days. Acme Corporation and TechFlow Systems are your highest-usage tenants by deployment frequency.`
+              ? <><strong style={{ color: '#DC2626' }}>2 tenants became inactive in the last 7 days</strong> — potential churn signal. Blueshift Ventures (Starter) and Orion Digital Labs (Free) have gone dark. Top tenant concentration risk: <strong>Acme + TechFlow drive 46% of usage</strong> — over-reliance on 2 accounts.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#64748B' }}>Recommended: reach out to recently inactive tenants · consider upsell path for high-usage Starter accounts.</span></>
               : displayTenants.length === 0
-                ? (
-                  <span>
-                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
-                      Once tenants are added, DevControl will detect
-                    </span>
-                    <span style={{ display: 'block', fontSize: '1rem', color: '#1E293B', marginBottom: '2px' }}>
-                      Unusual usage spikes · High-cost tenants impacting infrastructure · Churn risk based on activity patterns
-                    </span>
-                    <span style={{ display: 'block', fontSize: '0.95rem', color: '#64748B' }}>
-                      AI insights update automatically as tenant activity grows.
-                    </span>
-                  </span>
-                )
-                : `${activeCount} active and ${inactiveCount} inactive tenants. ${inactiveCount > 0 ? `${inactiveCount} tenant${inactiveCount > 1 ? 's' : ''} may require attention.` : 'All tenants are active.'}`
+                ? <>No tenants registered yet. Add your first tenant to begin tracking usage, billing signals, and churn risk across your platform.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#64748B' }}>DevControl will automatically detect usage spikes, high-cost tenants, and churn risk patterns as tenant activity grows.</span></>
+                : <>{activeCount} of {displayTenants.length} tenants active. {inactiveCount > 0 ? <><strong style={{ color: '#D97706' }}>{inactiveCount} tenant{inactiveCount > 1 ? 's' : ''} inactive</strong> — review for churn risk.</> : 'All tenants operating normally.'}<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#64748B' }}>Monitor deployment activity and plan usage to detect expansion and churn signals early.</span></>
             }
           </p>
         </div>
+        {isDemoActive && inactiveCount > 0 && (
+          <span style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', flexShrink: 0, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            Churn risk active
+          </span>
+        )}
       </div>
 
-      {/* 3 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
-        {[
-          { label: 'Total Tenants', value: displayTenants.length, sub: 'Registered accounts',    valueColor: displayTenants.length === 0 ? '#9ca3af' : '#0F172A' },
-          { label: 'Active',        value: activeCount,           sub: 'Operating normally',      valueColor: activeCount === 0 ? '#9ca3af' : '#059669' },
-          { label: 'Inactive',      value: inactiveCount,         sub: 'Suspended or churned',    valueColor: inactiveCount === 0 ? '#9ca3af' : '#D97706' },
-        ].map(({ label, value, sub, valueColor }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
-            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
-            <div style={{ fontSize: '2.625rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
-            <p style={{ fontSize: '0.9rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+      {/* KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '18px' }}>
+
+        {/* Total Tenants */}
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0' }}>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 14px' }}>Total Tenants</p>
+          <div style={{ fontSize: '2.1rem', fontWeight: 700, color: displayTenants.length === 0 ? '#9CA3AF' : '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '5px' }}>
+            {displayTenants.length}
           </div>
-        ))}
+          <p style={{ fontSize: '0.72rem', color: '#475569', margin: 0 }}>
+            {isDemoActive ? '+2 this month' : 'Registered accounts'}
+          </p>
+        </div>
+
+        {/* Active */}
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0' }}>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 14px' }}>Active</p>
+          <div style={{ fontSize: '2.1rem', fontWeight: 700, color: activeCount === 0 ? '#9CA3AF' : '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '5px' }}>
+            {activeCount}
+          </div>
+          <p style={{ fontSize: '0.72rem', color: '#475569', margin: 0 }}>Operating normally</p>
+        </div>
+
+        {/* Inactive / Churn Risk */}
+        <div style={{ background: inactiveCount > 0 ? '#FFFBEB' : '#fff', borderRadius: '12px', padding: '22px', border: inactiveCount > 0 ? '1px solid #FDE68A' : '1px solid #E2E8F0' }}>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: inactiveCount > 0 ? '#D97706' : '#64748B', margin: '0 0 14px' }}>Churn Risk</p>
+          <div style={{ fontSize: '2.1rem', fontWeight: 700, color: inactiveCount === 0 ? '#9CA3AF' : '#D97706', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '5px' }}>
+            {inactiveCount}
+          </div>
+          <p style={{ fontSize: '0.72rem', color: '#475569', margin: '0 0 3px' }}>
+            {inactiveCount === 0 ? 'No inactive accounts' : 'Inactive · outreach recommended'}
+          </p>
+          {inactiveCount > 0 && <p style={{ fontSize: '10px', fontWeight: 700, color: '#D97706', margin: 0 }}>Review now →</p>}
+        </div>
+
+        {/* Plan Distribution */}
+        <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0' }}>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 14px' }}>Plan Mix</p>
+          <div style={{ fontSize: '2.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '5px' }}>
+            {displayTenants.filter((t: any) => t.plan === 'enterprise' || t.plan === 'pro').length}
+            <span style={{ fontSize: '1rem', color: '#94A3B8', fontWeight: 400 }}> paid</span>
+          </div>
+          <p style={{ fontSize: '0.72rem', color: '#475569', margin: 0 }}>
+            {isDemoActive
+              ? `1 Enterprise · 3 Pro · 2 Starter · 1 Free`
+              : `${displayTenants.filter((t: any) => t.plan === 'enterprise').length} Enterprise · ${displayTenants.filter((t: any) => t.plan === 'pro').length} Pro`
+            }
+          </p>
+        </div>
+
       </div>
 
       {/* TENANT TABLE */}
@@ -256,6 +356,20 @@ export default function TenantsPage() {
             <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>All Tenants</p>
             <p style={{ fontSize: '0.9rem', color: '#94A3B8', margin: 0 }}>{filteredTenants.length} accounts</p>
           </div>
+          {isDemoActive && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {[
+                { label: 'Enterprise', count: 1, color: '#D97706', bg: '#FFFBEB' },
+                { label: 'Pro', count: 3, color: '#7C3AED', bg: '#F5F3FF' },
+                { label: 'Starter', count: 2, color: '#2563EB', bg: '#EFF6FF' },
+                { label: 'Free', count: 1, color: '#64748B', bg: '#F1F5F9' },
+              ].map(({ label, count, color, bg }) => (
+                <span key={label} style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: bg, color }}>
+                  {count} {label}
+                </span>
+              ))}
+            </div>
+          )}
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
             <input
@@ -324,6 +438,12 @@ export default function TenantsPage() {
         ) : (
           paginatedTenants.map((tenant, idx) => {
             const isActive = tenant.status === 'active'
+            const isInactive = !isActive
+            const isEnterprise = tenant.plan === 'enterprise'
+            const rowBg = isInactive ? '#FFFBEB' : '#fff'
+            const rowBorder = isInactive
+              ? (idx < paginatedTenants.length - 1 ? '1px solid #FDE68A' : 'none')
+              : (idx < paginatedTenants.length - 1 ? '1px solid #F8FAFC' : 'none')
             return (
               <div
                 key={tenant.id}
@@ -331,15 +451,30 @@ export default function TenantsPage() {
                   display: 'grid',
                   gridTemplateColumns: '2fr 2fr 100px 120px 140px 100px',
                   padding: '14px 28px',
-                  borderBottom: idx < paginatedTenants.length - 1 ? '1px solid #F8FAFC' : 'none',
+                  borderBottom: rowBorder,
+                  background: rowBg,
                   alignItems: 'center',
                   transition: 'background 0.1s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#F8FAFC' }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                onMouseEnter={e => { e.currentTarget.style.background = isInactive ? '#FEF3C7' : '#F8FAFC' }}
+                onMouseLeave={e => { e.currentTarget.style.background = rowBg }}
               >
                 {/* Name */}
-                <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>{tenant.name}</p>
+                <div>
+                  <p style={{ fontSize: '1rem', fontWeight: isEnterprise ? 700 : 600, color: '#0F172A', margin: '0 0 1px' }}>
+                    {tenant.name}
+                    {isEnterprise && (
+                      <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 700, background: '#FFFBEB', color: '#D97706', padding: '1px 6px', borderRadius: '3px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Top Account
+                      </span>
+                    )}
+                  </p>
+                  {isInactive && (
+                    <p style={{ fontSize: '0.68rem', color: '#D97706', fontWeight: 600, margin: 0 }}>
+                      ↓ Inactive · churn risk · outreach recommended
+                    </p>
+                  )}
+                </div>
 
                 {/* Email */}
                 <p style={{ fontSize: '0.95rem', color: '#475569', margin: 0 }}>{tenant.email}</p>
@@ -350,8 +485,8 @@ export default function TenantsPage() {
                 {/* Status */}
                 <span style={{
                   fontSize: '0.85rem', fontWeight: 700, padding: '3px 10px', borderRadius: '100px', width: 'fit-content',
-                  background: isActive ? '#F0FDF4' : '#F8FAFC',
-                  color: isActive ? '#059669' : '#64748B',
+                  background: isActive ? '#F0FDF4' : '#FEF3C7',
+                  color: isActive ? '#059669' : '#D97706',
                 }}>
                   {isActive ? 'Active' : 'Inactive'}
                 </span>
