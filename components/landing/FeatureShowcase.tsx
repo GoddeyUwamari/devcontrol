@@ -6,48 +6,57 @@ import { DollarSign, Shield, BarChart2, Activity, Search, Users } from 'lucide-r
 const features = [
   {
     icon: DollarSign,
-    title: 'Cut AWS Costs by 30%',
-    description: 'Identify waste, unused resources, and right-sizing opportunities automatically. Average team saves $2,400/month.',
+    title: 'Cut Cloud Spend Immediately',
+    description:
+      'Surface unused resources, over-provisioned services, and hidden waste — so you can reduce costs the same day. Average team saves $2,400/month.',
+    highlight: true,
     href: '/features/cost-optimization',
   },
   {
     icon: Shield,
-    title: 'Security & Compliance',
-    description: 'Automated scanning across all AWS resources. Stay SOC 2, HIPAA, and PCI compliant without manual audits.',
+    title: 'Avoid Costly Security Failures',
+    description:
+      'Continuously detect misconfigurations and compliance risks before audits or breaches impact the business.',
+    highlight: false,
     href: '/features/security',
   },
   {
-    icon: BarChart2,
-    title: 'DORA Metrics',
-    description: 'Track deployment frequency, lead time, change failure rate, and MTTR automatically. No spreadsheets.',
-    href: '/features/dora-metrics',
-  },
-  {
     icon: Activity,
-    title: 'Infrastructure Health',
-    description: 'Real-time monitoring across all your AWS services with instant alerts before users are affected.',
+    title: 'Catch Issues Before Customers Do',
+    description:
+      'Real-time infrastructure health and alerts — so incidents are resolved before they affect revenue or user experience.',
+    highlight: false,
     href: '/features/infrastructure-health',
   },
   {
     icon: Search,
-    title: 'Full Resource Visibility',
-    description: 'Map every AWS resource across all accounts and regions. Complete inventory in under 15 minutes.',
+    title: "See What You're Actually Paying For",
+    description:
+      'Full visibility across all AWS accounts and regions — no blind spots, no hidden costs, no guesswork.',
+    highlight: false,
     href: '/features/resource-discovery',
   },
   {
+    icon: BarChart2,
+    title: 'Know If Engineering Is Delivering',
+    description:
+      'Track deployment speed, reliability, and failure rates — without relying on manual reporting or spreadsheets.',
+    highlight: false,
+    href: '/features/dora-metrics',
+  },
+  {
     icon: Users,
-    title: 'Team Governance',
-    description: 'Role-based access, shared dashboards, and audit logs. Built for engineering orgs of 5 to 500.',
+    title: 'Control Team Spend & Access',
+    description:
+      'Set guardrails, manage permissions, and track changes across teams — built for growing engineering organizations.',
+    highlight: false,
     href: '/features/collaboration',
   },
 ]
 
 export function FeatureShowcase() {
   return (
-    <section
-      id="features"
-      style={{ width: '100%', padding: '80px 0', backgroundColor: '#fff' }}
-    >
+    <section style={{ width: '100%', padding: '100px 0', backgroundColor: '#fff' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 32px' }}>
 
         <h2
@@ -55,26 +64,42 @@ export function FeatureShowcase() {
             fontSize: 'clamp(2.6rem, 5vw, 3rem)',
             color: '#7c3aed',
             fontWeight: 800,
-            lineHeight: 1.15,
             textAlign: 'center',
             marginBottom: '16px',
           }}
         >
-          Your AWS Infrastructure, Finally Under Control
+          What You&apos;ll Know in 15 Minutes
         </h2>
 
         <p
           style={{
-            fontSize: '1.15rem',
+            fontSize: '1.2rem',
             color: '#374151',
-            lineHeight: 1.75,
-            maxWidth: '620px',
+            maxWidth: '680px',
             textAlign: 'center',
-            margin: '0 auto 48px',
+            margin: '0 auto 32px',
+            lineHeight: 1.7,
           }}
         >
-          Cut costs, fix security gaps, and track engineering performance — all from one AI-powered dashboard.
+          After one scan, you&apos;ll have complete clarity on your cloud costs, risks, and performance — without digging through dashboards.
         </p>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '32px',
+            flexWrap: 'wrap',
+            marginBottom: '56px',
+            fontSize: '0.95rem',
+            color: '#374151',
+            fontWeight: 500,
+          }}
+        >
+          <span>💰 20–40% cloud waste uncovered</span>
+          <span>⚠️ Critical risks identified early</span>
+          <span>⚡ Insights in under 15 minutes</span>
+        </div>
 
         <div
           style={{
@@ -91,77 +116,73 @@ export function FeatureShowcase() {
                 style={{
                   backgroundColor: '#fff',
                   borderRadius: '16px',
-                  border: '1.5px solid #e5e7eb',
+                  border: feature.highlight
+                    ? '2px solid #7c3aed'
+                    : '1.5px solid #e5e7eb',
                   padding: '40px',
-                  cursor: 'pointer',
-                  transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-                }}
-                onMouseEnter={(e) => {
-                  const el = e.currentTarget
-                  el.style.borderColor = '#7c3aed'
-                  el.style.boxShadow = '0 4px 24px rgba(124,58,237,0.10)'
-                }}
-                onMouseLeave={(e) => {
-                  const el = e.currentTarget
-                  el.style.borderColor = '#e5e7eb'
-                  el.style.boxShadow = 'none'
+                  boxShadow: feature.highlight
+                    ? '0 8px 32px rgba(124,58,237,0.15)'
+                    : 'none',
+                  transition: 'all 0.2s ease',
                 }}
               >
+                {feature.highlight && (
+                  <div
+                    style={{
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      color: '#7c3aed',
+                      marginBottom: '12px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                    }}
+                  >
+                    Highest Impact
+                  </div>
+                )}
+
                 <div
                   style={{
                     backgroundColor: 'rgba(124,58,237,0.06)',
                     borderRadius: '14px',
                     padding: '12px',
                     display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
                     marginBottom: '16px',
                   }}
                 >
                   <Icon style={{ color: '#7c3aed' }} size={22} />
                 </div>
+
                 <h3
                   style={{
-                    fontSize: '1.1rem',
+                    fontSize: '1.15rem',
                     fontWeight: 700,
                     color: '#0f172a',
-                    marginTop: '20px',
-                    marginBottom: '8px',
-                    lineHeight: 1.3,
+                    marginBottom: '10px',
                   }}
                 >
                   {feature.title}
                 </h3>
+
                 <p
                   style={{
                     fontSize: '0.95rem',
                     color: '#374151',
                     lineHeight: 1.65,
-                    marginTop: '8px',
-                    marginBottom: 0,
                   }}
                 >
                   {feature.description}
                 </p>
+
                 <Link
                   href={feature.href}
                   style={{
                     display: 'inline-block',
+                    marginTop: '18px',
                     color: '#7c3aed',
                     fontWeight: 700,
-                    fontSize: '0.875rem',
-                    letterSpacing: '0.04em',
-                    marginTop: '16px',
+                    fontSize: '0.85rem',
                     textDecoration: 'none',
-                    transition: 'text-decoration 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    const el = e.currentTarget as HTMLAnchorElement
-                    el.style.textDecoration = 'underline'
-                  }}
-                  onMouseLeave={(e) => {
-                    const el = e.currentTarget as HTMLAnchorElement
-                    el.style.textDecoration = 'none'
                   }}
                 >
                   Learn More →
@@ -170,6 +191,24 @@ export function FeatureShowcase() {
             )
           })}
         </div>
+
+        <div style={{ textAlign: 'center', marginTop: '64px' }}>
+          <Link
+            href="/register"
+            style={{
+              backgroundColor: '#7c3aed',
+              color: '#fff',
+              padding: '16px 36px',
+              borderRadius: '12px',
+              fontWeight: 700,
+              textDecoration: 'none',
+              boxShadow: '0 6px 24px rgba(124,58,237,0.35)',
+            }}
+          >
+            Scan My AWS for Cost &amp; Risk →
+          </Link>
+        </div>
+
       </div>
     </section>
   )
