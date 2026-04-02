@@ -1,4 +1,4 @@
-import { Shield, Lock, Award, Cloud, DollarSign, Clock, TrendingUp } from 'lucide-react'
+import { Shield, Lock, Cloud, DollarSign, Clock, TrendingUp } from 'lucide-react'
 
 const stats = [
   {
@@ -22,7 +22,7 @@ const badges = [
   { icon: Cloud, label: 'AWS Partner' },
   { icon: Shield, label: 'SOC 2 In Progress' },
   { icon: Lock, label: 'GDPR Compliant' },
-  { icon: Award, label: 'ISO 27001' },
+  { icon: Lock, label: 'Zero Credential Storage' },
 ]
 
 const inner: React.CSSProperties = {

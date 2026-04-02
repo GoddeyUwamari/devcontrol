@@ -36,7 +36,7 @@ export function CTASection() {
               asChild
             >
               <Link href="/register">
-                Start Free Trial
+                Scan My AWS for Waste
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
             </Button>
@@ -44,8 +44,11 @@ export function CTASection() {
               size="lg"
               variant="outline"
               className="text-lg px-8 py-6 bg-white/10 border-2 border-white/30 text-white hover:bg-white/20 hover:scale-105 transition-all font-bold"
+              asChild
             >
-              Talk to Sales
+              <Link href="/contact">
+                Talk to Sales
+              </Link>
             </Button>
           </div>
 
