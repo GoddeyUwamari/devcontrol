@@ -11,7 +11,7 @@ export function TrustedBySection() {
   return (
     <section style={{ width: '100%', padding: '48px 0', background: '#fafafa', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6', overflow: 'hidden' }}>
       <p style={{ textAlign: 'center', fontSize: '14px', fontWeight: '600', letterSpacing: '0.15em', color: '#374151', textTransform: 'uppercase', marginBottom: '28px' }}>
-        Used by platform teams at companies like
+        Trusted by engineers from companies including
       </p>
 
       <div style={{ position: 'relative', overflow: 'hidden' }}>

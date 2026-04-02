@@ -2,7 +2,6 @@
 
 import { HeroSection } from '@/components/landing/HeroSection'
 import { TrustedBySection } from '@/components/landing/TrustedBySection';
-import { HowItWorks } from '@/components/landing/HowItWorks';
 import { FeatureShowcase } from '@/components/landing/FeatureShowcase';
 import { AIFeaturesSection } from '@/components/landing/AIFeaturesSection';
 import { SocialProofSection } from '@/components/landing/SocialProofSection';
@@ -99,8 +98,6 @@ export function MarketingContent() {
       {/* AI Features */}
       <AIFeaturesSection />
 
-      {/* How It Works */}
-      <HowItWorks />
 
       {/* Integrations */}
       <section id="integrations" style={{ width: '100%', padding: '64px 0', backgroundColor: '#f8f8f8' }}>

@@ -20,7 +20,7 @@ const stats = [
 
 const badges = [
   { icon: Cloud, label: 'AWS Partner' },
-  { icon: Shield, label: 'SOC 2 Ready' },
+  { icon: Shield, label: 'SOC 2 In Progress' },
   { icon: Lock, label: 'GDPR Compliant' },
   { icon: Award, label: 'ISO 27001' },
 ]

@@ -1,183 +1,242 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowRight, Sparkles, Mail, MessageSquare, FileText, Target, AlertTriangle, TrendingUp, Search } from 'lucide-react'
+import {
+  ArrowRight,
+  Sparkles,
+  DollarSign,
+  AlertTriangle,
+  MessageSquare,
+  FileText,
+  TrendingUp,
+  Search,
+} from 'lucide-react'
 
-const aiFeatures = [
+const features = [
   {
-    icon: Sparkles,
-    title: 'AI Cost Insights',
-    description: 'Explains WHY costs changed, not just THAT they changed.',
-    href: '/features/ai-cost-insights',
-  },
-  {
-    icon: Mail,
-    title: 'Weekly AI Summaries',
-    description: 'Executive briefings delivered to your inbox every Monday.',
-    href: '/features/weekly-summaries',
-  },
-  {
-    icon: MessageSquare,
-    title: 'AI Chat Assistant',
-    description: 'Ask questions in plain English, get instant answers.',
-    href: '/features/ai-chat',
-  },
-  {
-    icon: FileText,
-    title: 'AI Reports',
-    description: 'Comprehensive analytics, auto-generated on-demand.',
-    href: '/features/ai-reports',
-  },
-  {
-    icon: Target,
-    title: 'Cost Optimization',
-    description: 'ML-powered recommendations with estimated savings.',
-    href: '/features/cost-optimization',
+    icon: DollarSign,
+    title: "Know Exactly Where You're Losing Money",
+    description:
+      'Understand what caused cost spikes and uncover hidden waste — with clear actions to reduce spend immediately.',
+    highlight: true,
   },
   {
     icon: AlertTriangle,
-    title: 'Anomaly Detection',
-    description: 'Catches issues before they become incidents.',
-    href: '/features/anomaly-detection',
+    title: 'Detect Risks Before They Become Incidents',
+    description:
+      'Automatically surface anomalies, misconfigurations, and unusual activity before they impact customers or revenue.',
+    highlight: false,
   },
   {
     icon: TrendingUp,
-    title: 'Cost Forecasting',
-    description: 'Predict AWS spend 90 days out with 95% accuracy.',
-    href: '/features/cost-forecasting',
+    title: 'See Future Costs Before They Happen',
+    description:
+      'Forecast your AWS spend and prevent budget surprises with accurate forward-looking insights.',
+    highlight: false,
+  },
+  {
+    icon: MessageSquare,
+    title: 'Ask Anything, Get Instant Answers',
+    description:
+      'Query your entire infrastructure in plain English — no dashboards, no queries, no complexity.',
+    highlight: false,
+  },
+  {
+    icon: FileText,
+    title: 'Get Executive-Ready Reports Instantly',
+    description:
+      'Generate clear, decision-ready reports for leadership, audits, or internal reviews in seconds.',
+    highlight: false,
   },
   {
     icon: Search,
-    title: 'Natural Language Search',
-    description: '"Find expensive EC2 instances in us-east-1" → instant results.',
-    href: '/features/nl-search',
+    title: 'Find Anything Across Your Infrastructure',
+    description:
+      'Instantly locate resources, costs, or risks using natural language — no filters or manual digging.',
+    highlight: false,
   },
 ]
 
-const inner: React.CSSProperties = {
-  maxWidth: '1400px',
-  margin: '0 auto',
-  padding: '0 32px',
-}
-
-const eyebrow: React.CSSProperties = {
-  color: '#7c3aed',
-  fontSize: '11px',
-  letterSpacing: '0.12em',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-}
-
 export function AIFeaturesSection() {
   return (
-    <section id="ai-features" style={{ width: '100%', padding: '64px 0', backgroundColor: '#f9f9fb' }}>
-      <div style={inner}>
-        <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+    <section style={{ width: '100%', padding: '100px 0', background: '#f9fafb' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
+
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '56px' }}>
           <div
-            className="inline-flex items-center gap-2 rounded-full font-semibold"
-            style={{ color: '#7c3aed', backgroundColor: '#ede9fe', padding: '6px 16px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '16px' }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: '#ede9fe',
+              color: '#7c3aed',
+              padding: '6px 14px',
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              marginBottom: '16px',
+            }}
           >
-            <Sparkles className="w-4 h-4" />
-            8 AI-Powered Features
+            <Sparkles size={14} />
+            AI-POWERED INTELLIGENCE
           </div>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '16px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
-            Built AI-Native, Not AI-Washed
+
+          <h2
+            style={{
+              fontSize: 'clamp(2.2rem, 4vw, 2.8rem)',
+              fontWeight: 800,
+              color: '#111827',
+              marginBottom: '16px',
+              lineHeight: 1.2,
+            }}
+          >
+            Your AI Cloud Analyst — Working 24/7
           </h2>
-          <p style={{ fontSize: '1.15rem', color: '#374151', maxWidth: '600px', margin: '0 auto', lineHeight: 1.75 }}>
-            While competitors bolt on 2–4 AI features, we built 8 from day one.
-            Real intelligence, not marketing buzzwords.
+
+          <p
+            style={{
+              fontSize: '1.15rem',
+              color: '#374151',
+              maxWidth: '680px',
+              margin: '0 auto',
+              lineHeight: 1.7,
+            }}
+          >
+            DevControl continuously analyzes your infrastructure, explains what&apos;s happening,
+            and tells you exactly what to do next — without dashboards, spreadsheets, or manual investigation.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5" style={{ marginBottom: '40px' }}>
-          {aiFeatures.map((feature) => {
+        {/* Proof Strip */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '32px',
+            flexWrap: 'wrap',
+            marginBottom: '64px',
+            fontSize: '0.95rem',
+            fontWeight: 500,
+            color: '#374151',
+          }}
+        >
+          <span>💰 Identify savings automatically</span>
+          <span>⚠️ Detect risks before incidents</span>
+          <span>⚡ Get answers in seconds</span>
+        </div>
+
+        {/* Grid */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '24px',
+          }}
+        >
+          {features.map((feature) => {
             const Icon = feature.icon
             return (
               <div
                 key={feature.title}
-                className="bg-white rounded-2xl cursor-pointer"
                 style={{
-                  border: '1px solid #f3f4f6',
-                  padding: '28px',
+                  background: '#fff',
+                  borderRadius: '18px',
+                  padding: '32px',
+                  border: feature.highlight
+                    ? '2px solid #7c3aed'
+                    : '1px solid #e5e7eb',
+                  boxShadow: feature.highlight
+                    ? '0 10px 30px rgba(124,58,237,0.15)'
+                    : '0 4px 12px rgba(0,0,0,0.04)',
                   transition: 'all 0.2s ease',
                 }}
-                onMouseEnter={(e) => {
-                  const el = e.currentTarget
-                  el.style.boxShadow = '0 8px 30px rgba(124, 58, 237, 0.12)'
-                  el.style.transform = 'translateY(-2px)'
-                  el.style.borderColor = '#ede9fe'
-                }}
-                onMouseLeave={(e) => {
-                  const el = e.currentTarget
-                  el.style.boxShadow = 'none'
-                  el.style.transform = 'translateY(0)'
-                  el.style.borderColor = '#f3f4f6'
-                }}
               >
+                {feature.highlight && (
+                  <div
+                    style={{
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      color: '#7c3aed',
+                      marginBottom: '10px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                    }}
+                  >
+                    Highest Impact
+                  </div>
+                )}
+
                 <div
                   style={{
-                    backgroundColor: 'rgba(124,58,237,0.12)',
-                    borderRadius: '14px',
-                    padding: '12px',
+                    background: 'rgba(124,58,237,0.1)',
+                    borderRadius: '12px',
+                    padding: '10px',
                     display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
                     marginBottom: '16px',
                   }}
                 >
-                  <Icon style={{ color: '#7c3aed' }} size={22} />
+                  <Icon size={20} color="#7c3aed" />
                 </div>
-                <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{feature.title}</h3>
-                <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: 1.65, marginBottom: '16px' }}>{feature.description}</p>
-                <Link
-                  href={feature.href}
-                  className="inline-flex items-center font-semibold"
-                  style={{ color: '#7c3aed', fontSize: '0.875rem', fontWeight: 700, letterSpacing: '0.04em', textDecoration: 'none', transition: 'all 0.15s ease', marginTop: '16px', display: 'inline-flex' }}
-                  onMouseEnter={(e) => {
-                    const el = e.currentTarget as HTMLAnchorElement
-                    el.style.color = '#6b21a8'
-                    el.style.textDecoration = 'underline'
-                  }}
-                  onMouseLeave={(e) => {
-                    const el = e.currentTarget as HTMLAnchorElement
-                    el.style.color = '#7c3aed'
-                    el.style.textDecoration = 'none'
+
+                <h3
+                  style={{
+                    fontSize: '1.05rem',
+                    fontWeight: 700,
+                    color: '#111827',
+                    marginBottom: '8px',
                   }}
                 >
-                  Learn More <ArrowRight className="ml-1 h-3 w-3" />
-                </Link>
+                  {feature.title}
+                </h3>
+
+                <p
+                  style={{
+                    fontSize: '0.95rem',
+                    color: '#4b5563',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {feature.description}
+                </p>
               </div>
             )
           })}
         </div>
 
-        <div style={{ textAlign: 'center' }}>
+        {/* Bottom CTA */}
+        <div style={{ textAlign: 'center', marginTop: '72px' }}>
           <Link
-            href="/features"
-            className="inline-flex items-center gap-2 font-bold text-white rounded-xl"
+            href="/register"
             style={{
               backgroundColor: '#7c3aed',
-              padding: '14px 32px',
-              fontSize: '1rem',
+              color: '#fff',
+              padding: '16px 36px',
+              borderRadius: '12px',
+              fontWeight: 700,
               textDecoration: 'none',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 4px 14px rgba(124,58,237,0.3)',
-            }}
-            onMouseEnter={(e) => {
-              const el = e.currentTarget as HTMLAnchorElement
-              el.style.backgroundColor = '#6b21a8'
-              el.style.transform = 'scale(1.02)'
-            }}
-            onMouseLeave={(e) => {
-              const el = e.currentTarget as HTMLAnchorElement
-              el.style.backgroundColor = '#7c3aed'
-              el.style.transform = 'scale(1)'
+              boxShadow: '0 8px 28px rgba(124,58,237,0.35)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
             }}
           >
-            Explore All AI Features
-            <ArrowRight className="h-5 w-5" />
+            Run Your First AI Analysis
+            <ArrowRight size={18} />
           </Link>
+
+          <p
+            style={{
+              marginTop: '12px',
+              fontSize: '0.85rem',
+              color: '#6b7280',
+            }}
+          >
+            No setup. No risk. First insights in 15 minutes.
+          </p>
         </div>
+
       </div>
     </section>
   )
