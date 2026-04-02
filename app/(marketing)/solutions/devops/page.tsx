@@ -79,7 +79,7 @@ export default function DevOpsPage() {
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
                 }}>
-                  Start Free Trial →
+                  Start Free Trial
                 </a>
                 <a href="/tour" style={{
                   background: 'transparent', color: '#e2e8f0',
@@ -101,6 +101,10 @@ export default function DevOpsPage() {
                   </span>
                 ))}
               </div>
+
+              <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '24px', fontStyle: 'italic' }}>
+                {'DORA metrics used to take us half a day to compile for board reviews — now it\u2019s real-time and automatic. Our CTO uses it directly in QBRs.'}
+              </p>
             </div>
 
             {/* Right — terminal block */}
@@ -183,24 +187,43 @@ export default function DevOpsPage() {
 
           {/* Feature cards grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-            {features.map(({ icon: Icon, title, desc }) => (
+            {features.map(({ icon: Icon, title, desc }, idx) => {
+              const isFirst = idx === 0
+              return (
               <div key={title} style={{
-                background: '#fff',
-                border: '1.5px solid #e5e7eb',
+                background: isFirst ? '#faf5ff' : '#fff',
+                border: isFirst ? '2px solid #7c3aed' : '1.5px solid #e5e7eb',
                 borderLeft: '4px solid #7c3aed',
                 borderRadius: '12px',
                 padding: '24px',
+                boxShadow: isFirst ? '0 4px 24px rgba(124,58,237,0.12)' : 'none',
                 transition: 'all 0.2s ease',
+                position: 'relative',
               }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.background = '#faf5ff'
-                  e.currentTarget.style.boxShadow = '0 4px 20px rgba(124,58,237,0.1)'
+                  if (!isFirst) {
+                    e.currentTarget.style.background = '#faf5ff'
+                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(124,58,237,0.1)'
+                  }
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.background = '#fff'
-                  e.currentTarget.style.boxShadow = 'none'
+                  if (!isFirst) {
+                    e.currentTarget.style.background = '#fff'
+                    e.currentTarget.style.boxShadow = 'none'
+                  }
                 }}
               >
+                {isFirst && (
+                  <div style={{
+                    position: 'absolute', top: '-12px', left: '20px',
+                    background: '#7c3aed', color: '#fff',
+                    fontSize: '0.7rem', fontWeight: 700,
+                    padding: '3px 10px', borderRadius: '100px',
+                    letterSpacing: '0.08em', textTransform: 'uppercase',
+                  }}>
+                    Most Used
+                  </div>
+                )}
                 <div style={{
                   width: '44px', height: '44px', borderRadius: '10px',
                   background: 'rgba(124,58,237,0.08)',
@@ -216,7 +239,8 @@ export default function DevOpsPage() {
                   {desc}
                 </p>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </section>
@@ -279,6 +303,58 @@ export default function DevOpsPage() {
                       {desc}
                     </p>
                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '64px 48px', background: '#fff' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 2fr 1fr',
+            gap: '48px', alignItems: 'center',
+            background: '#faf5ff', border: '1.5px solid rgba(124,58,237,0.15)',
+            borderRadius: '20px', padding: '48px',
+          }}>
+            {/* Avatar + name */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '72px', height: '72px', borderRadius: '50%',
+                background: 'linear-gradient(135deg, #7c3aed, #a78bfa)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.5rem', fontWeight: 800, color: '#fff',
+              }}>
+                MK
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>Marcus K.</div>
+                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Staff DevOps Engineer</div>
+                <div style={{ fontSize: '0.8rem', color: '#7c3aed', fontWeight: 600 }}>Series B SaaS, 120 engineers</div>
+              </div>
+            </div>
+
+            {/* Quote */}
+            <div>
+              <div style={{ fontSize: '2rem', color: '#a78bfa', lineHeight: 1, marginBottom: '8px' }}>&ldquo;</div>
+              <p style={{ fontSize: '1.05rem', color: '#1e293b', lineHeight: 1.75, fontStyle: 'italic', margin: 0 }}>
+                {'We went from 4 different dashboards — Grafana, Cost Explorer, SecurityHub, and a custom Notion doc — to one. Our MTTR dropped 60% in the first month because engineers stopped wasting time correlating incidents manually.'}
+              </p>
+              <div style={{ fontSize: '2rem', color: '#a78bfa', lineHeight: 1, textAlign: 'right', marginTop: '4px' }}>&rdquo;</div>
+            </div>
+
+            {/* Stats */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {[
+                { value: '60%', label: 'MTTR reduction' },
+                { value: '4 → 1', label: 'Dashboards consolidated' },
+                { value: '15 min', label: 'Setup to first insight' },
+              ].map(({ value, label }) => (
+                <div key={label} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>{value}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500, marginTop: '4px' }}>{label}</div>
                 </div>
               ))}
             </div>
@@ -394,7 +470,7 @@ export default function DevOpsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',

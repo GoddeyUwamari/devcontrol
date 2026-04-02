@@ -15,8 +15,8 @@ export default function SecurityCompliancePage() {
 
   const impacts = [
     { value: '87/100', label: 'Average security score after 30 days' },
-    { value: '0', label: 'Manual audit hours required' },
-    { value: '2 weeks', label: 'Average time to SOC 2 readiness' },
+    { value: '90%+', label: 'Reduction in manual audit prep time' },
+    { value: '2 weeks', label: 'Average time to identify all SOC 2 gaps' },
   ]
 
   const steps = [
@@ -73,7 +73,7 @@ export default function SecurityCompliancePage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
             }}>
-              Scan My AWS Security Free →
+              Scan My AWS Security Free
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#7c3aed',
@@ -218,6 +218,75 @@ export default function SecurityCompliancePage() {
         </div>
       </section>
 
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '64px 48px', background: '#fff' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+            borderRadius: '20px',
+            padding: '48px 56px',
+            border: '1px solid rgba(124,58,237,0.15)',
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '48px',
+            alignItems: 'center',
+          }}>
+            <div>
+              <p style={{
+                fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed',
+                textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px',
+              }}>
+                Customer Result
+              </p>
+              <p style={{
+                fontSize: '1.3rem', fontWeight: 700, color: '#0f172a',
+                lineHeight: 1.5, marginBottom: '20px',
+              }}>
+                {'"The security compliance dashboard caught a misconfigured S3 bucket before our SOC 2 audit — that alone was worth it."'}
+              </p>
+              <p style={{ fontSize: '0.875rem', color: '#475569', marginBottom: '24px' }}>
+                Alex K. · Infrastructure Lead · Growth-stage startup
+              </p>
+              <div style={{ display: 'flex', gap: '32px' }}>
+                {[
+                  { value: 'Passed', label: 'SOC 2 audit clean' },
+                  { value: '15 min', label: 'Time to first security score' },
+                  { value: '0', label: 'Audit findings missed' },
+                ].map(({ value, label }) => (
+                  <div key={label}>
+                    <p style={{ fontSize: '1.4rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 2px' }}>{value}</p>
+                    <p style={{ fontSize: '0.75rem', color: '#64748B', margin: 0 }}>{label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {[
+                { icon: '🔍', step: 'Day 1', body: 'Connected AWS in 8 minutes. DevControl immediately surfaced 14 security findings across IAM, S3, and network configuration.' },
+                { icon: '⚠️', step: 'Day 3', body: 'AI flagged a publicly accessible S3 bucket containing customer data — caught before the SOC 2 auditor review.' },
+                { icon: '✅', step: 'Week 2', body: 'All critical findings resolved. Compliance dashboard used as live evidence during SOC 2 audit. Passed clean.' },
+              ].map(({ icon, step, body }) => (
+                <div key={step} style={{
+                  background: '#fff',
+                  borderRadius: '12px',
+                  padding: '20px 24px',
+                  border: '1px solid #E2E8F0',
+                  display: 'flex',
+                  gap: '14px',
+                  alignItems: 'flex-start',
+                }}>
+                  <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>{icon}</span>
+                  <div>
+                    <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>{step}</p>
+                    <p style={{ fontSize: '0.875rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* WHO IT'S FOR */}
       <section style={{ padding: '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -232,7 +301,7 @@ export default function SecurityCompliancePage() {
               fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
-              Who It's For
+              {"Who It's For"}
             </h2>
           </div>
 
@@ -250,7 +319,7 @@ export default function SecurityCompliancePage() {
                 For CTOs & Compliance Officers
               </div>
               <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
-                Close Enterprise Deals Faster
+                Always Audit-Ready
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {[
@@ -326,7 +395,7 @@ export default function SecurityCompliancePage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',

@@ -45,7 +45,7 @@ const handleComingSoon = (e: React.MouseEvent, pageName: string) => {
   alert(`${pageName} page coming soon!`)
 }
 
-function MegaMenu({ items, showFooter }: { items: NavItem[]; showFooter?: boolean }) {
+function MegaMenu({ items, showFooter, onClose }: { items: NavItem[]; showFooter?: boolean; onClose?: () => void }) {
   return (
     <div
       style={{
@@ -66,7 +66,7 @@ function MegaMenu({ items, showFooter }: { items: NavItem[]; showFooter?: boolea
       }}
     >
       {items.map((item) => (
-        <MegaMenuItem key={item.title} item={item} />
+        <MegaMenuItem key={item.title} item={item} onClose={onClose} />
       ))}
 
       {showFooter && (
@@ -83,6 +83,7 @@ function MegaMenu({ items, showFooter }: { items: NavItem[]; showFooter?: boolea
         >
           <Link
             href="/register"
+            onClick={onClose}
             style={{ fontSize: '0.82rem', fontWeight: 700, color: '#7c3aed', letterSpacing: '0.02em', textDecoration: 'none' }}
             onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
             onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
@@ -91,6 +92,7 @@ function MegaMenu({ items, showFooter }: { items: NavItem[]; showFooter?: boolea
           </Link>
           <Link
             href="/tour"
+            onClick={onClose}
             style={{ fontSize: '0.82rem', fontWeight: 500, color: '#374151', textDecoration: 'none' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#0f172a')}
             onMouseLeave={e => (e.currentTarget.style.color = '#374151')}
@@ -103,7 +105,7 @@ function MegaMenu({ items, showFooter }: { items: NavItem[]; showFooter?: boolea
   )
 }
 
-function MegaMenuItem({ item }: { item: NavItem }) {
+function MegaMenuItem({ item, onClose }: { item: NavItem; onClose?: () => void }) {
   const { icon: Icon, title, desc, href } = item
 
   const content = (
@@ -157,6 +159,7 @@ function MegaMenuItem({ item }: { item: NavItem }) {
     return (
       <Link
         href={href}
+        onClick={onClose}
         style={sharedStyle}
         onMouseEnter={e => (e.currentTarget.style.background = '#faf5ff')}
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -331,15 +334,15 @@ export function MarketingNav() {
             {/* Desktop Nav */}
             <div className="hidden lg:flex" style={{ alignItems: 'center', gap: '4px' }}>
               <NavTrigger label="Platform" dropdownKey="platform" activeDropdown={activeDropdown} onOpen={openDropdown} onClose={closeDropdown}>
-                <MegaMenu items={platformItems} showFooter />
+                <MegaMenu items={platformItems} showFooter onClose={closeDropdown} />
               </NavTrigger>
 
               <NavTrigger label="Solutions" dropdownKey="solutions" activeDropdown={activeDropdown} onOpen={openDropdown} onClose={closeDropdown}>
-                <MegaMenu items={solutionsItems} showFooter />
+                <MegaMenu items={solutionsItems} showFooter onClose={closeDropdown} />
               </NavTrigger>
 
               <NavTrigger label="Resources" dropdownKey="resources" activeDropdown={activeDropdown} onOpen={openDropdown} onClose={closeDropdown}>
-                <MegaMenu items={resourcesItems} />
+                <MegaMenu items={resourcesItems} onClose={closeDropdown} />
               </NavTrigger>
 
               <NavLink href="/pricing">Pricing</NavLink>

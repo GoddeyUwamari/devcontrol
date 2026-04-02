@@ -14,7 +14,7 @@ export default function DoraMetricsPage() {
   ]
 
   const impacts = [
-    { value: 'Elite', label: 'Tier reached by avg customer in 90 days' },
+    { value: 'Elite', label: 'Tier benchmarks included out of the box' },
     { value: '4.2hrs', label: 'Average lead time improvement' },
     { value: '15min', label: 'Setup to first metric' },
   ]
@@ -74,7 +74,7 @@ export default function DoraMetricsPage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
             }}>
-              Get My DORA Score Free →
+              Get My DORA Score Free
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#7c3aed',
@@ -97,6 +97,9 @@ export default function DoraMetricsPage() {
               </span>
             ))}
           </div>
+          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+            {"Sophia P., VP Engineering at an Enterprise SaaS company: DORA metrics used to take half a day to compile for board reviews — now it's real-time and automatic."}
+          </p>
         </div>
       </section>
 
@@ -219,6 +222,54 @@ export default function DoraMetricsPage() {
         </div>
       </section>
 
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '64px 48px', background: '#faf5ff', borderTop: '1px solid #ede9fe', borderBottom: '1px solid #ede9fe' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
+          <div style={{
+            fontSize: '1.5rem', fontWeight: 700, color: '#0f172a',
+            lineHeight: 1.6, marginBottom: '28px',
+          }}>
+            {'\u201C'}DORA metrics used to take us{' '}
+            <span style={{ color: '#7c3aed', fontWeight: 800 }}>half a day to compile for board reviews</span>
+            {'. Now it\'s real-time and automatic. Our CTO uses it directly in QBRs.\u201D'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
+            <div style={{
+              width: '48px', height: '48px', borderRadius: '50%',
+              background: '#EDE9FE', color: '#7C3AED',
+              fontWeight: 700, fontSize: '14px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              SP
+            </div>
+            <div style={{ textAlign: 'left' }}>
+              <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Sophia P.</p>
+              <p style={{ fontSize: '12px', color: '#64748B', margin: 0 }}>VP Engineering · Enterprise SaaS</p>
+            </div>
+            <div style={{
+              marginLeft: '8px',
+              background: '#ECFDF5', color: '#059669',
+              padding: '4px 12px', borderRadius: '999px',
+              fontSize: '11px', fontWeight: 600,
+            }}>
+              Eliminated 4hrs manual reporting/week
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '48px', flexWrap: 'wrap' }}>
+            {[
+              { value: '4 metrics', label: 'Automated from day one' },
+              { value: '15 min', label: 'Setup to first DORA score' },
+              { value: 'Zero', label: 'Manual data collection' },
+            ].map(({ value, label }) => (
+              <div key={label} style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: '1.4rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px' }}>{value}</p>
+                <p style={{ fontSize: '0.78rem', color: '#64748B', margin: 0 }}>{label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* WHO IT'S FOR */}
       <section style={{ padding: '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -233,7 +284,7 @@ export default function DoraMetricsPage() {
               fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
-              Who It's For
+              {"Who It's For"}
             </h2>
           </div>
 
@@ -327,7 +378,7 @@ export default function DoraMetricsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',

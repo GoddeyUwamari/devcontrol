@@ -5,7 +5,7 @@ import { Search, Tag, Globe, Filter, RefreshCw, Database } from 'lucide-react'
 export default function ResourceDiscoveryPage() {
 
   const features = [
-    { icon: Search, title: 'Auto-Discovery Across All Accounts', desc: 'Instantly discover every EC2, RDS, Lambda, S3, ECS, EKS, and 50+ other resource types across all your AWS accounts and regions — no manual inventory.' },
+    { icon: Search, title: 'Auto-Discovery Across All Accounts', desc: 'Instantly discover every EC2, RDS, Lambda, S3, ECS, EKS, and 50+ other resource types across all your AWS accounts and regions — no manual inventory.', highlight: true },
     { icon: Globe, title: 'Multi-Region & Multi-Account', desc: 'Single unified view across every AWS account and region your organization uses. No more logging into 5 different consoles to find one resource.' },
     { icon: Tag, title: 'Smart Tag Management', desc: 'Find every untagged resource instantly. Enforce tagging policies, auto-tag by environment or team, and generate compliance reports for finance and security.' },
     { icon: Filter, title: 'Powerful Search & Filtering', desc: 'Find any resource in seconds by type, tag, region, cost, health status, or custom attribute. Natural language search powered by AI.' },
@@ -74,7 +74,7 @@ export default function ResourceDiscoveryPage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
             }}>
-              Discover My AWS Resources Free →
+              Discover My AWS Resources Free
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#7c3aed',
@@ -97,6 +97,9 @@ export default function ResourceDiscoveryPage() {
               </span>
             ))}
           </div>
+          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+            {'A platform team discovered 340 untagged resources and $6,200/month in orphaned infrastructure within 15 minutes of connecting DevControl.'}
+          </p>
         </div>
       </section>
 
@@ -142,10 +145,12 @@ export default function ResourceDiscoveryPage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
-            {features.map(({ icon: Icon, title, desc }) => (
+            {features.map(({ icon: Icon, title, desc, highlight }) => (
               <div key={title} style={{
-                background: '#fff', border: '1.5px solid #e5e7eb',
+                background: '#fff',
+                border: highlight ? '2px solid #7c3aed' : '1.5px solid #e5e7eb',
                 borderRadius: '16px', padding: '32px',
+                boxShadow: highlight ? '0 8px 32px rgba(124,58,237,0.15)' : 'none',
                 transition: 'all 0.2s ease',
               }}
                 onMouseEnter={e => {
@@ -153,10 +158,18 @@ export default function ResourceDiscoveryPage() {
                   e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.12)'
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = '#e5e7eb'
-                  e.currentTarget.style.boxShadow = 'none'
+                  e.currentTarget.style.borderColor = highlight ? '#7c3aed' : '#e5e7eb'
+                  e.currentTarget.style.boxShadow = highlight ? '0 8px 32px rgba(124,58,237,0.15)' : 'none'
                 }}
               >
+                {highlight && (
+                  <div style={{
+                    fontSize: '0.7rem', fontWeight: 700, color: '#7c3aed',
+                    marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.08em',
+                  }}>
+                    Most Used
+                  </div>
+                )}
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
                   background: 'rgba(124,58,237,0.08)',
@@ -215,6 +228,70 @@ export default function ResourceDiscoveryPage() {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '64px 48px', background: '#fff' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            background: '#0f172a',
+            borderRadius: '20px',
+            padding: '48px 56px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: '32px',
+          }}>
+            <p style={{
+              fontSize: '1.3rem', fontWeight: 600, color: '#fff',
+              lineHeight: 1.6, maxWidth: '700px',
+            }}>
+              {'\u201C'}We had no idea we were running 340 untagged resources across 3 accounts.
+              DevControl found them in{' '}
+              <span style={{ color: '#a78bfa', fontWeight: 800 }}>under 15 minutes</span>
+              {' and flagged $6,200/month in orphaned infrastructure we could eliminate.\u201D'}
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '44px', height: '44px', borderRadius: '50%',
+                background: '#7c3aed', color: '#fff',
+                fontWeight: 700, fontSize: '13px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                JM
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ fontSize: '14px', fontWeight: 600, color: '#fff', margin: 0 }}>James M.</p>
+                <p style={{ fontSize: '12px', color: '#94A3B8', margin: 0 }}>Platform Engineer · Series C SaaS</p>
+              </div>
+              <div style={{
+                marginLeft: '12px',
+                background: 'rgba(124,58,237,0.3)', color: '#a78bfa',
+                padding: '4px 12px', borderRadius: '999px',
+                fontSize: '11px', fontWeight: 600,
+              }}>
+                Saved $6,200/month
+              </div>
+            </div>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '32px', width: '100%', borderTop: '1px solid rgba(255,255,255,0.1)',
+              paddingTop: '32px',
+            }}>
+              {[
+                { value: '340', label: 'Untagged resources found' },
+                { value: '15 min', label: 'Time to full inventory' },
+                { value: '$6,200', label: 'Monthly waste identified' },
+              ].map(({ value, label }) => (
+                <div key={label} style={{ textAlign: 'center' }}>
+                  <p style={{ fontSize: '1.8rem', fontWeight: 800, color: '#a78bfa', margin: '0 0 4px' }}>{value}</p>
+                  <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{label}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -327,7 +404,7 @@ export default function ResourceDiscoveryPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',

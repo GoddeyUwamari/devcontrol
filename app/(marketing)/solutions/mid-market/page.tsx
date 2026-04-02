@@ -155,7 +155,7 @@ export default function MidMarketPage() {
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
                 }}>
-                  Start Free Trial →
+                  Start Free Trial
                 </a>
                 <a href="/contact" style={{
                   background: 'transparent', color: '#e2e8f0',
@@ -171,7 +171,7 @@ export default function MidMarketPage() {
                 display: 'flex', flexWrap: 'wrap', gap: '20px',
                 fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
               }}>
-                {['No credit card required', 'Setup in 15 minutes', 'SOC 2 certified'].map(t => (
+                {['No credit card required', 'Setup in 15 minutes', 'SOC 2 In Progress'].map(t => (
                   <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ color: '#a78bfa' }}>✓</span> {t}
                   </span>
@@ -233,7 +233,7 @@ export default function MidMarketPage() {
       </section>
 
       {/* FEATURES */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: '56px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -263,7 +263,7 @@ export default function MidMarketPage() {
       </section>
 
       {/* PROBLEM → SOLUTION */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: '56px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -340,8 +340,97 @@ export default function MidMarketPage() {
         </div>
       </section>
 
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '40px 48px', background: '#fff' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 2fr',
+            gap: '0',
+            border: '1.5px solid #e5e7eb',
+            borderRadius: '20px',
+            overflow: 'hidden',
+          }}>
+            {/* Left — stat column */}
+            <div style={{
+              background: '#7c3aed',
+              padding: '48px 40px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              gap: '32px',
+            }}>
+              <p style={{
+                fontSize: '0.72rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)',
+                textTransform: 'uppercase', letterSpacing: '0.12em', margin: 0,
+              }}>
+                Customer Result
+              </p>
+              {[
+                { value: '$31K', label: 'Monthly savings found' },
+                { value: '3 teams', label: 'Onboarded in one day' },
+                { value: '90 days', label: 'To SOC 2 baseline' },
+              ].map(({ value, label }) => (
+                <div key={label}>
+                  <p style={{ fontSize: '2rem', fontWeight: 800, color: '#fff', margin: '0 0 4px', lineHeight: 1 }}>{value}</p>
+                  <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.65)', margin: 0 }}>{label}</p>
+                </div>
+              ))}
+            </div>
+            {/* Right — quote */}
+            <div style={{ padding: '48px', background: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <p style={{
+                fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed',
+                textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '20px',
+              }}>
+                VP Engineering · B2B SaaS · 65 Engineers
+              </p>
+              <p style={{
+                fontSize: '1.2rem', fontWeight: 600, color: '#0f172a',
+                lineHeight: 1.65, marginBottom: '28px',
+              }}>
+                {'\u201C'}We were flying blind across 3 AWS accounts and 4 teams. DevControl gave us full visibility in 15 minutes and found{' '}
+                <span style={{ color: '#7c3aed', fontWeight: 800 }}>$31,000/month in waste we had no idea existed</span>
+                {'. Our CFO now uses the cost dashboard in every board meeting.\u201D'}
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '44px', height: '44px', borderRadius: '50%',
+                  background: '#EDE9FE', color: '#7C3AED',
+                  fontWeight: 700, fontSize: '13px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  DK
+                </div>
+                <div>
+                  <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', margin: 0 }}>David K.</p>
+                  <p style={{ fontSize: '12px', color: '#64748B', margin: 0 }}>VP Engineering · B2B SaaS · 65 engineers</p>
+                </div>
+                <div style={{
+                  marginLeft: '8px',
+                  background: '#ECFDF5', color: '#059669',
+                  padding: '4px 12px', borderRadius: '999px',
+                  fontSize: '11px', fontWeight: 600,
+                }}>
+                  Saved $31K/month
+                </div>
+              </div>
+              <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #f1f5f9' }}>
+                <a href="/case-studies" style={{
+                  fontSize: '0.875rem', fontWeight: 700, color: '#7c3aed',
+                  textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px',
+                }}>
+                  {'Read more customer stories \u2192'}
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* HOW IT WORKS — Vertical Timeline */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: '56px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -406,7 +495,7 @@ export default function MidMarketPage() {
       </section>
 
       {/* PRICING */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: '56px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '48px' }}>
             <div style={{
@@ -466,7 +555,7 @@ export default function MidMarketPage() {
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 24px rgba(124,58,237,0.3)',
                 }}>
-                  Start Free Trial →
+                  Start Free Trial
                 </a>
                 <a href="/pricing" style={{
                   background: 'transparent', color: '#7c3aed',
@@ -503,7 +592,7 @@ export default function MidMarketPage() {
             fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
-            Join 200+ growing engineering organizations using DevControl to scale faster, stay compliant, and control costs.
+            Join 500+ engineering organizations using DevControl to scale faster, stay compliant, and control costs.
           </p>
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <a href="/register" style={{
@@ -511,7 +600,7 @@ export default function MidMarketPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/contact" style={{
               background: 'transparent', color: '#fff',

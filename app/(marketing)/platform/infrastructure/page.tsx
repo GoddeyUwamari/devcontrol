@@ -34,7 +34,7 @@ export default function InfrastructureManagementPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px',
+        padding: '72px 48px 80px',
         borderBottom: '1px solid #f3f4f6',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>

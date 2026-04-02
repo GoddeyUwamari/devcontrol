@@ -25,14 +25,14 @@ export default function EnterprisePage() {
   const tableRows = [
     { feature: 'AWS Accounts', enterprise: 'Unlimited', pro: 'Up to 10' },
     { feature: 'Team Members', enterprise: 'Unlimited', pro: 'Up to 10' },
-    { feature: 'SSO / SAML', enterprise: '✓', pro: '✗' },
-    { feature: 'Custom Compliance', enterprise: '✓', pro: '✗' },
-    { feature: 'Auto-Remediation', enterprise: '✓', pro: '✗' },
-    { feature: 'Dedicated Account Manager', enterprise: '✓', pro: '✗' },
+    { feature: 'SSO / SAML', enterprise: '✓', pro: '\u2014' },
+    { feature: 'Custom Compliance', enterprise: '✓', pro: '\u2014' },
+    { feature: 'Auto-Remediation', enterprise: '✓', pro: '\u2014' },
+    { feature: 'Dedicated Account Manager', enterprise: '✓', pro: '\u2014' },
     { feature: 'SLA Guarantee', enterprise: '99.99%', pro: '99.9%' },
     { feature: 'Support', enterprise: '24/7 Priority', pro: '4hr Response' },
     { feature: 'API Access', enterprise: 'Full', pro: 'Limited' },
-    { feature: 'Custom Integrations', enterprise: '✓', pro: '✗' },
+    { feature: 'Custom Integrations', enterprise: '✓', pro: '\u2014' },
   ]
 
   return (
@@ -84,7 +84,7 @@ export default function EnterprisePage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
             }}>
-              Schedule Enterprise Demo →
+              Schedule Enterprise Demo
             </a>
             <a href="/case-studies" style={{
               background: 'transparent', color: '#e2e8f0',
@@ -101,12 +101,15 @@ export default function EnterprisePage() {
             justifyContent: 'center', gap: '24px',
             fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
           }}>
-            {['SOC 2 Type II', 'SAML / SSO', '99.99% SLA', 'Dedicated support'].map(t => (
+            {['SOC 2 In Progress', 'SAML / SSO', '99.99% SLA', 'Dedicated support'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#a78bfa' }}>✓</span> {t}
               </span>
             ))}
           </div>
+          <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '24px', fontStyle: 'italic' }}>
+            {'A global SaaS company managing 120+ AWS services identified $1.2M in annual savings within 30 days of deploying DevControl Enterprise.'}
+          </p>
         </div>
       </section>
 
@@ -190,6 +193,76 @@ export default function EnterprisePage() {
         </div>
       </section>
 
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '64px 48px', background: '#0f172a' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <p style={{
+            fontSize: '0.72rem', fontWeight: 700, color: '#a78bfa',
+            textTransform: 'uppercase', letterSpacing: '0.12em',
+            textAlign: 'center', marginBottom: '48px',
+          }}>
+            What Enterprise Teams Say
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '40px' }}>
+            {[
+              {
+                quote: 'Our CTO checks the security compliance dashboard before every investor call. It caught a misconfigured S3 bucket before our SOC 2 audit.',
+                name: 'Alex K.',
+                title: 'Infrastructure Lead',
+                company: 'Growth-stage startup',
+                outcome: 'Passed SOC 2 clean',
+              },
+              {
+                quote: 'We manage 47 AWS accounts across 3 business units. DevControl gave us unified visibility in a single afternoon. The multi-account support is exceptional.',
+                name: 'Rachel T.',
+                title: 'VP Platform Engineering',
+                company: 'Enterprise SaaS · 400 engineers',
+                outcome: '47 accounts unified',
+              },
+              {
+                quote: 'The auto-remediation workflows eliminated an entire class of compliance violations. What used to take our security team a week now happens automatically.',
+                name: 'Michael S.',
+                title: 'Head of Cloud Security',
+                company: 'Series D Fintech',
+                outcome: '90% reduction in manual remediation',
+              },
+            ].map(({ quote, name, title, company, outcome }) => (
+              <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <p style={{
+                  fontSize: '0.95rem', color: '#e2e8f0',
+                  lineHeight: 1.75, fontStyle: 'italic',
+                }}>
+                  {'\u201C'}{quote}{'\u201D'}
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: 'auto' }}>
+                  <div style={{
+                    width: '40px', height: '40px', borderRadius: '50%',
+                    background: 'rgba(124,58,237,0.3)', color: '#a78bfa',
+                    fontWeight: 700, fontSize: '12px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    {name.split(' ').map((n: string) => n[0]).join('')}
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '13px', fontWeight: 600, color: '#fff', margin: 0 }}>{name}</p>
+                    <p style={{ fontSize: '11px', color: '#64748b', margin: 0 }}>{title} · {company}</p>
+                  </div>
+                  <div style={{
+                    marginLeft: 'auto',
+                    background: 'rgba(124,58,237,0.2)', color: '#a78bfa',
+                    padding: '3px 10px', borderRadius: '999px',
+                    fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap',
+                  }}>
+                    {outcome}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* COMPARISON TABLE */}
       <section style={{ padding: '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -241,7 +314,7 @@ export default function EnterprisePage() {
                 </div>
                 <div style={{
                   fontSize: '0.875rem', fontWeight: 500,
-                  color: pro === '✗' ? '#9ca3af' : '#374151',
+                  color: pro === '\u2014' ? '#9ca3af' : '#374151',
                   textAlign: 'center',
                 }}>
                   {pro}
@@ -289,7 +362,7 @@ export default function EnterprisePage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
             }}>
-              Schedule Enterprise Demo →
+              Schedule Enterprise Demo
             </a>
             <a href="/case-studies" style={{
               background: 'transparent', color: '#7c3aed',

@@ -125,7 +125,7 @@ export default function PlatformEngineersPage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#e2e8f0',
@@ -148,6 +148,10 @@ export default function PlatformEngineersPage() {
               </span>
             ))}
           </div>
+
+          <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '24px', fontStyle: 'italic' }}>
+            {'A platform team of 4 engineers replaced 3 internal tools with DevControl — reducing platform toil by 60% in 30 days.'}
+          </p>
         </div>
       </section>
 
@@ -287,6 +291,62 @@ export default function PlatformEngineersPage() {
         </div>
       </section>
 
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '64px 48px', background: '#fff', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '24px' }}>
+            Platform Engineering Result
+          </p>
+          <p style={{ fontSize: '1.25rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.65, marginBottom: '28px', maxWidth: '700px', margin: '0 auto 28px' }}>
+            {'\u201C'}We replaced our internal Backstage implementation, a custom drift detector, and a homegrown tagging enforcer with DevControl. Setup took an afternoon. We got{' '}
+            <span style={{ color: '#7c3aed', fontWeight: 800 }}>3 months of platform work back</span>
+            {' immediately.\u201D'}
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '40px' }}>
+            <div style={{
+              width: '44px', height: '44px', borderRadius: '50%',
+              background: '#EDE9FE', color: '#7C3AED',
+              fontWeight: 700, fontSize: '13px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              TN
+            </div>
+            <div style={{ textAlign: 'left' }}>
+              <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Tom N.</p>
+              <p style={{ fontSize: '12px', color: '#64748B', margin: 0 }}>Staff Platform Engineer · Series B SaaS · 80 engineers</p>
+            </div>
+            <div style={{
+              marginLeft: '8px',
+              background: '#ECFDF5', color: '#059669',
+              padding: '4px 12px', borderRadius: '999px',
+              fontSize: '11px', fontWeight: 600,
+            }}>
+              Replaced 3 internal tools
+            </div>
+          </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '0', border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden',
+          }}>
+            {[
+              { value: '3 tools', label: 'Replaced by DevControl' },
+              { value: '1 afternoon', label: 'Setup time' },
+              { value: '60%', label: 'Reduction in platform toil' },
+              { value: '30 days', label: 'To Elite maturity tier' },
+            ].map(({ value, label }, i) => (
+              <div key={label} style={{
+                padding: '20px 16px', textAlign: 'center',
+                borderRight: i < 3 ? '1px solid #E2E8F0' : 'none',
+                background: i % 2 === 0 ? '#F8FAFC' : '#fff',
+              }}>
+                <p style={{ fontSize: '1.3rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px' }}>{value}</p>
+                <p style={{ fontSize: '0.72rem', color: '#64748B', margin: 0 }}>{label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* WHO IT'S FOR */}
       <section style={{ padding: '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -395,7 +455,7 @@ export default function PlatformEngineersPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',

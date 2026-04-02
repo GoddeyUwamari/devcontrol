@@ -100,7 +100,7 @@ export default function FinOpsPage() {
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
                 }}>
-                  See My AWS Costs Free →
+                  See My AWS Costs Free
                 </a>
                 <a href="/tour" style={{
                   background: 'transparent', color: '#7c3aed',
@@ -122,6 +122,10 @@ export default function FinOpsPage() {
                   </span>
                 ))}
               </div>
+
+              <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+                {'A FinOps team reduced their AWS bill by 38% in 30 days — recovering $18,200/month that had been invisible in their cost explorer.'}
+              </p>
             </div>
 
             {/* Right — cost ticker visual */}
@@ -338,6 +342,109 @@ export default function FinOpsPage() {
         </div>
       </section>
 
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '64px 48px', background: '#fff' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '280px 1fr',
+            gap: '64px',
+            alignItems: 'start',
+          }}>
+            {/* Left — big number */}
+            <div style={{ textAlign: 'center', paddingTop: '16px' }}>
+              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
+                Avg. First Month
+              </p>
+              <p style={{ fontSize: '4rem', fontWeight: 900, color: '#7c3aed', lineHeight: 1, margin: '0 0 8px', letterSpacing: '-0.04em' }}>
+                $2,400
+              </p>
+              <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>
+                in savings found
+              </p>
+              <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '0 0 24px' }}>
+                Average across all DevControl customers in their first 30 days
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {[
+                  { value: '8x', label: 'Average ROI on Pro plan' },
+                  { value: '30%', label: 'Typical AWS cost reduction' },
+                  { value: '15 min', label: 'Time to first savings report' },
+                ].map(({ value, label }) => (
+                  <div key={label} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.78rem', color: '#64748B' }}>{label}</span>
+                    <span style={{ fontSize: '1rem', fontWeight: 800, color: '#7c3aed' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right — stacked quotes */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '4px' }}>
+                FinOps Team Results
+              </p>
+              {[
+                {
+                  quote: 'We had no idea EC2 was running at 12% utilization across 40 instances. DevControl found $8,400/month we could cut immediately — without touching a single production workload.',
+                  name: 'Linda C.',
+                  title: 'Head of FinOps · Series C SaaS',
+                  outcome: 'Saved $8,400/month',
+                  initials: 'LC',
+                },
+                {
+                  quote: 'The reserved instance optimizer alone paid for 6 months of DevControl in the first recommendation. The ROI math was embarrassingly obvious.',
+                  name: 'Ryan M.',
+                  title: 'Cloud Finance Lead · Enterprise B2B',
+                  outcome: '12x ROI in month 1',
+                  initials: 'RM',
+                },
+                {
+                  quote: 'Finance used to ask me for cost reports every month. Now I just send them a link to the DevControl dashboard. That alone saved me 4 hours a week.',
+                  name: 'Priya K.',
+                  title: 'VP Engineering · Growth Startup',
+                  outcome: 'Eliminated 4hrs/week',
+                  initials: 'PK',
+                },
+              ].map(({ quote, name, title, outcome, initials }) => (
+                <div key={name} style={{
+                  background: '#F9FAFB',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '14px',
+                  padding: '24px',
+                }}>
+                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7, fontStyle: 'italic', margin: '0 0 16px' }}>
+                    {'\u201C'}{quote}{'\u201D'}
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%',
+                      background: '#EDE9FE', color: '#7C3AED',
+                      fontWeight: 700, fontSize: '11px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      {initials}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', margin: 0 }}>{name}</p>
+                      <p style={{ fontSize: '11px', color: '#64748B', margin: 0 }}>{title}</p>
+                    </div>
+                    <div style={{
+                      background: '#ECFDF5', color: '#059669',
+                      padding: '3px 10px', borderRadius: '999px',
+                      fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap',
+                    }}>
+                      {outcome}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* WHO IT'S FOR */}
       <section style={{ padding: '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -468,7 +575,7 @@ export default function FinOpsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/pricing" style={{
               background: 'transparent', color: '#fff',

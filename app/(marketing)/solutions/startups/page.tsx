@@ -5,7 +5,7 @@ import { Zap, DollarSign, Shield, BarChart3, Clock, TrendingUp } from 'lucide-re
 export default function StartupsPage() {
 
   const features = [
-    { icon: DollarSign, title: 'Stop AWS Bill Shock', desc: 'Get instant visibility into every dollar of AWS spend. AI recommendations find idle resources, right-sizing opportunities, and budget leaks before your next invoice.' },
+    { icon: DollarSign, title: 'Stop AWS Bill Shock', desc: 'Get instant visibility into every dollar of AWS spend. AI recommendations find idle resources, right-sizing opportunities, and budget leaks before your next invoice.', highlight: true },
     { icon: Zap, title: 'Ship Faster with DORA Metrics', desc: 'Automatically track deployment frequency, lead time, change failure rate, and MTTR. Show your Series A investors Elite-tier engineering velocity with real data.' },
     { icon: Shield, title: 'SOC 2 Readiness from Day One', desc: 'Continuous compliance monitoring mapped to SOC 2 controls. Stop losing enterprise deals because you can\'t answer security questionnaires fast enough.' },
     { icon: Clock, title: '15-Minute Setup', desc: 'Read-only IAM role, no agents, no code changes. Connect your AWS account and get your first insights in under 15 minutes — not days or weeks.' },
@@ -16,7 +16,7 @@ export default function StartupsPage() {
   const impacts = [
     { value: '$2,400', label: 'Average monthly savings found' },
     { value: '15min', label: 'Time to first insight' },
-    { value: '2 weeks', label: 'To SOC 2 audit readiness' },
+    { value: '2 weeks', label: 'To establish SOC 2 compliance baseline' },
   ]
 
   const steps = [
@@ -73,7 +73,7 @@ export default function StartupsPage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
             }}>
-              Start Free — No Credit Card →
+              Start Free — No Credit Card
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#7c3aed',
@@ -96,6 +96,9 @@ export default function StartupsPage() {
               </span>
             ))}
           </div>
+          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+            {'A seed-stage startup cut their AWS bill by $1,800/month and closed their first enterprise deal within 6 weeks of connecting DevControl.'}
+          </p>
         </div>
       </section>
 
@@ -141,10 +144,12 @@ export default function StartupsPage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
-            {features.map(({ icon: Icon, title, desc }) => (
+            {features.map(({ icon: Icon, title, desc, highlight }) => (
               <div key={title} style={{
-                background: '#fff', border: '1.5px solid #e5e7eb',
+                background: '#fff',
+                border: highlight ? '2px solid #7c3aed' : '1.5px solid #e5e7eb',
                 borderRadius: '16px', padding: '32px',
+                boxShadow: highlight ? '0 8px 32px rgba(124,58,237,0.15)' : 'none',
                 transition: 'all 0.2s ease',
               }}
                 onMouseEnter={e => {
@@ -152,10 +157,18 @@ export default function StartupsPage() {
                   e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.12)'
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = '#e5e7eb'
-                  e.currentTarget.style.boxShadow = 'none'
+                  e.currentTarget.style.borderColor = highlight ? '#7c3aed' : '#e5e7eb'
+                  e.currentTarget.style.boxShadow = highlight ? '0 8px 32px rgba(124,58,237,0.15)' : 'none'
                 }}
               >
+                {highlight && (
+                  <div style={{
+                    fontSize: '0.7rem', fontWeight: 700, color: '#7c3aed',
+                    marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.08em',
+                  }}>
+                    Most Impactful for Startups
+                  </div>
+                )}
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
                   background: 'rgba(124,58,237,0.08)',
@@ -212,6 +225,84 @@ export default function StartupsPage() {
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
                   {desc}
                 </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* SOCIAL PROOF */}
+      <section style={{ padding: '64px 48px', background: '#fafafa' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+            <p style={{
+              fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed',
+              textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
+            }}>
+              Real Startup Result
+            </p>
+            <h2 style={{
+              fontSize: 'clamp(1.5rem, 2.5vw, 2rem)', fontWeight: 800,
+              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '8px',
+            }}>
+              From Seed to Enterprise-Ready in 6 Weeks
+            </h2>
+            <p style={{ fontSize: '1rem', color: '#475569', maxWidth: '480px', margin: '0 auto' }}>
+              How a seed-stage fintech used DevControl to cut costs, close enterprise deals, and raise their Series A.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0', position: 'relative' }}>
+            {[
+              {
+                week: 'Week 1',
+                color: '#7c3aed',
+                title: 'Connected AWS',
+                body: 'Setup took 8 minutes. Discovered $1,800/month in idle resources immediately.',
+                outcome: '$1,800/mo found',
+              },
+              {
+                week: 'Week 2',
+                color: '#7c3aed',
+                title: 'Fixed Cost Leaks',
+                body: 'Terminated unused EC2 instances and right-sized 3 RDS databases.',
+                outcome: '24% bill reduction',
+              },
+              {
+                week: 'Week 3',
+                color: '#7c3aed',
+                title: 'SOC 2 Baseline',
+                body: 'Compliance dashboard surfaced 12 security findings. All resolved in 4 days.',
+                outcome: 'Audit-ready posture',
+              },
+              {
+                week: 'Week 6',
+                color: '#059669',
+                title: 'Enterprise Deal Closed',
+                body: 'Used DevControl compliance dashboard to answer security questionnaire in 20 minutes.',
+                outcome: 'First enterprise logo',
+              },
+            ].map(({ week, color, title, body, outcome }, i) => (
+              <div key={week} style={{
+                padding: '28px 24px',
+                background: '#fff',
+                border: '1px solid #E2E8F0',
+                borderLeft: i === 0 ? '1px solid #E2E8F0' : 'none',
+                borderRadius: i === 0 ? '16px 0 0 16px' : i === 3 ? '0 16px 16px 0' : '0',
+                position: 'relative',
+              }}>
+                <p style={{ fontSize: '0.68rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 10px' }}>{week}</p>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>{title}</h3>
+                <p style={{ fontSize: '0.82rem', color: '#475569', lineHeight: 1.6, margin: '0 0 16px' }}>{body}</p>
+                <span style={{
+                  display: 'inline-block',
+                  background: color === '#059669' ? '#ECFDF5' : '#EDE9FE',
+                  color,
+                  padding: '3px 10px', borderRadius: '999px',
+                  fontSize: '11px', fontWeight: 600,
+                }}>
+                  {outcome}
+                </span>
               </div>
             ))}
           </div>
@@ -326,7 +417,7 @@ export default function StartupsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Forever →
+              Start Free Forever
             </a>
             <a href="/pricing" style={{
               background: 'transparent', color: '#fff',

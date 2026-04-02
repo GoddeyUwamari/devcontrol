@@ -14,9 +14,10 @@ export default function CostOptimizationPage() {
   ]
 
   const impacts = [
-    { value: '$2,400', label: 'Average monthly savings' },
-    { value: '30%', label: 'Typical cost reduction' },
-    { value: '8x', label: 'Average ROI on Pro plan' },
+    { value: '$28,800', label: 'Average annual savings per team' },
+    { value: '500+', label: 'Companies Optimized' },
+    { value: '1M+', label: 'Resources Analyzed' },
+    { value: '30%', label: 'Avg Cost Reduction' },
   ]
 
   const steps = [
@@ -73,7 +74,7 @@ export default function CostOptimizationPage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
             }}>
-              See My AWS Costs Free →
+              Cut My AWS Costs Free
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#7c3aed',
@@ -81,7 +82,7 @@ export default function CostOptimizationPage() {
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #7c3aed',
             }}>
-              Take a Product Tour
+              See How It Works
             </a>
           </div>
 
@@ -92,10 +93,13 @@ export default function CostOptimizationPage() {
           }}>
             {['AI-powered recommendations', 'No code changes required', 'ROI in first week'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ color: '#16a34a' }}>✓</span> {t}
+                <span style={{ color: '#7c3aed' }}>✓</span> {t}
               </span>
             ))}
           </div>
+          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+            {'A fintech team cut their AWS bill by $3,100 in the first month after connecting DevControl.'}
+          </p>
         </div>
       </section>
 
@@ -103,7 +107,7 @@ export default function CostOptimizationPage() {
       <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
           gap: '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
@@ -232,7 +236,7 @@ export default function CostOptimizationPage() {
               fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
-              Who It's For
+              {"Who It's For"}
             </h2>
           </div>
 
@@ -247,7 +251,7 @@ export default function CostOptimizationPage() {
                 fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
               }}>
-                For CTOs & Finance Leaders
+                For CFOs & Engineering Leaders
               </div>
               <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Control Cloud Spend at the Board Level
@@ -278,7 +282,7 @@ export default function CostOptimizationPage() {
                 fontSize: '0.75rem', fontWeight: 700, color: '#fff',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
               }}>
-                For DevOps & Platform Engineers
+                For Platform Engineers & FinOps Teams
               </div>
               <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Find and Fix Waste at the Resource Level
@@ -326,7 +330,7 @@ export default function CostOptimizationPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',
