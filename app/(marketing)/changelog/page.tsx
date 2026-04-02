@@ -5,7 +5,7 @@ import {
   Sparkles, Zap, Bug, Calendar, Search, Mail, ArrowRight,
   ExternalLink, BookOpen, Star, Shield, Rocket, Filter,
   AlertCircle, Package, Trash2,
-} from 'lucide-react';
+} from 'lucide-react'; 
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -18,8 +18,8 @@ export default function ChangelogPage() {
 
   const releases = [
     {
-      version: '2.6.0',
-      date: '2024-01-20',
+      version: '3.2.0',
+      date: '2026-03-28',
       title: 'AI-Powered Cost Recommendations',
       featured: true,
       image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80',
@@ -35,8 +35,8 @@ export default function ChangelogPage() {
       stats: { newFeatures: 3, improvements: 2, bugFixes: 0 },
     },
     {
-      version: '2.5.0',
-      date: '2024-01-15',
+      version: '3.1.0',
+      date: '2026-03-14',
       title: 'DORA Metrics Dashboard',
       featured: true,
       image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=800&q=80',
@@ -53,8 +53,8 @@ export default function ChangelogPage() {
       stats: { newFeatures: 3, improvements: 1, bugFixes: 2 },
     },
     {
-      version: '2.4.0',
-      date: '2024-01-10',
+      version: '3.0.0',
+      date: '2026-02-28',
       title: 'Enhanced AWS Resource Discovery',
       featured: false,
       image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=800&q=80',
@@ -71,8 +71,8 @@ export default function ChangelogPage() {
       stats: { newFeatures: 3, improvements: 2, bugFixes: 1 },
     },
     {
-      version: '2.3.0',
-      date: '2024-01-05',
+      version: '2.9.0',
+      date: '2026-02-14',
       title: 'Team Management & RBAC',
       featured: false,
       image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=800&q=80',
@@ -88,12 +88,12 @@ export default function ChangelogPage() {
       stats: { newFeatures: 4, improvements: 2, bugFixes: 0 },
     },
     {
-      version: '2.2.0',
-      date: '2023-12-28',
+      version: '2.8.0',
+      date: '2026-01-31',
       title: 'Security & Compliance Updates',
       featured: false,
       changes: [
-        { type: 'security' as ChangeType, text: 'SOC 2 Type II certification completed', category: 'Security' },
+        { type: 'security' as ChangeType, text: 'SOC 2 Type II audit initiated — continuous compliance monitoring enabled', category: 'Security' },
         { type: 'security' as ChangeType, text: 'GDPR compliance enhancements with data export tools', category: 'Security' },
         { type: 'feature' as ChangeType, text: 'Security scanning dashboard with vulnerability tracking', category: 'Security' },
         { type: 'feature' as ChangeType, text: 'Compliance framework templates (CIS, NIST, PCI-DSS)', category: 'Security' },
@@ -103,8 +103,8 @@ export default function ChangelogPage() {
       stats: { newFeatures: 2, improvements: 1, bugFixes: 1 },
     },
     {
-      version: '2.1.0',
-      date: '2023-12-20',
+      version: '2.7.0',
+      date: '2026-01-17',
       title: 'Webhooks & API Enhancements',
       featured: false,
       changes: [
@@ -112,7 +112,7 @@ export default function ChangelogPage() {
         { type: 'feature' as ChangeType, text: 'GraphQL API beta release', category: 'API' },
         { type: 'improvement' as ChangeType, text: 'REST API rate limits increased to 10,000 requests/hour', category: 'API' },
         { type: 'improvement' as ChangeType, text: 'API response times reduced by 40%', category: 'Performance' },
-        { type: 'breaking' as ChangeType, text: 'Deprecated v1 endpoints (use v2 by March 2024)', category: 'API' },
+        { type: 'breaking' as ChangeType, text: 'Deprecated v2 endpoints (use v3 by June 2026)', category: 'API' },
         { type: 'fix' as ChangeType, text: 'Fixed inconsistent API error responses', category: 'API' },
       ],
       stats: { newFeatures: 2, improvements: 2, bugFixes: 1 },
@@ -482,7 +482,7 @@ export default function ChangelogPage() {
               }}
             />
             <a
-              href="#"
+              href="mailto:hello@devcontrol.io?subject=Changelog Newsletter Subscription"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                 height: '44px', padding: '0 20px', borderRadius: '8px',
@@ -494,7 +494,7 @@ export default function ChangelogPage() {
             </a>
           </div>
           <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '12px' }}>
-            Join 8,000+ subscribers. Unsubscribe anytime.
+            Join 500+ engineering teams. Unsubscribe anytime.
           </p>
         </div>
 

@@ -20,7 +20,7 @@ export default function BlogPage() {
       title: 'Introducing DORA Metrics in DevControl',
       description:
         'Track deployment frequency, lead time, change failure rate, and recovery time with our new DORA metrics dashboard. Learn how elite performers measure success.',
-      date: '2024-01-15',
+      date: '2026-03-28',
       category: 'Product',
       author: { name: 'Sarah Chen', role: 'Product Manager', avatar: 'SC' },
       readTime: '5 min read',
@@ -33,7 +33,7 @@ export default function BlogPage() {
       title: 'Best Practices for Service Catalog Management',
       description:
         'Learn how leading engineering teams organize and maintain their service catalogs at scale. A comprehensive guide to ownership, metadata, and discoverability.',
-      date: '2024-01-10',
+      date: '2026-03-21',
       category: 'Engineering',
       author: { name: 'Michael Torres', role: 'Staff Engineer', avatar: 'MT' },
       readTime: '8 min read',
@@ -46,7 +46,7 @@ export default function BlogPage() {
       title: 'Reducing AWS Costs with Infrastructure Visibility',
       description:
         'How one team saved 30% on their AWS bill by understanding their infrastructure dependencies. Real-world strategies for cost optimization.',
-      date: '2024-01-08',
+      date: '2026-03-14',
       category: 'Case Study',
       author: { name: 'Emily Rodriguez', role: 'Solutions Architect', avatar: 'ER' },
       readTime: '6 min read',
@@ -59,7 +59,7 @@ export default function BlogPage() {
       title: 'The Platform Engineering Maturity Model',
       description:
         'A framework for assessing and improving your internal developer platform. Understand where you are and how to level up.',
-      date: '2024-01-05',
+      date: '2026-03-07',
       category: 'Engineering',
       author: { name: 'David Kim', role: 'Engineering Lead', avatar: 'DK' },
       readTime: '10 min read',
@@ -72,7 +72,7 @@ export default function BlogPage() {
       title: 'Security Scanning at Scale: Lessons Learned',
       description:
         'How we built a security scanning system that checks 10,000+ resources daily without impacting performance. Architecture and best practices.',
-      date: '2024-01-03',
+      date: '2026-02-28',
       category: 'Security',
       author: { name: 'Alex Thompson', role: 'Security Engineer', avatar: 'AT' },
       readTime: '7 min read',
@@ -85,7 +85,7 @@ export default function BlogPage() {
       title: 'From Chaos to Clarity: Service Ownership Models',
       description:
         'Establishing clear ownership for microservices. How to define responsibilities, on-call rotations, and accountability in distributed systems.',
-      date: '2024-01-01',
+      date: '2026-02-21',
       category: 'Engineering',
       author: { name: 'Jessica Park', role: 'Engineering Manager', avatar: 'JP' },
       readTime: '9 min read',
@@ -212,8 +212,8 @@ export default function BlogPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
               {featuredPosts.slice(0, 2).map((post) => (
+                <Link key={post.id} href={'/blog/' + post.id} style={{ textDecoration: 'none', display: 'block' }}>
                 <div
-                  key={post.id}
                   style={{
                     border: '1px solid #e5e7eb', borderRadius: '16px',
                     overflow: 'hidden', background: '#fff',
@@ -276,6 +276,7 @@ export default function BlogPage() {
                     </div>
                   </div>
                 </div>
+                </Link>
               ))}
             </div>
           </div>
@@ -308,8 +309,8 @@ export default function BlogPage() {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
               {(selectedCategory === 'All' && searchQuery === '' ? regularPosts : filteredPosts).map((post) => (
+                <Link key={post.id} href={'/blog/' + post.id} style={{ textDecoration: 'none', display: 'block' }}>
                 <div
-                  key={post.id}
                   style={{
                     border: '1px solid #e5e7eb', borderRadius: '14px', overflow: 'hidden',
                     background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
@@ -370,6 +371,7 @@ export default function BlogPage() {
                     </div>
                   </div>
                 </div>
+                </Link>
               ))}
             </div>
           )}
@@ -408,7 +410,7 @@ export default function BlogPage() {
               }}
             />
             <a
-              href="#"
+              href="mailto:hello@devcontrol.io?subject=Blog Newsletter Subscription"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                 height: '44px', padding: '0 20px', borderRadius: '8px',
@@ -420,7 +422,7 @@ export default function BlogPage() {
             </a>
           </div>
           <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '12px' }}>
-            Join 5,000+ platform engineers. Unsubscribe anytime.
+            Join 500+ engineering teams. Unsubscribe anytime.
           </p>
         </div>
 
@@ -429,10 +431,10 @@ export default function BlogPage() {
           <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', marginBottom: '24px' }}>Popular Topics</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
             {[
-              { name: 'DORA Metrics', icon: TrendingUp, count: 12 },
-              { name: 'Cost Optimization', icon: DollarSign, count: 8 },
-              { name: 'Platform Engineering', icon: Rocket, count: 15 },
-              { name: 'Security', icon: Shield, count: 10 },
+              { name: 'DORA Metrics', icon: TrendingUp, count: 2 },
+              { name: 'Cost Optimization', icon: DollarSign, count: 1 },
+              { name: 'Platform Engineering', icon: Rocket, count: 2 },
+              { name: 'Security', icon: Shield, count: 1 },
             ].map((topic) => {
               const Icon = topic.icon;
               return (

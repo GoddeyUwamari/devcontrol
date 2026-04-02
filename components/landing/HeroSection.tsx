@@ -29,13 +29,13 @@ export function HeroSection() {
 </h1>
 
         {/* Subheadline */}
-        <p className="leading-relaxed" style={{ fontSize: '1.2rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
-       Identify idle compute, oversized instances, unused storage, and misconfigured resources—alongside security risks and deployment bottlenecks.
+        <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
+         See exactly where your cloud spend is leaking, what risks exist, and what's slowing your team down — in one unified view.
         </p>
 
         {/* ROI line */}
         <p style={{ fontSize: '1rem', color: '#374151', marginBottom: '36px' }}>
-          <strong style={{ color: '#059669' }}>$1.8K–$3.2K/month typical savings (~$2800/year)</strong>
+          <strong style={{ color: '#059669' }}>$2,400/month avg savings (~$28,800/year)</strong>
           {' · '}
           First insight in <strong style={{ color: '#059669' }}>15 min</strong>
           {' · '}
@@ -106,7 +106,7 @@ export function HeroSection() {
           </a>
         </div>
 
-        <p style={{ fontSize: '0.9rem', color: '#6b7280', marginBottom: '24px' }}>
+        <p style={{ fontSize: '0.9rem', color: '#374151', marginBottom: '24px' }}>
           Or <a href="/contact" style={{ color: '#7c3aed', fontWeight: 600, textDecoration: 'none' }}>book a 15-min AWS audit</a> with our team — free, no commitment
         </p>
 
@@ -114,14 +114,45 @@ export function HeroSection() {
         <div style={{
           display: 'flex', flexWrap: 'wrap',
           justifyContent: 'center', gap: '20px',
-          fontSize: '0.82rem', fontWeight: 500, color: '#374151',
+          fontSize: '0.82rem', fontWeight: 500, color: '#0F172A',
           marginTop: '16px',
           marginBottom: '0',
         }}>
           <span>🔐 AES-256 Encrypted</span>
-          <span>🏅 SOC 2 Type II (in progress)</span>
+          <span>🏅 SOC 2 In Progress</span>
           <span>☁️ AWS Cloud Partner</span>
           <span>🇪🇺 GDPR Friendly</span>
+        </div>
+
+        {/* Micro-preview strip */}
+        <div style={{
+          width: '100%',
+          borderTop: '1px solid #e5e7eb',
+          borderBottom: '1px solid #e5e7eb',
+          padding: '14px 0',
+          marginTop: '32px',
+          background: 'rgba(255,255,255,0.6)',
+        }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'center', marginBottom: '10px' }}>
+            What you get in 15 minutes
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0', flexWrap: 'wrap' }}>
+            {[
+              'Top cost leaks by service',
+              'Risk exposure summary',
+              'Service-level health breakdown',
+              'Ranked fixes with dollar impact',
+            ].map((item, i) => (
+              <div key={item} style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#0F172A', padding: '0 20px' }}>
+                  {item}
+                </span>
+                {i < 3 && (
+                  <span style={{ color: '#CBD5E1', fontSize: '1rem' }}>·</span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* How it works */}

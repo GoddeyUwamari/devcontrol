@@ -1,3 +1,5 @@
+'use client'
+
 const caseStudies = [
   {
     company: 'Axiom Labs',
@@ -29,7 +31,7 @@ const caseStudies = [
     solution:
       "DevControl's continuous compliance monitoring gave the security team real-time visibility into their SOC 2 posture. Automated alerts caught misconfigurations before they became audit findings.",
     results: [
-      { metric: '2 weeks', label: 'To SOC 2 audit readiness' },
+      { metric: '2 weeks', label: 'To establish SOC 2 compliance baseline' },
       { metric: '0 findings', label: 'In external security audit' },
       { metric: '$340K', label: 'Enterprise deal unlocked' },
     ],
@@ -58,6 +60,23 @@ const caseStudies = [
     author: 'James Oduya',
     role: 'Co-founder & CTO',
     tags: ['DORA Metrics', 'Engineering Performance', 'Startups'],
+  },
+  {
+    company: 'Meridian Analytics',
+    industry: 'Data Infrastructure · Series C · 200 engineers',
+    logo: 'MA',
+    logoColor: '#7c3aed',
+    challenge: 'Meridian was managing 47 AWS accounts across 3 business units with no unified visibility. Each team had their own cost tracking spreadsheet and security reviews took weeks.',
+    solution: 'DevControl unified all 47 accounts into a single control plane. The platform team reduced infrastructure toil by 60% and the security team moved from quarterly reviews to continuous monitoring.',
+    results: [
+      { metric: '47', label: 'AWS accounts unified' },
+      { metric: '60%', label: 'Reduction in platform toil' },
+      { metric: '$31K/mo', label: 'Monthly savings identified' },
+    ],
+    quote: 'We were flying blind across 3 business units. DevControl gave us unified visibility in a single afternoon. Our CFO now uses the cost dashboard in every board meeting.',
+    author: 'David K.',
+    role: 'VP Platform Engineering',
+    tags: ['Multi-Account', 'Platform Engineering', 'Cost Optimization'],
   },
 ]
 
@@ -135,8 +154,8 @@ export default function CaseStudiesPage() {
       </section>
 
       {/* Case study cards */}
-      <section style={{ maxWidth: '1100px', margin: '0 auto', padding: '64px 48px' }}>
-        {caseStudies.map((cs) => (
+      <section style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 48px' }}>
+        {caseStudies.slice(0, 3).map((cs) => (
           <div key={cs.company} style={{
             width: '100%',
             borderRadius: '20px',
@@ -252,6 +271,80 @@ export default function CaseStudiesPage() {
             </div>
           </div>
         ))}
+
+        {/* Meridian Analytics — dark banner card */}
+        <div style={{
+          width: '100%',
+          background: '#0f172a',
+          borderRadius: '20px',
+          padding: '48px',
+          marginBottom: '32px',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '48px',
+          alignItems: 'center',
+        }}>
+          {/* Left — quote + author */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '28px' }}>
+              <div style={{
+                width: '48px', height: '48px', borderRadius: '12px',
+                background: '#7c3aed', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: '0.9rem',
+              }}>
+                MA
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff' }}>Meridian Analytics</div>
+                <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '2px' }}>Data Infrastructure · Series C · 200 engineers</div>
+              </div>
+            </div>
+            <p style={{
+              fontSize: '1.2rem', color: '#e2e8f0', fontStyle: 'italic',
+              lineHeight: 1.65, marginBottom: '24px', fontWeight: 500,
+            }}>
+              {'\u201C'}We were flying blind across 3 business units. DevControl gave us unified visibility in a single afternoon. Our CFO now uses the cost dashboard in{' '}
+              <span style={{ color: '#a78bfa', fontWeight: 700 }}>every board meeting</span>
+              {'.\u201D'}
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '40px', height: '40px', borderRadius: '50%',
+                background: 'rgba(124,58,237,0.3)', color: '#a78bfa',
+                fontWeight: 700, fontSize: '12px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                DK
+              </div>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>David K.</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>VP Platform Engineering · Meridian Analytics</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right — stats */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '20px' }}>
+              Results
+            </p>
+            {[
+              { metric: '47', label: 'AWS accounts unified in one dashboard' },
+              { metric: '60%', label: 'Reduction in platform toil' },
+              { metric: '$31K/mo', label: 'Monthly savings identified' },
+            ].map(({ metric, label }, i) => (
+              <div key={label} style={{
+                paddingTop: i === 0 ? 0 : '20px',
+                paddingBottom: '20px',
+                borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.08)' : 'none',
+              }}>
+                <div style={{ fontSize: '2.2rem', fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>{metric}</div>
+                <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '4px' }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* Bottom CTA */}
@@ -259,6 +352,7 @@ export default function CaseStudiesPage() {
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
         padding: '80px 48px', textAlign: 'center', width: '100%',
       }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <h2 style={{
           fontSize: '2.2rem', fontWeight: 800, color: '#fff',
           marginBottom: '16px', letterSpacing: '-0.02em',
@@ -279,7 +373,7 @@ export default function CaseStudiesPage() {
               borderRadius: '10px', fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}
           >
-            Start Free Trial →
+            Start Free Trial
           </a>
           <a
             href="/tour"
@@ -294,6 +388,7 @@ export default function CaseStudiesPage() {
         </div>
         <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
           No credit card required · 14-day free trial · Read-only AWS access
+        </div>
         </div>
       </section>
 

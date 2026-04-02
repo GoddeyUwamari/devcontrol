@@ -868,10 +868,11 @@ export default function ApiReferencePage() {
                   npm install @devcontrol/sdk
                 </code>
                 <Button asChild size="sm" variant="outline" className="w-full gap-2">
-                  <a href="#" target="_blank" rel="noopener noreferrer">
+                  <a href="/docs" target="_blank" rel="noopener noreferrer">
                     <BookOpen className="w-4 h-4" />
                     View Docs
                     <ExternalLink className="w-3 h-3" />
+                    <span style={{ fontSize: '10px', color: '#94A3B8' }}>(coming soon)</span>
                   </a>
                 </Button>
               </CardContent>
@@ -892,10 +893,11 @@ export default function ApiReferencePage() {
                   pip install devcontrol
                 </code>
                 <Button asChild size="sm" variant="outline" className="w-full gap-2">
-                  <a href="#" target="_blank" rel="noopener noreferrer">
+                  <a href="/docs" target="_blank" rel="noopener noreferrer">
                     <BookOpen className="w-4 h-4" />
                     View Docs
                     <ExternalLink className="w-3 h-3" />
+                    <span style={{ fontSize: '10px', color: '#94A3B8' }}>(coming soon)</span>
                   </a>
                 </Button>
               </CardContent>
@@ -952,11 +954,11 @@ export default function ApiReferencePage() {
                     Is there a sandbox environment for testing?
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    Yes! Use the base URL{' '}
+                    Yes! Use your API key with{' '}
                     <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                      https://sandbox.api.devcontrol.io
+                      https://api.devcontrol.io
                     </code>{' '}
-                    for testing. Sandbox data is reset every 24 hours.
+                    and test data to explore the API safely before going live.
                   </AccordionContent>
                 </AccordionItem>
 
@@ -976,7 +978,7 @@ export default function ApiReferencePage() {
                     Are there any API usage limits?
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    Rate limits vary by plan. Free tier: 1,000 requests/hour, Pro: 10,000
+                    Rate limits vary by plan. Free tier: 500 requests/hour, Pro: 10,000
                     requests/hour, Enterprise: 100,000 requests/hour. Contact us for custom
                     limits.
                   </AccordionContent>
