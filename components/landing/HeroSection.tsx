@@ -29,17 +29,17 @@ export function HeroSection() {
 </h1>
 
         {/* Subheadline */}
-        <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
-         See exactly where your cloud spend is leaking, what risks exist, and what’s slowing your team down — in one unified view.
+        <p className="leading-relaxed" style={{ fontSize: '1.2rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
+       Identify idle compute, oversized instances, unused storage, and misconfigured resources—alongside security risks and deployment bottlenecks.
         </p>
 
         {/* ROI line */}
         <p style={{ fontSize: '1rem', color: '#374151', marginBottom: '36px' }}>
-          <strong style={{ color: '#059669' }}>$2,400/month avg savings (~$28,800/year)</strong>
+          <strong style={{ color: '#059669' }}>$1.8K–$3.2K/month typical savings (~$2800/year)</strong>
           {' · '}
           First insight in <strong style={{ color: '#059669' }}>15 min</strong>
           {' · '}
-          Read-only, zero risk to your infra
+          Read-only, zero risk
         </p>
 
         {/* CTA Buttons */}
@@ -119,7 +119,7 @@ export function HeroSection() {
           marginBottom: '0',
         }}>
           <span>🔐 AES-256 Encrypted</span>
-          <span>🏅 SOC 2 In Progress</span>
+          <span>🏅 SOC 2 Type II (in progress)</span>
           <span>☁️ AWS Cloud Partner</span>
           <span>🇪🇺 GDPR Friendly</span>
         </div>
@@ -150,7 +150,7 @@ export function HeroSection() {
             {[
               { step: '1', title: 'Connect AWS', sub: 'Read-only, 60 seconds' },
               { step: '2', title: 'Scan Everything', sub: 'Every resource, automatically' },
-              { step: '3', title: 'See Cost Leaks + Risks', sub: 'Full dashboard instantly' },
+              { step: '3', title: 'Identify Cost Leaks + Risks', sub: 'Prioritized insights instantly' },
               { step: '4', title: 'Fix With One Click', sub: 'AI-powered recommendations' },
             ].map(({ step, title, sub }) => (
               <div key={step} style={{
