@@ -16,7 +16,7 @@ export default function InfrastructureManagementPage() {
   ]
 
   const impacts = [
-    { value: '$47K', label: 'Average annual waste found' },
+    { value: '$28,800', label: 'Average annual savings found' },
     { value: '15min', label: 'Time to full inventory' },
     { value: '50+', label: 'AWS resource types supported' },
   ]
@@ -77,7 +77,7 @@ export default function InfrastructureManagementPage() {
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
             }}>
-              Get Full Visibility Free →
+              Get Full Visibility Free
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#7c3aed',
@@ -101,6 +101,9 @@ export default function InfrastructureManagementPage() {
               </span>
             ))}
           </div>
+          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+            {'A Series B fintech discovered $18,200/month in AWS waste within 48 hours of connecting DevControl.'}
+          </p>
         </div>
       </section>
 
@@ -237,7 +240,7 @@ export default function InfrastructureManagementPage() {
               fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
-              Who It's For
+              Who It&apos;s For
             </h2>
           </div>
 
@@ -333,7 +336,7 @@ export default function InfrastructureManagementPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free Trial →
+              Start Free Trial
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',
