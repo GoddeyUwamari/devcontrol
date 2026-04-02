@@ -30,27 +30,12 @@ export function HeroSection() {
 
         {/* Subheadline */}
         <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
-          Cut cloud costs, detect risks early, and eliminate infrastructure blind spots — from one AI-powered command center.
-        </p>
-
-        {/* Tagline */}
-        <p
-          className="font-bold"
-          style={{
-            fontSize: '1.2rem',
-            color: '#111827',
-            letterSpacing: '0.02em',
-            marginBottom: '12px',
-          }}
-        >
-          Ship faster.{' '}
-          <span style={{ color: '#7c3aed' }}>Spend less.</span>{' '}
-          Reduce risk.
+         See exactly where your cloud spend is leaking, what risks exist, and what’s slowing your team down — in one unified view.
         </p>
 
         {/* ROI line */}
         <p style={{ fontSize: '1rem', color: '#374151', marginBottom: '36px' }}>
-          <strong style={{ color: '#059669' }}>$2,400/month avg savings</strong>
+          <strong style={{ color: '#059669' }}>$2,400/month avg savings (~$28,800/year)</strong>
           {' · '}
           First insight in <strong style={{ color: '#059669' }}>15 min</strong>
           {' · '}
@@ -121,6 +106,10 @@ export function HeroSection() {
           </a>
         </div>
 
+        <p style={{ fontSize: '0.9rem', color: '#6b7280', marginBottom: '24px' }}>
+          Or <a href="/contact" style={{ color: '#7c3aed', fontWeight: 600, textDecoration: 'none' }}>book a 15-min AWS audit</a> with our team — free, no commitment
+        </p>
+
         {/* Trust badges — tight under buttons */}
         <div style={{
           display: 'flex', flexWrap: 'wrap',
@@ -130,7 +119,7 @@ export function HeroSection() {
           marginBottom: '0',
         }}>
           <span>🔐 AES-256 Encrypted</span>
-          <span>🏅 SOC 2 Ready</span>
+          <span>🏅 SOC 2 In Progress</span>
           <span>☁️ AWS Cloud Partner</span>
           <span>🇪🇺 GDPR Friendly</span>
         </div>
@@ -159,10 +148,10 @@ export function HeroSection() {
             width: '100%',
           }}>
             {[
-              { step: '1', title: 'Secure Connection', sub: 'Read-only IAM role' },
-              { step: '2', title: 'Instant Analysis', sub: 'Automated scanning' },
-              { step: '3', title: 'Get Insights', sub: 'Full dashboard access' },
-              { step: '4', title: 'Take Action', sub: 'AI-powered recommendations' },
+              { step: '1', title: 'Connect AWS', sub: 'Read-only, 60 seconds' },
+              { step: '2', title: 'Scan Everything', sub: 'Every resource, automatically' },
+              { step: '3', title: 'See Cost Leaks + Risks', sub: 'Full dashboard instantly' },
+              { step: '4', title: 'Fix With One Click', sub: 'AI-powered recommendations' },
             ].map(({ step, title, sub }) => (
               <div key={step} style={{
                 background: '#fff',

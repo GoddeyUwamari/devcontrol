@@ -96,7 +96,7 @@ export function PricingPreview() {
             Start free. Scale as you grow.
           </h2>
           <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75 }}>
-            All plans include a 14-day free trial. No credit card required.
+            Starter and Pro include a 14-day free trial. Free plan available forever. No credit card required.
           </p>
         </div>
 
