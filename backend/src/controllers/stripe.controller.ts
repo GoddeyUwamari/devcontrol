@@ -218,9 +218,23 @@ export class StripeController {
       }
 
       // Get full subscription details from Stripe
-      const subscription = await stripeService.getSubscription(
-        organization.stripe_subscription_id
-      );
+      let subscription;
+      try {
+        subscription = await stripeService.getSubscription(
+          organization.stripe_subscription_id
+        );
+      } catch (stripeError: any) {
+        console.warn('Could not fetch subscription from Stripe:', stripeError.message);
+        res.status(200).json({
+          success: true,
+          data: {
+            tier: organization.subscription_tier || 'free',
+            status: 'active',
+            cancelAtPeriodEnd: false,
+          },
+        });
+        return;
+      }
 
       res.status(200).json({
         success: true,
@@ -397,7 +411,15 @@ export class StripeController {
       const customerId = orgResult.rows[0].stripe_customer_id;
 
       // Get invoices from Stripe
-      const invoices = await stripeService.listInvoices(customerId, 20);
+      let invoices = [];
+      try {
+        invoices = await stripeService.listInvoices(customerId, 20);
+      } catch (stripeError: any) {
+        // Customer may not exist in current Stripe environment
+        console.warn('Could not fetch invoices from Stripe:', stripeError.message);
+        res.status(200).json({ success: true, data: [] });
+        return;
+      }
 
       res.status(200).json({
         success: true,
