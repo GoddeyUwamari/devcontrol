@@ -174,7 +174,7 @@ export default function BillingPage() {
               {subscription?.tier === 'free' ? (
                 <Button
                   className="w-full"
-                  onClick={() => router.push('/pricing')}
+                  onClick={() => router.push('/settings/billing/upgrade')}
                 >
                   <ArrowUpCircle className="mr-2 h-4 w-4" />
                   Upgrade Plan
@@ -215,7 +215,7 @@ export default function BillingPage() {
                     <Button
                       variant="outline"
                       className="w-full"
-                      onClick={() => router.push('/pricing')}
+                      onClick={() => router.push('/settings/billing/upgrade')}
                     >
                       <TrendingUp className="mr-2 h-4 w-4" />
                       Upgrade Plan
@@ -282,7 +282,7 @@ export default function BillingPage() {
                   <Button
                     size="sm"
                     className="mt-3"
-                    onClick={() => router.push('/pricing')}
+                    onClick={() => router.push('/settings/billing/upgrade')}
                   >
                     View Plans
                   </Button>
