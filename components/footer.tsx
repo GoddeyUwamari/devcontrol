@@ -31,22 +31,19 @@ interface FooterColumn {
 
 const footerData: FooterColumn[] = [
   {
-    heading: 'Product',
+    heading: 'Platform',
     sections: [
       {
         title: '',
         links: [
-          { label: 'Overview', href: '/product/overview' },
-          { label: 'Infrastructure Management', href: '/product/infrastructure' },
-          { label: 'Service Catalog', href: '/product/services' },
-          { label: 'Deployment Automation', href: '/product/deployments' },
-          { label: 'Cost Optimization', href: '/product/cost-optimization' },
-          { label: 'Security & Compliance', href: '/product/security' },
-          { label: 'Monitoring & Alerts', href: '/product/monitoring' },
-          { label: 'DORA Metrics', href: '/product/dora-metrics' },
-          { label: 'AWS Integration', href: '/product/aws-integration' },
-          { label: "What's New", href: '/changelog', external: true },
-          { label: 'Roadmap', href: '/product/roadmap' },
+          { label: 'Infrastructure Management', href: '/platform/infrastructure' },
+          { label: 'Cost Optimization', href: '/platform/costs' },
+          { label: 'Security & Compliance', href: '/solutions/security' },
+          { label: 'DORA Metrics', href: '/dora-metrics' },
+          { label: 'Resource Discovery', href: '/aws-resources' },
+          { label: 'Service Health', href: '/platform/service-health' },
+          { label: "What's New", href: '/changelog' },
+          { label: 'Product Tour', href: '/tour' },
         ],
       },
     ],
@@ -59,25 +56,16 @@ const footerData: FooterColumn[] = [
         links: [
           { label: 'For Startups', href: '/solutions/startups' },
           { label: 'For Mid-Market', href: '/solutions/mid-market' },
+          { label: 'For Scale-ups', href: '/solutions/scaleups' },
           { label: 'For Enterprise', href: '/solutions/enterprise' },
-        ],
-      },
-      {
-        title: 'By Use Case',
-        links: [
-          { label: 'Platform Engineering', href: '/solutions/platform-engineering' },
-          { label: 'FinOps', href: '/solutions/cost-optimization' },
-          { label: 'DevOps Acceleration', href: '/solutions/devops' },
-          { label: 'Cloud Migration', href: '/solutions/cloud-migration' },
-          { label: 'Compliance Automation', href: '/solutions/compliance' },
         ],
       },
       {
         title: 'By Role',
         links: [
           { label: 'For Platform Engineers', href: '/solutions/platform-engineers' },
-          { label: 'For DevOps Teams', href: '/solutions/devops-teams' },
-          { label: 'For Engineering Leaders', href: '/solutions/engineering-leaders' },
+          { label: 'For DevOps Teams', href: '/solutions/devops' },
+          { label: 'For FinOps Teams', href: '/solutions/finops' },
         ],
       },
     ],
@@ -88,16 +76,11 @@ const footerData: FooterColumn[] = [
       {
         title: '',
         links: [
-          { label: 'Documentation', href: '/docs', external: true },
-          { label: 'Getting Started', href: '/docs/getting-started' },
+          { label: 'Documentation', href: '/docs' },
           { label: 'API Reference', href: '/docs/api' },
-          { label: 'CLI Tool', href: '/developers/cli' },
-          { label: 'Integration Guides', href: '/developers/integrations' },
-          { label: 'Code Examples', href: '/developers/examples' },
-          { label: 'GitHub', href: 'https://github.com/devcontrol' },
-          { label: 'Developer Blog', href: '/developers/blog' },
-          { label: 'API Status', href: '/status' },
-          { label: 'Community', href: '/developers/community' },
+          { label: 'Changelog', href: '/changelog' },
+          { label: 'GitHub', href: 'https://github.com/GoddeyUwamari', external: true },
+          { label: 'Community', href: '/community' },
         ],
       },
     ],
@@ -106,25 +89,12 @@ const footerData: FooterColumn[] = [
     heading: 'Resources',
     sections: [
       {
-        title: 'Learn',
+        title: '',
         links: [
           { label: 'Blog', href: '/blog' },
-          { label: 'Case Studies', href: '/resources/case-studies' },
-          { label: 'Whitepapers', href: '/resources/whitepapers' },
-          { label: 'Webinars', href: '/resources/webinars' },
-          { label: 'Best Practices', href: '/resources/best-practices' },
-          { label: 'Platform Engineering Guide', href: '/resources/guides' },
-        ],
-      },
-      {
-        title: 'Support',
-        links: [
-          { label: 'Help Center', href: '/support' },
-          { label: 'Contact Support', href: '/support/contact' },
-          { label: 'System Status', href: '/status' },
-          { label: 'SLA', href: '/legal/sla' },
-          { label: 'Professional Services', href: '/services/professional' },
-          { label: 'Community Forum', href: '/community' },
+          { label: 'Case Studies', href: '/case-studies' },
+          { label: 'Pricing', href: '/pricing' },
+          { label: 'Community', href: '/community' },
         ],
       },
     ],
@@ -133,24 +103,12 @@ const footerData: FooterColumn[] = [
     heading: 'Company',
     sections: [
       {
-        title: 'About',
+        title: '',
         links: [
-          { label: 'About Us', href: '/company/about' },
-          { label: 'Careers', href: '/company/careers' },
-          { label: 'Team', href: '/company/team' },
-          { label: 'Partners', href: '/company/partners' },
-          { label: 'Contact Us', href: '/company/contact' },
-        ],
-      },
-      {
-        title: 'Legal & Trust',
-        links: [
-          { label: 'Security & Compliance', href: '/company/security' },
+          { label: 'Contact Us', href: '/contact' },
+          { label: 'WayUP Technology', href: 'https://www.wayuptechn.com/', external: true },
           { label: 'Privacy Policy', href: '/legal/privacy' },
           { label: 'Terms of Service', href: '/legal/terms' },
-          { label: 'Data Processing Agreement', href: '/legal/dpa' },
-          { label: 'Trust Center', href: '/company/trust' },
-          { label: 'Accessibility', href: '/legal/accessibility' },
         ],
       },
     ],
@@ -160,7 +118,7 @@ const footerData: FooterColumn[] = [
 const socialLinks = [
   {
     name: 'LinkedIn',
-    href: 'https://linkedin.com/company/devcontrol',
+    href: 'https://www.linkedin.com/in/goddey-uwamari/',
     icon: Linkedin,
   },
   {
@@ -170,7 +128,7 @@ const socialLinks = [
   },
   {
     name: 'GitHub',
-    href: 'https://github.com/devcontrol',
+    href: 'https://github.com/GoddeyUwamari',
     icon: Github,
   },
   {
@@ -285,14 +243,14 @@ export function Footer() {
                   size="sm"
                   className="flex-1 sm:flex-initial"
                 >
-                  <Link href="/contact/demo">Book a Demo</Link>
+                  <Link href="/contact">Book a Demo</Link>
                 </Button>
                 <Button
                   asChild
                   size="sm"
                   className="flex-1 sm:flex-initial"
                 >
-                  <Link href="/signup">Start Free Trial</Link>
+                  <Link href="/register">Start Free Trial</Link>
                 </Button>
               </div>
             </div>

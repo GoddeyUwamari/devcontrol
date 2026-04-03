@@ -114,15 +114,15 @@ export default function BillingPage() {
       string,
       { resources: number | 'unlimited'; apiRequests: number }
     > = {
-      free: { resources: 10, apiRequests: 100 },
-      starter: { resources: 50, apiRequests: 1000 },
+      free: { resources: 20, apiRequests: 500 },
+      starter: { resources: 60, apiRequests: 2000 },
       pro: { resources: 500, apiRequests: 5000 },
       enterprise: { resources: 'unlimited', apiRequests: 20000 },
     };
     return limits[subscription?.tier || 'free'];
   };
 
-  // Mock current usage - in production, fetch from backend
+  // TODO: Replace with real usage data from backend API
   const currentUsage = {
     resources: 8,
     apiRequests: 45,

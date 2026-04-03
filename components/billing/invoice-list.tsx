@@ -94,7 +94,7 @@ export function InvoiceList({ invoices }: InvoiceListProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {invoices.map((invoice) => (
+              {invoices.filter(invoice => invoice.status !== 'draft').map((invoice) => (
                 <TableRow key={invoice.id}>
                   <TableCell className="font-medium">
                     {formatDate(invoice.created)}

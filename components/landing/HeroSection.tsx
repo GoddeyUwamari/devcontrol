@@ -13,7 +13,7 @@ export function HeroSection() {
   return (
     <section
       className="relative overflow-hidden flex items-center"
-      style={{ width: '100%', paddingTop: '136px', paddingBottom: '32px' }}
+      style={{ width: '100%', paddingTop: '60px', paddingBottom: '32px' }}
     >
       <AnimatedBackground />
       <div className="absolute inset-0 -z-10" style={{ background: 'linear-gradient(to bottom, #faf5ff, #ffffff)', pointerEvents: 'none' }} />
