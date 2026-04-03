@@ -336,7 +336,7 @@ const steps = [
   {
     eyebrow: 'Step 4 — Security & Compliance',
     title: 'Know your security posture instantly',
-    description: 'Automated security scanning across all AWS resources. Stay SOC 2, HIPAA, and PCI compliant without manual audits.',
+    description: 'Automated security scanning across all AWS resources. Track SOC 2, HIPAA, and PCI compliance posture without manual audits.',
     highlights: [
       'Continuous compliance monitoring',
       'SOC 2, HIPAA, PCI DSS frameworks',
@@ -552,7 +552,7 @@ export default function TourPage() {
           </button>
 
           <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
-            {currentStep} of {totalSteps} steps complete
+            {currentStep + 1} of {totalSteps} steps
           </span>
 
           {currentStep < totalSteps - 1 ? (
@@ -566,7 +566,7 @@ export default function TourPage() {
                 display: 'flex', alignItems: 'center', gap: '8px',
               }}
             >
-              Next Step →
+              Next Step
             </button>
           ) : (
             <Link href="/register" style={{
@@ -577,7 +577,7 @@ export default function TourPage() {
               alignItems: 'center', gap: '8px',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
             }}>
-              🚀 Get Started Free →
+              🚀 Get Started Free
             </Link>
           )}
         </div>
@@ -606,7 +606,7 @@ export default function TourPage() {
             padding: '14px 32px', borderRadius: '10px',
             fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
           }}>
-            Start Free Trial →
+            Start Free Trial
           </Link>
           <Link href="/contact" style={{
             background: 'transparent', color: '#fff',
