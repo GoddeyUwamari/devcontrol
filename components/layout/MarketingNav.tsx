@@ -369,6 +369,14 @@ export function MarketingNav() {
             >
               Sign In
             </Link>
+            <Link href="/contact" style={{
+              padding: '8px 18px', borderRadius: '8px',
+              border: '1.5px solid #7c3aed', color: '#7c3aed',
+              fontWeight: 600, fontSize: '0.875rem', textDecoration: 'none',
+              display: 'inline-flex', alignItems: 'center',
+            }}>
+              Contact Sales
+            </Link>
             <Link
               href="/register"
               style={{
