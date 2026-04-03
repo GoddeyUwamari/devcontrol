@@ -34,9 +34,9 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
   const getPriceDisplay = () => {
     const prices: Record<string, number> = {
       free: 0,
-      starter: 199,
-      pro: 499,
-      enterprise: 1999,
+      starter: 79,
+      pro: 299,
+      enterprise: 1499,
     };
     return prices[subscription.tier] || 0;
   };

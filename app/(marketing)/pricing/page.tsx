@@ -65,7 +65,7 @@ const pricingTiers: PricingTier[] = [
     name: 'Pro',
     tier: 'pro',
     price: 299,
-    priceId: 'price_1Skm2eH8pNFfrvRPLh2mgf6l',
+    priceId: 'price_1TIANxH8pNFfrvRPngDy6iGc',
     annualPrice: 239,
     annualPriceId: 'price_pro_annual',
     annualSavings: 720,

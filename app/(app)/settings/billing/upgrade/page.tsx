@@ -31,7 +31,7 @@ const plans = [
     tier: 'pro',
     price: 299,
     annualPrice: 239,
-    priceId: 'price_1Skm2eH8pNFfrvRPLh2mgf6l',
+    priceId: 'price_1TIANxH8pNFfrvRPngDy6iGc',
     annualPriceId: 'price_pro_annual',
     popular: true,
     description: 'For growing teams that need AI-powered optimization',

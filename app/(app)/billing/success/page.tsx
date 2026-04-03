@@ -19,17 +19,32 @@ function CheckoutSuccessContent() {
   useEffect(() => {
     async function fetchSubscription() {
       try {
-        // Wait a moment for webhook to process
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        const result = await getSubscription();
-        if (result.success && result.data) {
-          setSubscription(result.data);
+        // Retry up to 5 times waiting for webhook to update the subscription
+        let attempts = 0
+        let subscription = null
+        while (attempts < 5) {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+          const result = await getSubscription()
+          if (result.success && result.data && result.data.tier !== 'free') {
+            subscription = result.data
+            break
+          }
+          attempts++
+        }
+        // If still free after retries, fetch one final time anyway
+        if (!subscription) {
+          const result = await getSubscription()
+          if (result.success && result.data) {
+            subscription = result.data
+          }
+        }
+        if (subscription) {
+          setSubscription(subscription)
         }
       } catch (error) {
-        console.error('Error fetching subscription:', error);
+        console.error('Error fetching subscription:', error)
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
     }
 

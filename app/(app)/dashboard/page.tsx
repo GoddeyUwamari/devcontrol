@@ -648,7 +648,7 @@ export default function DashboardPage() {
               letterSpacing: '-0.02em',
               lineHeight: 1.3,
             }}>
-              Your AWS Command Center for Cost, Risk, and System Intelligence
+              AWS Cost & Risk Intelligence
             </h1>
           </div>
           <p style={{
