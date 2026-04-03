@@ -34,7 +34,7 @@ const pricingTiers: PricingTier[] = [
     name: 'Starter',
     tier: 'starter',
     price: 79,
-    priceId: 'price_starter_monthly',
+    priceId: 'price_1Skm0uH8pNFfrvRPuccIDLoA',
     annualPrice: 63,
     annualPriceId: 'price_starter_annual',
     annualSavings: 192,
@@ -106,7 +106,7 @@ const pricingTiers: PricingTier[] = [
     tier: 'enterprise',
     price: 1499,
     priceId: 'price_1Skm4iH8pNFfrvRPa6nDnjqc',
-    trialDays: 14,
+    trialDays: 0,
     features: [
       '✨ Everything in Pro',
       '✨ Scheduled AI Reports (weekly/monthly)',
@@ -207,7 +207,7 @@ export default function PricingPage() {
       </section>
 
       {/* BILLING TOGGLE */}
-      <section style={{ padding: '48px 48px 0', textAlign: 'center' }}>
+      <section style={{ padding: '28px 48px 0', textAlign: 'center' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center',
@@ -392,7 +392,7 @@ export default function PricingPage() {
       </section>
 
       {/* ROI CALCULATOR */}
-      <section style={{ padding: '80px 48px', width: '100%', background: '#fafafa' }}>
+      <section style={{ padding: '56px 48px 48px', width: '100%', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
 
           <div style={{ textAlign: 'center', marginBottom: '48px' }}>
@@ -424,7 +424,7 @@ export default function PricingPage() {
       </section>
 
       {/* FEATURE COMPARISON */}
-      <section style={{ padding: '80px 48px', width: '100%', background: '#fafafa' }}>
+      <section style={{ padding: '40px 48px 60px', width: '100%', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
             fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
@@ -438,7 +438,7 @@ export default function PricingPage() {
       </section>
 
       {/* FAQ */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: '56px 48px 60px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
             fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
@@ -476,7 +476,7 @@ export default function PricingPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             }}>
-              Start Free 14-Day Trial →
+              Start Free 14-Day Trial
             </a>
             <a href="/contact" style={{
               background: 'transparent', color: '#fff',
