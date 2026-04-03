@@ -16,7 +16,7 @@ const platformItems = [
   { icon: Shield,       title: 'Security & Compliance',     desc: 'Automated security posture management',      href: '/solutions/security' },
   { icon: BarChart2,    title: 'DORA Metrics',              desc: 'Track elite engineering performance',        href: '/dora-metrics' },
   { icon: Search,       title: 'Resource Discovery',        desc: 'Find and tag every cloud asset',             href: '/aws-resources' },
-  { icon: Activity,     title: 'Service Health',            desc: 'Real-time uptime and incident tracking',     href: '/services' },
+  { icon: Activity,     title: 'Service Health',            desc: 'Real-time uptime and incident tracking',     href: '/platform/service-health' },
 ]
 
 const solutionsItems = [
