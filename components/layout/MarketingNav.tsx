@@ -22,7 +22,7 @@ const platformItems = [
 const solutionsItems = [
   { icon: Rocket,     title: 'For Startups',           desc: 'Move fast without breaking things',       href: '/solutions/startups' },
   { icon: TrendingUp, title: 'For Scale-ups',          desc: 'Scale infrastructure confidently',        href: '/solutions/scaleups' },
-  { icon: Building2,  title: 'For Enterprise',         desc: 'Enterprise-grade controls and compliance', href: '/solutions/enterprise' },
+  { icon: Building2,  title: 'For Mid-Market', desc: 'Built for growing teams of 20–100 engineers', href: '/solutions/mid-market' },
   { icon: GitBranch,  title: 'For DevOps Teams',       desc: 'Automate your entire delivery pipeline',  href: '/solutions/devops' },
   { icon: Layers,     title: 'For Platform Engineers', desc: 'Build and manage internal platforms',     href: '/solutions/platform-engineers' },
   { icon: DollarSign, title: 'For FinOps Teams',       desc: 'Optimize cloud costs across teams',       href: '/solutions/finops' },
@@ -34,7 +34,7 @@ const resourcesItems = [
   { icon: FileText,  title: 'Blog',          desc: 'Engineering insights and best practices', href: '/blog' },
   { icon: BarChart2, title: 'Case Studies',  desc: 'See how teams use DevControl',            href: '/case-studies' },
   { icon: Clock,     title: 'Changelog',     desc: 'Latest features and improvements',        href: '/changelog' },
-  { icon: Users,     title: 'Community',     desc: 'Connect with other DevControl users',     href: null },
+  { icon: Users,     title: 'Community',     desc: 'Connect with other DevControl users',     href: '/community' },
 ]
 
 type NavItem = { icon: React.ElementType; title: string; desc: string; href: string | null }

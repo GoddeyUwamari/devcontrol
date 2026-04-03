@@ -11,7 +11,7 @@ export default function ScaleupsPage() {
     stats: [
       { value: '10+', label: 'AWS accounts unified' },
       { value: '30%', label: 'Cost reduction typical' },
-      { value: '$47K', label: 'Annual waste found avg' },
+      { value: '$28,800', label: 'Average annual savings found' },
     ],
   }
 
