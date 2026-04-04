@@ -634,7 +634,7 @@ function InfrastructureContent() {
           </button>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
             <a
-              href="/costs/cost-optimization"
+              href="/cost-optimization"
               style={{
                 display: 'flex', alignItems: 'center', gap: '7px',
                 background: '#7C3AED', color: '#fff',
@@ -714,7 +714,7 @@ function InfrastructureContent() {
 
         </div>
 
-        <a href="/costs/ai-reports" style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <a href="/ai-reports" style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', flexShrink: 0 }}>
           Full report <ArrowRight size={11} />
         </a>
       </div>
@@ -844,7 +844,7 @@ function InfrastructureContent() {
           </p>
           {(isDemoActive || (realSavingsTotal && realSavingsTotal > 0)) && (
             <a
-              href="/costs/cost-optimization"
+              href="/cost-optimization"
               style={{
                 fontSize: '0.72rem', fontWeight: 600, color: '#059669',
                 textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
@@ -907,7 +907,7 @@ function InfrastructureContent() {
                   : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Today</span>
                 }
                 {action.risk === 'zero'
-                  ? <a href="/costs/cost-optimization" style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 13px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>Fix →</a>
+                  ? <a href="/cost-optimization" style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 13px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>Fix →</a>
                   : <a href="/anomalies" style={{ background: 'transparent', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textDecoration: 'none' }}>Review →</a>
                 }
               </div>

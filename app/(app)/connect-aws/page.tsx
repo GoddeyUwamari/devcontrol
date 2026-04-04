@@ -578,7 +578,7 @@ export default function ConnectAwsPage() {
               step by step.
             </p>
             <a
-              href="#"
+              href="/docs"
               style={{
                 fontSize: '14px',
                 color: '#7C3AED',
