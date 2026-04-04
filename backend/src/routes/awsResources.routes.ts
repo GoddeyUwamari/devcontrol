@@ -15,7 +15,7 @@ const controller = new AWSResourcesController(pool);
  * GET /api/aws-resources
  * List all AWS resources with optional filters
  */
-router.get('/', authenticate, (req, res, next) => controller.getAll(req, res, next));
+router.get('/', authenticate, checkDiscoveryLimit, (req, res, next) => controller.getAll(req, res, next));
 
 /**
  * GET /api/aws-resources/stats

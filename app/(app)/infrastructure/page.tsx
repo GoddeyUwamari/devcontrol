@@ -245,7 +245,9 @@ function InfrastructureContent() {
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
 
-  const { data: resources = [], isLoading, refetch } = useQuery({
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
+
+  const { data: resources = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['infrastructure', selectedType],
     queryFn: async () => {
       const allResources = await infrastructureService.getAll(
@@ -255,6 +257,12 @@ function InfrastructureContent() {
     },
     enabled: !isDemoActive,
   })
+
+  useEffect(() => {
+    if (isError && (error as any)?.response?.status === 402) {
+      setShowUpgradePrompt(true)
+    }
+  }, [isError, error])
 
   // Scroll to and highlight a resource when ?resource= is present
   useEffect(() => {
@@ -561,6 +569,32 @@ function InfrastructureContent() {
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+      {/* RESOURCE LIMIT UPGRADE PROMPT */}
+      {showUpgradePrompt && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: '10px',
+          padding: '14px 20px', marginBottom: '24px', gap: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#92400E' }}>
+              You've reached your resource limit. Upgrade your plan to see all resources.
+            </span>
+          </div>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              flexShrink: 0, fontSize: '0.8125rem', fontWeight: 600,
+              color: '#fff', background: '#D97706', borderRadius: '6px',
+              padding: '7px 16px', textDecoration: 'none', whiteSpace: 'nowrap',
+            }}
+          >
+            Upgrade plan
+          </a>
+        </div>
+      )}
 
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Shield, RefreshCw, Download, CheckCircle2, XCircle, MinusCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/auth-context';
+import { usePlan } from '@/lib/hooks/use-plan';
 import { demoModeService } from '@/lib/services/demo-mode.service';
 import {
   complianceEngineService,
@@ -259,7 +260,7 @@ function LockedState() {
 
 export default function CompliancePage() {
   const { user } = useAuth();
-  const isEnterprise = user?.organizationId != null; // real check via API result gating
+  const { isEnterprise } = usePlan();
 
   const [activeFramework, setActiveFramework] = useState<ControlFramework>('soc2');
   const [soc2Result, setSoc2Result] = useState<FrameworkScanResult | null>(null);
