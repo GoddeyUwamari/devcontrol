@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { anomalyService } from '@/lib/services/anomaly.service';
+import { usePlan } from '@/lib/hooks/use-plan';
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
 import {
   AlertTriangle,
@@ -24,6 +25,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Settings,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import customAnomalyRulesService, { CustomAnomalyRule, CreateRulePayload } from '@/lib/services/custom-anomaly-rules.service';
@@ -51,6 +53,8 @@ const overline: React.CSSProperties = {
 
 export default function AnomaliesPage() {
   // ── PRESERVED STATE ──────────────────────────────────────────────────────
+  const { isPro } = usePlan();
+  const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
   const [anomalies, setAnomalies] = useState<AnomalyDetection[]>([]);
   const [stats, setStats] = useState<AnomalyStats | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -84,8 +88,9 @@ export default function AnomaliesPage() {
       const data = await anomalyService.getAnomalies(filter);
       setAnomalies(data.anomalies);
       setStats(data.stats);
-    } catch (error) {
-      console.error('Failed to load anomalies:', error);
+    } catch (error: any) {
+      if (error?.status === 402) setShowUpgradeBanner(true);
+      else console.error('Failed to load anomalies:', error);
     } finally {
       setIsLoading(false);
     }
@@ -203,6 +208,41 @@ export default function AnomaliesPage() {
   ).size;
 
   // ── RENDER ───────────────────────────────────────────────────────────────
+  if (!isPro) {
+    return (
+      <div style={{
+        padding: '40px 56px 80px', maxWidth: '1320px', margin: '0 auto',
+        minHeight: '100vh', background: '#F9FAFB', fontFamily: 'Inter, system-ui, sans-serif',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <div style={{ textAlign: 'center', maxWidth: '420px' }}>
+          <div style={{
+            width: '56px', height: '56px', borderRadius: '14px', background: '#F5F3FF',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px',
+          }}>
+            <Lock size={24} color="#7C3AED" />
+          </div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', margin: '0 0 10px' }}>
+            Pro Plan Required
+          </h2>
+          <p style={{ fontSize: '0.875rem', color: '#64748B', margin: '0 0 24px', lineHeight: 1.6 }}>
+            This feature is available on the Pro plan and above.
+          </p>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              display: 'inline-block', background: '#7C3AED', color: '#fff',
+              padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem',
+              fontWeight: 600, textDecoration: 'none',
+            }}
+          >
+            Upgrade to Pro
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       padding: '40px 56px 80px',
@@ -213,6 +253,32 @@ export default function AnomaliesPage() {
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+      {/* UPGRADE BANNER */}
+      {showUpgradeBanner && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: '10px',
+          padding: '14px 20px', marginBottom: '24px', gap: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#92400E' }}>
+              This feature requires the Pro plan.
+            </span>
+          </div>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              flexShrink: 0, fontSize: '0.8125rem', fontWeight: 600,
+              color: '#fff', background: '#D97706', borderRadius: '6px',
+              padding: '7px 16px', textDecoration: 'none', whiteSpace: 'nowrap',
+            }}
+          >
+            Upgrade to Pro
+          </a>
+        </div>
+      )}
 
       {/* ── PAGE HEADER ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>

@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { AnomalyController } from '../controllers/anomaly.controller';
 import { AnomalyDetectionJob } from '../jobs/anomaly-detection.job';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requirePro } from '../middleware/subscription.middleware';
 
 export const createAnomalyRoutes = (
   pool: Pool,
@@ -11,9 +12,9 @@ export const createAnomalyRoutes = (
   const router = Router();
   const controller = new AnomalyController(pool, detectionJob);
 
-  // Make authentication optional for testing
-  // TODO: Re-enable in production
-  // router.use(authenticateToken);
+  // All routes require Pro tier or higher
+  router.use(authenticateToken);
+  router.use(requirePro);
 
   /**
    * GET /api/anomalies

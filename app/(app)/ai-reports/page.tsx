@@ -7,8 +7,9 @@ import { GeneratedReport, ReportHistoryItem } from '@/lib/services/ai-reports.se
 import {
   Sparkles, RefreshCw, Download, Trash2, MoreHorizontal,
   DollarSign, Shield, Server, BarChart3, CheckCircle2, X,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, Lock,
 } from 'lucide-react'
+import { usePlan } from '@/lib/hooks/use-plan'
 import { toast } from 'sonner'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -135,7 +136,9 @@ function ConfirmModal({
 
 export default function AIReportsPage() {
   const router = useRouter()
+  const { isPro } = usePlan()
   const { generateReport, getReportHistory, deleteReport, bulkDeleteReports, isGenerating, isFetchingHistory, error } = useAIReports()
+  const [showUpgradeBanner, setShowUpgradeBanner] = useState(false)
   const [currentReport, setCurrentReport] = useState<GeneratedReport | null>(null)
   const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([])
   const [generatingType, setGeneratingType] = useState<string | null>(null)
@@ -163,8 +166,12 @@ export default function AIReportsPage() {
   }, [])
 
   const loadReportHistory = async () => {
-    const history = await getReportHistory(50)
-    setReportHistory(history)
+    try {
+      const history = await getReportHistory(50)
+      setReportHistory(history)
+    } catch (err: any) {
+      if (err?.status === 402) setShowUpgradeBanner(true)
+    }
   }
 
   const handleGenerateReport = async (reportType: string = 'weekly_summary') => {
@@ -179,22 +186,28 @@ export default function AIReportsPage() {
     }
     const mappedType = typeMap[reportType] ?? 'weekly_summary'
 
-    const report = await generateReport({
-      dateRange: {
-        from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        to: new Date().toISOString().split('T')[0],
-      },
-      reportType: mappedType as any,
-    })
+    try {
+      const report = await generateReport({
+        dateRange: {
+          from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          to: new Date().toISOString().split('T')[0],
+        },
+        reportType: mappedType as any,
+      })
 
-    setGeneratingType(null)
+      setGeneratingType(null)
 
-    if (report) {
-      setCurrentReport(report)
-      toast.success('Report generated successfully!')
-      loadReportHistory()
-    } else {
-      toast.error(error || 'Failed to generate report')
+      if (report) {
+        setCurrentReport(report)
+        toast.success('Report generated successfully!')
+        loadReportHistory()
+      } else {
+        toast.error(error || 'Failed to generate report')
+      }
+    } catch (err: any) {
+      setGeneratingType(null)
+      if (err?.status === 402) setShowUpgradeBanner(true)
+      else toast.error('Failed to generate report')
     }
   }
 
@@ -321,6 +334,41 @@ export default function AIReportsPage() {
   const handleViewReport = (id: string) => router.push(`/ai-reports/${id}`)
   const handleDownloadReport = (id: string) => router.push(`/ai-reports/${id}?print=1`)
 
+  if (!isPro) {
+    return (
+      <div style={{
+        padding: '40px 56px 64px', maxWidth: '1320px', margin: '0 auto',
+        minHeight: '100vh', background: '#F9FAFB', fontFamily: 'Inter, system-ui, sans-serif',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <div style={{ textAlign: 'center', maxWidth: '420px' }}>
+          <div style={{
+            width: '56px', height: '56px', borderRadius: '14px', background: '#F5F3FF',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px',
+          }}>
+            <Lock size={24} color="#7C3AED" />
+          </div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', margin: '0 0 10px' }}>
+            Pro Plan Required
+          </h2>
+          <p style={{ fontSize: '0.875rem', color: '#64748B', margin: '0 0 24px', lineHeight: 1.6 }}>
+            This feature is available on the Pro plan and above.
+          </p>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              display: 'inline-block', background: '#7C3AED', color: '#fff',
+              padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem',
+              fontWeight: 600, textDecoration: 'none',
+            }}
+          >
+            Upgrade to Pro
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{
       padding: '40px 56px 64px',
@@ -338,6 +386,32 @@ export default function AIReportsPage() {
         .menu-item-danger:hover { background: #FEF2F2; color: #DC2626 !important; }
         .action-btn:hover { opacity: 0.85; }
       `}</style>
+
+      {/* UPGRADE BANNER */}
+      {showUpgradeBanner && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: '10px',
+          padding: '14px 20px', marginBottom: '24px', gap: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#92400E' }}>
+              This feature requires the Pro plan.
+            </span>
+          </div>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              flexShrink: 0, fontSize: '0.8125rem', fontWeight: 600,
+              color: '#fff', background: '#D97706', borderRadius: '6px',
+              padding: '7px 16px', textDecoration: 'none', whiteSpace: 'nowrap',
+            }}
+          >
+            Upgrade to Pro
+          </a>
+        </div>
+      )}
 
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>

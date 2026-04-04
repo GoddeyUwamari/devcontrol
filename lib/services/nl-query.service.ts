@@ -53,7 +53,11 @@ class NLQueryServiceClient {
       headers: this.getHeaders(),
       body: JSON.stringify({ query }),
     });
-    if (!response.ok) throw new Error('Failed to execute query');
+    if (!response.ok) {
+      const err = new Error('Failed to execute query');
+      (err as any).status = response.status;
+      throw err;
+    }
     const result = await response.json();
     return result.data;
   }

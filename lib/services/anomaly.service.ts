@@ -70,7 +70,9 @@ class AnomalyService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch anomalies');
+      const err = new Error('Failed to fetch anomalies');
+      (err as any).status = response.status;
+      throw err;
     }
 
     return response.json();

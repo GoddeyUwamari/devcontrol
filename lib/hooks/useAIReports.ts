@@ -17,6 +17,7 @@ export function useAIReports() {
       const report = await aiReportsService.generateReport(request);
       return report;
     } catch (err: any) {
+      if (err?.status === 402) throw err;
       const errorMessage = err.message || 'Failed to generate report';
       setError(errorMessage);
       console.error('[useAIReports] Generate error:', err);
@@ -40,6 +41,7 @@ export function useAIReports() {
       const history = await aiReportsService.getReportHistory(limit, reportType);
       return history;
     } catch (err: any) {
+      if (err?.status === 402) throw err;
       const errorMessage = err.message || 'Failed to fetch report history';
       setError(errorMessage);
       console.error('[useAIReports] Fetch history error:', err);

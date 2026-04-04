@@ -7,12 +7,14 @@ import { Router } from 'express';
 import { pool } from '../config/database';
 import { AIChatController } from '../controllers/ai-chat.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requirePro } from '../middleware/subscription.middleware';
 
 const router = Router();
 const controller = new AIChatController(pool);
 
-// All routes require authentication
+// All routes require Pro tier or higher
 router.use(authenticateToken);
+router.use(requirePro);
 
 /**
  * POST /api/ai-chat

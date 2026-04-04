@@ -9,8 +9,9 @@ import {
 import {
   Search, Download, TrendingUp, TrendingDown,
   Sparkles, ArrowRight, Loader2, X, ChevronRight,
-  DollarSign, BarChart3, Zap, Target,
+  DollarSign, BarChart3, Zap, Target, Lock,
 } from 'lucide-react'
+import { usePlan } from '@/lib/hooks/use-plan'
 import { forecastService } from '@/lib/services/forecast.service'
 import { optimizationService } from '@/lib/services/optimization.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
@@ -117,11 +118,13 @@ const DEMO_CHART_DATA: { date: string; actual: number | null; forecast: number |
 ]
 
 export default function CostsPage() {
+  const { isPro } = usePlan()
   const [selectedRange, setSelectedRange] = useState('30D')
   const [nlQuery, setNlQuery] = useState('')
   const [nlResult, setNlResult] = useState<NLQueryResult | null>(null)
   const [nlLoading, setNlLoading] = useState(false)
   const [nlError, setNlError] = useState<string | null>(null)
+  const [nlUpgradeBanner, setNlUpgradeBanner] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [narrativeExpanded, setNarrativeExpanded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -154,11 +157,16 @@ export default function CostsPage() {
     setNlLoading(true)
     setNlError(null)
     setNlResult(null)
+    setNlUpgradeBanner(false)
     try {
       const result = await nlQueryService.executeQuery(nlQuery)
       setNlResult(result)
-    } catch {
-      setNlError('Could not process query. Try: "Show EC2 spend last 30 days" or "Which services cost the most?"')
+    } catch (err: any) {
+      if (err?.status === 402) {
+        setNlUpgradeBanner(true)
+      } else {
+        setNlError('Could not process query. Try: "Show EC2 spend last 30 days" or "Which services cost the most?"')
+      }
     } finally {
       setNlLoading(false)
     }
@@ -442,7 +450,58 @@ export default function CostsPage() {
       </div>
 
       {/* NL SEARCH BAR / AI CO-PILOT */}
-      <form onSubmit={handleNlQuery} style={{ marginBottom: '24px' }}>
+      {!isPro && (
+        <div style={{
+          marginBottom: '24px', background: '#F8FAFC', border: '1.5px dashed #CBD5E1',
+          borderRadius: '12px', padding: '28px', textAlign: 'center',
+        }}>
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '10px', background: '#F5F3FF',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px',
+          }}>
+            <Lock size={18} color="#7C3AED" />
+          </div>
+          <p style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>Pro Plan Required</p>
+          <p style={{ fontSize: '0.8rem', color: '#64748B', margin: '0 0 16px' }}>
+            This feature is available on the Pro plan and above.
+          </p>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              display: 'inline-block', background: '#7C3AED', color: '#fff',
+              padding: '8px 20px', borderRadius: '8px', fontSize: '0.8125rem',
+              fontWeight: 600, textDecoration: 'none',
+            }}
+          >
+            Upgrade to Pro
+          </a>
+        </div>
+      )}
+      {nlUpgradeBanner && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: '10px',
+          padding: '14px 20px', marginBottom: '16px', gap: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#92400E' }}>
+              This feature requires the Pro plan.
+            </span>
+          </div>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              flexShrink: 0, fontSize: '0.8125rem', fontWeight: 600,
+              color: '#fff', background: '#D97706', borderRadius: '6px',
+              padding: '7px 16px', textDecoration: 'none', whiteSpace: 'nowrap',
+            }}
+          >
+            Upgrade to Pro
+          </a>
+        </div>
+      )}
+      <form onSubmit={handleNlQuery} style={{ marginBottom: '24px', display: isPro ? undefined : 'none' }}>
         <div style={{ position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
           <input

@@ -16,30 +16,35 @@ export const TIER_LIMITS: Record<SubscriptionTier, {
   maxServices: number;
   maxUsers: number;
   maxDeploymentsPerMonth: number;
+  maxResources: number;
   features: string[];
 }> = {
   free: {
     maxServices: 5,
     maxUsers: 3,
     maxDeploymentsPerMonth: 10,
+    maxResources: 20,
     features: ['basic_dashboard', 'manual_deployments'],
   },
   starter: {
     maxServices: 20,
-    maxUsers: 10,
+    maxUsers: 5,
     maxDeploymentsPerMonth: 50,
+    maxResources: 60,
     features: ['basic_dashboard', 'manual_deployments', 'cost_analytics', 'alerts'],
   },
   pro: {
     maxServices: 100,
-    maxUsers: 50,
+    maxUsers: 10,
     maxDeploymentsPerMonth: 500,
+    maxResources: 500,
     features: ['basic_dashboard', 'manual_deployments', 'cost_analytics', 'alerts', 'advanced_analytics', 'api_access', 'custom_integrations'],
   },
   enterprise: {
     maxServices: -1, // unlimited
     maxUsers: -1, // unlimited
     maxDeploymentsPerMonth: -1, // unlimited
+    maxResources: -1, // unlimited
     features: ['basic_dashboard', 'manual_deployments', 'cost_analytics', 'alerts', 'advanced_analytics', 'api_access', 'custom_integrations', 'sso', 'audit_logs', 'dedicated_support', 'sla'],
   },
 };
@@ -212,6 +217,7 @@ async function getOrganizationLimits(organizationId: string): Promise<{
     maxServices: number;
     maxUsers: number;
     maxDeploymentsPerMonth: number;
+    maxResources: number;
   };
   usage: {
     services: number;
@@ -262,6 +268,7 @@ async function getOrganizationLimits(organizationId: string): Promise<{
       maxServices: org.max_services || TIER_LIMITS[tier].maxServices,
       maxUsers: org.max_users || TIER_LIMITS[tier].maxUsers,
       maxDeploymentsPerMonth: org.max_deployments_per_month || TIER_LIMITS[tier].maxDeploymentsPerMonth,
+      maxResources: TIER_LIMITS[tier].maxResources,
     },
     usage: {
       services: parseInt(servicesResult.rows[0].count),
@@ -297,11 +304,14 @@ export const checkResourceLimit = (resourceType: ResourceLimitType, incrementBy:
 
       switch (resourceType) {
         case 'services':
-        case 'aws_resources':
-          // Both services and aws_resources count against max_services limit
-          currentUsage = Math.max(usage.services, usage.awsResources);
+          currentUsage = usage.services;
           maxLimit = limits.maxServices;
-          resourceName = 'resources';
+          resourceName = 'services';
+          break;
+        case 'aws_resources':
+          currentUsage = usage.awsResources;
+          maxLimit = limits.maxResources;
+          resourceName = 'AWS resources';
           break;
         case 'users':
           currentUsage = usage.users;
@@ -337,7 +347,8 @@ export const checkResourceLimit = (resourceType: ResourceLimitType, incrementBy:
             nextTier: cta.nextTier,
             currentLimit: maxLimit,
             nextLimit: cta.nextTier ? TIER_LIMITS[cta.nextTier][
-              resourceType === 'services' || resourceType === 'aws_resources' ? 'maxServices' :
+              resourceType === 'aws_resources' ? 'maxResources' :
+              resourceType === 'services' ? 'maxServices' :
               resourceType === 'users' ? 'maxUsers' : 'maxDeploymentsPerMonth'
             ] : null,
           },

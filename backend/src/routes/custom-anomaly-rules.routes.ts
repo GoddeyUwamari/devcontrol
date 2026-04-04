@@ -1,10 +1,16 @@
 import { Router } from 'express';
 import { Pool } from 'pg';
 import { CustomAnomalyRulesService } from '../services/custom-anomaly-rules.service';
+import { authenticateToken } from '../middleware/auth.middleware';
+import { requireEnterprise } from '../middleware/subscription.middleware';
 
 export const createCustomRulesRoutes = (pool: Pool): Router => {
   const router = Router();
   const service = new CustomAnomalyRulesService(pool);
+
+  // All routes require Enterprise tier
+  router.use(authenticateToken);
+  router.use(requireEnterprise);
 
   // GET /api/anomaly-rules — list all rules for org
   router.get('/', async (req, res) => {

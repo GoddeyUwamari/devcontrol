@@ -7,6 +7,7 @@ import { Router } from 'express';
 import { NLQueryController } from '../controllers/nl-query.controller';
 import { NLQueryService } from '../services/nl-query.service';
 import { authenticate as authenticateToken } from '../middleware/auth.middleware';
+import { requirePro } from '../middleware/subscription.middleware';
 import { pool } from '../config/database';
 import { NLQueryExecutorService } from '../services/nl-query-executor.service';
 
@@ -14,6 +15,10 @@ const router = Router();
 const service = new NLQueryService(pool);
 const controller = new NLQueryController(service);
 const executor = new NLQueryExecutorService(pool);
+
+// All routes require Pro tier or higher
+router.use(authenticateToken);
+router.use(requirePro);
 
 /**
  * POST /api/nl-query/parse
@@ -36,11 +41,11 @@ const executor = new NLQueryExecutorService(pool);
  *   }
  * }
  */
-router.post('/parse', authenticateToken, controller.parseQuery);
-router.get('/analytics', authenticateToken, controller.getAnalytics);
+router.post('/parse', controller.parseQuery);
+router.get('/analytics', controller.getAnalytics);
 
 // POST /api/nl-query/execute — parse intent AND return real data
-router.post('/execute', authenticateToken, async (req: any, res) => {
+router.post('/execute', async (req: any, res) => {
   try {
     const { query } = req.body;
     const organizationId = req.user?.organizationId;
