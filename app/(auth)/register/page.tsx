@@ -289,17 +289,19 @@ export default function RegisterPage() {
               >
                 I agree to the{" "}
                 <Link
-                  href="/terms"
+                  href="/legal/terms"
                   className="font-medium text-primary hover:underline"
                   target="_blank"
+                  rel="noopener noreferrer"
                 >
                   Terms of Service
                 </Link>{" "}
                 and{" "}
                 <Link
-                  href="/privacy"
+                  href="/legal/privacy"
                   className="font-medium text-primary hover:underline"
                   target="_blank"
+                  rel="noopener noreferrer"
                 >
                   Privacy Policy
                 </Link>

@@ -15,6 +15,20 @@ import { checkResourceLimit } from '../middleware/subscription.middleware';
 
 const router = Router();
 
+// Public endpoint — no auth required
+router.get('/founding-count', async (req, res) => {
+  try {
+    const { pool } = await import('../config/database');
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM organizations
+       WHERE subscription_tier != 'free' AND subscription_tier IS NOT NULL`
+    );
+    res.json({ count: result.rows[0].count });
+  } catch {
+    res.json({ count: 5 });
+  }
+});
+
 // All organization routes require authentication
 router.use(authenticate);
 

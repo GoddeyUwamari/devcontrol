@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle2, Clock, Shield, Sparkles, Zap } from 'lucide-react'
 import { FeatureComparisonTable } from '@/components/billing/feature-comparison-table'
 import { PricingFAQ } from '@/components/billing/pricing-faq'
@@ -331,6 +331,14 @@ function ROICalculator() {
 
 export default function PricingPage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
+  const [foundingCount, setFoundingCount] = useState(5)
+
+  useEffect(() => {
+    fetch('http://localhost:8080/api/organizations/founding-count')
+      .then(res => res.json())
+      .then(data => setFoundingCount(data.count ?? 5))
+      .catch(() => {})
+  }, [])
 
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
@@ -440,7 +448,7 @@ export default function PricingPage() {
                   ))}
                 </div>
                 <p style={{ fontSize: '0.7rem', color: '#7c3aed', fontWeight: 600, marginTop: '4px', textAlign: 'center' }}>
-                  5 of 50 spots claimed
+                  {foundingCount} of 50 spots claimed
                 </p>
               </div>
               <a href="/register" style={{
