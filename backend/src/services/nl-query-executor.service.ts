@@ -84,6 +84,18 @@ export class NLQueryExecutorService {
       conditions.push(`estimated_monthly_cost <= $${idx++}`);
       values.push(costMaxVal);
     }
+    if (filters.encrypted === false) {
+      conditions.push(`is_encrypted = $${idx++}`);
+      values.push(false);
+    }
+    if (filters.hasBackup === false) {
+      conditions.push(`has_backup = $${idx++}`);
+      values.push(false);
+    }
+    if (filters.publicAccess === true) {
+      conditions.push(`is_public = $${idx++}`);
+      values.push(true);
+    }
 
     const orderBy = filters.costMin || filters.costMax
       ? 'ORDER BY estimated_monthly_cost DESC'
@@ -91,6 +103,7 @@ export class NLQueryExecutorService {
 
     const result = await this.pool.query(
       `SELECT
+         id,
          resource_id,
          resource_name,
          resource_type,

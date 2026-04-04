@@ -111,8 +111,12 @@ export function CommandPalette() {
           onKeyDown={handleInputKeyDown}
         />
         {isNL && (
-          <div className="absolute right-3 top-3 flex items-center gap-2
-            text-xs text-purple-600 dark:text-purple-400">
+          <div
+            className="absolute right-3 top-3 flex items-center gap-2
+              text-xs text-purple-600 dark:text-purple-400"
+            style={{ cursor: isNL ? 'pointer' : 'default' }}
+            onClick={() => { if (isNL && !isProcessing) runNLQuery() }}
+          >
             <Sparkles className="h-4 w-4 animate-pulse" />
             <span>AI Search</span>
           </div>
@@ -192,7 +196,12 @@ export function CommandPalette() {
                   return (
                     <CommandItem key={idx} onSelect={() => {
                       setOpen(false)
-                      router.push(`/${nlResult.intent.target}`)
+                      const resourceId = row.id || null
+                      if (resourceId && nlResult.intent.target === 'infrastructure') {
+                        router.push(`/infrastructure?resource=${resourceId}`)
+                      } else {
+                        router.push(`/${nlResult.intent.target}`)
+                      }
                     }}>
                       <div className="flex flex-col min-w-0">
                         <span className="font-medium truncate">{label}</span>
@@ -208,7 +217,7 @@ export function CommandPalette() {
                 <CommandItem onSelect={() => {
                   setOpen(false)
                   router.push(`/${nlResult.intent.target}`)
-                }}>
+                }} >
                   <span className="text-xs text-purple-600 font-medium">
                     View all {nlResult.rowCount} results →
                   </span>

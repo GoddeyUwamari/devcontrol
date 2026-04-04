@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { useQuery } from '@tanstack/react-query'
@@ -227,6 +228,8 @@ export default function InfrastructurePage() {
 
 function InfrastructureContent() {
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const targetResourceId = searchParams.get('resource')
 
   const [selectedType,  setSelectedType]  = useState<string | null>(null)
   const [openDropdown,  setOpenDropdown]  = useState<string | null>(null)
@@ -252,6 +255,23 @@ function InfrastructureContent() {
     },
     enabled: !isDemoActive,
   })
+
+  // Scroll to and highlight a resource when ?resource= is present
+  useEffect(() => {
+    console.log('targetResourceId:', targetResourceId)
+    console.log('found element:', document.getElementById(`resource-${targetResourceId}`))
+    if (!targetResourceId || isLoading) return
+    const el = document.getElementById(`resource-${targetResourceId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.style.transition = 'background-color 0.3s ease'
+    el.style.backgroundColor = '#EDE9FE'
+    el.style.boxShadow = '0 0 0 2px #7C3AED'
+    setTimeout(() => {
+      el.style.backgroundColor = ''
+      el.style.boxShadow = ''
+    }, 2000)
+  }, [targetResourceId, isLoading])
 
   // All resources (unfiltered) — used for monthly cost in real mode
   const { data: allResources = [] } = useQuery({
@@ -1035,7 +1055,7 @@ function InfrastructureContent() {
                 : null
 
             return (
-              <div key={r.id}>
+              <div key={r.id} id={`resource-${r.id}`}>
                 <div
                   style={{
                     display: 'grid',
