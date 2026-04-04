@@ -30,6 +30,7 @@ import optimizationRoutes from './optimization.routes';
 import costOptimizationAIRoutes from './cost-optimization-ai.routes';
 import userPreferencesRoutes from './user-preferences.routes';
 import tenantsRoutes from './tenants.routes';
+import usageRoutes from './usage.routes';
 
 const router = Router();
 
@@ -68,6 +69,7 @@ router.use('/optimizations', optimizationRoutes);
 router.use('/cost-optimization', costOptimizationAIRoutes);
 router.use('/user/preferences', userPreferencesRoutes);
 router.use('/tenants', tenantsRoutes);
+router.use('/usage', usageRoutes);
 router.use('/', logsRoutes);
 
 // API root

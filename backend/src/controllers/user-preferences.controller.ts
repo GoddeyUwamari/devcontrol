@@ -139,6 +139,86 @@ export async function updateEmailPreferences(req: Request, res: Response) {
 }
 
 /**
+ * Get user's display preferences (theme, timezone, language)
+ */
+export async function getDisplayPreferences(req: Request, res: Response) {
+  try {
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const result = await pool.query(
+      `SELECT theme, timezone, language FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    return res.json({ success: true, data: result.rows[0] });
+  } catch (error: any) {
+    console.error('[Display Preferences] Get error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch display preferences' });
+  }
+}
+
+/**
+ * Update user's display preferences (theme, timezone, language)
+ */
+export async function updateDisplayPreferences(req: Request, res: Response) {
+  try {
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const { theme, timezone, language } = req.body;
+
+    const allowed = { theme: 'theme', timezone: 'timezone', language: 'language' };
+    const updates: string[] = [];
+    const values: any[] = [];
+    let paramCount = 1;
+
+    if (theme !== undefined && typeof theme === 'string') {
+      updates.push(`theme = $${paramCount++}`);
+      values.push(theme);
+    }
+    if (timezone !== undefined && typeof timezone === 'string') {
+      updates.push(`timezone = $${paramCount++}`);
+      values.push(timezone);
+    }
+    if (language !== undefined && typeof language === 'string') {
+      updates.push(`language = $${paramCount++}`);
+      values.push(language);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid preferences provided' });
+    }
+
+    values.push(userId);
+
+    const result = await pool.query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${paramCount} RETURNING theme, timezone, language`,
+      values
+    );
+
+    return res.json({
+      success: true,
+      data: result.rows[0],
+      message: 'Display preferences updated successfully',
+    });
+  } catch (error: any) {
+    console.error('[Display Preferences] Update error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update display preferences' });
+  }
+}
+
+/**
  * Unsubscribe from all emails (via email link)
  * CAN-SPAM Act compliance
  */

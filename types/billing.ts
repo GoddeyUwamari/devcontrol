@@ -26,11 +26,13 @@ export interface Invoice {
   id: string;
   number: string | null;
   status: 'draft' | 'open' | 'paid' | 'uncollectible' | 'void';
-  total: number;
+  amount_paid: number;
   currency: string;
   created: number;
   pdfUrl: string | null;
   hostedUrl: string | null;
+  amount_refunded: number;
+  refund_status: 'full' | 'partial' | null;
 }
 
 export interface PricingTier {

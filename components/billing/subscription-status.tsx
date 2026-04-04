@@ -1,15 +1,36 @@
 'use client';
 
+import { useState } from 'react';
 import { Subscription } from '@/types/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, CreditCard, TrendingUp } from 'lucide-react';
+import { openCustomerPortal } from '@/lib/services/stripe.service';
 
 interface SubscriptionStatusProps {
   subscription: Subscription;
 }
 
 export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
+  const [portalLoading, setPortalLoading] = useState(false);
+
+  const handleOpenPortal = async () => {
+    setPortalLoading(true);
+    try {
+      const result = await openCustomerPortal();
+      if (result.success && result.data?.url) {
+        window.location.href = result.data.url;
+      }
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const getTrialDaysRemaining = () => {
+    if (!subscription.currentPeriodEnd) return 0;
+    const msRemaining = subscription.currentPeriodEnd * 1000 - Date.now();
+    return Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));
+  };
   const getStatusBadge = () => {
     switch (subscription.status) {
       case 'active':
@@ -42,16 +63,67 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
   };
 
   const getNextBillingDate = () => {
-    if (!subscription.currentPeriodEnd) return 'N/A';
-    return new Date(subscription.currentPeriodEnd * 1000).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    const fmt = (ts: number) =>
+      new Date(ts * 1000).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
+    if (subscription.cancelAtPeriodEnd) {
+      return subscription.currentPeriodEnd
+        ? fmt(subscription.currentPeriodEnd)
+        : 'end of billing period';
+    }
+
+    if (subscription.cancelAt) return fmt(subscription.cancelAt);
+
+    return subscription.currentPeriodEnd
+      ? fmt(subscription.currentPeriodEnd)
+      : 'end of billing period';
   };
 
   return (
-    <Card>
+    <>
+      {subscription.status === 'trialing' && (
+        <div
+          style={{
+            backgroundColor: 'rgba(217, 119, 6, 0.10)',
+            border: '1px solid #D97706',
+            borderRadius: '0.75rem',
+            padding: '0.875rem 1rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+          }}
+        >
+          <p style={{ fontSize: '0.875rem', color: '#92400e', margin: 0, lineHeight: 1.4 }}>
+            <strong>Your trial ends in {getTrialDaysRemaining()} days</strong>
+            {' '}— add a payment method to keep access.
+          </p>
+          <button
+            onClick={handleOpenPortal}
+            disabled={portalLoading}
+            style={{
+              flexShrink: 0,
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              color: '#92400e',
+              border: '1px solid #D97706',
+              borderRadius: '0.5rem',
+              padding: '0.375rem 0.75rem',
+              background: 'transparent',
+              cursor: portalLoading ? 'not-allowed' : 'pointer',
+              opacity: portalLoading ? 0.6 : 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {portalLoading ? 'Loading…' : 'Add payment method'}
+          </button>
+        </div>
+      )}
+      <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
@@ -126,5 +198,6 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
         </div>
       </CardContent>
     </Card>
+    </>
   );
 }

@@ -427,11 +427,17 @@ export class StripeController {
           id: invoice.id,
           number: invoice.number,
           status: invoice.status,
-          total: invoice.total,
+          amount_paid: invoice.amount_paid,
           currency: invoice.currency,
           created: invoice.created,
           pdfUrl: invoice.invoice_pdf,
           hostedUrl: invoice.hosted_invoice_url,
+          amount_refunded: (invoice as any).amount_refunded ?? 0,
+          refund_status: (() => {
+            const refunded = (invoice as any).amount_refunded ?? 0;
+            if (refunded <= 0) return null;
+            return refunded >= invoice.amount_paid ? 'full' : 'partial';
+          })(),
         })),
       });
     } catch (error: any) {

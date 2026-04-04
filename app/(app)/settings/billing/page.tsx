@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
 import { SubscriptionStatus } from '@/components/billing/subscription-status';
 import { InvoiceList } from '@/components/billing/invoice-list';
 import { CancelSubscriptionDialog } from '@/components/billing/cancel-subscription-dialog';
@@ -14,6 +15,7 @@ import {
   openCustomerPortal,
   resumeSubscription,
 } from '@/lib/services/stripe.service';
+import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
   CreditCard,
@@ -29,9 +31,14 @@ export default function BillingPage() {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usageLoading, setUsageLoading] = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [resourceCount, setResourceCount] = useState(0);
+  const [resourceLimit, setResourceLimit] = useState<number | null>(20);
+  const [apiRequestsThisHour, setApiRequestsThisHour] = useState(0);
+  const [apiRequestLimit, setApiRequestLimit] = useState(500);
   const router = useRouter();
 
   const fetchData = async () => {
@@ -59,8 +66,27 @@ export default function BillingPage() {
     }
   };
 
+  const fetchUsage = async () => {
+    setUsageLoading(true);
+    try {
+      const [statsRes, apiUsageRes] = await Promise.all([
+        api.get('/api/aws-resources/stats'),
+        api.get('/api/usage/api-requests'),
+      ]);
+      setResourceCount(statsRes.data?.data?.total ?? 0);
+      setApiRequestsThisHour(apiUsageRes.data?.data?.requestsThisHour ?? 0);
+      setApiRequestLimit(apiUsageRes.data?.data?.limit ?? 500);
+      setResourceLimit(apiUsageRes.data?.data?.resourceLimit ?? 20);
+    } catch {
+      // fallback to 0 defaults
+    } finally {
+      setUsageLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchUsage();
   }, []);
 
   const handleOpenPortal = async () => {
@@ -122,18 +148,10 @@ export default function BillingPage() {
     return limits[subscription?.tier || 'free'];
   };
 
-  // TODO: Replace with real usage data from backend API
-  const currentUsage = {
-    resources: 8,
-    apiRequests: 45,
-  };
-
   const limits = getLimits();
   const resourceUsagePercent =
-    limits.resources === 'unlimited'
-      ? 0
-      : (currentUsage.resources / limits.resources) * 100;
-  const apiUsagePercent = (currentUsage.apiRequests / limits.apiRequests) * 100;
+    resourceLimit === null ? 0 : (resourceCount / resourceLimit) * 100;
+  const apiUsagePercent = (apiRequestsThisHour / apiRequestLimit) * 100;
 
   if (loading) {
     return (
@@ -238,40 +256,61 @@ export default function BillingPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Resources Usage */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">AWS Resources Discovered</span>
-                  <span className="font-medium">
-                    {currentUsage.resources}{' '}
-                    {limits.resources !== 'unlimited' && `/ ${limits.resources}`}
-                  </span>
+              {usageLoading ? (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Skeleton className="h-4 w-40" />
+                      <Skeleton className="h-4 w-16" />
+                    </div>
+                    <Skeleton className="h-2 w-full" />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Skeleton className="h-4 w-40" />
+                      <Skeleton className="h-4 w-16" />
+                    </div>
+                    <Skeleton className="h-2 w-full" />
+                  </div>
                 </div>
-                {limits.resources !== 'unlimited' && (
-                  <Progress value={resourceUsagePercent} className="h-2" />
-                )}
-                {limits.resources !== 'unlimited' && resourceUsagePercent > 80 && (
-                  <p className="text-xs text-amber-600 dark:text-amber-500">
-                    You&apos;re approaching your resource limit. Consider upgrading your plan.
-                  </p>
-                )}
-              </div>
+              ) : (
+                <>
+                  {/* Resources Usage */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">AWS Resources Discovered</span>
+                      <span className="font-medium">
+                        {resourceCount}{' '}
+                        {resourceLimit !== null && `/ ${resourceLimit}`}
+                      </span>
+                    </div>
+                    {resourceLimit !== null && (
+                      <Progress value={resourceUsagePercent} className="h-2" />
+                    )}
+                    {resourceLimit !== null && resourceUsagePercent > 80 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-500">
+                        You&apos;re approaching your resource limit. Consider upgrading your plan.
+                      </p>
+                    )}
+                  </div>
 
-              {/* API Usage */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">API Requests This Hour</span>
-                  <span className="font-medium">
-                    {currentUsage.apiRequests} / {limits.apiRequests}
-                  </span>
-                </div>
-                <Progress value={apiUsagePercent} className="h-2" />
-                {apiUsagePercent > 80 && (
-                  <p className="text-xs text-amber-600 dark:text-amber-500">
-                    You&apos;re approaching your API request limit.
-                  </p>
-                )}
-              </div>
+                  {/* API Usage */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">API Requests This Hour</span>
+                      <span className="font-medium">
+                        {apiRequestsThisHour} / {apiRequestLimit}
+                      </span>
+                    </div>
+                    <Progress value={apiUsagePercent} className="h-2" />
+                    {apiUsagePercent > 80 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-500">
+                        You&apos;re approaching your API request limit.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
 
               {subscription?.tier === 'free' && (
                 <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-lg">

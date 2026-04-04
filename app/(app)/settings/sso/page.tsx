@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { Lock, ShieldCheck, Copy, Check, Trash2, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
@@ -65,21 +65,22 @@ export default function SSOSettingsPage() {
       const json = await res.json();
       return json.data ?? null;
     },
-    onSuccess: (data: SSOConfig | null) => {
-      if (data) {
-        setForm({
-          providerName: data.providerName,
-          idpEntityId: data.idpEntityId,
-          idpSsoUrl: data.idpSsoUrl,
-          idpCertificate: "", // never pre-fill certificate
-          emailAttr: data.attributeMapping?.email ?? "email",
-          nameAttr: data.attributeMapping?.name ?? "displayName",
-          allowedDomains: (data.allowedDomains ?? []).join(", "),
-          isActive: data.isActive,
-        });
-      }
-    },
-  } as any);
+  });
+
+  useEffect(() => {
+    if (config) {
+      setForm({
+        providerName: config.providerName,
+        idpEntityId: config.idpEntityId,
+        idpSsoUrl: config.idpSsoUrl,
+        idpCertificate: "", // never pre-fill certificate
+        emailAttr: config.attributeMapping?.email ?? "email",
+        nameAttr: config.attributeMapping?.name ?? "displayName",
+        allowedDomains: (config.allowedDomains ?? []).join(", "),
+        isActive: config.isActive,
+      });
+    }
+  }, [config]);
 
   const saveMutation = useMutation({
     mutationFn: async (payload: FormState) => {

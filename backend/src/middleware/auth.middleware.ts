@@ -73,6 +73,15 @@ export const authenticate = async (
       [decoded.organizationId]
     );
 
+    // Track API request for usage metering (fire-and-forget, non-blocking)
+    pool.query(
+      `INSERT INTO api_usage (organization_id, hour, request_count)
+       VALUES ($1, date_trunc('hour', NOW()), 1)
+       ON CONFLICT (organization_id, hour)
+       DO UPDATE SET request_count = api_usage.request_count + 1`,
+      [decoded.organizationId]
+    ).catch(() => { /* non-critical */ });
+
     next();
   } catch (error: any) {
     if (error.message === 'Token has expired') {

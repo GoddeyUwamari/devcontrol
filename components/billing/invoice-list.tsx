@@ -105,9 +105,28 @@ export function InvoiceList({ invoices }: InvoiceListProps) {
                     </span>
                   </TableCell>
                   <TableCell className="font-semibold">
-                    {formatAmount(invoice.total, invoice.currency)}
+                    {formatAmount(invoice.amount_paid, invoice.currency)}
                   </TableCell>
-                  <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {getStatusBadge(invoice.status)}
+                      {invoice.amount_refunded > 0 && (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          padding: '2px 8px',
+                          borderRadius: '9999px',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          background: '#FEF3C7',
+                          color: '#D97706',
+                          marginLeft: '6px',
+                        }}>
+                          {invoice.refund_status === 'full' ? 'Refunded' : 'Partial Refund'}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
                       {invoice.hostedUrl && (
@@ -127,6 +146,20 @@ export function InvoiceList({ invoices }: InvoiceListProps) {
                         >
                           <Download className="h-4 w-4" />
                         </Button>
+                      )}
+                      {invoice.status === 'paid' &&
+                       invoice.amount_refunded === 0 &&
+                       (Date.now() / 1000 - invoice.created) < 30 * 24 * 60 * 60 && (
+                        <button
+                          onClick={() => window.location.href = `mailto:support@devcontrol.io?subject=Refund Request - ${invoice.number}&body=I would like to request a refund for invoice ${invoice.number}.`}
+                          title="Request refund"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', padding: '4px' }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="1 4 1 10 7 10"></polyline>
+                            <path d="M3.51 15a9 9 0 1 0 .49-3.51"></path>
+                          </svg>
+                        </button>
                       )}
                     </div>
                   </TableCell>
