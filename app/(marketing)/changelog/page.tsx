@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import api from '@/lib/api';
 import {
   Sparkles, Zap, Bug, Calendar, Search, Mail, ArrowRight,
   ExternalLink, BookOpen, Star, Shield, Rocket, Filter,
@@ -15,6 +16,25 @@ export default function ChangelogPage() {
   const [selectedFilter, setSelectedFilter] = useState<ChangeType | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [emailSubscribe, setEmailSubscribe] = useState('');
+  const [subscribeStatus, setSubscribeStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'duplicate'>('idle');
+
+  const handleSubscribe = async () => {
+    if (!emailSubscribe || !emailSubscribe.includes('@')) return;
+    setSubscribeStatus('loading');
+    try {
+      const res = await api.post('/api/newsletter/subscribe', { email: emailSubscribe, source: 'changelog' });
+      if (res.data?.message === 'Already subscribed') {
+        setSubscribeStatus('duplicate');
+        setEmailSubscribe('');
+      } else {
+        setSubscribeStatus('success');
+        setEmailSubscribe('');
+      }
+    } catch (err: any) {
+      if (err.response?.status === 200) setSubscribeStatus('duplicate');
+      else setSubscribeStatus('error');
+    }
+  };
 
   const releases = [
     {
@@ -481,21 +501,41 @@ export default function ChangelogPage() {
                 fontSize: '0.875rem', outline: 'none', color: '#0f172a', boxSizing: 'border-box',
               }}
             />
-            <a
-              href="mailto:hello@devcontrol.io?subject=Changelog Newsletter Subscription"
+            <button
+              onClick={handleSubscribe}
+              disabled={subscribeStatus === 'loading' || subscribeStatus === 'success'}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                 height: '44px', padding: '0 20px', borderRadius: '8px',
-                background: '#7c3aed', color: '#fff', fontWeight: 600,
-                fontSize: '0.875rem', textDecoration: 'none', whiteSpace: 'nowrap',
+                background: subscribeStatus === 'success' ? '#059669' : '#7c3aed',
+                color: '#fff', fontWeight: 600,
+                fontSize: '0.875rem', border: 'none', cursor: subscribeStatus === 'loading' || subscribeStatus === 'success' ? 'default' : 'pointer',
+                whiteSpace: 'nowrap', opacity: subscribeStatus === 'loading' ? 0.7 : 1,
               }}
             >
-              Subscribe <ArrowRight style={{ width: '14px', height: '14px' }} />
-            </a>
+              {subscribeStatus === 'loading' ? 'Subscribing...' : subscribeStatus === 'success' ? 'Subscribed!' : <>Subscribe <ArrowRight style={{ width: '14px', height: '14px' }} /></>}
+            </button>
           </div>
-          <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '12px' }}>
-            Join 500+ engineering teams. Unsubscribe anytime.
-          </p>
+          {subscribeStatus === 'success' && (
+            <p style={{ fontSize: '0.8rem', color: '#059669', marginTop: '10px' }}>
+              You&apos;re subscribed! We&apos;ll notify you of new updates.
+            </p>
+          )}
+          {subscribeStatus === 'duplicate' && (
+            <p style={{ fontSize: '0.8rem', color: '#7c3aed', marginTop: '10px' }}>
+              You&apos;re already subscribed.
+            </p>
+          )}
+          {subscribeStatus === 'error' && (
+            <p style={{ fontSize: '0.8rem', color: '#dc2626', marginTop: '10px' }}>
+              Something went wrong. Try again.
+            </p>
+          )}
+          {subscribeStatus === 'idle' && (
+            <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '12px' }}>
+              Join 500+ engineering teams. Unsubscribe anytime.
+            </p>
+          )}
         </div>
 
         {/* Footer Links */}
