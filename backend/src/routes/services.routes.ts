@@ -4,6 +4,7 @@ import { ServicesController } from '../controllers/services.controller';
 import { validateBody, validateParams } from '../middleware/validation';
 import { createServiceSchema, updateServiceSchema, uuidParamSchema } from '../validators/schemas';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscription.middleware';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 
 const router = Router();
@@ -97,7 +98,7 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
 
 // ─── POST /api/services/discover ─────────────────────────────────────────────
 
-router.post('/discover', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+router.post('/discover', authenticateToken, checkDiscoveryLimit, async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
     if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
@@ -121,7 +122,7 @@ router.post('/discover', authenticateToken, async (req: Request, res: Response):
 
 // ─── GET /api/services — aws_resources-backed list ───────────────────────────
 
-router.get('/', authenticateToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   // Only intercept if the org is authenticated — fall through to controller otherwise
   const orgId = req.organizationId;
   if (!orgId) {

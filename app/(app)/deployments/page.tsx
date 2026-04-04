@@ -8,8 +8,9 @@ import type { Deployment, DeploymentEnvironment, DeploymentStatus } from '@/lib/
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import { usePlan } from '@/lib/hooks/use-plan'
 import {
-  Rocket, RefreshCw, ArrowRight, Sparkles, XCircle, X,
+  Rocket, RefreshCw, ArrowRight, Sparkles, XCircle, X, AlertTriangle,
 } from 'lucide-react'
 
 type EnvironmentFilter = 'all' | DeploymentEnvironment
@@ -116,6 +117,25 @@ function DeploymentsContent() {
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
+  const { tier } = usePlan()
+
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
+
+  // ─── Monthly usage stats ──────────────────────────────────────────────────
+  const { data: deploymentStats } = useQuery({
+    queryKey: ['deployment-stats'],
+    queryFn: () => deploymentsService.getStats(),
+    enabled: !isDemoActive,
+  })
+
+  // ─── Handle react-query list error (including 402) ────────────────────────
+  useEffect(() => {
+    if (error) {
+      if ((error as any).response?.status === 402) {
+        setShowUpgradePrompt(true)
+      }
+    }
+  }, [error])
 
   // ─── New Deployment modal state ───────────────────────────────────────────
   const [showModal, setShowModal] = useState(false)
@@ -141,7 +161,12 @@ function DeploymentsContent() {
       setModalForm({ serviceName: '', environment: 'production', region: 'us-east-1', version: '' })
       setTimeout(() => { setShowModal(false); setModalSuccess(null) }, 2000)
     } catch (err: any) {
-      setModalError(err.message || 'Failed to create deployment')
+      if (err.response?.status === 402) {
+        setShowModal(false)
+        setShowUpgradePrompt(true)
+      } else {
+        setModalError(err.message || 'Failed to create deployment')
+      }
     } finally {
       setModalSubmitting(false)
     }
@@ -183,6 +208,11 @@ function DeploymentsContent() {
           </h1>
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Track all service deployments across environments · Real-time status
+            {!isDemoActive && deploymentStats && (
+              <span style={{ marginLeft: '8px', fontSize: '0.78rem', color: '#94A3B8' }}>
+                · {deploymentStats.deployments_this_month} deployment{deploymentStats.deployments_this_month !== 1 ? 's' : ''} this month
+              </span>
+            )}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -198,6 +228,52 @@ function DeploymentsContent() {
           </button>
         </div>
       </div>
+
+      {/* Tier limit upgrade prompt */}
+      {showUpgradePrompt && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: '10px',
+          padding: '14px 20px', marginBottom: '24px', gap: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#92400E' }}>
+              You've reached your monthly deployment limit on the <strong>{tier}</strong> plan. Upgrade to continue deploying.
+            </span>
+          </div>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              flexShrink: 0, fontSize: '0.8125rem', fontWeight: 600,
+              color: '#fff', background: '#D97706', borderRadius: '6px',
+              padding: '7px 16px', textDecoration: 'none', whiteSpace: 'nowrap',
+            }}
+          >
+            Upgrade plan
+          </a>
+        </div>
+      )}
+
+      {/* Generic error banner (non-402 failures) */}
+      {!isDemoActive && error && !showUpgradePrompt && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px',
+          padding: '14px 20px', marginBottom: '24px',
+        }}>
+          <AlertTriangle size={16} style={{ color: '#DC2626', flexShrink: 0 }} />
+          <span style={{ fontSize: '0.875rem', color: '#991B1B' }}>
+            Failed to load deployments — check your connection and try again.
+          </span>
+          <button
+            onClick={() => refetch()}
+            style={{ marginLeft: 'auto', fontSize: '0.8125rem', fontWeight: 600, color: '#DC2626', background: 'none', border: '1px solid #FECACA', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer', flexShrink: 0 }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* AI INSIGHT BANNER */}
       <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 24px', border: '1px solid #F1F5F9', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>

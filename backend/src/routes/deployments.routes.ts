@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../config/database';
 import { DeploymentsController } from '../controllers/deployments.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { checkResourceLimit } from '../middleware/subscription.middleware';
 
 const router = Router();
 const controller = new DeploymentsController();
@@ -36,7 +37,8 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
          COUNT(*) FILTER (WHERE status = 'running')       AS running,
          COUNT(*) FILTER (WHERE status = 'failed')        AS failed,
          COUNT(*) FILTER (WHERE status = 'deploying')     AS deploying,
-         COALESCE(SUM(cost_estimate), 0)                  AS total_cost
+         COALESCE(SUM(cost_estimate), 0)                  AS total_cost,
+         COUNT(*) FILTER (WHERE deployed_at >= date_trunc('month', CURRENT_DATE)) AS this_month
        FROM deployments ${where}`,
       values
     );
@@ -47,11 +49,12 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     const failed   = parseInt(row.failed) || 0;
     const deploying = parseInt(row.deploying) || 0;
     const totalCost = parseFloat(row.total_cost) || 0;
+    const thisMonth = parseInt(row.this_month) || 0;
     const successRate = total > 0 ? Math.round((running / total) * 100) : null;
 
     res.json({
       success: true,
-      stats: { total, running, failed, deploying, success_rate: successRate, total_cost: totalCost },
+      stats: { total, running, failed, deploying, success_rate: successRate, total_cost: totalCost, deployments_this_month: thisMonth },
     });
   } catch (err: any) {
     console.error('[Deployments/stats]', err);
@@ -61,12 +64,12 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
 
 // ─── GET / and GET /:id — delegate to controller ─────────────────────────────
 
-router.get('/', (req, res) => controller.getAll(req, res));
-router.get('/:id', (req, res) => controller.getById(req, res));
+router.get('/', authenticateToken, (req, res) => controller.getAll(req, res));
+router.get('/:id', authenticateToken, (req, res) => controller.getById(req, res));
 
 // ─── POST / — resolve serviceName → service_id, then delegate ────────────────
 
-router.post('/', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+router.post('/', authenticateToken, checkResourceLimit('deployments', 1), async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
     let { service_id, service_name, serviceName, environment, aws_region, region, deployed_by, version } = req.body;

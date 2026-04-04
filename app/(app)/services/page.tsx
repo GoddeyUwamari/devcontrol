@@ -6,6 +6,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import awsServicesService, { AWSService, AWSServicesStats } from '@/lib/services/aws-services.service'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { usePlan } from '@/lib/hooks/use-plan'
 
 const _now = Date.now()
 
@@ -86,12 +87,14 @@ export default function ServicesPage() {
   const [isLoading,     setIsLoading]     = useState(false)
   const [error,         setError]         = useState<string | null>(null)
   const [noAwsAccount,  setNoAwsAccount]  = useState(true)
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const demoMode     = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
+  const { tier } = usePlan()
 
   // ── Fetch real data ──────────────────────────────────────────────────────
 
@@ -111,6 +114,10 @@ export default function ServicesPage() {
       setServices(svcs)
       setStats(st)
     } catch (err: any) {
+      if (err.response?.status === 402) {
+        setShowUpgradePrompt(true)
+        return
+      }
       // Check if the failure is simply because no AWS account is connected yet.
       // If so, show the onboarding empty state instead of an error banner.
       try {
@@ -169,7 +176,11 @@ export default function ServicesPage() {
       // Refetch services after discovery
       await fetchServices()
     } catch (err: any) {
-      setError(err.message || 'Discovery failed — check your AWS connection')
+      if (err.response?.status === 402) {
+        setShowUpgradePrompt(true)
+      } else {
+        setError(err.message || 'Discovery failed — check your AWS connection')
+      }
     } finally {
       setIsDiscovering(false)
     }
@@ -360,6 +371,32 @@ export default function ServicesPage() {
           Full report <ArrowRight size={11} />
         </a>
       </div>
+
+      {/* Tier limit upgrade prompt */}
+      {showUpgradePrompt && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: '10px',
+          padding: '14px 20px', marginBottom: '24px', gap: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#92400E' }}>
+              You've reached your service limit on the <strong>{tier}</strong> plan. Upgrade to monitor more services.
+            </span>
+          </div>
+          <a
+            href="/settings/billing/upgrade"
+            style={{
+              flexShrink: 0, fontSize: '0.8125rem', fontWeight: 600,
+              color: '#fff', background: '#D97706', borderRadius: '6px',
+              padding: '7px 16px', textDecoration: 'none', whiteSpace: 'nowrap',
+            }}
+          >
+            Upgrade plan
+          </a>
+        </div>
+      )}
 
       {/* Error banner — only shown when an AWS account IS connected but the call failed */}
       {error && !noAwsAccount && (

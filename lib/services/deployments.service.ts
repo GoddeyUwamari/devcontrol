@@ -89,14 +89,15 @@ export const deploymentsService = {
     await api.delete(`/api/deployments/${id}`);
   },
 
-  // Get deployment stats (total, running, failed, deploying, success_rate, total_cost)
+  // Get deployment stats (total, running, failed, deploying, success_rate, total_cost, deployments_this_month)
   getStats: async (environment?: string): Promise<{
     total: number; running: number; failed: number; deploying: number;
-    success_rate: number | null; total_cost: number;
+    success_rate: number | null; total_cost: number; deployments_this_month: number;
   }> => {
     const query = environment && environment !== 'all' ? `?environment=${environment}` : '';
-    const response = await api.get<ApiResponse<any>>(`/api/deployments/stats${query}`);
-    return handleApiResponse(response);
+    const response = await api.get<{ success: boolean; stats: any }>(`/api/deployments/stats${query}`);
+    if (!response.data.success) throw new Error('Failed to load deployment stats');
+    return response.data.stats;
   },
 
   // Create deployment from modal (accepts serviceName instead of service_id)
