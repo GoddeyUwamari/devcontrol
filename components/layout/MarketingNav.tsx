@@ -40,10 +40,6 @@ const resourcesItems = [
 type NavItem = { icon: React.ElementType; title: string; desc: string; href: string | null }
 type DropdownKey = 'platform' | 'solutions' | 'resources'
 
-const handleComingSoon = (e: React.MouseEvent, pageName: string) => {
-  e.preventDefault()
-  alert(`${pageName} page coming soon!`)
-}
 
 function MegaMenu({ items, showFooter, onClose }: { items: NavItem[]; showFooter?: boolean; onClose?: () => void }) {
   return (
@@ -155,29 +151,16 @@ function MegaMenuItem({ item, onClose }: { item: NavItem; onClose?: () => void }
     width: '100%',
   }
 
-  if (href) {
-    return (
-      <Link
-        href={href}
-        onClick={onClose}
-        style={sharedStyle}
-        onMouseEnter={e => (e.currentTarget.style.background = '#faf5ff')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-      >
-        {content}
-      </Link>
-    )
-  }
-
   return (
-    <button
+    <Link
+      href={href ?? '#'}
+      onClick={onClose}
       style={sharedStyle}
-      onClick={(e) => handleComingSoon(e, title)}
       onMouseEnter={e => (e.currentTarget.style.background = '#faf5ff')}
       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
     >
       {content}
-    </button>
+    </Link>
   )
 }
 
@@ -276,7 +259,7 @@ export function MarketingNav() {
           <span style={{ marginRight: '8px' }}>🚀</span>
           NEW: 8 AI-Powered Features Now Available!{' '}
           <a
-            href="#ai-features"
+            href="/platform/infrastructure"
             style={{ color: '#ffffff', fontSize: '0.875rem', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: '2px', marginLeft: '4px' }}
           >
             Learn More →

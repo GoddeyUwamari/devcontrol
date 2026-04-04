@@ -136,7 +136,7 @@ export function InfrastructureValueProps() {
             {/* Learn More Link */}
             <div className="pt-4 border-t border-gray-100">
               <a
-                href="#"
+                href="/platform/infrastructure"
                 className="text-sm font-medium text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 group-hover:gap-2 transition-all"
               >
                 Learn more

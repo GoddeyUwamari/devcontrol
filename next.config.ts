@@ -22,7 +22,16 @@ const nextConfig: NextConfig = {
     ],
   },
   async redirects() {
-    return [];
+    return [
+      { source: '/features/cost-optimization',      destination: '/platform/costs',                permanent: false },
+      { source: '/features/security',               destination: '/solutions/security',             permanent: false },
+      { source: '/features/infrastructure-health',  destination: '/platform/infrastructure',        permanent: false },
+      { source: '/features/resource-discovery',     destination: '/aws-resources',                  permanent: false },
+      { source: '/features/dora-metrics',           destination: '/dora-metrics',                   permanent: false },
+      { source: '/features/collaboration',          destination: '/solutions/platform-engineers',   permanent: false },
+      { source: '/platform/integrations',           destination: '/docs/api',                       permanent: false },
+      { source: '/company/security',                destination: '/solutions/security',             permanent: false },
+    ];
   },
 };
 
