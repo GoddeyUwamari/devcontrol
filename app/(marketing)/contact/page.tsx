@@ -132,7 +132,7 @@ export default function ContactPage() {
                   Pick a time that works for you — no back-and-forth email needed.
                 </p>
                 <a
-                  href="https://calendly.com/devcontrol/demo"
+                  href="https://calendly.com/uwamarigoddey/30min"
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{
