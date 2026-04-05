@@ -86,7 +86,7 @@ export default function CommunityPage() {
           {/* CTA */}
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '48px' }}>
             <a
-              href="https://slack.devcontrol.io"
+              href="https://join.slack.com/t/devcontrolcommunity/shared_invite/zt-3ul72iy4x-EJmlkBxEP8M2mvOP8KmFBg"
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -259,7 +259,7 @@ export default function CommunityPage() {
             It's free. Always will be. Join 500+ engineers building smarter cloud infrastructure.
           </p>
           <a
-            href="https://slack.devcontrol.io"
+            href="https://join.slack.com/t/devcontrolcommunity/shared_invite/zt-3ul72iy4x-EJmlkBxEP8M2mvOP8KmFBg"
             target="_blank"
             rel="noopener noreferrer"
             style={{
