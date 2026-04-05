@@ -12,7 +12,7 @@ export function DashboardPreview() {
   const [imageError, setImageError] = useState(false)
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
       {/* Browser Chrome */}
       <div className="bg-white rounded-t-xl border border-gray-200 shadow-2xl overflow-hidden">
         {/* Browser Header */}

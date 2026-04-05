@@ -2,6 +2,7 @@
 
 import { ArrowRight, Play } from 'lucide-react'
 import { AnimatedBackground } from './AnimatedBackground'
+import { DashboardPreview } from './DashboardPreview'
 
 const inner: React.CSSProperties = {
   maxWidth: '1400px',
@@ -210,6 +211,11 @@ export function HeroSection() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Dashboard Screenshot */}
+        <div style={{ marginTop: '64px', width: '100%' }}>
+          <DashboardPreview />
         </div>
 
       </div>
