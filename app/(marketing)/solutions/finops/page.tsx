@@ -545,7 +545,7 @@ export default function FinOpsPage() {
             marginBottom: '40px', flexWrap: 'wrap', justifyContent: 'center',
           }}>
             {[
-              { label: 'DevControl Pro Cost', value: '$299/mo' },
+              { label: 'DevControl Pro Cost', value: '$199/mo' },
               { label: 'Average Savings Found', value: '$2,400/mo' },
               { label: 'Your ROI', value: '8x' },
             ].map(({ label, value }) => (

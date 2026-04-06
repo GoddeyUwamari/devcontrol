@@ -166,7 +166,7 @@ export function FeatureComparisonTable() {
                 </th>
                 <th style={{ ...cellBase, width: '120px', textAlign: 'center', fontWeight: 600, color: '#0f172a' }}>
                   <div>Starter</div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 400, color: '#6b7280', marginTop: '2px' }}>$79/mo</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 400, color: '#6b7280', marginTop: '2px' }}>$49/mo</div>
                 </th>
                 <th style={{ ...cellBase, ...proColStyle, width: '140px', textAlign: 'center', fontWeight: 600, color: '#0f172a', borderTop: '2px solid #7c3aed' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
@@ -177,7 +177,7 @@ export function FeatureComparisonTable() {
                       fontSize: '0.65rem', fontWeight: 700,
                     }}>Popular</span>
                   </div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 400, color: '#6b7280', marginTop: '2px' }}>$299/mo</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 400, color: '#6b7280', marginTop: '2px' }}>$199/mo</div>
                 </th>
                 <th style={{ ...cellBase, width: '140px', textAlign: 'center', fontWeight: 600, color: '#0f172a' }}>
                   <div>Enterprise</div>

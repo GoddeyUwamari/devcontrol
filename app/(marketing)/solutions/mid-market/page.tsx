@@ -531,7 +531,7 @@ export default function MidMarketPage() {
                   Growth Plan
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '2.8rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>$299</span>
+                  <span style={{ fontSize: '2.8rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>$199</span>
                   <span style={{ fontSize: '1rem', color: '#94a3b8' }}>/month</span>
                 </div>
                 <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '8px' }}>

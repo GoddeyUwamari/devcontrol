@@ -34,7 +34,7 @@ const pricingTiers: PricingTier[] = [
     name: 'Cost Control',
     tagline: 'Identify and eliminate the most common sources of AWS waste.',
     tier: 'starter',
-    price: 79,
+    price: 49,
     priceId: 'price_1Skm0uH8pNFfrvRPuccIDLoA',
     annualPrice: 63,
     annualPriceId: 'price_starter_annual',
@@ -65,7 +65,7 @@ const pricingTiers: PricingTier[] = [
     name: 'Optimization Engine',
     tagline: 'Turn your AWS into a predictable, optimized system.',
     tier: 'pro',
-    price: 299,
+    price: 199,
     priceId: 'price_1TIANxH8pNFfrvRPngDy6iGc',
     annualPrice: 239,
     annualPriceId: 'price_pro_annual',
@@ -104,7 +104,7 @@ const pricingTiers: PricingTier[] = [
     name: 'Revenue Protection',
     tagline: 'Protect revenue at scale and eliminate high-impact risk.',
     tier: 'enterprise',
-    price: 1499,
+    price: 999,
     priceId: 'price_1Skm4iH8pNFfrvRPa6nDnjqc',
     trialDays: 0,
     features: [
@@ -145,8 +145,8 @@ function ROICalculator() {
   const wasteHigh = Math.round(spend * 0.40)
   const savings = Math.round(spend * 0.24)
   const annual = savings * 12
-  const roi = Math.round(savings / 299)
-  const barPct = Math.min(99, Math.round((savings / (savings + 299)) * 100))
+  const roi = Math.round(savings / 199)
+  const barPct = Math.min(99, Math.round((savings / (savings + 199)) * 100))
   const fmt = (n: number) => '$' + n.toLocaleString()
 
   return (
@@ -201,7 +201,7 @@ function ROICalculator() {
             {[
               { label: 'Estimated waste', value: `${fmt(wasteLow)}–${fmt(wasteHigh)}`, sub: '20–40% of AWS spend', color: '#DC2626' },
               { label: 'Recoverable savings', value: `${fmt(savings)}/mo`, sub: `${fmt(annual)}/year`, color: '#059669' },
-              { label: 'DevControl ROI', value: `${roi}x`, sub: '$299/mo Pro plan', color: '#7c3aed' },
+              { label: 'DevControl ROI', value: `${roi}x`, sub: '$199/mo Pro plan', color: '#7c3aed' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} style={{
                 background: '#fafafa', borderRadius: '14px',
@@ -218,7 +218,7 @@ function ROICalculator() {
           <div style={{ marginBottom: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748B', marginBottom: '6px' }}>
               <span>Savings vs DevControl cost</span>
-              <span>{fmt(savings)} savings vs $299 cost</span>
+              <span>{fmt(savings)} savings vs $199 cost</span>
             </div>
             <div style={{ height: '8px', background: '#f3f4f6', borderRadius: '100px', overflow: 'hidden' }}>
               <div style={{
@@ -293,7 +293,7 @@ function ROICalculator() {
             <div style={{ padding: '24px 28px', background: '#faf5ff' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
                 <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>DevControl</span>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, background: 'rgba(124,58,237,0.1)', color: '#7c3aed', padding: '2px 8px', borderRadius: '100px' }}>From $299/mo</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, background: 'rgba(124,58,237,0.1)', color: '#7c3aed', padding: '2px 8px', borderRadius: '100px' }}>From $199/mo</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {[

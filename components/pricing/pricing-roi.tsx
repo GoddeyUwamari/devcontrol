@@ -165,7 +165,7 @@ export function PricingROI() {
       }}>
         <p style={{ fontSize: '0.875rem', color: '#374151', marginBottom: '6px' }}>
           <strong style={{ color: '#0f172a' }}>Pro Plan Example:</strong>{' '}
-          Typical ROI: Save $2,400/mo vs $299 cost ={' '}
+          Typical ROI: Save $2,400/mo vs $199 cost ={' '}
           <strong style={{ color: '#16a34a' }}>8x return</strong>
         </p>
         <p style={{ fontSize: '0.78rem', color: '#6b7280' }}>

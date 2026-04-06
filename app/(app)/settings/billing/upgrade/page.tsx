@@ -10,7 +10,7 @@ const plans = [
   {
     name: 'Starter',
     tier: 'starter',
-    price: 79,
+    price: 49,
     annualPrice: 63,
     priceId: 'price_1Skm0uH8pNFfrvRPuccIDLoA',
     annualPriceId: 'price_starter_annual',
@@ -28,7 +28,7 @@ const plans = [
   {
     name: 'Pro',
     tier: 'pro',
-    price: 299,
+    price: 199,
     annualPrice: 239,
     priceId: 'price_1TIANxH8pNFfrvRPngDy6iGc',
     annualPriceId: 'price_pro_annual',
@@ -50,7 +50,7 @@ const plans = [
   {
     name: 'Enterprise',
     tier: 'enterprise',
-    price: 1499,
+    price: 999,
     priceId: 'price_1Skm4iH8pNFfrvRPa6nDnjqc',
     description: 'For large organizations needing full control',
     features: [

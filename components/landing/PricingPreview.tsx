@@ -21,7 +21,7 @@ const tiers = [
   },
   {
     name: 'Starter',
-    price: '$79',
+    price: '$49',
     period: '/month',
     highlight: 'For small teams',
     highlighted: false,
@@ -37,7 +37,7 @@ const tiers = [
   },
   {
     name: 'Pro',
-    price: '$299',
+    price: '$199',
     period: '/month',
     highlight: 'Most Popular',
     highlighted: true,

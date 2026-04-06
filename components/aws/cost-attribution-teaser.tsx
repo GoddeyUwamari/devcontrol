@@ -131,7 +131,7 @@ export function CostAttributionTeaser({ currentPlan, onUpgrade }: CostAttributio
               Available on Pro plan
             </p>
             <p className="text-xs text-gray-600 dark:text-gray-400">
-              Starting at $299/month
+              Starting at $199/month
             </p>
           </div>
 
