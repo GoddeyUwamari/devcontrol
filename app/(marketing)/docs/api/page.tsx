@@ -1017,7 +1017,7 @@ export default function ApiReferencePage() {
               </p>
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <Button asChild size="lg" className="gap-2">
-                  <a href="mailto:api@devcontrol.io">
+                  <a href="mailto:support@devcontrol.io">
                     <MessageCircle className="w-4 h-4" />
                     Contact API Support
                   </a>

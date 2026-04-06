@@ -174,7 +174,7 @@ devcontrol service create --name my-service`;
                   </Link>
                 </Button>
                 <Button asChild variant="outline" className="w-full">
-                  <a href="mailto:success@devcontrol.io?subject=Schedule Onboarding Call">
+                  <a href="mailto:hello@devcontrol.io?subject=Schedule Onboarding Call">
                     <Calendar className="w-4 h-4 mr-2" />
                     Book Call
                   </a>
