@@ -12,8 +12,8 @@ const plans = [
     tier: 'starter',
     price: 49,
     annualPrice: 63,
-    priceId: 'price_1Skm0uH8pNFfrvRPuccIDLoA',
-    annualPriceId: 'price_starter_annual',
+    priceId: 'price_1TJBsAHTCYC33EIRTp9R4IMh',
+    annualPriceId: 'price_1TJBwMHTCYC33EIR9RdjFpGW',
     description: 'For small teams getting started with AWS visibility',
     features: [
       'Up to 60 AWS resources',
@@ -30,8 +30,8 @@ const plans = [
     tier: 'pro',
     price: 199,
     annualPrice: 239,
-    priceId: 'price_1TIANxH8pNFfrvRPngDy6iGc',
-    annualPriceId: 'price_pro_annual',
+    priceId: 'price_1TJC3AHTCYC33EIRjY1RN0I6',
+    annualPriceId: 'price_1TJC4DHTCYC33EIRbANhi4iF',
     popular: true,
     description: 'For growing teams that need AI-powered optimization',
     features: [

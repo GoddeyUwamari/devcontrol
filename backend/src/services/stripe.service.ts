@@ -397,8 +397,8 @@ export class StripeService {
    * Get tier name from Stripe price ID
    */
   getTierFromPriceId(priceId: string): string {
-    const STARTER_PRICE_ID = process.env.STRIPE_PRICE_STARTER || 'price_1Skm0uH8pNFfrvRPuccIDLoA';
-    const PRO_PRICE_ID = process.env.STRIPE_PRICE_PRO || 'price_1TIANxH8pNFfrvRPngDy6iGc';
+    const STARTER_PRICE_ID = process.env.STRIPE_PRICE_STARTER || 'price_1TJBsAHTCYC33EIRTp9R4IMh';
+    const PRO_PRICE_ID = process.env.STRIPE_PRICE_PRO || 'price_1TJC3AHTCYC33EIRjY1RN0I6';
     const ENTERPRISE_PRICE_ID = process.env.STRIPE_PRICE_ENTERPRISE || 'price_1Skm4iH8pNFfrvRPa6nDnjqc';
 
     if (priceId === STARTER_PRICE_ID) return 'starter';
