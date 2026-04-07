@@ -14,26 +14,21 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Log EVERY request to verify middleware is running
-  console.log(`\n🛡️ MIDDLEWARE HIT - Path: ${pathname}`);
 
   // Get the auth-token cookie
   const authCookie = request.cookies.get('auth-token')?.value;
 
   // Log auth status
-  console.log(`🔐 Auth cookie present: ${!!authCookie}`);
   if (authCookie) {
-    console.log(`🔐 Auth cookie value: ${authCookie.slice(0, 20)}...`);
   }
 
   // List all cookies for debugging
   const allCookies = request.cookies.getAll();
-  console.log(`🍪 All cookies: [${allCookies.map(c => c.name).join(', ')}]`);
 
   const isAuthenticated = !!authCookie;
 
   // RULE 1: Authenticated users on / should go to /dashboard
   if (pathname === '/' && isAuthenticated) {
-    console.log(`➡️ REDIRECTING: / -> /dashboard (user is authenticated)`);
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
@@ -41,7 +36,6 @@ export function middleware(request: NextRequest) {
   if ((pathname === '/login' || pathname === '/signup') && isAuthenticated) {
     // Verify token is not a stale/empty value before redirecting
     if (authCookie && authCookie.length > 20) {
-      console.log(`➡️  REDIRECTING: ${pathname} -> /dashboard (user is authenticated)`);
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
   }
@@ -53,11 +47,9 @@ export function middleware(request: NextRequest) {
   );
 
   if (isProtected && !isAuthenticated) {
-    console.log(`🚫 REDIRECTING: ${pathname} -> /login (user not authenticated)`);
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  console.log(`✅ ALLOWING: ${pathname}`);
   return NextResponse.next();
 }
 
