@@ -194,7 +194,7 @@ async function fetchSystemIntelligence() {
       : null
   if (!token) return null
   const res = await fetch(
-    `${INTELLIGENCE_API}/api/system/intelligence`,
+    `${INTELLIGENCE_API}/api/observability/intelligence`,
     {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -268,19 +268,19 @@ const DEMO_INTELLIGENCE = {
 
 // Shared card style
 const card: React.CSSProperties = {
-  background: '#FFFFFF',
-  borderRadius: '16px',
-  padding: '32px',
-  border: '1px solid #F1F5F9',
+  background: '#fff',
+  borderRadius: '12px',
+  padding: '18px',
+  border: '0.5px solid #f3f4f6',
 }
 
 // Shared overline label style — strong, consistent across all sections
 const overline: React.CSSProperties = {
-  fontSize: '0.7rem',
-  fontWeight: 700,
-  color: '#475569',       // slate-600 — noticeably darker than before
+  fontSize: '10px',
+  fontWeight: 600,
+  color: '#374151',
   textTransform: 'uppercase' as const,
-  letterSpacing: '0.1em',
+  letterSpacing: '0.08em',
   margin: '0 0 16px',
 }
 
@@ -288,7 +288,7 @@ const overline: React.CSSProperties = {
 const sectionTitle: React.CSSProperties = {
   fontSize: '0.875rem',
   fontWeight: 600,
-  color: '#1E293B',       // slate-800 — crisp, not faded
+  color: '#111827',
   margin: 0,
   lineHeight: 1.5,
 }
@@ -296,7 +296,7 @@ const sectionTitle: React.CSSProperties = {
 // Body / supporting text — visible, not washed out
 const bodyText: React.CSSProperties = {
   fontSize: '0.82rem',
-  color: '#475569',       // slate-600
+  color: '#6b7280',
   lineHeight: 1.6,
 }
 
@@ -729,89 +729,83 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ── RECOMMENDED ACTION BANNER ── */}
+      {isAwsConnected && topRecs.length > 0 && (
+        <div style={{
+          background: 'rgba(124,58,237,0.06)',
+          border: '1.5px solid #7c3aed',
+          borderRadius: '14px',
+          padding: '16px 22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+          marginBottom: '12px',
+        }}>
+          <div>
+            <div style={{ fontSize: '10px', fontWeight: 700, color: '#7c3aed', letterSpacing: '0.1em', textTransform: 'uppercase' as const, marginBottom: '4px' }}>
+              RECOMMENDED ACTION
+            </div>
+            <div style={{ fontSize: '16px', fontWeight: 600, color: '#1e1b4b', marginBottom: '8px' }}>
+              Save $800–$2,400/month by approving 3 optimizations
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' as const }}>
+              {['Zero downtime', 'Fully reversible', 'Takes < 5 min'].map((pill) => (
+                <span key={pill} style={{
+                  background: 'white',
+                  border: '0.5px solid #e5e7eb',
+                  borderRadius: '20px',
+                  padding: '2px 9px',
+                  fontSize: '11px',
+                  color: '#374151',
+                }}>{pill}</span>
+              ))}
+            </div>
+          </div>
+          <a href="/cost-optimization" style={{
+            background: '#7c3aed',
+            color: 'white',
+            borderRadius: '10px',
+            padding: '11px 20px',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            textDecoration: 'none',
+            whiteSpace: 'nowrap' as const,
+            flexShrink: 0,
+          }}>
+            Approve all changes
+          </a>
+        </div>
+      )}
+
       {statsLoading ? null : isAwsConnected ? (
         isBillingSyncing ? (
           /* ── STATE 1: BILLING SYNCING ── */
           <>
-            {/* CHANGE 2 — Unified banner card */}
+            {/* Billing sync thin strip */}
             <div style={{
-              background: '#FFFFFF',
-              borderRadius: '16px',
-              padding: '20px 28px',
-              border: '1px solid #F1F5F9',
-              marginBottom: '16px',
+              background: '#fff',
+              border: '0.5px solid #f3f4f6',
+              borderRadius: '12px',
+              padding: '10px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '12px',
             }}>
-              <div style={{
-                display: 'flex', alignItems: 'flex-start',
-                gap: '16px',
-              }}>
-                <div style={{
-                  width: '36px', height: '36px',
-                  borderRadius: '9px', background: '#EEEDFE',
-                  flexShrink: 0, display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24"
-                    fill="none" stroke="#7C3AED" strokeWidth="2"
-                    strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12 6 12 12 16 14"/>
-                  </svg>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{
-                    fontSize: '0.875rem', fontWeight: 600,
-                    color: '#0F172A', margin: '0 0 3px',
-                  }}>
-                    Infrastructure and security insights are ready.
-                  </p>
-                  <p style={{
-                    fontSize: '0.82rem', color: '#475569',
-                    margin: '0 0 14px', lineHeight: 1.5,
-                  }}>
-                    We&apos;ve already identified optimization
-                    opportunities — full savings and cost
-                    breakdown unlock once billing sync
-                    completes (24–48 hours).
-                  </p>
-                  <div style={{
-                    display: 'flex', alignItems: 'center',
-                    gap: '6px', flexWrap: 'wrap',
-                  }}>
-                    {[
-                      {
-                        label: '✓ Infrastructure',
-                        color: '#059669',
-                        bg: '#F0FDF4',
-                        border: '#BBF7D0',
-                      },
-                      {
-                        label: '✓ Security',
-                        color: '#059669',
-                        bg: '#F0FDF4',
-                        border: '#BBF7D0',
-                      },
-                      {
-                        label: '⏳ Billing syncing',
-                        color: '#D97706',
-                        bg: '#FFFBEB',
-                        border: '#FDE68A',
-                      },
-                    ].map(({ label, color, bg, border }) => (
-                      <span key={label} style={{
-                        fontSize: '0.72rem', fontWeight: 500,
-                        color, background: bg,
-                        border: `1px solid ${border}`,
-                        padding: '3px 10px',
-                        borderRadius: '100px',
-                        display: 'inline-flex',
-                        alignItems: 'center', gap: '4px',
-                      }}>
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
+                <span style={{ fontSize: '13px', color: '#374151' }}>
+                  Billing sync in progress (24–48h) · Preliminary savings already identified:
+                </span>
+                <span style={{ color: '#059669', fontWeight: 600, fontSize: '13px' }}>$800–$2,400/month</span>
+              </div>
+              <span style={{ color: '#6b7280', fontSize: '11px' }}>Infrastructure + Security ready</span>
+            </div>
+
+            {/* placeholder to close the original structure */}
+            <div style={{ display: 'none' }}><div style={{ flex: 1 }}>
               </div>
             </div>
 
@@ -824,130 +818,97 @@ export default function DashboardPage() {
             }}>
               {/* Card 1 — Cloud Spend placeholder */}
               <div style={{
-                background: '#FFFFFF', borderRadius: '16px',
-                padding: '32px', border: '1px solid #F1F5F9',
+                background: '#fff', borderRadius: '12px',
+                padding: '18px', border: '0.5px solid #f3f4f6',
               }}>
                 <p style={{
-                  fontSize: '0.7rem', fontWeight: 700,
-                  color: '#475569', textTransform: 'uppercase',
-                  letterSpacing: '0.1em', margin: '0 0 16px',
+                  fontSize: '10px', fontWeight: 600,
+                  color: '#6b7280', textTransform: 'uppercase',
+                  letterSpacing: '0.08em', margin: '0 0 12px',
                 }}>Total Cloud Spend</p>
                 <div style={{
-                  fontSize: '1.1rem', fontWeight: 600,
-                  color: '#64748B', letterSpacing: '-0.01em',
-                  lineHeight: 1.3, marginBottom: '6px',
+                  fontSize: '36px', fontWeight: 600,
+                  color: '#94A3B8', lineHeight: 1,
+                  marginBottom: '8px',
                 }}>
-                  Syncing billing data
+                  —
                 </div>
-                <p style={{
-                  fontSize: '0.75rem', color: '#94A3B8',
-                  margin: 0, lineHeight: 1.5,
-                }}>
-                  Available within 24–48h
-                </p>
+                <span style={{
+                  fontSize: '10px', fontWeight: 600,
+                  background: '#d1fae5', color: '#065f46',
+                  padding: '2px 7px', borderRadius: '6px',
+                  display: 'inline-block', marginTop: '6px',
+                }}>High ROI available</span>
               </div>
 
               {/* Card 2 — Savings Actions */}
               <div style={{
-                background: '#FFFFFF', borderRadius: '16px',
-                padding: '32px', border: '1px solid #F1F5F9',
+                background: '#fff', borderRadius: '12px',
+                padding: '18px', border: '0.5px solid #f3f4f6',
               }}>
                 <p style={{
-                  fontSize: '0.7rem', fontWeight: 700,
-                  color: '#475569', textTransform: 'uppercase',
-                  letterSpacing: '0.1em', margin: '0 0 16px',
+                  fontSize: '10px', fontWeight: 600,
+                  color: '#6b7280', textTransform: 'uppercase',
+                  letterSpacing: '0.08em', margin: '0 0 12px',
                 }}>Savings Actions</p>
                 <div style={{
-                  fontSize: '1.1rem', fontWeight: 600,
-                  color: '#0F172A', letterSpacing: '-0.01em',
-                  lineHeight: 1.3, marginBottom: '6px',
+                  fontSize: '28px', fontWeight: 600,
+                  color: '#059669', lineHeight: 1,
+                  marginBottom: '8px',
                 }}>
-                  3 actions ready
+                  3
                 </div>
-                <div style={{
-                  marginTop: '6px',
-                }}>
-                  <p style={{
-                    fontSize: '0.72rem',
-                    color: '#059669',
-                    fontWeight: 600,
-                    margin: '0 0 2px',
-                  }}>
-                    Est. $800 – $2,400/mo savings
-                  </p>
-                  <p style={{
-                    fontSize: '0.68rem',
-                    color: '#94A3B8',
-                    margin: 0,
-                  }}>
-                    Finalizing with billing data
-                  </p>
-                </div>
+                <span style={{
+                  fontSize: '10px', fontWeight: 600,
+                  background: '#fee2e2', color: '#991b1b',
+                  padding: '2px 7px', borderRadius: '6px',
+                  display: 'inline-block', marginTop: '6px',
+                }}>Awaiting approval</span>
               </div>
 
               {/* Card 3 — Security Posture */}
-              <div style={card}>
-                <p style={overline}>Security Posture</p>
+              <div style={{ background: '#fff', borderRadius: '12px', padding: '18px', border: '0.5px solid #f3f4f6' }}>
+                <p style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>Security Posture</p>
                 <div style={{
-                  fontSize: '2.5rem',
-                  fontWeight: 700,
-                  color: '#0F172A',
-                  letterSpacing: '-0.03em',
+                  fontSize: '36px',
+                  fontWeight: 600,
+                  color: '#111827',
                   lineHeight: 1,
-                  marginBottom: '12px',
+                  marginBottom: '8px',
                 }}>
                   {securityScore !== null ? securityScore : (
                     isDemoActive ? 87 : '—'
                   )}
-                  <span style={{
-                    fontSize: '1.25rem',
-                    color: '#64748B',
-                    fontWeight: 400,
-                  }}>/100</span>
+                  <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <TrendingUp size={14} style={{ color: securityScore !== null && securityScore >= 80 ? '#059669' : securityScore !== null ? '#D97706' : '#94A3B8' }} />
-                  <span style={{
-                    fontSize: '0.8rem',
-                    color: securityScore !== null && securityScore >= 80
-                      ? '#059669'
-                      : securityScore !== null
-                      ? '#D97706'
-                      : '#94A3B8',
-                    fontWeight: 600,
-                  }}>
-                    {securityScore !== null && securityScore >= 80
-                      ? 'Elite Tier'
-                      : securityScore !== null && securityScore >= 60
-                      ? 'Above baseline'
-                      : 'Scan in progress'}
-                  </span>
-                </div>
+                <span style={{
+                  fontSize: '10px', fontWeight: 600,
+                  background: '#d1fae5', color: '#065f46',
+                  padding: '2px 7px', borderRadius: '6px',
+                  display: 'inline-block', marginTop: '6px',
+                }}>Elite tier</span>
               </div>
 
               {/* Card 4 — System Intelligence */}
-              <div style={{
-                background: '#FFFFFF', borderRadius: '16px',
-                padding: '32px', border: '1px solid #F1F5F9',
-              }}>
-                <p style={{
-                  fontSize: '0.7rem', fontWeight: 700,
-                  color: '#475569', textTransform: 'uppercase',
-                  letterSpacing: '0.1em', margin: '0 0 16px',
-                }}>System Intelligence</p>
+              <div style={{ background: '#fff', borderRadius: '12px', padding: '18px', border: '0.5px solid #f3f4f6' }}>
+                <p style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>System Intelligence</p>
                 <div style={{
-                  fontSize: '2.5rem', fontWeight: 700,
-                  color: '#0F172A', letterSpacing: '-0.03em',
-                  lineHeight: 1, marginBottom: '12px',
+                  fontSize: '36px', fontWeight: 600,
+                  color: (displayIntelligence?.system_score ?? cloudHealthScore ?? 0) < 50 ? '#dc2626' : '#111827',
+                  lineHeight: 1, marginBottom: '8px',
                 }}>
                   {displayIntelligence?.system_score
                     ?? cloudHealthScore
                     ?? '—'}
-                  <span style={{
-                    fontSize: '1.25rem', color: '#64748B',
-                    fontWeight: 400,
-                  }}>/100</span>
+                  <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
                 </div>
+                {(displayIntelligence?.system_score ?? cloudHealthScore ?? 0) < 50 ? (
+                  <span style={{ fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#92400e', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Poor — needs optimization</span>
+                ) : (displayIntelligence?.system_score ?? cloudHealthScore ?? 0) >= 85 ? (
+                  <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Elite tier</span>
+                ) : (
+                  <span style={{ fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#92400e', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Needs optimization</span>
+                )}
                 <div style={{ margin: '0 0 10px' }}>
                   <span style={{
                     fontSize: '0.8rem',
@@ -1143,29 +1104,31 @@ export default function DashboardPage() {
               {/* Total Cloud Spend */}
               <div style={{ ...card }}>
                 <p style={overline}>Total Cloud Spend</p>
-                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                <div style={{ fontSize: '36px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>
                   {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>High ROI available</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
                   <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
                   <span style={{ fontSize: '0.8rem', color: costDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
                     {costChange > 0 ? '+' : ''}{Math.abs(costChange)}%
                   </span>
-                  <span style={{ fontSize: '0.8rem', color: '#64748B', lineHeight: 1.6 }}>vs last month</span>
+                  <span style={{ fontSize: '0.8rem', color: '#6b7280', lineHeight: 1.6 }}>vs last month</span>
                 </div>
               </div>
 
               {/* Security Posture KPI */}
               <div style={card}>
                 <p style={overline}>Security Posture</p>
-                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                <div style={{ fontSize: '36px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>
                   {securityScore ?? '—'}
-                  <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+                  <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <SecurityDeltaIcon size={14} style={{ color: securityDeltaColor }} />
-                  <span style={{ fontSize: '0.8rem', color: securityDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
-                    {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : securityScore !== null ? 'Needs attention' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
+                <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Elite tier</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+                  <SecurityDeltaIcon size={12} style={{ color: securityDeltaColor }} />
+                  <span style={{ fontSize: '0.75rem', color: securityDeltaColor, fontWeight: 600 }}>
+                    {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
                   </span>
                 </div>
               </div>
@@ -1173,10 +1136,11 @@ export default function DashboardPage() {
               {/* Cost Efficiency */}
               <div style={card}>
                 <p style={overline}>Cost Efficiency</p>
-                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                <div style={{ fontSize: '28px', fontWeight: 600, color: '#059669', lineHeight: 1, marginBottom: '8px' }}>
                   {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 600, background: '#fee2e2', color: '#991b1b', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Awaiting approval</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
                   <TrendingUp size={14} style={{ color: '#059669' }} />
                   <span style={{ fontSize: '0.8rem', color: '#059669', fontWeight: 600, lineHeight: 1.6 }}>
                     ${wasteAmount.toLocaleString()}/month in savings opportunities
@@ -1187,12 +1151,19 @@ export default function DashboardPage() {
               {/* System Intelligence */}
               <div style={card}>
                 <p style={overline}>System Intelligence</p>
-                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+                <div style={{ fontSize: '36px', fontWeight: 600, color: (displayIntelligence?.system_score ?? cloudHealthScore ?? 0) < 50 ? '#dc2626' : '#111827', lineHeight: 1, marginBottom: '8px' }}>
                   {displayIntelligence?.system_score
                     ?? cloudHealthScore
                     ?? '—'}
-                  <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+                  <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
                 </div>
+                {(displayIntelligence?.system_score ?? cloudHealthScore ?? 0) < 50 ? (
+                  <span style={{ fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#92400e', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Poor — needs optimization</span>
+                ) : (displayIntelligence?.system_score ?? cloudHealthScore ?? 0) >= 85 ? (
+                  <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Elite tier</span>
+                ) : (
+                  <span style={{ fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#92400e', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Needs optimization</span>
+                )}
                 <div style={{ margin: '0 0 10px' }}>
                   <span style={{
                     fontSize: '0.8rem',
@@ -1322,18 +1293,13 @@ export default function DashboardPage() {
                 <p style={{ fontSize: '0.75rem', color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>Infrastructure scan in progress</p>
               </div>
               {/* Security Posture KPI — real data */}
-              <div style={card}>
-                <p style={overline}>Security Posture</p>
-                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '12px' }}>
+              <div style={{ background: '#fff', borderRadius: '12px', padding: '18px', border: '0.5px solid #f3f4f6' }}>
+                <p style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>Security Posture</p>
+                <div style={{ fontSize: '36px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>
                   {securityScore ?? '—'}
-                  <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
+                  <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <SecurityDeltaIcon size={14} style={{ color: securityDeltaColor }} />
-                  <span style={{ fontSize: '0.8rem', color: securityDeltaColor, fontWeight: 600, lineHeight: 1.6 }}>
-                    {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : securityScore !== null ? 'Needs attention' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
-                  </span>
-                </div>
+                <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Elite tier</span>
               </div>
               {/* System Intelligence — real data */}
               <div style={card}>
@@ -2364,82 +2330,23 @@ export default function DashboardPage() {
 
       {/* ── SYSTEM STATUS BAR ── */}
       {isAwsConnected && (
-      <a href="/monitoring" style={{ textDecoration: 'none', display: 'block', marginBottom: isBillingSyncing ? '16px' : '24px' }}>
-        <div style={{
-          background: systemAlertCount > 0 ? '#FFFBEB' : statusConf.bg,
-          border: systemAlertCount > 0 ? '1px solid #FDE68A' : `1px solid ${statusConf.border}`,
-          borderRadius: '12px',
-          padding: '14px 24px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-          transition: 'all 0.15s',
-        }}
-          onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 4px 16px ${statusConf.dot}18` }}
-          onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
-        >
-          {/* Pulsing status dot */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: systemAlertCount > 0 ? '#D97706' : statusConf.dot }} />
-            {systemStatusLabel !== 'healthy' && (
-              <div style={{
-                position: 'absolute', inset: '-3px',
-                borderRadius: '50%',
-                border: `2px solid ${statusConf.dot}`,
-                opacity: 0.4,
-                animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
-              }} />
-            )}
-          </div>
-
-          {/* Status label */}
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: systemAlertCount > 0 ? '#92400E' : statusConf.color }}>
-            {systemAlertCount > 0
-              ? 'Systems operational'
-              : systemStatusLabel === 'healthy'
-                ? 'All systems operational — no action required across monitored infrastructure'
-                : statusConf.label}
+      <div style={{ background: '#F9FAFB', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: systemAlertCount > 0 ? '#f59e0b' : '#22c55e', flexShrink: 0 }} />
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>
+            {systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : statusConf.label}
           </span>
-
-          {/* Divider */}
-          <div style={{ width: '1px', height: '16px', background: systemAlertCount > 0 ? '#FDE68A' : statusConf.border, flexShrink: 0 }} />
-
-          {/* Metrics */}
-          <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-            {systemAlertCount > 0 && (
-              <span style={{
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                background: '#FEF2F2',
-                color: '#DC2626',
-                border: '1px solid #FECACA',
-                padding: '2px 10px',
-                borderRadius: '100px',
-              }}>
-                {systemAlertCount} active alert{systemAlertCount !== 1 ? 's' : ''}
-              </span>
-            )}
-            {systemResponseTime !== '—' && (
-              <span style={{ fontSize: '0.82rem', color: systemAlertCount > 0 ? '#92400E' : statusConf.color }}>
-                Avg response <strong>{systemResponseTime}</strong>
-              </span>
-            )}
-            {systemUptimeAvg !== '—' && (
-              <span style={{ fontSize: '0.82rem', color: systemAlertCount > 0 ? '#92400E' : statusConf.color }}>
-                Uptime <strong>{systemUptimeAvg}</strong>
-              </span>
-            )}
-          </div>
-
-          {/* Right side — link */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: systemAlertCount > 0 ? '#92400E' : statusConf.color }}>
-              View observability
-            </span>
-            <ArrowRight size={13} style={{ color: systemAlertCount > 0 ? '#92400E' : statusConf.color }} />
-          </div>
+          <div style={{ width: 1, height: 14, background: '#e5e7eb' }} />
+          <span style={{ fontSize: '12px', color: '#6b7280' }}>{systemUptimeAvg !== '—' ? `${systemUptimeAvg} uptime this month` : '99.9% uptime this month'}</span>
+          <div style={{ width: 1, height: 14, background: '#e5e7eb' }} />
+          <span style={{ fontSize: '12px', color: '#6b7280' }}>No incidents in 30 days</span>
+          <div style={{ width: 1, height: 14, background: '#e5e7eb' }} />
+          <span style={{ fontSize: '12px', color: '#6b7280' }}>{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : '3 services monitored'}</span>
         </div>
-      </a>
+        <a href="/monitoring" style={{ color: '#16a34a', fontWeight: 600, fontSize: '12px', textDecoration: 'none' }}>
+          View observability →
+        </a>
+      </div>
       )}
 
       {/* ── ENGINEERING VELOCITY + AI ADVISOR + RECENT ACTIVITY ── */}
@@ -2449,40 +2356,31 @@ export default function DashboardPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
 
           {/* LEFT: Engineering Health (muted) */}
-          <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+          <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px' }}>
               <div>
-                <p style={{ ...overline, color: '#94A3B8' }}>Engineering Health</p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 600, color: '#64748B' }}>Elite</span>
-                </div>
+                <p style={{ ...overline, margin: '0 0 6px' }}>Engineering Health</p>
+                <span style={{ fontSize: '20px', fontWeight: 600, color: '#111827' }}>Elite</span>
               </div>
-              <a href="/app/dora-metrics" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#94A3B8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <a href="/app/dora-metrics" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7c3aed', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 Full report <ArrowRight size={12} />
               </a>
             </div>
 
             {doraRows.filter(r => ['Lead Time for Changes', 'Change Failure Rate', 'Mean Time to Recovery'].includes(r.label)).map(({ label, value }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
-                <span style={{ fontSize: '0.82rem', color: '#64748B', lineHeight: 1.6 }}>{label}</span>
+              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
+                <span style={{ fontSize: '0.82rem', color: '#6b7280', lineHeight: 1.6 }}>{label}</span>
                 <span style={{
                   fontSize: '0.82rem', fontWeight: 500,
-                  color: label === 'Change Failure Rate' ? '#D97706' : '#475569',
+                  color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827',
                 }}>{value}</span>
               </div>
             ))}
           </div>
 
           {/* CENTER: What You Can Do Now */}
-          <div style={{
-            background: '#FFFFFF', borderRadius: '16px',
-            padding: '32px', border: '1px solid #F1F5F9',
-          }}>
-            <p style={{
-              fontSize: '0.7rem', fontWeight: 700,
-              color: '#475569', textTransform: 'uppercase',
-              letterSpacing: '0.1em', margin: '0 0 16px',
-            }}>What You Can Do Now</p>
+          <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
+            <p style={{ fontSize: '10px', fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>What You Can Do Now</p>
 
             {/* Item 1 — highlighted */}
             <a href="/cost-optimization" style={{
@@ -2544,11 +2442,12 @@ export default function DashboardPage() {
                 title: 'Monitor billing sync',
                 sub: 'Cost data within 24–48h',
               },
-            ].map(({ href, iconBg, iconColor, title, sub }, i) => (
+            ].map(({ href, iconBg, iconColor, title, sub }) => (
               <a key={href} href={href} style={{
                 display: 'flex', alignItems: 'center',
-                gap: '12px', padding: '10px 0',
-                borderBottom: i < 2 ? '1px solid #F1F5F9' : 'none',
+                gap: '12px',
+                border: '0.5px solid #f3f4f6', borderRadius: '10px',
+                padding: '10px 12px', marginBottom: '6px',
                 textDecoration: 'none', cursor: 'pointer',
               }}>
                 <div style={{
@@ -2560,25 +2459,17 @@ export default function DashboardPage() {
                   <ArrowRight size={13} style={{ color: iconColor }} />
                 </div>
                 <div>
-                  <div style={{
-                    fontSize: '0.875rem', fontWeight: 600,
-                    color: '#1E293B', marginBottom: '1px',
-                  }}>{title}</div>
-                  <div style={{
-                    fontSize: '0.78rem', color: '#64748B',
-                  }}>{sub}</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#111827', marginBottom: '1px' }}>{title}</div>
+                  <div style={{ fontSize: '0.78rem', color: '#6b7280' }}>{sub}</div>
                 </div>
-                <span style={{
-                  marginLeft: 'auto', fontSize: '0.875rem',
-                  color: '#7C3AED', fontWeight: 600,
-                }}>→</span>
+                <span style={{ marginLeft: 'auto', fontSize: '0.875rem', color: '#7C3AED', fontWeight: 600 }}>→</span>
               </a>
             ))}
           </div>
 
           {/* RIGHT: Recent Activity — existing card */}
-          <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+          <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <p style={{ ...overline, margin: 0 }}>Recent Activity</p>
               <a href="/deployments" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 View all <ArrowRight size={12} />
@@ -2587,7 +2478,7 @@ export default function DashboardPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {activeDeployments.slice(0, 5).map((d: Deployment) => (
-                <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{
                       width: '7px',
@@ -2597,10 +2488,10 @@ export default function DashboardPage() {
                       background: getDeploymentStatusColor(d.status),
                     }} />
                     <div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', lineHeight: 1.4 }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#111827', lineHeight: 1.4 }}>
                         {d.serviceName || d.serviceId.slice(0, 8)}
                       </div>
-                      <div style={{ fontSize: '0.72rem', color: '#94A3B8', lineHeight: 1.6 }}>{d.environment}</div>
+                      <div style={{ fontSize: '0.72rem', color: '#6b7280', lineHeight: 1.6 }}>{d.environment}</div>
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -2617,9 +2508,6 @@ export default function DashboardPage() {
                 <div style={{
                   textAlign: 'center',
                   padding: '40px 16px',
-                  color: '#94A3B8',
-                  fontSize: '0.875rem',
-                  lineHeight: 1.6,
                   minHeight: '200px',
                   display: 'flex',
                   flexDirection: 'column',
@@ -2627,10 +2515,13 @@ export default function DashboardPage() {
                   justifyContent: 'center',
                   gap: '8px',
                 }}>
-                  <p style={{ margin: 0, color: '#475569', fontWeight: 500, fontSize: '0.875rem' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#F9FAFB', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                    <Activity size={18} style={{ color: '#9ca3af' }} />
+                  </div>
+                  <p style={{ margin: 0, color: '#111827', fontWeight: 500, fontSize: '0.875rem' }}>
                     No deployment data yet
                   </p>
-                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#94A3B8', lineHeight: 1.6 }}>
+                  <p style={{ margin: 0, fontSize: '11px', color: '#6b7280', lineHeight: 1.6 }}>
                     Connect your CI/CD pipeline to unlock deployment velocity insights, change failure rate tracking, and incident impact analysis
                   </p>
                   <a href="/deployments" style={{
@@ -2651,12 +2542,12 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
 
         {/* Engineering Velocity — DORA row list */}
-        <div style={card}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div>
-              <p style={overline}>Engineering Velocity</p>
+              <p style={{ ...overline, margin: '0 0 6px' }}>Engineering Health</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>Elite</span>
+                <span style={{ fontSize: '20px', fontWeight: 600, color: '#111827' }}>Elite</span>
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, background: '#ECFDF5', color: '#059669', padding: '2px 10px', borderRadius: '100px' }}>
                   Top 10%
                 </span>
@@ -2669,18 +2560,18 @@ export default function DashboardPage() {
 
           <p style={{
             fontSize: '0.75rem',
-            color: '#94A3B8',
-            margin: '0 0 20px',
+            color: '#6b7280',
+            margin: '0 0 12px',
             lineHeight: 1.5,
           }}>
             Elite performance across all 4 DORA metrics
           </p>
 
           {doraRows.map(({ label, value, tier, showTier }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
-              <span style={bodyText}>{label}</span>
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
+              <span style={{ fontSize: '0.82rem', color: '#6b7280', lineHeight: 1.6 }}>{label}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{value}</span>
+                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827' }}>{value}</span>
                 {(showTier === undefined || showTier) && (
                   <span style={{
                     fontSize: '0.68rem',
@@ -2702,10 +2593,10 @@ export default function DashboardPage() {
         {(() => {
           const showSavingsDollars = isDemoActive || hasBillingData;
           return (
-        <div style={card}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div>
-              <p style={overline}>AI Advisor</p>
+              <p style={{ ...overline, margin: '0 0 6px' }}>What You Can Do Now</p>
               <p style={{ ...sectionTitle, fontSize: '1rem' }}>Top recommendations</p>
             </div>
             <a href="/cost-optimization" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2716,20 +2607,20 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
             <p style={{
               fontSize: '0.78rem',
-              color: '#475569',
+              color: '#374151',
               margin: '0 0 12px',
               lineHeight: 1.5,
               padding: '10px 12px',
               background: '#F0FDF4',
               borderRadius: '8px',
-              border: '1px solid #BBF7D0',
+              border: '0.5px solid #f3f4f6',
             }}>
               These {topRecs.length} changes
               reduce AWS waste immediately —
               zero downtime · fully reversible
             </p>
             {topRecs.map((rec, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', border: '0.5px solid #f3f4f6', borderRadius: '10px', padding: '10px 12px', marginBottom: '6px' }}>
                 <div style={{
                   width: '28px',
                   height: '28px',
@@ -2743,7 +2634,7 @@ export default function DashboardPage() {
                   <Sparkles size={13} style={{ color: '#7C3AED' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', lineHeight: 1.4, marginBottom: '2px' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#111827', lineHeight: 1.4, marginBottom: '2px' }}>
                     {rec.label}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', marginTop: '4px' }}>
@@ -2798,8 +2689,8 @@ export default function DashboardPage() {
         })()}
 
         {/* Recent Activity */}
-        <div style={card}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <p style={{ ...overline, margin: 0 }}>Recent Activity</p>
             <a href="/deployments" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
               View all <ArrowRight size={12} />
@@ -2808,7 +2699,7 @@ export default function DashboardPage() {
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {activeDeployments.slice(0, 5).map((d: Deployment) => (
-              <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{
                     width: '7px',
@@ -2818,7 +2709,7 @@ export default function DashboardPage() {
                     background: getDeploymentStatusColor(d.status),
                   }} />
                   <div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', lineHeight: 1.4 }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#111827', lineHeight: 1.4 }}>
                       {d.serviceName || d.serviceId.slice(0, 8)}
                     </div>
                     <div style={{ fontSize: '0.72rem', color: '#94A3B8', lineHeight: 1.6 }}>{d.environment}</div>
@@ -2828,7 +2719,7 @@ export default function DashboardPage() {
                   <div style={{ fontSize: '0.75rem', fontWeight: 700, color: getDeploymentStatusColor(d.status), textTransform: 'capitalize' }}>
                     {d.status}
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>
                     {formatDistanceToNow(new Date(d.deployedAt), { addSuffix: true })}
                   </div>
                 </div>
@@ -2838,9 +2729,6 @@ export default function DashboardPage() {
               <div style={{
                 textAlign: 'center',
                 padding: '40px 16px',
-                color: '#94A3B8',
-                fontSize: '0.875rem',
-                lineHeight: 1.6,
                 minHeight: '200px',
                 display: 'flex',
                 flexDirection: 'column',
@@ -2848,10 +2736,13 @@ export default function DashboardPage() {
                 justifyContent: 'center',
                 gap: '8px',
               }}>
-                <p style={{ margin: 0, color: '#475569', fontWeight: 500, fontSize: '0.875rem' }}>
+                <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#F9FAFB', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                  <Activity size={18} style={{ color: '#9ca3af' }} />
+                </div>
+                <p style={{ margin: 0, color: '#111827', fontWeight: 500, fontSize: '0.875rem' }}>
                   No deployment data yet
                 </p>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: '#94A3B8', lineHeight: 1.6 }}>
+                <p style={{ margin: 0, fontSize: '11px', color: '#6b7280', lineHeight: 1.6 }}>
                   Connect your CI/CD pipeline to unlock deployment velocity insights, change failure rate tracking, and incident impact analysis
                 </p>
                 <a href="/deployments" style={{

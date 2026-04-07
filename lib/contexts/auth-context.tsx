@@ -307,40 +307,57 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Refresh user data
    */
   const refreshUser = useCallback(async () => {
-    try {
-      const response = await authService.getCurrentUser();
-
-      // Extract user data (getCurrentUser returns user with organizations array)
+    const applyUserResponse = (response: User) => {
       const { organizations: userOrgs, ...userData } = response as any;
-
-      console.log("🔄 Refreshed user data:", userData);
-      console.log("🔄 User organizations:", userOrgs);
-
       setUser(userData);
       tokenManager.setUser(userData);
-
-      // If organizations are included in the response, update them
       if (userOrgs && Array.isArray(userOrgs)) {
         setOrganizations(userOrgs);
-
-        // Set first organization as active if none selected — use functional update
-        // to avoid capturing `organization` in deps (which would cause identity churn)
         if (userOrgs.length > 0) {
-          setOrganization((prev) => {
-            if (!prev) console.log("🔄 Set active organization:", userOrgs[0]);
-            return prev ?? userOrgs[0];
-          });
+          setOrganization((prev) => prev ?? userOrgs[0]);
         }
       }
-    } catch (error) {
-      // Log the error but do NOT force-logout on 401 here.
-      // A failed background refresh does not mean the session is invalid —
-      // the user may have just logged in with a perfectly valid token and the
-      // /me endpoint is temporarily unavailable. Calling logout() here would
-      // immediately wipe the user state that was just set from cache.
-      console.error("Failed to refresh user:", error);
+    };
+
+    try {
+      const response = await authService.getCurrentUser();
+      applyUserResponse(response);
+    } catch (error: any) {
+      const status = error?.response?.status;
+
+      if (status === 401) {
+        // Token expired — try silent refresh before giving up
+        const storedRefreshToken = tokenManager.getRefreshToken();
+        if (storedRefreshToken) {
+          try {
+            const refreshResponse = await authService.refreshToken(storedRefreshToken);
+            const { accessToken, refreshToken: newRefreshToken } = refreshResponse.data;
+            tokenManager.setAccessToken(accessToken);
+            tokenManager.setRefreshToken(newRefreshToken);
+            tokenManager.setAuthCookie(accessToken);
+            // Retry with new token
+            const retryResponse = await authService.getCurrentUser();
+            applyUserResponse(retryResponse);
+            return;
+          } catch {
+            // Refresh token also rejected — fall through to forced logout
+          }
+        }
+        // No refresh token or refresh failed — clear session and redirect
+        console.warn("Session expired — redirecting to login");
+        tokenManager.clearAll();
+        tokenManager.clearAuthCookie();
+        setUser(null);
+        setOrganization(null);
+        setOrganizations([]);
+        router.push("/login");
+      } else {
+        // Non-401 error (network down, 5xx, etc.) — don't clear the session,
+        // the cached user state is still valid.
+        console.error("Failed to refresh user:", error);
+      }
     }
-  }, []);
+  }, [router]);
 
   /**
    * Create organization
