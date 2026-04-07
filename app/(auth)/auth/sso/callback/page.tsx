@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-export default function SSOCallbackPage() {
+function SSOCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
@@ -64,5 +64,13 @@ export default function SSOCallbackPage() {
       <Loader2 style={{ width: 32, height: 32, color: "#7C3AED", animation: "spin 1s linear infinite" }} />
       <p style={{ color: "#6B7280", fontSize: "0.9rem" }}>Completing sign-in&hellip;</p>
     </div>
+  );
+}
+
+export default function SSOCallbackPage() {
+  return (
+    <Suspense fallback={<div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}><Loader2 style={{ width: 32, height: 32, color: "#7C3AED", animation: "spin 1s linear infinite" }} /></div>}>
+      <SSOCallbackContent />
+    </Suspense>
   );
 }
