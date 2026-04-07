@@ -53,9 +53,9 @@ export function WelcomeModal() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-2xl">Let's find your AWS cost waste 👋</DialogTitle>
-        </DialogHeader>
+        <DialogHeader className="pt-4">
+  <DialogTitle className="text-2xl">Let's find your AWS cost waste 👋</DialogTitle>
+</DialogHeader>
 
         <div className="space-y-4 py-4">
           <p className="text-gray-600 dark:text-gray-400">
