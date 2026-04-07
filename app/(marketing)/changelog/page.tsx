@@ -543,7 +543,7 @@ export default function ChangelogPage() {
           {[
             { href: '/docs', icon: BookOpen, title: 'Documentation', desc: 'Learn how to use all the new features', external: false },
             { href: '/blog', icon: Rocket, title: 'Blog', desc: 'Read in-depth articles about new releases', external: false },
-            { href: 'mailto:hello@devcontrol.io', icon: Sparkles, title: 'Request a Feature', desc: "Have an idea? We'd love to hear it", external: true },
+            { href: 'mailto:hello@getdevcontrol.com', icon: Sparkles, title: 'Request a Feature', desc: "Have an idea? We'd love to hear it", external: true },
           ].map((item) => {
             const Icon = item.icon;
             return (

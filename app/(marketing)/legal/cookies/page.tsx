@@ -169,8 +169,8 @@ export default function CookiePolicyPage() {
             </h2>
             <p style={{ fontSize: '16px', color: '#374151', lineHeight: 1.8 }}>
               If you have questions about how DevControl uses cookies, contact DevControl, Inc. at{' '}
-              <a href="mailto:hello@devcontrol.io" style={{ color: '#7C3AED', fontWeight: 600 }}>
-                hello@devcontrol.io
+              <a href="mailto:hello@getdevcontrol.com" style={{ color: '#7C3AED', fontWeight: 600 }}>
+                hello@getdevcontrol.com
               </a>
               .
             </p>

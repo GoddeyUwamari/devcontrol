@@ -175,7 +175,7 @@ export default function ApiReferencePage() {
     },
   ];
 
-  const authExample = `curl -X GET https://api.devcontrol.io/v1/services \\
+  const authExample = `curl -X GET https://api.getdevcontrol.com/v1/services \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json"`;
 
@@ -336,12 +336,12 @@ export default function ApiReferencePage() {
           <CardContent>
             <div className="flex items-center justify-between gap-4 bg-background p-3 rounded-lg border">
               <code className="text-sm font-mono text-foreground">
-                https://api.devcontrol.io
+                https://api.getdevcontrol.com
               </code>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => handleCopy('https://api.devcontrol.io', 'base-url')}
+                onClick={() => handleCopy('https://api.getdevcontrol.com', 'base-url')}
               >
                 {copiedCode === 'base-url' ? (
                   <Check className="w-4 h-4 text-green-600" />
@@ -956,7 +956,7 @@ export default function ApiReferencePage() {
                   <AccordionContent className="text-muted-foreground">
                     Yes! Use your API key with{' '}
                     <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                      https://api.devcontrol.io
+                      https://api.getdevcontrol.com
                     </code>{' '}
                     and test data to explore the API safely before going live.
                   </AccordionContent>
@@ -1017,7 +1017,7 @@ export default function ApiReferencePage() {
               </p>
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <Button asChild size="lg" className="gap-2">
-                  <a href="mailto:support@devcontrol.io">
+                  <a href="mailto:support@getdevcontrol.com">
                     <MessageCircle className="w-4 h-4" />
                     Contact API Support
                   </a>

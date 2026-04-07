@@ -283,7 +283,7 @@ function CodeExamplesSection() {
     {
       title: 'API Request',
       icon: FileCode,
-      code: `curl -X GET \\\n  https://api.devcontrol.io/v1/services \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -H "Content-Type: application/json"`,
+      code: `curl -X GET \\\n  https://api.getdevcontrol.com/v1/services \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -H "Content-Type: application/json"`,
     },
     {
       title: 'AWS IAM Policy',
@@ -413,7 +413,7 @@ function CTASection() {
           }}>
             Contact Support
           </Link>
-          <a href="mailto:support@devcontrol.io" style={{
+          <a href="mailto:support@getdevcontrol.com" style={{
             display: 'inline-flex', alignItems: 'center',
             padding: '10px 24px', borderRadius: '8px',
             border: '1px solid #e5e7eb', background: '#fff',

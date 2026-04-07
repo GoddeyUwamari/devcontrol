@@ -136,8 +136,8 @@ export default function TermsOfServicePage() {
             <p style={{ fontSize: '16px', color: '#374151', lineHeight: 1.8 }}>
               Subscription fees are non-refundable for partial billing periods except at the sole
               discretion of DevControl, Inc. If you believe a charge was made in error, contact us at{' '}
-              <a href="mailto:hello@devcontrol.io" style={{ color: '#7C3AED', fontWeight: 600 }}>
-                hello@devcontrol.io
+              <a href="mailto:hello@getdevcontrol.com" style={{ color: '#7C3AED', fontWeight: 600 }}>
+                hello@getdevcontrol.com
               </a>{' '}
               within 14 days of the charge.
             </p>
@@ -255,8 +255,8 @@ export default function TermsOfServicePage() {
             </h2>
             <p style={{ fontSize: '16px', color: '#374151', lineHeight: 1.8 }}>
               Questions about these Terms? Contact DevControl, Inc. at{' '}
-              <a href="mailto:hello@devcontrol.io" style={{ color: '#7C3AED', fontWeight: 600 }}>
-                hello@devcontrol.io
+              <a href="mailto:hello@getdevcontrol.com" style={{ color: '#7C3AED', fontWeight: 600 }}>
+                hello@getdevcontrol.com
               </a>
               .
             </p>

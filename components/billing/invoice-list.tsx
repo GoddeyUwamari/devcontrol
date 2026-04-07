@@ -151,7 +151,7 @@ export function InvoiceList({ invoices }: InvoiceListProps) {
                        invoice.amount_refunded === 0 &&
                        (Date.now() / 1000 - invoice.created) < 30 * 24 * 60 * 60 && (
                         <button
-                          onClick={() => window.location.href = `mailto:support@devcontrol.io?subject=Refund Request - ${invoice.number}&body=I would like to request a refund for invoice ${invoice.number}.`}
+                          onClick={() => window.location.href = `mailto:support@getdevcontrol.com?subject=Refund Request - ${invoice.number}&body=I would like to request a refund for invoice ${invoice.number}.`}
                           title="Request refund"
                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', padding: '4px' }}
                         >

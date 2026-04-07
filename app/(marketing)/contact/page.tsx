@@ -16,7 +16,7 @@ export default function ContactPage() {
       ? `Demo Request from ${formState.company || formState.name}`
       : `Contact from ${formState.company || formState.name}`
     const body = `Name: ${formState.name}%0AEmail: ${formState.email}%0ACompany: ${formState.company}%0ARole: ${formState.role}%0A%0AMessage:%0A${formState.message}`
-    window.location.href = `mailto:hello@devcontrol.io?subject=${subject}&body=${body}`
+    window.location.href = `mailto:hello@getdevcontrol.com?subject=${subject}&body=${body}`
     setSubmitted(true)
   }
 
@@ -181,8 +181,8 @@ export default function ContactPage() {
                   </h3>
                   <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7 }}>
                     Your email client should have opened. If not, email us directly at{' '}
-                    <a href="mailto:hello@devcontrol.io" style={{ color: '#7c3aed', fontWeight: 600 }}>
-                      hello@devcontrol.io
+                    <a href="mailto:hello@getdevcontrol.com" style={{ color: '#7c3aed', fontWeight: 600 }}>
+                      hello@getdevcontrol.com
                     </a>
                   </p>
                   <button
@@ -349,8 +349,8 @@ export default function ContactPage() {
 
                   <p style={{ fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>
                     Or email us directly at{' '}
-                    <a href="mailto:hello@devcontrol.io" style={{ color: '#7c3aed', fontWeight: 600 }}>
-                      hello@devcontrol.io
+                    <a href="mailto:hello@getdevcontrol.com" style={{ color: '#7c3aed', fontWeight: 600 }}>
+                      hello@getdevcontrol.com
                     </a>
                   </p>
                 </div>

@@ -5,7 +5,7 @@ import { Check, Copy, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-const curlExample = `curl -X POST https://api.devcontrol.io/deployments \\
+const curlExample = `curl -X POST https://api.getdevcontrol.com/deployments \\
   -H "Authorization: Bearer YOUR_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{

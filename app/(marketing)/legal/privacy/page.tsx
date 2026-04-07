@@ -177,8 +177,8 @@ export default function PrivacyPolicyPage() {
             </p>
             <p style={{ fontSize: '16px', color: '#374151', lineHeight: 1.8 }}>
               To exercise any of these rights, email us at{' '}
-              <a href="mailto:hello@devcontrol.io" style={{ color: '#7C3AED', fontWeight: 600 }}>
-                hello@devcontrol.io
+              <a href="mailto:hello@getdevcontrol.com" style={{ color: '#7C3AED', fontWeight: 600 }}>
+                hello@getdevcontrol.com
               </a>
               . We will respond within 30 days.
             </p>
@@ -210,8 +210,8 @@ export default function PrivacyPolicyPage() {
             <p style={{ fontSize: '16px', color: '#374151', lineHeight: 1.8 }}>
               If you have questions about this Privacy Policy or how we handle your data, please contact
               DevControl, Inc. at{' '}
-              <a href="mailto:hello@devcontrol.io" style={{ color: '#7C3AED', fontWeight: 600 }}>
-                hello@devcontrol.io
+              <a href="mailto:hello@getdevcontrol.com" style={{ color: '#7C3AED', fontWeight: 600 }}>
+                hello@getdevcontrol.com
               </a>
               .
             </p>

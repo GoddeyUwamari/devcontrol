@@ -174,7 +174,7 @@ devcontrol service create --name my-service`;
                   </Link>
                 </Button>
                 <Button asChild variant="outline" className="w-full">
-                  <a href="mailto:hello@devcontrol.io?subject=Schedule Onboarding Call">
+                  <a href="mailto:hello@getdevcontrol.com?subject=Schedule Onboarding Call">
                     <Calendar className="w-4 h-4 mr-2" />
                     Book Call
                   </a>
@@ -489,7 +489,7 @@ devcontrol service create --name my-service`;
           </Card>
 
           <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-            <a href="mailto:support@devcontrol.io">
+            <a href="mailto:support@getdevcontrol.com">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2 group-hover:text-primary transition-colors">
                   <MessageCircle className="w-5 h-5" />
@@ -511,7 +511,7 @@ devcontrol service create --name my-service`;
             size="sm"
             className="shadow-lg gap-2 rounded-full px-4"
           >
-            <a href="mailto:support@devcontrol.io">
+            <a href="mailto:support@getdevcontrol.com">
               <MessageCircle className="w-4 h-4" />
               Get Help
             </a>
