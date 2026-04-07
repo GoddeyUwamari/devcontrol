@@ -652,8 +652,8 @@ export default function DashboardPage() {
             </h1>
           </div>
           <p style={{
-            fontSize: '0.875rem',
-            color: '#475569',
+            fontSize: '13px',
+            color: '#6b7280',
             margin: 0,
             lineHeight: 1.6,
           }}>
@@ -796,12 +796,12 @@ export default function DashboardPage() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
-                <span style={{ fontSize: '13px', color: '#374151' }}>
+                <span style={{ fontSize: '13px', color: '#374151', fontWeight: 500 }}>
                   Billing sync in progress (24–48h) · Preliminary savings already identified:
                 </span>
                 <span style={{ color: '#059669', fontWeight: 600, fontSize: '13px' }}>$800–$2,400/month</span>
               </div>
-              <span style={{ color: '#6b7280', fontSize: '11px' }}>Infrastructure + Security ready</span>
+              <span style={{ color: '#374151', fontSize: '11px', fontWeight: 500 }}>Infrastructure + Security ready</span>
             </div>
 
             {/* placeholder to close the original structure */}
@@ -822,16 +822,15 @@ export default function DashboardPage() {
                 padding: '18px', border: '0.5px solid #f3f4f6',
               }}>
                 <p style={{
-                  fontSize: '10px', fontWeight: 600,
-                  color: '#6b7280', textTransform: 'uppercase',
+                  fontSize: '10px', fontWeight: 700,
+                  color: '#374151', textTransform: 'uppercase',
                   letterSpacing: '0.08em', margin: '0 0 12px',
                 }}>Total Cloud Spend</p>
-                <div style={{
-                  fontSize: '36px', fontWeight: 600,
-                  color: '#94A3B8', lineHeight: 1,
-                  marginBottom: '8px',
-                }}>
-                  —
+                <div style={{ fontSize: '15px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '4px' }}>
+                  Syncing...
+                </div>
+                <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500, marginBottom: '8px' }}>
+                  Full data in 24–48h
                 </div>
                 <span style={{
                   fontSize: '10px', fontWeight: 600,
@@ -847,8 +846,8 @@ export default function DashboardPage() {
                 padding: '18px', border: '0.5px solid #f3f4f6',
               }}>
                 <p style={{
-                  fontSize: '10px', fontWeight: 600,
-                  color: '#6b7280', textTransform: 'uppercase',
+                  fontSize: '10px', fontWeight: 700,
+                  color: '#374151', textTransform: 'uppercase',
                   letterSpacing: '0.08em', margin: '0 0 12px',
                 }}>Savings Actions</p>
                 <div style={{
@@ -868,30 +867,26 @@ export default function DashboardPage() {
 
               {/* Card 3 — Security Posture */}
               <div style={{ background: '#fff', borderRadius: '12px', padding: '18px', border: '0.5px solid #f3f4f6' }}>
-                <p style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>Security Posture</p>
-                <div style={{
-                  fontSize: '36px',
-                  fontWeight: 600,
-                  color: '#111827',
-                  lineHeight: 1,
-                  marginBottom: '8px',
-                }}>
-                  {securityScore !== null ? securityScore : (
-                    isDemoActive ? 87 : '—'
-                  )}
-                  <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
-                </div>
-                <span style={{
-                  fontSize: '10px', fontWeight: 600,
-                  background: '#d1fae5', color: '#065f46',
-                  padding: '2px 7px', borderRadius: '6px',
-                  display: 'inline-block', marginTop: '6px',
-                }}>Elite tier</span>
+                <p style={{ fontSize: '10px', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>Security Posture</p>
+                {(securityScore === null || securityScore === 0) && !isDemoActive ? (
+                  <>
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>Scanning...</div>
+                    <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Elite tier</span>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: '36px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>
+                      {securityScore !== null ? securityScore : (isDemoActive ? 87 : '—')}
+                      <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
+                    </div>
+                    <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Elite tier</span>
+                  </>
+                )}
               </div>
 
               {/* Card 4 — System Intelligence */}
               <div style={{ background: '#fff', borderRadius: '12px', padding: '18px', border: '0.5px solid #f3f4f6' }}>
-                <p style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>System Intelligence</p>
+                <p style={{ fontSize: '10px', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>System Intelligence</p>
                 <div style={{
                   fontSize: '36px', fontWeight: 600,
                   color: (displayIntelligence?.system_score ?? cloudHealthScore ?? 0) < 50 ? '#dc2626' : '#111827',
@@ -909,112 +904,53 @@ export default function DashboardPage() {
                 ) : (
                   <span style={{ fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#92400e', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Needs optimization</span>
                 )}
-                <div style={{ margin: '0 0 10px' }}>
+                <div style={{ margin: '8px 0 10px' }}>
                   <span style={{
-                    fontSize: '0.8rem',
+                    fontSize: '13px',
                     fontWeight: 600,
                     color:
-                      (displayIntelligence
-                        ?.system_score ?? 0) >= 85
+                      (displayIntelligence?.system_score ?? 0) >= 85
                         ? '#059669'
-                        : (displayIntelligence
-                            ?.system_score ?? 0) >= 70
-                          ? '#D97706'
-                          : '#DC2626',
+                        : '#92400e',
                   }}>
                     {displayIntelligence?.status ?? 'Computing...'}
                   </span>
-                  {displayIntelligence
-                    ?.system_score &&
-                    displayIntelligence
-                      .system_score < 85 && (
-                    <p style={{
-                      fontSize: '0.68rem',
-                      color: '#94A3B8',
-                      margin: '2px 0 0',
-                      lineHeight: 1.4,
-                    }}>
-                      Top teams: 85+ · Improve to
-                      unlock full efficiency
+                  {displayIntelligence?.system_score && displayIntelligence.system_score < 85 && (
+                    <p style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500, margin: '2px 0 0', lineHeight: 1.4 }}>
+                      Top teams: 85+ · Improve to unlock full efficiency
                     </p>
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {displayIntelligence
-                    ? Object.values(
-                        displayIntelligence.components
-                      ).map((comp: any) => (
-                        <div key={comp.label} style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          marginBottom: '2px',
-                        }}>
-                          <div style={{
-                            flex: 1, height: '4px',
-                            background: '#F1F5F9',
-                            borderRadius: '2px',
-                          }}>
+                    ? Object.values(displayIntelligence.components).map((comp: any) => (
+                        <div key={comp.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                          <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
                             <div style={{
                               width: `${comp.score}%`,
                               height: '100%',
-                              background:
-                                comp.score >= 80
-                                  ? '#059669'
-                                  : comp.score >= 60
-                                    ? '#D97706'
-                                    : '#DC2626',
+                              background: comp.score >= 80 ? '#059669' : comp.score >= 60 ? '#D97706' : '#DC2626',
                               borderRadius: '2px',
                               transition: 'width 0.3s ease',
                             }} />
                           </div>
-                          <span style={{
-                            fontSize: '0.68rem',
-                            color: '#64748B',
-                            width: '76px',
-                            textAlign: 'right',
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                          }}>
-                            {comp.label.split(' ')[0]}
-                            {' '}{comp.score}
+                          <span style={{ fontSize: '12px', color: '#374151', width: '76px', textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 500 }}>
+                            {comp.label.split(' ')[0]}{' '}{comp.score}
                           </span>
                         </div>
                       ))
-                    : [{label:'Cost',score:costScore},
-                       {label:'Security',score:securityScore_health},
-                       {label:'Reliability',score:reliabilityScore}
-                      ].map(({label, score}) => (
-                        <div key={label} style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          marginBottom: '2px',
-                        }}>
-                          <div style={{
-                            flex: 1, height: '4px',
-                            background: '#F1F5F9',
-                            borderRadius: '2px',
-                          }}>
+                    : [{label:'Cost',score:costScore},{label:'Security',score:securityScore_health},{label:'Reliability',score:reliabilityScore}]
+                      .map(({label, score}) => (
+                        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                          <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
                             <div style={{
                               width: `${score ?? 0}%`,
                               height: '100%',
-                              background:
-                                (score??0) >= 80
-                                  ? '#059669'
-                                  : (score??0) >= 60
-                                    ? '#D97706'
-                                    : '#DC2626',
+                              background: (score??0) >= 80 ? '#059669' : (score??0) >= 60 ? '#D97706' : '#DC2626',
                               borderRadius: '2px',
                             }} />
                           </div>
-                          <span style={{
-                            fontSize: '0.68rem',
-                            color: '#64748B',
-                            width: '76px',
-                            textAlign: 'right',
-                            flexShrink: 0,
-                          }}>
+                          <span style={{ fontSize: '12px', color: '#374151', width: '76px', textAlign: 'right', flexShrink: 0, fontWeight: 500 }}>
                             {label} {score ?? '—'}
                           </span>
                         </div>
@@ -1103,10 +1039,17 @@ export default function DashboardPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px', marginBottom: '32px' }}>
               {/* Total Cloud Spend */}
               <div style={{ ...card }}>
-                <p style={overline}>Total Cloud Spend</p>
-                <div style={{ fontSize: '36px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>
-                  {statsLoading && !demoMode ? '—' : `$${currentSpend.toLocaleString()}`}
-                </div>
+                <p style={{ ...overline, color: '#374151', fontWeight: 700 }}>Total Cloud Spend</p>
+                {(statsLoading && !demoMode) || currentSpend === 0 && !demoMode ? (
+                  <>
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '4px' }}>Syncing...</div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500, marginBottom: '8px' }}>Full data in 24–48h</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '36px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>
+                    {`$${currentSpend.toLocaleString()}`}
+                  </div>
+                )}
                 <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>High ROI available</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
                   <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
@@ -1119,11 +1062,17 @@ export default function DashboardPage() {
 
               {/* Security Posture KPI */}
               <div style={card}>
-                <p style={overline}>Security Posture</p>
-                <div style={{ fontSize: '36px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>
-                  {securityScore ?? '—'}
-                  <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
-                </div>
+                <p style={{ ...overline, color: '#374151', fontWeight: 700 }}>Security Posture</p>
+                {(securityScore === null || securityScore === 0) && !isDemoActive ? (
+                  <>
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>Scanning...</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '36px', fontWeight: 600, color: '#111827', lineHeight: 1, marginBottom: '8px' }}>
+                    {securityScore ?? (isDemoActive ? 87 : '—')}
+                    <span style={{ fontSize: '1rem', color: '#9ca3af', fontWeight: 400 }}>/100</span>
+                  </div>
+                )}
                 <span style={{ fontSize: '10px', fontWeight: 600, background: '#d1fae5', color: '#065f46', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Elite tier</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
                   <SecurityDeltaIcon size={12} style={{ color: securityDeltaColor }} />
@@ -1135,7 +1084,7 @@ export default function DashboardPage() {
 
               {/* Cost Efficiency */}
               <div style={card}>
-                <p style={overline}>Cost Efficiency</p>
+                <p style={{ ...overline, color: '#374151', fontWeight: 700 }}>Savings Actions</p>
                 <div style={{ fontSize: '28px', fontWeight: 600, color: '#059669', lineHeight: 1, marginBottom: '8px' }}>
                   {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
                 </div>
@@ -1150,7 +1099,7 @@ export default function DashboardPage() {
 
               {/* System Intelligence */}
               <div style={card}>
-                <p style={overline}>System Intelligence</p>
+                <p style={{ ...overline, color: '#374151', fontWeight: 700 }}>System Intelligence</p>
                 <div style={{ fontSize: '36px', fontWeight: 600, color: (displayIntelligence?.system_score ?? cloudHealthScore ?? 0) < 50 ? '#dc2626' : '#111827', lineHeight: 1, marginBottom: '8px' }}>
                   {displayIntelligence?.system_score
                     ?? cloudHealthScore
@@ -1164,112 +1113,53 @@ export default function DashboardPage() {
                 ) : (
                   <span style={{ fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#92400e', padding: '2px 7px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' }}>Needs optimization</span>
                 )}
-                <div style={{ margin: '0 0 10px' }}>
+                <div style={{ margin: '8px 0 10px' }}>
                   <span style={{
-                    fontSize: '0.8rem',
+                    fontSize: '13px',
                     fontWeight: 600,
                     color:
-                      (displayIntelligence
-                        ?.system_score ?? 0) >= 85
+                      (displayIntelligence?.system_score ?? 0) >= 85
                         ? '#059669'
-                        : (displayIntelligence
-                            ?.system_score ?? 0) >= 70
-                          ? '#D97706'
-                          : '#DC2626',
+                        : '#92400e',
                   }}>
                     {displayIntelligence?.status ?? 'Computing...'}
                   </span>
-                  {displayIntelligence
-                    ?.system_score &&
-                    displayIntelligence
-                      .system_score < 85 && (
-                    <p style={{
-                      fontSize: '0.68rem',
-                      color: '#94A3B8',
-                      margin: '2px 0 0',
-                      lineHeight: 1.4,
-                    }}>
-                      Top teams: 85+ · Improve to
-                      unlock full efficiency
+                  {displayIntelligence?.system_score && displayIntelligence.system_score < 85 && (
+                    <p style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500, margin: '2px 0 0', lineHeight: 1.4 }}>
+                      Top teams: 85+ · Improve to unlock full efficiency
                     </p>
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {displayIntelligence
-                    ? Object.values(
-                        displayIntelligence.components
-                      ).map((comp: any) => (
-                        <div key={comp.label} style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          marginBottom: '2px',
-                        }}>
-                          <div style={{
-                            flex: 1, height: '4px',
-                            background: '#F1F5F9',
-                            borderRadius: '2px',
-                          }}>
+                    ? Object.values(displayIntelligence.components).map((comp: any) => (
+                        <div key={comp.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                          <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
                             <div style={{
                               width: `${comp.score}%`,
                               height: '100%',
-                              background:
-                                comp.score >= 80
-                                  ? '#059669'
-                                  : comp.score >= 60
-                                    ? '#D97706'
-                                    : '#DC2626',
+                              background: comp.score >= 80 ? '#059669' : comp.score >= 60 ? '#D97706' : '#DC2626',
                               borderRadius: '2px',
                               transition: 'width 0.3s ease',
                             }} />
                           </div>
-                          <span style={{
-                            fontSize: '0.68rem',
-                            color: '#64748B',
-                            width: '76px',
-                            textAlign: 'right',
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                          }}>
-                            {comp.label.split(' ')[0]}
-                            {' '}{comp.score}
+                          <span style={{ fontSize: '12px', color: '#374151', width: '76px', textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 500 }}>
+                            {comp.label.split(' ')[0]}{' '}{comp.score}
                           </span>
                         </div>
                       ))
-                    : [{label:'Cost',score:costScore},
-                       {label:'Security',score:securityScore_health},
-                       {label:'Reliability',score:reliabilityScore}
-                      ].map(({label, score}) => (
-                        <div key={label} style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          marginBottom: '2px',
-                        }}>
-                          <div style={{
-                            flex: 1, height: '4px',
-                            background: '#F1F5F9',
-                            borderRadius: '2px',
-                          }}>
+                    : [{label:'Cost',score:costScore},{label:'Security',score:securityScore_health},{label:'Reliability',score:reliabilityScore}]
+                      .map(({label, score}) => (
+                        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                          <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
                             <div style={{
                               width: `${score ?? 0}%`,
                               height: '100%',
-                              background:
-                                (score??0) >= 80
-                                  ? '#059669'
-                                  : (score??0) >= 60
-                                    ? '#D97706'
-                                    : '#DC2626',
+                              background: (score??0) >= 80 ? '#059669' : (score??0) >= 60 ? '#D97706' : '#DC2626',
                               borderRadius: '2px',
                             }} />
                           </div>
-                          <span style={{
-                            fontSize: '0.68rem',
-                            color: '#64748B',
-                            width: '76px',
-                            textAlign: 'right',
-                            flexShrink: 0,
-                          }}>
+                          <span style={{ fontSize: '12px', color: '#374151', width: '76px', textAlign: 'right', flexShrink: 0, fontWeight: 500 }}>
                             {label} {score ?? '—'}
                           </span>
                         </div>
@@ -1310,112 +1200,53 @@ export default function DashboardPage() {
                     ?? '—'}
                   <span style={{ fontSize: '1.25rem', color: '#64748B', fontWeight: 400 }}>/100</span>
                 </div>
-                <div style={{ margin: '0 0 10px' }}>
+                <div style={{ margin: '8px 0 10px' }}>
                   <span style={{
-                    fontSize: '0.8rem',
+                    fontSize: '13px',
                     fontWeight: 600,
                     color:
-                      (displayIntelligence
-                        ?.system_score ?? 0) >= 85
+                      (displayIntelligence?.system_score ?? 0) >= 85
                         ? '#059669'
-                        : (displayIntelligence
-                            ?.system_score ?? 0) >= 70
-                          ? '#D97706'
-                          : '#DC2626',
+                        : '#92400e',
                   }}>
                     {displayIntelligence?.status ?? 'Computing...'}
                   </span>
-                  {displayIntelligence
-                    ?.system_score &&
-                    displayIntelligence
-                      .system_score < 85 && (
-                    <p style={{
-                      fontSize: '0.68rem',
-                      color: '#94A3B8',
-                      margin: '2px 0 0',
-                      lineHeight: 1.4,
-                    }}>
-                      Top teams: 85+ · Improve to
-                      unlock full efficiency
+                  {displayIntelligence?.system_score && displayIntelligence.system_score < 85 && (
+                    <p style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500, margin: '2px 0 0', lineHeight: 1.4 }}>
+                      Top teams: 85+ · Improve to unlock full efficiency
                     </p>
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {displayIntelligence
-                    ? Object.values(
-                        displayIntelligence.components
-                      ).map((comp: any) => (
-                        <div key={comp.label} style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          marginBottom: '2px',
-                        }}>
-                          <div style={{
-                            flex: 1, height: '4px',
-                            background: '#F1F5F9',
-                            borderRadius: '2px',
-                          }}>
+                    ? Object.values(displayIntelligence.components).map((comp: any) => (
+                        <div key={comp.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                          <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
                             <div style={{
                               width: `${comp.score}%`,
                               height: '100%',
-                              background:
-                                comp.score >= 80
-                                  ? '#059669'
-                                  : comp.score >= 60
-                                    ? '#D97706'
-                                    : '#DC2626',
+                              background: comp.score >= 80 ? '#059669' : comp.score >= 60 ? '#D97706' : '#DC2626',
                               borderRadius: '2px',
                               transition: 'width 0.3s ease',
                             }} />
                           </div>
-                          <span style={{
-                            fontSize: '0.68rem',
-                            color: '#64748B',
-                            width: '76px',
-                            textAlign: 'right',
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                          }}>
-                            {comp.label.split(' ')[0]}
-                            {' '}{comp.score}
+                          <span style={{ fontSize: '12px', color: '#374151', width: '76px', textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 500 }}>
+                            {comp.label.split(' ')[0]}{' '}{comp.score}
                           </span>
                         </div>
                       ))
-                    : [{label:'Cost',score:costScore},
-                       {label:'Security',score:securityScore_health},
-                       {label:'Reliability',score:reliabilityScore}
-                      ].map(({label, score}) => (
-                        <div key={label} style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          marginBottom: '2px',
-                        }}>
-                          <div style={{
-                            flex: 1, height: '4px',
-                            background: '#F1F5F9',
-                            borderRadius: '2px',
-                          }}>
+                    : [{label:'Cost',score:costScore},{label:'Security',score:securityScore_health},{label:'Reliability',score:reliabilityScore}]
+                      .map(({label, score}) => (
+                        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                          <div style={{ flex: 1, height: '4px', background: '#F1F5F9', borderRadius: '2px' }}>
                             <div style={{
                               width: `${score ?? 0}%`,
                               height: '100%',
-                              background:
-                                (score??0) >= 80
-                                  ? '#059669'
-                                  : (score??0) >= 60
-                                    ? '#D97706'
-                                    : '#DC2626',
+                              background: (score??0) >= 80 ? '#059669' : (score??0) >= 60 ? '#D97706' : '#DC2626',
                               borderRadius: '2px',
                             }} />
                           </div>
-                          <span style={{
-                            fontSize: '0.68rem',
-                            color: '#64748B',
-                            width: '76px',
-                            textAlign: 'right',
-                            flexShrink: 0,
-                          }}>
+                          <span style={{ fontSize: '12px', color: '#374151', width: '76px', textAlign: 'right', flexShrink: 0, fontWeight: 500 }}>
                             {label} {score ?? '—'}
                           </span>
                         </div>
@@ -1946,13 +1777,13 @@ export default function DashboardPage() {
               }}>
                 <div>
                   <p style={{
-                    fontSize: '0.7rem', fontWeight: 700,
-                    color: '#475569', textTransform: 'uppercase',
-                    letterSpacing: '0.1em', margin: '0 0 16px',
+                    fontSize: '10px', fontWeight: 700,
+                    color: '#374151', textTransform: 'uppercase',
+                    letterSpacing: '0.08em', margin: '0 0 8px',
                   }}>AI Advisor</p>
                   <p style={{
-                    fontSize: '1rem', fontWeight: 600,
-                    color: '#1E293B', margin: 0,
+                    fontSize: '16px', fontWeight: 700,
+                    color: '#111827', margin: 0,
                   }}>
                     Actions ready for approval
                   </p>
@@ -1967,7 +1798,7 @@ export default function DashboardPage() {
               </div>
 
               <p style={{
-                fontSize: '0.75rem', color: '#475569',
+                fontSize: '12px', color: '#374151',
                 margin: '0 0 16px', lineHeight: 1.5,
               }}>
                 These 3 changes reduce AWS waste
@@ -1991,13 +1822,13 @@ export default function DashboardPage() {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{
-                      fontSize: '0.82rem', fontWeight: 600,
-                      color: '#1E293B', marginBottom: '4px',
+                      fontSize: '14px', fontWeight: 600,
+                      color: '#111827', marginBottom: '4px',
                     }}>
                       {rec.label}
                     </div>
                     <div style={{
-                      fontSize: '0.78rem', color: '#64748B',
+                      fontSize: '12px', color: '#374151',
                       fontStyle: 'normal', fontWeight: 500,
                       marginBottom: '4px',
                     }}>
@@ -2051,14 +1882,13 @@ export default function DashboardPage() {
               }}>
                 <div>
                   <div style={{
-                    fontSize: '0.72rem', fontWeight: 600,
-                    color: '#475569', marginBottom: '2px',
+                    fontSize: '13px', fontWeight: 600,
+                    color: '#111827', marginBottom: '2px',
                   }}>
                     Estimated impact
                   </div>
                   <div style={{
-                    fontSize: '0.78rem', color: '#94A3B8',
-                    fontStyle: 'italic',
+                    fontSize: '12px', color: '#374151', fontWeight: 500,
                   }}>
                     Savings estimate available once billing
                     sync completes
@@ -2330,18 +2160,18 @@ export default function DashboardPage() {
 
       {/* ── SYSTEM STATUS BAR ── */}
       {isAwsConnected && (
-      <div style={{ background: '#F9FAFB', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+      <div style={{ background: '#FFFFFF', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: systemAlertCount > 0 ? '#f59e0b' : '#22c55e', flexShrink: 0 }} />
           <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>
             {systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : statusConf.label}
           </span>
           <div style={{ width: 1, height: 14, background: '#e5e7eb' }} />
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>{systemUptimeAvg !== '—' ? `${systemUptimeAvg} uptime this month` : '99.9% uptime this month'}</span>
+          <span style={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>{systemUptimeAvg !== '—' ? `${systemUptimeAvg} uptime this month` : '99.9% uptime this month'}</span>
           <div style={{ width: 1, height: 14, background: '#e5e7eb' }} />
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>No incidents in 30 days</span>
+          <span style={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>No incidents in 30 days</span>
           <div style={{ width: 1, height: 14, background: '#e5e7eb' }} />
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : '3 services monitored'}</span>
+          <span style={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : '3 services monitored'}</span>
         </div>
         <a href="/monitoring" style={{ color: '#16a34a', fontWeight: 600, fontSize: '12px', textDecoration: 'none' }}>
           View observability →
@@ -2359,8 +2189,8 @@ export default function DashboardPage() {
           <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px' }}>
               <div>
-                <p style={{ ...overline, margin: '0 0 6px' }}>Engineering Health</p>
-                <span style={{ fontSize: '20px', fontWeight: 600, color: '#111827' }}>Elite</span>
+                <p style={{ ...overline, margin: '0 0 6px', color: '#374151', fontWeight: 700 }}>Engineering Health</p>
+                <span style={{ fontSize: '22px', fontWeight: 700, color: '#111827' }}>Elite</span>
               </div>
               <a href="/app/dora-metrics" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7c3aed', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 Full report <ArrowRight size={12} />
@@ -2369,9 +2199,9 @@ export default function DashboardPage() {
 
             {doraRows.filter(r => ['Lead Time for Changes', 'Change Failure Rate', 'Mean Time to Recovery'].includes(r.label)).map(({ label, value }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
-                <span style={{ fontSize: '0.82rem', color: '#6b7280', lineHeight: 1.6 }}>{label}</span>
+                <span style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6, fontWeight: 500 }}>{label}</span>
                 <span style={{
-                  fontSize: '0.82rem', fontWeight: 500,
+                  fontSize: '13px', fontWeight: 600,
                   color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827',
                 }}>{value}</span>
               </div>
@@ -2380,7 +2210,7 @@ export default function DashboardPage() {
 
           {/* CENTER: What You Can Do Now */}
           <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
-            <p style={{ fontSize: '10px', fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>What You Can Do Now</p>
+            <p style={{ fontSize: '10px', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>What You Can Do Now</p>
 
             {/* Item 1 — highlighted */}
             <a href="/cost-optimization" style={{
@@ -2459,8 +2289,8 @@ export default function DashboardPage() {
                   <ArrowRight size={13} style={{ color: iconColor }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#111827', marginBottom: '1px' }}>{title}</div>
-                  <div style={{ fontSize: '0.78rem', color: '#6b7280' }}>{sub}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#111827', marginBottom: '1px' }}>{title}</div>
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>{sub}</div>
                 </div>
                 <span style={{ marginLeft: 'auto', fontSize: '0.875rem', color: '#7C3AED', fontWeight: 600 }}>→</span>
               </a>
@@ -2470,7 +2300,7 @@ export default function DashboardPage() {
           {/* RIGHT: Recent Activity — existing card */}
           <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <p style={{ ...overline, margin: 0 }}>Recent Activity</p>
+              <p style={{ ...overline, margin: 0, fontWeight: 700 }}>Recent Activity</p>
               <a href="/deployments" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 View all <ArrowRight size={12} />
               </a>
@@ -2518,10 +2348,10 @@ export default function DashboardPage() {
                   <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#F9FAFB', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
                     <Activity size={18} style={{ color: '#9ca3af' }} />
                   </div>
-                  <p style={{ margin: 0, color: '#111827', fontWeight: 500, fontSize: '0.875rem' }}>
+                  <p style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: '14px' }}>
                     No deployment data yet
                   </p>
-                  <p style={{ margin: 0, fontSize: '11px', color: '#6b7280', lineHeight: 1.6 }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#6b7280', lineHeight: 1.5 }}>
                     Connect your CI/CD pipeline to unlock deployment velocity insights, change failure rate tracking, and incident impact analysis
                   </p>
                   <a href="/deployments" style={{
@@ -2691,7 +2521,7 @@ export default function DashboardPage() {
         {/* Recent Activity */}
         <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <p style={{ ...overline, margin: 0 }}>Recent Activity</p>
+            <p style={{ ...overline, margin: 0, fontWeight: 700 }}>Recent Activity</p>
             <a href="/deployments" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
               View all <ArrowRight size={12} />
             </a>
@@ -2742,7 +2572,7 @@ export default function DashboardPage() {
                 <p style={{ margin: 0, color: '#111827', fontWeight: 500, fontSize: '0.875rem' }}>
                   No deployment data yet
                 </p>
-                <p style={{ margin: 0, fontSize: '11px', color: '#6b7280', lineHeight: 1.6 }}>
+                <p style={{ margin: 0, fontSize: '12px', color: '#6b7280', lineHeight: 1.5 }}>
                   Connect your CI/CD pipeline to unlock deployment velocity insights, change failure rate tracking, and incident impact analysis
                 </p>
                 <a href="/deployments" style={{
