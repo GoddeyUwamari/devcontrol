@@ -233,7 +233,7 @@ export default function ServicesPage() {
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
 
       {/* PAGE HEADER */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '34px' }}>
         <div>
           <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
             Services
@@ -267,9 +267,9 @@ export default function ServicesPage() {
           </button>
           <a href="/anomalies" style={{
             display: 'flex', alignItems: 'center', gap: '7px',
-            background: warningCount > 0 ? '#DC2626' : '#7C3AED',
-            color: '#fff', padding: '9px 18px', borderRadius: '7px',
-            fontSize: '12px', fontWeight: 700, textDecoration: 'none',
+            background: '#7c3aed',
+            color: 'white', padding: '10px 20px', borderRadius: '10px',
+            fontSize: '13px', fontWeight: 600, textDecoration: 'none', border: 'none',
           }}>
             <AlertTriangle size={13} />
             {warningCount > 0 ? 'Resolve At-Risk Services' : 'Add Service'}
@@ -280,7 +280,7 @@ export default function ServicesPage() {
       {/* SYSTEM INTELLIGENCE STRIP */}
       <div style={{
         background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0',
-        padding: '20px 24px', marginBottom: '16px',
+        padding: '20px 24px', marginBottom: '18px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         flexWrap: 'wrap', gap: '16px',
       }}>
@@ -304,11 +304,11 @@ export default function ServicesPage() {
               </span>
             </div>
             <div>
-              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Service Health Score</p>
-              <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>
+              <p style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#374151', margin: '0 0 4px' }}>Service Health Score</p>
+              <p style={{ fontSize: '16px', fontWeight: 700, color: '#111827', margin: '0 0 3px' }}>
                 {warningCount > 0 ? 'System Stable — Performance Risk Emerging in Production' : 'All Systems Healthy'}
               </p>
-              <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>
+              <p style={{ fontSize: '12px', fontWeight: 500, color: '#374151', margin: 0 }}>
                 {totalServices}/{totalServices} services measured · High confidence
               </p>
             </div>
@@ -318,23 +318,23 @@ export default function ServicesPage() {
 
           {/* Drivers */}
           <div>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 6px' }}>Driven by</p>
+            <p style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#374151', margin: '0 0 6px' }}>Driven by</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
               {isDemoActive ? (
                 <>
-                  <p style={{ fontSize: '0.75rem', color: '#DC2626', fontWeight: 600, margin: 0 }}>● Payment processor invocation spike (+178%)</p>
-                  <p style={{ fontSize: '0.75rem', color: '#D97706', fontWeight: 500, margin: 0 }}>● Analytics worker cost inefficiency detected</p>
-                  <p style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, margin: 0 }}>● {healthyCount} services operating within thresholds</p>
+                  <p style={{ fontSize: '13px', color: '#DC2626', fontWeight: 600, margin: 0 }}>● Payment processor invocation spike (+178%)</p>
+                  <p style={{ fontSize: '13px', color: '#374151', fontWeight: 500, margin: 0 }}>● Analytics worker cost inefficiency detected</p>
+                  <p style={{ fontSize: '13px', color: '#374151', fontWeight: 500, margin: 0 }}>● {healthyCount} services operating within thresholds</p>
                 </>
               ) : warningCount > 0 ? (
                 <>
-                  <p style={{ fontSize: '0.75rem', color: '#DC2626', fontWeight: 600, margin: 0 }}>● {warningCount} service{warningCount !== 1 ? 's' : ''} requiring attention</p>
-                  <p style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, margin: 0 }}>● {healthyCount} services operating within thresholds</p>
+                  <p style={{ fontSize: '13px', color: '#DC2626', fontWeight: 600, margin: 0 }}>● {warningCount} service{warningCount !== 1 ? 's' : ''} requiring attention</p>
+                  <p style={{ fontSize: '13px', color: '#374151', fontWeight: 500, margin: 0 }}>● {healthyCount} services operating within thresholds</p>
                 </>
               ) : (
                 <>
-                  <p style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 600, margin: 0 }}>● All {totalServices} services operating within thresholds</p>
-                  <p style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, margin: 0 }}>● Average uptime {avgUptimeDisplay}</p>
+                  <p style={{ fontSize: '13px', color: '#059669', fontWeight: 600, margin: 0 }}>● All {totalServices} services operating within thresholds</p>
+                  <p style={{ fontSize: '13px', color: '#374151', fontWeight: 500, margin: 0 }}>● Average uptime {avgUptimeDisplay}</p>
                 </>
               )}
             </div>
@@ -344,11 +344,11 @@ export default function ServicesPage() {
 
           {/* Business impact */}
           <div>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Business Impact</p>
-            <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>
+            <p style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#374151', margin: '0 0 4px' }}>Business Impact</p>
+            <p style={{ fontSize: '14px', fontWeight: 700, color: '#111827', margin: '0 0 3px' }}>
               {isDemoActive ? 'Transaction flow at risk · $864 cost increase' : warningCount > 0 ? `${warningCount} service${warningCount !== 1 ? 's' : ''} at risk` : 'No active business impact detected'}
             </p>
-            <p style={{ fontSize: '0.68rem', fontWeight: 600, color: warningCount > 0 ? '#DC2626' : '#059669', margin: 0 }}>
+            <p style={{ fontSize: '12px', fontWeight: 600, color: warningCount > 0 ? '#DC2626' : '#059669', margin: 0 }}>
               {isDemoActive ? 'Payment processing degradation — user-facing' : warningCount > 0 ? 'Review highlighted services below' : 'All systems nominal'}
             </p>
           </div>
@@ -357,11 +357,11 @@ export default function ServicesPage() {
 
           {/* At risk count */}
           <div>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>At Risk</p>
-            <p style={{ fontSize: '0.95rem', fontWeight: 700, color: warningCount > 0 ? '#D97706' : '#059669', margin: '0 0 3px' }}>
+            <p style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#DC2626', margin: '0 0 4px' }}>At Risk</p>
+            <p style={{ fontSize: '22px', fontWeight: 700, color: '#DC2626', margin: '0 0 3px' }}>
               {warningCount} of {totalServices}
             </p>
-            <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>
+            <p style={{ fontSize: '12px', fontWeight: 500, color: '#374151', margin: 0 }}>
               {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Require immediate review' : 'All services healthy'}
             </p>
           </div>
@@ -377,7 +377,7 @@ export default function ServicesPage() {
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: '10px',
-          padding: '14px 20px', marginBottom: '24px', gap: '16px',
+          padding: '14px 20px', marginBottom: '26px', gap: '16px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '1.1rem' }}>⚠️</span>
@@ -400,125 +400,193 @@ export default function ServicesPage() {
 
       {/* Error banner — only shown when an AWS account IS connected but the call failed */}
       {error && !noAwsAccount && (
-        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', padding: '12px 20px', marginBottom: '20px' }}>
+        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', padding: '12px 20px', marginBottom: '22px' }}>
           <p style={{ fontSize: '0.875rem', color: '#DC2626', margin: 0 }}>
             Failed to load services — check your AWS connection
           </p>
         </div>
       )}
 
+      {/* IMMEDIATE ACTION BANNER */}
+      {warningCount > 0 && (
+        <div style={{
+          background: '#FEF2F2', border: '1.5px solid #DC2626', borderRadius: '14px',
+          padding: '16px 22px', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', gap: '16px', marginBottom: '18px',
+        }}>
+          <div>
+            <p style={{ color: '#DC2626', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 4px' }}>Immediate Action Required</p>
+            <p style={{ color: '#7f1d1d', fontSize: '16px', fontWeight: 600, margin: '0 0 8px' }}>
+              {warningCount} production service{warningCount !== 1 ? 's' : ''} at risk — potential downtime &amp; revenue impact
+            </p>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {['Revenue disruption risk', 'SLA breach risk', 'Fix in < 5 min'].map(pill => (
+                <span key={pill} style={{ background: 'white', border: '0.5px solid #fecaca', borderRadius: '20px', padding: '2px 9px', fontSize: '11px', color: '#991b1b' }}>{pill}</span>
+              ))}
+            </div>
+          </div>
+          <a href="/anomalies" style={{
+            background: '#DC2626', color: 'white', border: 'none', borderRadius: '10px',
+            padding: '11px 20px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+            textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>Resolve All Critical Issues</a>
+        </div>
+      )}
+
+      {/* EXECUTIVE SUMMARY STRIP */}
+      <div style={{
+        background: 'white', border: '0.5px solid #f3f4f6', borderRadius: '12px',
+        padding: '10px 20px', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', marginBottom: '18px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <span style={{ fontSize: '13px', fontWeight: 500, color: '#374151' }}>
+            Total cost: {totalMonthlyCost > 0
+              ? <span style={{ color: '#111827', fontWeight: 700 }}>{costDisplay}</span>
+              : <span style={{ color: '#6b7280', fontWeight: 500 }}>Syncing...</span>
+            }
+          </span>
+          <span style={{ width: '1px', height: '14px', background: '#e5e7eb', margin: '0 16px', display: 'inline-block' }} />
+          <span style={{ fontSize: '13px', fontWeight: 500, color: '#374151' }}>
+            Services at risk: <span style={{ color: '#DC2626', fontWeight: 700 }}>{warningCount}</span>
+          </span>
+          <span style={{ width: '1px', height: '14px', background: '#e5e7eb', margin: '0 16px', display: 'inline-block' }} />
+          <span style={{ fontSize: '13px', fontWeight: 500, color: '#374151' }}>
+            System health: <span style={{ color: '#111827', fontWeight: 500 }}>{warningCount > 0 ? 'Degraded' : 'Stable'}</span>
+          </span>
+          <span style={{ width: '1px', height: '14px', background: '#e5e7eb', margin: '0 16px', display: 'inline-block' }} />
+          <span style={{ fontSize: '13px', fontWeight: 500, color: '#374151' }}>{totalServices} services monitored</span>
+        </div>
+        {warningCount > 0 && (
+          <span style={{ color: '#DC2626', fontSize: '12px', fontWeight: 600 }}>
+            Recommended: Resolve {warningCount} critical service{warningCount !== 1 ? 's' : ''} now
+          </span>
+        )}
+      </div>
+
       {/* 4 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
 
         {/* Total Services */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0', opacity: isLoading && !isDemoActive ? 0.6 : 1 }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 14px' }}>Total Services</p>
-          <div style={{ fontSize: '2.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '5px' }}>
+          <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#374151', margin: '0 0 14px' }}>Total Services</p>
+          <div style={{ fontSize: '38px', fontWeight: 700, color: '#111827', lineHeight: 1, marginBottom: '5px' }}>
             {isLoading && !isDemoActive ? '…' : totalServices}
           </div>
-          <p style={{ fontSize: '0.72rem', color: '#475569', margin: 0 }}>Registered across all environments</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', fontWeight: 500, margin: 0 }}>Registered across all environments</p>
         </div>
 
         {/* Healthy */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0', opacity: isLoading && !isDemoActive ? 0.6 : 1 }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 14px' }}>Healthy</p>
-          <div style={{ fontSize: '2.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '5px' }}>
+          <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#374151', margin: '0 0 14px' }}>Healthy</p>
+          <div style={{ fontSize: '38px', fontWeight: 700, color: '#059669', lineHeight: 1, marginBottom: '5px' }}>
             {isLoading && !isDemoActive ? '…' : healthyCount}
           </div>
-          <p style={{ fontSize: '0.72rem', color: '#475569', margin: 0 }}>Operating within thresholds</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', fontWeight: 500, margin: 0 }}>Operating within thresholds</p>
         </div>
 
         {/* At Risk */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0', opacity: isLoading && !isDemoActive ? 0.6 : 1 }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#D97706', margin: '0 0 14px' }}>At Risk</p>
-          <div style={{ fontSize: '2.1rem', fontWeight: 700, color: warningCount > 0 ? '#D97706' : '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '5px' }}>
+          <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#374151', margin: '0 0 14px' }}>At Risk</p>
+          <div style={{ fontSize: '38px', fontWeight: 700, color: '#DC2626', lineHeight: 1, marginBottom: '5px' }}>
             {isLoading && !isDemoActive ? '…' : warningCount}
           </div>
-          <p style={{ fontSize: '0.72rem', color: '#475569', margin: '0 0 3px' }}>
+          <p style={{ color: '#6b7280', fontSize: '12px', fontWeight: 500, margin: '0 0 3px' }}>
             {isDemoActive ? '1 reliability · 1 cost inefficiency · both in production' : warningCount > 0 ? `${warningCount} at risk — affecting production services` : 'No services at risk'}
           </p>
           {warningCount > 0 && (
-            <p style={{ fontSize: '10px', fontWeight: 700, color: '#D97706', margin: 0 }}>Resolve now →</p>
+            <p style={{ fontSize: '12px', fontWeight: 600, color: '#DC2626', margin: 0 }}>Resolve now →</p>
           )}
         </div>
 
         {/* Total Monthly Cost */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0', opacity: isLoading && !isDemoActive ? 0.6 : 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: 0 }}>Total Monthly Cost</p>
+            <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#374151', margin: 0 }}>Total Monthly Cost</p>
             <span style={{ fontSize: '9px', fontWeight: 700, color: '#D97706', background: '#FEF3C7', padding: '1px 6px', borderRadius: '3px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Partial</span>
           </div>
-          <div style={{ fontSize: '2.1rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '5px' }}>
+          <div style={{ fontSize: '32px', fontWeight: 700, color: '#111827', lineHeight: 1, marginBottom: '5px' }}>
             {isLoading && !isDemoActive ? '…' : '$11,444'}
           </div>
-          <p style={{ fontSize: '0.72rem', color: '#475569', margin: 0 }}>Aggregate · per-service breakdown in progress</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', fontWeight: 500, margin: 0 }}>Aggregate · per-service breakdown in progress</p>
         </div>
 
       </div>
 
       {/* DECISION INTELLIGENCE */}
       <div style={{
-        background: '#fff', borderRadius: '12px', padding: '14px 20px',
-        border: '1px solid #E2E8F0', marginBottom: '20px',
+        background: '#faf5ff', borderRadius: '12px', padding: '16px 20px',
+        border: '1px solid #e9d5ff', marginBottom: '22px',
         display: 'flex', alignItems: 'flex-start', gap: '14px',
       }}>
         <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Sparkles size={12} style={{ color: '#fff' }} />
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Decision Intelligence</p>
-          <p style={{ fontSize: '0.84rem', color: '#1E293B', margin: 0, lineHeight: 1.7 }}>
+          <p style={{ color: '#7c3aed', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 4px' }}>AI Insight</p>
+          <p style={{ fontSize: '14px', color: '#111827', fontWeight: 600, lineHeight: 1.5, margin: '0 0 4px' }}>
             {isDemoActive
-              ? <><strong style={{ color: '#DC2626' }}>Payment Processor</strong> showing Lambda invocation spike (+178%) — likely retry loop driving <strong style={{ color: '#DC2626' }}>$864 cost increase</strong> this month. Investigate retry logic before this impacts transaction reliability. Analytics Worker has a cost inefficiency — non-critical but recoverable.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#64748B' }}>17 of 19 services operating within thresholds · no new issues detected in last 24h.</span></>
+              ? <><strong style={{ color: '#DC2626' }}>Payment Processor</strong> showing Lambda invocation spike (+178%) — likely retry loop driving <strong style={{ color: '#DC2626' }}>$864 cost increase</strong> this month. Investigate retry logic before this impacts transaction reliability. Analytics Worker has a cost inefficiency — non-critical but recoverable.</>
               : totalServices === 0
                 ? 'Connect AWS to unlock real-time cost insights, security risks, and performance signals. Most teams uncover 20–40% wasted spend in their first scan.'
                 : warningCount > 0
-                  ? <>{warningCount} service{warningCount > 1 ? 's' : ''} showing early degradation signals. No current outage risk, but performance instability detected in production.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#64748B' }}>Review highlighted services below — {healthyCount} of {totalServices} services operating normally.</span></>
-                  : <>{totalServices} services running with {avgUptimeDisplay} average uptime. No active issues detected.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#64748B' }}>System is healthy — no action required.</span></>
+                  ? <>{warningCount} service{warningCount > 1 ? 's' : ''} showing early degradation signals. No current outage risk, but performance instability detected in production.</>
+                  : <>{totalServices} services running with {avgUptimeDisplay} average uptime. No active issues detected.</>
+            }
+          </p>
+          <p style={{ fontSize: '13px', color: '#374151', fontWeight: 500, margin: 0 }}>
+            {isDemoActive
+              ? '17 of 19 services operating within thresholds · no new issues detected in last 24h.'
+              : totalServices === 0
+                ? ''
+                : warningCount > 0
+                  ? `Review highlighted services below — ${healthyCount} of ${totalServices} services operating normally.`
+                  : 'System is healthy — no action required.'
             }
           </p>
         </div>
         {warningCount > 0 && (
-          <a href="/anomalies" style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-            Resolve Issue <ArrowRight size={11} />
+          <a href="/anomalies" style={{ fontSize: '12px', fontWeight: 600, color: '#7c3aed', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+            Recommended: Resolve before impact occurs →
           </a>
         )}
       </div>
 
       {/* PRIORITY ACTIONS */}
       {(isDemoActive || warningCount > 0) && (
-        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px 24px', marginBottom: '18px' }}>
+        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px 24px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
             <div>
-              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 3px' }}>Priority Actions</p>
+              <p style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#374151', margin: '0 0 3px' }}>Priority Actions</p>
               <p style={{ fontSize: '0.8rem', color: '#475569', margin: 0 }}>
                 Ranked by impact · {isDemoActive ? '2 services at risk in production' : `${warningCount} service${warningCount !== 1 ? 's' : ''} at risk`}
               </p>
             </div>
-            <span style={{ display: 'inline-flex', padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#DC2626', color: '#fff' }}>Act Now</span>
+            <span style={{ display: 'inline-flex', background: '#f5f3ff', color: '#7c3aed', border: '1px solid #e9d5ff', borderRadius: '20px', padding: '3px 12px', fontSize: '11px', fontWeight: 600 }}>Action required</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
             {isDemoActive ? (
               <>
                 {/* Demo Priority 1 */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 16px', background: '#FFF8F8', borderRadius: '8px', border: '1px solid #FECACA' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: '#fff9f9', borderRadius: '12px', border: '1.5px solid #fecaca' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <div style={{ textAlign: 'center', minWidth: '40px' }}>
                       <p style={{ fontSize: '0.6rem', fontWeight: 700, color: '#DC2626', textTransform: 'uppercase', margin: '0 0 2px' }}>Priority</p>
-                      <p style={{ fontSize: '1rem', fontWeight: 700, color: '#DC2626', margin: 0 }}>1</p>
+                      <p style={{ fontSize: '22px', fontWeight: 700, color: '#DC2626', margin: 0 }}>1</p>
                     </div>
-                    <div style={{ width: '1px', height: '32px', background: '#FECACA', flexShrink: 0 }} />
+                    <div style={{ width: '1px', height: '40px', background: '#fecaca', flexShrink: 0 }} />
                     <div>
-                      <p style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>
-                        Payment Processor (Lambda) — <span style={{ color: '#DC2626' }}>invocation spike +178%</span>
+                      <p style={{ fontSize: '14px', fontWeight: 600, color: '#111827', margin: '0 0 3px' }}>
+                        Payment Processor (Lambda) — <span style={{ color: '#DC2626', fontWeight: 600 }}>invocation spike +178%</span>
                       </p>
-                      <p style={{ fontSize: '0.7rem', color: '#64748B', margin: 0 }}>Staging · us-west-2 · retry loop suspected · $864 cost increase · user-facing transaction risk</p>
+                      <p style={{ fontSize: '12px', color: '#374151', fontWeight: 500, margin: 0 }}>Staging · us-west-2 · retry loop suspected · $864 cost increase · user-facing transaction risk</p>
+                      <p style={{ color: '#991b1b', fontSize: '11px', fontWeight: 500, margin: '4px 0 0' }}>Potential impact: Revenue disruption · SLA breach risk</p>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}>
-                    <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#DC2626', color: '#fff' }}>High</span>
+                    <span style={{ display: 'inline-flex', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', background: '#DC2626', color: 'white' }}>High</span>
                     <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#FEE2E2', color: '#991B1B' }}>Reliability</span>
-                    <a href="/anomalies" style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 13px', fontSize: '11px', fontWeight: 700, textDecoration: 'none' }}>Resolve Issue →</a>
+                    <a href="/anomalies" style={{ background: '#7c3aed', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}>Resolve Issue →</a>
                   </div>
                 </div>
                 {/* Demo Priority 2 */}
@@ -548,26 +616,29 @@ export default function ServicesPage() {
               allServices
                 .filter((s: any) => s.status !== 'healthy')
                 .map((svc: any, i: number) => (
-                  <div key={svc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 16px', background: '#FFF8F8', borderRadius: '8px', border: '1px solid #FECACA' }}>
+                  <div key={svc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: '#fff9f9', borderRadius: '12px', border: '1.5px solid #fecaca' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                       <div style={{ textAlign: 'center', minWidth: '40px' }}>
                         <p style={{ fontSize: '0.6rem', fontWeight: 700, color: '#DC2626', textTransform: 'uppercase', margin: '0 0 2px' }}>Priority</p>
-                        <p style={{ fontSize: '1rem', fontWeight: 700, color: '#DC2626', margin: 0 }}>{i + 1}</p>
+                        <p style={{ fontSize: '22px', fontWeight: 700, color: '#DC2626', margin: 0 }}>{i + 1}</p>
                       </div>
-                      <div style={{ width: '1px', height: '32px', background: '#FECACA', flexShrink: 0 }} />
+                      <div style={{ width: '1px', height: '40px', background: '#fecaca', flexShrink: 0 }} />
                       <div>
-                        <p style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>
-                          {svc.name} ({(svc.type as string)?.toUpperCase()}) — <span style={{ color: '#DC2626' }}>at risk</span>
+                        <p style={{ fontSize: '14px', fontWeight: 600, color: '#111827', margin: '0 0 3px' }}>
+                          {svc.name} ({(svc.type as string)?.toUpperCase()}) — <span style={{ color: '#DC2626', fontWeight: 600 }}>at risk</span>
                         </p>
-                        <p style={{ fontSize: '0.7rem', color: '#64748B', margin: 0 }}>
+                        <p style={{ fontSize: '12px', color: '#374151', fontWeight: 500, margin: 0 }}>
                           {svc.environment} · {svc.region || 'us-east-1'} · uptime {svc.uptime}%
                         </p>
+                        <p style={{ color: '#991b1b', fontSize: '11px', fontWeight: 500, margin: '4px 0 0' }}>Potential impact: Revenue disruption · SLA breach risk</p>
                       </div>
                     </div>
-                    <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#DC2626', color: '#fff' }}>High</span>
-                    <a href={`/anomalies?service=${svc.name}`} style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 13px', fontSize: '11px', fontWeight: 700, textDecoration: 'none' }}>
-                      Resolve Issue →
-                    </a>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}>
+                      <span style={{ display: 'inline-flex', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', background: '#DC2626', color: 'white' }}>High</span>
+                      <a href={`/anomalies?service=${svc.name}`} style={{ background: '#7c3aed', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}>
+                        Resolve Issue →
+                      </a>
+                    </div>
                   </div>
                 ))
             )}
@@ -576,7 +647,7 @@ export default function ServicesPage() {
       )}
 
       {/* QUICK NAV */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '30px' }}>
         {[
           { icon: Rocket,    label: 'Deployments',  desc: 'Deployment history and tracking', href: '/deployments',  color: '#7C3AED', bg: '#F5F3FF' },
           { icon: GitBranch, label: 'Dependencies', desc: 'Service dependency map',          href: '/dependencies', color: '#059669', bg: '#F0FDF4' },
@@ -662,7 +733,7 @@ export default function ServicesPage() {
         {/* Column headers */}
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 110px 130px 110px 100px 110px 80px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
           {['Service', 'Type', 'Environment', 'Status', 'Uptime', 'Monthly Cost', ''].map(col => (
-            <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
+            <span key={col} style={{ fontSize: '11px', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
           ))}
         </div>
 
@@ -739,7 +810,7 @@ export default function ServicesPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 110px 130px 110px 100px 110px 80px', alignItems: 'center' }}>
                   {/* Service name */}
                   <div>
-                    <p style={{ fontSize: '0.84rem', fontWeight: isAtRisk ? 700 : 600, color: '#0F172A', margin: '0 0 2px' }}>
+                    <p style={{ fontSize: '13px', fontWeight: 600, color: '#111827', margin: '0 0 2px' }}>
                       {svc.name.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} ({(svc.type as string)?.toUpperCase()})
                     </p>
                     {isAtRisk && (
@@ -759,8 +830,8 @@ export default function ServicesPage() {
 
                   {/* Resource type */}
                   <span style={{
-                    fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', width: 'fit-content',
-                    background: tc.bg, color: tc.color,
+                    fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '6px', width: 'fit-content',
+                    background: '#f3f4f6', color: '#374151',
                   }}>
                     {TYPE_DISPLAY[svc.type] ?? svc.type?.toUpperCase() ?? '—'}
                   </span>
@@ -773,13 +844,13 @@ export default function ServicesPage() {
                   {/* Status */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.8rem', fontWeight: isAtRisk ? 600 : 500, color: isAtRisk ? statusColor : '#475569' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isAtRisk ? statusColor : '#059669' }}>
                       {isAtRisk ? (svc.status === 'critical' ? 'Critical' : 'At Risk') : 'Healthy'}
                     </span>
                   </div>
 
                   {/* Uptime */}
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: (svc.uptime ?? 0) >= 99 ? '#059669' : '#D97706' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
                     {svc.uptime ? `${svc.uptime}%` : '—'}
                   </span>
 
@@ -793,8 +864,8 @@ export default function ServicesPage() {
                     <a
                       href={isAtRisk ? `/anomalies?service=${svc.name}` : `/services/${svc.id}`}
                       style={{
-                        fontSize: '0.75rem', fontWeight: 700,
-                        color: isAtRisk ? '#DC2626' : '#7C3AED',
+                        fontSize: '0.75rem', fontWeight: 600,
+                        color: '#7c3aed',
                         textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px'
                       }}
                     >
