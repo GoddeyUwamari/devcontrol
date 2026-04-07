@@ -131,18 +131,21 @@ export class OptimizationRepository {
       summary.totalMonthlySavings += parseFloat(row.total_monthly || 0);
       summary.totalAnnualSavings += parseFloat(row.total_annual || 0);
 
-      if (!summary.byType[row.type]) {
-        summary.byType[row.type] = { count: 0, savings: 0 };
+      const type = row.type as OptimizationType;
+      if (!summary.byType[type]) {
+        summary.byType[type] = { count: 0, savings: 0 };
       }
-      summary.byType[row.type].count += parseInt(row.total);
-      summary.byType[row.type].savings += parseFloat(row.total_monthly || 0);
+      summary.byType[type].count += parseInt(row.total);
+      summary.byType[type].savings += parseFloat(row.total_monthly || 0);
 
       if (row.risk) {
-        summary.byRisk[row.risk] = (summary.byRisk[row.risk] || 0) + parseInt(row.total);
+        const risk = row.risk as keyof typeof summary.byRisk;
+        summary.byRisk[risk] = (summary.byRisk[risk] || 0) + parseInt(row.total);
       }
 
       if (row.status) {
-        summary.byStatus[row.status] = (summary.byStatus[row.status] || 0) + parseInt(row.total);
+        const status = row.status as keyof typeof summary.byStatus;
+        summary.byStatus[status] = (summary.byStatus[status] || 0) + parseInt(row.total);
       }
     }
 

@@ -17,7 +17,7 @@ const createScheduleSchema = z.object({
   email_recipients: z.array(z.string().email()).optional().default([]),
   slack_channels: z.array(z.string()).optional().default([]),
   format: z.enum(['pdf', 'csv', 'both']).optional().default('pdf'),
-  filters: z.record(z.any()).optional().default({}),
+  filters: z.record(z.string(), z.any()).optional().default({}),
   columns: z.array(z.string()).optional().default([]),
 });
 
@@ -76,7 +76,7 @@ export class ScheduledReportsController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }
@@ -95,7 +95,7 @@ export class ScheduledReportsController {
   async create(req: Request, res: Response): Promise<void> {
     try {
       const organizationId = req.organizationId;
-      const userId = req.user?.id;
+      const userId = req.user?.userId;
 
       if (!organizationId) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -166,7 +166,7 @@ export class ScheduledReportsController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }
@@ -262,7 +262,7 @@ export class ScheduledReportsController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }
@@ -350,7 +350,7 @@ export class ScheduledReportsController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }

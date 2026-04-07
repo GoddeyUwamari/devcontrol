@@ -181,7 +181,7 @@ export class WeeklyAISummaryJob {
       alerts: {
         total: alertsData.total,
         critical: alertsData.critical,
-        topAlert: alertsData.topAlert
+        topAlert: alertsData.topAlert ?? undefined
       },
       dora: doraMetrics
     };

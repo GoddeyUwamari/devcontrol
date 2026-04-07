@@ -93,7 +93,7 @@ export class ScheduledReportsService {
         email_recipients: report.delivery_email ? report.email_recipients : [],
         slack_sent: deliveryResults.slackSuccess,
         slack_channels: report.delivery_slack ? report.slack_channels : [],
-        error_message: deliveryResults.error || null,
+        error_message: deliveryResults.error || undefined,
       });
 
       // Update schedule status

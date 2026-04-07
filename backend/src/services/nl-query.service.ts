@@ -20,6 +20,9 @@ export interface NLQueryIntent {
     template?: string;
     costMin?: string;
     costMax?: string;
+    encrypted?: boolean;
+    hasBackup?: boolean;
+    publicAccess?: boolean;
   };
   explanation: string;
   confidence: 'high' | 'medium' | 'low';

@@ -46,16 +46,16 @@ export class RiskTrackingService {
 
     const factors = {
       totalResources: stats.total_resources || 0,
-      unencryptedCount: stats.unencrypted_count || 0,
-      publicCount: stats.public_count || 0,
-      missingBackupCount: stats.missing_backup_count || 0,
+      unencryptedResources: stats.unencrypted_count || 0,
+      publicResources: stats.public_count || 0,
+      missingBackups: stats.missing_backup_count || 0,
       complianceIssues: stats.compliance_stats?.by_severity || {
         critical: 0,
         high: 0,
         medium: 0,
         low: 0,
       },
-      orphanedCount: stats.orphaned_count || 0,
+      orphanedResources: stats.orphaned_count || 0,
     };
 
     return calculateRiskScore(factors);
@@ -69,16 +69,17 @@ export class RiskTrackingService {
     const stats = await this.resourcesRepository.getStats(organizationId);
     const riskScore = await this.calculateCurrentRiskScore(organizationId);
 
+    const findFactor = (name: string) => riskScore.factors.find(f => f.name === name)?.score ?? 0;
     await this.repository.createSnapshot({
       organizationId,
       snapshotDate: new Date(),
-      overallScore: riskScore.score,
+      overallScore: riskScore.total,
       grade: riskScore.grade,
-      encryptionScore: riskScore.factors.encryption,
-      publicAccessScore: riskScore.factors.publicAccess,
-      backupScore: riskScore.factors.backup,
-      complianceScore: riskScore.factors.compliance,
-      resourceManagementScore: riskScore.factors.resourceManagement,
+      encryptionScore: findFactor('Encryption'),
+      publicAccessScore: findFactor('Public Access'),
+      backupScore: findFactor('Backup'),
+      complianceScore: findFactor('Compliance'),
+      resourceManagementScore: findFactor('Resource Management'),
       totalResources: stats.total_resources || 0,
       unencryptedCount: stats.unencrypted_count || 0,
       publicCount: stats.public_count || 0,

@@ -370,7 +370,7 @@ export class ScheduledReportsRepository {
     `;
 
     const result = await this.pool.query(query, [id, organizationId]);
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   /**

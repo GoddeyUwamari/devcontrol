@@ -189,6 +189,7 @@ export interface OrphanedResource {
 export interface ResourceFilters {
   resource_type?: ResourceType;
   region?: string;
+  environment?: string;
   status?: ResourceStatus;
   is_encrypted?: boolean;
   is_public?: boolean;

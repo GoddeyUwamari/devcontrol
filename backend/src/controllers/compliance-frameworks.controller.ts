@@ -25,7 +25,7 @@ const createRuleSchema = z.object({
   severity: z.enum(['critical', 'high', 'medium', 'low']),
   category: z.enum(['encryption', 'backups', 'public_access', 'tagging', 'iam', 'networking', 'custom']),
   rule_type: z.enum(['property_check', 'tag_required', 'tag_pattern', 'metadata_check', 'relationship_check', 'custom_script']),
-  conditions: z.record(z.any()),
+  conditions: z.record(z.string(), z.any()),
   resource_types: z.array(z.string()).optional(),
   recommendation: z.string().min(1),
   remediation_url: z.string().url().optional(),
@@ -35,7 +35,7 @@ const createRuleSchema = z.object({
 const updateRuleSchema = createRuleSchema.partial();
 
 const executeScanSchema = z.object({
-  resource_filters: z.record(z.any()).optional(),
+  resource_filters: z.record(z.string(), z.any()).optional(),
 });
 
 export class ComplianceFrameworksController {
@@ -82,7 +82,7 @@ export class ComplianceFrameworksController {
   async createFramework(req: Request, res: Response): Promise<void> {
     try {
       const organizationId = req.organizationId;
-      const userId = req.user?.id;
+      const userId = req.user?.userId;
 
       if (!organizationId) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -107,7 +107,7 @@ export class ComplianceFrameworksController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }
@@ -192,7 +192,7 @@ export class ComplianceFrameworksController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }
@@ -283,7 +283,7 @@ export class ComplianceFrameworksController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }
@@ -324,7 +324,7 @@ export class ComplianceFrameworksController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }
@@ -375,7 +375,7 @@ export class ComplianceFrameworksController {
   async executeScan(req: Request, res: Response): Promise<void> {
     try {
       const organizationId = req.organizationId;
-      const userId = req.user?.id;
+      const userId = req.user?.userId;
 
       if (!organizationId) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -411,7 +411,7 @@ export class ComplianceFrameworksController {
         res.status(400).json({
           success: false,
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         });
         return;
       }

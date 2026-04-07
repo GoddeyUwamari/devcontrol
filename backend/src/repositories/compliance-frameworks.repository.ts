@@ -214,7 +214,7 @@ export class ComplianceFrameworksRepository {
       RETURNING id
     `;
     const result = await this.pool.query(query, [id, organizationId]);
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   // ==================== Rules ====================
@@ -330,7 +330,7 @@ export class ComplianceFrameworksRepository {
       RETURNING id
     `;
     const result = await this.pool.query(query, [id]);
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   // ==================== Scans ====================
