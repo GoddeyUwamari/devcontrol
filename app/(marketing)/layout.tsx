@@ -7,7 +7,7 @@ export default function MarketingLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white" style={{ overflowX: 'hidden' }}>
       <MarketingNav />
       <main style={{ paddingTop: '104px' }}>{children}</main>
       <Footer />

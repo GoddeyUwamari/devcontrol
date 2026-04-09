@@ -682,3 +682,5 @@ html {
     padding: 1rem !important;
   }
 }
+
+body { overflow-x: hidden; }
