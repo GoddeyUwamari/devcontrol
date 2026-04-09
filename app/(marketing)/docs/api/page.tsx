@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,8 +37,23 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 export default function ApiReferencePage() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const handleCopy = (code: string, id: string) => {
     navigator.clipboard.writeText(code);
@@ -230,7 +245,7 @@ export default function ApiReferencePage() {
 
   return (
     <div className="min-h-screen bg-background py-8 md:py-12">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 xl:px-12">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 xl:px-12" style={{ paddingLeft: isMobile ? '16px' : isTablet ? '24px' : undefined, paddingRight: isMobile ? '16px' : isTablet ? '24px' : undefined }}>
         {/* Hero Section */}
         <div className="text-center mb-12">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/20">
@@ -238,7 +253,7 @@ export default function ApiReferencePage() {
           </div>
 
           <div className="flex items-center justify-center gap-3 mb-4">
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground">
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground" style={{ fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : undefined }}>
               API Reference
             </h1>
             <Badge variant="secondary" className="text-sm">
@@ -359,7 +374,7 @@ export default function ApiReferencePage() {
 
         {/* Authentication Section */}
         <div id="authentication" className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
             <Key className="w-7 h-7 text-primary" />
             Authentication
           </h2>
@@ -427,14 +442,14 @@ export default function ApiReferencePage() {
                 </div>
               </div>
 
-              <div className="flex gap-3">
-                <Button asChild size="sm" className="gap-2">
+              <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
+                <Button asChild size="sm" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>
                   <Link href="/settings/api-keys">
                     <Key className="w-4 h-4" />
                     Manage API Keys
                   </Link>
                 </Button>
-                <Button asChild size="sm" variant="outline" className="gap-2">
+                <Button asChild size="sm" variant="outline" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>
                   <Link href="/docs/api-security">
                     <BookOpen className="w-4 h-4" />
                     Security Guide
@@ -491,7 +506,7 @@ export default function ApiReferencePage() {
 
         {/* API Endpoints */}
         <div id="endpoints" className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
             <Code2 className="w-7 h-7 text-primary" />
             API Endpoints
           </h2>
@@ -557,7 +572,7 @@ export default function ApiReferencePage() {
 
         {/* Example: Create Service */}
         <div className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
             <Terminal className="w-7 h-7 text-primary" />
             Example: Create a Service
           </h2>
@@ -635,7 +650,7 @@ export default function ApiReferencePage() {
 
         {/* Error Handling */}
         <div className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
             <AlertCircle className="w-7 h-7 text-primary" />
             Error Handling
           </h2>
@@ -777,7 +792,7 @@ export default function ApiReferencePage() {
 
         {/* Webhooks */}
         <div className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
             <Zap className="w-7 h-7 text-primary" />
             Webhooks
           </h2>
@@ -847,7 +862,7 @@ export default function ApiReferencePage() {
 
         {/* SDKs & Tools */}
         <div className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
             <Code2 className="w-7 h-7 text-primary" />
             SDKs & Libraries
           </h2>
@@ -930,7 +945,7 @@ export default function ApiReferencePage() {
 
         {/* FAQs */}
         <div className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
             <BookOpen className="w-7 h-7 text-primary" />
             Frequently Asked Questions
           </h2>
@@ -1015,14 +1030,14 @@ export default function ApiReferencePage() {
                 Our team is here to help you build powerful integrations. Get in touch for
                 technical support, custom solutions, or partnership opportunities.
               </p>
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                <Button asChild size="lg" className="gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-3" style={{ flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center' }}>
+                <Button asChild size="lg" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>
                   <a href="mailto:support@getdevcontrol.com">
                     <MessageCircle className="w-4 h-4" />
                     Contact API Support
                   </a>
                 </Button>
-                <Button asChild size="lg" variant="outline" className="gap-2">
+                <Button asChild size="lg" variant="outline" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>
                   <Link href="/docs">
                     <BookOpen className="w-4 h-4" />
                     Browse Documentation

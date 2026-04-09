@@ -1,5 +1,18 @@
 'use client'
 
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    setWidth(window.innerWidth)
+    const handler = () => setWidth(window.innerWidth)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return width
+}
+
 const caseStudies = [
   {
     company: 'Axiom Labs',
@@ -87,13 +100,17 @@ const stats = [
 ]
 
 export default function CaseStudiesPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
     <main style={{ width: '100%', minHeight: '100vh', background: '#fff' }}>
 
       {/* Hero */}
       <section style={{
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px 60px',
+        padding: isMobile ? '48px 16px 36px' : isTablet ? '64px 32px 48px' : '80px 48px 60px',
         textAlign: 'center',
         borderBottom: '1px solid #f3f4f6',
         width: '100%',
@@ -109,7 +126,8 @@ export default function CaseStudiesPage() {
         </div>
 
         <h1 style={{
-          fontSize: 'clamp(2rem, 4vw, 3rem)', fontWeight: 800,
+          fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 3rem)',
+          fontWeight: 800,
           color: '#0f172a', lineHeight: 1.15, marginBottom: '16px',
           letterSpacing: '-0.02em',
         }}>
@@ -117,7 +135,7 @@ export default function CaseStudiesPage() {
         </h1>
 
         <p style={{
-          fontSize: '1.1rem', color: '#374151', lineHeight: 1.7,
+          fontSize: isMobile ? '0.95rem' : '1.1rem', color: '#374151', lineHeight: 1.7,
           maxWidth: '520px', margin: '0 auto',
         }}>
           See how engineering teams use DevControl to cut AWS costs,
@@ -129,14 +147,14 @@ export default function CaseStudiesPage() {
       <section style={{
         background: '#f9fafb',
         borderBottom: '1px solid #f3f4f6',
-        padding: '40px 48px',
+        padding: isMobile ? '32px 16px' : isTablet ? '32px 24px' : '40px 48px',
         width: '100%',
       }}>
         <div style={{
           maxWidth: '900px',
           margin: '0 auto',
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
           gap: '32px',
           textAlign: 'center',
         }}>
@@ -154,13 +172,16 @@ export default function CaseStudiesPage() {
       </section>
 
       {/* Case study cards */}
-      <section style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 48px' }}>
+      <section style={{
+        maxWidth: '1400px', margin: '0 auto',
+        padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px',
+      }}>
         {caseStudies.slice(0, 3).map((cs) => (
           <div key={cs.company} style={{
             width: '100%',
             borderRadius: '20px',
             border: '1.5px solid #e5e7eb',
-            padding: '48px',
+            padding: isMobile ? '24px' : '48px',
             marginBottom: '32px',
             background: '#fff',
             boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
@@ -201,8 +222,8 @@ export default function CaseStudiesPage() {
             {/* Two column — challenge/solution + results */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)',
-              gap: '48px',
+              gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.2fr) minmax(0, 1fr)',
+              gap: isMobile ? '24px' : '48px',
               alignItems: 'start',
             }}>
               <div>
@@ -244,7 +265,7 @@ export default function CaseStudiesPage() {
                 background: '#faf5ff',
                 border: '1px solid rgba(124,58,237,0.12)',
                 borderRadius: '16px',
-                padding: '32px',
+                padding: isMobile ? '20px' : '32px',
               }}>
                 <div style={{
                   fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
@@ -277,11 +298,11 @@ export default function CaseStudiesPage() {
           width: '100%',
           background: '#0f172a',
           borderRadius: '20px',
-          padding: '48px',
+          padding: isMobile ? '24px' : '48px',
           marginBottom: '32px',
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '48px',
+          gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+          gap: isMobile ? '32px' : '48px',
           alignItems: 'center',
         }}>
           {/* Left — quote + author */}
@@ -301,7 +322,7 @@ export default function CaseStudiesPage() {
               </div>
             </div>
             <p style={{
-              fontSize: '1.2rem', color: '#e2e8f0', fontStyle: 'italic',
+              fontSize: isMobile ? '1rem' : '1.2rem', color: '#e2e8f0', fontStyle: 'italic',
               lineHeight: 1.65, marginBottom: '24px', fontWeight: 500,
             }}>
               {'\u201C'}We were flying blind across 3 business units. DevControl gave us unified visibility in a single afternoon. Our CFO now uses the cost dashboard in{' '}
@@ -350,27 +371,34 @@ export default function CaseStudiesPage() {
       {/* Bottom CTA */}
       <section style={{
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center', width: '100%',
+        padding: isMobile ? '48px 24px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center', width: '100%',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <h2 style={{
-          fontSize: '2.2rem', fontWeight: 800, color: '#fff',
+          fontSize: isMobile ? '1.6rem' : '2.2rem', fontWeight: 800, color: '#fff',
           marginBottom: '16px', letterSpacing: '-0.02em',
         }}>
           Ready to write your own success story?
         </h2>
         <p style={{
-          fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+          fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
           maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
         }}>
           Join 500+ engineering teams saving an average of $2,400/month.
         </p>
-        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <div style={{
+          display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap',
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'stretch' : undefined,
+        }}>
           <a
             href="/register"
             style={{
               background: '#fff', color: '#7c3aed', padding: '14px 32px',
               borderRadius: '10px', fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
+              textAlign: 'center', display: 'inline-block',
             }}
           >
             Start Free Trial
@@ -381,6 +409,8 @@ export default function CaseStudiesPage() {
               background: 'transparent', color: '#fff', padding: '14px 32px',
               borderRadius: '10px', fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
+              textAlign: 'center', display: 'inline-block',
             }}
           >
             Take a Product Tour

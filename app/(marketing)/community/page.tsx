@@ -1,7 +1,19 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { Users, MessageCircle, Zap, BookOpen, ArrowRight, Star, Shield, Rocket } from 'lucide-react'
 import Link from 'next/link'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    setWidth(window.innerWidth)
+    const handler = () => setWidth(window.innerWidth)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return width
+}
 
 const benefits = [
   {
@@ -43,6 +55,10 @@ const stats = [
 ]
 
 export default function CommunityPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
 
@@ -50,7 +66,7 @@ export default function CommunityPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
-        padding: '100px 48px',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '100px 48px',
         textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -66,7 +82,7 @@ export default function CommunityPage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.5rem)',
+            fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2.2rem, 5vw, 3.5rem)',
             fontWeight: 800, color: '#fff',
             lineHeight: 1.1, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
@@ -76,7 +92,7 @@ export default function CommunityPage() {
           </h1>
 
           <p style={{
-            fontSize: '1.15rem', color: '#94a3b8',
+            fontSize: isMobile ? '0.95rem' : '1.15rem', color: '#94a3b8',
             lineHeight: 1.75, maxWidth: '560px',
             margin: '0 auto 40px',
           }}>
@@ -84,7 +100,13 @@ export default function CommunityPage() {
           </p>
 
           {/* CTA */}
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '48px' }}>
+          <div style={{
+            display: 'flex', gap: '16px',
+            justifyContent: 'center', flexWrap: 'wrap',
+            marginBottom: '48px',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'stretch' : undefined,
+          }}>
             <a
               href="https://join.slack.com/t/devcontrolcommunity/shared_invite/zt-3ul72iy4x-EJmlkBxEP8M2mvOP8KmFBg"
               target="_blank"
@@ -94,7 +116,9 @@ export default function CommunityPage() {
                 padding: '16px 36px', borderRadius: '10px',
                 fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                 boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
+                textAlign: 'center',
               }}
             >
               <Users size={18} />
@@ -107,7 +131,9 @@ export default function CommunityPage() {
                 padding: '16px 32px', borderRadius: '10px',
                 fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
                 border: '1.5px solid #334155',
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
+                textAlign: 'center',
               }}
             >
               Contact the Team
@@ -116,11 +142,11 @@ export default function CommunityPage() {
 
           {/* Stats */}
           <div style={{
-            display: 'inline-flex', gap: '48px', flexWrap: 'wrap',
+            display: 'inline-flex', gap: isMobile ? '24px' : '48px', flexWrap: 'wrap',
             justifyContent: 'center',
             background: 'rgba(255,255,255,0.05)',
             border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '16px', padding: '24px 40px',
+            borderRadius: '16px', padding: isMobile ? '20px 24px' : '24px 40px',
           }}>
             {stats.map(({ value, label }) => (
               <div key={label} style={{ textAlign: 'center' }}>
@@ -133,7 +159,7 @@ export default function CommunityPage() {
       </section>
 
       {/* BENEFITS */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <p style={{
@@ -143,21 +169,25 @@ export default function CommunityPage() {
               Why Join
             </p>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything in One Place
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: isMobile ? '0.95rem' : '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               A private community for engineers who take AWS infrastructure seriously.
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {benefits.map(({ icon: Icon, title, desc }) => (
               <div key={title} style={{
                 background: '#fff', border: '1.5px solid #e5e7eb',
-                borderRadius: '16px', padding: '32px',
+                borderRadius: '16px', padding: isMobile ? '24px' : '32px',
                 transition: 'all 0.2s ease',
               }}
                 onMouseEnter={e => {
@@ -190,7 +220,7 @@ export default function CommunityPage() {
       </section>
 
       {/* CHANNELS */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '48px' }}>
             <p style={{
@@ -200,14 +230,18 @@ export default function CommunityPage() {
               Community Channels
             </p>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Find Your People
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', maxWidth: '900px', margin: '0 auto' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '16px', maxWidth: '900px', margin: '0 auto',
+          }}>
             {[
               { channel: '#aws-cost-optimization', desc: 'Share savings wins, ask for advice on rightsizing and Reserved Instances', members: '280+' },
               { channel: '#security-compliance', desc: 'SOC 2, HIPAA, CIS benchmarks — real practitioner discussions', members: '190+' },
@@ -218,10 +252,10 @@ export default function CommunityPage() {
             ].map(({ channel, desc, members }) => (
               <div key={channel} style={{
                 background: '#fff', border: '1px solid #e5e7eb',
-                borderRadius: '12px', padding: '20px 24px',
+                borderRadius: '12px', padding: isMobile ? '16px' : '20px 24px',
                 display: 'flex', flexDirection: 'column', gap: '8px',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                   <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#7c3aed', margin: 0, fontFamily: 'monospace' }}>
                     {channel}
                   </p>
@@ -243,17 +277,18 @@ export default function CommunityPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '48px 24px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Ready to Join?
           </h2>
           <p style={{
-            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
             It's free. Always will be. Join 500+ engineers building smarter cloud infrastructure.
@@ -263,10 +298,12 @@ export default function CommunityPage() {
             target="_blank"
             rel="noopener noreferrer"
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               background: '#fff', color: '#7c3aed',
               padding: '16px 36px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
+              textAlign: 'center',
             }}
           >
             <Users size={18} />

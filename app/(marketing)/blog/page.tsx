@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import {
   FileText, Calendar, ArrowRight, Search, Clock, TrendingUp,
@@ -10,11 +10,26 @@ import {
 import Link from 'next/link';
 import Image from 'next/image';
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    setWidth(window.innerWidth);
+    const handler = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return width;
+}
+
 export default function BlogPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [emailSubscribe, setEmailSubscribe] = useState('');
   const [subscribeStatus, setSubscribeStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'duplicate'>('idle');
+
+  const width = useWindowWidth();
+  const isMobile = width > 0 && width < 640;
+  const isTablet = width >= 640 && width < 1024;
 
   const handleSubscribe = async () => {
     if (!emailSubscribe || !emailSubscribe.includes('@')) return;
@@ -140,7 +155,10 @@ export default function BlogPage() {
     <div style={{ minHeight: '100vh', background: '#fff' }}>
 
       {/* Hero */}
-      <section style={{ background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', padding: '80px 48px' }}>
+      <section style={{
+        background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px',
+      }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -154,12 +172,15 @@ export default function BlogPage() {
           </div>
           <h1 style={{
             color: '#0f172a', fontWeight: 800,
-            fontSize: 'clamp(2rem, 4vw, 2.8rem)',
+            fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 2.8rem)',
             marginBottom: '16px', letterSpacing: '-0.02em', lineHeight: 1.2,
           }}>
             Engineering Insights &amp; Product Updates
           </h1>
-          <p style={{ color: '#374151', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6 }}>
+          <p style={{
+            color: '#374151', fontSize: isMobile ? '0.95rem' : '1.1rem',
+            maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6,
+          }}>
             Platform engineering insights, product updates, and best practices from industry leaders and the DevControl team.
           </p>
           <div style={{ position: 'relative', maxWidth: '480px', margin: '0 auto' }}>
@@ -181,7 +202,7 @@ export default function BlogPage() {
       </section>
 
       {/* Content */}
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 48px' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 48px' }}>
 
         {/* Category Filters */}
         <div style={{ padding: '40px 0 32px' }}>
@@ -189,7 +210,7 @@ export default function BlogPage() {
             <Filter style={{ width: '15px', height: '15px', color: '#9ca3af' }} />
             <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#6b7280' }}>Filter by category</span>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: isMobile ? '8px' : '10px' }}>
             {categories.map((category) => {
               const Icon = category.icon;
               const active = selectedCategory === category.name;
@@ -230,7 +251,11 @@ export default function BlogPage() {
               <Star style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Featured Articles</h2>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+              gap: '24px',
+            }}>
               {featuredPosts.slice(0, 2).map((post) => (
                 <Link key={post.id} href={'/blog/' + post.id} style={{ textDecoration: 'none', display: 'block' }}>
                 <div
@@ -258,7 +283,7 @@ export default function BlogPage() {
                     </div>
                   </div>
                   <div style={{ padding: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7c3aed', background: '#ede9fe', padding: '2px 10px', borderRadius: '6px' }}>
                         {post.category}
                       </span>
@@ -327,7 +352,11 @@ export default function BlogPage() {
               </button>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+              gap: '24px',
+            }}>
               {(selectedCategory === 'All' && searchQuery === '' ? regularPosts : filteredPosts).map((post) => (
                 <Link key={post.id} href={'/blog/' + post.id} style={{ textDecoration: 'none', display: 'block' }}>
                 <div
@@ -401,7 +430,7 @@ export default function BlogPage() {
         <div style={{
           background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(124,58,237,0.03))',
           border: '1px solid rgba(124,58,237,0.15)',
-          borderRadius: '20px', padding: '48px 32px',
+          borderRadius: '20px', padding: isMobile ? '32px 20px' : '48px 32px',
           textAlign: 'center', marginBottom: '48px',
         }}>
           <div style={{
@@ -417,7 +446,10 @@ export default function BlogPage() {
           <p style={{ color: '#4b5563', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
             Get the latest platform engineering insights, product updates, and best practices delivered to your inbox every week.
           </p>
-          <div style={{ display: 'flex', gap: '12px', maxWidth: '400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'flex', gap: '12px', maxWidth: '400px', margin: '0 auto',
+            flexDirection: isMobile ? 'column' : 'row',
+          }}>
             <input
               type="email"
               placeholder="Enter your email"
@@ -427,18 +459,20 @@ export default function BlogPage() {
                 flex: 1, height: '44px', paddingLeft: '14px', paddingRight: '14px',
                 borderRadius: '8px', border: '1px solid #e5e7eb', background: '#fff',
                 fontSize: '0.875rem', outline: 'none', color: '#0f172a', boxSizing: 'border-box',
+                width: isMobile ? '100%' : undefined,
               }}
             />
             <button
               onClick={handleSubscribe}
               disabled={subscribeStatus === 'loading' || subscribeStatus === 'success'}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                 height: '44px', padding: '0 20px', borderRadius: '8px',
                 background: subscribeStatus === 'success' ? '#059669' : '#7c3aed',
                 color: '#fff', fontWeight: 600,
                 fontSize: '0.875rem', border: 'none', cursor: subscribeStatus === 'loading' || subscribeStatus === 'success' ? 'default' : 'pointer',
                 whiteSpace: 'nowrap', opacity: subscribeStatus === 'loading' ? 0.7 : 1,
+                width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
               }}
             >
               {subscribeStatus === 'loading' ? 'Subscribing...' : subscribeStatus === 'success' ? 'Subscribed!' : <>Subscribe <ArrowRight style={{ width: '14px', height: '14px' }} /></>}
@@ -469,7 +503,11 @@ export default function BlogPage() {
         {/* Popular Topics */}
         <div style={{ marginBottom: '48px' }}>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', marginBottom: '24px' }}>Popular Topics</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+            gap: '16px',
+          }}>
             {[
               { name: 'DORA Metrics', icon: TrendingUp, count: 2 },
               { name: 'Cost Optimization', icon: DollarSign, count: 1 },
@@ -509,7 +547,11 @@ export default function BlogPage() {
         </div>
 
         {/* Resources */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', paddingBottom: '64px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+          gap: '24px', paddingBottom: '64px',
+        }}>
           <Link href="/docs" style={{ textDecoration: 'none' }}>
             <div
               style={{

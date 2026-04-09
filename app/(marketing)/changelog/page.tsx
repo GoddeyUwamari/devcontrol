@@ -1,14 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import {
   Sparkles, Zap, Bug, Calendar, Search, Mail, ArrowRight,
   ExternalLink, BookOpen, Star, Shield, Rocket, Filter,
   AlertCircle, Package, Trash2,
-} from 'lucide-react'; 
+} from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    setWidth(window.innerWidth);
+    const handler = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return width;
+}
 
 type ChangeType = 'feature' | 'improvement' | 'fix' | 'security' | 'breaking' | 'deprecation';
 
@@ -17,6 +28,10 @@ export default function ChangelogPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [emailSubscribe, setEmailSubscribe] = useState('');
   const [subscribeStatus, setSubscribeStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'duplicate'>('idle');
+
+  const width = useWindowWidth();
+  const isMobile = width > 0 && width < 640;
+  const isTablet = width >= 640 && width < 1024;
 
   const handleSubscribe = async () => {
     if (!emailSubscribe || !emailSubscribe.includes('@')) return;
@@ -174,7 +189,10 @@ export default function ChangelogPage() {
     <div style={{ minHeight: '100vh', background: '#fff' }}>
 
       {/* Hero */}
-      <section style={{ background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', padding: '80px 48px' }}>
+      <section style={{
+        background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px',
+      }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -188,12 +206,15 @@ export default function ChangelogPage() {
           </div>
           <h1 style={{
             color: '#0f172a', fontWeight: 800,
-            fontSize: 'clamp(2rem, 4vw, 2.8rem)',
+            fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 2.8rem)',
             marginBottom: '16px', letterSpacing: '-0.02em', lineHeight: 1.2,
           }}>
             What&apos;s New in DevControl
           </h1>
-          <p style={{ color: '#374151', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6 }}>
+          <p style={{
+            color: '#374151', fontSize: isMobile ? '0.95rem' : '1.1rem',
+            maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6,
+          }}>
             All the latest updates, improvements, and fixes. We ship new features every week to help you build better.
           </p>
           <div style={{ position: 'relative', maxWidth: '480px', margin: '0 auto 24px' }}>
@@ -210,20 +231,25 @@ export default function ChangelogPage() {
               }}
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
+            flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row',
+          }}>
             <Link href="/blog" style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
               padding: '9px 18px', borderRadius: '8px', border: '1px solid #e5e7eb',
               background: '#fff', color: '#374151', fontWeight: 500,
               fontSize: '0.875rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
             }}>
               <BookOpen style={{ width: '15px', height: '15px' }} /> Read Blog
             </Link>
             <a href="#subscribe" style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
               padding: '9px 18px', borderRadius: '8px',
               background: '#7c3aed', color: '#fff', fontWeight: 600,
               fontSize: '0.875rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
             }}>
               <Mail style={{ width: '15px', height: '15px' }} /> Subscribe to Updates
             </a>
@@ -232,7 +258,7 @@ export default function ChangelogPage() {
       </section>
 
       {/* Content */}
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 48px' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 48px' }}>
 
         {/* Filters */}
         <div style={{ padding: '40px 0 32px' }}>
@@ -240,7 +266,7 @@ export default function ChangelogPage() {
             <Filter style={{ width: '15px', height: '15px', color: '#9ca3af' }} />
             <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#6b7280' }}>Filter by type</span>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: isMobile ? '8px' : '10px' }}>
             {filters.map((filter) => {
               const Icon = filter.icon;
               const active = selectedFilter === filter.value;
@@ -273,7 +299,11 @@ export default function ChangelogPage() {
               <Star style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Featured Releases</h2>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+              gap: '24px',
+            }}>
               {featuredReleases.map((release) => (
                 <div
                   key={release.version}
@@ -313,8 +343,8 @@ export default function ChangelogPage() {
                     </div>
                     <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>{release.title}</h3>
                     <p style={{ fontSize: '0.875rem', color: '#4b5563', lineHeight: 1.6, marginBottom: '20px' }}>{release.summary}</p>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.78rem', color: '#6b7280' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.78rem', color: '#6b7280', flexWrap: 'wrap' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <Sparkles style={{ width: '12px', height: '12px' }} /> {release.stats.newFeatures} new
                         </span>
@@ -379,10 +409,13 @@ export default function ChangelogPage() {
                   onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)')}
                   onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.05)')}
                 >
-                  <div style={{ padding: '28px 28px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div style={{ padding: isMobile ? '20px 20px 16px' : '28px 28px 20px' }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                      marginBottom: '16px', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: '12px',
+                    }}>
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
                           <span style={{
                             background: '#7c3aed', color: '#fff', fontSize: '0.82rem',
                             fontWeight: 700, padding: '3px 12px', borderRadius: '6px',
@@ -404,7 +437,7 @@ export default function ChangelogPage() {
                           display: 'inline-flex', alignItems: 'center', gap: '6px',
                           padding: '7px 14px', borderRadius: '8px', border: '1px solid #e5e7eb',
                           background: '#fff', color: '#374151', fontSize: '0.82rem',
-                          fontWeight: 500, textDecoration: 'none', flexShrink: 0, marginLeft: '16px',
+                          fontWeight: 500, textDecoration: 'none', flexShrink: 0,
                         }}>
                           <BookOpen style={{ width: '13px', height: '13px' }} />
                           Read more
@@ -416,6 +449,7 @@ export default function ChangelogPage() {
                       display: 'flex', alignItems: 'center', gap: '20px',
                       fontSize: '0.78rem', color: '#6b7280',
                       borderTop: '1px solid #f3f4f6', paddingTop: '16px',
+                      flexWrap: 'wrap',
                     }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Sparkles style={{ width: '12px', height: '12px' }} /> {release.stats.newFeatures} new features
@@ -430,7 +464,7 @@ export default function ChangelogPage() {
                       )}
                     </div>
                   </div>
-                  <div style={{ padding: '0 28px 28px' }}>
+                  <div style={{ padding: isMobile ? '0 20px 20px' : '0 28px 28px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {release.changes
                         .filter((change) => selectedFilter === 'all' || change.type === selectedFilter)
@@ -472,7 +506,7 @@ export default function ChangelogPage() {
           style={{
             background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(124,58,237,0.03))',
             border: '1px solid rgba(124,58,237,0.15)',
-            borderRadius: '20px', padding: '48px 32px',
+            borderRadius: '20px', padding: isMobile ? '32px 20px' : '48px 32px',
             textAlign: 'center', marginBottom: '48px',
           }}
         >
@@ -489,7 +523,10 @@ export default function ChangelogPage() {
           <p style={{ color: '#4b5563', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
             Get notified about new features, improvements, and important updates delivered to your inbox every week.
           </p>
-          <div style={{ display: 'flex', gap: '12px', maxWidth: '400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'flex', gap: '12px', maxWidth: '400px', margin: '0 auto',
+            flexDirection: isMobile ? 'column' : 'row',
+          }}>
             <input
               type="email"
               placeholder="Enter your email"
@@ -499,18 +536,20 @@ export default function ChangelogPage() {
                 flex: 1, height: '44px', paddingLeft: '14px', paddingRight: '14px',
                 borderRadius: '8px', border: '1px solid #e5e7eb', background: '#fff',
                 fontSize: '0.875rem', outline: 'none', color: '#0f172a', boxSizing: 'border-box',
+                width: isMobile ? '100%' : undefined,
               }}
             />
             <button
               onClick={handleSubscribe}
               disabled={subscribeStatus === 'loading' || subscribeStatus === 'success'}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                 height: '44px', padding: '0 20px', borderRadius: '8px',
                 background: subscribeStatus === 'success' ? '#059669' : '#7c3aed',
                 color: '#fff', fontWeight: 600,
                 fontSize: '0.875rem', border: 'none', cursor: subscribeStatus === 'loading' || subscribeStatus === 'success' ? 'default' : 'pointer',
                 whiteSpace: 'nowrap', opacity: subscribeStatus === 'loading' ? 0.7 : 1,
+                width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
               }}
             >
               {subscribeStatus === 'loading' ? 'Subscribing...' : subscribeStatus === 'success' ? 'Subscribed!' : <>Subscribe <ArrowRight style={{ width: '14px', height: '14px' }} /></>}
@@ -539,7 +578,11 @@ export default function ChangelogPage() {
         </div>
 
         {/* Footer Links */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingBottom: '64px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gap: '20px', paddingBottom: '64px',
+        }}>
           {[
             { href: '/docs', icon: BookOpen, title: 'Documentation', desc: 'Learn how to use all the new features', external: false },
             { href: '/blog', icon: Rocket, title: 'Blog', desc: 'Read in-depth articles about new releases', external: false },

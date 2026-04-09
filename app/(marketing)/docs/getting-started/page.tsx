@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,8 +34,23 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 export default function GettingStartedPage() {
   const [copiedCode, setCopiedCode] = useState(false);
+
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   // TODO: Replace with actual API calls to check completion status
   // This would integrate with your backend to check:
@@ -114,14 +129,14 @@ devcontrol service create --name my-service`;
 
   return (
     <div className="min-h-screen bg-background py-8 md:py-12">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 xl:px-12">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 xl:px-12" style={{ paddingLeft: isMobile ? '16px' : isTablet ? '24px' : undefined, paddingRight: isMobile ? '16px' : isTablet ? '24px' : undefined }}>
         {/* Hero Section */}
         <div className="text-center mb-8 md:mb-12">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/20">
             <Rocket className="w-8 h-8 text-primary" />
           </div>
 
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4">
+          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4" style={{ fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : undefined }}>
             Getting Started with DevControl
           </h1>
 
@@ -132,7 +147,7 @@ devcontrol service create --name my-service`;
 
           {/* Progress Bar */}
           <div className="max-w-md mx-auto">
-            <div className="flex items-center justify-between mb-2 text-sm">
+            <div className="flex items-center justify-between mb-2 text-sm" style={{ flexWrap: 'wrap', gap: '4px' }}>
               <span className="font-medium text-foreground">
                 {completedCount} of {totalSteps} completed
               </span>

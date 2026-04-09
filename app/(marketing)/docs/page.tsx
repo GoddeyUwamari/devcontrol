@@ -1,3 +1,6 @@
+'use client';
+
+import { useState, useEffect } from 'react';
 import {
   Book, Rocket, FileCode, HelpCircle, ArrowRight, Search,
   Terminal, Cloud, Shield, BarChart3, Layers, GitBranch,
@@ -5,12 +8,31 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    setWidth(window.innerWidth);
+    const handler = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return width;
+}
+
+interface ResponsiveProps {
+  isMobile: boolean;
+  isTablet: boolean;
+}
+
 // ============================================
 // HERO SECTION
 // ============================================
-function DocsHero() {
+function DocsHero({ isMobile, isTablet }: ResponsiveProps) {
   return (
-    <section style={{ background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', padding: '80px 48px' }}>
+    <section style={{
+      background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
+      padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px',
+    }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -24,12 +46,15 @@ function DocsHero() {
         </div>
         <h1 style={{
           color: '#0f172a', fontWeight: 800,
-          fontSize: 'clamp(2rem, 4vw, 2.8rem)',
+          fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 2.8rem)',
           marginBottom: '16px', letterSpacing: '-0.02em', lineHeight: 1.2,
         }}>
           Everything You Need to Build with DevControl
         </h1>
-        <p style={{ color: '#374151', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6 }}>
+        <p style={{
+          color: '#374151', fontSize: isMobile ? '0.95rem' : '1.1rem',
+          maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6,
+        }}>
           Guides, tutorials, API references, and best practices — everything to get you started and keep you moving.
         </p>
         <div style={{ position: 'relative', maxWidth: '480px', margin: '0 auto' }}>
@@ -52,7 +77,7 @@ function DocsHero() {
 // ============================================
 // QUICK START CARDS
 // ============================================
-function QuickStartSection() {
+function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
   const quickStart = [
     { title: 'Getting Started', description: 'Set up DevControl in under 5 minutes with our quickstart guide', icon: Rocket, href: '/docs/getting-started', badge: 'Start here' },
     { title: 'API Reference',   description: 'Complete REST API documentation with examples',               icon: FileCode, href: '/docs/api', badge: null },
@@ -61,14 +86,18 @@ function QuickStartSection() {
   ];
 
   return (
-    <section style={{ padding: '64px 48px' }}>
+    <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+          gap: '16px',
+        }}>
           {quickStart.map((item) => (
             <Link key={item.title} href={item.href} style={{ textDecoration: 'none' }}>
               <div style={{
                 height: '100%', border: '1px solid #e5e7eb', borderRadius: '14px',
-                padding: '24px', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+                padding: isMobile ? '16px' : '24px', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
                 cursor: 'pointer',
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -89,7 +118,7 @@ function QuickStartSection() {
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>{item.title}</span>
+                  <span style={{ fontSize: isMobile ? '0.875rem' : '1rem', fontWeight: 700, color: '#0f172a' }}>{item.title}</span>
                   <ArrowRight style={{ width: '14px', height: '14px', color: '#7c3aed' }} />
                 </div>
                 <p style={{ fontSize: '0.85rem', color: '#4b5563', lineHeight: 1.5, margin: 0 }}>{item.description}</p>
@@ -105,7 +134,7 @@ function QuickStartSection() {
 // ============================================
 // POPULAR TOPICS
 // ============================================
-function PopularTopicsSection() {
+function PopularTopicsSection({ isMobile, isTablet }: ResponsiveProps) {
   const topics = [
     { title: 'Connect AWS Account',  href: '/docs/getting-started', icon: Cloud },
     { title: 'Set Up Cost Alerts',   href: '/docs',                  icon: Bell },
@@ -118,7 +147,7 @@ function PopularTopicsSection() {
   ];
 
   return (
-    <section style={{ background: '#fafafa', padding: '64px 48px' }}>
+    <section style={{ background: '#fafafa', padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
@@ -126,7 +155,11 @@ function PopularTopicsSection() {
           </h2>
           <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>Most frequently accessed documentation</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', maxWidth: '900px', margin: '0 auto' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+          gap: '12px', maxWidth: '900px', margin: '0 auto',
+        }}>
           {topics.map((topic) => (
             <Link key={topic.title} href={topic.href} style={{ textDecoration: 'none' }}>
               <div style={{
@@ -148,7 +181,7 @@ function PopularTopicsSection() {
 // ============================================
 // DOCUMENTATION CATEGORIES
 // ============================================
-function CategoriesSection() {
+function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
   const categories = [
     {
       title: 'Core Concepts',
@@ -219,7 +252,7 @@ function CategoriesSection() {
   ];
 
   return (
-    <section style={{ padding: '64px 48px' }}>
+    <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
@@ -227,12 +260,16 @@ function CategoriesSection() {
           </h2>
           <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>Browse documentation organized by topic</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+          gap: '16px',
+        }}>
           {categories.map((category) => (
             <div
               key={category.title}
               style={{
-                border: '1px solid #e5e7eb', borderRadius: '14px', padding: '24px',
+                border: '1px solid #e5e7eb', borderRadius: '14px', padding: isMobile ? '20px' : '24px',
                 background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
               }}
             >
@@ -273,7 +310,7 @@ function CategoriesSection() {
 // ============================================
 // CODE EXAMPLES
 // ============================================
-function CodeExamplesSection() {
+function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
   const codeBlocks = [
     {
       title: 'CLI Quick Start',
@@ -298,7 +335,7 @@ function CodeExamplesSection() {
   ];
 
   return (
-    <section style={{ background: '#fafafa', padding: '64px 48px' }}>
+    <section style={{ background: '#fafafa', padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
@@ -306,7 +343,11 @@ function CodeExamplesSection() {
           </h2>
           <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>Common commands and code snippets</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', maxWidth: '900px', margin: '0 auto' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+          gap: '16px', maxWidth: '900px', margin: '0 auto',
+        }}>
           {codeBlocks.map((block) => (
             <div
               key={block.title}
@@ -322,9 +363,12 @@ function CodeExamplesSection() {
               <div style={{ padding: '16px 20px' }}>
                 <pre style={{
                   background: '#f8fafc', padding: '14px 16px', borderRadius: '8px',
-                  overflow: 'auto', margin: 0,
+                  overflowX: 'auto', margin: 0,
                 }}>
-                  <code style={{ fontSize: '0.78rem', color: '#4b5563', fontFamily: 'monospace', whiteSpace: 'pre' }}>
+                  <code style={{
+                    fontSize: isMobile ? '0.78rem' : '0.875rem',
+                    color: '#4b5563', fontFamily: 'monospace', whiteSpace: 'pre',
+                  }}>
                     {block.code}
                   </code>
                 </pre>
@@ -340,7 +384,7 @@ function CodeExamplesSection() {
 // ============================================
 // RESOURCES SECTION
 // ============================================
-function ResourcesSection() {
+function ResourcesSection({ isMobile, isTablet }: ResponsiveProps) {
   const resources = [
     { title: 'Community Slack', description: 'Join 500+ DevControl users', icon: MessageCircle, href: '#',          external: true },
     { title: 'Changelog',       description: "See what's new in DevControl", icon: FileText,    href: '/changelog', external: false },
@@ -349,7 +393,7 @@ function ResourcesSection() {
   ];
 
   return (
-    <section style={{ padding: '64px 48px' }}>
+    <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
@@ -357,7 +401,11 @@ function ResourcesSection() {
           </h2>
           <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>More ways to get help and stay updated</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', maxWidth: '900px', margin: '0 auto' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+          gap: '16px', maxWidth: '900px', margin: '0 auto',
+        }}>
           {resources.map((resource) => (
             <Link
               key={resource.title}
@@ -366,7 +414,7 @@ function ResourcesSection() {
               style={{ textDecoration: 'none' }}
             >
               <div style={{
-                border: '1px solid #e5e7eb', borderRadius: '14px', padding: '20px 16px',
+                border: '1px solid #e5e7eb', borderRadius: '14px', padding: isMobile ? '16px 12px' : '20px 16px',
                 background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
                 textAlign: 'center', cursor: 'pointer',
               }}>
@@ -377,7 +425,7 @@ function ResourcesSection() {
                 }}>
                   <resource.icon style={{ width: '18px', height: '18px', color: '#7c3aed' }} />
                 </div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', marginBottom: '4px' }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', marginBottom: '4px', flexWrap: 'wrap' }}>
                   {resource.title}
                   {resource.external && <ExternalLink style={{ width: '11px', height: '11px', color: '#9ca3af' }} />}
                 </div>
@@ -394,31 +442,41 @@ function ResourcesSection() {
 // ============================================
 // CTA SECTION
 // ============================================
-function CTASection() {
+function CTASection({ isMobile, isTablet }: ResponsiveProps) {
   return (
-    <section style={{ background: '#fafafa', padding: '64px 48px' }}>
+    <section style={{ background: '#fafafa', padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
-        <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>
+        <h2 style={{
+          fontSize: isMobile ? '1.6rem' : 'clamp(1.4rem, 3vw, 1.8rem)',
+          fontWeight: 700, color: '#0f172a', marginBottom: '12px',
+        }}>
           Can&apos;t Find What You&apos;re Looking For?
         </h2>
         <p style={{ color: '#4b5563', maxWidth: '480px', margin: '0 auto 28px', lineHeight: 1.6, fontSize: '0.95rem' }}>
           Our team is here to help. Reach out and we&apos;ll get you pointed in the right direction.
         </p>
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+        <div style={{
+          display: 'flex', gap: '12px', justifyContent: 'center',
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'stretch' : undefined,
+          maxWidth: isMobile ? '320px' : undefined, margin: isMobile ? '0 auto' : undefined,
+        }}>
           <Link href="/contact" style={{
-            display: 'inline-flex', alignItems: 'center',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             padding: '10px 24px', borderRadius: '8px',
             background: '#7c3aed', color: '#fff', fontWeight: 600,
             fontSize: '0.9rem', textDecoration: 'none',
+            width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
           }}>
             Contact Support
           </Link>
           <a href="mailto:support@getdevcontrol.com" style={{
-            display: 'inline-flex', alignItems: 'center',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             padding: '10px 24px', borderRadius: '8px',
             border: '1px solid #e5e7eb', background: '#fff',
             color: '#374151', fontWeight: 500,
             fontSize: '0.9rem', textDecoration: 'none',
+            width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
           }}>
             Email Us
           </a>
@@ -432,15 +490,19 @@ function CTASection() {
 // MAIN PAGE
 // ============================================
 export default function DocsPage() {
+  const width = useWindowWidth();
+  const isMobile = width > 0 && width < 640;
+  const isTablet = width >= 640 && width < 1024;
+
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
-      <DocsHero />
-      <QuickStartSection />
-      <PopularTopicsSection />
-      <CategoriesSection />
-      <CodeExamplesSection />
-      <ResourcesSection />
-      <CTASection />
+      <DocsHero isMobile={isMobile} isTablet={isTablet} />
+      <QuickStartSection isMobile={isMobile} isTablet={isTablet} />
+      <PopularTopicsSection isMobile={isMobile} isTablet={isTablet} />
+      <CategoriesSection isMobile={isMobile} isTablet={isTablet} />
+      <CodeExamplesSection isMobile={isMobile} isTablet={isTablet} />
+      <ResourcesSection isMobile={isMobile} isTablet={isTablet} />
+      <CTASection isMobile={isMobile} isTablet={isTablet} />
     </div>
   );
 }
