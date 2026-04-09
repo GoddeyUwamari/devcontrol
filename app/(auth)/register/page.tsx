@@ -186,7 +186,7 @@ export default function RegisterPage() {
             <div className="space-y-1 text-xs text-muted-foreground">
               <p className="font-medium">Password must contain:</p>
               <ul className="space-y-1 pl-4">
-                <li className="flex items-center gap-2">
+                <li className="flex items-start gap-2">
                   <Check
                     className={cn(
                       "h-3 w-3",
@@ -197,7 +197,7 @@ export default function RegisterPage() {
                   />
                   At least 8 characters
                 </li>
-                <li className="flex items-center gap-2">
+                <li className="flex items-start gap-2">
                   <Check
                     className={cn(
                       "h-3 w-3",
@@ -208,7 +208,7 @@ export default function RegisterPage() {
                   />
                   One uppercase letter
                 </li>
-                <li className="flex items-center gap-2">
+                <li className="flex items-start gap-2">
                   <Check
                     className={cn(
                       "h-3 w-3",
@@ -219,7 +219,7 @@ export default function RegisterPage() {
                   />
                   One number
                 </li>
-                <li className="flex items-center gap-2">
+                <li className="flex items-start gap-2">
                   <Check
                     className={cn(
                       "h-3 w-3",
@@ -285,7 +285,7 @@ export default function RegisterPage() {
               />
               <Label
                 htmlFor="termsAccepted"
-                className="text-sm font-normal leading-5 cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex-1"
+                className="text-sm font-normal leading-relaxed cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex-1 min-w-0"
               >
                 I agree to the{" "}
                 <Link
