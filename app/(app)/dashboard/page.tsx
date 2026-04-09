@@ -300,7 +300,22 @@ const bodyText: React.CSSProperties = {
   lineHeight: 1.6,
 }
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 export default function DashboardPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   const { user, isLoading: authLoading } = useAuth();
   const { socket, isConnected } = useWebSocket();
   const queryClient = useQueryClient();
@@ -623,7 +638,7 @@ export default function DashboardPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px 48px' : isTablet ? '32px 24px 56px' : '40px 56px 64px',
       maxWidth: '1400px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -812,7 +827,7 @@ export default function DashboardPage() {
             {/* CHANGE 3 — KPI placeholder row */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
+              gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)',
               gap: '24px',
               marginBottom: '16px',
             }}>
@@ -1036,7 +1051,7 @@ export default function DashboardPage() {
 
           {/* KPI grid — gated on data state */}
           {(isDemoActive || hasBillingData) ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px', marginBottom: '32px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '24px', marginBottom: '32px' }}>
               {/* Total Cloud Spend */}
               <div style={{ ...card }}>
                 <p style={{ ...overline, color: '#374151', fontWeight: 700 }}>Total Cloud Spend</p>
@@ -1169,7 +1184,7 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : isAwsConnected && (isBillingSyncing || hasPartialData) ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '24px', marginBottom: '32px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: '24px', marginBottom: '32px' }}>
               {/* Placeholder — Cloud Spend */}
               <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', borderLeft: '3px solid #7C3AED', paddingLeft: '29px' }}>
                 <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 16px' }}>Total Cloud Spend</p>
@@ -1293,7 +1308,7 @@ export default function DashboardPage() {
             background: '#FFFFFF',
             borderRadius: '16px',
             border: '1px solid #E2E8F0',
-            padding: '48px 40px',
+            padding: isMobile ? '24px 16px' : isTablet ? '32px 24px' : '48px 40px',
             textAlign: 'center',
             marginBottom: '24px',
           }}>
@@ -1362,7 +1377,7 @@ export default function DashboardPage() {
           {/* ── PREVIEW KPI GRID ── */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)',
             gap: '20px', marginBottom: '24px',
           }}>
             {[
@@ -1762,7 +1777,7 @@ export default function DashboardPage() {
           /* CHANGE 4 — 2-col AI Advisor + Security Posture */
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
             gap: '24px',
             marginBottom: '16px',
           }}>
@@ -2003,7 +2018,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           /* Existing 3fr/2fr Spend Trend + Security Posture */
-          <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '32px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '3fr 2fr', gap: '24px', marginBottom: '32px' }}>
 
             {/* Spend Trend */}
             <div style={card}>
@@ -2139,7 +2154,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px' }}>
           {[
             { label: 'Monthly Savings', value: `$${wasteAmount.toLocaleString()}`, sub: 'AI-identified waste', color: '#059669' },
             { label: 'Annual Projection', value: `$${(wasteAmount * 12).toLocaleString()}`, sub: 'At current run rate', color: '#059669' },
@@ -2183,7 +2198,7 @@ export default function DashboardPage() {
       {isAwsConnected && (
       isBillingSyncing ? (
         /* CHANGE 6 — Syncing state bottom 3-col */
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : '1fr 1fr 1fr', gap: '24px' }}>
 
           {/* LEFT: Engineering Health (muted) */}
           <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
@@ -2369,7 +2384,7 @@ export default function DashboardPage() {
           </div>
         </div>
       ) : (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : '1fr 1fr 1fr', gap: '24px' }}>
 
         {/* Engineering Velocity — DORA row list */}
         <div style={{ background: '#fff', border: '0.5px solid #f3f4f6', borderRadius: '12px', padding: '18px' }}>
