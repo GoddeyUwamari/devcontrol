@@ -281,7 +281,7 @@ export default function RegisterPage() {
                   setValue("termsAccepted", checked as boolean)
                 }
                 disabled={isLoading}
-                className="mt-0.5 shrink-0"
+                className="mt-0.5 shrink-0 h-4 w-4"
               />
               <label
                 htmlFor="termsAccepted"
