@@ -52,9 +52,9 @@ export function WelcomeModal() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="w-full sm:max-w-2xl">
         <DialogHeader className="pt-4">
-  <DialogTitle className="text-2xl">Let's find your AWS cost waste 👋</DialogTitle>
+  <DialogTitle className="text-lg sm:text-2xl">Let's find your AWS cost waste 👋</DialogTitle>
 </DialogHeader>
 
         <div className="space-y-4 py-4">
@@ -62,7 +62,7 @@ export function WelcomeModal() {
             Most AWS environments have <strong>$500–$2,000/month in recoverable waste</strong>. DevControl finds it automatically — idle resources, oversized instances, security gaps — and tells you exactly what to fix first.
           </p>
 
-          <div className="grid grid-cols-3 gap-4 py-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-4">
             <div className="text-center">
               <div className="text-3xl mb-2" aria-hidden="true">💸</div>
               <h4 className="font-semibold text-sm mb-1">Find Cost Waste</h4>
