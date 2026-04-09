@@ -24,12 +24,13 @@ export function TrustedBySection() {
   const doubled = [...companies, ...companies]
 
   return (
+    <div style={{ overflow: 'hidden', maxWidth: '100%' }}>
     <section style={{ width: '100%', padding: isMobile ? '32px 0' : '48px 0', background: '#fafafa', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6', overflow: 'hidden' }}>
       <p style={{ textAlign: 'center', fontSize: isMobile ? '11px' : '14px', fontWeight: '600', letterSpacing: '0.15em', color: '#374151', textTransform: 'uppercase', marginBottom: isMobile ? '20px' : '28px' }}>
         Trusted by engineers from companies including
       </p>
 
-      <div style={{ position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', overflow: 'hidden', maxWidth: '100vw', contain: 'paint' }}>
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: isMobile ? '60px' : '120px', background: 'linear-gradient(to right, #fafafa, transparent)', zIndex: 2 }} />
         <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: isMobile ? '60px' : '120px', background: 'linear-gradient(to left, #fafafa, transparent)', zIndex: 2 }} />
 
@@ -70,5 +71,6 @@ export function TrustedBySection() {
         }
       `}</style>
     </section>
+    </div>
   )
 }
