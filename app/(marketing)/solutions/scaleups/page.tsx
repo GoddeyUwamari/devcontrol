@@ -1,8 +1,23 @@
 'use client'
 
 import { TrendingUp, Users, Shield, BarChart3, Zap, GitBranch, DollarSign, Globe } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 export default function ScaleupsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const signatureFeature = {
     icon: TrendingUp,
@@ -63,12 +78,14 @@ export default function ScaleupsPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)',
-        padding: '80px 48px',
+        padding: isMobile ? '60px 20px' : isTablet ? '70px 32px' : '80px 48px',
       }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: '1.2fr 1fr',
-          gap: '64px', alignItems: 'center',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : '1.2fr 1fr',
+          gap: isMobile ? '40px' : '64px',
+          alignItems: 'center',
         }}>
           {/* Left — text */}
           <div>
@@ -83,7 +100,7 @@ export default function ScaleupsPage() {
             </div>
 
             <h1 style={{
-              fontSize: 'clamp(2rem, 4vw, 3rem)',
+              fontSize: isMobile ? '1.9rem' : 'clamp(2rem, 4vw, 3rem)',
               fontWeight: 800, color: '#fff',
               lineHeight: 1.15, marginBottom: '20px',
               letterSpacing: '-0.02em',
@@ -93,7 +110,7 @@ export default function ScaleupsPage() {
             </h1>
 
             <p style={{
-              fontSize: '1.1rem', color: 'rgba(255,255,255,0.75)',
+              fontSize: isMobile ? '1rem' : '1.1rem', color: 'rgba(255,255,255,0.75)',
               lineHeight: 1.75, marginBottom: '36px', maxWidth: '520px',
             }}>
               You&apos;ve outgrown spreadsheets and gut feel. DevControl gives scale-up
@@ -101,12 +118,18 @@ export default function ScaleupsPage() {
               region — without the enterprise price tag.
             </p>
 
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{
+              display: 'flex', gap: '16px',
+              flexDirection: isMobile ? 'column' : 'row',
+              alignItems: isMobile ? 'stretch' : undefined,
+              flexWrap: 'wrap',
+            }}>
               <a href="/register" style={{
                 background: '#7c3aed', color: '#fff',
                 padding: '14px 32px', borderRadius: '10px',
                 fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                 boxShadow: '0 4px 20px rgba(124,58,237,0.4)',
+                textAlign: 'center', boxSizing: 'border-box',
               }}>
                 Get Started Free
               </a>
@@ -115,6 +138,7 @@ export default function ScaleupsPage() {
                 padding: '14px 32px', borderRadius: '10px',
                 fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
                 border: '1.5px solid rgba(255,255,255,0.3)',
+                textAlign: 'center', boxSizing: 'border-box',
               }}>
                 Read Case Studies
               </a>
@@ -128,7 +152,7 @@ export default function ScaleupsPage() {
           <div style={{
             background: 'rgba(255,255,255,0.05)',
             border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '20px', padding: '40px',
+            borderRadius: '20px', padding: isMobile ? '28px 20px' : '40px',
           }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa',
@@ -147,7 +171,7 @@ export default function ScaleupsPage() {
                   <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
                     {label}
                   </span>
-                  <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#a78bfa' }}>
+                  <span style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', fontWeight: 800, color: '#a78bfa' }}>
                     {value}
                   </span>
                 </div>
@@ -161,14 +185,16 @@ export default function ScaleupsPage() {
       </section>
 
       {/* SIGNATURE FEATURE */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             background: '#fff',
             border: '2px solid rgba(124,58,237,0.2)',
-            borderRadius: '24px', padding: '48px',
-            display: 'grid', gridTemplateColumns: '1.2fr 1fr',
-            gap: '48px', alignItems: 'center',
+            borderRadius: '24px', padding: isMobile ? '28px 20px' : '48px',
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1.2fr 1fr',
+            gap: isMobile ? '32px' : '48px',
+            alignItems: 'center',
           }}>
             <div>
               <div style={{
@@ -181,7 +207,7 @@ export default function ScaleupsPage() {
                 ✦ Signature Feature
               </div>
               <h2 style={{
-                fontSize: 'clamp(1.6rem, 3vw, 2.2rem)', fontWeight: 800,
+                fontSize: isMobile ? '1.4rem' : 'clamp(1.6rem, 3vw, 2.2rem)', fontWeight: 800,
                 color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
               }}>
                 {signatureFeature.title}
@@ -209,7 +235,7 @@ export default function ScaleupsPage() {
       </section>
 
       {/* FEATURES — 2 col grid */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -219,18 +245,22 @@ export default function ScaleupsPage() {
               Platform Capabilities
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Built for Teams Growing Fast
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             {features.map(({ icon: Icon, title, desc }) => (
               <div key={title} style={{
                 background: '#fff', border: '1.5px solid #e5e7eb',
-                borderRadius: '16px', padding: '36px',
+                borderRadius: '16px', padding: isMobile ? '24px' : '36px',
                 display: 'flex', gap: '24px', alignItems: 'flex-start',
                 transition: 'all 0.2s ease',
               }}
@@ -250,7 +280,7 @@ export default function ScaleupsPage() {
                 }}>
                   <Icon size={24} style={{ color: '#7c3aed' }} />
                 </div>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
                     {title}
                   </h3>
@@ -265,41 +295,45 @@ export default function ScaleupsPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '0 48px 80px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '0 20px 48px' : isTablet ? '0 32px 64px' : '0 48px 80px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             background: '#0f172a',
             borderRadius: '20px',
-            padding: '48px',
+            padding: isMobile ? '28px 20px' : '48px',
             display: 'grid',
-            gridTemplateColumns: '1fr auto',
-            gap: '48px',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
+            gap: isMobile ? '32px' : '48px',
             alignItems: 'center',
           }}>
             <div>
               <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
                 Scale-up Result
               </p>
-              <p style={{ fontSize: '1.15rem', fontWeight: 600, color: '#e2e8f0', lineHeight: 1.65, marginBottom: '24px', maxWidth: '560px' }}>
+              <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 600, color: '#e2e8f0', lineHeight: 1.65, marginBottom: '24px', maxWidth: '560px' }}>
                 {'\u201C'}We had 3 AWS accounts, 4 teams, and no idea what anything cost. DevControl gave us full visibility in 15 minutes and found{' '}
                 <span style={{ color: '#a78bfa', fontWeight: 800 }}>$8,200/month in idle resources</span>
                 {' '}we had completely forgotten about.{'\u201D'}
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '12px',
+                flexDirection: isMobile ? 'column' : 'row',
+              }}>
                 <div style={{
                   width: '40px', height: '40px', borderRadius: '50%',
                   background: 'rgba(124,58,237,0.3)', color: '#a78bfa',
                   fontWeight: 700, fontSize: '13px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
                 }}>
                   MC
                 </div>
-                <div>
+                <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
                   <p style={{ fontSize: '14px', fontWeight: 600, color: '#fff', margin: 0 }}>Marcus Chen</p>
                   <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>VP Engineering · Axiom Labs · Series B</p>
                 </div>
                 <div style={{
-                  marginLeft: '12px',
+                  marginLeft: isMobile ? '0' : '12px',
                   background: 'rgba(124,58,237,0.2)', color: '#a78bfa',
                   padding: '3px 12px', borderRadius: '999px',
                   fontSize: '11px', fontWeight: 600,
@@ -308,14 +342,19 @@ export default function ScaleupsPage() {
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '180px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : '1fr',
+              gap: '16px',
+              minWidth: isMobile ? undefined : '180px',
+            }}>
               {[
                 { value: '3', label: 'Accounts unified' },
                 { value: '$8,200', label: 'Monthly savings' },
                 { value: '15 min', label: 'Time to insight' },
               ].map(({ value, label }) => (
-                <div key={label} style={{ textAlign: 'center', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <p style={{ fontSize: '1.5rem', fontWeight: 800, color: '#a78bfa', margin: '0 0 4px' }}>{value}</p>
+                <div key={label} style={{ textAlign: 'center', padding: isMobile ? '12px 8px' : '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <p style={{ fontSize: isMobile ? '1.1rem' : '1.5rem', fontWeight: 800, color: '#a78bfa', margin: '0 0 4px' }}>{value}</p>
                   <p style={{ fontSize: '0.72rem', color: '#64748b', margin: 0 }}>{label}</p>
                 </div>
               ))}
@@ -325,7 +364,7 @@ export default function ScaleupsPage() {
       </section>
 
       {/* HOW IT WORKS — horizontal timeline */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -335,7 +374,7 @@ export default function ScaleupsPage() {
               Quick Setup
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Multi-Account Visibility in 15 Minutes
@@ -344,13 +383,16 @@ export default function ScaleupsPage() {
 
           {/* Timeline */}
           <div style={{ position: 'relative' }}>
-            {/* Connector line */}
+            {/* Connector line — desktop only */}
+            {!isMobile && (
+              <div style={{
+                position: 'absolute', top: '28px', left: '12.5%', right: '12.5%',
+                height: '2px', background: 'rgba(124,58,237,0.2)', zIndex: 0,
+              }} />
+            )}
             <div style={{
-              position: 'absolute', top: '28px', left: '12.5%', right: '12.5%',
-              height: '2px', background: 'rgba(124,58,237,0.2)', zIndex: 0,
-            }} />
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
               gap: '24px', position: 'relative', zIndex: 1,
             }}>
               {timeline.map(({ step, title, desc }) => (
@@ -379,7 +421,7 @@ export default function ScaleupsPage() {
       </section>
 
       {/* WHO IT'S FOR — 3 cards */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -389,19 +431,23 @@ export default function ScaleupsPage() {
               Every Role Covered
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {audiences.map(({ role, title, points }, i) => (
               <div key={role} style={{
                 background: i === 1 ? 'linear-gradient(135deg, #faf5ff, #f3e8ff)' : '#fff',
                 border: i === 1 ? '2px solid rgba(124,58,237,0.25)' : '1.5px solid #e5e7eb',
-                borderRadius: '20px', padding: '36px',
+                borderRadius: '20px', padding: isMobile ? '28px' : '36px',
               }}>
                 <div style={{
                   display: 'inline-flex',
@@ -434,7 +480,8 @@ export default function ScaleupsPage() {
       <section style={{
         width: '100%',
         background: '#0f172a',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '56px 20px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
@@ -447,7 +494,7 @@ export default function ScaleupsPage() {
             Ready to Scale With Control?
           </div>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Your Infrastructure Complexity Is About to Get Simple
@@ -458,12 +505,19 @@ export default function ScaleupsPage() {
           }}>
             Join fast-growing teams using DevControl to unify AWS visibility and stay in control as they scale.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap',
+          }}>
             <a href="/register" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 20px rgba(124,58,237,0.4)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Start Free Trial
             </a>
@@ -472,6 +526,8 @@ export default function ScaleupsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid rgba(255,255,255,0.25)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Read Case Studies
             </a>

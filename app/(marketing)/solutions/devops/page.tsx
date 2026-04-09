@@ -1,8 +1,23 @@
 'use client'
 
 import { Terminal, GitBranch, Shield, BarChart3, Zap, RefreshCw, Bell, Cloud } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 export default function DevOpsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     { icon: GitBranch, title: 'Pipeline Visibility & DORA Metrics', desc: 'Track deployment frequency, lead time, change failure rate, and MTTR automatically from your existing GitHub setup. No instrumentation, no manual tracking — just real data.' },
@@ -35,11 +50,16 @@ export default function DevOpsPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
-        padding: '140px 48px 100px',
+        padding: isMobile ? '60px 20px 48px' : isTablet ? '100px 32px 72px' : '140px 48px 100px',
         borderBottom: '1px solid #1e293b',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '80px', alignItems: 'center' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: isMobile ? '40px' : '80px',
+            alignItems: 'center',
+          }}>
 
             {/* Left — text */}
             <div>
@@ -54,7 +74,7 @@ export default function DevOpsPage() {
               </div>
 
               <h1 style={{
-                fontSize: 'clamp(2rem, 4vw, 3rem)',
+                fontSize: isMobile ? '1.9rem' : 'clamp(2rem, 4vw, 3rem)',
                 fontWeight: 800, color: '#fff',
                 lineHeight: 1.15, marginBottom: '20px',
                 letterSpacing: '-0.02em',
@@ -64,7 +84,7 @@ export default function DevOpsPage() {
               </h1>
 
               <p style={{
-                fontSize: '1.1rem', color: '#94a3b8',
+                fontSize: isMobile ? '1rem' : '1.1rem', color: '#94a3b8',
                 lineHeight: 1.75, marginBottom: '36px',
               }}>
                 Stop switching between AWS Console, Grafana, PagerDuty, and spreadsheets.
@@ -72,12 +92,18 @@ export default function DevOpsPage() {
                 performance, and DORA metrics — in one place.
               </p>
 
-              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '32px' }}>
+              <div style={{
+                display: 'flex', gap: '16px',
+                flexDirection: isMobile ? 'column' : 'row',
+                alignItems: isMobile ? 'stretch' : undefined,
+                flexWrap: 'wrap', marginBottom: '32px',
+              }}>
                 <a href="/register" style={{
                   background: '#7c3aed', color: '#fff',
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+                  textAlign: 'center', boxSizing: 'border-box',
                 }}>
                   Start Free Trial
                 </a>
@@ -86,6 +112,7 @@ export default function DevOpsPage() {
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
                   border: '1.5px solid #334155',
+                  textAlign: 'center', boxSizing: 'border-box',
                 }}>
                   See How It Works
                 </a>
@@ -93,6 +120,7 @@ export default function DevOpsPage() {
 
               <div style={{
                 display: 'flex', flexWrap: 'wrap', gap: '20px',
+                flexDirection: isMobile ? 'column' : 'row',
                 fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
               }}>
                 {['GitHub & AWS integration', 'No agents required', 'Full API access'].map(t => (
@@ -124,7 +152,7 @@ export default function DevOpsPage() {
               </div>
 
               {/* Terminal content */}
-              <div style={{ fontSize: '0.8rem', lineHeight: 2 }}>
+              <div style={{ fontSize: isMobile ? '0.72rem' : '0.8rem', lineHeight: 2 }}>
                 <div><span style={{ color: '#8b949e' }}>$</span> <span style={{ color: '#79c0ff' }}>devcontrol</span> <span style={{ color: '#e6edf3' }}>scan --account production</span></div>
                 <div style={{ color: '#3fb950' }}>✓ Connected to 3 AWS accounts</div>
                 <div style={{ color: '#3fb950' }}>✓ Discovered 847 resources across 6 regions</div>
@@ -145,15 +173,16 @@ export default function DevOpsPage() {
       </section>
 
       {/* BUSINESS IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '32px', textAlign: 'center',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gap: isMobile ? '24px' : '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
               <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
@@ -164,8 +193,8 @@ export default function DevOpsPage() {
         </div>
       </section>
 
-      {/* FEATURES — Horizontal rows */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      {/* FEATURES — grid */}
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -175,7 +204,7 @@ export default function DevOpsPage() {
               DevOps Capabilities
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything Your DevOps Team Needs in One Place
@@ -186,7 +215,11 @@ export default function DevOpsPage() {
           </div>
 
           {/* Feature cards grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+            gap: '16px',
+          }}>
             {features.map(({ icon: Icon, title, desc }, idx) => {
               const isFirst = idx === 0
               return (
@@ -246,7 +279,7 @@ export default function DevOpsPage() {
       </section>
 
       {/* HOW IT WORKS — Vertical Timeline */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -256,7 +289,7 @@ export default function DevOpsPage() {
               Onboarding Timeline
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Fully Operational in 2 Weeks
@@ -285,9 +318,9 @@ export default function DevOpsPage() {
                   </div>
                   <div style={{
                     background: '#fff', border: '1.5px solid #e5e7eb',
-                    borderRadius: '12px', padding: '20px 24px', flex: 1,
+                    borderRadius: '12px', padding: isMobile ? '16px' : '20px 24px', flex: 1,
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
                       <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
                         {title}
                       </h3>
@@ -311,25 +344,28 @@ export default function DevOpsPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '64px 48px', background: '#fff' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '64px 48px', background: '#fff' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 2fr 1fr',
-            gap: '48px', alignItems: 'center',
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 2fr 1fr',
+            gap: isMobile ? '32px' : '48px',
+            alignItems: 'center',
             background: '#faf5ff', border: '1.5px solid rgba(124,58,237,0.15)',
-            borderRadius: '20px', padding: '48px',
+            borderRadius: '20px', padding: isMobile ? '28px 20px' : '48px',
           }}>
             {/* Avatar + name */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center', gap: '12px' }}>
               <div style={{
                 width: '72px', height: '72px', borderRadius: '50%',
                 background: 'linear-gradient(135deg, #7c3aed, #a78bfa)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '1.5rem', fontWeight: 800, color: '#fff',
+                flexShrink: 0,
               }}>
                 MK
               </div>
-              <div style={{ textAlign: 'center' }}>
+              <div style={{ textAlign: isMobile ? 'left' : 'center' }}>
                 <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>Marcus K.</div>
                 <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Staff DevOps Engineer</div>
                 <div style={{ fontSize: '0.8rem', color: '#7c3aed', fontWeight: 600 }}>Series B SaaS, 120 engineers</div>
@@ -339,21 +375,25 @@ export default function DevOpsPage() {
             {/* Quote */}
             <div>
               <div style={{ fontSize: '2rem', color: '#a78bfa', lineHeight: 1, marginBottom: '8px' }}>&ldquo;</div>
-              <p style={{ fontSize: '1.05rem', color: '#1e293b', lineHeight: 1.75, fontStyle: 'italic', margin: 0 }}>
+              <p style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', color: '#1e293b', lineHeight: 1.75, fontStyle: 'italic', margin: 0 }}>
                 {'We went from 4 different dashboards — Grafana, Cost Explorer, SecurityHub, and a custom Notion doc — to one. Our MTTR dropped 60% in the first month because engineers stopped wasting time correlating incidents manually.'}
               </p>
               <div style={{ fontSize: '2rem', color: '#a78bfa', lineHeight: 1, textAlign: 'right', marginTop: '4px' }}>&rdquo;</div>
             </div>
 
             {/* Stats */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'row' : 'column',
+              gap: isMobile ? '16px' : '24px',
+            }}>
               {[
                 { value: '60%', label: 'MTTR reduction' },
                 { value: '4 → 1', label: 'Dashboards consolidated' },
                 { value: '15 min', label: 'Setup to first insight' },
               ].map(({ value, label }) => (
-                <div key={label} style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>{value}</div>
+                <div key={label} style={{ textAlign: 'center', flex: isMobile ? '1' : undefined }}>
+                  <div style={{ fontSize: isMobile ? '1.2rem' : '1.8rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>{value}</div>
                   <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500, marginTop: '4px' }}>{label}</div>
                 </div>
               ))}
@@ -363,7 +403,7 @@ export default function DevOpsPage() {
       </section>
 
       {/* WHO IT'S FOR */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -373,17 +413,21 @@ export default function DevOpsPage() {
               Built For Your Team
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             <div style={{
               background: '#fff', border: '1.5px solid #e5e7eb',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
@@ -414,7 +458,7 @@ export default function DevOpsPage() {
             <div style={{
               background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
               border: '1.5px solid rgba(124,58,237,0.2)',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: '#7c3aed',
@@ -449,11 +493,12 @@ export default function DevOpsPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '56px 20px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             One Tool. Your Entire DevOps Stack.
@@ -464,11 +509,18 @@ export default function DevOpsPage() {
           }}>
             Connect your AWS account and GitHub in 15 minutes. Get costs, security, and DORA metrics instantly.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Start Free Trial
             </a>
@@ -477,6 +529,8 @@ export default function DevOpsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Take a Product Tour
             </a>

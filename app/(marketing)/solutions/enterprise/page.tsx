@@ -1,8 +1,23 @@
 'use client'
 
 import { Shield, Lock, Users, BarChart3, Zap, FileText, Globe, Headphones } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 export default function EnterprisePage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     { icon: Shield, title: 'Custom Compliance Frameworks', desc: 'Map your infrastructure to any compliance standard — SOC 2, HIPAA, PCI-DSS, ISO 27001, or your own internal security policies. Automated evidence collection for every audit.' },
@@ -42,7 +57,7 @@ export default function EnterprisePage() {
       <section style={{
         width: '100%',
         background: '#0f172a',
-        padding: '100px 48px',
+        padding: isMobile ? '60px 20px' : isTablet ? '80px 32px' : '100px 48px',
         borderBottom: '1px solid #1e293b',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
@@ -58,7 +73,7 @@ export default function EnterprisePage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.5rem)',
+            fontSize: isMobile ? '1.9rem' : 'clamp(2.2rem, 5vw, 3.5rem)',
             fontWeight: 800, color: '#fff',
             lineHeight: 1.1, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '900px', margin: '0 auto 20px',
@@ -68,7 +83,7 @@ export default function EnterprisePage() {
           </h1>
 
           <p style={{
-            fontSize: '1.15rem', color: '#94a3b8',
+            fontSize: isMobile ? '1rem' : '1.15rem', color: '#94a3b8',
             lineHeight: 1.75, maxWidth: '620px',
             margin: '0 auto 36px',
           }}>
@@ -77,12 +92,19 @@ export default function EnterprisePage() {
             to govern AWS at scale — deployed in days, not months.
           </p>
 
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap', marginBottom: '36px',
+          }}>
             <a href="/contact" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Schedule Enterprise Demo
             </a>
@@ -91,6 +113,8 @@ export default function EnterprisePage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #334155',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Read Case Studies
             </a>
@@ -98,7 +122,9 @@ export default function EnterprisePage() {
 
           <div style={{
             display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '24px',
+            justifyContent: 'center', gap: isMobile ? '12px' : '24px',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: 'center',
             fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
           }}>
             {['SOC 2 In Progress', 'SAML / SSO', '99.99% SLA', 'Dedicated support'].map(t => (
@@ -114,15 +140,16 @@ export default function EnterprisePage() {
       </section>
 
       {/* BUSINESS IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: '32px', textAlign: 'center',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+          gap: isMobile ? '20px' : '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '1.4rem' : '2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
               <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
@@ -134,7 +161,7 @@ export default function EnterprisePage() {
       </section>
 
       {/* FEATURES — 2 col alternating */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -144,7 +171,7 @@ export default function EnterprisePage() {
               Enterprise Capabilities
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Built for Large Engineering Organizations
@@ -154,12 +181,16 @@ export default function EnterprisePage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '20px',
+          }}>
             {features.map(({ icon: Icon, title, desc }, i) => (
               <div key={title} style={{
                 background: i % 2 === 0 ? '#fff' : '#faf5ff',
                 border: i % 2 === 0 ? '1.5px solid #e5e7eb' : '1.5px solid rgba(124,58,237,0.15)',
-                borderRadius: '16px', padding: '32px',
+                borderRadius: '16px', padding: isMobile ? '24px' : '32px',
                 display: 'flex', gap: '20px', alignItems: 'flex-start',
                 transition: 'all 0.2s ease',
               }}
@@ -179,7 +210,7 @@ export default function EnterprisePage() {
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
                     {title}
                   </h3>
@@ -194,7 +225,7 @@ export default function EnterprisePage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '64px 48px', background: '#0f172a' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '64px 48px', background: '#0f172a' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <p style={{
             fontSize: '0.72rem', fontWeight: 700, color: '#a78bfa',
@@ -203,7 +234,11 @@ export default function EnterprisePage() {
           }}>
             What Enterprise Teams Say
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '40px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: isMobile ? '32px' : '40px',
+          }}>
             {[
               {
                 quote: 'Our CTO checks the security compliance dashboard before every investor call. It caught a misconfigured S3 bucket before our SOC 2 audit.',
@@ -234,7 +269,7 @@ export default function EnterprisePage() {
                 }}>
                   {'\u201C'}{quote}{'\u201D'}
                 </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: 'auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: 'auto', flexWrap: 'wrap' }}>
                   <div style={{
                     width: '40px', height: '40px', borderRadius: '50%',
                     background: 'rgba(124,58,237,0.3)', color: '#a78bfa',
@@ -244,7 +279,7 @@ export default function EnterprisePage() {
                   }}>
                     {name.split(' ').map((n: string) => n[0]).join('')}
                   </div>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <p style={{ fontSize: '13px', fontWeight: 600, color: '#fff', margin: 0 }}>{name}</p>
                     <p style={{ fontSize: '11px', color: '#64748b', margin: 0 }}>{title} · {company}</p>
                   </div>
@@ -264,7 +299,7 @@ export default function EnterprisePage() {
       </section>
 
       {/* COMPARISON TABLE */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '48px' }}>
             <div style={{
@@ -274,19 +309,20 @@ export default function EnterprisePage() {
               Enterprise vs Pro
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               What Enterprise Teams Get
             </h2>
           </div>
 
-          <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+          <div style={{ maxWidth: '800px', margin: '0 auto', overflowX: 'auto' }}>
             {/* Table header */}
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 160px 160px',
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr 100px 100px' : '1fr 160px 160px',
               background: '#0f172a', borderRadius: '12px 12px 0 0',
-              padding: '16px 24px',
+              padding: isMobile ? '14px 16px' : '16px 24px',
             }}>
               <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8' }}>Feature</div>
               <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#a78bfa', textAlign: 'center' }}>Enterprise</div>
@@ -296,24 +332,25 @@ export default function EnterprisePage() {
             {/* Table rows */}
             {tableRows.map(({ feature, enterprise, pro }, i) => (
               <div key={feature} style={{
-                display: 'grid', gridTemplateColumns: '1fr 160px 160px',
-                padding: '14px 24px',
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr 100px 100px' : '1fr 160px 160px',
+                padding: isMobile ? '12px 16px' : '14px 24px',
                 background: i % 2 === 0 ? '#fff' : '#f8fafc',
                 borderLeft: '1px solid #e5e7eb',
                 borderRight: '1px solid #e5e7eb',
                 borderBottom: i === tableRows.length - 1 ? '1px solid #e5e7eb' : '1px solid #f1f5f9',
                 borderRadius: i === tableRows.length - 1 ? '0 0 12px 12px' : '0',
               }}>
-                <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: 500 }}>{feature}</div>
+                <div style={{ fontSize: isMobile ? '0.8rem' : '0.875rem', color: '#374151', fontWeight: 500 }}>{feature}</div>
                 <div style={{
-                  fontSize: '0.875rem', fontWeight: 700,
+                  fontSize: isMobile ? '0.8rem' : '0.875rem', fontWeight: 700,
                   color: enterprise === '✗' ? '#9ca3af' : '#7c3aed',
                   textAlign: 'center',
                 }}>
                   {enterprise}
                 </div>
                 <div style={{
-                  fontSize: '0.875rem', fontWeight: 500,
+                  fontSize: isMobile ? '0.8rem' : '0.875rem', fontWeight: 500,
                   color: pro === '\u2014' ? '#9ca3af' : '#374151',
                   textAlign: 'center',
                 }}>
@@ -329,7 +366,8 @@ export default function EnterprisePage() {
       <section style={{
         width: '100%',
         background: '#fff',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '56px 20px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
         borderTop: '1px solid #f3f4f6',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -343,7 +381,7 @@ export default function EnterprisePage() {
             Ready to Scale with DevControl
           </div>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#0f172a', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Let&apos;s Talk About Your Infrastructure
@@ -355,12 +393,19 @@ export default function EnterprisePage() {
             Our enterprise team will walk you through a custom deployment plan,
             security review, and ROI projection for your organization.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap',
+          }}>
             <a href="/contact" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Schedule Enterprise Demo
             </a>
@@ -369,6 +414,8 @@ export default function EnterprisePage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #7c3aed',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Read Case Studies
             </a>

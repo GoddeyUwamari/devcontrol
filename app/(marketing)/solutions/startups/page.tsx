@@ -1,8 +1,23 @@
 'use client'
 
 import { Zap, DollarSign, Shield, BarChart3, Clock, TrendingUp } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 export default function StartupsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     { icon: DollarSign, title: 'Stop AWS Bill Shock', desc: 'Get instant visibility into every dollar of AWS spend. AI recommendations find idle resources, right-sizing opportunities, and budget leaks before your next invoice.', highlight: true },
@@ -32,7 +47,7 @@ export default function StartupsPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px',
+        padding: isMobile ? '60px 20px' : isTablet ? '70px 32px' : '80px 48px',
         borderBottom: '1px solid #f3f4f6',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
@@ -48,7 +63,7 @@ export default function StartupsPage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+            fontSize: isMobile ? '1.9rem' : 'clamp(2.2rem, 5vw, 3.2rem)',
             fontWeight: 800, color: '#0f172a',
             lineHeight: 1.15, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
@@ -58,7 +73,7 @@ export default function StartupsPage() {
           </h1>
 
           <p style={{
-            fontSize: '1.15rem', color: '#374151',
+            fontSize: isMobile ? '1rem' : '1.15rem', color: '#374151',
             lineHeight: 1.75, maxWidth: '620px',
             margin: '0 auto 36px',
           }}>
@@ -66,12 +81,19 @@ export default function StartupsPage() {
             without hiring a dedicated DevOps team or taking engineers off product work.
           </p>
 
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap', marginBottom: '36px',
+          }}>
             <a href="/register" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Start Free — No Credit Card
             </a>
@@ -80,6 +102,8 @@ export default function StartupsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #7c3aed',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               See How It Works
             </a>
@@ -87,7 +111,9 @@ export default function StartupsPage() {
 
           <div style={{
             display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '24px',
+            justifyContent: 'center', gap: '16px',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: 'center',
             fontSize: '0.875rem', fontWeight: 500, color: '#374151',
           }}>
             {['Free plan available', '15-minute setup', 'No DevOps hire needed'].map(t => (
@@ -103,15 +129,15 @@ export default function StartupsPage() {
       </section>
 
       {/* BUSINESS IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '32px', textAlign: 'center',
+          display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gap: isMobile ? '24px' : '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
               <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
@@ -123,7 +149,7 @@ export default function StartupsPage() {
       </section>
 
       {/* FEATURES */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -133,7 +159,7 @@ export default function StartupsPage() {
               Built for Startup Velocity
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything a Startup Needs. Nothing It Doesn&apos;t.
@@ -143,12 +169,16 @@ export default function StartupsPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {features.map(({ icon: Icon, title, desc, highlight }) => (
               <div key={title} style={{
                 background: '#fff',
                 border: highlight ? '2px solid #7c3aed' : '1.5px solid #e5e7eb',
-                borderRadius: '16px', padding: '32px',
+                borderRadius: '16px', padding: isMobile ? '24px' : '32px',
                 boxShadow: highlight ? '0 8px 32px rgba(124,58,237,0.15)' : 'none',
                 transition: 'all 0.2s ease',
               }}
@@ -190,7 +220,7 @@ export default function StartupsPage() {
       </section>
 
       {/* HOW IT WORKS */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -200,14 +230,18 @@ export default function StartupsPage() {
               Quick Setup
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Up and Running Before Lunch
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '32px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '32px',
+          }}>
             {steps.map(({ step, title, desc }) => (
               <div key={step} style={{ textAlign: 'center' }}>
                 <div style={{
@@ -232,7 +266,7 @@ export default function StartupsPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '64px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '64px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '40px' }}>
             <p style={{
@@ -242,7 +276,7 @@ export default function StartupsPage() {
               Real Startup Result
             </p>
             <h2 style={{
-              fontSize: 'clamp(1.5rem, 2.5vw, 2rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.3rem' : 'clamp(1.5rem, 2.5vw, 2rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '8px',
             }}>
               From Seed to Enterprise-Ready in 6 Weeks
@@ -252,7 +286,12 @@ export default function StartupsPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0', position: 'relative' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+            gap: '0',
+            position: 'relative',
+          }}>
             {[
               {
                 week: 'Week 1',
@@ -284,11 +323,14 @@ export default function StartupsPage() {
               },
             ].map(({ week, color, title, body, outcome }, i) => (
               <div key={week} style={{
-                padding: '28px 24px',
+                padding: isMobile ? '20px' : '28px 24px',
                 background: '#fff',
                 border: '1px solid #E2E8F0',
-                borderLeft: i === 0 ? '1px solid #E2E8F0' : 'none',
-                borderRadius: i === 0 ? '16px 0 0 16px' : i === 3 ? '0 16px 16px 0' : '0',
+                borderLeft: isMobile ? '1px solid #E2E8F0' : (i === 0 ? '1px solid #E2E8F0' : 'none'),
+                borderTop: isMobile && i > 0 ? 'none' : '1px solid #E2E8F0',
+                borderRadius: isMobile
+                  ? (i === 0 ? '16px 16px 0 0' : i === 3 ? '0 0 16px 16px' : '0')
+                  : (i === 0 ? '16px 0 0 16px' : i === 3 ? '0 16px 16px 0' : '0'),
                 position: 'relative',
               }}>
                 <p style={{ fontSize: '0.68rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 10px' }}>{week}</p>
@@ -310,7 +352,7 @@ export default function StartupsPage() {
       </section>
 
       {/* WHO IT'S FOR */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -320,17 +362,21 @@ export default function StartupsPage() {
               Your Stage. Your Needs.
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             <div style={{
               background: '#fff', border: '1.5px solid #e5e7eb',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
@@ -361,7 +407,7 @@ export default function StartupsPage() {
             <div style={{
               background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
               border: '1.5px solid rgba(124,58,237,0.2)',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: '#7c3aed',
@@ -396,11 +442,12 @@ export default function StartupsPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '56px 20px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Built for Startups. Priced for Startups.
@@ -411,11 +458,18 @@ export default function StartupsPage() {
           }}>
             Start free. Get your AWS costs, security score, and DORA metrics in 15 minutes.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Start Free Forever
             </a>
@@ -424,6 +478,8 @@ export default function StartupsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               View Pricing
             </a>

@@ -1,8 +1,23 @@
 'use client'
 
 import { DollarSign, TrendingDown, BarChart3, Bell, PieChart, Zap, FileText, Users } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 export default function FinOpsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     { icon: DollarSign, stat: '$2,400', statSub: 'avg monthly savings', title: 'AI Cost Recommendations', desc: 'Machine learning identifies idle resources, right-sizing opportunities, and reserved instance gaps. Every recommendation comes with projected savings before you act.' },
@@ -56,11 +71,16 @@ export default function FinOpsPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '140px 48px 100px',
+        padding: isMobile ? '60px 20px 48px' : isTablet ? '100px 32px 72px' : '140px 48px 100px',
         borderBottom: '1px solid #f3f4f6',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '80px', alignItems: 'center' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: isMobile ? '40px' : '80px',
+            alignItems: 'center',
+          }}>
 
             {/* Left — text */}
             <div>
@@ -75,7 +95,7 @@ export default function FinOpsPage() {
               </div>
 
               <h1 style={{
-                fontSize: 'clamp(2rem, 4vw, 3rem)',
+                fontSize: isMobile ? '1.9rem' : 'clamp(2rem, 4vw, 3rem)',
                 fontWeight: 800, color: '#0f172a',
                 lineHeight: 1.15, marginBottom: '20px',
                 letterSpacing: '-0.02em',
@@ -85,7 +105,7 @@ export default function FinOpsPage() {
               </h1>
 
               <p style={{
-                fontSize: '1.1rem', color: '#374151',
+                fontSize: isMobile ? '1rem' : '1.1rem', color: '#374151',
                 lineHeight: 1.75, marginBottom: '36px',
               }}>
                 AI-powered cloud cost intelligence for FinOps teams. Get complete spend
@@ -93,12 +113,18 @@ export default function FinOpsPage() {
                 — without building a single internal tool.
               </p>
 
-              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '32px' }}>
+              <div style={{
+                display: 'flex', gap: '16px',
+                flexDirection: isMobile ? 'column' : 'row',
+                alignItems: isMobile ? 'stretch' : undefined,
+                flexWrap: 'wrap', marginBottom: '32px',
+              }}>
                 <a href="/register" style={{
                   background: '#7c3aed', color: '#fff',
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+                  textAlign: 'center', boxSizing: 'border-box',
                 }}>
                   See My AWS Costs Free
                 </a>
@@ -107,6 +133,7 @@ export default function FinOpsPage() {
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
                   border: '1.5px solid #7c3aed',
+                  textAlign: 'center', boxSizing: 'border-box',
                 }}>
                   Take a Product Tour
                 </a>
@@ -114,6 +141,7 @@ export default function FinOpsPage() {
 
               <div style={{
                 display: 'flex', flexWrap: 'wrap', gap: '20px',
+                flexDirection: isMobile ? 'column' : 'row',
                 fontSize: '0.875rem', fontWeight: 500, color: '#374151',
               }}>
                 {['No credit card required', 'ROI in first week', '15-minute setup'].map(t => (
@@ -133,7 +161,7 @@ export default function FinOpsPage() {
               background: '#fff',
               borderRadius: '20px',
               border: '1.5px solid #e5e7eb',
-              padding: '32px',
+              padding: isMobile ? '24px' : '32px',
               boxShadow: '0 8px 40px rgba(0,0,0,0.08)',
             }}>
               <div style={{
@@ -156,7 +184,7 @@ export default function FinOpsPage() {
                 }}>
                   <div>
                     <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '4px' }}>{label}</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a' }}>{value}</div>
+                    <div style={{ fontSize: isMobile ? '1.2rem' : '1.5rem', fontWeight: 800, color: '#0f172a' }}>{value}</div>
                   </div>
                   <div style={{
                     background: bad ? 'rgba(239,68,68,0.08)' : 'rgba(22,163,74,0.08)',
@@ -199,15 +227,16 @@ export default function FinOpsPage() {
       </section>
 
       {/* BUSINESS IMPACT BAR — 4 metrics */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: '32px', textAlign: 'center',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+          gap: isMobile ? '20px' : '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '1.5rem' : '2.2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
               <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
@@ -219,7 +248,7 @@ export default function FinOpsPage() {
       </section>
 
       {/* FEATURES — Cards with embedded stats */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -229,7 +258,7 @@ export default function FinOpsPage() {
               FinOps Capabilities
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Every Dollar. Every Team. Every Month.
@@ -239,7 +268,11 @@ export default function FinOpsPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+            gap: '20px',
+          }}>
             {features.map(({ icon: Icon, stat, statSub, title, desc }) => (
               <div key={title} style={{
                 background: '#fff', border: '1.5px solid #e5e7eb',
@@ -290,7 +323,7 @@ export default function FinOpsPage() {
       </section>
 
       {/* FINOPS WORKFLOW */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -300,7 +333,7 @@ export default function FinOpsPage() {
               FinOps Framework
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               DevControl Across the FinOps Lifecycle
@@ -310,11 +343,15 @@ export default function FinOpsPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {workflow.map(({ phase, color, bg, border, desc, items }) => (
               <div key={phase} style={{
                 background: bg, border: `1.5px solid ${border}`,
-                borderRadius: '20px', padding: '36px',
+                borderRadius: '20px', padding: isMobile ? '28px' : '36px',
               }}>
                 <div style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -343,12 +380,12 @@ export default function FinOpsPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '64px 48px', background: '#fff' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '64px 48px', background: '#fff' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '280px 1fr',
-            gap: '64px',
+            gridTemplateColumns: isMobile ? '1fr' : '280px 1fr',
+            gap: isMobile ? '40px' : '64px',
             alignItems: 'start',
           }}>
             {/* Left — big number */}
@@ -356,7 +393,7 @@ export default function FinOpsPage() {
               <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
                 Avg. First Month
               </p>
-              <p style={{ fontSize: '4rem', fontWeight: 900, color: '#7c3aed', lineHeight: 1, margin: '0 0 8px', letterSpacing: '-0.04em' }}>
+              <p style={{ fontSize: isMobile ? '3rem' : '4rem', fontWeight: 900, color: '#7c3aed', lineHeight: 1, margin: '0 0 8px', letterSpacing: '-0.04em' }}>
                 $2,400
               </p>
               <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>
@@ -416,7 +453,7 @@ export default function FinOpsPage() {
                   <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7, fontStyle: 'italic', margin: '0 0 16px' }}>
                     {'\u201C'}{quote}{'\u201D'}
                   </p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     <div style={{
                       width: '36px', height: '36px', borderRadius: '50%',
                       background: '#EDE9FE', color: '#7C3AED',
@@ -426,7 +463,7 @@ export default function FinOpsPage() {
                     }}>
                       {initials}
                     </div>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', margin: 0 }}>{name}</p>
                       <p style={{ fontSize: '11px', color: '#64748B', margin: 0 }}>{title}</p>
                     </div>
@@ -446,7 +483,7 @@ export default function FinOpsPage() {
       </section>
 
       {/* WHO IT'S FOR */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -456,17 +493,21 @@ export default function FinOpsPage() {
               Built For Your Team
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             <div style={{
               background: '#fff', border: '1.5px solid #e5e7eb',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
@@ -497,7 +538,7 @@ export default function FinOpsPage() {
             <div style={{
               background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
               border: '1.5px solid rgba(124,58,237,0.2)',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: '#7c3aed',
@@ -532,7 +573,8 @@ export default function FinOpsPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '56px 20px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
 
@@ -540,8 +582,10 @@ export default function FinOpsPage() {
           <div style={{
             background: 'rgba(255,255,255,0.1)',
             border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '16px', padding: '24px 32px',
-            display: 'inline-flex', gap: '48px',
+            borderRadius: '16px', padding: isMobile ? '20px' : '24px 32px',
+            display: 'flex', gap: isMobile ? '24px' : '48px',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: 'center',
             marginBottom: '40px', flexWrap: 'wrap', justifyContent: 'center',
           }}>
             {[
@@ -551,13 +595,13 @@ export default function FinOpsPage() {
             ].map(({ label, value }) => (
               <div key={label} style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>{label}</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff' }}>{value}</div>
+                <div style={{ fontSize: isMobile ? '1.2rem' : '1.5rem', fontWeight: 800, color: '#fff' }}>{value}</div>
               </div>
             ))}
           </div>
 
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Stop Overpaying for AWS. Start Today.
@@ -569,11 +613,18 @@ export default function FinOpsPage() {
             Get your first AWS cost report in 15 minutes. See exactly where you&apos;re
             overspending and how much you can save.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Start Free Trial
             </a>
@@ -582,6 +633,8 @@ export default function FinOpsPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               View Pricing
             </a>

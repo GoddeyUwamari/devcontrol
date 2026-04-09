@@ -1,9 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { DollarSign, Users, Shield, Network } from 'lucide-react'
 import { midMarketQuickWins } from './data/midMarketQuickWins'
 import { midMarketValueCards } from './data/midMarketValueCards'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 const problems = [
   {
@@ -105,6 +116,10 @@ function FeatureCard({ icon: Icon, title, desc }: { icon: React.ElementType; tit
 }
 
 export default function MidMarketPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
 
@@ -112,11 +127,16 @@ export default function MidMarketPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
-        padding: '140px 48px 100px',
+        padding: isMobile ? '60px 20px 48px' : isTablet ? '100px 32px 72px' : '140px 48px 100px',
         borderBottom: '1px solid #1e293b',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '80px', alignItems: 'center' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: isMobile ? '40px' : '80px',
+            alignItems: 'center',
+          }}>
 
             {/* Left — text */}
             <div>
@@ -131,7 +151,7 @@ export default function MidMarketPage() {
               </div>
 
               <h1 style={{
-                fontSize: 'clamp(2rem, 4vw, 3rem)',
+                fontSize: isMobile ? '1.9rem' : 'clamp(2rem, 4vw, 3rem)',
                 fontWeight: 800, color: '#fff',
                 lineHeight: 1.15, marginBottom: '20px',
                 letterSpacing: '-0.02em',
@@ -141,19 +161,25 @@ export default function MidMarketPage() {
               </h1>
 
               <p style={{
-                fontSize: '1.1rem', color: '#94a3b8',
+                fontSize: isMobile ? '1rem' : '1.1rem', color: '#94a3b8',
                 lineHeight: 1.75, marginBottom: '36px',
               }}>
                 Stop managing AWS like a startup. Get the visibility, cost control, and compliance automation
                 that growing engineering organizations need — without the enterprise price tag or 6-week implementation.
               </p>
 
-              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '32px' }}>
+              <div style={{
+                display: 'flex', gap: '16px',
+                flexDirection: isMobile ? 'column' : 'row',
+                alignItems: isMobile ? 'stretch' : undefined,
+                flexWrap: 'wrap', marginBottom: '32px',
+              }}>
                 <a href="/register" style={{
                   background: '#7c3aed', color: '#fff',
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+                  textAlign: 'center', boxSizing: 'border-box',
                 }}>
                   Start Free Trial
                 </a>
@@ -162,6 +188,7 @@ export default function MidMarketPage() {
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
                   border: '1.5px solid #334155',
+                  textAlign: 'center', boxSizing: 'border-box',
                 }}>
                   Talk to Sales
                 </a>
@@ -169,6 +196,7 @@ export default function MidMarketPage() {
 
               <div style={{
                 display: 'flex', flexWrap: 'wrap', gap: '20px',
+                flexDirection: isMobile ? 'column' : 'row',
                 fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
               }}>
                 {['No credit card required', 'Setup in 15 minutes', 'SOC 2 In Progress'].map(t => (
@@ -184,7 +212,7 @@ export default function MidMarketPage() {
               background: '#0d1117',
               borderRadius: '16px',
               border: '1px solid #30363d',
-              padding: '32px',
+              padding: isMobile ? '24px' : '32px',
             }}>
               {[
                 { value: '$24K', label: 'Average monthly savings found' },
@@ -197,7 +225,7 @@ export default function MidMarketPage() {
                     paddingBottom: '24px',
                     borderBottom: i < 2 ? '1px solid #21262d' : 'none',
                   }}>
-                    <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>
+                    <div style={{ fontSize: isMobile ? '1.8rem' : '2.4rem', fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>
                       {value}
                     </div>
                     <div style={{ fontSize: '0.9rem', color: '#8b949e', marginTop: '6px' }}>
@@ -213,15 +241,16 @@ export default function MidMarketPage() {
       </section>
 
       {/* IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '32px', textAlign: 'center',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gap: isMobile ? '24px' : '32px', textAlign: 'center',
         }}>
-          {midMarketQuickWins.map(({ value, label }) => (
+          {midMarketQuickWins.map(({ value, label }: { value: string; label: string }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
               <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
@@ -233,7 +262,7 @@ export default function MidMarketPage() {
       </section>
 
       {/* FEATURES */}
-      <section style={{ padding: '56px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '56px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -243,7 +272,7 @@ export default function MidMarketPage() {
               Mid-Market Capabilities
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything Growing Teams Need.{' '}
@@ -254,8 +283,12 @@ export default function MidMarketPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-            {midMarketValueCards.map(({ icon, title, description }) => (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '16px',
+          }}>
+            {midMarketValueCards.map(({ icon, title, description }: { icon: React.ElementType; title: string; description: string }) => (
               <FeatureCard key={title} icon={icon} title={title} desc={description} />
             ))}
           </div>
@@ -263,7 +296,7 @@ export default function MidMarketPage() {
       </section>
 
       {/* PROBLEM → SOLUTION */}
-      <section style={{ padding: '56px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '56px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -273,14 +306,18 @@ export default function MidMarketPage() {
               Common Growing Pains
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               The Problems Teams Hit at 20–100 Engineers
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             {problems.map(({ icon: Icon, problem, solution }) => (
               <div key={problem} style={{
                 background: '#fff',
@@ -341,11 +378,11 @@ export default function MidMarketPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '40px 48px', background: '#fff' }}>
+      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '40px 48px', background: '#fff' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 2fr',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 2fr',
             gap: '0',
             border: '1.5px solid #e5e7eb',
             borderRadius: '20px',
@@ -354,7 +391,7 @@ export default function MidMarketPage() {
             {/* Left — stat column */}
             <div style={{
               background: '#7c3aed',
-              padding: '48px 40px',
+              padding: isMobile ? '32px 24px' : '48px 40px',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'center',
@@ -372,13 +409,13 @@ export default function MidMarketPage() {
                 { value: '90 days', label: 'To SOC 2 baseline' },
               ].map(({ value, label }) => (
                 <div key={label}>
-                  <p style={{ fontSize: '2rem', fontWeight: 800, color: '#fff', margin: '0 0 4px', lineHeight: 1 }}>{value}</p>
+                  <p style={{ fontSize: isMobile ? '1.6rem' : '2rem', fontWeight: 800, color: '#fff', margin: '0 0 4px', lineHeight: 1 }}>{value}</p>
                   <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.65)', margin: 0 }}>{label}</p>
                 </div>
               ))}
             </div>
             {/* Right — quote */}
-            <div style={{ padding: '48px', background: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ padding: isMobile ? '32px 24px' : '48px', background: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <p style={{
                 fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed',
                 textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '20px',
@@ -386,14 +423,17 @@ export default function MidMarketPage() {
                 VP Engineering · B2B SaaS · 65 Engineers
               </p>
               <p style={{
-                fontSize: '1.2rem', fontWeight: 600, color: '#0f172a',
+                fontSize: isMobile ? '1rem' : '1.2rem', fontWeight: 600, color: '#0f172a',
                 lineHeight: 1.65, marginBottom: '28px',
               }}>
                 {'\u201C'}We were flying blind across 3 AWS accounts and 4 teams. DevControl gave us full visibility in 15 minutes and found{' '}
                 <span style={{ color: '#7c3aed', fontWeight: 800 }}>$31,000/month in waste we had no idea existed</span>
                 {'. Our CFO now uses the cost dashboard in every board meeting.\u201D'}
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '12px',
+                flexDirection: isMobile ? 'column' : 'row',
+              }}>
                 <div style={{
                   width: '44px', height: '44px', borderRadius: '50%',
                   background: '#EDE9FE', color: '#7C3AED',
@@ -403,12 +443,12 @@ export default function MidMarketPage() {
                 }}>
                   DK
                 </div>
-                <div>
+                <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
                   <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', margin: 0 }}>David K.</p>
                   <p style={{ fontSize: '12px', color: '#64748B', margin: 0 }}>VP Engineering · B2B SaaS · 65 engineers</p>
                 </div>
                 <div style={{
-                  marginLeft: '8px',
+                  marginLeft: isMobile ? '0' : '8px',
                   background: '#ECFDF5', color: '#059669',
                   padding: '4px 12px', borderRadius: '999px',
                   fontSize: '11px', fontWeight: 600,
@@ -430,7 +470,7 @@ export default function MidMarketPage() {
       </section>
 
       {/* HOW IT WORKS — Vertical Timeline */}
-      <section style={{ padding: '56px 48px' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '56px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -440,7 +480,7 @@ export default function MidMarketPage() {
               Onboarding Timeline
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Operational in 2 Weeks
@@ -469,9 +509,9 @@ export default function MidMarketPage() {
                   </div>
                   <div style={{
                     background: '#fff', border: '1.5px solid #e5e7eb',
-                    borderRadius: '12px', padding: '20px 24px', flex: 1,
+                    borderRadius: '12px', padding: isMobile ? '16px' : '20px 24px', flex: 1,
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
                       <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
                         {title}
                       </h3>
@@ -495,7 +535,7 @@ export default function MidMarketPage() {
       </section>
 
       {/* PRICING */}
-      <section style={{ padding: '56px 48px' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '56px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '48px' }}>
             <div style={{
@@ -505,7 +545,7 @@ export default function MidMarketPage() {
               Transparent Pricing
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               One Plan. No Per-Seat Surprises.
@@ -519,7 +559,7 @@ export default function MidMarketPage() {
             <div style={{
               border: '2px solid #7c3aed',
               borderRadius: '20px',
-              padding: '40px',
+              padding: isMobile ? '28px 20px' : '40px',
               boxShadow: '0 8px 40px rgba(124,58,237,0.12)',
               background: '#fff',
             }}>
@@ -539,7 +579,11 @@ export default function MidMarketPage() {
                 </p>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '32px' }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+                gap: '12px', marginBottom: '32px',
+              }}>
                 {pricingFeatures.map(feature => (
                   <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: '#059669', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>✓</span>
@@ -548,12 +592,19 @@ export default function MidMarketPage() {
                 ))}
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
+              <div style={{
+                display: 'flex', gap: '12px', justifyContent: 'center',
+                flexDirection: isMobile ? 'column' : 'row',
+                alignItems: isMobile ? 'center' : undefined,
+                flexWrap: 'wrap', marginBottom: '16px',
+              }}>
                 <a href="/register" style={{
                   background: '#7c3aed', color: '#fff',
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 24px rgba(124,58,237,0.3)',
+                  width: isMobile ? '100%' : undefined,
+                  boxSizing: 'border-box', textAlign: 'center',
                 }}>
                   Start Free Trial
                 </a>
@@ -562,6 +613,8 @@ export default function MidMarketPage() {
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
                   border: '1.5px solid #7c3aed',
+                  width: isMobile ? '100%' : undefined,
+                  boxSizing: 'border-box', textAlign: 'center',
                 }}>
                   Compare All Plans
                 </a>
@@ -579,11 +632,12 @@ export default function MidMarketPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '56px 20px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Built for the Team You&apos;re Becoming
@@ -594,11 +648,18 @@ export default function MidMarketPage() {
           }}>
             Join 500+ engineering organizations using DevControl to scale faster, stay compliant, and control costs.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Start Free Trial
             </a>
@@ -607,6 +668,8 @@ export default function MidMarketPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Schedule a Demo
             </a>

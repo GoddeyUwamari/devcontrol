@@ -1,8 +1,23 @@
 'use client'
 
 import { Layers, GitBranch, Shield, BarChart3, Zap, Search, RefreshCw, Lock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 export default function PlatformEngineersPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     { icon: Layers, title: 'Internal Developer Portal Alternative', desc: 'Give every engineer a self-service view of infrastructure they own — costs, health, dependencies, and drift status — without building it yourself.' },
@@ -73,7 +88,7 @@ export default function PlatformEngineersPage() {
       <section style={{
         width: '100%',
         background: '#0f172a',
-        padding: '140px 48px 100px',
+        padding: isMobile ? '60px 20px 48px' : isTablet ? '100px 32px 72px' : '140px 48px 100px',
         borderBottom: '1px solid #1e293b',
         position: 'relative',
         overflow: 'hidden',
@@ -99,7 +114,7 @@ export default function PlatformEngineersPage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.5rem)',
+            fontSize: isMobile ? '1.9rem' : 'clamp(2.2rem, 5vw, 3.5rem)',
             fontWeight: 800, color: '#fff',
             lineHeight: 1.1, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '900px', margin: '0 auto 20px',
@@ -109,7 +124,7 @@ export default function PlatformEngineersPage() {
           </h1>
 
           <p style={{
-            fontSize: '1.15rem', color: '#94a3b8',
+            fontSize: isMobile ? '1rem' : '1.15rem', color: '#94a3b8',
             lineHeight: 1.75, maxWidth: '640px',
             margin: '0 auto 36px',
           }}>
@@ -118,12 +133,19 @@ export default function PlatformEngineersPage() {
             self-service — deployed in 15 minutes, not 6 months.
           </p>
 
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap', marginBottom: '36px',
+          }}>
             <a href="/register" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Start Free Trial
             </a>
@@ -132,6 +154,8 @@ export default function PlatformEngineersPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #334155',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               See How It Works
             </a>
@@ -139,7 +163,9 @@ export default function PlatformEngineersPage() {
 
           <div style={{
             display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '24px',
+            justifyContent: 'center', gap: isMobile ? '12px' : '24px',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: 'center',
             fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
           }}>
             {['No agents required', 'IaC drift detection', 'Developer self-service'].map(t => (
@@ -156,15 +182,16 @@ export default function PlatformEngineersPage() {
       </section>
 
       {/* BUSINESS IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '32px', textAlign: 'center',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gap: isMobile ? '24px' : '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
               <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
@@ -176,7 +203,7 @@ export default function PlatformEngineersPage() {
       </section>
 
       {/* FEATURES — 2 col alternating backgrounds */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -186,7 +213,7 @@ export default function PlatformEngineersPage() {
               Platform Capabilities
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything Your Platform Team Needs to Scale
@@ -196,12 +223,16 @@ export default function PlatformEngineersPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '20px',
+          }}>
             {features.map(({ icon: Icon, title, desc }, i) => (
               <div key={title} style={{
                 background: i % 2 === 0 ? '#faf5ff' : '#fff',
                 border: i % 2 === 0 ? '1.5px solid rgba(124,58,237,0.15)' : '1.5px solid #e5e7eb',
-                borderRadius: '16px', padding: '32px',
+                borderRadius: '16px', padding: isMobile ? '24px' : '32px',
                 transition: 'all 0.2s ease',
               }}
                 onMouseEnter={e => {
@@ -234,7 +265,7 @@ export default function PlatformEngineersPage() {
       </section>
 
       {/* MATURITY MODEL */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -244,7 +275,7 @@ export default function PlatformEngineersPage() {
               Platform Engineering Maturity
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Where Are You Today? Where Could You Be?
@@ -254,13 +285,17 @@ export default function PlatformEngineersPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {maturityLevels.map(({ level, title, subtitle, color, bg, border, points }) => (
               <div key={level} style={{
                 background: bg,
                 border: `1.5px solid ${border}`,
                 borderRadius: '20px',
-                padding: '36px',
+                padding: isMobile ? '28px' : '36px',
               }}>
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '50%',
@@ -292,31 +327,36 @@ export default function PlatformEngineersPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '64px 48px', background: '#fff', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}>
+      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '64px 48px', background: '#fff', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '24px' }}>
             Platform Engineering Result
           </p>
-          <p style={{ fontSize: '1.25rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.65, marginBottom: '28px', maxWidth: '700px', margin: '0 auto 28px' }}>
+          <p style={{ fontSize: isMobile ? '1.05rem' : '1.25rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.65, marginBottom: '28px', maxWidth: '700px', margin: '0 auto 28px' }}>
             {'\u201C'}We replaced our internal Backstage implementation, a custom drift detector, and a homegrown tagging enforcer with DevControl. Setup took an afternoon. We got{' '}
             <span style={{ color: '#7c3aed', fontWeight: 800 }}>3 months of platform work back</span>
             {' immediately.\u201D'}
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '40px' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px',
+            marginBottom: '40px',
+            flexDirection: isMobile ? 'column' : 'row',
+          }}>
             <div style={{
               width: '44px', height: '44px', borderRadius: '50%',
               background: '#EDE9FE', color: '#7C3AED',
               fontWeight: 700, fontSize: '13px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
             }}>
               TN
             </div>
-            <div style={{ textAlign: 'left' }}>
+            <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
               <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Tom N.</p>
               <p style={{ fontSize: '12px', color: '#64748B', margin: 0 }}>Staff Platform Engineer · Series B SaaS · 80 engineers</p>
             </div>
             <div style={{
-              marginLeft: '8px',
+              marginLeft: isMobile ? '0' : '8px',
               background: '#ECFDF5', color: '#059669',
               padding: '4px 12px', borderRadius: '999px',
               fontSize: '11px', fontWeight: 600,
@@ -325,7 +365,8 @@ export default function PlatformEngineersPage() {
             </div>
           </div>
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+            display: 'grid',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
             gap: '0', border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden',
           }}>
             {[
@@ -335,11 +376,12 @@ export default function PlatformEngineersPage() {
               { value: '30 days', label: 'To Elite maturity tier' },
             ].map(({ value, label }, i) => (
               <div key={label} style={{
-                padding: '20px 16px', textAlign: 'center',
-                borderRight: i < 3 ? '1px solid #E2E8F0' : 'none',
+                padding: isMobile ? '16px 12px' : '20px 16px', textAlign: 'center',
+                borderRight: isMobile ? (i % 2 === 0 ? '1px solid #E2E8F0' : 'none') : (i < 3 ? '1px solid #E2E8F0' : 'none'),
+                borderBottom: isMobile && i < 2 ? '1px solid #E2E8F0' : 'none',
                 background: i % 2 === 0 ? '#F8FAFC' : '#fff',
               }}>
-                <p style={{ fontSize: '1.3rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px' }}>{value}</p>
+                <p style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px' }}>{value}</p>
                 <p style={{ fontSize: '0.72rem', color: '#64748B', margin: 0 }}>{label}</p>
               </div>
             ))}
@@ -348,7 +390,7 @@ export default function PlatformEngineersPage() {
       </section>
 
       {/* WHO IT'S FOR */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
             <div style={{
@@ -358,17 +400,21 @@ export default function PlatformEngineersPage() {
               Built For Your Team
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
               color: '#0f172a', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             <div style={{
               background: '#fff', border: '1.5px solid #e5e7eb',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
@@ -399,7 +445,7 @@ export default function PlatformEngineersPage() {
             <div style={{
               background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
               border: '1.5px solid rgba(124,58,237,0.2)',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: '#7c3aed',
@@ -434,11 +480,12 @@ export default function PlatformEngineersPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '56px 20px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Your Platform. Finally Under Control.
@@ -449,11 +496,18 @@ export default function PlatformEngineersPage() {
           }}>
             Stop building internal tools. Start governing your infrastructure automatically — in 15 minutes.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : undefined,
+            flexWrap: 'wrap',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Start Free Trial
             </a>
@@ -462,6 +516,8 @@ export default function PlatformEngineersPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              boxSizing: 'border-box', textAlign: 'center',
             }}>
               Take a Product Tour
             </a>
