@@ -14,12 +14,15 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useOnboarding } from '@/lib/stores/onboarding-store';
+import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 
 export function WelcomeModal() {
-  const { currentStage, completeStep } = useOnboarding();
+  const { currentStage, completeStep, dismiss } = useOnboarding();
   const [open, setOpen] = useState(false);
+  const isDemoActive = useDemoMode();
 
   useEffect(() => {
+    if (isDemoActive) return;
     // Auto-open on welcome stage
     if (currentStage === 'welcome') {
       // Small delay for better UX
@@ -34,7 +37,7 @@ export function WelcomeModal() {
 
       return () => clearTimeout(timer);
     }
-  }, [currentStage]);
+  }, [currentStage, isDemoActive]);
 
   const handleGetStarted = async () => {
     // Track analytics
@@ -46,8 +49,13 @@ export function WelcomeModal() {
     setOpen(false);
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
     setOpen(false);
+    try {
+      await dismiss(); // calls POST /api/onboarding/dismiss
+    } catch {
+      // silently fail — modal is already closed
+    }
   };
 
   return (
