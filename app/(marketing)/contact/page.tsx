@@ -1,14 +1,29 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Calendar, Mail, MessageCircle, Building2, User, Phone, CheckCircle, Clock, Users, Zap } from 'lucide-react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 export default function ContactPage() {
   const [formState, setFormState] = useState({
     name: '', email: '', company: '', role: '', message: '', reason: 'demo',
   })
   const [submitted, setSubmitted] = useState(false)
+
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const handleSubmit = () => {
     if (!formState.name || !formState.email) return
@@ -35,7 +50,7 @@ export default function ContactPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px',
         borderBottom: '1px solid #f3f4f6',
         textAlign: 'center',
       }}>
@@ -50,7 +65,7 @@ export default function ContactPage() {
             Get in Touch
           </div>
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+            fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem,5vw,3rem)',
             fontWeight: 800, color: '#0f172a',
             lineHeight: 1.15, marginBottom: '16px',
             letterSpacing: '-0.02em',
@@ -59,7 +74,7 @@ export default function ContactPage() {
             <span style={{ color: '#7c3aed' }}>AWS Infrastructure</span>
           </h1>
           <p style={{
-            fontSize: '1.1rem', color: '#374151',
+            fontSize: isMobile ? '0.95rem' : '1.1rem', color: '#374151',
             lineHeight: 1.75, maxWidth: '520px',
             margin: '0 auto',
           }}>
@@ -70,9 +85,14 @@ export default function ContactPage() {
       </section>
 
       {/* MAIN CONTENT */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', alignItems: 'start' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: isMobile ? '48px' : '64px',
+            alignItems: 'start',
+          }}>
 
             {/* LEFT — Book a Demo */}
             <div>
@@ -83,10 +103,13 @@ export default function ContactPage() {
                 }}>
                   Book a Demo
                 </div>
-                <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', marginBottom: '12px', letterSpacing: '-0.02em' }}>
+                <h2 style={{
+                  fontSize: isMobile ? 'clamp(1.4rem,4vw,1.8rem)' : '1.8rem',
+                  fontWeight: 800, color: '#0f172a', marginBottom: '12px', letterSpacing: '-0.02em',
+                }}>
                   See DevControl in 30 Minutes
                 </h2>
-                <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.75 }}>
+                <p style={{ fontSize: isMobile ? '0.95rem' : '0.95rem', color: '#374151', lineHeight: 1.75 }}>
                   We&apos;ll walk you through a live demo tailored to your infrastructure,
                   show you exactly how much you could save, and answer every question you have.
                 </p>
@@ -121,7 +144,7 @@ export default function ContactPage() {
                 background: '#faf5ff',
                 border: '2px dashed rgba(124,58,237,0.3)',
                 borderRadius: '16px',
-                padding: '40px 32px',
+                padding: isMobile ? '28px 20px' : '40px 32px',
                 textAlign: 'center',
               }}>
                 <Calendar size={32} style={{ color: '#7c3aed', margin: '0 auto 16px' }} />
@@ -136,11 +159,12 @@ export default function ContactPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                     background: '#7c3aed', color: '#fff',
                     padding: '12px 28px', borderRadius: '10px',
                     fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none',
                     boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+                    width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
                   }}
                 >
                   <Calendar size={16} />
@@ -161,10 +185,13 @@ export default function ContactPage() {
                 }}>
                   Send a Message
                 </div>
-                <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', marginBottom: '12px', letterSpacing: '-0.02em' }}>
+                <h2 style={{
+                  fontSize: isMobile ? 'clamp(1.4rem,4vw,1.8rem)' : '1.8rem',
+                  fontWeight: 800, color: '#0f172a', marginBottom: '12px', letterSpacing: '-0.02em',
+                }}>
                   Get in Touch Directly
                 </h2>
-                <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.75 }}>
+                <p style={{ fontSize: isMobile ? '0.95rem' : '0.95rem', color: '#374151', lineHeight: 1.75 }}>
                   Prefer to reach out by email? Fill in the form below and
                   we&apos;ll get back to you within 2 hours on business days.
                 </p>
@@ -225,7 +252,11 @@ export default function ContactPage() {
                   </div>
 
                   {/* Name + Email */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                    gap: '12px',
+                  }}>
                     <div>
                       <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '6px' }}>
                         Name *
@@ -267,7 +298,11 @@ export default function ContactPage() {
                   </div>
 
                   {/* Company + Role */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                    gap: '12px',
+                  }}>
                     <div>
                       <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '6px' }}>
                         Company
@@ -341,6 +376,7 @@ export default function ContactPage() {
                       cursor: 'pointer', display: 'flex', alignItems: 'center',
                       justifyContent: 'center', gap: '8px',
                       boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+                      width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
                     }}
                   >
                     <Mail size={16} />
@@ -361,9 +397,16 @@ export default function ContactPage() {
       </section>
 
       {/* SOCIAL PROOF STRIP */}
-      <section style={{ padding: '48px', background: '#fafafa', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{
+        padding: isMobile ? '40px 16px' : '48px',
+        background: '#fafafa', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6',
+      }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '32px', textAlign: 'center' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+            gap: '32px', textAlign: 'center',
+          }}>
             {[
               { value: '500+', label: 'Engineering teams onboarded' },
               { value: '$2,400', label: 'Average monthly savings found' },
@@ -382,26 +425,35 @@ export default function ContactPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '64px 48px', textAlign: 'center',
+        padding: isMobile ? '48px 24px' : isTablet ? '56px 32px' : '64px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.6rem, 3vw, 2.4rem)', fontWeight: 800,
+            fontSize: isMobile ? 'clamp(1.4rem,4vw,1.8rem)' : 'clamp(1.6rem, 3vw, 2.4rem)',
+            fontWeight: 800,
             color: '#fff', marginBottom: '12px', letterSpacing: '-0.02em',
           }}>
             Not Ready to Talk Yet?
           </h2>
           <p style={{
-            fontSize: '1rem', color: 'rgba(255,255,255,0.85)',
+            fontSize: isMobile ? '0.95rem' : '1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '400px', margin: '0 auto 24px', lineHeight: 1.7,
           }}>
             Start free and explore DevControl on your own. No credit card, no commitment.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'stretch' : 'center',
+            maxWidth: isMobile ? '320px' : undefined, margin: isMobile ? '0 auto' : undefined,
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '12px 28px', borderRadius: '10px',
               fontWeight: 700, fontSize: '0.95rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
+              textAlign: 'center', display: 'inline-block',
             }}>
               Start Free Trial
             </a>
@@ -410,6 +462,8 @@ export default function ContactPage() {
               padding: '12px 28px', borderRadius: '10px',
               fontWeight: 600, fontSize: '0.95rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
+              textAlign: 'center', display: 'inline-block',
             }}>
               Take a Product Tour
             </a>
