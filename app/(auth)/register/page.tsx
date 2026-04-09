@@ -273,7 +273,7 @@ export default function RegisterPage() {
 
           {/* Terms & Conditions */}
           <div className="space-y-2">
-            <div className="flex items-start space-x-2">
+            <div className="flex items-start gap-3">
               <Checkbox
                 id="termsAccepted"
                 checked={termsAccepted}
@@ -285,7 +285,7 @@ export default function RegisterPage() {
               />
               <Label
                 htmlFor="termsAccepted"
-                className="text-sm font-normal leading-5 peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-sm font-normal leading-5 cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex-1"
               >
                 I agree to the{" "}
                 <Link
