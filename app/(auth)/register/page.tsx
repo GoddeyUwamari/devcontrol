@@ -273,7 +273,7 @@ export default function RegisterPage() {
 
           {/* Terms & Conditions */}
           <div className="space-y-2">
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-2">
               <Checkbox
                 id="termsAccepted"
                 checked={termsAccepted}
@@ -281,11 +281,12 @@ export default function RegisterPage() {
                   setValue("termsAccepted", checked as boolean)
                 }
                 disabled={isLoading}
-                className="mt-0.5"
+                className="mt-0.5 shrink-0"
               />
-              <Label
+              <label
                 htmlFor="termsAccepted"
-                className="text-sm font-normal leading-relaxed cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex-1 min-w-0"
+                className="text-sm font-normal leading-relaxed cursor-pointer"
+                style={{ display: 'block', minWidth: 0 }}
               >
                 I agree to the{" "}
                 <Link
@@ -295,8 +296,8 @@ export default function RegisterPage() {
                   rel="noopener noreferrer"
                 >
                   Terms of Service
-                </Link>{" "}
-                and{" "}
+                </Link>
+                {" "}and{" "}
                 <Link
                   href="/legal/privacy"
                   className="font-medium text-primary hover:underline"
@@ -305,7 +306,7 @@ export default function RegisterPage() {
                 >
                   Privacy Policy
                 </Link>
-              </Label>
+              </label>
             </div>
             {errors.termsAccepted && (
               <p className="text-sm text-destructive">
