@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -61,6 +72,9 @@ async function fetchReadiness() {
 }
 
 export default function AlertHistoryPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
@@ -173,7 +187,7 @@ export default function AlertHistoryPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -393,7 +407,7 @@ export default function AlertHistoryPage() {
           {/* Component cards */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(5, 1fr)',
+            gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(5, 1fr)',
             gap: '12px',
           }}>
             {Object.values(displayReadiness.components).map((comp: any) => {
@@ -475,7 +489,7 @@ export default function AlertHistoryPage() {
 
       {/* 4 KPI CARDS — only in demo mode or when incidents exist */}
       {(isDemoActive || displayStats.total > 0) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
           {[
             {
               label: 'Total Resolved',
@@ -513,7 +527,7 @@ export default function AlertHistoryPage() {
             <div key={label} style={{
               background: '#fff',
               borderRadius: '14px',
-              padding: '32px',
+              padding: isMobile ? '16px 14px' : '32px',
               border: '1px solid #E2E8F0',
               borderLeft: hero ? '3px solid #7C3AED' : '1px solid #E2E8F0',
             }}>
@@ -696,7 +710,7 @@ export default function AlertHistoryPage() {
       )}
 
       {/* HISTORY TABLE */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
 
         {/* Table header + filters */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
@@ -746,12 +760,12 @@ export default function AlertHistoryPage() {
 
         {/* Rows */}
         {isLoading && !isDemoActive ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading alert history...</p>
           </div>
         ) : filteredAlerts.length === 0 ? (
-          <div style={{ padding: '64px 40px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '64px 40px', textAlign: 'center' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '12px',
               background: '#F5F3FF', display: 'flex', alignItems: 'center',
               justifyContent: 'center', margin: '0 auto 16px' }}>

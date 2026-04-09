@@ -1,6 +1,17 @@
 'use client';
 
 import { Suspense, useState, useEffect, useMemo } from 'react';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -84,6 +95,9 @@ export default function AlertsPage() {
 }
 
 function AlertsContent() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -405,7 +419,7 @@ function AlertsContent() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -459,10 +473,10 @@ function AlertsContent() {
       </div>
 
       {/* 4 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
 
         {/* Total Alerts */}
-        <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+        <div style={{ background: '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Alerts</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{displayStats.total}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>In selected period</p>
@@ -471,21 +485,21 @@ function AlertsContent() {
         </div>
 
         {/* Active Now */}
-        <div style={{ background: displayStats.active === 0 ? '#EAF3DE' : '#FCEBEB', borderRadius: '14px', padding: '32px', border: `0.5px solid ${displayStats.active === 0 ? '#639922' : '#F09595'}` }}>
+        <div style={{ background: displayStats.active === 0 ? '#EAF3DE' : '#FCEBEB', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: `0.5px solid ${displayStats.active === 0 ? '#639922' : '#F09595'}` }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Active Now</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: displayStats.active === 0 ? '#059669' : '#A32D2D', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{displayStats.active}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{displayStats.active === 0 ? 'All services healthy' : 'Requires immediate attention'}</p>
         </div>
 
         {/* Critical */}
-        <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+        <div style={{ background: '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Critical</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: displayStats.critical === 0 ? '#059669' : '#A32D2D', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{displayStats.critical}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{displayStats.critical === 0 ? 'No critical issues' : 'Immediate action required'}</p>
         </div>
 
         {/* Avg Resolution */}
-        <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+        <div style={{ background: '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Avg Resolution</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {displayStats.avgResolutionTime ? `${displayStats.avgResolutionTime}m` : '—'}
@@ -550,7 +564,7 @@ function AlertsContent() {
       )}
 
       {/* ALERT TABLE */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
 
         {/* Table header + filters */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '16px', flexWrap: 'wrap' }}>
@@ -599,7 +613,7 @@ function AlertsContent() {
           const hasActiveFilters = searchQuery || selectedSeverity !== 'all' || selectedStatus !== 'all';
           if (hasActiveFilters) {
             return (
-              <div style={{ padding: '64px', textAlign: 'center' }}>
+              <div style={{ padding: isMobile ? '16px 14px' : '64px', textAlign: 'center' }}>
                 <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                   <AlertCircle size={22} style={{ color: '#94A3B8' }} />
                 </div>
@@ -611,7 +625,7 @@ function AlertsContent() {
             );
           }
           return (
-            <div style={{ padding: '64px', textAlign: 'center' }}>
+            <div style={{ padding: isMobile ? '16px 14px' : '64px', textAlign: 'center' }}>
               <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                 <CheckCircle2 size={22} style={{ color: '#059669' }} />
               </div>

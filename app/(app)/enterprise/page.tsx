@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import {
@@ -146,6 +157,9 @@ const securityControls = [
 // ── PAGE ───────────────────────────────────────────────────────────────────────
 
 export default function EnterprisePage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const router = useRouter()
   const demoMode = useDemoMode()
   const { organization } = useAuth()
@@ -209,7 +223,7 @@ export default function EnterprisePage() {
   const adminCount = displayMembers.filter(m => m.role === 'admin' || m.role === 'owner').length
 
   return (
-    <div style={{ padding: '40px 56px 80px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 80px', maxWidth: '1400px', margin: '0 auto' }}>
 
       {/* PAGE HEADER */}
       <div style={{ marginBottom: '32px' }}>
@@ -231,7 +245,7 @@ export default function EnterprisePage() {
       {/* TOP ROW: Plan + Compliance */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
+        gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
         gap: '20px',
         marginBottom: '20px',
       }}>
@@ -309,7 +323,7 @@ export default function EnterprisePage() {
               {/* Plan details grid */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
+                gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
                 gap: '12px',
                 marginBottom: '20px',
               }}>
@@ -872,7 +886,7 @@ export default function EnterprisePage() {
           <div style={{
             background: '#FFFFFF',
             borderRadius: '20px',
-            padding: '32px',
+            padding: isMobile ? '16px 14px' : '32px',
             width: '100%',
             maxWidth: '440px',
             boxShadow: '0 24px 64px rgba(0,0,0,0.15)',

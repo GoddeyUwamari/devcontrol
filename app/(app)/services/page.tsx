@@ -1,6 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { Plus, Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -72,6 +83,9 @@ function typeStyle(t: string) {
 }
 
 export default function ServicesPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const [envFilter,      setEnvFilter]      = useState<string>('all')
   const [templateFilter, setTemplateFilter] = useState<string>('all')
   const [search,         setSearch]         = useState<string>('')
@@ -223,7 +237,7 @@ export default function ServicesPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -245,7 +259,7 @@ export default function ServicesPage() {
             Performance, cost, and risk across all services — real time.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: isMobile ? '8px' : '10px', alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <button
             onClick={handleAutoDiscover}
             disabled={isDiscovering}
@@ -465,7 +479,7 @@ export default function ServicesPage() {
       </div>
 
       {/* 4 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
 
         {/* Total Services */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0', opacity: isLoading && !isDemoActive ? 0.6 : 1 }}>
@@ -647,7 +661,7 @@ export default function ServicesPage() {
       )}
 
       {/* QUICK NAV */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '30px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '14px', marginBottom: '30px' }}>
         {[
           { icon: Rocket,    label: 'Deployments',  desc: 'Deployment history and tracking', href: '/deployments',  color: '#7C3AED', bg: '#F5F3FF' },
           { icon: GitBranch, label: 'Dependencies', desc: 'Service dependency map',          href: '/dependencies', color: '#059669', bg: '#F0FDF4' },
@@ -673,7 +687,7 @@ export default function ServicesPage() {
       </div>
 
       {/* SERVICES TABLE */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
 
         {/* Table header with filters */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
@@ -739,12 +753,12 @@ export default function ServicesPage() {
 
         {/* Service rows */}
         {isLoading && !isDemoActive ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px', animation: 'spin 1s linear infinite' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading services...</p>
           </div>
         ) : filteredServices.length === 0 ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Layers size={22} style={{ color: '#94A3B8' }} />
             </div>
@@ -752,7 +766,7 @@ export default function ServicesPage() {
             <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 28px', lineHeight: 1.6 }}>
               Secure read-only access — no changes made to your infrastructure.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', maxWidth: '600px', margin: '0 auto 28px', textAlign: 'left' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '16px', maxWidth: '600px', margin: '0 auto 28px', textAlign: 'left' }}>
               {[
                 { step: '1', title: 'Connect AWS',       desc: 'Secure read-only access — no changes made to your infrastructure',  color: '#7C3AED' },
                 { step: '2', title: 'Discover Services', desc: 'Automatically map your infrastructure, costs, and dependencies',        color: '#059669' },

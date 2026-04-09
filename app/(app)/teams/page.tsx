@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Users, Plus, X, Slack, Trash2, AlertTriangle } from 'lucide-react'
@@ -71,6 +82,9 @@ const DEMO_META: Record<string, { services: number; cost: string; alerts: number
 }
 
 export default function TeamsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const router = useRouter()
   const demoMode = useDemoMode()
   const queryClient = useQueryClient()
@@ -131,7 +145,7 @@ export default function TeamsPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 80px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 80px',
       maxWidth: '1400px',
       margin: '0 auto',
     }}>
@@ -231,7 +245,7 @@ export default function TeamsPage() {
             background: '#FFFFFF',
             border: '1px solid #E2E8F0',
             borderRadius: '16px',
-            padding: '56px 40px',
+            padding: isMobile ? '16px 14px' : '56px 40px',
             textAlign: 'center',
             maxWidth: '520px',
             margin: '0 auto',
@@ -325,6 +339,7 @@ export default function TeamsPage() {
           border: '1px solid #E2E8F0',
           borderRadius: '14px',
           overflow: 'hidden',
+          overflowX: isMobile ? 'auto' : 'hidden',
         }}>
           {/* Table header */}
           <div style={{
@@ -559,7 +574,7 @@ export default function TeamsPage() {
           <div style={{
             background: '#FFFFFF',
             borderRadius: '20px',
-            padding: '32px',
+            padding: isMobile ? '16px 14px' : '32px',
             width: '100%',
             maxWidth: '480px',
             boxShadow: '0 24px 64px rgba(0,0,0,0.15)',

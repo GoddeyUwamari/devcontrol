@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -43,6 +54,9 @@ const overline: React.CSSProperties = {
 }
 
 export default function SecurityPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const [acknowledging, setAcknowledging] = useState<string | null>(null)
   const demoMode = demoModeService.isEnabled()
 
@@ -221,7 +235,7 @@ export default function SecurityPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 80px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 80px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -401,7 +415,7 @@ export default function SecurityPage() {
       })()}
 
       {/* ── 3 KPI CARDS ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
 
         {/* Security Score */}
         <div style={{ ...card, border: '1px solid #F1F5F9', borderTop: '3px solid #7C3AED', borderRadius: '12px', padding: '16px 20px' }}>
@@ -464,7 +478,7 @@ export default function SecurityPage() {
       </div>
 
       {/* ── RISK SCORE TREND + SECURITY CHECKS ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '3fr 2fr', gap: '24px', marginBottom: '28px' }}>
 
         {/* Risk Score Trend */}
         <div style={card}>
@@ -541,7 +555,7 @@ export default function SecurityPage() {
       </div>
 
       {/* ── ACTIVE ANOMALIES + COMPLIANCE FRAMEWORKS ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px', marginBottom: '28px' }}>
 
         {/* Active Anomalies */}
         <div style={{ ...card, padding: '20px 24px' }}>
@@ -656,7 +670,7 @@ export default function SecurityPage() {
       </div>
 
       {/* ── QUICK NAVIGATION ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '16px' }}>
         {navCards.map(({ icon: Icon, label, desc, href, color, bg }) => (
           <a key={href} href={href} style={{ textDecoration: 'none' }}>
             <div

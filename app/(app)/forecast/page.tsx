@@ -1,6 +1,17 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useRouter } from 'next/navigation';
 import { forecastService } from '@/lib/services/forecast.service';
 import { CostForecast, Scenario, ScenarioType } from '@/types/forecast.types';
@@ -45,6 +56,9 @@ const stripMarkdown = (text: string) =>
       .trim();
 
 export default function ForecastPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const [forecast, setForecast] = useState<CostForecast | null>(null);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
@@ -219,7 +233,7 @@ export default function ForecastPage() {
 
   return (
     // FIX 6 — page wrapper padding 40px 56px 64px
-    <div style={{ padding: '40px 56px 64px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
 
       {/* Header */}
       <div style={{ marginBottom: '32px' }}>
@@ -252,7 +266,7 @@ export default function ForecastPage() {
       </div>
 
       {/* FIX 4 — KPI cards with neutral #F8FAFC icon backgrounds */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
 
         {/* Next 30 Days */}
         <Card className="hover:shadow-lg transition-shadow" style={{ borderLeft: '2px solid #534AB7', borderRadius: '0 12px 12px 0' }}>
@@ -588,7 +602,7 @@ export default function ForecastPage() {
           </div>{/* end flex row */}
 
           {/* Risks & Recommendations — FIX 2: stripMarkdown applied */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px' }}>
             {/* Risks */}
             <Card>
               <CardHeader>
@@ -816,7 +830,7 @@ export default function ForecastPage() {
               </CardHeader>
               <CardContent>
                 {/* Cost Comparison */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginBottom: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '24px', marginBottom: '24px' }}>
                   <div style={{ textAlign: 'center', padding: '16px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
                     <p style={{ fontSize: '0.8rem', color: '#475569', marginBottom: '4px' }}>Baseline (30-day)</p>
                     <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>

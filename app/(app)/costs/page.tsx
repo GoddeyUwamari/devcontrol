@@ -1,6 +1,17 @@
 'use client'
 
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -118,6 +129,9 @@ const DEMO_CHART_DATA: { date: string; actual: number | null; forecast: number |
 ]
 
 export default function CostsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const { isPro } = usePlan()
   const [selectedRange, setSelectedRange] = useState('30D')
   const [nlQuery, setNlQuery] = useState('')
@@ -239,7 +253,7 @@ export default function CostsPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -293,7 +307,7 @@ export default function CostsPage() {
             Real-time AWS spend tracking, forecasting, and AI-powered savings recommendations
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: isMobile ? '8px' : '12px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <button style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#374151', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
             <Download size={15} /> Export CSV
           </button>
@@ -362,7 +376,7 @@ export default function CostsPage() {
       )}
 
       {/* 4 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
         {([
           {
             cardKey: 'savings',
@@ -430,7 +444,7 @@ export default function CostsPage() {
           const content = (
             <div
               key={label}
-              style={{ background: cardBg ?? '#fff', borderRadius: '14px', padding: '32px', border: isHovered ? '0.5px solid #7C3AED' : `0.5px solid ${cardBorder ?? '#e5e7eb'}`, ...(cardBorderTop ? { borderTop: cardBorderTop } : {}), transition: 'border-color 0.15s ease', cursor: 'pointer' }}
+              style={{ background: cardBg ?? '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: isHovered ? '0.5px solid #7C3AED' : `0.5px solid ${cardBorder ?? '#e5e7eb'}`, ...(cardBorderTop ? { borderTop: cardBorderTop } : {}), transition: 'border-color 0.15s ease', cursor: 'pointer' }}
               onMouseEnter={() => setHoveredCard(cardKey)}
               onMouseLeave={() => setHoveredCard(null)}
             >
@@ -623,7 +637,7 @@ export default function CostsPage() {
 
             {/* Empty state */}
             {nlResult.data.rows.length === 0 && (
-              <div style={{ padding: '32px', textAlign: 'center' }}>
+              <div style={{ padding: isMobile ? '16px 14px' : '32px', textAlign: 'center' }}>
                 <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>No data matched your query. Try rephrasing or check your AWS connection.</p>
               </div>
             )}
@@ -635,7 +649,7 @@ export default function CostsPage() {
       </form>
 
       {/* SPEND TREND CHART — FIX 1: auto domain + smart tickFormatter */}
-      <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', marginBottom: '20px' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #F1F5F9', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div>
             <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 4px', letterSpacing: '-0.01em' }}>Spend Trend</h2>
@@ -859,10 +873,10 @@ export default function CostsPage() {
       </div>
 
       {/* COST BY SERVICE + TOP SAVINGS */}
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '3fr 2fr', gap: '24px', marginBottom: '20px' }}>
 
         {/* Cost by Service */}
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #F1F5F9' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
             <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: 0, letterSpacing: '-0.01em' }}>Cost by Service</h2>
             <a href="/cost-optimization" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -906,7 +920,7 @@ export default function CostsPage() {
         </div>
 
         {/* Top Savings Opportunities */}
-        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #BBF7D0', borderTop: '3px solid #059669' }}>
+        <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #BBF7D0', borderTop: '3px solid #059669' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
             <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#059669', margin: 0, letterSpacing: '-0.01em' }}>Top Savings</h2>
             <a href="/cost-optimization" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -982,7 +996,7 @@ export default function CostsPage() {
       </div>
 
       {/* DEVCONTROL VALUE DELIVERED */}
-      <div style={{ background: '#F9FAFB', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', marginBottom: '16px' }}>
+      <div style={{ background: '#F9FAFB', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #F1F5F9', marginBottom: '16px' }}>
         <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 20px' }}>DevControl value delivered</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px' }}>
           {[
@@ -1005,7 +1019,7 @@ export default function CostsPage() {
 
       {/* AI COST NARRATIVE — FIX 2: stripMarkdown applied to each recommendation */}
       {forecast?.aiSummary && (
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '0.5px solid #E5E7EB', borderLeft: '3px solid #534AB7' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', border: '0.5px solid #E5E7EB', borderLeft: '3px solid #534AB7' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Sparkles size={16} style={{ color: '#fff' }} />

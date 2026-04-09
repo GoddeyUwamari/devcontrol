@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
@@ -24,6 +35,9 @@ const TRUST_POLICY = JSON.stringify(
 )
 
 export default function ConnectAwsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -101,7 +115,7 @@ export default function ConnectAwsPage() {
         minHeight: '100vh',
         background: '#F9FAFB',
         fontFamily: 'Inter, system-ui, sans-serif',
-        padding: '40px 56px',
+        padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px',
       }}
     >
       <div
@@ -109,7 +123,7 @@ export default function ConnectAwsPage() {
           maxWidth: '1400px',
           margin: '0 auto',
           display: 'grid',
-          gridTemplateColumns: '2fr 1fr',
+          gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr',
           gap: '48px',
           alignItems: 'start',
         }}

@@ -1,6 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useRouter } from 'next/navigation';
 import { Shield, Plus, RefreshCw, FileText } from 'lucide-react';
 import { useComplianceFrameworks, useComplianceScans } from '@/lib/hooks/useComplianceFrameworks';
@@ -24,6 +35,9 @@ type DemoFramework = {
 };
 
 export default function ComplianceFrameworksPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   // ── PRESERVED HOOKS ──────────────────────────────────────────────────────
   const { frameworks, loading, error, fetchFrameworks, createFramework, updateFramework, deleteFramework, executeScan } = useComplianceFrameworks();
   const { scans, fetchScans } = useComplianceScans(true);
@@ -148,7 +162,7 @@ export default function ComplianceFrameworksPage() {
   // ── RENDER ───────────────────────────────────────────────────────────────
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -323,7 +337,7 @@ export default function ComplianceFrameworksPage() {
       </div>
 
       {/* ── RISK KPI CARDS ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '18px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '14px', marginBottom: '18px' }}>
 
         {/* Compliance Score */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0' }}>
@@ -462,7 +476,7 @@ export default function ComplianceFrameworksPage() {
 
       {/* ── FRAMEWORKS LIST ── */}
       {loading && !isDemoActive ? (
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
           <RefreshCw size={24} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
           <p style={{ fontSize: '1rem', color: '#64748B', margin: 0 }}>Loading frameworks...</p>
         </div>
@@ -472,7 +486,7 @@ export default function ComplianceFrameworksPage() {
           <div style={{ marginBottom: '12px', fontSize: '15px', fontWeight: 500, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             Start with a pre-built framework
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, minmax(0, 1fr))', gap: '12px', marginBottom: '24px' }}>
             {PRE_BUILT_FRAMEWORKS.map((fw) => (
               <div key={fw.name} style={{ background: '#fff', border: fw.badge === 'CIS AWS' ? '1px solid #DDD6FE' : '0.5px solid #E2E8F0', borderRadius: '12px', padding: '16px', cursor: 'pointer' }}>
                 <div style={{ marginBottom: '8px' }}>
@@ -504,7 +518,7 @@ export default function ComplianceFrameworksPage() {
           </div>
 
           {/* Empty state */}
-          <div style={{ background: '#fff', border: '0.5px solid #E2E8F0', borderRadius: '12px', padding: '48px 32px', textAlign: 'center' }}>
+          <div style={{ background: '#fff', border: '0.5px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '16px 14px' : '48px 32px', textAlign: 'center' }}>
             <p style={{ fontSize: '18px', fontWeight: 500, color: '#0F172A', margin: '0 0 8px' }}>
               Your AWS environment is not currently being evaluated
             </p>

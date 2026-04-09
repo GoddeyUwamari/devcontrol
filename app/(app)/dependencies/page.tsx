@@ -1,6 +1,17 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Network, List, Activity, AlertTriangle, Plus, Command, Play, Clock, RefreshCw } from 'lucide-react'
@@ -130,6 +141,9 @@ const CACHE_KEY = 'dependencies_cache'
 const CACHE_TIMESTAMP_KEY = 'dependencies_cache_timestamp'
 
 export default function DependenciesPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const router = useRouter()
   const globalDemoMode = useDemoMode()
   const [localDemoMode, setLocalDemoMode] = useState(false)
@@ -480,7 +494,7 @@ export default function DependenciesPage() {
   if (false) {
     return (
       <div style={{
-        padding: '40px 56px 64px',
+        padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
         maxWidth: '1320px',
         margin: '0 auto',
         minHeight: '100vh',
@@ -531,7 +545,7 @@ export default function DependenciesPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -565,7 +579,7 @@ export default function DependenciesPage() {
 
       {/* Loading Timeout Warning */}
       {isLoading && loadingTimeout && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '16px 14px' : '48px 24px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '12px' }}>
           <Clock size={32} style={{ color: '#D97706', marginBottom: '16px' }} aria-hidden="true" />
           <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#92400E', margin: '0 0 8px' }}>
             This is taking longer than usual
@@ -845,7 +859,7 @@ export default function DependenciesPage() {
                       {/* Key Metrics */}
                       <div>
                         <p style={SECTION_HEADER}>Key Metrics</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : '1fr 1fr 1fr 1fr', gap: '8px' }}>
                           {[
                             ['Avg Latency', `${metrics.latency}ms`],
                             ['Error Rate', `${metrics.errorRate}%`],

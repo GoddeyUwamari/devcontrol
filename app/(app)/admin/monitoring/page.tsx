@@ -1,6 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useRouter } from 'next/navigation'
 import { Activity, CheckCircle2, XCircle, TrendingUp, TrendingDown, ArrowRight, Sparkles, ExternalLink } from 'lucide-react'
 import { TimeRangeSelector } from '@/components/monitoring/TimeRangeSelector'
@@ -39,6 +50,9 @@ interface MonitoringError {
 }
 
 export default function MonitoringPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const router = useRouter()
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
@@ -644,7 +658,7 @@ export default function MonitoringPage() {
   if (!metricsAvailable && !isDemoActive && !loading && !error) {
     return (
       <ErrorBoundary>
-        <div style={{ padding: '40px 56px 64px', maxWidth: '1320px', margin: '0 auto', minHeight: '100vh', background: '#F9FAFB', fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <div style={{ padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px', maxWidth: '1320px', margin: '0 auto', minHeight: '100vh', background: '#F9FAFB', fontFamily: 'Inter, system-ui, sans-serif' }}>
           <MonitoringEmptyState onSetup={() => router.push('/settings/monitoring')} />
         </div>
       </ErrorBoundary>
@@ -653,7 +667,7 @@ export default function MonitoringPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -747,7 +761,7 @@ export default function MonitoringPage() {
           background: 'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)',
           borderRadius: '16px',
           border: '1px solid #DDD6FE',
-          padding: '64px 40px',
+          padding: isMobile ? '16px 14px' : '64px 40px',
           textAlign: 'center',
           marginBottom: '28px',
         }}>
@@ -794,7 +808,7 @@ export default function MonitoringPage() {
               Explore Demo Data
             </button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)',
             gap: '16px', maxWidth: '600px', margin: '40px auto 0' }}>
             {[
               { icon: '📊', label: 'Real-time visibility', desc: 'Identify issues before they impact users' },
@@ -829,9 +843,9 @@ export default function MonitoringPage() {
 
       {/* LOADING STATE */}
       {loading && !isDemoActive && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
           {[1, 2, 3, 4].map(i => (
-            <div key={i} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0', height: '120px', animation: 'pulse 1.5s ease-in-out infinite', opacity: 0.6 }} />
+            <div key={i} style={{ background: '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0', height: '120px', animation: 'pulse 1.5s ease-in-out infinite', opacity: 0.6 }} />
           ))}
         </div>
       )}
@@ -885,7 +899,7 @@ export default function MonitoringPage() {
           )}
 
           {/* 4 KPI CARDS */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
             {[
               {
                 label: 'System Uptime',
@@ -916,7 +930,7 @@ export default function MonitoringPage() {
                   : '#0F172A',
               },
             ].map(({ label, value, sub, valueColor }) => (
-              <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+              <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
                 <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>{label}</p>
                 <div style={{ fontSize: '2rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
                 <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
@@ -925,8 +939,8 @@ export default function MonitoringPage() {
           </div>
 
           {/* RESPONSE TIME CHART + ACTIVE ALERTS — 3fr / 2fr */}
-          <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '24px', marginBottom: '28px' }}>
-            <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '3fr 2fr', gap: '24px', marginBottom: '28px' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #F1F5F9' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <div>
                   <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Response Time Trend</p>
@@ -941,7 +955,7 @@ export default function MonitoringPage() {
               <ResponseTimeChart data={responseTimeData} currentValue={responseTime} trendPercent={trendPercent} />
             </div>
 
-            <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #F1F5F9' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Active Alerts</p>
                 <a href="/settings/alerts" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -953,7 +967,7 @@ export default function MonitoringPage() {
           </div>
 
           {/* SERVICE HEALTH TABLE */}
-          <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9', marginBottom: '28px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #F1F5F9', marginBottom: '28px', overflowX: isMobile ? 'auto' : 'visible' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Service Health</p>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -969,7 +983,7 @@ export default function MonitoringPage() {
           </div>
 
           {/* SLO DASHBOARD */}
-          <div style={{ background: '#fff', borderRadius: '16px', padding: '32px', border: '1px solid #F1F5F9' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #F1F5F9' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div>
                 <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Service Level Objectives</p>

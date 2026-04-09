@@ -1,6 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { Lock, ShieldCheck, Copy, Check, Trash2, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
@@ -47,6 +58,9 @@ function authHeaders() {
 }
 
 export default function SSOSettingsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const { organization } = useAuth();
   const isEnterprise = organization?.subscriptionTier === "enterprise";
   const qc = useQueryClient();
@@ -163,7 +177,7 @@ export default function SSOSettingsPage() {
   // ── Locked state for non-enterprise ──────────────────────────────────────
   if (!isEnterprise) {
     return (
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: "40px 32px", background: "#F9FAFB", minHeight: "100vh" }}>
+      <div style={{ maxWidth: 1320, margin: "0 auto", padding: isMobile ? "24px 16px" : isTablet ? "40px 24px" : "40px 32px", background: "#F9FAFB", minHeight: "100vh" }}>
         <div style={{ marginBottom: 32 }}>
           <p style={{ fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7C3AED", marginBottom: 6 }}>
             Security
@@ -192,7 +206,7 @@ export default function SSOSettingsPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1320, margin: "0 auto", padding: "40px 32px", background: "#F9FAFB", minHeight: "100vh" }}>
+    <div style={{ maxWidth: 1320, margin: "0 auto", padding: isMobile ? "24px 16px" : isTablet ? "40px 24px" : "40px 32px", background: "#F9FAFB", minHeight: "100vh" }}>
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <p style={{ fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7C3AED", marginBottom: 6 }}>
@@ -221,7 +235,7 @@ export default function SSOSettingsPage() {
                   {config.isActive ? "Active" : "Inactive"}
                 </span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 32px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "16px 32px" }}>
                 <div>
                   {label("SP Entity ID")}
                   <code style={{ display: "block", fontSize: "0.78rem", color: "#374151", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 6, padding: "8px 12px", wordBreak: "break-all" }}>
@@ -259,7 +273,7 @@ export default function SSOSettingsPage() {
               {config ? "Update SAML Configuration" : "Configure SAML IdP"}
             </h2>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px 32px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "20px 32px" }}>
               {/* Provider Name */}
               <div>
                 {label("Identity Provider")}

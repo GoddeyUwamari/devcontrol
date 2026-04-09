@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -47,6 +58,9 @@ function PlanBadge({ plan }: { plan?: string }) {
 }
 
 export default function TenantsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const debouncedSearch = useDebounce(searchQuery, 300)
@@ -124,7 +138,7 @@ export default function TenantsPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -296,7 +310,7 @@ export default function TenantsPage() {
       </div>
 
       {/* KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '18px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '14px', marginBottom: '18px' }}>
 
         {/* Total Tenants */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: '22px', border: '1px solid #E2E8F0' }}>
@@ -348,7 +362,7 @@ export default function TenantsPage() {
       </div>
 
       {/* TENANT TABLE */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
 
         {/* Table header + search */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
@@ -390,12 +404,12 @@ export default function TenantsPage() {
 
         {/* Rows */}
         {isLoading && !isDemoActive ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '1rem', color: '#64748B', margin: 0 }}>Loading tenants...</p>
           </div>
         ) : error && !isDemoActive && !isAuthError ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
             <XCircle size={22} style={{ color: '#DC2626', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '1rem', color: '#DC2626', margin: '0 0 16px' }}>{(error as Error).message}</p>
             <button onClick={() => refetch()} style={{ background: '#7C3AED', color: '#fff', padding: '8px 20px', borderRadius: '8px', fontSize: '1rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}>
@@ -403,14 +417,14 @@ export default function TenantsPage() {
             </button>
           </div>
         ) : paginatedTenants.length === 0 && !searchQuery ? (
-          <div style={{ padding: '48px 32px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px 32px', textAlign: 'center' }}>
             <p style={{ fontSize: '18px', fontWeight: 500, color: '#0F172A', margin: '0 0 8px' }}>
               No tenants added yet
             </p>
             <p style={{ fontSize: '15px', color: '#475569', lineHeight: 1.6, margin: '0 auto 24px', maxWidth: '400px' }}>
               Add your first tenant to start tracking usage, billing, and activity across your platform.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', maxWidth: '480px', margin: '0 auto 24px', textAlign: 'left' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px', maxWidth: '480px', margin: '0 auto 24px', textAlign: 'left' }}>
               {['Tenant usage trends', 'Billing & plan distribution', 'Activity & health signals', 'AI-detected anomalies'].map(item => (
                 <div key={item} style={{ fontSize: '18px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#534AB7', flexShrink: 0 }} />
@@ -432,7 +446,7 @@ export default function TenantsPage() {
             </div>
           </div>
         ) : paginatedTenants.length === 0 ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
             <p style={{ fontSize: '1rem', color: '#475569', margin: 0 }}>No tenants match your search. Try a different query.</p>
           </div>
         ) : (
@@ -547,7 +561,7 @@ export default function TenantsPage() {
           }}>
           <div
             onClick={e => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: '16px', padding: '32px', width: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+            style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '32px', width: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px' }}>Add Tenant</h2>
             <p style={{ fontSize: '1rem', color: '#475569', margin: '0 0 24px' }}>Register a new tenant account on this platform.</p>
 

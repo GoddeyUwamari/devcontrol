@@ -1,6 +1,17 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useRouter } from 'next/navigation'
 import { useAIReports } from '@/lib/hooks/useAIReports'
 import { GeneratedReport, ReportHistoryItem } from '@/lib/services/ai-reports.service'
@@ -135,6 +146,9 @@ function ConfirmModal({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AIReportsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const router = useRouter()
   const { isPro } = usePlan()
   const { generateReport, getReportHistory, deleteReport, bulkDeleteReports, isGenerating, isFetchingHistory, error } = useAIReports()
@@ -337,7 +351,7 @@ export default function AIReportsPage() {
   if (!isPro) {
     return (
       <div style={{
-        padding: '40px 56px 64px', maxWidth: '1320px', margin: '0 auto',
+        padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px', maxWidth: '1320px', margin: '0 auto',
         minHeight: '100vh', background: '#F9FAFB', fontFamily: 'Inter, system-ui, sans-serif',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
@@ -371,7 +385,7 @@ export default function AIReportsPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -448,7 +462,7 @@ export default function AIReportsPage() {
         const lastReportType = lastReport ? normalizeReportType(lastReport.type || lastReport.report_type || '') : null
         const lastTypeConfig = lastReportType ? typeConfig[lastReportType] : null
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : '2fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
 
             {/* Card 1 — Recommended Next Report */}
             <div style={{
@@ -575,7 +589,7 @@ export default function AIReportsPage() {
         <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
           Available Reports
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
           {[
             { type: 'cost_analysis',  badge: 'High impact',  badgeColor: '#059669', badgeBg: '#F0FDF4' },
             { type: 'security',       badge: 'Relevant now', badgeColor: '#475569', badgeBg: '#F1F5F9' },
@@ -667,14 +681,14 @@ export default function AIReportsPage() {
 
       {/* REPORTS LIST */}
       {isLoading && !isDemoActive ? (
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
           <RefreshCw size={24} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
           <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading reports...</p>
         </div>
       ) : displayReports.length === 0 ? (
         <div style={{
           background: 'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)',
-          borderRadius: '16px', padding: '56px 40px', textAlign: 'center', border: '1px solid #DDD6FE',
+          borderRadius: '16px', padding: isMobile ? '16px 14px' : '56px 40px', textAlign: 'center', border: '1px solid #DDD6FE',
         }}>
           <div style={{ fontSize: '2rem', marginBottom: '16px' }}>✨</div>
           <p style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', margin: '0 0 8px' }}>
@@ -683,7 +697,7 @@ export default function AIReportsPage() {
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 24px', lineHeight: 1.7, maxWidth: '480px', marginLeft: 'auto', marginRight: 'auto' }}>
             Generate your first AI report to discover:
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', maxWidth: '440px', margin: '0 auto 28px', textAlign: 'left' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px', maxWidth: '440px', margin: '0 auto 28px', textAlign: 'left' }}>
             {['💰 Immediate cost-saving opportunities', '🔐 Hidden security risks and misconfigs', '⚙️ Infrastructure inefficiencies', '📊 Executive-ready summaries'].map(item => (
               <div key={item} style={{ fontSize: '0.82rem', color: '#475569', background: '#fff', borderRadius: '8px', padding: '10px 14px', border: '1px solid #EDE9FE' }}>
                 {item}

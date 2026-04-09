@@ -1,6 +1,17 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { anomalyService } from '@/lib/services/anomaly.service';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
@@ -52,6 +63,9 @@ const overline: React.CSSProperties = {
 };
 
 export default function AnomaliesPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   // ── PRESERVED STATE ──────────────────────────────────────────────────────
   const { isPro } = usePlan();
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
@@ -211,7 +225,7 @@ export default function AnomaliesPage() {
   if (!isPro) {
     return (
       <div style={{
-        padding: '40px 56px 80px', maxWidth: '1320px', margin: '0 auto',
+        padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 80px', maxWidth: '1320px', margin: '0 auto',
         minHeight: '100vh', background: '#F9FAFB', fontFamily: 'Inter, system-ui, sans-serif',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
@@ -245,7 +259,7 @@ export default function AnomaliesPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 80px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 80px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -436,7 +450,7 @@ export default function AnomaliesPage() {
       </div>
 
       {/* ── 4 KPI CARDS ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
         {/* Card 1 — Active Issues */}
         <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '20px' }}>
           <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 10px' }}>Active Issues</p>
@@ -642,12 +656,12 @@ export default function AnomaliesPage() {
       {/* ── ANOMALY LIST ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {isLoading ? (
-          <div style={{ background: '#fff', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
             <RefreshCw size={24} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading anomalies...</p>
           </div>
         ) : anomalies.length === 0 ? (
-          <div style={{ background: '#fff', borderRadius: '16px', padding: '48px 56px', border: '1px solid #F1F5F9' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '48px 56px', border: '1px solid #F1F5F9' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px' }}>
               <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
                 <CheckCircle2 size={22} style={{ color: '#16A34A' }} />
@@ -1008,7 +1022,7 @@ export default function AnomaliesPage() {
                 {/* ── Expanded detail ── */}
                 {isExpanded && (
                   <div style={{ padding: '20px 24px', borderTop: `1px solid #E2E8F0` }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
                       {[
                         {
                           label: 'Current Value',
@@ -1087,7 +1101,7 @@ export default function AnomaliesPage() {
         {showCreateRule && (
           <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #DDD6FE', padding: '24px', marginBottom: '16px' }}>
             <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 20px' }}>Create Detection Rule</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Rule Name *</label>
                 <input

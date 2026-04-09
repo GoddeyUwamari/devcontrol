@@ -1,6 +1,17 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { Shield, RefreshCw, Download, CheckCircle2, XCircle, MinusCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { usePlan } from '@/lib/hooks/use-plan';
@@ -175,7 +186,7 @@ function ControlRow({ ctrl }: { ctrl: ControlResult }) {
       {expanded && (
         <tr style={{ background: '#F8FAFC' }}>
           <td colSpan={6} style={{ padding: '16px 24px 20px 48px', borderBottom: '1px solid #F1F5F9' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px' }}>
               <div>
                 <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
                   Description
@@ -223,9 +234,11 @@ function ControlRow({ ctrl }: { ctrl: ControlResult }) {
 // ─── Empty / Locked State ────────────────────────────────────────────────────
 
 function LockedState() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
   return (
     <div style={{
-      background: '#fff', borderRadius: '16px', padding: '64px 40px',
+      background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '64px 40px',
       textAlign: 'center', border: '1px solid #F1F5F9',
     }}>
       <div style={{
@@ -259,6 +272,9 @@ function LockedState() {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function CompliancePage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const { user } = useAuth();
   const { isEnterprise } = usePlan();
 
@@ -354,7 +370,7 @@ export default function CompliancePage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -420,7 +436,7 @@ export default function CompliancePage() {
 
       {/* ── Loading ── */}
       {loading && (
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '64px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '64px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
           <RefreshCw size={24} style={{ color: '#94A3B8', margin: '0 auto 12px', animation: 'spin 1s linear infinite' }} />
           <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading compliance data…</p>
         </div>
@@ -430,7 +446,7 @@ export default function CompliancePage() {
         <div style={{ marginBottom: '28px' }}>
           {/* Show enterprise gated state or empty state */}
           <div style={{
-            background: '#fff', borderRadius: '16px', padding: '56px 40px',
+            background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '56px 40px',
             textAlign: 'center', border: '1px solid #F1F5F9',
           }}>
             <div style={{
@@ -463,7 +479,7 @@ export default function CompliancePage() {
       {!loading && hasResults && (
         <>
           {/* ── KPI Row ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
             {[
               { label: 'Overall Score',     value: `${combinedScore}%`, sub: 'Weighted across both frameworks', color: combinedScore >= 80 ? '#059669' : combinedScore >= 60 ? '#D97706' : '#DC2626' },
               { label: 'Controls Passing',  value: totalPassed,  sub: 'Across SOC 2 + HIPAA', color: '#059669' },
@@ -540,7 +556,7 @@ export default function CompliancePage() {
           </div>
 
           {/* ── Controls Table ── */}
-          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
             {/* Table header */}
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

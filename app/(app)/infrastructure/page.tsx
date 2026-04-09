@@ -1,6 +1,17 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
@@ -227,6 +238,9 @@ export default function InfrastructurePage() {
 }
 
 function InfrastructureContent() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const targetResourceId = searchParams.get('resource')
@@ -561,7 +575,7 @@ function InfrastructureContent() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -752,7 +766,7 @@ function InfrastructureContent() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
 
         {/* Total Resources — display only */}
-        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
+        <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '0.5px solid #e5e7eb' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Resources</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (totalResources ?? '—')}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
@@ -766,7 +780,7 @@ function InfrastructureContent() {
         </div>
 
         {/* Monthly Cost — display only */}
-        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '0.5px solid #e5e7eb' }}>
+        <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '0.5px solid #e5e7eb' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Monthly Cost</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {isDemoActive
@@ -788,7 +802,7 @@ function InfrastructureContent() {
 
         {/* Healthy — click to filter */}
         <div
-          style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: hoveredCard === 'active' || statusFilter === 'active' ? '0.5px solid #7C3AED' : '0.5px solid #e5e7eb', transition: 'border-color 0.15s ease', cursor: 'pointer' }}
+          style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: hoveredCard === 'active' || statusFilter === 'active' ? '0.5px solid #7C3AED' : '0.5px solid #e5e7eb', transition: 'border-color 0.15s ease', cursor: 'pointer' }}
           onMouseEnter={() => setHoveredCard('active')}
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'active' ? null : 'active')}
@@ -802,7 +816,7 @@ function InfrastructureContent() {
         {/* Critical Issues — click to filter */}
         <div
           style={{
-            background: '#fff', borderRadius: '12px', padding: '32px',
+            background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px',
             border: hoveredCard === 'warning' || statusFilter === 'warning'
               ? '0.5px solid #7C3AED'
               : '1px solid #FECACA',
@@ -824,7 +838,7 @@ function InfrastructureContent() {
         </div>
 
         {/* Recoverable Savings — display only */}
-        <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #A7F3D0' }}>
+        <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #A7F3D0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Recoverable Savings</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#16A34A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{potentialSavingsValue}</div>
           <p style={{ fontSize: '0.72rem', color: '#64748B', margin: '0 0 4px' }}>
@@ -917,7 +931,7 @@ function InfrastructureContent() {
       </div>
 
       {/* RESOURCE TABLE */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
 
         {/* Table header + dropdown filter pills */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
@@ -1016,12 +1030,12 @@ function InfrastructureContent() {
 
         {/* Rows */}
         {isLoading && !isDemoActive ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading resources...</p>
           </div>
         ) : !isDemoActive && effectiveResources.length === 0 ? (
-          <div style={{ padding: '64px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '64px', textAlign: 'center' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Server size={22} style={{ color: '#94A3B8' }} />
             </div>
@@ -1033,7 +1047,7 @@ function InfrastructureContent() {
                 Connect your AWS account to uncover cost leaks, security risks, and idle resources — first insights in under 2 minutes.
               </p>
               <div style={{
-                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px',
+                display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px',
                 maxWidth: '480px', margin: '0 auto 24px', textAlign: 'left',
               }}>
                 {[

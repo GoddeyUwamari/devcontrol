@@ -1,6 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Download } from 'lucide-react';
 import { auditLogsService, AuditLogFilters } from '@/lib/services/audit-logs.service';
@@ -21,6 +32,9 @@ type DemoLog = {
 };
 
 export default function AuditLogsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   // ── PRESERVED STATE ──────────────────────────────────────────────────────
   const [filters, setFilters] = useState<AuditLogFilters>({
     page: 1,
@@ -138,7 +152,7 @@ export default function AuditLogsPage() {
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -173,14 +187,14 @@ export default function AuditLogsPage() {
       </div>
 
       {/* ── RISK KPI CARDS ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
           { label: 'Suspicious events',   value: hasLogs ? suspiciousCount  : '—', sub: 'AI-detected anomalies',        valueColor: !hasLogs || suspiciousCount === 0  ? '#9ca3af' : '#DC2626' },
           { label: 'Failed actions',       value: hasLogs ? failedCount      : '—', sub: 'Last 24 hours',                valueColor: !hasLogs || failedCount === 0      ? '#9ca3af' : '#D97706' },
           { label: 'High-risk actions',    value: hasLogs ? highRiskCount    : '—', sub: 'IAM changes, security groups', valueColor: !hasLogs || highRiskCount === 0    ? '#9ca3af' : '#DC2626' },
           { label: 'Active users',         value: hasLogs ? activeUserCount  : '—', sub: 'Last 24 hours',                valueColor: '#9ca3af' },
         ].map(({ label, value, sub, valueColor }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+          <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
               {label}
             </p>
@@ -247,7 +261,7 @@ export default function AuditLogsPage() {
       {/* ── FILTERS (only when logs exist) ── */}
       {hasLogs && (
         <div style={{ background: '#fff', borderRadius: '14px', padding: '24px 28px', border: '1px solid #F1F5F9', marginBottom: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '16px', alignItems: 'end' }}>
             <div>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>Action</p>
               <select
@@ -301,7 +315,7 @@ export default function AuditLogsPage() {
       )}
 
       {/* ── AUDIT LOG TABLE ── */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
 
         {/* Table header bar */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -324,19 +338,19 @@ export default function AuditLogsPage() {
 
         {/* Rows */}
         {isLoading && !demoMode ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
             <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading audit logs...</p>
           </div>
         ) : displayLogs.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 32px' }}>
+          <div style={{ textAlign: 'center', padding: isMobile ? '16px 14px' : '48px 32px' }}>
             <p style={{ fontSize: '16px', fontWeight: 500, color: '#0F172A', margin: '0 0 8px' }}>
               No audit activity detected yet
             </p>
             <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, margin: '0 auto 20px', maxWidth: '480px' }}>
               Once connected, DevControl will track all infrastructure actions, API calls, and user activity across your AWS environment.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', maxWidth: '400px', margin: '0 auto', textAlign: 'left' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '6px', maxWidth: '400px', margin: '0 auto', textAlign: 'left' }}>
               {['Trace who made changes', 'Detect unusual access patterns', 'Investigate incidents in seconds', 'Track IAM and policy changes'].map((item) => (
                 <div key={item} style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#534AB7', flexShrink: 0 }} />

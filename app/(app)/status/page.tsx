@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import {
@@ -81,6 +92,9 @@ const uptimeHistory = [
 ]
 
 export default function StatusPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
@@ -107,7 +121,7 @@ export default function StatusPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -196,7 +210,7 @@ export default function StatusPage() {
       </div>
 
       {/* 4 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {[
           { label: 'Platform Uptime',   value: '99.98%', sub: 'Last 30 days',            valueColor: '#059669', hero: true  },
           { label: 'Avg Response Time', value: '45ms',   sub: 'Across all endpoints',    valueColor: '#0F172A', hero: false },
@@ -206,7 +220,7 @@ export default function StatusPage() {
           <div key={label} style={{
             background: '#fff',
             borderRadius: '14px',
-            padding: '32px',
+            padding: isMobile ? '16px 14px' : '32px',
             border: '1px solid #E2E8F0',
             borderLeft: hero ? '2px solid #534AB7' : '1px solid #E2E8F0',
           }}>
@@ -225,7 +239,7 @@ export default function StatusPage() {
           <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 2px' }}>Service Status</p>
           <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{services.filter(s => s.status === 'operational').length}/{services.length} services operational</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1px', background: '#F1F5F9' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '1px', background: '#F1F5F9' }}>
           {services.map((service) => {
             const cfg = statusConfig[service.status]
             const Icon = service.icon
@@ -289,7 +303,7 @@ export default function StatusPage() {
             <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>All regions operational · No latency anomalies detected</p>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
           {regions.map((region) => {
             const cfg = statusConfig[region.status]
             return (

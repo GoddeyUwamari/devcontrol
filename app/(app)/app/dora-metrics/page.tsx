@@ -1,6 +1,17 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/contexts/auth-context';
 import {
@@ -215,6 +226,9 @@ const METRIC_CONFIGS = [
 // ── PAGE COMPONENT ─────────────────────────────────────────────────────────
 
 export default function DORAMetricsPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const [dateRange, setDateRange] = useState<DateRangeOption>('30d');
   const [selectedService, setSelectedService] = useState<string>('all');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
@@ -353,7 +367,7 @@ export default function DORAMetricsPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 80px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 80px',
       maxWidth: '1400px',
       margin: '0 auto',
       display: 'flex',
@@ -723,7 +737,7 @@ export default function DORAMetricsPage() {
       {isLoading && !isDemoActive && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)',
           gap: '20px',
         }}>
           {[...Array(4)].map((_, i) => (
@@ -744,7 +758,7 @@ export default function DORAMetricsPage() {
       {metrics && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)',
           gap: '20px',
         }}>
           {[
@@ -845,7 +859,7 @@ export default function DORAMetricsPage() {
                 </CardHeader>
                 <CardContent>
                   <div style={{
-                    fontSize: '2.2rem',
+                    fontSize: isMobile ? '1.4rem' : '2.2rem',
                     fontWeight: 700,
                     color: '#0F172A',
                     letterSpacing: '-0.04em',
@@ -1066,7 +1080,7 @@ export default function DORAMetricsPage() {
         {/* Locked state for non-enterprise */}
         {!isEnterprise ? (
           <div style={{
-            padding: '56px 24px',
+            padding: isMobile ? '16px 14px' : '56px 24px',
             textAlign: 'center',
             background: '#F8FAFC',
           }}>

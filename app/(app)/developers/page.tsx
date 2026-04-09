@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus, X, Copy, Check, Trash2,
@@ -9,7 +9,17 @@ import {
   Cloud, Database, Server, BarChart2, Activity, Mail,
 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
-import { useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { toast } from 'sonner'
 import developersService from '@/lib/services/developers.service'
 
@@ -123,6 +133,9 @@ function timeAgo(iso: string): string {
 // ── PAGE ───────────────────────────────────────────────────────────────────────
 
 export default function DevelopersPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const demoMode = useDemoMode()
   const router = useRouter()
 
@@ -473,7 +486,7 @@ export default function DevelopersPage() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ padding: '40px 56px 80px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 80px', maxWidth: '1400px', margin: '0 auto' }}>
 
       {/* PAGE HEADER */}
       <div style={{ marginBottom: '32px' }}>
@@ -504,7 +517,7 @@ export default function DevelopersPage() {
         }}>
           Get DevControl fully connected
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, minmax(0, 1fr))', gap: '12px' }}>
           {setupSteps.map(step => (
             <div key={step.number} style={{
               background: '#FFFFFF',
@@ -1183,7 +1196,7 @@ export default function DevelopersPage() {
           <div style={{
             background: '#FFFFFF',
             borderRadius: '20px',
-            padding: '32px',
+            padding: isMobile ? '16px 14px' : '32px',
             width: '100%',
             maxWidth: '440px',
             boxShadow: '0 24px 64px rgba(0,0,0,0.15)',
@@ -1274,7 +1287,7 @@ export default function DevelopersPage() {
           <div style={{
             background: '#FFFFFF',
             borderRadius: '20px',
-            padding: '32px',
+            padding: isMobile ? '16px 14px' : '32px',
             width: '100%',
             maxWidth: '480px',
             boxShadow: '0 24px 64px rgba(0,0,0,0.15)',

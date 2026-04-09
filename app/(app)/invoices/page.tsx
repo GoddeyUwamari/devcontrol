@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useQuery } from '@tanstack/react-query'
 import { Download, FileText, RefreshCw } from 'lucide-react'
 import api from '@/lib/api'
@@ -41,6 +52,9 @@ function WhatYoullSee() {
 }
 
 export default function InvoicesPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const [statusFilter, setStatusFilter] = useState('all')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
@@ -160,7 +174,7 @@ export default function InvoicesPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -208,10 +222,10 @@ export default function InvoicesPage() {
       </div>
 
       {/* 3 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
 
         {/* This Month — hero card with left accent */}
-        <div style={{ background: '#fff', borderRadius: '0 14px 14px 0', padding: '32px', border: '1px solid #E2E8F0', borderLeft: '2px solid #534AB7' }}>
+        <div style={{ background: '#fff', borderRadius: '0 14px 14px 0', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0', borderLeft: '2px solid #534AB7' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>This Month</p>
           <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#0F172A' : '#9CA3AF', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {hasData ? `$${totalThisMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
@@ -230,7 +244,7 @@ export default function InvoicesPage() {
         </div>
 
         {/* Total Paid */}
-        <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+        <div style={{ background: '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Paid</p>
           <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? '#3B6D11' : '#9CA3AF', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {hasData ? `$${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
@@ -241,7 +255,7 @@ export default function InvoicesPage() {
         </div>
 
         {/* Outstanding */}
-        <div style={{ background: '#fff', borderRadius: '14px', padding: '32px', border: '1px solid #E2E8F0' }}>
+        <div style={{ background: '#fff', borderRadius: '14px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Outstanding</p>
           <div style={{ fontSize: '2rem', fontWeight: 700, color: hasData ? (outstanding > 0 ? '#DC2626' : '#3B6D11') : '#9CA3AF', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {hasData ? `$${outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
@@ -304,7 +318,7 @@ export default function InvoicesPage() {
       {isLoading && !isDemoActive ? (
 
         /* Loading */
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
           <RefreshCw size={24} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
           <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading invoices...</p>
         </div>
@@ -313,7 +327,7 @@ export default function InvoicesPage() {
 
         /* STATE 2 — Not connected */
         <>
-        <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: '64px 48px', textAlign: 'center' }}>
+        <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '64px 48px', textAlign: 'center' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <FileText size={22} style={{ color: '#94A3B8' }} />
           </div>
@@ -377,7 +391,7 @@ export default function InvoicesPage() {
 
         /* STATE 4 — Connected, no invoices yet */
         <>
-        <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: '64px 48px', textAlign: 'center' }}>
+        <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '64px 48px', textAlign: 'center' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <FileText size={22} style={{ color: '#94A3B8' }} />
           </div>
@@ -412,7 +426,7 @@ export default function InvoicesPage() {
           )}
 
           {/* Invoice table */}
-          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
             {/* Column headers */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 160px 160px 120px 100px 120px', gap: '0', padding: '12px 28px', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC' }}>
               {['Billing Period', 'Invoice ID', 'Issue Date', 'Amount', 'VS Prior Month', 'Status', 'Actions'].map(col => (

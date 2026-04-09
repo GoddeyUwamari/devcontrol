@@ -1,6 +1,17 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 import { useRouter } from 'next/navigation';
 import { RefreshCw, Zap, Wrench, DollarSign, Server, ShieldCheck, Tag, CheckCircle, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -89,6 +100,9 @@ const SCAN_STEPS = [
 type ScanState = 'idle' | 'scanning' | 'complete';
 
 export default function CostOptimizationPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
   const router = useRouter();
   const { organization } = useAuth();
   const isEnterprise = organization?.subscriptionTier === 'enterprise';
@@ -485,7 +499,7 @@ export default function CostOptimizationPage() {
 
   return (
     <div style={{
-      padding: '40px 56px 64px',
+      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -622,7 +636,7 @@ export default function CostOptimizationPage() {
             </button>
           </div>
 
-          <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: '48px 40px' }}>
+          <div style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: '12px', padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '48px 40px' }}>
             <p style={{ fontSize: '20px', fontWeight: 500, color: '#0F172A', margin: '0 0 12px' }}>
               Your AWS account isn&apos;t connected yet
             </p>
@@ -630,7 +644,7 @@ export default function CostOptimizationPage() {
               Most teams discover 20–40% in wasted cloud spend within their first scan. Connect your account to see exactly where your money is going.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxWidth: '560px', marginBottom: '28px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px', maxWidth: '560px', marginBottom: '28px' }}>
               {([
                 { Icon: DollarSign, title: 'Hidden costs by service',    sub: 'EC2, RDS, S3 broken down' },
                 { Icon: Server,     title: 'Idle & orphaned resources',  sub: 'Draining your bill silently' },
@@ -696,7 +710,7 @@ export default function CostOptimizationPage() {
           </div>
 
           {/* KPI Cards — outcome-driven placeholders */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
             <div style={{ background: '#fff', borderRadius: '0 12px 12px 0', padding: '28px 32px', border: '1px solid #E2E8F0', borderLeft: '2px solid #534AB7' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>Monthly Savings</p>
               <div style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', lineHeight: 1.3, marginBottom: '6px' }}>Unlock potential savings</div>
@@ -820,7 +834,7 @@ export default function CostOptimizationPage() {
               <p style={{ fontSize: '12px', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px' }}>
                 We scan for
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px 32px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '8px 32px' }}>
                 {([
                   'Idle and underutilized EC2 instances',
                   'Overprovisioned RDS and ElastiCache',
@@ -921,23 +935,23 @@ export default function CostOptimizationPage() {
           )}
 
           {/* KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
-            <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0', borderTop: '3px solid #059669' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0', borderTop: '3px solid #059669' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Monthly Savings</p>
               <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>${monthlySavings.toLocaleString()}</div>
               <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>AI-identified waste</p>
             </div>
-            <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Annual Projection</p>
               <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>${annualSavings.toLocaleString()}</div>
               <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>${Math.round(annualSavings / 1000)}k/year if all applied</p>
             </div>
-            <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Opportunities</p>
               <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{totalOpportunities}</div>
               <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>{displayRecs.filter((r: any) => r.status === 'pending').length} pending · {zeroRiskCount} zero-risk</p>
             </div>
-            <div style={{ background: '#fff', borderRadius: '12px', padding: '32px', border: '1px solid #E2E8F0' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #E2E8F0' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Zero-Risk Changes</p>
               <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{zeroRiskCount}</div>
               <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0 }}>No downtime · fully reversible</p>
@@ -983,7 +997,7 @@ export default function CostOptimizationPage() {
 
           {/* Recommendations */}
           {isLoading && !isDemoActive ? (
-            <div style={{ background: '#fff', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', padding: isMobile ? '16px 14px' : '48px', textAlign: 'center', border: '1px solid #F1F5F9' }}>
               <RefreshCw size={24} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
               <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Scanning for opportunities...</p>
             </div>
