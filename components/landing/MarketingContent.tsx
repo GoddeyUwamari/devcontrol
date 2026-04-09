@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react'
 import { HeroSection } from '@/components/landing/HeroSection'
 import { TrustedBySection } from '@/components/landing/TrustedBySection';
 import { FeatureShowcase } from '@/components/landing/FeatureShowcase';
@@ -25,6 +26,17 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 const integrations = [
   { name: 'AWS', icon: Cloud, color: '#f97316' },
@@ -81,6 +93,10 @@ const eyebrow: React.CSSProperties = {
 };
 
 export function MarketingContent() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
     <>
       {/* Hero */}
@@ -100,17 +116,17 @@ export function MarketingContent() {
 
 
       {/* Integrations */}
-      <section id="integrations" style={{ width: '100%', padding: '64px 0', backgroundColor: '#f8f8f8' }}>
-        <div style={inner}>
-          <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 40px' }}>
+      <section id="integrations" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#f8f8f8' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
+          <div style={{ textAlign: 'center', maxWidth: '600px', margin: isMobile ? '0 auto 28px' : '0 auto 40px' }}>
             <p style={eyebrow}>Integrations</p>
             <h2
               className="font-extrabold"
-              style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
+              style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
             >
               Works with your entire stack
             </h2>
-            <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75 }}>
+            <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', color: '#374151', lineHeight: 1.75 }}>
               DevControl connects to the tools your team already uses. One platform, zero friction.
             </p>
           </div>
@@ -123,7 +139,7 @@ export function MarketingContent() {
                   key={integration.name}
                   className="flex flex-col items-center gap-3 bg-white rounded-2xl cursor-pointer"
                   style={{
-                    padding: '28px 16px',
+                    padding: isMobile ? '20px 12px' : '28px 16px',
                     border: '1px solid #f3f4f6',
                     transition: 'all 0.2s ease',
                   }}
@@ -171,9 +187,9 @@ export function MarketingContent() {
       </section>
 
       {/* Security */}
-      <section id="security" style={{ width: '100%', padding: '64px 0', backgroundColor: '#fff' }}>
-        <div style={inner}>
-          <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 48px' }}>
+      <section id="security" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#fff' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
+          <div style={{ textAlign: 'center', maxWidth: '600px', margin: isMobile ? '0 auto 32px' : '0 auto 48px' }}>
             <div
               className="inline-flex items-center gap-2 rounded-full font-semibold"
               style={{ color: '#7c3aed', backgroundColor: '#ede9fe', padding: '6px 16px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '16px' }}
@@ -183,11 +199,11 @@ export function MarketingContent() {
             </div>
             <h2
               className="font-extrabold"
-              style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
+              style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
             >
               Your data is safe with us
             </h2>
-            <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75, marginBottom: '12px' }}>
+            <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', color: '#374151', lineHeight: 1.75, marginBottom: '12px' }}>
               We built DevControl with a security-first mindset. Enterprise-grade protections out of the box — no add-ons required.
             </p>
             <p style={{ fontSize: '15px', fontWeight: 600, color: '#7c3aed' }}>
@@ -203,7 +219,7 @@ export function MarketingContent() {
                   key={item.title}
                   className="flex items-start gap-5 bg-white rounded-2xl"
                   style={{
-                    padding: '32px',
+                    padding: isMobile ? '20px' : '32px',
                     border: '1px solid #f3f4f6',
                     transition: 'all 0.2s ease',
                   }}
@@ -234,8 +250,8 @@ export function MarketingContent() {
                     <Icon style={{ color: '#7c3aed' }} size={22} />
                   </div>
                   <div>
-                    <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{item.title}</h3>
-                    <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: 1.65 }}>{item.description}</p>
+                    <h3 className="font-bold" style={{ fontSize: isMobile ? '1rem' : '1.1rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{item.title}</h3>
+                    <p style={{ color: '#374151', fontSize: isMobile ? '0.88rem' : '0.95rem', lineHeight: 1.65 }}>{item.description}</p>
                   </div>
                 </div>
               );

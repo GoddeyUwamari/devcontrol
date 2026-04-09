@@ -1,7 +1,19 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { DollarSign, Shield, BarChart2, Activity, Search, Users } from 'lucide-react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 const features = [
   {
@@ -55,17 +67,21 @@ const features = [
 ]
 
 export function FeatureShowcase() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
-    <section style={{ width: '100%', padding: '100px 0', backgroundColor: '#fff' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 32px' }}>
+    <section style={{ width: '100%', padding: isMobile ? '60px 0' : isTablet ? '80px 0' : '100px 0', backgroundColor: '#fff' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
 
         <h2
           style={{
-            fontSize: 'clamp(2.6rem, 5vw, 3rem)',
+            fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2.6rem, 5vw, 3rem)',
             color: '#7c3aed',
             fontWeight: 800,
             textAlign: 'center',
-            marginBottom: '16px',
+            marginBottom: isMobile ? '12px' : '16px',
           }}
         >
           What You&apos;ll Know in 15 Minutes
@@ -73,11 +89,11 @@ export function FeatureShowcase() {
 
         <p
           style={{
-            fontSize: '1.2rem',
+            fontSize: isMobile ? '1rem' : '1.2rem',
             color: '#374151',
             maxWidth: '680px',
             textAlign: 'center',
-            margin: '0 auto 32px',
+            margin: isMobile ? '0 auto 24px' : '0 auto 32px',
             lineHeight: 1.7,
           }}
         >
@@ -87,11 +103,13 @@ export function FeatureShowcase() {
         <div
           style={{
             display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
             justifyContent: 'center',
-            gap: '32px',
+            alignItems: 'center',
+            gap: isMobile ? '12px' : '32px',
             flexWrap: 'wrap',
-            marginBottom: '56px',
-            fontSize: '0.95rem',
+            marginBottom: isMobile ? '32px' : '56px',
+            fontSize: isMobile ? '0.85rem' : '0.95rem',
             color: '#374151',
             fontWeight: 500,
           }}
@@ -104,7 +122,7 @@ export function FeatureShowcase() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
             gap: '24px',
           }}
         >
@@ -119,7 +137,7 @@ export function FeatureShowcase() {
                   border: feature.highlight
                     ? '2px solid #7c3aed'
                     : '1.5px solid #e5e7eb',
-                  padding: '40px',
+                  padding: isMobile ? '24px' : '40px',
                   boxShadow: feature.highlight
                     ? '0 8px 32px rgba(124,58,237,0.15)'
                     : 'none',
@@ -155,7 +173,7 @@ export function FeatureShowcase() {
 
                 <h3
                   style={{
-                    fontSize: '1.15rem',
+                    fontSize: isMobile ? '1rem' : '1.15rem',
                     fontWeight: 700,
                     color: '#0f172a',
                     marginBottom: '10px',
@@ -166,7 +184,7 @@ export function FeatureShowcase() {
 
                 <p
                   style={{
-                    fontSize: '0.95rem',
+                    fontSize: isMobile ? '0.88rem' : '0.95rem',
                     color: '#374151',
                     lineHeight: 1.65,
                   }}
@@ -177,12 +195,14 @@ export function FeatureShowcase() {
                 <Link
                   href={feature.href}
                   style={{
-                    display: 'inline-block',
+                    display: isMobile ? 'block' : 'inline-block',
                     marginTop: '18px',
                     color: '#7c3aed',
                     fontWeight: 700,
                     fontSize: '0.85rem',
                     textDecoration: 'none',
+                    width: isMobile ? 'fit-content' : undefined,
+                    margin: isMobile ? '18px auto 0' : undefined,
                   }}
                 >
                   Learn More →
@@ -203,6 +223,9 @@ export function FeatureShowcase() {
               fontWeight: 700,
               textDecoration: 'none',
               boxShadow: '0 6px 24px rgba(124,58,237,0.35)',
+              display: isMobile ? 'block' : undefined,
+              width: isMobile ? 'fit-content' : undefined,
+              margin: isMobile ? '0 auto' : undefined,
             }}
           >
             Scan My AWS for Cost &amp; Risk →

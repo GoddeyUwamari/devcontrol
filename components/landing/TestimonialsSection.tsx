@@ -1,5 +1,18 @@
 'use client';
 
+import { useEffect, useState } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 type Testimonial = {
   stars: number;
   before: string;
@@ -53,18 +66,22 @@ function Stars({ count }: { count: number }) {
 }
 
 export function TestimonialsSection() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
     <section
       style={{
         width: '100%',
-        padding: '80px 24px',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 24px' : '80px 24px',
         background: '#F9FAFB',
       }}
     >
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
 
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+        <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
           <p
             style={{
               textTransform: 'uppercase',
@@ -79,7 +96,7 @@ export function TestimonialsSection() {
           </p>
           <h2
             style={{
-              fontSize: 'clamp(28px, 3vw, 40px)',
+              fontSize: isMobile ? 'clamp(22px, 4vw, 32px)' : 'clamp(28px, 3vw, 40px)',
               fontWeight: 800,
               color: '#0F172A',
               marginBottom: '12px',
@@ -87,7 +104,7 @@ export function TestimonialsSection() {
           >
             Trusted by Engineering Leaders
           </h2>
-          <p style={{ color: '#475569', fontSize: '16px' }}>
+          <p style={{ color: '#475569', fontSize: isMobile ? '14px' : '16px' }}>
             Real outcomes from teams optimizing cost, performance, and risk at scale.
           </p>
         </div>
@@ -96,7 +113,7 @@ export function TestimonialsSection() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
             gap: '24px',
           }}
         >
@@ -107,7 +124,7 @@ export function TestimonialsSection() {
                 background: '#fff',
                 border: '1px solid #E2E8F0',
                 borderRadius: '18px',
-                padding: '28px',
+                padding: isMobile ? '20px' : '28px',
                 transition: 'all 0.25s ease',
               }}
               onMouseEnter={(e) => {
@@ -126,7 +143,7 @@ export function TestimonialsSection() {
               <p
                 style={{
                   marginTop: '16px',
-                  fontSize: '15px',
+                  fontSize: isMobile ? '14px' : '15px',
                   color: '#374151',
                   lineHeight: 1.7,
                 }}
@@ -192,7 +209,7 @@ export function TestimonialsSection() {
         </div>
 
         {/* Post-testimonial CTA */}
-        <div style={{ textAlign: 'center', marginTop: '48px' }}>
+        <div style={{ textAlign: 'center', marginTop: isMobile ? '32px' : '48px' }}>
           <a
             href="/register"
             style={{

@@ -1,7 +1,19 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Check } from 'lucide-react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 const tiers = [
   {
@@ -87,20 +99,24 @@ const eyebrow: React.CSSProperties = {
 }
 
 export function PricingPreview() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
-    <section id="pricing" style={{ width: '100%', padding: '64px 0', backgroundColor: '#fff' }}>
-      <div style={inner}>
-        <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 48px' }}>
+    <section id="pricing" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#fff' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
+        <div style={{ textAlign: 'center', maxWidth: '600px', margin: isMobile ? '0 auto 32px' : '0 auto 48px' }}>
           <p style={eyebrow}>Pricing</p>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
+          <h2 className="font-extrabold" style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
             Start free. Scale as you grow.
           </h2>
-          <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75 }}>
+          <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', color: '#374151', lineHeight: 1.75 }}>
             Starter and Pro include a 14-day free trial. Free plan available forever. No credit card required.
           </p>
         </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6" style={{ marginBottom: '36px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '24px', marginBottom: isMobile ? '24px' : '36px' }}>
           {tiers.map((tier) => (
             <div
               key={tier.name}
@@ -108,8 +124,8 @@ export function PricingPreview() {
               style={{
                 border: tier.highlighted ? '2px solid #7c3aed' : '1px solid #f3f4f6',
                 boxShadow: tier.highlighted ? '0 8px 30px rgba(124,58,237,0.15)' : '0 2px 8px rgba(0,0,0,0.04)',
-                transform: tier.highlighted ? 'scale(1.03)' : 'none',
-                padding: '32px 24px',
+                transform: tier.highlighted && !isMobile ? 'scale(1.03)' : 'none',
+                padding: isMobile ? '24px 16px' : '32px 24px',
               }}
             >
               {tier.highlighted && (
@@ -125,7 +141,7 @@ export function PricingPreview() {
                 <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '4px', lineHeight: 1.3 }}>{tier.name}</h3>
                 <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '16px' }}>{tier.highlight}</p>
                 <div className="flex items-baseline gap-1">
-                  <span className="font-extrabold" style={{ fontSize: '2.25rem', color: '#111827' }}>{tier.price}</span>
+                  <span className="font-extrabold" style={{ fontSize: isMobile ? '1.8rem' : '2.25rem', color: '#111827' }}>{tier.price}</span>
                   {tier.period && <span style={{ color: '#6b7280', fontSize: '14px' }}>{tier.period}</span>}
                 </div>
                 {tier.highlighted && (
@@ -204,7 +220,7 @@ export function PricingPreview() {
           </Link>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-6" style={{ fontSize: '14px', color: '#6b7280' }}>
+        <div className="flex flex-wrap items-center justify-center" style={{ gap: isMobile ? '12px' : '24px', fontSize: isMobile ? '13px' : '14px', color: '#6b7280' }}>
           {['14-day free trial', 'No credit card required', 'Cancel anytime', 'No hidden fees', 'SOC 2 In Progress'].map((item) => (
             <div key={item} className="flex items-center gap-2">
               <Check className="h-4 w-4" style={{ color: '#16a34a' }} />

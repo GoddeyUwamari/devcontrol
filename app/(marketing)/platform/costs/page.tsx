@@ -1,8 +1,23 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { TrendingDown, AlertTriangle, BarChart3, DollarSign, Zap, PieChart } from 'lucide-react'
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 export default function CostOptimizationPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     { icon: TrendingDown, title: 'AI Cost Recommendations', desc: 'Machine learning analyzes your usage patterns and recommends right-sizing, reserved instances, and idle resource elimination automatically.' },
@@ -33,7 +48,7 @@ export default function CostOptimizationPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px',
         borderBottom: '1px solid #f3f4f6',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
@@ -49,7 +64,7 @@ export default function CostOptimizationPage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+            fontSize: isMobile ? 'clamp(1.8rem,5vw,2.6rem)' : 'clamp(2.2rem,5vw,3.2rem)',
             fontWeight: 800, color: '#0f172a',
             lineHeight: 1.15, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
@@ -59,7 +74,7 @@ export default function CostOptimizationPage() {
           </h1>
 
           <p style={{
-            fontSize: '1.15rem', color: '#374151',
+            fontSize: isMobile ? '0.95rem' : '1.15rem', color: '#374151',
             lineHeight: 1.75, maxWidth: '600px',
             margin: '0 auto 36px',
           }}>
@@ -67,12 +82,23 @@ export default function CostOptimizationPage() {
             savings automatically. Average team saves $2,400/month in the first week.
           </p>
 
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '16px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            marginBottom: '36px',
+            alignItems: 'center',
+          }}>
             <a href="/register" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Cut My AWS Costs Free
             </a>
@@ -81,15 +107,22 @@ export default function CostOptimizationPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #7c3aed',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               See How It Works
             </a>
           </div>
 
           <div style={{
-            display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '24px',
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: isMobile ? '10px' : '24px',
             fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+            alignItems: 'center',
           }}>
             {['AI-powered recommendations', 'No code changes required', 'ROI in first week'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -97,25 +130,29 @@ export default function CostOptimizationPage() {
               </span>
             ))}
           </div>
-          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+          <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
             {'A fintech team cut their AWS bill by $3,100 in the first month after connecting DevControl.'}
           </p>
         </div>
       </section>
 
       {/* BUSINESS IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{
+        padding: isMobile ? '32px 16px' : isTablet ? '40px 32px' : '48px',
+        background: '#fafafa', borderBottom: '1px solid #f3f4f6',
+      }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
           gap: '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '1.8rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -124,9 +161,9 @@ export default function CostOptimizationPage() {
       </section>
 
       {/* FEATURES */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -144,11 +181,15 @@ export default function CostOptimizationPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {features.map(({ icon: Icon, title, desc }) => (
               <div key={title} style={{
                 background: '#fff', border: '1.5px solid #e5e7eb',
-                borderRadius: '16px', padding: '32px',
+                borderRadius: '16px', padding: isMobile ? '20px' : '32px',
                 transition: 'all 0.2s ease',
               }}
                 onMouseEnter={e => {
@@ -168,7 +209,7 @@ export default function CostOptimizationPage() {
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -181,9 +222,9 @@ export default function CostOptimizationPage() {
       </section>
 
       {/* HOW IT WORKS */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -198,7 +239,11 @@ export default function CostOptimizationPage() {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '32px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+            gap: '32px',
+          }}>
             {steps.map(({ step, title, desc }) => (
               <div key={step} style={{ textAlign: 'center' }}>
                 <div style={{
@@ -206,7 +251,7 @@ export default function CostOptimizationPage() {
                   background: '#7c3aed', color: '#fff',
                   fontSize: '1rem', fontWeight: 800,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  margin: '0 auto 20px',
+                  margin: isMobile ? '0 auto 16px' : '0 auto 20px',
                 }}>
                   {step}
                 </div>
@@ -223,9 +268,9 @@ export default function CostOptimizationPage() {
       </section>
 
       {/* WHO IT'S FOR */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -240,10 +285,14 @@ export default function CostOptimizationPage() {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             <div style={{
               background: '#fff', border: '1.5px solid #e5e7eb',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
@@ -253,7 +302,7 @@ export default function CostOptimizationPage() {
               }}>
                 For CFOs & Engineering Leaders
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Control Cloud Spend at the Board Level
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -274,7 +323,7 @@ export default function CostOptimizationPage() {
             <div style={{
               background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
               border: '1.5px solid rgba(124,58,237,0.2)',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: '#7c3aed',
@@ -284,7 +333,7 @@ export default function CostOptimizationPage() {
               }}>
                 For Platform Engineers & FinOps Teams
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Find and Fix Waste at the Resource Level
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -309,26 +358,37 @@ export default function CostOptimizationPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '48px 24px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Stop Overpaying for AWS. Start Today.
           </h2>
           <p style={{
-            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
             Join 500+ engineering teams saving an average of $2,400/month with DevControl.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '16px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Start Free Trial
             </a>
@@ -337,6 +397,9 @@ export default function CostOptimizationPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Take a Product Tour
             </a>

@@ -1,5 +1,18 @@
 'use client';
 
+import { useEffect, useState } from 'react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 const stats = [
   { value: '$2,400', suffix: '/mo', label: 'Average monthly savings per team' },
   { value: '15', suffix: ' min', label: 'From signup to first insight' },
@@ -7,13 +20,16 @@ const stats = [
 ];
 
 export function StatsBar() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+
   return (
     <div
       style={{
         background: '#F9FAFB',
         borderTop: '1px solid #E2E8F0',
         borderBottom: '1px solid #E2E8F0',
-        padding: '32px 56px',
+        padding: isMobile ? '24px 16px' : '32px 56px',
       }}
     >
       <div
@@ -21,7 +37,7 @@ export function StatsBar() {
           maxWidth: '900px',
           margin: '0 auto',
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
         }}
       >
         {stats.map((stat, index) => (
@@ -29,13 +45,14 @@ export function StatsBar() {
             key={stat.label}
             style={{
               textAlign: 'center',
-              padding: '0 32px',
-              borderRight: index < stats.length - 1 ? '1px solid #E2E8F0' : 'none',
+              padding: isMobile ? '16px 0' : '0 32px',
+              borderRight: isMobile ? 'none' : index < stats.length - 1 ? '1px solid #E2E8F0' : 'none',
+              borderBottom: isMobile && index < stats.length - 1 ? '1px solid #E2E8F0' : 'none',
             }}
           >
             <div
               style={{
-                fontSize: '32px',
+                fontSize: isMobile ? '24px' : '32px',
                 fontWeight: 600,
                 letterSpacing: '-0.03em',
                 color: '#0F172A',
@@ -47,7 +64,7 @@ export function StatsBar() {
             </div>
             <div
               style={{
-                fontSize: '13px',
+                fontSize: isMobile ? '12px' : '13px',
                 color: '#475569',
                 fontWeight: 400,
               }}

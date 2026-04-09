@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowRight,
@@ -11,6 +12,17 @@ import {
   TrendingUp,
   Search,
 } from 'lucide-react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 const features = [
   {
@@ -58,12 +70,16 @@ const features = [
 ]
 
 export function AIFeaturesSection() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
-    <section style={{ width: '100%', padding: '100px 0', background: '#f9fafb' }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
+    <section style={{ width: '100%', padding: isMobile ? '60px 0' : isTablet ? '80px 0' : '100px 0', background: '#f9fafb' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 24px' }}>
 
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+        <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
           <div
             style={{
               display: 'inline-flex',
@@ -85,10 +101,10 @@ export function AIFeaturesSection() {
 
           <h2
             style={{
-              fontSize: 'clamp(2.2rem, 4vw, 2.8rem)',
+              fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2.2rem, 4vw, 2.8rem)',
               fontWeight: 800,
               color: '#111827',
-              marginBottom: '16px',
+              marginBottom: isMobile ? '12px' : '16px',
               lineHeight: 1.2,
             }}
           >
@@ -97,7 +113,7 @@ export function AIFeaturesSection() {
 
           <p
             style={{
-              fontSize: '1.15rem',
+              fontSize: isMobile ? '1rem' : '1.15rem',
               color: '#374151',
               maxWidth: '680px',
               margin: '0 auto',
@@ -113,11 +129,13 @@ export function AIFeaturesSection() {
         <div
           style={{
             display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
             justifyContent: 'center',
-            gap: '32px',
+            alignItems: 'center',
+            gap: isMobile ? '12px' : '32px',
             flexWrap: 'wrap',
-            marginBottom: '64px',
-            fontSize: '0.95rem',
+            marginBottom: isMobile ? '40px' : '64px',
+            fontSize: isMobile ? '0.85rem' : '0.95rem',
             fontWeight: 500,
             color: '#374151',
           }}
@@ -131,7 +149,7 @@ export function AIFeaturesSection() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
             gap: '24px',
           }}
         >
@@ -143,7 +161,7 @@ export function AIFeaturesSection() {
                 style={{
                   background: '#fff',
                   borderRadius: '18px',
-                  padding: '32px',
+                  padding: isMobile ? '20px' : '32px',
                   border: feature.highlight
                     ? '2px solid #7c3aed'
                     : '1px solid #e5e7eb',
@@ -182,7 +200,7 @@ export function AIFeaturesSection() {
 
                 <h3
                   style={{
-                    fontSize: '1.05rem',
+                    fontSize: isMobile ? '0.95rem' : '1.05rem',
                     fontWeight: 700,
                     color: '#111827',
                     marginBottom: '8px',
@@ -193,7 +211,7 @@ export function AIFeaturesSection() {
 
                 <p
                   style={{
-                    fontSize: '0.95rem',
+                    fontSize: isMobile ? '0.88rem' : '0.95rem',
                     color: '#4b5563',
                     lineHeight: 1.6,
                   }}
@@ -206,7 +224,7 @@ export function AIFeaturesSection() {
         </div>
 
         {/* Bottom CTA */}
-        <div style={{ textAlign: 'center', marginTop: '72px' }}>
+        <div style={{ textAlign: 'center', marginTop: isMobile ? '48px' : '72px' }}>
           <Link
             href="/register"
             style={{
@@ -217,7 +235,9 @@ export function AIFeaturesSection() {
               fontWeight: 700,
               textDecoration: 'none',
               boxShadow: '0 8px 28px rgba(124,58,237,0.35)',
-              display: 'inline-flex',
+              display: isMobile ? 'block' : 'inline-flex',
+              width: isMobile ? 'fit-content' : undefined,
+              margin: isMobile ? '0 auto' : undefined,
               alignItems: 'center',
               gap: '8px',
             }}

@@ -1,8 +1,23 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Activity, Bell, Clock, Shield, Zap, BarChart3, AlertTriangle, CheckCircle } from 'lucide-react'
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 export default function ServiceHealthPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     {
@@ -56,7 +71,7 @@ export default function ServiceHealthPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px',
         borderBottom: '1px solid #f3f4f6',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
@@ -72,7 +87,7 @@ export default function ServiceHealthPage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+            fontSize: isMobile ? 'clamp(1.8rem,5vw,2.6rem)' : 'clamp(2.2rem,5vw,3.2rem)',
             fontWeight: 800, color: '#0f172a',
             lineHeight: 1.15, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
@@ -82,7 +97,7 @@ export default function ServiceHealthPage() {
           </h1>
 
           <p style={{
-            fontSize: '1.15rem', color: '#374151',
+            fontSize: isMobile ? '0.95rem' : '1.15rem', color: '#374151',
             lineHeight: 1.75, maxWidth: '600px',
             margin: '0 auto 36px',
           }}>
@@ -91,12 +106,23 @@ export default function ServiceHealthPage() {
             in under 60 seconds.
           </p>
 
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '16px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            marginBottom: '36px',
+            alignItems: 'center',
+          }}>
             <a href="/register" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Monitor My Services Free
             </a>
@@ -105,15 +131,22 @@ export default function ServiceHealthPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #7c3aed',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               See How It Works
             </a>
           </div>
 
           <div style={{
-            display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '24px',
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: isMobile ? '10px' : '24px',
             fontSize: '0.875rem', fontWeight: 500, color: '#0F172A',
+            alignItems: 'center',
           }}>
             {['Real-time detection', 'SLO tracking built in', 'Slack & PagerDuty alerts'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -122,25 +155,29 @@ export default function ServiceHealthPage() {
             ))}
           </div>
 
-          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+          <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
             {'A DevOps team reduced their MTTR by 60% in the first month — from 4 hours to under 45 minutes.'}
           </p>
         </div>
       </section>
 
       {/* IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{
+        padding: isMobile ? '32px 16px' : isTablet ? '40px 32px' : '48px',
+        background: '#fafafa', borderBottom: '1px solid #f3f4f6',
+      }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
           gap: '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '1.8rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -149,9 +186,9 @@ export default function ServiceHealthPage() {
       </section>
 
       {/* FEATURES */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -169,12 +206,16 @@ export default function ServiceHealthPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {features.map(({ icon: Icon, title, desc }, i) => (
               <div key={title} style={{
                 background: i === 0 ? '#faf5ff' : '#fff',
                 border: i === 0 ? '2px solid rgba(124,58,237,0.2)' : '1.5px solid #e5e7eb',
-                borderRadius: '16px', padding: '32px',
+                borderRadius: '16px', padding: isMobile ? '20px' : '32px',
                 transition: 'all 0.2s ease',
               }}
                 onMouseEnter={e => {
@@ -202,7 +243,7 @@ export default function ServiceHealthPage() {
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -215,23 +256,26 @@ export default function ServiceHealthPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '0 48px 80px', background: '#fff' }}>
+      <section style={{
+        padding: isMobile ? '0 16px 48px' : isTablet ? '0 32px 64px' : '0 48px 80px',
+        background: '#fff',
+      }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
             borderRadius: '20px',
-            padding: '48px 56px',
+            padding: isMobile ? '28px 20px' : '48px 56px',
             border: '1px solid rgba(124,58,237,0.15)',
             display: 'grid',
-            gridTemplateColumns: '1fr auto',
-            gap: '48px',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
+            gap: isMobile ? '24px' : '48px',
             alignItems: 'center',
           }}>
             <div>
               <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
                 DevOps Team Result
               </p>
-              <p style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.65, marginBottom: '24px', maxWidth: '560px' }}>
+              <p style={{ fontSize: isMobile ? '1rem' : '1.2rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.65, marginBottom: '24px', maxWidth: '560px' }}>
                 {'\u201C'}Our on-call engineers were spending 4 hours per incident just figuring out what broke and why. DevControl shows us the{' '}
                 <span style={{ color: '#7c3aed', fontWeight: 800 }}>blast radius and root cause in under 2 minutes</span>
                 {'. MTTR dropped by 60% in the first month.\u201D'}
@@ -242,6 +286,7 @@ export default function ServiceHealthPage() {
                   background: '#EDE9FE', color: '#7C3AED',
                   fontWeight: 700, fontSize: '13px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
                 }}>
                   AT
                 </div>
@@ -259,14 +304,24 @@ export default function ServiceHealthPage() {
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '160px' }}>
+            <div style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'row' : 'column',
+              gap: isMobile ? '8px' : '16px',
+              minWidth: isMobile ? undefined : '160px',
+            }}>
               {[
                 { value: '4hrs', label: 'Avg incident time before' },
                 { value: '45min', label: 'Avg incident time after' },
                 { value: '60%', label: 'MTTR reduction' },
               ].map(({ value, label }) => (
-                <div key={label} style={{ textAlign: 'center', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
-                  <p style={{ fontSize: '1.3rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px' }}>{value}</p>
+                <div key={label} style={{
+                  textAlign: 'center',
+                  padding: isMobile ? '12px 8px' : '16px',
+                  background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0',
+                  flex: isMobile ? '1' : undefined,
+                }}>
+                  <p style={{ fontSize: isMobile ? '1rem' : '1.3rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px' }}>{value}</p>
                   <p style={{ fontSize: '0.72rem', color: '#64748B', margin: 0 }}>{label}</p>
                 </div>
               ))}
@@ -276,9 +331,9 @@ export default function ServiceHealthPage() {
       </section>
 
       {/* HOW IT WORKS */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -293,7 +348,11 @@ export default function ServiceHealthPage() {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '32px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+            gap: '32px',
+          }}>
             {steps.map(({ step, title, desc }) => (
               <div key={step} style={{ textAlign: 'center' }}>
                 <div style={{
@@ -318,9 +377,9 @@ export default function ServiceHealthPage() {
       </section>
 
       {/* WHO IT'S FOR */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -335,10 +394,14 @@ export default function ServiceHealthPage() {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             <div style={{
               background: '#fff', border: '1.5px solid #e5e7eb',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
@@ -348,7 +411,7 @@ export default function ServiceHealthPage() {
               }}>
                 For DevOps & Platform Engineers
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Stop Flying Blind During Incidents
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -369,7 +432,7 @@ export default function ServiceHealthPage() {
             <div style={{
               background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
               border: '1.5px solid rgba(124,58,237,0.2)',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: '#7c3aed',
@@ -379,7 +442,7 @@ export default function ServiceHealthPage() {
               }}>
                 For Engineering Leaders
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Prove Reliability to Your Board
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -404,26 +467,37 @@ export default function ServiceHealthPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '48px 24px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Know Before Your Customers Do.
           </h2>
           <p style={{
-            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
             Real-time service health monitoring. SLO tracking. Instant incident alerts. All in 15 minutes.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '16px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Start Free Trial
             </a>
@@ -432,6 +506,9 @@ export default function ServiceHealthPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Take a Product Tour
             </a>

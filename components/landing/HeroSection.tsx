@@ -1,8 +1,20 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { ArrowRight, Play } from 'lucide-react'
 import { AnimatedBackground } from './AnimatedBackground'
 import { DashboardPreview } from './DashboardPreview'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 const inner: React.CSSProperties = {
   maxWidth: '1400px',
@@ -11,31 +23,39 @@ const inner: React.CSSProperties = {
 }
 
 export function HeroSection() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
+
   return (
     <section
       className="relative overflow-hidden flex items-center"
-      style={{ width: '100%', paddingTop: '60px', paddingBottom: '32px' }}
+      style={{ width: '100%', paddingTop: isMobile ? '40px' : '60px', paddingBottom: '32px' }}
     >
       <AnimatedBackground />
       <div className="absolute inset-0 -z-10" style={{ background: 'linear-gradient(to bottom, #faf5ff, #ffffff)', pointerEvents: 'none' }} />
 
-      <div style={{ ...inner, width: '100%', textAlign: 'center', position: 'relative', zIndex: 1 }}>
+      <div style={{
+        ...inner,
+        padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px',
+        width: '100%', textAlign: 'center', position: 'relative', zIndex: 1,
+      }}>
 
         {/* Headline */}
-       <h1 className="font-extrabold leading-tight" style={{ fontSize: 'clamp(2.5rem, 6vw, 4rem)', marginBottom: '20px' }}>
-  <span style={{ color: '#7c3aed' }}>Your AWS Is Leaking Money.</span>
-  <div style={{ marginTop: '-18px' }}>
-    <span style={{ color: '#111827', fontSize: 'clamp(2rem, 5vw, 2.6rem)' }}>DevControl Shows You Exactly Where.</span>
-  </div>
-</h1>
+        <h1 className="font-extrabold leading-tight" style={{ fontSize: isMobile ? '2rem' : isTablet ? '2.8rem' : 'clamp(2.5rem, 6vw, 4rem)', marginBottom: '20px' }}>
+          <span style={{ color: '#7c3aed' }}>Your AWS Is Leaking Money.</span>
+          <div style={{ marginTop: isMobile ? '-8px' : '-18px' }}>
+            <span style={{ color: '#111827', fontSize: isMobile ? '1.5rem' : isTablet ? '2rem' : 'clamp(2rem, 5vw, 2.6rem)' }}>DevControl Shows You Exactly Where.</span>
+          </div>
+        </h1>
 
         {/* Subheadline */}
-        <p className="leading-relaxed" style={{ fontSize: '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
+        <p className="leading-relaxed" style={{ fontSize: isMobile ? '1rem' : '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
          See exactly where your cloud spend is leaking, what risks exist, and what's slowing your team down — in one unified view.
         </p>
 
         {/* ROI line */}
-        <p style={{ fontSize: '1rem', color: '#374151', marginBottom: '36px' }}>
+        <p style={{ fontSize: isMobile ? '0.85rem' : '1rem', color: '#374151', marginBottom: '36px' }}>
           <strong style={{ color: '#059669' }}>$2,400/month avg savings (~$28,800/year)</strong>
           {' · '}
           First insight in <strong style={{ color: '#059669' }}>15 min</strong>
@@ -44,7 +64,7 @@ export function HeroSection() {
         </p>
 
         {/* CTA Buttons */}
-        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
           <a
             href="/register"
             style={{
@@ -58,10 +78,12 @@ export function HeroSection() {
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '8px',
               boxShadow: '0 4px 20px rgba(124,58,237,0.35)',
               transition: 'all 0.2s ease',
               textDecoration: 'none',
+              width: isMobile ? '100%' : 'auto',
             }}
             onMouseEnter={e => {
               e.currentTarget.style.opacity = '0.9'
@@ -81,6 +103,7 @@ export function HeroSection() {
             style={{
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '8px',
               backgroundColor: 'transparent',
               color: '#374151',
@@ -92,6 +115,7 @@ export function HeroSection() {
               cursor: 'pointer',
               transition: 'all 0.2s ease',
               textDecoration: 'none',
+              width: isMobile ? '100%' : 'auto',
             }}
             onMouseEnter={e => {
               e.currentTarget.style.borderColor = '#7c3aed'
@@ -114,8 +138,8 @@ export function HeroSection() {
         {/* Trust badges — tight under buttons */}
         <div style={{
           display: 'flex', flexWrap: 'wrap',
-          justifyContent: 'center', gap: '20px',
-          fontSize: '0.82rem', fontWeight: 500, color: '#0F172A',
+          justifyContent: 'center', gap: isMobile ? '12px' : '20px',
+          fontSize: isMobile ? '0.75rem' : '0.82rem', fontWeight: 500, color: '#0F172A',
           marginTop: '16px',
           marginBottom: '0',
         }}>
@@ -137,7 +161,7 @@ export function HeroSection() {
           <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'center', marginBottom: '10px' }}>
             What you get in 15 minutes
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: '0', flexWrap: 'wrap' }}>
             {[
               'Top cost leaks by service',
               'Risk exposure summary',
@@ -145,10 +169,10 @@ export function HeroSection() {
               'Ranked fixes with dollar impact',
             ].map((item, i) => (
               <div key={item} style={{ display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#0F172A', padding: '0 20px' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#0F172A', padding: isMobile ? '4px 12px' : '0 20px' }}>
                   {item}
                 </span>
-                {i < 3 && (
+                {i < 3 && !isMobile && (
                   <span style={{ color: '#CBD5E1', fontSize: '1rem' }}>·</span>
                 )}
               </div>
@@ -162,7 +186,7 @@ export function HeroSection() {
           background: 'rgba(124,58,237,0.04)',
           border: '1.5px solid rgba(124,58,237,0.1)',
           borderRadius: '20px',
-          padding: '28px 32px',
+          padding: isMobile ? '20px 16px' : '28px 32px',
           marginTop: '48px',
         }}>
           <div style={{
@@ -175,7 +199,7 @@ export function HeroSection() {
           </div>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: isMobile || isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
             gap: '16px',
             width: '100%',
           }}>
@@ -189,7 +213,7 @@ export function HeroSection() {
                 background: '#fff',
                 border: '1.5px solid #e5e7eb',
                 borderRadius: '14px',
-                padding: '24px 16px',
+                padding: isMobile ? '16px 12px' : '24px 16px',
                 textAlign: 'center',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
               }}>
@@ -202,10 +226,10 @@ export function HeroSection() {
                 }}>
                   {step}
                 </div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
+                <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
                   {title}
                 </div>
-                <div style={{ fontSize: '0.78rem', color: '#374151' }}>
+                <div style={{ fontSize: isMobile ? '0.72rem' : '0.78rem', color: '#374151' }}>
                   {sub}
                 </div>
               </div>

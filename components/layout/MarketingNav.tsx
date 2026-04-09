@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useRef } from 'react'
+import { usePathname } from 'next/navigation'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   ChevronDown, Menu, X,
@@ -9,6 +10,17 @@ import {
   Rocket, TrendingUp, Building2, GitBranch, Layers, DollarSign,
   BookOpen, Code2, FileText, Clock, Users,
 } from 'lucide-react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 const platformItems = [
   { icon: Server,       title: 'Infrastructure Management', desc: 'Unified view of all your cloud resources',    href: '/platform/infrastructure' },
@@ -41,19 +53,21 @@ type NavItem = { icon: React.ElementType; title: string; desc: string; href: str
 type DropdownKey = 'platform' | 'solutions' | 'resources'
 
 
-function MegaMenu({ items, showFooter, onClose }: { items: NavItem[]; showFooter?: boolean; onClose?: () => void }) {
+function MegaMenu({ items, showFooter, onClose, align = 'left' }: { items: NavItem[]; showFooter?: boolean; onClose?: () => void; align?: 'left' | 'right' }) {
   return (
     <div
       style={{
         position: 'absolute',
         top: 'calc(100% + 8px)',
-        left: '-24px',
+        left: align === 'right' ? 'auto' : '-24px',
+        right: align === 'right' ? '-24px' : 'auto',
         backgroundColor: '#fff',
         borderRadius: '16px',
         boxShadow: '0 16px 48px rgba(0,0,0,0.12)',
         border: '1px solid #e5e7eb',
         padding: '16px',
-        minWidth: '560px',
+        minWidth: 'min(560px, calc(100vw - 48px))',
+        maxWidth: 'calc(100vw - 48px)',
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
         gap: '4px',
@@ -120,7 +134,7 @@ function MegaMenuItem({ item, onClose }: { item: NavItem; onClose?: () => void }
       >
         <Icon style={{ width: '16px', height: '16px', color: '#7c3aed' }} />
       </div>
-      <div>
+      <div style={{ minWidth: 0, wordBreak: 'break-word' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px', display: 'block', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
             {title}
@@ -149,6 +163,7 @@ function MegaMenuItem({ item, onClose }: { item: NavItem; onClose?: () => void }
     border: 'none',
     textAlign: 'left' as const,
     width: '100%',
+    minWidth: 0,
   }
 
   return (
@@ -221,7 +236,21 @@ function NavTrigger({
 export function MarketingNav() {
   const [activeDropdown, setActiveDropdown] = useState<DropdownKey | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [expandedSection, setExpandedSection] = useState<string | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTiny = width > 0 && width < 380
+
+  const toggleSection = (section: string) => {
+    setExpandedSection(prev => prev === section ? null : section)
+  }
+
+  const pathname = usePathname()
+  useEffect(() => {
+    setMobileMenuOpen(false)
+    setExpandedSection(null)
+  }, [pathname])
 
   const openDropdown = (key: DropdownKey) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
@@ -245,7 +274,7 @@ export function MarketingNav() {
       <div
         style={{
           width: '100%',
-          padding: '10px 0',
+          padding: isMobile ? '8px 12px' : '10px 0',
           textAlign: 'center',
           background: 'linear-gradient(to right, #7c3aed, #6d28d9)',
           position: 'fixed',
@@ -253,14 +282,15 @@ export function MarketingNav() {
           left: 0,
           right: 0,
           zIndex: 51,
+          overflow: 'hidden',
         }}
       >
-        <p style={{ color: '#ffffff', fontSize: '0.875rem', fontWeight: 500, letterSpacing: '0.01em', margin: 0 }}>
+        <p style={{ color: '#ffffff', fontSize: isMobile ? '0.75rem' : '0.875rem', fontWeight: 500, letterSpacing: '0.01em', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           <span style={{ marginRight: '8px' }}>🚀</span>
           NEW: 8 AI-Powered Features Now Available!{' '}
           <a
             href="/platform/infrastructure"
-            style={{ color: '#ffffff', fontSize: '0.875rem', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: '2px', marginLeft: '4px' }}
+            style={{ color: '#ffffff', fontSize: isMobile ? '0.75rem' : '0.875rem', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: '2px', marginLeft: '4px' }}
           >
             Learn More →
           </a>
@@ -287,7 +317,7 @@ export function MarketingNav() {
           style={{
             maxWidth: '1400px',
             margin: '0 auto',
-            padding: '0 32px',
+            padding: isMobile ? '0 16px' : width < 1024 ? '0 24px' : '0 32px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -311,7 +341,7 @@ export function MarketingNav() {
               >
                 <span style={{ fontSize: '18px', fontWeight: 800, color: '#fff' }}>DC</span>
               </div>
-              <span style={{ fontSize: '18px', fontWeight: 700, color: '#111827' }}>DevControl</span>
+              {!isTiny && <span style={{ fontSize: '18px', fontWeight: 700, color: '#111827' }}>DevControl</span>}
             </Link>
 
             {/* Desktop Nav */}
@@ -325,7 +355,7 @@ export function MarketingNav() {
               </NavTrigger>
 
               <NavTrigger label="Resources" dropdownKey="resources" activeDropdown={activeDropdown} onOpen={openDropdown} onClose={closeDropdown}>
-                <MegaMenu items={resourcesItems} onClose={closeDropdown} />
+                <MegaMenu items={resourcesItems} onClose={closeDropdown} align="right" />
               </NavTrigger>
 
               <NavLink href="/pricing">Pricing</NavLink>
@@ -414,19 +444,70 @@ export function MarketingNav() {
               paddingBottom: '16px',
               animation: 'megaFadeIn 0.2s ease',
               zIndex: 99,
+              maxHeight: '80vh',
+              overflowY: 'auto',
             }}
             className="lg:hidden"
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '8px' }}>
-              <Link href="/platform/infrastructure" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingTop: '8px' }}>
+
+              {/* Platform expandable */}
+              <button
+                onClick={() => toggleSection('platform')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+              >
                 Platform
-              </Link>
-              <Link href="/solutions/startups" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
+                <ChevronDown style={{ width: '16px', height: '16px', transition: 'transform 0.2s ease', transform: expandedSection === 'platform' ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+              </button>
+              {expandedSection === 'platform' && (
+                <div style={{ backgroundColor: '#faf5ff', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
+                  {platformItems.map(item => (
+                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '14px', color: '#374151', textDecoration: 'none' }}>
+                      <item.icon style={{ width: '14px', height: '14px', color: '#7c3aed', flexShrink: 0 }} />
+                      {item.title}
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              {/* Solutions expandable */}
+              <button
+                onClick={() => toggleSection('solutions')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+              >
                 Solutions
-              </Link>
-              <Link href="/docs" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
+                <ChevronDown style={{ width: '16px', height: '16px', transition: 'transform 0.2s ease', transform: expandedSection === 'solutions' ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+              </button>
+              {expandedSection === 'solutions' && (
+                <div style={{ backgroundColor: '#faf5ff', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
+                  {solutionsItems.map(item => (
+                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '14px', color: '#374151', textDecoration: 'none' }}>
+                      <item.icon style={{ width: '14px', height: '14px', color: '#7c3aed', flexShrink: 0 }} />
+                      {item.title}
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              {/* Resources expandable */}
+              <button
+                onClick={() => toggleSection('resources')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+              >
                 Resources
-              </Link>
+                <ChevronDown style={{ width: '16px', height: '16px', transition: 'transform 0.2s ease', transform: expandedSection === 'resources' ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+              </button>
+              {expandedSection === 'resources' && (
+                <div style={{ backgroundColor: '#faf5ff', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
+                  {resourcesItems.map(item => (
+                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '14px', color: '#374151', textDecoration: 'none' }}>
+                      <item.icon style={{ width: '14px', height: '14px', color: '#7c3aed', flexShrink: 0 }} />
+                      {item.title}
+                    </Link>
+                  ))}
+                </div>
+              )}
+
               <Link href="/pricing" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Pricing
               </Link>
@@ -436,12 +517,19 @@ export function MarketingNav() {
               <Link href="/docs" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
                 Developers
               </Link>
+
               <div style={{ borderTop: '1px solid #f3f4f6', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 24px' }}>
                 <Link
                   href="/login"
                   style={{ display: 'block', textAlign: 'center', padding: '10px 0', fontSize: '15px', fontWeight: 500, color: '#374151', border: '1px solid #e5e7eb', borderRadius: '8px', textDecoration: 'none' }}
                 >
                   Sign In
+                </Link>
+                <Link
+                  href="/contact"
+                  style={{ display: 'block', textAlign: 'center', padding: '10px 0', fontSize: '15px', fontWeight: 600, color: '#7c3aed', border: '1.5px solid #7c3aed', borderRadius: '8px', textDecoration: 'none' }}
+                >
+                  Contact Sales
                 </Link>
                 <Link
                   href="/register"

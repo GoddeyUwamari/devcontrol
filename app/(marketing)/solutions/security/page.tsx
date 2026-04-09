@@ -1,8 +1,23 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Shield, AlertTriangle, CheckCircle2, Lock, Eye, FileText } from 'lucide-react'
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 export default function SecurityCompliancePage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     { icon: Shield, title: 'Continuous Security Scanning', desc: 'Automated scans across all AWS resources 24/7. Every misconfiguration, exposed port, and policy violation surfaced instantly — no manual audits required.' },
@@ -32,7 +47,7 @@ export default function SecurityCompliancePage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px',
         borderBottom: '1px solid #f3f4f6',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
@@ -48,7 +63,7 @@ export default function SecurityCompliancePage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+            fontSize: isMobile ? 'clamp(1.8rem,5vw,2.6rem)' : 'clamp(2.2rem,5vw,3.2rem)',
             fontWeight: 800, color: '#0f172a',
             lineHeight: 1.15, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
@@ -58,7 +73,7 @@ export default function SecurityCompliancePage() {
           </h1>
 
           <p style={{
-            fontSize: '1.15rem', color: '#374151',
+            fontSize: isMobile ? '0.95rem' : '1.15rem', color: '#374151',
             lineHeight: 1.75, maxWidth: '600px',
             margin: '0 auto 36px',
           }}>
@@ -66,12 +81,23 @@ export default function SecurityCompliancePage() {
             audit-ready reports — so you're never caught off guard by a finding or a breach.
           </p>
 
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '16px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            marginBottom: '36px',
+            alignItems: 'center',
+          }}>
             <a href="/register" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Scan My AWS Security Free
             </a>
@@ -80,15 +106,22 @@ export default function SecurityCompliancePage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #7c3aed',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               See How It Works
             </a>
           </div>
 
           <div style={{
-            display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '24px',
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: isMobile ? '10px' : '24px',
             fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+            alignItems: 'center',
           }}>
             {['SOC 2 & HIPAA monitoring', 'Continuous 24/7 scanning', 'Audit-ready in 2 weeks'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -100,18 +133,22 @@ export default function SecurityCompliancePage() {
       </section>
 
       {/* BUSINESS IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{
+        padding: isMobile ? '32px 16px' : isTablet ? '40px 32px' : '48px',
+        background: '#fafafa', borderBottom: '1px solid #f3f4f6',
+      }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
           gap: '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '1.8rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -120,9 +157,9 @@ export default function SecurityCompliancePage() {
       </section>
 
       {/* FEATURES */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -140,11 +177,15 @@ export default function SecurityCompliancePage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {features.map(({ icon: Icon, title, desc }) => (
               <div key={title} style={{
                 background: '#fff', border: '1.5px solid #e5e7eb',
-                borderRadius: '16px', padding: '32px',
+                borderRadius: '16px', padding: isMobile ? '20px' : '32px',
                 transition: 'all 0.2s ease',
               }}
                 onMouseEnter={e => {
@@ -164,7 +205,7 @@ export default function SecurityCompliancePage() {
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -177,9 +218,9 @@ export default function SecurityCompliancePage() {
       </section>
 
       {/* HOW IT WORKS */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -194,7 +235,11 @@ export default function SecurityCompliancePage() {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '32px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+            gap: '32px',
+          }}>
             {steps.map(({ step, title, desc }) => (
               <div key={step} style={{ textAlign: 'center' }}>
                 <div style={{
@@ -219,16 +264,19 @@ export default function SecurityCompliancePage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '64px 48px', background: '#fff' }}>
+      <section style={{
+        padding: isMobile ? '40px 16px' : isTablet ? '48px 32px' : '64px 48px',
+        background: '#fff',
+      }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
             borderRadius: '20px',
-            padding: '48px 56px',
+            padding: isMobile ? '24px 20px' : '48px 56px',
             border: '1px solid rgba(124,58,237,0.15)',
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '48px',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: isMobile ? '24px' : '48px',
             alignItems: 'center',
           }}>
             <div>
@@ -239,7 +287,7 @@ export default function SecurityCompliancePage() {
                 Customer Result
               </p>
               <p style={{
-                fontSize: '1.3rem', fontWeight: 700, color: '#0f172a',
+                fontSize: isMobile ? '1rem' : '1.3rem', fontWeight: 700, color: '#0f172a',
                 lineHeight: 1.5, marginBottom: '20px',
               }}>
                 {'"The security compliance dashboard caught a misconfigured S3 bucket before our SOC 2 audit — that alone was worth it."'}
@@ -247,14 +295,18 @@ export default function SecurityCompliancePage() {
               <p style={{ fontSize: '0.875rem', color: '#475569', marginBottom: '24px' }}>
                 Alex K. · Infrastructure Lead · Growth-stage startup
               </p>
-              <div style={{ display: 'flex', gap: '32px' }}>
+              <div style={{
+                display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: isMobile ? '16px' : '32px',
+              }}>
                 {[
                   { value: 'Passed', label: 'SOC 2 audit clean' },
                   { value: '15 min', label: 'Time to first security score' },
                   { value: '0', label: 'Audit findings missed' },
                 ].map(({ value, label }) => (
                   <div key={label}>
-                    <p style={{ fontSize: '1.4rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 2px' }}>{value}</p>
+                    <p style={{ fontSize: isMobile ? '1.1rem' : '1.4rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 2px' }}>{value}</p>
                     <p style={{ fontSize: '0.75rem', color: '#64748B', margin: 0 }}>{label}</p>
                   </div>
                 ))}
@@ -269,7 +321,7 @@ export default function SecurityCompliancePage() {
                 <div key={step} style={{
                   background: '#fff',
                   borderRadius: '12px',
-                  padding: '20px 24px',
+                  padding: isMobile ? '16px' : '20px 24px',
                   border: '1px solid #E2E8F0',
                   display: 'flex',
                   gap: '14px',
@@ -288,9 +340,9 @@ export default function SecurityCompliancePage() {
       </section>
 
       {/* WHO IT'S FOR */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -305,10 +357,14 @@ export default function SecurityCompliancePage() {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             <div style={{
               background: '#fff', border: '1.5px solid #e5e7eb',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
@@ -318,7 +374,7 @@ export default function SecurityCompliancePage() {
               }}>
                 For CTOs & Compliance Officers
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Always Audit-Ready
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -339,7 +395,7 @@ export default function SecurityCompliancePage() {
             <div style={{
               background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
               border: '1.5px solid rgba(124,58,237,0.2)',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: '#7c3aed',
@@ -349,7 +405,7 @@ export default function SecurityCompliancePage() {
               }}>
                 For Security & DevOps Engineers
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Fix Misconfigurations Before They Become Incidents
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -374,26 +430,37 @@ export default function SecurityCompliancePage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '48px 24px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Your Next Security Audit Starts Today
           </h2>
           <p style={{
-            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
             Get your AWS security score in 15 minutes. No agents, no code changes, no risk.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '16px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Start Free Trial
             </a>
@@ -402,6 +469,9 @@ export default function SecurityCompliancePage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Take a Product Tour
             </a>

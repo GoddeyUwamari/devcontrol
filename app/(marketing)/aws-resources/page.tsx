@@ -1,8 +1,23 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Search, Tag, Globe, Filter, RefreshCw, Database } from 'lucide-react'
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 export default function ResourceDiscoveryPage() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const features = [
     { icon: Search, title: 'Auto-Discovery Across All Accounts', desc: 'Instantly discover every EC2, RDS, Lambda, S3, ECS, EKS, and 50+ other resource types across all your AWS accounts and regions — no manual inventory.', highlight: true },
@@ -32,7 +47,7 @@ export default function ResourceDiscoveryPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px',
+        padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px',
         borderBottom: '1px solid #f3f4f6',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
@@ -48,7 +63,7 @@ export default function ResourceDiscoveryPage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+            fontSize: isMobile ? 'clamp(1.8rem,5vw,2.6rem)' : 'clamp(2.2rem,5vw,3.2rem)',
             fontWeight: 800, color: '#0f172a',
             lineHeight: 1.15, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
@@ -58,7 +73,7 @@ export default function ResourceDiscoveryPage() {
           </h1>
 
           <p style={{
-            fontSize: '1.15rem', color: '#374151',
+            fontSize: isMobile ? '0.95rem' : '1.15rem', color: '#374151',
             lineHeight: 1.75, maxWidth: '600px',
             margin: '0 auto 36px',
           }}>
@@ -67,12 +82,23 @@ export default function ResourceDiscoveryPage() {
             in real time, with zero manual effort.
           </p>
 
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '16px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            marginBottom: '36px',
+            alignItems: 'center',
+          }}>
             <a href="/register" style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Discover My AWS Resources Free
             </a>
@@ -81,15 +107,22 @@ export default function ResourceDiscoveryPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '1.5px solid #7c3aed',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               See How It Works
             </a>
           </div>
 
           <div style={{
-            display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '24px',
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: isMobile ? '10px' : '24px',
             fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+            alignItems: 'center',
           }}>
             {['50+ AWS resource types', 'Multi-account & multi-region', 'Real-time sync'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -97,25 +130,29 @@ export default function ResourceDiscoveryPage() {
               </span>
             ))}
           </div>
-          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+          <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
             {'A platform team discovered 340 untagged resources and $6,200/month in orphaned infrastructure within 15 minutes of connecting DevControl.'}
           </p>
         </div>
       </section>
 
       {/* BUSINESS IMPACT BAR */}
-      <section style={{ padding: '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
+      <section style={{
+        padding: isMobile ? '32px 16px' : isTablet ? '40px 32px' : '48px',
+        background: '#fafafa', borderBottom: '1px solid #f3f4f6',
+      }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
           gap: '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
             <div key={label}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+              <div style={{ fontSize: isMobile ? '1.8rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -124,9 +161,9 @@ export default function ResourceDiscoveryPage() {
       </section>
 
       {/* FEATURES */}
-      <section style={{ padding: '80px 48px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -144,12 +181,16 @@ export default function ResourceDiscoveryPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
             {features.map(({ icon: Icon, title, desc, highlight }) => (
               <div key={title} style={{
                 background: '#fff',
                 border: highlight ? '2px solid #7c3aed' : '1.5px solid #e5e7eb',
-                borderRadius: '16px', padding: '32px',
+                borderRadius: '16px', padding: isMobile ? '20px' : '32px',
                 boxShadow: highlight ? '0 8px 32px rgba(124,58,237,0.15)' : 'none',
                 transition: 'all 0.2s ease',
               }}
@@ -178,7 +219,7 @@ export default function ResourceDiscoveryPage() {
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -191,9 +232,9 @@ export default function ResourceDiscoveryPage() {
       </section>
 
       {/* HOW IT WORKS */}
-      <section style={{ padding: '80px 48px', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -208,7 +249,11 @@ export default function ResourceDiscoveryPage() {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '32px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+            gap: '32px',
+          }}>
             {steps.map(({ step, title, desc }) => (
               <div key={step} style={{ textAlign: 'center' }}>
                 <div style={{
@@ -233,12 +278,15 @@ export default function ResourceDiscoveryPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section style={{ padding: '64px 48px', background: '#fff' }}>
+      <section style={{
+        padding: isMobile ? '40px 16px' : isTablet ? '48px 32px' : '64px 48px',
+        background: '#fff',
+      }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             background: '#0f172a',
             borderRadius: '20px',
-            padding: '48px 56px',
+            padding: isMobile ? '28px 20px' : '48px 56px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -246,7 +294,7 @@ export default function ResourceDiscoveryPage() {
             gap: '32px',
           }}>
             <p style={{
-              fontSize: '1.3rem', fontWeight: 600, color: '#fff',
+              fontSize: isMobile ? '1rem' : '1.3rem', fontWeight: 600, color: '#fff',
               lineHeight: 1.6, maxWidth: '700px',
             }}>
               {'\u201C'}We had no idea we were running 340 untagged resources across 3 accounts.
@@ -254,21 +302,27 @@ export default function ResourceDiscoveryPage() {
               <span style={{ color: '#a78bfa', fontWeight: 800 }}>under 15 minutes</span>
               {' and flagged $6,200/month in orphaned infrastructure we could eliminate.\u201D'}
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              alignItems: 'center',
+              gap: isMobile ? '8px' : '12px',
+            }}>
               <div style={{
                 width: '44px', height: '44px', borderRadius: '50%',
                 background: '#7c3aed', color: '#fff',
                 fontWeight: 700, fontSize: '13px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
               }}>
                 JM
               </div>
-              <div style={{ textAlign: 'left' }}>
+              <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
                 <p style={{ fontSize: '14px', fontWeight: 600, color: '#fff', margin: 0 }}>James M.</p>
                 <p style={{ fontSize: '12px', color: '#94A3B8', margin: 0 }}>Platform Engineer · Series C SaaS</p>
               </div>
               <div style={{
-                marginLeft: '12px',
+                marginLeft: isMobile ? '0' : '12px',
                 background: 'rgba(124,58,237,0.3)', color: '#a78bfa',
                 padding: '4px 12px', borderRadius: '999px',
                 fontSize: '11px', fontWeight: 600,
@@ -277,7 +331,8 @@ export default function ResourceDiscoveryPage() {
               </div>
             </div>
             <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
               gap: '32px', width: '100%', borderTop: '1px solid rgba(255,255,255,0.1)',
               paddingTop: '32px',
             }}>
@@ -287,7 +342,7 @@ export default function ResourceDiscoveryPage() {
                 { value: '$6,200', label: 'Monthly waste identified' },
               ].map(({ value, label }) => (
                 <div key={label} style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: '1.8rem', fontWeight: 800, color: '#a78bfa', margin: '0 0 4px' }}>{value}</p>
+                  <p style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', fontWeight: 800, color: '#a78bfa', margin: '0 0 4px' }}>{value}</p>
                   <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{label}</p>
                 </div>
               ))}
@@ -297,9 +352,9 @@ export default function ResourceDiscoveryPage() {
       </section>
 
       {/* WHO IT'S FOR */}
-      <section style={{ padding: '80px 48px' }}>
+      <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
             <div style={{
               fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
@@ -314,10 +369,14 @@ export default function ResourceDiscoveryPage() {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: '24px',
+          }}>
             <div style={{
               background: '#fff', border: '1.5px solid #e5e7eb',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
@@ -327,7 +386,7 @@ export default function ResourceDiscoveryPage() {
               }}>
                 For CTOs &amp; Engineering Leaders
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Complete Cloud Asset Governance
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -348,7 +407,7 @@ export default function ResourceDiscoveryPage() {
             <div style={{
               background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
               border: '1.5px solid rgba(124,58,237,0.2)',
-              borderRadius: '20px', padding: '40px',
+              borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
                 display: 'inline-flex', background: '#7c3aed',
@@ -358,7 +417,7 @@ export default function ResourceDiscoveryPage() {
               }}>
                 For Platform Engineers &amp; DevOps
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Find Anything. Fix Everything.
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -383,26 +442,37 @@ export default function ResourceDiscoveryPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '48px 24px' : isTablet ? '64px 32px' : '80px 48px',
+        textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Every Resource. Always Accounted For.
           </h2>
           <p style={{
-            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
             Connect your AWS accounts and get a complete resource inventory in under 15 minutes.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '16px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Start Free Trial
             </a>
@@ -411,6 +481,9 @@ export default function ResourceDiscoveryPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : undefined,
+              textAlign: 'center',
+              boxSizing: 'border-box',
             }}>
               Take a Product Tour
             </a>

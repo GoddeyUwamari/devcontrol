@@ -1,8 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Check, Lock, Shield, DollarSign, BarChart2, Activity, Search, Zap } from 'lucide-react'
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
 
 // ─── Mock screens ────────────────────────────────────────────────────────────
 
@@ -379,6 +390,9 @@ const steps = [
 export default function TourPage() {
   const [currentStep, setCurrentStep] = useState(0)
   const totalSteps = 6
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
@@ -386,7 +400,7 @@ export default function TourPage() {
       {/* Hero */}
       <section style={{
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px 60px',
+        padding: isMobile ? '48px 24px 40px' : isTablet ? '60px 32px 48px' : '80px 48px 60px',
         textAlign: 'center',
         borderBottom: '1px solid #f3f4f6',
       }}>
@@ -401,7 +415,7 @@ export default function TourPage() {
         </div>
 
         <h1 style={{
-          fontSize: 'clamp(2rem, 4vw, 3rem)', fontWeight: 800,
+          fontSize: isMobile ? 'clamp(1.8rem, 4vw, 2.4rem)' : 'clamp(2rem, 4vw, 3rem)', fontWeight: 800,
           color: '#0f172a', lineHeight: 1.15, marginBottom: '16px',
           letterSpacing: '-0.02em',
         }}>
@@ -409,7 +423,7 @@ export default function TourPage() {
         </h1>
 
         <p style={{
-          fontSize: '1.1rem', color: '#374151', lineHeight: 1.7,
+          fontSize: isMobile ? '0.95rem' : '1.1rem', color: '#374151', lineHeight: 1.7,
           maxWidth: '520px', margin: '0 auto',
         }}>
           Walk through 6 steps to see how engineering teams get complete
@@ -418,7 +432,7 @@ export default function TourPage() {
       </section>
 
       {/* Progress bar */}
-      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '48px 48px 0' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto', padding: isMobile ? '24px 16px 0' : isTablet ? '32px 32px 0' : '48px 48px 0' }}>
         <div style={{
           display: 'flex', alignItems: 'center',
           justifyContent: 'center', gap: '0',
@@ -447,7 +461,7 @@ export default function TourPage() {
 
               {/* Step circle */}
               <div style={{
-                width: '32px', height: '32px', borderRadius: '50%',
+                width: isMobile ? '28px' : '32px', height: isMobile ? '28px' : '32px', borderRadius: '50%',
                 background: i <= currentStep ? '#7c3aed' : '#f3f4f6',
                 color: i <= currentStep ? '#fff' : '#6b7280',
                 fontSize: '0.8rem', fontWeight: 700,
@@ -461,25 +475,27 @@ export default function TourPage() {
               </div>
 
               {/* Step label */}
-              <div style={{
-                fontSize: '0.72rem', fontWeight: 600,
-                color: i === currentStep ? '#7c3aed' : i < currentStep ? '#374151' : '#9ca3af',
-                textAlign: 'center', letterSpacing: '0.02em',
-              }}>
-                {step.navLabel}
-              </div>
+              {!isMobile && (
+                <div style={{
+                  fontSize: '0.72rem', fontWeight: 600,
+                  color: i === currentStep ? '#7c3aed' : i < currentStep ? '#374151' : '#9ca3af',
+                  textAlign: 'center', letterSpacing: '0.02em',
+                }}>
+                  {step.navLabel}
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
 
       {/* Step content */}
-      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 48px 80px' }}>
+      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: isMobile ? '0 16px 48px' : isTablet ? '0 32px 64px' : '0 48px 80px' }}>
 
         {/* Step counter */}
         <div style={{
           textAlign: 'center', fontSize: '0.8rem',
-          color: '#9ca3af', fontWeight: 500, marginBottom: '32px',
+          color: '#9ca3af', fontWeight: 500, marginBottom: isMobile ? '20px' : '32px',
         }}>
           Step <span style={{ color: '#7c3aed', fontWeight: 700 }}>{currentStep + 1}</span> of {totalSteps}
         </div>
@@ -487,8 +503,8 @@ export default function TourPage() {
         {/* Two-column layout */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1.4fr',
-          gap: '48px',
+          gridTemplateColumns: isMobile || isTablet ? '1fr' : '1fr 1.4fr',
+          gap: isMobile ? '24px' : isTablet ? '32px' : '48px',
           alignItems: 'center',
         }}>
           {/* LEFT — Step info */}
@@ -501,14 +517,14 @@ export default function TourPage() {
             </div>
 
             <h2 style={{
-              fontSize: '1.8rem', fontWeight: 800, color: '#0f172a',
+              fontSize: isMobile ? '1.4rem' : isTablet ? '1.6rem' : '1.8rem', fontWeight: 800, color: '#0f172a',
               lineHeight: 1.2, marginBottom: '16px', letterSpacing: '-0.02em',
             }}>
               {steps[currentStep].title}
             </h2>
 
             <p style={{
-              fontSize: '1rem', color: '#374151',
+              fontSize: isMobile ? '0.9rem' : '1rem', color: '#374151',
               lineHeight: 1.7, marginBottom: '24px',
             }}>
               {steps[currentStep].description}
@@ -535,7 +551,7 @@ export default function TourPage() {
         <div style={{
           display: 'flex', alignItems: 'center',
           justifyContent: 'space-between',
-          marginTop: '40px', paddingTop: '32px',
+          marginTop: isMobile ? '28px' : '40px', paddingTop: '32px',
           borderTop: '1px solid #f3f4f6',
         }}>
           <button
@@ -543,8 +559,8 @@ export default function TourPage() {
             style={{
               visibility: currentStep === 0 ? 'hidden' : 'visible',
               background: 'transparent', color: '#374151',
-              border: '1.5px solid #e5e7eb', padding: '12px 24px',
-              borderRadius: '10px', fontWeight: 600, fontSize: '0.9rem',
+              border: '1.5px solid #e5e7eb', padding: isMobile ? '10px 18px' : '12px 24px',
+              borderRadius: '10px', fontWeight: 600, fontSize: isMobile ? '0.82rem' : '0.9rem',
               cursor: 'pointer',
             }}
           >
@@ -560,8 +576,8 @@ export default function TourPage() {
               onClick={() => setCurrentStep(s => Math.min(totalSteps - 1, s + 1))}
               style={{
                 background: '#7c3aed', color: '#fff', border: 'none',
-                padding: '12px 28px', borderRadius: '10px',
-                fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer',
+                padding: isMobile ? '10px 18px' : '12px 28px', borderRadius: '10px',
+                fontWeight: 700, fontSize: isMobile ? '0.82rem' : '0.9rem', cursor: 'pointer',
                 boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
                 display: 'flex', alignItems: 'center', gap: '8px',
               }}
@@ -571,8 +587,8 @@ export default function TourPage() {
           ) : (
             <Link href="/register" style={{
               background: '#7c3aed', color: '#fff',
-              padding: '12px 28px', borderRadius: '10px',
-              fontWeight: 700, fontSize: '0.9rem',
+              padding: isMobile ? '10px 18px' : '12px 28px', borderRadius: '10px',
+              fontWeight: 700, fontSize: isMobile ? '0.82rem' : '0.9rem',
               textDecoration: 'none', display: 'flex',
               alignItems: 'center', gap: '8px',
               boxShadow: '0 4px 16px rgba(124,58,237,0.3)',
@@ -586,25 +602,26 @@ export default function TourPage() {
       {/* Final CTA */}
       <section style={{
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '48px 24px' : isTablet ? '64px 32px' : '80px 48px', textAlign: 'center',
       }}>
         <h2 style={{
-          fontSize: '2.2rem', fontWeight: 800, color: '#fff',
+          fontSize: isMobile ? '1.6rem' : isTablet ? '2rem' : '2.2rem', fontWeight: 800, color: '#fff',
           marginBottom: '16px', letterSpacing: '-0.02em',
         }}>
           Your AWS bill is too high. Let&apos;s fix that.
         </h2>
         <p style={{
-          fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+          fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
           maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
         }}>
           Join 500+ engineering teams saving an average of $2,400/month with DevControl.
         </p>
-        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
           <Link href="/register" style={{
             background: '#fff', color: '#7c3aed',
             padding: '14px 32px', borderRadius: '10px',
             fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+            width: isMobile ? '100%' : 'auto', textAlign: 'center',
           }}>
             Start Free Trial
           </Link>
@@ -613,6 +630,7 @@ export default function TourPage() {
             padding: '14px 32px', borderRadius: '10px',
             fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
             border: '2px solid rgba(255,255,255,0.4)',
+            width: isMobile ? '100%' : 'auto', textAlign: 'center',
           }}>
             Talk to Sales
           </Link>

@@ -6,6 +6,17 @@ import { FeatureComparisonTable } from '@/components/billing/feature-comparison-
 import { PricingFAQ } from '@/components/billing/pricing-faq'
 import { PricingTier } from '@/types/billing'
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
+}
+
 const pricingTiers: PricingTier[] = [
   {
     name: 'Visibility',
@@ -140,6 +151,9 @@ const pricingTiers: PricingTier[] = [
 
 function ROICalculator() {
   const [spend, setSpend] = useState(10000)
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   const wasteLow = Math.round(spend * 0.20)
   const wasteHigh = Math.round(spend * 0.40)
@@ -150,7 +164,7 @@ function ROICalculator() {
   const fmt = (n: number) => '$' + n.toLocaleString()
 
   return (
-    <section style={{ padding: '80px 48px', width: '100%', background: '#fff' }}>
+    <section style={{ padding: isMobile ? '48px 16px' : isTablet ? '64px 32px' : '80px 48px', width: '100%', background: '#fff' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
 
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
@@ -173,14 +187,14 @@ function ROICalculator() {
 
         <div style={{
           background: '#fff', border: '1.5px solid #e5e7eb',
-          borderRadius: '20px', padding: '48px',
+          borderRadius: '20px', padding: isMobile ? '24px 20px' : '48px',
           boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
         }}>
           {/* Slider */}
           <div style={{ marginBottom: '40px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '12px' }}>
-              <span style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500 }}>Monthly AWS spend</span>
-              <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a' }}>{fmt(spend)}</span>
+              <span style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', fontWeight: 500 }}>Monthly AWS spend</span>
+              <span style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', fontWeight: 800, color: '#0f172a' }}>{fmt(spend)}</span>
             </div>
             <input
               type="range"
@@ -197,7 +211,7 @@ function ROICalculator() {
           </div>
 
           {/* Metrics */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
             {[
               { label: 'Estimated waste', value: `${fmt(wasteLow)}–${fmt(wasteHigh)}`, sub: '20–40% of AWS spend', color: '#DC2626' },
               { label: 'Recoverable savings', value: `${fmt(savings)}/mo`, sub: `${fmt(annual)}/year`, color: '#059669' },
@@ -205,10 +219,10 @@ function ROICalculator() {
             ].map(({ label, value, sub, color }) => (
               <div key={label} style={{
                 background: '#fafafa', borderRadius: '14px',
-                padding: '20px', border: '1px solid #f3f4f6',
+                padding: isMobile ? '16px' : '20px', border: '1px solid #f3f4f6',
               }}>
                 <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>{label}</p>
-                <p style={{ fontSize: '1.4rem', fontWeight: 800, color, lineHeight: 1, marginBottom: '4px' }}>{value}</p>
+                <p style={{ fontSize: isMobile ? '1.1rem' : '1.4rem', fontWeight: 800, color, lineHeight: 1, marginBottom: '4px' }}>{value}</p>
                 <p style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{sub}</p>
               </div>
             ))}
@@ -251,7 +265,7 @@ function ROICalculator() {
           marginTop: '48px',
           border: '1.5px solid #e5e7eb', borderRadius: '20px', overflow: 'hidden',
         }}>
-          <div style={{ padding: '28px 32px', borderBottom: '1px solid #f3f4f6' }}>
+          <div style={{ padding: isMobile ? '20px 16px' : '28px 32px', borderBottom: '1px solid #f3f4f6' }}>
             <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '10px' }}>
               Competitive positioning
             </p>
@@ -263,9 +277,9 @@ function ROICalculator() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1px 1fr' }}>
             {/* AWS Cost Explorer */}
-            <div style={{ padding: '24px 28px' }}>
+            <div style={{ padding: isMobile ? '16px' : '24px 28px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
                 <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>AWS Cost Explorer</span>
                 <span style={{ fontSize: '0.7rem', fontWeight: 600, background: '#f3f4f6', color: '#6b7280', padding: '2px 8px', borderRadius: '100px' }}>Free</span>
@@ -287,10 +301,10 @@ function ROICalculator() {
             </div>
 
             {/* Divider */}
-            <div style={{ background: '#f3f4f6' }} />
+            {!isMobile && <div style={{ background: '#f3f4f6' }} />}
 
             {/* DevControl */}
-            <div style={{ padding: '24px 28px', background: '#faf5ff' }}>
+            <div style={{ padding: isMobile ? '16px' : '24px 28px', background: '#faf5ff', borderTop: isMobile ? '1px solid #f3f4f6' : 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
                 <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>DevControl</span>
                 <span style={{ fontSize: '0.7rem', fontWeight: 600, background: 'rgba(124,58,237,0.1)', color: '#7c3aed', padding: '2px 8px', borderRadius: '100px' }}>From $199/mo</span>
@@ -332,9 +346,12 @@ function ROICalculator() {
 export default function PricingPage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
   const [foundingCount, setFoundingCount] = useState(5)
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+  const isTablet = width >= 640 && width < 1024
 
   useEffect(() => {
-    fetch('http://localhost:8080/api/organizations/founding-count')
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/organizations/founding-count`)
       .then(res => res.json())
       .then(data => setFoundingCount(data.count ?? 5))
       .catch(() => {})
@@ -347,7 +364,7 @@ export default function PricingPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #fff 100%)',
-        padding: '80px 48px 56px',
+        padding: isMobile ? '48px 16px 40px' : isTablet ? '64px 32px 48px' : '80px 48px 56px',
         textAlign: 'center',
         borderBottom: '1px solid #f3f4f6',
       }}>
@@ -366,7 +383,7 @@ export default function PricingPage() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(2rem, 5vw, 3.5rem)',
+            fontSize: isMobile ? 'clamp(1.8rem, 5vw, 2.6rem)' : 'clamp(2rem, 5vw, 3.5rem)',
             fontWeight: 800, color: '#0f172a',
             lineHeight: 1.15, marginBottom: '10px',
             letterSpacing: '-0.02em',
@@ -376,7 +393,7 @@ export default function PricingPage() {
           </h1>
 
           <p style={{
-            fontSize: '1.1rem', color: '#374151',
+            fontSize: isMobile ? '0.95rem' : '1.1rem', color: '#374151',
             lineHeight: 1.7, maxWidth: '560px',
             margin: '0 auto 28px',
           }}>
@@ -389,9 +406,9 @@ export default function PricingPage() {
 
           {/* Trust signals */}
           <div style={{
-            display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '24px',
-            fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+            display: 'flex', flexDirection: isMobile ? 'column' : 'row', flexWrap: 'wrap',
+            justifyContent: 'center', alignItems: 'center', gap: isMobile ? '10px' : '24px',
+            fontSize: isMobile ? '0.8rem' : '0.875rem', fontWeight: 500, color: '#374151',
             marginBottom: '32px',
           }}>
             {([
@@ -410,11 +427,13 @@ export default function PricingPage() {
 
           {/* Founding member banner */}
           <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            flexWrap: 'wrap', gap: '16px',
+            display: 'flex', alignItems: isMobile ? 'flex-start' : 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            justifyContent: 'space-between',
+            gap: '16px',
             background: 'rgba(124,58,237,0.06)',
             border: '1px solid rgba(124,58,237,0.2)',
-            borderRadius: '14px', padding: '16px 24px',
+            borderRadius: '14px', padding: isMobile ? '16px' : '16px 24px',
             maxWidth: '760px', margin: '0 auto',
           }}>
             {/* Left */}
@@ -437,7 +456,7 @@ export default function PricingPage() {
             </div>
 
             {/* Right */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '16px' }}>
               <div>
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                   {[...Array(10)].map((_, i) => (
@@ -466,7 +485,7 @@ export default function PricingPage() {
       </section>
 
       {/* BILLING TOGGLE */}
-      <section style={{ padding: '28px 48px 0', textAlign: 'center' }}>
+      <section style={{ padding: isMobile ? '20px 16px 0' : isTablet ? '28px 32px 0' : '28px 48px 0', textAlign: 'center' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center',
@@ -501,11 +520,11 @@ export default function PricingPage() {
       </section>
 
       {/* PRICING CARDS */}
-      <section style={{ padding: '40px 48px 30px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '24px 16px 20px' : isTablet ? '32px 24px' : '40px 48px 30px', width: '100%' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
           gap: '24px',
         }}>
           {pricingTiers.map(tier => {
@@ -523,7 +542,7 @@ export default function PricingPage() {
                   background: '#fff',
                   borderRadius: '20px',
                   border: isPopular ? '2px solid #7c3aed' : '1.5px solid #e5e7eb',
-                  padding: '32px',
+                  padding: isMobile ? '24px 20px' : '32px',
                   position: 'relative',
                   boxShadow: isPopular
                     ? '0 8px 40px rgba(124,58,237,0.15)'
@@ -563,12 +582,12 @@ export default function PricingPage() {
 
                 <div style={{ marginBottom: '24px' }}>
                   {isEnterprise ? (
-                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a' }}>
+                    <div style={{ fontSize: isMobile ? '2rem' : '2rem', fontWeight: 800, color: '#0f172a' }}>
                       Custom
                     </div>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px' }}>
-                      <span style={{ fontSize: '2.5rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>
+                      <span style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>
                         ${price}
                       </span>
                       <span style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '6px' }}>
@@ -593,7 +612,7 @@ export default function PricingPage() {
                   style={{
                     display: 'block', textAlign: 'center',
                     padding: '12px 24px', borderRadius: '10px',
-                    fontWeight: 700, fontSize: '0.9rem',
+                    fontWeight: 700, fontSize: isMobile ? '0.82rem' : '0.9rem',
                     textDecoration: 'none', marginBottom: '28px',
                     background: isPopular ? '#7c3aed' : 'transparent',
                     color: isPopular ? '#fff' : '#7c3aed',
@@ -659,8 +678,8 @@ export default function PricingPage() {
           </p>
           <div style={{
             display: 'flex', flexWrap: 'wrap',
-            justifyContent: 'center', gap: '20px',
-            fontSize: '0.8rem', color: '#6b7280',
+            justifyContent: 'center', gap: isMobile ? '12px' : '20px',
+            fontSize: isMobile ? '0.75rem' : '0.8rem', color: '#6b7280',
           }}>
             {['Cancel anytime', 'No hidden fees', 'Instant access', 'SOC 2 In Progress'].map(item => (
               <span key={item} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -675,12 +694,12 @@ export default function PricingPage() {
       <ROICalculator />
 
       {/* FEATURE COMPARISON */}
-      <section style={{ padding: '40px 48px 60px', width: '100%', background: '#fafafa' }}>
+      <section style={{ padding: isMobile ? '32px 16px 40px' : isTablet ? '40px 32px' : '40px 48px 60px', width: '100%', background: '#fafafa' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
             fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
             color: '#0f172a', textAlign: 'center',
-            marginBottom: '48px', letterSpacing: '-0.02em',
+            marginBottom: isMobile ? '32px' : '48px', letterSpacing: '-0.02em',
           }}>
             Compare Plans
           </h2>
@@ -689,12 +708,12 @@ export default function PricingPage() {
       </section>
 
       {/* FAQ */}
-      <section style={{ padding: '56px 48px 60px', width: '100%' }}>
+      <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 32px' : '56px 48px 60px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
             fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
             color: '#0f172a', textAlign: 'center',
-            marginBottom: '48px', letterSpacing: '-0.02em',
+            marginBottom: isMobile ? '32px' : '48px', letterSpacing: '-0.02em',
           }}>
             Frequently Asked Questions
           </h2>
@@ -706,26 +725,27 @@ export default function PricingPage() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        padding: '80px 48px', textAlign: 'center',
+        padding: isMobile ? '48px 24px' : isTablet ? '64px 32px' : '80px 48px', textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h2 style={{
-            fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
             color: '#fff', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Ready to Optimize Your AWS Costs?
           </h2>
           <p style={{
-            fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
+            fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
             Join 500+ engineering teams saving an average of $2,400/month with DevControl.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <a href="/register" style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
+              width: isMobile ? '100%' : 'auto', textAlign: 'center',
             }}>
               Start Free 14-Day Trial
             </a>
@@ -734,6 +754,7 @@ export default function PricingPage() {
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
               border: '2px solid rgba(255,255,255,0.4)',
+              width: isMobile ? '100%' : 'auto', textAlign: 'center',
             }}>
               Schedule Demo
             </a>

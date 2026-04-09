@@ -146,7 +146,7 @@ function FooterColumn({ column, isMobile }: { column: FooterColumn; isMobile?: b
       <div className="border-b border-gray-800">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="flex w-full items-center justify-between py-4 text-left"
+          className="flex w-full items-center justify-between py-5 text-left"
           aria-expanded={isOpen}
         >
           <span className="text-sm font-semibold uppercase tracking-wider text-gray-200">
@@ -225,7 +225,7 @@ export function Footer() {
     <footer className="bg-gray-950 text-gray-400 border-t border-gray-800">
       {/* Utility Row */}
       <div className="border-b border-gray-800">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             {/* Left side - Status and CTAs */}
             <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
@@ -236,7 +236,7 @@ export function Footer() {
               </div>
 
               {/* CTAs */}
-              <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
                 <Button
                   asChild
                   variant="outline"
@@ -264,7 +264,7 @@ export function Footer() {
       </div>
 
       {/* Main Footer Content */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 lg:py-16">
         {/* Desktop Grid */}
         <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-8 lg:gap-12">
           {footerData.map((column, idx) => (
@@ -332,7 +332,7 @@ export function Footer() {
             </div>
 
             {/* Right - Social Links */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-5">
               {socialLinks.map((social) => {
                 const Icon = social.icon;
                 return (

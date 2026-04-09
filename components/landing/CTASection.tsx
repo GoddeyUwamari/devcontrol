@@ -1,30 +1,39 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
 
-const inner: React.CSSProperties = {
-  maxWidth: '1400px',
-  margin: '0 auto',
-  padding: '0 32px',
+function useWindowWidth() {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return width
 }
 
 export function CTASection() {
+  const width = useWindowWidth()
+  const isMobile = width > 0 && width < 640
+
   return (
     <section
       style={{
         width: '100%',
-        padding: '64px 0',
+        padding: isMobile ? '48px 0' : '64px 0',
         background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%)',
       }}
     >
-      <div style={inner}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : '0 32px' }}>
         <div style={{ maxWidth: '640px', margin: '0 auto', textAlign: 'center', color: '#fff' }}>
-          <h2 className="font-extrabold" style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)', marginBottom: '16px', lineHeight: 1.2 }}>
+          <h2 className="font-extrabold" style={{ fontSize: isMobile ? 'clamp(1.5rem, 4vw, 2rem)' : 'clamp(1.75rem, 4vw, 2.75rem)', marginBottom: isMobile ? '12px' : '16px', lineHeight: 1.2 }}>
             Your AWS bill is too high.<br />Let&apos;s fix that.
           </h2>
-          <p style={{ fontSize: '1.125rem', color: '#ddd6fe', marginBottom: '36px', lineHeight: 1.7 }}>
+          <p style={{ fontSize: isMobile ? '1rem' : '1.125rem', color: '#ddd6fe', marginBottom: isMobile ? '28px' : '36px', lineHeight: 1.7 }}>
             Join 500+ engineering teams saving an average of $2,400/month with DevControl.
           </p>
 
@@ -52,7 +61,7 @@ export function CTASection() {
             </Button>
           </div>
 
-          <p style={{ fontSize: '13px', color: '#c4b5fd', marginTop: '24px' }}>
+          <p style={{ fontSize: isMobile ? '12px' : '13px', color: '#c4b5fd', marginTop: '24px' }}>
             No credit card required · 14-day free trial · Cancel anytime
           </p>
         </div>
