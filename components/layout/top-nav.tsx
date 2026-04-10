@@ -248,23 +248,23 @@ export function TopNav() {
       {/* ── MOBILE TOP BAR (lg:hidden) ── */}
       <div
         className="lg:hidden"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', height: '60px' }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', height: '68px' }}
       >
         {/* Left: Hamburger + Logo grouped */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
             onClick={() => setMobileMenuOpen(true)}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '8px', border: 'none', background: 'none', cursor: 'pointer', color: '#0F172A' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', borderRadius: '10px', border: 'none', background: 'none', cursor: 'pointer', color: '#0F172A' }}
             aria-label="Open menu"
           >
-            <Menu size={22} />
+            <Menu size={26} />
           </button>
           <Link
             href="/dashboard"
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none', fontWeight: 700, fontSize: '1.1rem', color: '#0F172A', letterSpacing: '-0.01em' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '1.2rem', color: '#0F172A', letterSpacing: '-0.01em' }}
           >
-            <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, #2563EB, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: '#fff', fontSize: '12px', fontWeight: 700 }}>DC</span>
+            <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'linear-gradient(135deg, #2563EB, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>DC</span>
             </div>
             DevControl
           </Link>
@@ -274,20 +274,20 @@ export function TopNav() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
           <Link
             href="/observability/alerts"
-            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', color: '#475569' }}
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', color: '#475569' }}
             aria-label="Alerts"
           >
-            <Bell size={20} />
+            <Bell size={24} />
             {hasCriticalAlerts && (
               <span style={{
-                position: 'absolute', top: '4px', right: '4px',
-                width: '8px', height: '8px', borderRadius: '50%',
+                position: 'absolute', top: '6px', right: '6px',
+                width: '9px', height: '9px', borderRadius: '50%',
                 background: '#DC2626', border: '2px solid white',
               }} />
             )}
           </Link>
           {isLoading ? (
-            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#E2E8F0' }} />
+            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#E2E8F0' }} />
           ) : user ? (
             <UserDropdown
               user={{
@@ -298,7 +298,7 @@ export function TopNav() {
               onLogout={handleLogout}
             />
           ) : (
-            <Link href="/login" style={{ fontSize: '0.875rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>Sign in</Link>
+            <Link href="/login" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>Sign in</Link>
           )}
         </div>
       </div>
