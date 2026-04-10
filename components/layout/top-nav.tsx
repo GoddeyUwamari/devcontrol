@@ -247,8 +247,7 @@ export function TopNav() {
 
       {/* ── MOBILE TOP BAR (lg:hidden) ── */}
       <div
-        className="lg:hidden"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', height: '68px' }}
+        className="lg:hidden flex items-center justify-between px-5 h-[68px]"
       >
         {/* Left: Hamburger + Logo grouped */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
