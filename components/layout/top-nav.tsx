@@ -20,7 +20,7 @@ import { UserDropdown } from '@/components/ui/user-dropdown';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { quickActions } from '@/lib/navigation-config';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 type NavChild = {
   label: string;
@@ -98,27 +98,117 @@ const navItems: NavItem[] = [
   },
 ];
 
+// Mobile drawer sections (excludes Add Service / Add Resource)
+const mobileSections = [
+  {
+    key: 'services',
+    label: 'Services',
+    items: [
+      { label: 'Services Overview', href: '/services' },
+      { label: 'Deployments', href: '/deployments' },
+      { label: 'Dependencies', href: '/dependencies' },
+    ],
+  },
+  {
+    key: 'infrastructure',
+    label: 'Infrastructure',
+    items: [
+      { label: 'Overview', href: '/infrastructure' },
+      { label: 'Recommendations', href: '/cost-optimization' },
+      { label: 'Tenants', href: '/infrastructure/tenants' },
+    ],
+  },
+  {
+    key: 'costs',
+    label: 'Costs',
+    items: [
+      { label: 'Cost Overview', href: '/costs' },
+      { label: 'Optimization', href: '/cost-optimization' },
+      { label: 'Forecast', href: '/forecast' },
+      { label: 'Invoices', href: '/invoices' },
+      { label: 'AI Reports', href: '/ai-reports' },
+    ],
+  },
+  {
+    key: 'security',
+    label: 'Security',
+    items: [
+      { label: 'Security Overview', href: '/security' },
+      { label: 'Compliance', href: '/compliance' },
+      { label: 'Anomalies', href: '/anomalies' },
+    ],
+  },
+  {
+    key: 'observability',
+    label: 'Observability',
+    items: [
+      { label: 'Alerts', href: '/observability/alerts' },
+      { label: 'Alert History', href: '/observability/alert-history' },
+      { label: 'SLOs', href: '/monitoring/slos' },
+      { label: 'DORA Metrics', href: '/app/dora-metrics' },
+    ],
+  },
+  {
+    key: 'devops',
+    label: 'DevOps',
+    items: [
+      { label: 'Teams', href: '/teams' },
+      { label: 'Audit Logs', href: '/audit-logs' },
+      { label: 'Admin', href: '/admin/monitoring' },
+    ],
+  },
+];
+
 export function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isLoading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const [hasCriticalAlerts, setHasCriticalAlerts] = useState(false);
+
+  // Close mobile drawer on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setOpenSection(null);
+  }, [pathname]);
+
+  // Fetch critical alerts on mount, refresh every 60s
+  useEffect(() => {
+    const checkAlerts = async () => {
+      try {
+        const res = await fetch('/api/anomalies');
+        if (!res.ok) return;
+        const data = await res.json();
+        const anomalies = Array.isArray(data) ? data : (data.anomalies ?? []);
+        setHasCriticalAlerts(
+          anomalies.some((a: { severity?: string }) =>
+            a.severity === 'critical' || a.severity === 'high'
+          )
+        );
+      } catch {
+        // Never show false positives
+        setHasCriticalAlerts(false);
+      }
+    };
+    checkAlerts();
+    const interval = setInterval(checkAlerts, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const toggleSection = (key: string) => {
+    setOpenSection(prev => (prev === key ? null : key));
+  };
 
   const getUserInitials = () => {
     if (!user) return 'U';
-
     const fullName = user.fullName || '';
     const nameParts = fullName.split(' ');
-
     if (nameParts.length >= 2) {
       return (nameParts[0].charAt(0) + nameParts[1].charAt(0)).toUpperCase();
     }
-
-    if (fullName) {
-      return fullName.charAt(0).toUpperCase();
-    }
-
+    if (fullName) return fullName.charAt(0).toUpperCase();
     return user.email?.charAt(0).toUpperCase() || 'U';
   };
 
@@ -128,7 +218,6 @@ export function TopNav() {
   };
 
   const handleSearchClick = () => {
-    // This will be connected to the command palette
     const event = new KeyboardEvent('keydown', {
       key: 'k',
       metaKey: true,
@@ -155,7 +244,67 @@ export function TopNav() {
 
   return (
     <header className="w-full border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
-      <div className="max-w-[1920px] mx-auto flex h-16 items-center px-4 md:px-6 lg:px-8">
+
+      {/* ── MOBILE TOP BAR (lg:hidden) ── */}
+      <div
+        className="lg:hidden"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', height: '60px' }}
+      >
+        {/* Left: Hamburger + Logo grouped */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '8px', border: 'none', background: 'none', cursor: 'pointer', color: '#0F172A' }}
+            aria-label="Open menu"
+          >
+            <Menu size={22} />
+          </button>
+          <Link
+            href="/dashboard"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', fontWeight: 700, fontSize: '1.1rem', color: '#0F172A', letterSpacing: '-0.01em' }}
+          >
+            <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, #2563EB, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: '#fff', fontSize: '12px', fontWeight: 700 }}>DC</span>
+            </div>
+            DevControl
+          </Link>
+        </div>
+
+        {/* Right: Bell + Avatar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Link
+            href="/observability/alerts"
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', color: '#475569' }}
+            aria-label="Alerts"
+          >
+            <Bell size={20} />
+            {hasCriticalAlerts && (
+              <span style={{
+                position: 'absolute', top: '-2px', right: '-2px',
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: '#DC2626', border: '2px solid white',
+              }} />
+            )}
+          </Link>
+          {isLoading ? (
+            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#E2E8F0' }} />
+          ) : user ? (
+            <UserDropdown
+              user={{
+                name: getUserName(),
+                email: user.email || '',
+                initials: getUserInitials(),
+              }}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <Link href="/login" style={{ fontSize: '0.875rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>Sign in</Link>
+          )}
+        </div>
+      </div>
+
+      {/* ── DESKTOP HEADER (hidden on mobile) ── */}
+      <div className="hidden lg:flex max-w-[1920px] mx-auto h-16 items-center px-4 md:px-6 lg:px-8">
         {/* Left: Logo + Navigation */}
         <div className="flex items-center gap-2 lg:gap-6">
           {/* Logo */}
@@ -166,17 +315,16 @@ export function TopNav() {
             <div className="w-10 h-10 rounded-md bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
               <span className="text-white text-xl font-bold">DC</span>
             </div>
-            <span className="hidden lg:inline-block text-xl">DevControl</span>
+            <span className="text-xl">DevControl</span>
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-1">
+          <nav className="flex items-center gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = isItemActive(item);
 
               if (!item.children) {
-                // Simple link
                 return (
                   <Link
                     key={item.href}
@@ -192,7 +340,6 @@ export function TopNav() {
                 );
               }
 
-              // Dropdown item
               return (
                 <div
                   key={item.label}
@@ -270,19 +417,6 @@ export function TopNav() {
 
         {/* Right: Search + Actions + User */}
         <div className="ml-auto flex items-center gap-2 lg:gap-3 shrink-0">
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 hover:bg-accent rounded-md transition-colors"
-            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
-          >
-            {mobileMenuOpen ? (
-              <X className="w-5 h-5" />
-            ) : (
-              <Menu className="w-5 h-5" />
-            )}
-          </button>
-
           {/* Search Trigger (Cmd+K) */}
           <Button
             variant="outline"
@@ -295,17 +429,6 @@ export function TopNav() {
             <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
               <span className="text-xs">⌘</span>K
             </kbd>
-          </Button>
-
-          {/* Mobile Search Icon */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleSearchClick}
-            className="md:hidden"
-            aria-label="Search"
-          >
-            <Search className="h-5 w-5" aria-hidden="true" />
           </Button>
 
           {/* Quick Actions Dropdown */}
@@ -352,65 +475,99 @@ export function TopNav() {
         </div>
       </div>
 
-      {/* Mobile Navigation Menu */}
+      {/* ── MOBILE DRAWER ── */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t bg-background">
-          <div className="px-4 py-4 space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = isItemActive(item);
+        <div className="lg:hidden" style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
+          {/* Overlay */}
+          <div
+            onClick={() => setMobileMenuOpen(false)}
+            style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }}
+          />
 
-              if (!item.children) {
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                      'hover:bg-accent',
-                      isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'
-                    )}
-                    onClick={() => setMobileMenuOpen(false)}
+          {/* Drawer */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, bottom: 0,
+            width: '85vw', maxWidth: '320px',
+            background: '#fff', display: 'flex', flexDirection: 'column',
+            overflowY: 'auto',
+          }}>
+            {/* Drawer header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 20px 16px', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
+              <span style={{ fontWeight: 700, fontSize: '1rem', color: '#0F172A' }}>DevControl</span>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '6px', border: 'none', background: '#F1F5F9', cursor: 'pointer', color: '#475569' }}
+                aria-label="Close menu"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Nav sections */}
+            <div style={{ flex: 1 }}>
+              {mobileSections.map((section) => (
+                <div key={section.key}>
+                  <button
+                    onClick={() => toggleSection(section.key)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      width: '100%', padding: '14px 20px',
+                      fontSize: '1rem', fontWeight: 600, color: '#0F172A',
+                      background: 'none', border: 'none', borderBottom: '1px solid #F1F5F9',
+                      cursor: 'pointer', textAlign: 'left',
+                    }}
                   >
-                    <Icon className="w-4 h-4" />
-                    {item.label}
-                  </Link>
-                );
-              }
+                    {section.label}
+                    <ChevronDown
+                      size={16}
+                      style={{
+                        color: '#94A3B8',
+                        transform: openSection === section.key ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.2s',
+                        flexShrink: 0,
+                      }}
+                    />
+                  </button>
 
-              return (
-                <div key={item.label}>
-                  <div className={cn(
-                    'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md',
-                    isActive ? 'text-foreground' : 'text-muted-foreground'
-                  )}>
-                    <Icon className="w-4 h-4" />
-                    {item.label}
-                  </div>
-                  <div className="ml-7 space-y-1">
-                    {item.children.map((child) => {
-                      const ChildIcon = child.icon;
-                      const childActive = pathname === child.href || pathname.startsWith(child.href + '/');
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          className={cn(
-                            'flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors',
-                            'hover:bg-accent',
-                            childActive ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground'
-                          )}
-                          onClick={() => setMobileMenuOpen(false)}
-                        >
-                          <ChildIcon className="w-3.5 h-3.5" />
-                          {child.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
+                  {openSection === section.key && (
+                    <div style={{ background: '#F8FAFC', padding: '8px 0', borderBottom: '1px solid #F1F5F9' }}>
+                      {section.items.map((item) => {
+                        const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            style={{
+                              display: 'block', padding: '10px 32px',
+                              fontSize: '0.9rem',
+                              color: isActive ? '#7C3AED' : '#475569',
+                              fontWeight: isActive ? 600 : 400,
+                              textDecoration: 'none',
+                              background: isActive ? '#F5F3FF' : 'transparent',
+                            }}
+                          >
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* Bottom: Settings */}
+            <Link
+              href="/settings"
+              style={{
+                display: 'block', padding: '16px 20px',
+                fontSize: '0.9rem', color: '#475569',
+                borderTop: '1px solid #F1F5F9',
+                textDecoration: 'none', flexShrink: 0,
+              }}
+            >
+              ⚙ Settings
+            </Link>
           </div>
         </div>
       )}

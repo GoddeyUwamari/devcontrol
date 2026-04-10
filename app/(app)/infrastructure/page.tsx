@@ -801,7 +801,7 @@ function InfrastructureContent() {
       )}
 
       {/* 5 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)', gap: isMobile ? '12px' : '20px', marginBottom: '28px' }}>
 
         {/* Total Resources — display only */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '0.5px solid #e5e7eb' }}>
@@ -1061,8 +1061,8 @@ function InfrastructureContent() {
           </div>
         </div>
 
-        {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 80px 80px' : isTablet ? '2fr 80px 100px 100px 90px' : '2fr 90px 150px 150px 110px 110px 110px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+        {/* Column headers — hidden on mobile (cards replace the grid) */}
+        <div style={{ display: isMobile ? 'none' : 'grid', gridTemplateColumns: isTablet ? '2fr 80px 100px 100px 90px' : '2fr 90px 150px 150px 110px 110px 110px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
           {['Resource', 'Type', 'AWS ID', 'Service', 'Region', 'Monthly Cost', 'Issue'].map(col => (
             <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
           ))}
@@ -1144,78 +1144,125 @@ function InfrastructureContent() {
 
             return (
               <div key={r.id} id={`resource-${r.id}`}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: isMobile ? '1fr 80px 80px' : isTablet ? '2fr 80px 100px 100px 90px' : '2fr 90px 150px 150px 110px 110px 110px',
-                    padding: '14px 28px',
+                {isMobile ? (
+                  /* ── MOBILE CARD ── */
+                  <div style={{
+                    padding: '16px',
                     background: rowBg,
-                    borderBottom: `1px solid ${rowBorder}`,
-                    alignItems: 'center',
-                    transition: 'background 0.1s',
-                    marginBottom: '4px',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg || '#F8FAFC' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg }}
-                >
-                  {/* Resource name + icon */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: typeConf.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Icon size={14} style={{ color: typeConf.color }} />
-                    </div>
-                    <div>
-                      <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 1px' }}>
+                    borderRadius: '10px',
+                    border: `1px solid ${rowBorder}`,
+                    marginBottom: '10px',
+                  }}>
+                    {/* Top row: icon + name + status badge */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: issueLabel ? '6px' : '10px' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: typeConf.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Icon size={14} style={{ color: typeConf.color }} />
+                      </div>
+                      <p style={{ flex: 1, fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}
                       </p>
-                      {issueLabel
-                        ? <p style={{ fontSize: '0.67rem', color: statusLabel === 'Critical' ? '#DC2626' : '#D97706', margin: 0, fontWeight: 700 }}>
-                            {issueLabel}
-                            {statusLabel === 'Critical' && (
-                              <a
-                                href={`/anomalies?resource=${r.awsId}`}
-                                style={{ marginLeft: '8px', color: '#DC2626', fontWeight: 700, fontSize: '0.67rem', textDecoration: 'underline' }}
-                              >
-                                Investigate →
-                              </a>
-                            )}
-                          </p>
-                        : <p style={{ fontSize: '0.67rem', color: '#94A3B8', margin: 0 }}>
-                            Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </p>
-                      }
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '100px', background: statusBg, color: statusColor, flexShrink: 0 }}>
+                        {statusLabel}
+                      </span>
+                    </div>
+
+                    {/* Issue label */}
+                    {issueLabel && (
+                      <p style={{ fontSize: '0.72rem', color: statusLabel === 'Critical' ? '#DC2626' : '#D97706', margin: '0 0 10px', fontWeight: 600 }}>
+                        {issueLabel}
+                        {statusLabel === 'Critical' && (
+                          <a href={`/anomalies?resource=${r.awsId}`} style={{ marginLeft: '8px', color: '#DC2626', fontWeight: 700, textDecoration: 'underline' }}>
+                            Investigate →
+                          </a>
+                        )}
+                      </p>
+                    )}
+
+                    {/* Bottom row: type + region + cost */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', background: typeConf.bg, color: typeConf.color }}>
+                        {(r.resourceType as string)?.toUpperCase() ?? '—'}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748B', fontFamily: 'monospace' }}>{r.awsRegion || '—'}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>
+                        ${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                     </div>
                   </div>
+                ) : (
+                  /* ── DESKTOP / TABLET GRID ROW ── */
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: isTablet ? '2fr 80px 100px 100px 90px' : '2fr 90px 150px 150px 110px 110px 110px',
+                      padding: '14px 28px',
+                      background: rowBg,
+                      borderBottom: `1px solid ${rowBorder}`,
+                      alignItems: 'center',
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg || '#F8FAFC' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg }}
+                  >
+                    {/* Resource name + icon */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: typeConf.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Icon size={14} style={{ color: typeConf.color }} />
+                      </div>
+                      <div>
+                        <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 1px' }}>
+                          {r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}
+                        </p>
+                        {issueLabel
+                          ? <p style={{ fontSize: '0.67rem', color: statusLabel === 'Critical' ? '#DC2626' : '#D97706', margin: 0, fontWeight: 700 }}>
+                              {issueLabel}
+                              {statusLabel === 'Critical' && (
+                                <a
+                                  href={`/anomalies?resource=${r.awsId}`}
+                                  style={{ marginLeft: '8px', color: '#DC2626', fontWeight: 700, fontSize: '0.67rem', textDecoration: 'underline' }}
+                                >
+                                  Investigate →
+                                </a>
+                              )}
+                            </p>
+                          : <p style={{ fontSize: '0.67rem', color: '#94A3B8', margin: 0 }}>
+                              Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </p>
+                        }
+                      </div>
+                    </div>
 
-                  {/* Type badge */}
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', background: typeConf.bg, color: typeConf.color, width: 'fit-content' }}>
-                    {(r.resourceType as string)?.toUpperCase() ?? '—'}
-                  </span>
+                    {/* Type badge */}
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', background: typeConf.bg, color: typeConf.color, width: 'fit-content' }}>
+                      {(r.resourceType as string)?.toUpperCase() ?? '—'}
+                    </span>
 
-                  {/* AWS ID */}
-                  <span style={{ fontSize: '0.75rem', color: '#64748B', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                    {r.awsId || '—'}
-                  </span>
+                    {/* AWS ID */}
+                    <span style={{ fontSize: '0.75rem', color: '#64748B', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                      {r.awsId || '—'}
+                    </span>
 
-                  {/* Service */}
-                  <span style={{ fontSize: '0.82rem', color: '#475569' }}>
-                    {r.serviceName || '—'}
-                  </span>
+                    {/* Service */}
+                    <span style={{ fontSize: '0.82rem', color: '#475569' }}>
+                      {r.serviceName || '—'}
+                    </span>
 
-                  {/* Region */}
-                  <span style={{ fontSize: '0.78rem', color: '#475569', fontFamily: 'monospace' }}>
-                    {r.awsRegion || '—'}
-                  </span>
+                    {/* Region */}
+                    <span style={{ fontSize: '0.78rem', color: '#475569', fontFamily: 'monospace' }}>
+                      {r.awsRegion || '—'}
+                    </span>
 
-                  {/* Monthly Cost */}
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>
-                    ${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}
-                  </span>
+                    {/* Monthly Cost */}
+                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>
+                      ${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}
+                    </span>
 
-                  {/* Issue badge */}
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '100px', background: statusBg, color: statusColor, width: 'fit-content' }}>
-                    {statusLabel}
-                  </span>
-                </div>
+                    {/* Issue badge */}
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '100px', background: statusBg, color: statusColor, width: 'fit-content' }}>
+                      {statusLabel}
+                    </span>
+                  </div>
+                )}
               </div>
             )
           })
