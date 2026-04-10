@@ -251,7 +251,7 @@ export function TopNav() {
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', height: '60px' }}
       >
         {/* Left: Hamburger + Logo grouped */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
           <button
             onClick={() => setMobileMenuOpen(true)}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '8px', border: 'none', background: 'none', cursor: 'pointer', color: '#0F172A' }}
@@ -261,7 +261,7 @@ export function TopNav() {
           </button>
           <Link
             href="/dashboard"
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', fontWeight: 700, fontSize: '1.1rem', color: '#0F172A', letterSpacing: '-0.01em' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none', fontWeight: 700, fontSize: '1.1rem', color: '#0F172A', letterSpacing: '-0.01em' }}
           >
             <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, #2563EB, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: '#fff', fontSize: '12px', fontWeight: 700 }}>DC</span>
@@ -271,16 +271,16 @@ export function TopNav() {
         </div>
 
         {/* Right: Bell + Avatar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
           <Link
             href="/observability/alerts"
-            style={{ position: 'relative', display: 'flex', alignItems: 'center', color: '#475569' }}
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', color: '#475569' }}
             aria-label="Alerts"
           >
             <Bell size={20} />
             {hasCriticalAlerts && (
               <span style={{
-                position: 'absolute', top: '-2px', right: '-2px',
+                position: 'absolute', top: '4px', right: '4px',
                 width: '8px', height: '8px', borderRadius: '50%',
                 background: '#DC2626', border: '2px solid white',
               }} />
