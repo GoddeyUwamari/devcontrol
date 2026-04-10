@@ -27,12 +27,12 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className={cn('flex items-center space-x-2 text-sm', className)}
+      className={cn('hidden sm:flex flex-nowrap items-center space-x-2 text-sm', className)}
     >
-      <ol className="flex items-center space-x-2">
+      <ol className="flex flex-nowrap items-center space-x-2">
         {/* Mobile: Show only last 2 items (parent + current) */}
         {items.length > 2 && (
-          <li className="md:hidden flex items-center">
+          <li className="md:hidden inline-flex items-center shrink-0">
             {items[items.length - 2].href && (
               <>
                 <Link
@@ -59,7 +59,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
               key={item.href || `${item.label}-${index}`}
               className={cn(
                 'items-center',
-                items.length > 2 ? 'hidden md:flex' : 'flex'
+                items.length >= 2 ? 'hidden md:inline-flex' : 'inline-flex'
               )}
             >
               {index > 0 && (

@@ -21,13 +21,13 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
       aria-label="Breadcrumb"
       className={cn('flex items-center space-x-1 text-sm', className)}
     >
-      <ol className="flex items-center space-x-1">
+      <ol className="flex flex-nowrap items-center space-x-1">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;
           const isCurrent = item.current || isLast;
 
           return (
-            <li key={index} className="flex items-center">
+            <li key={index} className="inline-flex items-center shrink-0">
               {index > 0 && (
                 <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground flex-shrink-0" />
               )}
