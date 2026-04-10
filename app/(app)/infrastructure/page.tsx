@@ -580,6 +580,7 @@ function InfrastructureContent() {
       margin: '0 auto',
       minHeight: '100vh',
       background: '#F9FAFB',
+      overflowX: 'hidden',
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
@@ -611,8 +612,8 @@ function InfrastructureContent() {
       )}
 
       {/* PAGE HEADER */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
-        <div>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px', gap: isMobile ? '0' : '24px' }}>
+        <div style={{ flex: 1 }}>
           <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
             Infrastructure
           </p>
@@ -622,47 +623,84 @@ function InfrastructureContent() {
           <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Real-time visibility into cost, health, and risk across your AWS infrastructure.
           </p>
+          {isMobile && (
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+              <button
+                onClick={handleSyncAWS}
+                disabled={isSyncing}
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  background: syncComplete ? '#059669' : '#fff',
+                  color: syncComplete ? '#fff' : '#475569',
+                  padding: '10px 12px', borderRadius: '8px',
+                  fontSize: '0.8rem', fontWeight: 600,
+                  border: `1px solid ${syncComplete ? '#059669' : '#E2E8F0'}`,
+                  cursor: isSyncing ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s',
+                }}>
+                {isSyncing
+                  ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Syncing...</>
+                  : syncComplete
+                    ? <><Check size={14} /> Done</>
+                    : <><RefreshCw size={14} /> Sync AWS</>
+                }
+              </button>
+              <a
+                href="/cost-optimization"
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                  background: '#7C3AED', color: '#fff',
+                  padding: '10px 12px', borderRadius: '7px',
+                  fontSize: '0.8rem', fontWeight: 700, textDecoration: 'none',
+                }}
+              >
+                <Check size={13} /> Apply Fixes
+              </a>
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={handleSyncAWS}
-            disabled={isSyncing}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              background: syncComplete ? '#059669' : '#fff',
-              color: syncComplete ? '#fff' : '#475569',
-              padding: '10px 20px', borderRadius: '8px',
-              fontSize: '0.875rem', fontWeight: 600,
-              border: `1px solid ${syncComplete ? '#059669' : '#E2E8F0'}`,
-              cursor: isSyncing ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s',
-            }}>
-            {isSyncing
-              ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Syncing AWS...</>
-              : syncComplete
-                ? <><Check size={15} /> Sync Complete</>
-                : (!isDemoActive && allResources.length === 0)
-                  ? <><RefreshCw size={15} /> Scan My AWS for Cost & Risk</>
-                  : <><RefreshCw size={15} /> Sync AWS</>
-            }
-          </button>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-            <a
-              href="/cost-optimization"
+        {!isMobile && (
+          <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+            <button
+              onClick={handleSyncAWS}
+              disabled={isSyncing}
               style={{
-                display: 'flex', alignItems: 'center', gap: '7px',
-                background: '#7C3AED', color: '#fff',
-                padding: '9px 18px', borderRadius: '7px',
-                fontSize: '12px', fontWeight: 700, textDecoration: 'none',
-              }}
-            >
-              <Check size={13} /> Apply Recommended Fixes
-            </a>
-            <p style={{ fontSize: '0.65rem', color: '#64748B', margin: 0, textAlign: 'right' }}>
-              Applies 3 zero-risk optimizations · No downtime · Est. savings: $1,060/mo
-            </p>
+                display: 'flex', alignItems: 'center', gap: '8px',
+                background: syncComplete ? '#059669' : '#fff',
+                color: syncComplete ? '#fff' : '#475569',
+                padding: '10px 20px', borderRadius: '8px',
+                fontSize: '0.875rem', fontWeight: 600,
+                border: `1px solid ${syncComplete ? '#059669' : '#E2E8F0'}`,
+                cursor: isSyncing ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
+              }}>
+              {isSyncing
+                ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Syncing AWS...</>
+                : syncComplete
+                  ? <><Check size={15} /> Sync Complete</>
+                  : (!isDemoActive && allResources.length === 0)
+                    ? <><RefreshCw size={15} /> Scan My AWS for Cost & Risk</>
+                    : <><RefreshCw size={15} /> Sync AWS</>
+              }
+            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+              <a
+                href="/cost-optimization"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '7px',
+                  background: '#7C3AED', color: '#fff',
+                  padding: '9px 18px', borderRadius: '7px',
+                  fontSize: '12px', fontWeight: 700, textDecoration: 'none',
+                }}
+              >
+                <Check size={13} /> Apply Recommended Fixes
+              </a>
+              <p style={{ fontSize: '0.65rem', color: '#64748B', margin: 0, textAlign: 'right' }}>
+                Applies 3 zero-risk optimizations · No downtime · Est. savings: $1,060/mo
+              </p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* SYSTEM INTELLIGENCE STRIP */}
@@ -670,7 +708,7 @@ function InfrastructureContent() {
         background: '#fff', borderRadius: '10px',
         border: '1px solid #E2E8F0', borderLeft: '4px solid #7C3AED',
         padding: '20px 24px', marginBottom: '16px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px',
+        display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
 
@@ -692,7 +730,7 @@ function InfrastructureContent() {
             </div>
           </div>
 
-          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0, display: isMobile ? 'none' : 'block' }} />
 
           {/* Primary Issue */}
           <div>
@@ -701,7 +739,7 @@ function InfrastructureContent() {
             <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#DC2626', margin: 0 }}>{`$${Math.round(intelWaste).toLocaleString()}/mo active waste`}</p>
           </div>
 
-          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0, display: isMobile ? 'none' : 'block' }} />
 
           {/* Score Impact */}
           <div>
@@ -710,10 +748,10 @@ function InfrastructureContent() {
             <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>Within 24–48h after fixes applied</p>
           </div>
 
-          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0 }} />
+          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0, display: isMobile ? 'none' : 'block' }} />
 
           {/* Component scores */}
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
             {[
               { label: 'Cost',          score: `${intelCostScore}/100`,     chip: scoreChip(intelCostScore)     },
               { label: 'Security',      score: `${intelSecurityScore}/100`, chip: scoreChip(intelSecurityScore) },
@@ -748,14 +786,14 @@ function InfrastructureContent() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {costByService.map((row) => (
               <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 0' }}>
-                <span style={{ width: '160px', fontSize: '0.875rem', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{row.name}</span>
+                <span style={{ width: isMobile ? '80px' : '160px', fontSize: isMobile ? '0.75rem' : '0.875rem', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{row.name}</span>
                 <div style={{ flex: 1, height: '6px', background: '#F3F4F6', borderRadius: '3px', overflow: 'hidden' }}>
                   <div style={{ width: `${row.barWidth}%`, height: '100%', background: '#7C3AED', borderRadius: '3px' }} />
                 </div>
-                <span style={{ width: '80px', textAlign: 'right', fontSize: '0.875rem', fontWeight: 600, color: '#111827', flexShrink: 0 }}>
+                <span style={{ width: isMobile ? '60px' : '80px', textAlign: 'right', fontSize: isMobile ? '0.75rem' : '0.875rem', fontWeight: 600, color: '#111827', flexShrink: 0 }}>
                   ${row.cost.toFixed(2)}
                 </span>
-                <span style={{ width: '45px', textAlign: 'right', fontSize: '0.8rem', color: '#6B7280', flexShrink: 0 }}>{row.pct}%</span>
+                <span style={{ display: isMobile ? 'none' : 'block', width: '45px', textAlign: 'right', fontSize: '0.8rem', color: '#6B7280', flexShrink: 0 }}>{row.pct}%</span>
               </div>
             ))}
           </div>
@@ -763,12 +801,12 @@ function InfrastructureContent() {
       )}
 
       {/* 5 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)', gap: '20px', marginBottom: '28px' }}>
 
         {/* Total Resources — display only */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '0.5px solid #e5e7eb' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Resources</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (totalResources ?? '—')}</div>
+          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (totalResources ?? '—')}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
             {isDemoActive
               ? 'Across all regions'
@@ -782,7 +820,7 @@ function InfrastructureContent() {
         {/* Monthly Cost — display only */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '0.5px solid #e5e7eb' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Monthly Cost</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
+          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
             {isDemoActive
               ? `$${Math.round(totalMonthlyCost).toLocaleString()}`
               : totalMonthlyCost > 0
@@ -808,7 +846,7 @@ function InfrastructureContent() {
           onClick={() => setStatusFilter(statusFilter === 'active' ? null : 'active')}
         >
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Healthy</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (activeCount ?? '—')}</div>
+          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (activeCount ?? '—')}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>Running normally</p>
           <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Click to filter</p>
         </div>
@@ -828,7 +866,7 @@ function InfrastructureContent() {
           onClick={() => setStatusFilter(statusFilter === 'warning' ? null : 'warning')}
         >
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Critical Issues</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#DC2626', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
+          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#DC2626', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
           <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>
             1 cost inefficiency · 1 reliability risk
           </p>
@@ -840,7 +878,7 @@ function InfrastructureContent() {
         {/* Recoverable Savings — display only */}
         <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #A7F3D0' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Recoverable Savings</p>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#16A34A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{potentialSavingsValue}</div>
+          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#16A34A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{potentialSavingsValue}</div>
           <p style={{ fontSize: '0.72rem', color: '#64748B', margin: '0 0 4px' }}>
             {totalMonthlyCost > 0 && (realSavingsTotal ?? 0) > 0
               ? `${Math.round(((realSavingsTotal ?? 0) / totalMonthlyCost) * 100)}% of total spend`
@@ -888,7 +926,9 @@ function InfrastructureContent() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
           {displayTopActions.map((action) => (
             <div key={action.id} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+              alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between',
+              gap: isMobile ? '12px' : '0',
               padding: action.isTop ? '15px 16px' : '13px 16px', background: action.bg,
               borderRadius: '8px', border: action.isTop ? `2px solid ${action.border}` : `1px solid ${action.border}`,
             }}>
@@ -902,7 +942,7 @@ function InfrastructureContent() {
                   <p style={{ fontSize: '0.7rem', color: '#64748B', margin: 0 }}>{action.sub}</p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0, flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
                 {action.risk === 'zero'
                   ? <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Zero Risk</span>
                   : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#FEF3C7', color: '#92400E' }}>Review Impact</span>
@@ -921,8 +961,8 @@ function InfrastructureContent() {
                   : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Today</span>
                 }
                 {action.risk === 'zero'
-                  ? <a href="/cost-optimization" style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 13px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>Fix →</a>
-                  : <a href="/anomalies" style={{ background: 'transparent', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textDecoration: 'none' }}>Review →</a>
+                  ? <a href="/cost-optimization" style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 13px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', width: isMobile ? '100%' : 'auto', textAlign: 'center' }}>Fix →</a>
+                  : <a href="/anomalies" style={{ background: 'transparent', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textDecoration: 'none', width: isMobile ? '100%' : 'auto', textAlign: 'center' }}>Review →</a>
                 }
               </div>
             </div>
@@ -931,7 +971,7 @@ function InfrastructureContent() {
       </div>
 
       {/* RESOURCE TABLE */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: 'auto' }}>
 
         {/* Table header + dropdown filter pills */}
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
@@ -989,7 +1029,7 @@ function InfrastructureContent() {
                         position: 'absolute', top: 'calc(100% + 6px)', left: 0,
                         background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px',
                         boxShadow: '0 4px 16px rgba(0,0,0,0.10)', zIndex: 50,
-                        minWidth: '160px', overflow: 'hidden',
+                        minWidth: isMobile ? '0' : '160px', overflow: 'hidden',
                       }}>
                       {pill.items.map((item) => {
                         const isSel = item.value === null ? selectedType === null : item.value === selectedType
@@ -1022,7 +1062,7 @@ function InfrastructureContent() {
         </div>
 
         {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 150px 150px 110px 110px 110px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 80px 80px' : isTablet ? '2fr 80px 100px 100px 90px' : '2fr 90px 150px 150px 110px 110px 110px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
           {['Resource', 'Type', 'AWS ID', 'Service', 'Region', 'Monthly Cost', 'Issue'].map(col => (
             <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
           ))}
@@ -1075,7 +1115,7 @@ function InfrastructureContent() {
             </button>
           </div>
         ) : (
-          (showAllResources ? tableResources : tableResources.slice(0, 8)).map((r: InfrastructureResource, idx: number) => {
+          (showAllResources ? tableResources : tableResources.slice(0, 8)).map((r: InfrastructureResource) => {
             const typeConf = resourceTypeConfig[r.resourceType?.toLowerCase() as string] || resourceTypeConfig.default
             const Icon = typeConf.icon
 
@@ -1107,7 +1147,7 @@ function InfrastructureContent() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 90px 150px 150px 110px 110px 110px',
+                    gridTemplateColumns: isMobile ? '1fr 80px 80px' : isTablet ? '2fr 80px 100px 100px 90px' : '2fr 90px 150px 150px 110px 110px 110px',
                     padding: '14px 28px',
                     background: rowBg,
                     borderBottom: `1px solid ${rowBorder}`,

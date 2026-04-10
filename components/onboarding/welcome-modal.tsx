@@ -105,11 +105,11 @@ export function WelcomeModal() {
           </div>
         </div>
 
-        <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={handleSkip}>
-            I'll Do This Later
+        <div className="flex flex-col sm:flex-row sm:justify-end gap-3">
+          <Button variant="outline" className="w-full sm:w-auto" onClick={handleSkip}>
+            I&apos;ll Do This Later
           </Button>
-          <Button onClick={handleGetStarted}>Connect AWS & Find Savings →</Button>
+          <Button className="w-full sm:w-auto" onClick={handleGetStarted}>Connect AWS &amp; Find Savings →</Button>
         </div>
       </DialogContent>
     </Dialog>
