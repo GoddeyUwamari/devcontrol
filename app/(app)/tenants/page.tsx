@@ -138,7 +138,7 @@ export default function TenantsPage() {
 
   return (
     <div style={{
-      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
+      padding: 'clamp(16px, 4vw, 56px) clamp(16px, 4vw, 56px) 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -148,7 +148,7 @@ export default function TenantsPage() {
       <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
 
       {/* PAGE HEADER */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
             Infrastructure
@@ -161,10 +161,10 @@ export default function TenantsPage() {
           </p>
         </div>
         {/* FIX 2: header buttons */}
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             onClick={() => refetch()}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '1rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, whiteSpace: 'nowrap', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
             <RefreshCw size={15} /> Refresh
           </button>
           <button
@@ -176,7 +176,7 @@ export default function TenantsPage() {
               background: isDemoActive ? '#EDE9FE' : '#7C3AED',
               color: isDemoActive ? '#A78BFA' : '#fff',
               padding: '10px 20px', borderRadius: '8px',
-              fontSize: '1rem', fontWeight: 600,
+              fontSize: '0.875rem', fontWeight: 600, whiteSpace: 'nowrap',
               border: 'none', cursor: isDemoActive ? 'not-allowed' : 'pointer',
               opacity: isDemoActive ? 0.7 : 1,
             }}>
