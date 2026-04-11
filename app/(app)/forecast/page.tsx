@@ -251,7 +251,7 @@ export default function ForecastPage() {
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
                       <CardTitle>Cost Forecast</CardTitle>
-                      <CardDescription>90-day historical data with 90-day AI predictions · Monthly equivalent</CardDescription>
+                      <CardDescription>Historical spend with AI predictions</CardDescription>
                     </div>
                     <div className="flex items-center gap-4 text-xs">
                       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-blue-500" /><span className="text-slate-500">Historical</span></div>
@@ -260,6 +260,18 @@ export default function ForecastPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {chartData.length === 0 ? (
+                    <div className="h-80 flex flex-col items-center justify-center text-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center">
+                        <Brain className="w-6 h-6 text-slate-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-600 mb-1">No forecast data yet</p>
+                        <p className="text-xs text-slate-400">Connect your AWS account to generate AI-powered cost predictions</p>
+                      </div>
+                    </div>
+                  ) : (
+                  <div style={{ width: "100%", height: 320 }}>
                   <ResponsiveContainer width="100%" height={320}>
                     <ComposedChart data={chartData}>
                       <defs>
@@ -287,6 +299,8 @@ export default function ForecastPage() {
                       <ReferenceLine x={chartData[forecast.historicalData.length]?.date} stroke="#EF4444" strokeDasharray="3 3" strokeWidth={2} label={{ value: 'Today', position: 'top', fill: '#EF4444', fontSize: 12, fontWeight: 'bold' }} />
                     </ComposedChart>
                   </ResponsiveContainer>
+                  </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
