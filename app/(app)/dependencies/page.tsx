@@ -481,7 +481,7 @@ export default function DependenciesPage() {
   // Empty State - but NOT when demo mode is on
   if (false) {
     return (
-      <div className="px-4 py-6 sm:px-6 sm:py-10 lg:px-14 lg:py-10" style={{
+      <div className="px-4 py-6 sm:px-6 sm:py-10 lg:px-14 lg:py-10 overflow-x-hidden" style={{
         maxWidth: '1320px',
         margin: '0 auto',
         minHeight: '100vh',
@@ -531,7 +531,7 @@ export default function DependenciesPage() {
   }
 
   return (
-    <div className="px-4 py-6 sm:px-6 sm:py-10 lg:px-14 lg:py-10" style={{
+    <div className="px-4 py-6 sm:px-6 sm:py-10 lg:px-14 lg:py-10 overflow-x-hidden" style={{
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
@@ -588,7 +588,7 @@ export default function DependenciesPage() {
       {/* Header */}
       <div id="dependencies-header" className="space-y-4">
         {/* Title Row */}
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
               Service Dependency Mapping
@@ -597,7 +597,7 @@ export default function DependenciesPage() {
               Analyze critical paths, detect bottlenecks, and understand system-wide impact.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             {/* Demo Mode Toggle */}
             {!globalDemoMode && (
               <DemoModeInlineToggle

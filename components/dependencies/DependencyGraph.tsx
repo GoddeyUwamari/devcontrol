@@ -135,7 +135,7 @@ function DependencyGraphInner({ onRefresh, graphRef, demoMode = false, onNodeCli
   }
 
   return (
-    <div ref={activeRef} className="h-[600px] border rounded-lg bg-gray-50">
+    <div ref={activeRef} className="w-full h-[400px] sm:h-[600px] border rounded-lg bg-gray-50 overflow-hidden">
       <ReactFlow
         nodes={nodes}
         edges={edges}
