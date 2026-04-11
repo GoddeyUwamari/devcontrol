@@ -1,17 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-
-function useWindowWidth() {
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    const update = () => setWidth(window.innerWidth)
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
-  return width
-}
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
@@ -35,9 +24,6 @@ const TRUST_POLICY = JSON.stringify(
 )
 
 export default function ConnectAwsPage() {
-  const width = useWindowWidth()
-  const isMobile = width > 0 && width < 640
-  const isTablet = width >= 640 && width < 1024
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -46,7 +32,6 @@ export default function ConnectAwsPage() {
   const [connecting, setConnecting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [copied, setCopied] = useState(false)
-
   const [roleArnFocused, setRoleArnFocused] = useState(false)
   const [nicknameFocused, setNicknameFocused] = useState(false)
 
@@ -67,542 +52,152 @@ export default function ConnectAwsPage() {
 
   const handleConnect = async () => {
     if (connecting || success) return
-
-    if (!roleArn.trim()) {
-      toast.error('Role ARN is required')
-      return
-    }
-    if (!arnValid) {
-      toast.error('Role ARN must match format: arn:aws:iam::123456789012:role/RoleName')
-      return
-    }
+    if (!roleArn.trim()) { toast.error('Role ARN is required'); return }
+    if (!arnValid) { toast.error('Role ARN must match format: arn:aws:iam::123456789012:role/RoleName'); return }
 
     setConnecting(true)
     try {
-      await awsAccountsService.connect({
-        roleArn: roleArn.trim(),
-        nickname: nickname.trim() || undefined,
-      })
+      await awsAccountsService.connect({ roleArn: roleArn.trim(), nickname: nickname.trim() || undefined })
       setSuccess(true)
       queryClient.invalidateQueries({ queryKey: ['aws-accounts'] })
       toast.success('AWS account connected successfully')
       setTimeout(() => router.push('/dashboard'), 1500)
     } catch (err: any) {
-      const message = err?.response?.data?.message ?? 'Failed to connect AWS account. Please check your Role ARN and try again.'
-      toast.error(message)
+      toast.error(err?.response?.data?.message ?? 'Failed to connect AWS account. Please check your Role ARN and try again.')
     } finally {
       setConnecting(false)
     }
   }
 
-  const inputStyle = (focused: boolean): React.CSSProperties => ({
-    width: '100%',
-    padding: '12px 16px',
-    border: `1px solid ${focused ? '#7C3AED' : '#E2E8F0'}`,
-    outline: focused ? '2px solid rgba(124,58,237,0.15)' : 'none',
-    borderRadius: '10px',
-    fontSize: '14px',
-    fontFamily: 'Inter, system-ui, sans-serif',
-    color: '#0F172A',
-    background: '#FFFFFF',
-    boxSizing: 'border-box',
-    transition: 'border-color 0.15s, outline 0.15s',
-  })
-
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#F9FAFB',
-        fontFamily: 'Inter, system-ui, sans-serif',
-        padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: '1400px',
-          margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr',
-          gap: '48px',
-          alignItems: 'start',
-        }}
-      >
-        {/* ── LEFT SECTION ── */}
-        <div>
-          {/* Breadcrumb */}
-          <div
-            style={{
-              fontSize: '13px',
-              color: '#94A3B8',
-              marginBottom: '20px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <a
-              href="/dashboard"
-              style={{ color: '#475569', textDecoration: 'none' }}
-            >
-              Dashboard
-            </a>
-            <span>›</span>
-            <span style={{ color: '#0F172A', fontWeight: 500 }}>
-              Connect AWS
-            </span>
-          </div>
+    <div className="min-h-screen bg-gray-50 font-sans px-4 py-6 sm:px-6 sm:py-10 lg:px-14 lg:py-10">
+      <div className="max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-8 lg:gap-12 items-start">
 
-          {/* Title */}
-          <h1
-            style={{
-              fontSize: '28px',
-              fontWeight: 700,
-              color: '#0F172A',
-              margin: '0 0 8px',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            Connect your AWS account
-          </h1>
-          <p
-            style={{
-              fontSize: '15px',
-              color: '#475569',
-              margin: '0 0 32px',
-              lineHeight: 1.6,
-            }}
-          >
-            Set up a read-only IAM role so DevControl can analyse your costs,
-            security posture, and infrastructure health.
-          </p>
+          {/* LEFT */}
+          <div>
+            <nav className="flex items-center gap-1.5 text-sm mb-5 flex-nowrap whitespace-nowrap overflow-hidden">
+              <a href="/dashboard" className="text-slate-500 hover:text-slate-900 transition-colors">Dashboard</a>
+              <span className="text-slate-400">›</span>
+              <span className="text-slate-900 font-medium">Connect AWS</span>
+            </nav>
 
-          {/* Card */}
-          <div
-            style={{
-              background: '#FFFFFF',
-              borderRadius: '16px',
-              border: '1px solid #E2E8F0',
-              padding: '36px',
-            }}
-          >
-            {/* ── STEP 1 ── */}
-            <div style={{ marginBottom: '40px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '16px',
-                }}
-              >
-                {/* Badge */}
-                <div
-                  style={{
-                    flexShrink: 0,
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: '#7C3AED',
-                    color: '#FFFFFF',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    marginTop: '2px',
-                  }}
-                >
-                  1
-                </div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-2">
+              Connect your AWS account
+            </h1>
+            <p className="text-sm sm:text-base text-slate-500 leading-relaxed mb-8">
+              Set up a read-only IAM role so DevControl can analyse your costs, security posture, and infrastructure health.
+            </p>
 
-                <div style={{ flex: 1 }}>
-                  <h2
-                    style={{
-                      fontSize: '17px',
-                      fontWeight: 600,
-                      color: '#0F172A',
-                      margin: '0 0 8px',
-                    }}
-                  >
-                    Create the IAM role
-                  </h2>
-                  <p
-                    style={{
-                      fontSize: '14px',
-                      color: '#475569',
-                      margin: '0 0 16px',
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    In your AWS Console, create a new IAM role with the
-                    following trust policy. This gives DevControl read-only
-                    access to your account.
-                  </p>
-
-                  {/* Code block */}
-                  <div
-                    style={{
-                      background: '#0F172A',
-                      borderRadius: '10px',
-                      padding: '16px',
-                      marginBottom: '12px',
-                      position: 'relative',
-                    }}
-                  >
-                    <pre
-                      style={{
-                        margin: 0,
-                        fontFamily:
-                          '"Fira Code", "Cascadia Code", Menlo, monospace',
-                        fontSize: '13px',
-                        color: '#E2E8F0',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      {TRUST_POLICY}
-                    </pre>
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-9">
+              {/* STEP 1 */}
+              <div className="mb-10">
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center text-sm font-bold mt-0.5">1</div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-base sm:text-lg font-semibold text-slate-900 mb-2">Create the IAM role</h2>
+                    <p className="text-sm text-slate-500 leading-relaxed mb-4">
+                      In your AWS Console, create a new IAM role with the following trust policy. This gives DevControl read-only access to your account.
+                    </p>
+                    <div className="bg-slate-900 rounded-xl p-4 mb-3 overflow-x-auto">
+                      <pre className="text-sm text-slate-200 font-mono whitespace-pre-wrap break-words leading-relaxed">{TRUST_POLICY}</pre>
+                    </div>
+                    <button onClick={handleCopy} className="border border-slate-200 rounded-lg px-3.5 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-900 hover:border-slate-300 cursor-pointer transition-colors mb-3 bg-transparent">
+                      {copied ? '✓ Copied!' : 'Copy policy →'}
+                    </button>
+                    <p className="text-xs text-slate-400">
+                      Attach the <strong className="text-slate-500">ReadOnlyAccess</strong> managed policy to this role.
+                    </p>
                   </div>
-
-                  {/* Copy button */}
-                  <button
-                    onClick={handleCopy}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid #E2E8F0',
-                      borderRadius: '8px',
-                      padding: '6px 14px',
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      color: '#475569',
-                      cursor: 'pointer',
-                      fontFamily: 'Inter, system-ui, sans-serif',
-                      marginBottom: '12px',
-                    }}
-                  >
-                    {copied ? '✓ Copied!' : 'Copy policy →'}
-                  </button>
-
-                  {/* Fine print */}
-                  <p
-                    style={{
-                      fontSize: '13px',
-                      color: '#94A3B8',
-                      margin: 0,
-                    }}
-                  >
-                    Attach the{' '}
-                    <strong style={{ color: '#475569' }}>
-                      ReadOnlyAccess
-                    </strong>{' '}
-                    managed policy to this role.
-                  </p>
                 </div>
               </div>
-            </div>
 
-            {/* Divider */}
-            <div
-              style={{
-                borderTop: '1px solid #F1F5F9',
-                marginBottom: '40px',
-              }}
-            />
+              <div className="border-t border-slate-100 mb-10" />
 
-            {/* ── STEP 2 ── */}
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '16px',
-                }}
-              >
-                {/* Badge */}
-                <div
-                  style={{
-                    flexShrink: 0,
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: '#7C3AED',
-                    color: '#FFFFFF',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    marginTop: '2px',
-                  }}
-                >
-                  2
-                </div>
-
-                <div style={{ flex: 1 }}>
-                  <h2
-                    style={{
-                      fontSize: '17px',
-                      fontWeight: 600,
-                      color: '#0F172A',
-                      margin: '0 0 8px',
-                    }}
-                  >
-                    Enter your Role ARN
-                  </h2>
-                  <p
-                    style={{
-                      fontSize: '14px',
-                      color: '#475569',
-                      margin: '0 0 20px',
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    After creating the role, paste the Role ARN below. It looks
-                    like:{' '}
-                    <code
-                      style={{
-                        fontFamily: 'Menlo, monospace',
-                        fontSize: '13px',
-                        color: '#7C3AED',
-                      }}
+              {/* STEP 2 */}
+              <div>
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center text-sm font-bold mt-0.5">2</div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-base sm:text-lg font-semibold text-slate-900 mb-2">Enter your Role ARN</h2>
+                    <p className="text-sm text-slate-500 leading-relaxed mb-5">
+                      After creating the role, paste the Role ARN below. It looks like:{' '}
+                      <code className="font-mono text-xs text-violet-600">arn:aws:iam::123456789012:role/DevControlRole</code>
+                    </p>
+                    <div className="mb-4">
+                      <input
+                        type="text"
+                        value={roleArn}
+                        onChange={(e) => setRoleArn(e.target.value)}
+                        onFocus={() => setRoleArnFocused(true)}
+                        onBlur={() => setRoleArnFocused(false)}
+                        placeholder="arn:aws:iam::YOUR_ACCOUNT_ID:role/DevControlRole"
+                        className={`w-full px-4 py-3 border rounded-xl text-sm text-slate-900 bg-white transition-all outline-none ${roleArnFocused ? 'border-violet-500 ring-2 ring-violet-500/15' : 'border-slate-200'}`}
+                      />
+                      {roleArn.trim() && (
+                        <p className={`mt-1.5 text-xs leading-snug ${arnValid ? 'text-green-700' : 'text-amber-700'}`}>
+                          {arnValid ? `✓ Valid ARN format · Account ID: ${extractedId}` : 'Expected format: arn:aws:iam::123456789012:role/RoleName'}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mb-6">
+                      <label className="block text-xs font-medium text-slate-500 mb-1.5">Account nickname (optional)</label>
+                      <input
+                        type="text"
+                        value={nickname}
+                        onChange={(e) => setNickname(e.target.value)}
+                        onFocus={() => setNicknameFocused(true)}
+                        onBlur={() => setNicknameFocused(false)}
+                        placeholder="e.g. Production, Staging"
+                        className={`w-full px-4 py-3 border rounded-xl text-sm text-slate-900 bg-white transition-all outline-none ${nicknameFocused ? 'border-violet-500 ring-2 ring-violet-500/15' : 'border-slate-200'}`}
+                      />
+                    </div>
+                    <button
+                      onClick={handleConnect}
+                      disabled={connecting || success}
+                      className={`w-full py-3.5 rounded-xl text-base font-semibold text-white transition-colors shadow-lg shadow-violet-500/25 mb-4 ${connecting || success ? 'bg-violet-400 cursor-default' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}
                     >
-                      arn:aws:iam::123456789012:role/DevControlRole
-                    </code>
-                  </p>
-
-                  {/* Role ARN input */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <input
-                      type="text"
-                      value={roleArn}
-                      onChange={(e) => setRoleArn(e.target.value)}
-                      onFocus={() => setRoleArnFocused(true)}
-                      onBlur={() => setRoleArnFocused(false)}
-                      placeholder="arn:aws:iam::YOUR_ACCOUNT_ID:role/DevControlRole"
-                      style={inputStyle(roleArnFocused)}
-                    />
-                    {roleArn.trim() && (
-                      <p style={{ margin: '6px 0 0', fontSize: '11px', lineHeight: 1.4, color: arnValid ? '#3B6D11' : '#854F0B' }}>
-                        {arnValid
-                          ? `✓ Valid ARN format · Account ID: ${extractedId}`
-                          : 'Expected format: arn:aws:iam::123456789012:role/RoleName'}
-                      </p>
+                      {connecting ? 'Verifying connection...' : 'Connect Account →'}
+                    </button>
+                    {success && (
+                      <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
+                        ✅ Connection verified — redirecting to your dashboard...
+                      </div>
                     )}
                   </div>
-
-                  {/* Nickname input */}
-                  <div style={{ marginBottom: '24px' }}>
-                    <label
-                      style={{
-                        display: 'block',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        color: '#475569',
-                        marginBottom: '6px',
-                      }}
-                    >
-                      Account nickname (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={nickname}
-                      onChange={(e) => setNickname(e.target.value)}
-                      onFocus={() => setNicknameFocused(true)}
-                      onBlur={() => setNicknameFocused(false)}
-                      placeholder="e.g. Production, Staging"
-                      style={inputStyle(nicknameFocused)}
-                    />
-                  </div>
-
-                  {/* CTA button */}
-                  <button
-                    onClick={handleConnect}
-                    disabled={connecting || success}
-                    style={{
-                      width: '100%',
-                      padding: '14px',
-                      background:
-                        connecting || success ? '#A78BFA' : '#7C3AED',
-                      color: '#FFFFFF',
-                      border: 'none',
-                      borderRadius: '10px',
-                      fontSize: '15px',
-                      fontWeight: 600,
-                      cursor: connecting || success ? 'default' : 'pointer',
-                      fontFamily: 'Inter, system-ui, sans-serif',
-                      boxShadow: '0 4px 14px rgba(124,58,237,0.3)',
-                      transition: 'background 0.15s',
-                      marginBottom: '16px',
-                    }}
-                  >
-                    {connecting
-                      ? 'Verifying connection...'
-                      : 'Connect Account →'}
-                  </button>
-
-                  {/* Success message */}
-                  {success && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '12px 16px',
-                        background: '#F0FDF4',
-                        border: '1px solid #BBF7D0',
-                        borderRadius: '10px',
-                        fontSize: '14px',
-                        color: '#15803D',
-                        fontWeight: 500,
-                      }}
-                    >
-                      ✅ Connection verified — redirecting to your
-                      dashboard...
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* ── RIGHT SECTION ── */}
-        <div style={{ position: 'sticky', top: '32px' }}>
-          <div
-            style={{
-              background: '#FFFFFF',
-              borderRadius: '16px',
-              border: '1px solid #E2E8F0',
-              padding: '28px',
-            }}
-          >
-            {/* What DevControl reads */}
-            <div
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: '#94A3B8',
-                letterSpacing: '0.07em',
-                textTransform: 'uppercase',
-                marginBottom: '14px',
-              }}
-            >
-              What DevControl reads
-            </div>
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-              {[
-                'EC2, RDS, Lambda, S3 resource metadata',
-                'CloudWatch metrics and alarms',
-                'Cost and usage reports',
-                'Security Hub findings',
-                'CloudTrail audit logs',
-              ].map((item) => (
-                <li
-                  key={item}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '10px',
-                    fontSize: '14px',
-                    color: '#475569',
-                    marginBottom: '10px',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  <span style={{ color: '#16A34A', flexShrink: 0, fontWeight: 600 }}>
-                    ✓
-                  </span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <p
-              style={{
-                fontSize: '12px',
-                color: '#94A3B8',
-                margin: '12px 0 0',
-                lineHeight: 1.5,
-              }}
-            >
-              Read-only. DevControl never modifies your infrastructure.
-            </p>
+          {/* RIGHT */}
+          <div className="lg:sticky lg:top-8">
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3.5">What DevControl reads</p>
+              <ul className="space-y-2.5 mb-1">
+                {['EC2, RDS, Lambda, S3 resource metadata','CloudWatch metrics and alarms','Cost and usage reports','Security Hub findings','CloudTrail audit logs'].map((item) => (
+                  <li key={item} className="flex items-start gap-2.5 text-sm text-slate-500 leading-snug">
+                    <span className="text-green-600 font-semibold shrink-0">✓</span>{item}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-slate-400 leading-relaxed mt-3">Read-only. DevControl never modifies your infrastructure.</p>
 
-            {/* Security */}
-            <div
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: '#94A3B8',
-                letterSpacing: '0.07em',
-                textTransform: 'uppercase',
-                marginTop: '24px',
-                marginBottom: '14px',
-              }}
-            >
-              Security
-            </div>
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-              {[
-                'AES-256 encrypted at rest',
-                'SOC 2 audit underway',
-                'Role credentials never stored',
-              ].map((item) => (
-                <li
-                  key={item}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '10px',
-                    fontSize: '14px',
-                    color: '#475569',
-                    marginBottom: '10px',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  <span style={{ flexShrink: 0 }}>🛡️</span>
-                  {item}
-                </li>
-              ))}
-            </ul>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mt-6 mb-3.5">Security</p>
+              <ul className="space-y-2.5">
+                {['AES-256 encrypted at rest','SOC 2 audit underway','Role credentials never stored'].map((item) => (
+                  <li key={item} className="flex items-start gap-2.5 text-sm text-slate-500 leading-snug">
+                    <span className="shrink-0">🛡️</span>{item}
+                  </li>
+                ))}
+              </ul>
 
-            {/* Need help? */}
-            <div
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: '#94A3B8',
-                letterSpacing: '0.07em',
-                textTransform: 'uppercase',
-                marginTop: '24px',
-                marginBottom: '14px',
-              }}
-            >
-              Need help?
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mt-6 mb-3.5">Need help?</p>
+              <p className="text-sm text-slate-500 leading-relaxed mb-2.5">Our setup guide walks through the exact IAM role configuration step by step.</p>
+              <a href="/docs" className="text-sm text-violet-600 font-medium hover:text-violet-700 transition-colors">View setup guide →</a>
             </div>
-            <p
-              style={{
-                fontSize: '14px',
-                color: '#475569',
-                margin: '0 0 10px',
-                lineHeight: 1.6,
-              }}
-            >
-              Our setup guide walks through the exact IAM role configuration
-              step by step.
-            </p>
-            <a
-              href="/docs"
-              style={{
-                fontSize: '14px',
-                color: '#7C3AED',
-                fontWeight: 500,
-                textDecoration: 'none',
-              }}
-            >
-              View setup guide →
-            </a>
           </div>
+
         </div>
       </div>
     </div>
