@@ -1,850 +1,299 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-
-function useWindowWidth() {
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    const update = () => setWidth(window.innerWidth)
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
-  return width
-}
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { alertHistoryService } from '@/lib/services/alert-history.service'
 import { Alert, AlertFilters, DateRangeOption } from '@/lib/types'
-import {
-  Sparkles, ArrowRight, RefreshCw,
-  Clock, Bell, TrendingDown, Filter, Shield,
-  CheckCircle2, AlertTriangle, XCircle, ChevronRight,
-} from 'lucide-react'
+import { Sparkles, ArrowRight, RefreshCw, Bell, Shield, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 
 const DEMO_HISTORY = [
-  { id: 'h1', alertName: 'High CPU Usage',          serviceName: 'api-gateway',          severity: 'critical', status: 'resolved', description: 'CPU usage above 90% for 15 minutes on api-gateway ECS cluster.',        labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),  durationMinutes: 25, resolvedAt: new Date(Date.now() - 1000 * 60 * 95).toISOString(),       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$1,240' },
-  { id: 'h2', alertName: 'Deployment Failed',       serviceName: 'auth-service',         severity: 'critical', status: 'resolved', description: 'Deployment to staging failed. Rolled back to previous version.',       labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),  durationMinutes: 22, resolvedAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),   createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$890' },
-  { id: 'h3', alertName: 'Memory Spike',            serviceName: 'analytics-worker',     severity: 'warning',  status: 'resolved', description: 'Memory usage peaked at 94% during batch processing job.',              labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),  durationMinutes: 45, resolvedAt: new Date(Date.now() - 1000 * 60 * 60 * 7).toISOString(),   createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$340' },
-  { id: 'h4', alertName: 'RDS Failover',            serviceName: 'payment-processor',    severity: 'critical', status: 'resolved', description: 'RDS primary instance failover triggered. Standby promoted.',           labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), durationMinutes: 8,  resolvedAt: new Date(Date.now() - 1000 * 60 * 60 * 23).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$2,100' },
-  { id: 'h5', alertName: 'High Latency',            serviceName: 'api-gateway',          severity: 'warning',  status: 'resolved', description: 'p95 latency exceeded 800ms threshold for 10 minutes.',                labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000 * 60 * 60 * 28).toISOString(), durationMinutes: 18, resolvedAt: new Date(Date.now() - 1000 * 60 * 60 * 27).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$560' },
-  { id: 'h6', alertName: 'Certificate Renewed',     serviceName: 'api-gateway',          severity: 'warning',  status: 'resolved', description: 'SSL certificate renewed successfully before expiry.',                 labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(), durationMinutes: 5,  resolvedAt: new Date(Date.now() - 1000 * 60 * 60 * 47).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$0' },
-  { id: 'h7', alertName: 'Lambda Timeout',          serviceName: 'notification-service', severity: 'warning',  status: 'resolved', description: 'Lambda function exceeded 30s timeout on 3 consecutive invocations.',  labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000 * 60 * 60 * 52).toISOString(), durationMinutes: 12, resolvedAt: new Date(Date.now() - 1000 * 60 * 60 * 51).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$180' },
-  { id: 'h8', alertName: 'S3 Bucket Policy Change', serviceName: 'analytics-worker',     severity: 'critical', status: 'resolved', description: 'Unexpected S3 bucket policy modification detected and reverted.',     labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(), durationMinutes: 3,  resolvedAt: new Date(Date.now() - 1000 * 60 * 60 * 71).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$3,400' },
+  { id: 'h1', alertName: 'High CPU Usage',          serviceName: 'api-gateway',          severity: 'critical', status: 'resolved', description: 'CPU usage above 90% for 15 minutes on api-gateway ECS cluster.',       labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*2).toISOString(),  durationMinutes: 25, resolvedAt: new Date(Date.now() - 1000*60*95).toISOString(),      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$1,240' },
+  { id: 'h2', alertName: 'Deployment Failed',       serviceName: 'auth-service',         severity: 'critical', status: 'resolved', description: 'Deployment to staging failed. Rolled back to previous version.',      labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*5).toISOString(),  durationMinutes: 22, resolvedAt: new Date(Date.now() - 1000*60*60*4).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$890' },
+  { id: 'h3', alertName: 'Memory Spike',            serviceName: 'analytics-worker',     severity: 'warning',  status: 'resolved', description: 'Memory usage peaked at 94% during batch processing job.',             labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*8).toISOString(),  durationMinutes: 45, resolvedAt: new Date(Date.now() - 1000*60*60*7).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$340' },
+  { id: 'h4', alertName: 'RDS Failover',            serviceName: 'payment-processor',    severity: 'critical', status: 'resolved', description: 'RDS primary instance failover triggered. Standby promoted.',          labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*24).toISOString(), durationMinutes: 8,  resolvedAt: new Date(Date.now() - 1000*60*60*23).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$2,100' },
+  { id: 'h5', alertName: 'High Latency',            serviceName: 'api-gateway',          severity: 'warning',  status: 'resolved', description: 'p95 latency exceeded 800ms threshold for 10 minutes.',               labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*28).toISOString(), durationMinutes: 18, resolvedAt: new Date(Date.now() - 1000*60*60*27).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$560' },
+  { id: 'h6', alertName: 'Certificate Renewed',     serviceName: 'api-gateway',          severity: 'warning',  status: 'resolved', description: 'SSL certificate renewed successfully before expiry.',                labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*48).toISOString(), durationMinutes: 5,  resolvedAt: new Date(Date.now() - 1000*60*60*47).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$0' },
+  { id: 'h7', alertName: 'Lambda Timeout',          serviceName: 'notification-service', severity: 'warning',  status: 'resolved', description: 'Lambda function exceeded 30s timeout on 3 consecutive invocations.', labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*52).toISOString(), durationMinutes: 12, resolvedAt: new Date(Date.now() - 1000*60*60*51).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$180' },
+  { id: 'h8', alertName: 'S3 Bucket Policy Change', serviceName: 'analytics-worker',     severity: 'critical', status: 'resolved', description: 'Unexpected S3 bucket policy modification detected and reverted.',    labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*72).toISOString(), durationMinutes: 3,  resolvedAt: new Date(Date.now() - 1000*60*60*71).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$3,400' },
 ] as unknown as Alert[]
 
-const DEMO_STATS = {
-  total: 8,
-  critical: 4,
-  avgResolutionTime: 17,
-  mttr: 22,
+const DEMO_STATS = { total: 8, critical: 4, avgResolutionTime: 17, mttr: 22 }
+const DEMO_READINESS = {
+  readiness_score: 72, status: 'Partially Ready',
+  components: {
+    alert_coverage:           { score: 100, label: 'Alert Coverage',    detail: '5 of 5 services have alerts',           status: 'good' },
+    monitoring_coverage:      { score: 80,  label: 'Monitoring',        detail: '4 of 5 services reporting',             status: 'good' },
+    critical_service_coverage:{ score: 100, label: 'Critical Coverage', detail: '3 of 3 critical services covered',      status: 'good' },
+    signal_freshness:         { score: 80,  label: 'Signal Freshness',  detail: 'Metrics up to date',                   status: 'good' },
+    response_config:          { score: 0,   label: 'Response Setup',    detail: 'No alert destinations configured',      status: 'risk' },
+  },
+  top_gaps: [{ type: 'response_config', severity: 'medium', message: 'No on-call routing configured — team will not be notified of incidents', action: 'Configure destinations', actionPath: '/settings/notifications' }],
 }
 
-// Local type extends the imported DateRangeOption with 24h for the UI toggle.
-// We clamp to a valid DateRangeOption when passing to service calls.
 type LocalDateRange = '24h' | DateRangeOption
+const toServiceRange = (r: LocalDateRange): DateRangeOption => r === '24h' ? '7d' : r
 
-function toServiceRange(r: LocalDateRange): DateRangeOption {
-  return r === '24h' ? '7d' : r
-}
-
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL
-  || 'http://localhost:8080'
-
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 async function fetchReadiness() {
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('accessToken')
-      : null
-  const res = await fetch(
-    `${API_URL}/api/observability/readiness`,
-    {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    }
-  )
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+  const res = await fetch(`${API_URL}/api/observability/readiness`, { headers: { 'Authorization': `Bearer ${token}` } })
   if (!res.ok) return null
   const data = await res.json()
   return data.success ? data.data : null
 }
 
 export default function AlertHistoryPage() {
-  const width = useWindowWidth()
-  const isMobile = width > 0 && width < 640
-  const isTablet = width >= 640 && width < 1024
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
-  const queryClient = useQueryClient()
 
   const [dateRange, setDateRange] = useState<LocalDateRange>('30d')
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all')
-  const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
 
   const serviceRange = toServiceRange(dateRange)
+  const filters: AlertFilters = { dateRange: serviceRange, severity: selectedSeverity !== 'all' ? selectedSeverity as any : undefined }
 
-  const filters: AlertFilters = {
-    dateRange: serviceRange,
-    severity: selectedSeverity !== 'all' ? selectedSeverity as any : undefined,
-    status: selectedStatus !== 'all' ? selectedStatus as any : undefined,
-  }
+  const { data: historyData, isLoading, refetch } = useQuery({ queryKey: ['alert-history', filters], queryFn: () => alertHistoryService.getAlertHistory(filters), refetchInterval: 60000 })
+  const { data: statsData } = useQuery({ queryKey: ['alert-stats-history', serviceRange], queryFn: () => alertHistoryService.getAlertStats({ dateRange: serviceRange }), refetchInterval: 60000 })
+  const { data: readinessData } = useQuery({ queryKey: ['observability-readiness'], queryFn: fetchReadiness, refetchInterval: 120000, enabled: !isDemoActive })
 
-  const { data: historyData, isLoading, refetch } = useQuery({
-    queryKey: ['alert-history', filters],
-    queryFn: () => alertHistoryService.getAlertHistory(filters),
-    refetchInterval: 60000,
-  })
-
-  const { data: statsData } = useQuery({
-    queryKey: ['alert-stats-history', serviceRange],
-    queryFn: () => alertHistoryService.getAlertStats({ dateRange: serviceRange }),
-    refetchInterval: 60000,
-  })
-
-  const { data: readinessData } = useQuery({
-    queryKey: ['observability-readiness'],
-    queryFn: fetchReadiness,
-    refetchInterval: 120000,
-    enabled: !isDemoActive,
-  })
-
-  const displayAlerts: Alert[] = isDemoActive
-    ? DEMO_HISTORY
-    : (historyData?.data || [])
-
-  const displayStats = isDemoActive
-    ? DEMO_STATS
-    : {
-        total: statsData?.data?.total || 0,
-        critical: statsData?.data?.criticalCount || 0,
-        avgResolutionTime: statsData?.data?.avgResolutionTime || 0,
-        mttr: statsData?.data?.avgResolutionTime || 0,
-      }
-
-  const DEMO_READINESS = {
-    readiness_score: 72,
-    status: 'Partially Ready',
-    components: {
-      alert_coverage: {
-        score: 100,
-        label: 'Alert Coverage',
-        detail: '5 of 5 services have alerts',
-        status: 'good',
-      },
-      monitoring_coverage: {
-        score: 80,
-        label: 'Monitoring Coverage',
-        detail: '4 of 5 services reporting',
-        status: 'good',
-      },
-      critical_service_coverage: {
-        score: 100,
-        label: 'Critical Coverage',
-        detail: '3 of 3 critical services covered',
-        status: 'good',
-      },
-      signal_freshness: {
-        score: 80,
-        label: 'Signal Freshness',
-        detail: 'Metrics up to date',
-        status: 'good',
-      },
-      response_config: {
-        score: 0,
-        label: 'Response Setup',
-        detail: 'No alert destinations configured',
-        status: 'risk',
-      },
-    },
-    top_gaps: [
-      {
-        type: 'response_config',
-        severity: 'medium',
-        message: 'No on-call routing configured — team will not be notified of incidents',
-        action: 'Configure destinations',
-        actionPath: '/settings/notifications',
-      },
-    ],
-  }
-
-  const displayReadiness = isDemoActive
-    ? DEMO_READINESS
-    : readinessData
+  const displayAlerts: Alert[] = isDemoActive ? DEMO_HISTORY : (historyData?.data || [])
+  const displayStats = isDemoActive ? DEMO_STATS : { total: statsData?.data?.total || 0, critical: statsData?.data?.criticalCount || 0, avgResolutionTime: statsData?.data?.avgResolutionTime || 0, mttr: statsData?.data?.avgResolutionTime || 0 }
+  const displayReadiness = isDemoActive ? DEMO_READINESS : readinessData
 
   const filteredAlerts = displayAlerts.filter((a: Alert) => {
     if (selectedSeverity !== 'all' && a.severity !== selectedSeverity) return false
-    if (selectedStatus !== 'all' && a.status !== selectedStatus) return false
     if (searchQuery && !a.alertName.toLowerCase().includes(searchQuery.toLowerCase()) && !a.serviceName?.toLowerCase().includes(searchQuery.toLowerCase())) return false
     return true
   })
 
-  const formatTime = (iso: string) =>
-    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const formatTime = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+  const scoreColor = (s: number) => s >= 80 ? '#059669' : s >= 65 ? '#D97706' : '#DC2626'
+  const scoreBg = (s: number) => s >= 80 ? 'bg-green-50 border-green-600' : s >= 65 ? 'bg-amber-50 border-amber-500' : 'bg-red-50 border-red-600'
 
   return (
-    <div style={{
-      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
-      maxWidth: '1320px',
-      margin: '0 auto',
-      minHeight: '100vh',
-      background: '#F9FAFB',
-      fontFamily: 'Inter, system-ui, sans-serif',
-    }}>
+    <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
 
-      {/* PAGE HEADER */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+      {/* Page header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Incident Resolution Insights
-          </h1>
-          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Reliability intelligence · Mean time to resolve · Incident patterns · Last 30d
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Incident Resolution Insights</h1>
+          <p className="text-sm text-slate-500 leading-relaxed">Reliability intelligence · Mean time to resolve · Incident patterns · Last 30d</p>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={() => refetch()}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 500, border: '1px solid #E2E8F0', cursor: 'pointer' }}>
-            <RefreshCw size={15} /> Refresh
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => refetch()} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
+            <RefreshCw size={14} /> Refresh
           </button>
-          <a href="/observability/alerts" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
-            <Bell size={15} /> Active Alerts
+          <a href="/observability/alerts" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors whitespace-nowrap">
+            <Bell size={14} /> Active Alerts
           </a>
         </div>
       </div>
 
-      {/* AI INSIGHT BANNER */}
-      <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 24px', border: '1px solid #F1F5F9', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Sparkles size={14} style={{ color: '#fff' }} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>AI Insight</p>
-          <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>
+      {/* AI Insight */}
+      <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-6 py-4 mb-6 flex items-start gap-3.5">
+        <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-white" /></div>
+        <div className="flex-1">
+          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
+          <p className="text-sm text-slate-700 leading-relaxed">
             {isDemoActive
-              ? '4 critical alerts resolved in the last 72 hours. RDS Failover and S3 Bucket Policy Change had the fastest resolution times (8m and 3m). Average MTTR is 17 minutes — Elite tier performance. No recurring alert patterns detected.'
+              ? '4 critical alerts resolved in the last 72 hours. RDS Failover and S3 Bucket Policy Change had the fastest resolution times (8m and 3m). Average MTTR is 17 minutes — Elite tier performance.'
               : displayReadiness
-                ? (() => {
-                    const score = displayReadiness.readiness_score
-                    const gaps = displayReadiness.top_gaps
-                    const worstGap = gaps[0]
-
-                    if (score >= 85) {
-                      return 'System is fully prepared for incident detection. All services have alert coverage and metrics are reporting normally.'
-                    }
-                    if (score >= 65) {
-                      return `System is ${Math.round(score)}% ready for incident detection. ${worstGap ? worstGap.message + '. Fix this to improve response time.' : 'Minor gaps exist in coverage.'}`
-                    }
-                    return `Incident detection is at risk (${Math.round(score)}/100). ${worstGap ? worstGap.message : 'Multiple coverage gaps detected.'} Resolve gaps before the next incident occurs.`
-                  })()
-                : 'Connect your AWS account to begin incident readiness monitoring.'
-            }
+                ? (() => { const s = displayReadiness.readiness_score; const g = displayReadiness.top_gaps[0]; if (s >= 85) return 'System is fully prepared for incident detection. All services have alert coverage and metrics are reporting normally.'; if (s >= 65) return `System is ${Math.round(s)}% ready for incident detection. ${g ? g.message + '. Fix this to improve response time.' : 'Minor gaps exist in coverage.'}`; return `Incident detection is at risk (${Math.round(s)}/100). ${g ? g.message : 'Multiple coverage gaps detected.'} Resolve gaps before the next incident occurs.` })()
+                : 'Connect your AWS account to begin incident readiness monitoring.'}
           </p>
         </div>
-        <a href="/observability/alerts" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-          Active alerts <ArrowRight size={12} />
-        </a>
+        <a href="/observability/alerts" className="text-xs font-semibold text-violet-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">Active alerts <ArrowRight size={11} /></a>
       </div>
 
-      {/* READINESS BANNER */}
+      {/* Readiness banner */}
       {displayReadiness && (
-        <div style={{
-          background: '#fff',
-          borderRadius: '14px',
-          border: '1px solid #E2E8F0',
-          padding: '24px 28px',
-          marginBottom: '20px',
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '20px',
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '16px',
-            }}>
-              {/* Score circle */}
-              <div style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                background:
-                  displayReadiness.readiness_score >= 80
-                    ? '#F0FDF4'
-                    : displayReadiness.readiness_score >= 65
-                      ? '#FFFBEB'
-                      : '#FEF2F2',
-                border: `2px solid ${
-                  displayReadiness.readiness_score >= 80
-                    ? '#059669'
-                    : displayReadiness.readiness_score >= 65
-                      ? '#D97706'
-                      : '#DC2626'
-                }`,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                <span style={{
-                  fontSize: '1.25rem',
-                  fontWeight: 700,
-                  color:
-                    displayReadiness.readiness_score >= 80
-                      ? '#059669'
-                      : displayReadiness.readiness_score >= 65
-                        ? '#D97706'
-                        : '#DC2626',
-                  lineHeight: 1,
-                }}>
-                  {displayReadiness.readiness_score}
-                </span>
-                <span style={{
-                  fontSize: '0.55rem',
-                  color: '#94A3B8',
-                  fontWeight: 600,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}>
-                  /100
-                </span>
+        <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7 mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+            <div className="flex items-center gap-4">
+              <div className={`w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center shrink-0 ${scoreBg(displayReadiness.readiness_score)}`}>
+                <span className="text-xl font-bold leading-none" style={{ color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.readiness_score}</span>
+                <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-widest">/100</span>
               </div>
               <div>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginBottom: '4px',
-                }}>
-                  <p style={{
-                    fontSize: '1rem',
-                    fontWeight: 700,
-                    color: '#0F172A',
-                    margin: 0,
-                  }}>
-                    Incident Readiness
-                  </p>
-                  <span style={{
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    padding: '2px 9px',
-                    borderRadius: '100px',
-                    background:
-                      displayReadiness.readiness_score >= 80
-                        ? '#F0FDF4'
-                        : displayReadiness.readiness_score >= 65
-                          ? '#FFFBEB'
-                          : '#FEF2F2',
-                    color:
-                      displayReadiness.readiness_score >= 80
-                        ? '#059669'
-                        : displayReadiness.readiness_score >= 65
-                          ? '#D97706'
-                          : '#DC2626',
-                  }}>
-                    {displayReadiness.status}
-                  </span>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <p className="text-base font-bold text-slate-900">Incident Readiness</p>
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full" style={{ background: scoreBg(displayReadiness.readiness_score).includes('green') ? '#F0FDF4' : scoreBg(displayReadiness.readiness_score).includes('amber') ? '#FFFBEB' : '#FEF2F2', color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.status}</span>
                 </div>
-                <p style={{
-                  fontSize: '0.82rem',
-                  color: '#475569',
-                  margin: 0,
-                }}>
-                  {displayReadiness.top_gaps.length === 0
-                    ? 'All systems ready — full incident detection coverage'
-                    : `${displayReadiness.top_gaps.length} gap${displayReadiness.top_gaps.length !== 1 ? 's' : ''} reducing detection capability`
-                  }
-                </p>
+                <p className="text-xs text-slate-500">{displayReadiness.top_gaps.length === 0 ? 'All systems ready — full incident detection coverage' : `${displayReadiness.top_gaps.length} gap${displayReadiness.top_gaps.length !== 1 ? 's' : ''} reducing detection capability`}</p>
                 {displayReadiness.readiness_score < 80 && (
-                  <p style={{
-                    fontSize: '0.72rem',
-                    color:
-                      displayReadiness.readiness_score < 65
-                        ? '#DC2626' : '#D97706',
-                    margin: '4px 0 0',
-                    fontWeight: 500,
-                  }}>
-                    {displayReadiness.readiness_score < 65
-                      ? 'Incidents may go undetected — immediate action required'
-                      : 'Detection and response may be delayed for critical failures'
-                    }
+                  <p className="text-xs font-medium mt-1" style={{ color: scoreColor(displayReadiness.readiness_score) }}>
+                    {displayReadiness.readiness_score < 65 ? 'Incidents may go undetected — immediate action required' : 'Detection and response may be delayed for critical failures'}
                   </p>
                 )}
               </div>
             </div>
-
-            {/* Top gap CTA */}
             {displayReadiness.top_gaps[0] && (
-              <a
-                href={displayReadiness.top_gaps[0].actionPath}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: '#7C3AED',
-                  color: '#fff',
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  textDecoration: 'none',
-                  flexShrink: 0,
-                }}
-              >
+              <a href={displayReadiness.top_gaps[0].actionPath} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold no-underline transition-colors whitespace-nowrap self-start sm:self-auto">
                 {displayReadiness.top_gaps[0].action} →
               </a>
             )}
           </div>
-
-          {/* Component cards */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(5, 1fr)',
-            gap: '12px',
-          }}>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {Object.values(displayReadiness.components).map((comp: any) => {
-              const cardSeverityStyle = (status: string) => {
-                if (status === 'risk') return {
-                  background: '#FEF2F2',
-                  border: '1px solid #FECACA',
-                  borderLeft: '3px solid #DC2626',
-                }
-                if (status === 'warning') return {
-                  background: '#FFFBEB',
-                  border: '1px solid #FDE68A',
-                  borderLeft: '3px solid #D97706',
-                }
-                return {
-                  background: '#F8FAFC',
-                  border: '1px solid #F1F5F9',
-                  borderLeft: '1px solid #F1F5F9',
-                }
-              }
+              const isRisk = comp.status === 'risk', isWarn = comp.status === 'warning'
               return (
-              <div key={comp.label} style={{
-                borderRadius: '10px',
-                padding: '14px 16px',
-                ...cardSeverityStyle(comp.status),
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '8px',
-                }}>
-                  <p style={{
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    color: '#475569',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.07em',
-                    margin: 0,
-                  }}>
-                    {comp.label}
-                  </p>
-                  {comp.status === 'good'
-                    ? <CheckCircle2 size={13} style={{ color: '#059669', flexShrink: 0 }} />
-                    : comp.status === 'warning'
-                      ? <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
-                      : <XCircle size={13} style={{ color: '#DC2626', flexShrink: 0 }} />
-                  }
+                <div key={comp.label} className={`rounded-xl p-3.5 border ${isRisk ? 'bg-red-50 border-l-[3px] border-red-600 border-t-red-100 border-r-red-100 border-b-red-100' : isWarn ? 'bg-amber-50 border-l-[3px] border-amber-500 border-t-amber-100 border-r-amber-100 border-b-amber-100' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{comp.label}</p>
+                    {comp.status === 'good' ? <CheckCircle2 size={12} className="text-green-600 shrink-0" /> : comp.status === 'warning' ? <AlertTriangle size={12} className="text-amber-500 shrink-0" /> : <XCircle size={12} className="text-red-600 shrink-0" />}
+                  </div>
+                  <div className="text-xl font-bold leading-none mb-1.5" style={{ color: scoreColor(comp.score) }}>{comp.score}%</div>
+                  <p className="text-[10px] text-slate-400 leading-snug">{comp.detail}</p>
                 </div>
-                <div style={{
-                  fontSize: '1.5rem',
-                  fontWeight: 700,
-                  color:
-                    comp.status === 'good'
-                      ? '#059669'
-                      : comp.status === 'warning'
-                        ? '#D97706'
-                        : '#DC2626',
-                  lineHeight: 1,
-                  marginBottom: '6px',
-                  letterSpacing: '-0.02em',
-                }}>
-                  {comp.score}%
-                </div>
-                <p style={{
-                  fontSize: '0.7rem',
-                  color: '#64748B',
-                  margin: 0,
-                  lineHeight: 1.4,
-                }}>
-                  {comp.detail}
-                </p>
-              </div>
               )
             })}
           </div>
         </div>
       )}
 
-      {/* 4 KPI CARDS — only in demo mode or when incidents exist */}
+      {/* KPI cards */}
       {(isDemoActive || displayStats.total > 0) && (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {[
-            {
-              label: 'Total Resolved',
-              value: displayStats.total > 0 ? displayStats.total : null,
-              empty: 'No incidents yet',
-              sub: `Last ${dateRange}`,
-              valueColor: '#0F172A',
-              hero: false,
-            },
-            {
-              label: 'Critical Resolved',
-              value: displayStats.critical > 0 ? displayStats.critical : null,
-              empty: 'No incidents yet',
-              sub: 'High severity incidents',
-              valueColor: '#0F172A',
-              hero: false,
-            },
-            {
-              label: 'Avg Resolution',
-              value: displayStats.avgResolutionTime ? `${displayStats.avgResolutionTime}m` : null,
-              empty: 'Available after first incident',
-              sub: 'Mean time to resolve',
-              valueColor: '#0F172A',
-              hero: false,
-            },
-            {
-              label: 'MTTR',
-              value: displayStats.mttr ? `${displayStats.mttr}m` : null,
-              empty: 'Available after first incident',
-              sub: isDemoActive ? 'vs 45m industry avg · Elite' : 'Mean time to recovery',
-              valueColor: '#0F172A',
-              hero: true,
-            },
-          ].map(({ label, value, empty, sub, valueColor, hero }) => (
-            <div key={label} style={{
-              background: '#fff',
-              borderRadius: '14px',
-              padding: isMobile ? '16px 14px' : '32px',
-              border: '1px solid #E2E8F0',
-              borderLeft: hero ? '3px solid #7C3AED' : '1px solid #E2E8F0',
-            }}>
-              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569',
-                textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-                {label}
-              </p>
-              {value !== null ? (
-                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor,
-                  letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
-                  {value}
-                </div>
-              ) : (
-                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#9ca3af',
-                  marginBottom: '8px', paddingTop: '6px' }}>
-                  {empty}
-                </div>
-              )}
-              <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+            { label: 'Total Resolved', value: displayStats.total || null, empty: 'No incidents yet', sub: `Last ${dateRange}`, hero: false },
+            { label: 'Critical Resolved', value: displayStats.critical || null, empty: 'No incidents yet', sub: 'High severity incidents', hero: false },
+            { label: 'Avg Resolution', value: displayStats.avgResolutionTime ? `${displayStats.avgResolutionTime}m` : null, empty: 'Available after first incident', sub: 'Mean time to resolve', hero: false },
+            { label: 'MTTR', value: displayStats.mttr ? `${displayStats.mttr}m` : null, empty: 'Available after first incident', sub: isDemoActive ? 'vs 45m industry avg · Elite' : 'Mean time to recovery', hero: true },
+          ].map(({ label, value, empty, sub, hero }) => (
+            <div key={label} className={`bg-white rounded-xl p-4 sm:p-8 border border-slate-200 ${hero ? 'border-l-[3px] border-l-violet-600' : ''}`}>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
+              {value !== null ? <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{value}</div> : <div className="text-sm font-medium text-slate-300 mb-2 pt-1.5">{empty}</div>}
+              <p className="text-xs text-slate-400 leading-relaxed">{sub}</p>
             </div>
           ))}
         </div>
       )}
 
-      {/* TOP PRIORITY ACTION */}
-      {displayReadiness && (
-        displayReadiness.components.response_config.score === 0 ||
-        displayReadiness.components.monitoring_coverage.score < 50
-      ) && (
-        <div style={{
-          background: '#FEF2F2',
-          border: '1px solid #FECACA',
-          borderLeft: '4px solid #DC2626',
-          borderRadius: '12px',
-          padding: '16px 20px',
-          marginBottom: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-        }}>
+      {/* Top priority action */}
+      {displayReadiness && (displayReadiness.components.response_config.score === 0 || displayReadiness.components.monitoring_coverage.score < 50) && (
+        <div className="bg-red-50 border border-red-100 border-l-[4px] border-l-red-600 rounded-xl px-4 sm:px-5 py-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <p style={{
-              fontSize: '0.62rem',
-              fontWeight: 700,
-              color: '#DC2626',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              margin: '0 0 4px',
-            }}>
-              Top Priority
-            </p>
-            <p style={{
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              color: '#0F172A',
-              margin: '0 0 2px',
-            }}>
-              {displayReadiness.components.response_config.score === 0
-                ? 'Configure alert destinations'
-                : 'Restore metric reporting for 2 services'
-              }
-            </p>
-            <p style={{
-              fontSize: '0.78rem',
-              color: '#DC2626',
-              margin: 0,
-            }}>
-              {displayReadiness.components.response_config.score === 0
-                ? 'Without this, your team will not be notified when incidents occur'
-                : 'Services are not sending metrics — incidents may go undetected'
-              }
-            </p>
+            <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest mb-1">Top Priority</p>
+            <p className="text-sm font-semibold text-slate-900 mb-0.5">{displayReadiness.components.response_config.score === 0 ? 'Configure alert destinations' : 'Restore metric reporting for 2 services'}</p>
+            <p className="text-xs text-red-600">{displayReadiness.components.response_config.score === 0 ? 'Without this, your team will not be notified when incidents occur' : 'Services are not sending metrics — incidents may go undetected'}</p>
           </div>
-          <a
-            href={
-              displayReadiness.components.response_config.score === 0
-                ? '/settings/notifications'
-                : '/admin/monitoring'
-            }
-            style={{
-              background: '#DC2626',
-              color: '#fff',
-              padding: '9px 18px',
-              borderRadius: '8px',
-              fontSize: '0.78rem',
-              fontWeight: 700,
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            Fix now →
-          </a>
+          <a href={displayReadiness.components.response_config.score === 0 ? '/settings/notifications' : '/admin/monitoring'} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold no-underline whitespace-nowrap self-start sm:self-auto transition-colors">Fix now →</a>
         </div>
       )}
 
-      {/* TOP GAPS */}
+      {/* Coverage gaps */}
       {displayReadiness?.top_gaps?.length > 0 && (
-        <div style={{
-          background: '#fff',
-          borderRadius: '12px',
-          border: '1px solid #E2E8F0',
-          padding: '20px 24px',
-          marginBottom: '24px',
-        }}>
-          <p style={{
-            fontSize: '0.7rem',
-            fontWeight: 700,
-            color: '#475569',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            margin: '0 0 14px',
-          }}>
-            Coverage Gaps
-          </p>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-          }}>
-            {[...displayReadiness.top_gaps]
-              .sort((a: any, b: any) => {
-                const order = { high: 0, medium: 1, low: 2 }
-                return (
-                  (order[a.severity as keyof typeof order] ?? 2) -
-                  (order[b.severity as keyof typeof order] ?? 2)
-                )
-              })
-              .map((gap: any, i: number) => (
-              <div key={i} style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                gap: '16px',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                background: gap.severity === 'high' ? '#FEF2F2' : '#FFFBEB',
-                border: `1px solid ${gap.severity === 'high' ? '#FECACA' : '#FDE68A'}`,
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '10px',
-                }}>
-                  <AlertTriangle
-                    size={14}
-                    style={{
-                      color: gap.severity === 'high' ? '#DC2626' : '#D97706',
-                      flexShrink: 0,
-                      marginTop: '1px',
-                    }}
-                  />
-                  <p style={{
-                    fontSize: '0.82rem',
-                    color: '#374151',
-                    margin: 0,
-                    lineHeight: 1.5,
-                  }}>
-                    {gap.message}
-                  </p>
+        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 mb-6">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Coverage Gaps</p>
+          <div className="flex flex-col gap-2.5">
+            {[...displayReadiness.top_gaps].sort((a: any, b: any) => ({ high: 0, medium: 1, low: 2 }[a.severity as string] ?? 2) - ({ high: 0, medium: 1, low: 2 }[b.severity as string] ?? 2)).map((gap: any, i: number) => (
+              <div key={i} className={`flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-4 py-3 rounded-xl border ${gap.severity === 'high' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-200'}`}>
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle size={13} className={`shrink-0 mt-0.5 ${gap.severity === 'high' ? 'text-red-600' : 'text-amber-500'}`} />
+                  <p className="text-xs text-slate-600 leading-relaxed">{gap.message}</p>
                 </div>
-                <a
-                  href={gap.actionPath}
-                  style={{
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    color: '#7C3AED',
-                    textDecoration: 'none',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                  }}
-                >
-                  {gap.action} →
-                </a>
+                <a href={gap.actionPath} className="text-xs font-semibold text-violet-600 no-underline whitespace-nowrap shrink-0">{gap.action} →</a>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* HISTORY TABLE */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: isMobile ? 'auto' : 'hidden' }}>
-
-        {/* Table header + filters */}
-        <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+      {/* History table */}
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+        <div className="px-4 sm:px-7 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>Alert Timeline</p>
-            <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{filteredAlerts.length} records</p>
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Alert Timeline</p>
+            <p className="text-xs text-slate-400">{filteredAlerts.length} records</p>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Date range */}
-            <div style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px' }}>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex bg-slate-50 rounded-lg p-0.5 gap-0.5">
               {(['24h', '7d', '30d', '90d'] as LocalDateRange[]).map(r => (
-                <button key={r} onClick={() => setDateRange(r)}
-                  style={{ padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, border: 'none', cursor: 'pointer',
-                    background: dateRange === r ? '#fff' : 'transparent',
-                    color: dateRange === r ? '#0F172A' : '#64748B',
-                    boxShadow: dateRange === r ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  }}>{r}</button>
+                <button key={r} onClick={() => setDateRange(r)} className={`px-3 py-1.5 rounded-md border-none text-xs font-semibold cursor-pointer transition-all ${dateRange === r ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>{r}</button>
               ))}
             </div>
-            {/* Search */}
-            <input
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search history..."
-              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.82rem', color: '#0F172A', outline: 'none', width: '160px' }}
-            />
-            {/* Severity filter */}
-            <div style={{ display: 'flex', background: '#F8FAFC', borderRadius: '8px', padding: '4px', gap: '2px' }}>
+            <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search history..."
+              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-900 outline-none focus:border-violet-500 transition-colors w-36" />
+            <div className="flex bg-slate-50 rounded-lg p-0.5 gap-0.5">
               {['all', 'critical', 'warning'].map(s => (
-                <button key={s} onClick={() => setSelectedSeverity(s)}
-                  style={{ padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, border: 'none', cursor: 'pointer', textTransform: 'capitalize',
-                    background: selectedSeverity === s ? '#fff' : 'transparent',
-                    color: selectedSeverity === s ? '#0F172A' : '#64748B',
-                    boxShadow: selectedSeverity === s ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  }}>{s === 'all' ? 'All' : s}</button>
+                <button key={s} onClick={() => setSelectedSeverity(s)} className={`px-2.5 py-1.5 rounded-md border-none text-xs font-semibold cursor-pointer capitalize transition-all ${selectedSeverity === s ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>{s === 'all' ? 'All' : s}</button>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 140px 120px 100px 120px 150px 150px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
-          {['Alert', 'Service', 'Severity', 'Cost Impact', 'Duration', 'Started', 'Resolved'].map(col => (
-            <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
-          ))}
-        </div>
-
-        {/* Rows */}
-        {isLoading && !isDemoActive ? (
-          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
-            <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
-            <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading alert history...</p>
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
+          <div className="grid px-7 py-2.5 bg-slate-50 border-b border-slate-50 min-w-[780px]" style={{ gridTemplateColumns: '2fr 130px 110px 100px 90px 140px 140px' }}>
+            {['Alert', 'Service', 'Severity', 'Cost Impact', 'Duration', 'Started', 'Resolved'].map(col => (
+              <span key={col} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{col}</span>
+            ))}
           </div>
-        ) : filteredAlerts.length === 0 ? (
-          <div style={{ padding: isMobile ? '16px 14px' : '64px 40px', textAlign: 'center' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px',
-              background: '#F5F3FF', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', margin: '0 auto 16px' }}>
-              <Shield size={22} style={{ color: '#7C3AED' }} />
-            </div>
-            <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 8px' }}>
-              No incidents recorded yet
-            </p>
-            <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '0 0 6px', lineHeight: 1.7 }}>
-              When alerts are triggered, this timeline will show what happened,<br />
-              which service was affected, how long it lasted, and how quickly it was resolved.
-            </p>
-            <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: '0 0 24px' }}>
-              Use this to audit reliability and improve engineering response times.
-            </p>
-            <a href="/observability/alerts" style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              background: '#7C3AED', color: '#fff', padding: '9px 20px',
-              borderRadius: '8px', fontSize: '0.82rem', fontWeight: 600,
-              textDecoration: 'none',
-            }}>
-              Configure Alerts →
-            </a>
-          </div>
-        ) : (
-          filteredAlerts.map((alert: Alert, idx: number) => {
-            const severityColor = alert.severity === 'critical' ? '#DC2626' : '#D97706'
-            const severityBg    = alert.severity === 'critical' ? '#FEF2F2' : '#FFFBEB'
-            const duration      = alert.durationMinutes ? `${alert.durationMinutes}m` : '—'
-
+          {isLoading && !isDemoActive ? (
+            <div className="p-12 text-center"><RefreshCw size={18} className="text-slate-300 mx-auto mb-3" /><p className="text-sm text-slate-400">Loading alert history...</p></div>
+          ) : filteredAlerts.length === 0 ? (
+            <EmptyHistory />
+          ) : filteredAlerts.map((alert: Alert, idx: number) => {
+            const sevCls = alert.severity === 'critical' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
+            const cost = (alert as any).costImpact
             return (
-              <div key={alert.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '2fr 140px 120px 100px 120px 150px 150px',
-                  padding: '14px 28px',
-                  borderBottom: idx < filteredAlerts.length - 1 ? '1px solid #F8FAFC' : 'none',
-                  alignItems: 'center',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#F8FAFC' }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-              >
-                {/* Alert name */}
+              <div key={alert.id} className={`grid px-7 py-3.5 items-center hover:bg-slate-50 transition-colors min-w-[780px] ${idx < filteredAlerts.length - 1 ? 'border-b border-slate-50' : ''}`} style={{ gridTemplateColumns: '2fr 130px 110px 100px 90px 140px 140px' }}>
                 <div>
-                  <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 2px' }}>{alert.alertName}</p>
-                  <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }}>{alert.description}</p>
+                  <p className="text-sm font-semibold text-slate-900 mb-0.5">{alert.alertName}</p>
+                  <p className="text-[11px] text-slate-400 truncate max-w-xs">{alert.description}</p>
                 </div>
-
-                {/* Service */}
-                <span style={{ fontSize: '0.78rem', color: '#475569', fontFamily: 'monospace' }}>{alert.serviceName || '—'}</span>
-
-                {/* Severity */}
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '100px', background: severityBg, color: severityColor, width: 'fit-content', textTransform: 'capitalize' }}>
-                  {alert.severity}
-                </span>
-
-                {/* Cost Impact */}
-                <span style={{ fontSize: '0.78rem', fontWeight: 600,
-                  color: (alert as any).costImpact && (alert as any).costImpact !== '$0' ? '#DC2626' : '#9ca3af' }}>
-                  {isDemoActive ? ((alert as any).costImpact ?? '—') : '—'}
-                </span>
-
-                {/* Duration */}
-                <span style={{ fontSize: '0.78rem', color: '#475569' }}>{duration}</span>
-
-                {/* Started */}
-                <span style={{ fontSize: '0.75rem', color: '#64748B' }}>{formatTime(alert.startedAt)}</span>
-
-                {/* Resolved */}
-                <span style={{ fontSize: '0.75rem', color: '#475569', fontWeight: 500 }}>
-                  {alert.resolvedAt ? formatTime(alert.resolvedAt) : '—'}
-                </span>
+                <span className="text-xs text-slate-500 font-mono">{alert.serviceName || '—'}</span>
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full w-fit capitalize ${sevCls}`}>{alert.severity}</span>
+                <span className={`text-xs font-semibold ${isDemoActive && cost && cost !== '$0' ? 'text-red-600' : 'text-slate-300'}`}>{isDemoActive ? (cost ?? '—') : '—'}</span>
+                <span className="text-xs text-slate-400">{alert.durationMinutes ? `${alert.durationMinutes}m` : '—'}</span>
+                <span className="text-xs text-slate-400">{formatTime(alert.startedAt)}</span>
+                <span className="text-xs text-slate-500 font-medium">{alert.resolvedAt ? formatTime(alert.resolvedAt) : '—'}</span>
               </div>
             )
-          })
-        )}
-      </div>
+          })}
+        </div>
 
+        {/* Mobile cards */}
+        <div className="sm:hidden flex flex-col divide-y divide-slate-50">
+          {filteredAlerts.length === 0 ? <EmptyHistory /> : filteredAlerts.map((alert: Alert) => {
+            const sevCls = alert.severity === 'critical' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
+            const cost = (alert as any).costImpact
+            return (
+              <div key={alert.id} className="px-4 py-4">
+                <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <p className="text-sm font-semibold text-slate-900 leading-snug flex-1">{alert.alertName}</p>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize shrink-0 ${sevCls}`}>{alert.severity}</span>
+                </div>
+                <p className="text-xs text-slate-400 mb-1.5 line-clamp-2">{alert.description}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400 font-mono">{alert.serviceName}</span>
+                  <div className="flex gap-3 text-[11px] text-slate-400">
+                    {alert.durationMinutes && <span>{alert.durationMinutes}m</span>}
+                    {isDemoActive && cost && cost !== '$0' && <span className="text-red-600 font-semibold">{cost}</span>}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EmptyHistory() {
+  return (
+    <div className="p-10 sm:p-16 text-center">
+      <div className="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-4"><Shield size={20} className="text-violet-600" /></div>
+      <p className="text-base font-semibold text-slate-900 mb-2">No incidents recorded yet</p>
+      <p className="text-sm text-slate-400 leading-relaxed mb-1 max-w-sm mx-auto">When alerts are triggered, this timeline will show what happened, which service was affected, how long it lasted, and how quickly it was resolved.</p>
+      <p className="text-xs text-slate-300 mb-6">Use this to audit reliability and improve engineering response times.</p>
+      <a href="/observability/alerts" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-xs font-semibold no-underline transition-colors">Configure Alerts →</a>
     </div>
   )
 }
