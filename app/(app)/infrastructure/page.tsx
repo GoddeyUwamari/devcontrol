@@ -575,7 +575,7 @@ function InfrastructureContent() {
 
   return (
     <div style={{
-      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
+      padding: 'clamp(16px, 4vw, 56px) clamp(16px, 4vw, 56px) 64px',
       maxWidth: '1320px',
       margin: '0 auto',
       minHeight: '100vh',
