@@ -139,12 +139,12 @@ export default function ForecastPage() {
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1">Cost Forecasting</h1>
           <p className="text-sm text-slate-500 leading-relaxed">AI-powered predictions and scenario planning for your AWS costs</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-slate-400">Updated {new Date(forecast.generatedAt).toLocaleString()}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">Updated {new Date(forecast.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
           <button onClick={() => setActiveTab('scenarios')} className="bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:border-slate-300 transition-colors whitespace-nowrap">
             ⚡ What-if scenarios
           </button>
-          <Button variant="outline" size="sm" onClick={loadForecast}><RefreshCw className="w-4 h-4" /></Button>
+          <button onClick={loadForecast} className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors flex items-center justify-center shrink-0"><RefreshCw className="w-4 h-4 text-slate-500" /></button>
         </div>
       </div>
 
