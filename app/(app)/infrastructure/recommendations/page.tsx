@@ -126,7 +126,7 @@ const DEMO_STATS = {
 
 function StatsSkeleton() {
   return (
-    <div className="grid gap-4 md:grid-cols-4">
+    <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
       {[...Array(4)].map((_, i) => (
         <Card key={i}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -345,7 +345,7 @@ export default function RecommendationsPage() {
 
   return (
     <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Cost Optimization</h1>
           <p className="text-muted-foreground mt-2">
@@ -367,7 +367,7 @@ export default function RecommendationsPage() {
       {showStatsLoading ? (
         <StatsSkeleton />
       ) : (
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Savings</CardTitle>
