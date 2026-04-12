@@ -1,25 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-
-function useWindowWidth() {
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    const update = () => setWidth(window.innerWidth)
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
-  return width
-}
+import { useState } from 'react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
-import {
-  CheckCircle2, AlertTriangle, XCircle, Sparkles,
-  ArrowRight, Globe, Zap, Server, Database,
-  Cloud, Shield, Activity, Clock, TrendingUp,
-  ChevronDown, ChevronUp
-} from 'lucide-react'
+import { CheckCircle2, AlertTriangle, XCircle, Sparkles, ArrowRight, Globe, Zap, Server, Database, Cloud, Shield, Activity, Clock, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react'
 
 type ServiceStatus = 'operational' | 'degraded' | 'outage' | 'maintenance'
 
@@ -33,45 +17,9 @@ const services = [
 ]
 
 const incidents = [
-  {
-    id: 1,
-    title: 'Elevated API Latency',
-    severity: 'minor',
-    status: 'resolved',
-    date: 'Mar 14, 2026',
-    duration: '15 minutes',
-    affected: ['API Gateway'],
-    updates: [
-      { time: '03:45 AM EDT', message: 'Investigation identified elevated p95 latency on API Gateway due to upstream cache miss. Fix deployed.' },
-      { time: '03:30 AM EDT', message: 'We are investigating reports of elevated API response times. All other services remain unaffected.' },
-    ],
-  },
-  {
-    id: 2,
-    title: 'Dashboard Slow Loading',
-    severity: 'minor',
-    status: 'resolved',
-    date: 'Mar 9, 2026',
-    duration: '8 minutes',
-    affected: ['Web Application'],
-    updates: [
-      { time: '11:08 AM EDT', message: 'Root cause identified as CDN cache invalidation. Resolved and monitoring.' },
-      { time: '11:00 AM EDT', message: 'Some users experiencing slow dashboard load times. Engineering investigating.' },
-    ],
-  },
-  {
-    id: 3,
-    title: 'Scheduled Maintenance — Database Upgrade',
-    severity: 'maintenance',
-    status: 'resolved',
-    date: 'Mar 4, 2026',
-    duration: '30 minutes',
-    affected: ['API Gateway', 'Web Application', 'Data Pipeline'],
-    updates: [
-      { time: '02:30 AM EDT', message: 'Maintenance completed successfully. All services operational and performing within normal parameters.' },
-      { time: '02:00 AM EDT', message: 'Scheduled maintenance window begins. PostgreSQL version upgrade in progress.' },
-    ],
-  },
+  { id: 1, title: 'Elevated API Latency', severity: 'minor', status: 'resolved', date: 'Mar 14, 2026', duration: '15 minutes', affected: ['API Gateway'], updates: [{ time: '03:45 AM EDT', message: 'Investigation identified elevated p95 latency on API Gateway due to upstream cache miss. Fix deployed.' }, { time: '03:30 AM EDT', message: 'We are investigating reports of elevated API response times. All other services remain unaffected.' }] },
+  { id: 2, title: 'Dashboard Slow Loading', severity: 'minor', status: 'resolved', date: 'Mar 9, 2026', duration: '8 minutes', affected: ['Web Application'], updates: [{ time: '11:08 AM EDT', message: 'Root cause identified as CDN cache invalidation. Resolved and monitoring.' }, { time: '11:00 AM EDT', message: 'Some users experiencing slow dashboard load times. Engineering investigating.' }] },
+  { id: 3, title: 'Scheduled Maintenance — Database Upgrade', severity: 'maintenance', status: 'resolved', date: 'Mar 4, 2026', duration: '30 minutes', affected: ['API Gateway', 'Web Application', 'Data Pipeline'], updates: [{ time: '02:30 AM EDT', message: 'Maintenance completed successfully. All services operational and performing within normal parameters.' }, { time: '02:00 AM EDT', message: 'Scheduled maintenance window begins. PostgreSQL version upgrade in progress.' }] },
 ]
 
 const regions = [
@@ -91,182 +39,121 @@ const uptimeHistory = [
   { day: 'Sun', value: 100   },
 ]
 
+const statusConfig = {
+  operational: { label: 'Operational', color: '#059669', bg: '#F0FDF4', border: '#BBF7D0' },
+  degraded:    { label: 'Degraded',    color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
+  outage:      { label: 'Outage',      color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
+  maintenance: { label: 'Maintenance', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' },
+}
+
 export default function StatusPage() {
-  const width = useWindowWidth()
-  const isMobile = width > 0 && width < 640
-  const isTablet = width >= 640 && width < 1024
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
-  const isDemoActive = demoMode || salesDemoMode
   const [expandedIncidents, setExpandedIncidents] = useState<number[]>([])
 
-  const overallStatus: ServiceStatus = services.every(s => s.status === 'operational')
-    ? 'operational'
-    : services.some(s => s.status === 'outage')
-      ? 'outage'
-      : 'degraded'
+  const overallStatus: ServiceStatus = services.every(s => s.status === 'operational') ? 'operational' : services.some(s => s.status === 'outage') ? 'outage' : 'degraded'
+  const toggleIncident = (id: number) => setExpandedIncidents(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])
 
-  const toggleIncident = (id: number) => {
-    setExpandedIncidents(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    )
-  }
-
-  const statusConfig = {
-    operational: { label: 'Operational', color: '#059669', bg: '#F0FDF4', border: '#BBF7D0' },
-    degraded:    { label: 'Degraded',    color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
-    outage:      { label: 'Outage',      color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
-    maintenance: { label: 'Maintenance', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' },
-  }
+  const heroBg = overallStatus === 'operational' ? 'bg-green-50 border-green-200' : overallStatus === 'degraded' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+  const heroIconBg = overallStatus === 'operational' ? 'bg-green-100' : overallStatus === 'degraded' ? 'bg-amber-100' : 'bg-red-100'
+  const heroTitleColor = overallStatus === 'operational' ? 'text-green-600' : overallStatus === 'degraded' ? 'text-amber-500' : 'text-red-600'
 
   return (
-    <div style={{
-      padding: isMobile ? '24px 16px' : isTablet ? '40px 24px' : '40px 56px 64px',
-      maxWidth: '1320px',
-      margin: '0 auto',
-      minHeight: '100vh',
-      background: '#F9FAFB',
-      fontFamily: 'Inter, system-ui, sans-serif',
-    }}>
+    <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
 
-      {/* PAGE HEADER */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+      {/* Page header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
-            Observability
-          </p>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Status Intelligence
-          </h1>
-          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Real-time health, uptime, and performance across your monitored services and regions
-          </p>
+          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1.5">Observability</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Status Intelligence</h1>
+          <p className="text-sm text-slate-500 leading-relaxed">Real-time health, uptime, and performance across your monitored services and regions</p>
         </div>
-        <a href="/monitoring" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7C3AED', color: '#fff', padding: '10px 20px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
-          <Activity size={15} /> Monitoring Overview
+        <a href="/monitoring" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors whitespace-nowrap self-start">
+          <Activity size={14} /> Monitoring Overview
         </a>
       </div>
 
-      {/* HERO STATUS BANNER */}
-      <div style={{
-        background: overallStatus === 'operational' ? '#F0FDF4' : overallStatus === 'degraded' ? '#FFFBEB' : '#FEF2F2',
-        border: `1px solid ${overallStatus === 'operational' ? '#BBF7D0' : overallStatus === 'degraded' ? '#FDE68A' : '#FECACA'}`,
-        borderRadius: '16px',
-        padding: '32px 40px',
-        marginBottom: '28px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '20px',
-      }}>
-        <div style={{
-          width: '56px', height: '56px', borderRadius: '50%',
-          background: overallStatus === 'operational' ? '#DCFCE7' : overallStatus === 'degraded' ? '#FEF3C7' : '#FEE2E2',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          {overallStatus === 'operational'
-            ? <CheckCircle2 size={28} style={{ color: '#059669' }} />
-            : overallStatus === 'degraded'
-              ? <AlertTriangle size={28} style={{ color: '#D97706' }} />
-              : <XCircle size={28} style={{ color: '#DC2626' }} />
-          }
+      {/* Hero status banner */}
+      <div className={`rounded-2xl border p-6 sm:p-8 mb-7 flex items-center gap-4 sm:gap-5 ${heroBg}`}>
+        <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center shrink-0 ${heroIconBg}`}>
+          {overallStatus === 'operational' ? <CheckCircle2 size={26} className="text-green-600" /> : overallStatus === 'degraded' ? <AlertTriangle size={26} className="text-amber-500" /> : <XCircle size={26} className="text-red-600" />}
         </div>
         <div>
-          <h2 style={{
-            fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.02em', margin: '0 0 4px',
-            color: overallStatus === 'operational' ? '#059669' : overallStatus === 'degraded' ? '#D97706' : '#DC2626',
-          }}>
+          <h2 className={`text-xl sm:text-2xl font-bold tracking-tight mb-1 ${heroTitleColor}`}>
             {overallStatus === 'operational' ? 'System Healthy — No Action Required' : overallStatus === 'degraded' ? 'Partial Service Degradation' : 'Service Disruption Detected'}
           </h2>
-          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0 }}>
+          <p className="text-sm text-slate-500">
             {overallStatus === 'operational'
               ? `System risk: NONE · all services within SLA · last updated: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}`
               : overallStatus === 'degraded'
                 ? `System risk: ELEVATED · service degradation detected · last updated: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}`
-                : `System risk: CRITICAL · active outage detected · last updated: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}`
-            }
+                : `System risk: CRITICAL · active outage detected · last updated: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}`}
           </p>
         </div>
       </div>
 
-      {/* DECISION INTELLIGENCE */}
-      <div style={{ background: '#fff', borderRadius: '12px', padding: '14px 20px', border: '1px solid #E2E8F0', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-        <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Sparkles size={12} style={{ color: '#fff' }} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Decision Intelligence</p>
-          <p style={{ fontSize: '0.84rem', color: '#1E293B', margin: 0, lineHeight: 1.7 }}>
+      {/* Decision Intelligence */}
+      <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-5 py-4 mb-6 flex items-start gap-3.5">
+        <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={12} className="text-white" /></div>
+        <div className="flex-1">
+          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
+          <p className="text-sm text-slate-700 leading-relaxed">
             {overallStatus === 'operational'
-              ? <><strong style={{ color: '#059669' }}>All systems operating within SLA.</strong> Uptime stable at 99.98% — Elite tier (last 30 days). 3 minor incidents resolved · avg resolution 18 minutes. No performance degradation across regions · no cost anomalies linked to incidents.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>No action required — system is healthy.</span></>
+              ? <><strong className="text-green-600">All systems operating within SLA.</strong> Uptime stable at 99.98% — Elite tier (last 30 days). 3 minor incidents resolved · avg resolution 18 minutes. No performance degradation across regions · no cost anomalies linked to incidents.<span className="block mt-1 text-xs text-green-600 font-semibold">No action required — system is healthy.</span></>
               : overallStatus === 'degraded'
-                ? <><strong style={{ color: '#D97706' }}>Partial service degradation detected.</strong> One or more services are operating below threshold. Review highlighted services and check recent deployments for root cause.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#D97706', fontWeight: 600 }}>Action required — investigate degraded services.</span></>
-                : <><strong style={{ color: '#DC2626' }}>Service disruption detected.</strong> One or more services are experiencing an outage. Escalate immediately and review incident timeline for impact scope.<span style={{ display: 'block', marginTop: '5px', fontSize: '0.78rem', color: '#DC2626', fontWeight: 600 }}>Critical — escalate now.</span></>
-            }
+                ? <><strong className="text-amber-500">Partial service degradation detected.</strong> Review highlighted services and check recent deployments for root cause.<span className="block mt-1 text-xs text-amber-500 font-semibold">Action required — investigate degraded services.</span></>
+                : <><strong className="text-red-600">Service disruption detected.</strong> Escalate immediately and review incident timeline for impact scope.<span className="block mt-1 text-xs text-red-600 font-semibold">Critical — escalate now.</span></>}
           </p>
         </div>
-        <a href="/monitoring/slos" style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-          View SLOs <ArrowRight size={11} />
-        </a>
+        <a href="/monitoring/slos" className="text-[11px] font-bold text-violet-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">View SLOs <ArrowRight size={10} /></a>
       </div>
 
-      {/* 4 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : isTablet ? 'repeat(2,1fr)' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
         {[
-          { label: 'Platform Uptime',   value: '99.98%', sub: 'Last 30 days',            valueColor: '#059669', hero: true  },
-          { label: 'Avg Response Time', value: '45ms',   sub: 'Across all endpoints',    valueColor: '#0F172A', hero: false },
-          { label: 'Incidents (30d)',   value: '3',      sub: 'All resolved · 0 active', valueColor: '#0F172A', hero: false },
-          { label: 'Global Regions',    value: '4',      sub: 'All regions operational', valueColor: '#0F172A', hero: false },
-        ].map(({ label, value, sub, valueColor, hero }) => (
-          <div key={label} style={{
-            background: '#fff',
-            borderRadius: '14px',
-            padding: isMobile ? '16px 14px' : '32px',
-            border: '1px solid #E2E8F0',
-            borderLeft: hero ? '2px solid #534AB7' : '1px solid #E2E8F0',
-          }}>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B',
-              textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 14px' }}>{label}</p>
-            <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor,
-              letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{value}</div>
-            <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{sub}</p>
+          { label: 'Platform Uptime',   value: '99.98%', sub: 'Last 30 days',            color: 'text-green-600', hero: true  },
+          { label: 'Avg Response Time', value: '45ms',   sub: 'Across all endpoints',    color: 'text-slate-900', hero: false },
+          { label: 'Incidents (30d)',   value: '3',      sub: 'All resolved · 0 active', color: 'text-slate-900', hero: false },
+          { label: 'Global Regions',    value: '4',      sub: 'All regions operational', color: 'text-slate-900', hero: false },
+        ].map(({ label, value, sub, color, hero }) => (
+          <div key={label} className={`bg-white rounded-xl p-4 sm:p-8 border border-slate-200 ${hero ? 'border-l-[2px] border-l-violet-600' : ''}`}>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
+            <div className={`text-2xl sm:text-3xl font-bold tracking-tight leading-none mb-2 ${color}`}>{value}</div>
+            <p className="text-xs text-slate-400 leading-relaxed">{sub}</p>
           </div>
         ))}
       </div>
 
-      {/* SERVICE STATUS */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', marginBottom: '24px' }}>
-        <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 2px' }}>Service Status</p>
-          <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{services.filter(s => s.status === 'operational').length}/{services.length} services operational</p>
+      {/* Service status */}
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden mb-6">
+        <div className="px-5 sm:px-7 py-4 border-b border-slate-100">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Service Status</p>
+          <p className="text-xs text-slate-300">{services.filter(s => s.status === 'operational').length}/{services.length} services operational</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(3, 1fr)', gap: '1px', background: '#F1F5F9' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" style={{ gap: '1px', background: '#F1F5F9' }}>
           {services.map((service) => {
             const cfg = statusConfig[service.status]
             const Icon = service.icon
             return (
-              <div key={service.name} style={{ background: '#fff', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon size={15} style={{ color: '#475569' }} />
-                    </div>
+              <div key={service.name} className="bg-white p-5 sm:p-7 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0"><Icon size={14} className="text-slate-400" /></div>
                     <div>
-                      <p style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>{service.name}</p>
-                      <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: 0 }}>{service.description}</p>
+                      <p className="text-sm font-bold text-slate-900">{service.name}</p>
+                      <p className="text-[10px] text-slate-400">{service.description}</p>
                     </div>
                   </div>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '100px', background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
-                    {cfg.label}
-                  </span>
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border shrink-0 ml-2" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>{cfg.label}</span>
                 </div>
-                <div style={{ display: 'flex', gap: '24px' }}>
+                <div className="flex gap-6">
                   <div>
-                    <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px' }}>Uptime</p>
-                    <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#059669', margin: 0 }}>{service.uptime}</p>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Uptime</p>
+                    <p className="text-sm font-bold text-green-600">{service.uptime}</p>
                   </div>
                   <div>
-                    <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px' }}>Response</p>
-                    <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>{service.responseTime}</p>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Response</p>
+                    <p className="text-sm font-bold text-slate-900">{service.responseTime}</p>
                   </div>
                 </div>
               </div>
@@ -275,116 +162,89 @@ export default function StatusPage() {
         </div>
       </div>
 
-      {/* 7-DAY UPTIME HISTORY */}
-      <div style={{ background: '#fff', borderRadius: '16px', padding: '28px 32px', border: '1px solid #F1F5F9', marginBottom: '24px' }}>
-        <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px' }}>7-Day Uptime History</p>
-        <p style={{ fontSize: '0.875rem', color: '#0F172A', fontWeight: 600, margin: '0 0 24px' }}>No downtime in the last 7 days · 100% availability across all monitored services</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
+      {/* 7-day uptime history */}
+      <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100 mb-6">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">7-Day Uptime History</p>
+        <p className="text-sm font-semibold text-slate-900 mb-6">No downtime in the last 7 days · 100% availability across all monitored services</p>
+        <div className="grid grid-cols-7 gap-2">
           {uptimeHistory.map(({ day, value }) => (
-            <div key={day} style={{ textAlign: 'center' }}>
-              <div style={{
-                height: '48px', borderRadius: '6px', marginBottom: '8px',
-                background: value === 100 ? '#059669' : value >= 99.9 ? '#34D399' : value >= 99 ? '#FDE68A' : '#FCA5A5',
-                opacity: 0.85,
-              }} />
-              <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{day}</p>
-              <p style={{ fontSize: '0.82rem', fontWeight: 700, color: value === 100 ? '#059669' : value >= 99.9 ? '#059669' : '#D97706', margin: 0 }}>{value === 100 ? '100%' : `${value}%`}</p>
+            <div key={day} className="text-center">
+              <div className="h-10 sm:h-12 rounded-md mb-2" style={{ background: value === 100 ? '#059669' : value >= 99.9 ? '#34D399' : value >= 99 ? '#FDE68A' : '#FCA5A5', opacity: 0.85 }} />
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">{day}</p>
+              <p className={`text-xs font-bold ${value >= 99.9 ? 'text-green-600' : 'text-amber-500'}`}>{value === 100 ? '100%' : `${value}%`}</p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* REGIONAL STATUS */}
-      <div style={{ background: '#fff', borderRadius: '16px', padding: '28px 32px', border: '1px solid #F1F5F9', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-          <Globe size={16} style={{ color: '#475569' }} />
+      {/* Regional status */}
+      <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100 mb-6">
+        <div className="flex items-center gap-2.5 mb-5">
+          <Globe size={15} className="text-slate-400" />
           <div>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 2px' }}>Regional Status</p>
-            <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>All regions operational · No latency anomalies detected</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Regional Status</p>
+            <p className="text-sm font-semibold text-slate-900">All regions operational · No latency anomalies detected</p>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {regions.map((region) => {
             const cfg = statusConfig[region.status]
             return (
-              <div key={region.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #F1F5F9' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <CheckCircle2 size={16} style={{ color: '#059669' }} />
+              <div key={region.name} className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 size={15} className="text-green-600 shrink-0" />
                   <div>
-                    <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0 }}>{region.name}</p>
-                    <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: 0 }}>Latency: {region.latency}</p>
+                    <p className="text-sm font-semibold text-slate-900">{region.name}</p>
+                    <p className="text-[10px] text-slate-400">Latency: {region.latency}</p>
                   </div>
                 </div>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '100px', background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
-                  {cfg.label}
-                </span>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>{cfg.label}</span>
               </div>
             )
           })}
         </div>
       </div>
 
-      {/* INCIDENT HISTORY */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
-        <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 2px' }}>Incident History</p>
-          <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{incidents.filter(i => i.status === 'resolved').length} incidents in the last 30 days — all minor, no customer impact</p>
+      {/* Incident history */}
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+        <div className="px-5 sm:px-7 py-4 border-b border-slate-100">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Incident History</p>
+          <p className="text-xs text-slate-300">{incidents.filter(i => i.status === 'resolved').length} incidents in the last 30 days — all minor, no customer impact</p>
         </div>
         {incidents.map((incident, idx) => {
           const isExpanded = expandedIncidents.includes(incident.id)
           const severityColor = incident.severity === 'maintenance' ? '#7C3AED' : incident.severity === 'major' ? '#DC2626' : '#D97706'
           const severityBg    = incident.severity === 'maintenance' ? '#F5F3FF' : incident.severity === 'major' ? '#FEF2F2' : '#FFFBEB'
           return (
-            <div key={incident.id} style={{ borderBottom: idx < incidents.length - 1 ? '1px solid #F8FAFC' : 'none' }}>
-              <div
-                onClick={() => toggleIncident(incident.id)}
-                style={{ padding: '18px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', transition: 'background 0.1s' }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#F8FAFC' }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <p style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>{incident.title}</p>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: severityBg, color: severityColor, textTransform: 'capitalize' }}>
-                        {incident.severity}
-                      </span>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: '#F0FDF4', color: '#059669' }}>
-                        resolved
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: '16px' }}>
-                      <span style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Clock size={11} /> {incident.date}
-                      </span>
-                      <span style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <TrendingUp size={11} /> {incident.duration}
-                      </span>
-                      <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
-                        Affected: {incident.affected.join(', ')}
-                      </span>
-                    </div>
+            <div key={incident.id} className={idx < incidents.length - 1 ? 'border-b border-slate-50' : ''}>
+              <div onClick={() => toggleIncident(incident.id)}
+                className="px-5 sm:px-7 py-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                    <p className="text-sm font-bold text-slate-900">{incident.title}</p>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ background: severityBg, color: severityColor }}>{incident.severity}</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-600">resolved</span>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={10} /> {incident.date}</span>
+                    <span className="text-xs text-slate-400 flex items-center gap-1"><TrendingUp size={10} /> {incident.duration}</span>
+                    <span className="text-xs text-slate-400">Affected: {incident.affected.join(', ')}</span>
                   </div>
                 </div>
-                {isExpanded
-                  ? <ChevronUp size={16} style={{ color: '#94A3B8', flexShrink: 0 }} />
-                  : <ChevronDown size={16} style={{ color: '#94A3B8', flexShrink: 0 }} />
-                }
+                {isExpanded ? <ChevronUp size={15} className="text-slate-300 shrink-0 ml-3" /> : <ChevronDown size={15} className="text-slate-300 shrink-0 ml-3" />}
               </div>
               {isExpanded && (
-                <div style={{ padding: '0 28px 20px', borderTop: '1px solid #F8FAFC' }}>
-                  <div style={{ paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="px-5 sm:px-7 pb-5 border-t border-slate-50 pt-4">
+                  <div className="flex flex-col gap-3">
                     {incident.updates.map((update, i) => (
-                      <div key={i} style={{ display: 'flex', gap: '14px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: i === 0 ? '#059669' : '#CBD5E1', marginTop: '4px' }} />
-                          {i < incident.updates.length - 1 && (
-                            <div style={{ width: '1px', flex: 1, background: '#E2E8F0', marginTop: '4px' }} />
-                          )}
+                      <div key={i} className="flex gap-3.5">
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className={`w-2 h-2 rounded-full mt-1 ${i === 0 ? 'bg-green-500' : 'bg-slate-200'}`} />
+                          {i < incident.updates.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
                         </div>
-                        <div style={{ paddingBottom: i < incident.updates.length - 1 ? '12px' : '0' }}>
-                          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', margin: '0 0 4px' }}>{update.time}</p>
-                          <p style={{ fontSize: '0.875rem', color: '#1E293B', margin: 0, lineHeight: 1.6 }}>{update.message}</p>
+                        <div className={i < incident.updates.length - 1 ? 'pb-3' : ''}>
+                          <p className="text-xs font-semibold text-slate-400 mb-1">{update.time}</p>
+                          <p className="text-sm text-slate-700 leading-relaxed">{update.message}</p>
                         </div>
                       </div>
                     ))}
@@ -395,7 +255,6 @@ export default function StatusPage() {
           )
         })}
       </div>
-
     </div>
   )
 }
