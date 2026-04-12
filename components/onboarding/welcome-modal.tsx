@@ -60,7 +60,7 @@ export function WelcomeModal() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="w-full sm:max-w-2xl">
+       <DialogContent className="w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pt-4">
   <DialogTitle className="text-lg sm:text-2xl">Let's find your AWS cost waste 👋</DialogTitle>
 </DialogHeader>
