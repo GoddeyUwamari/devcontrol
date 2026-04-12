@@ -13,22 +13,11 @@ import { DemoBanner } from '@/components/demo/DemoBanner';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 
-/**
- * App Layout - Authenticated Users Only
- *
- * TODO: Add authentication check - redirect non-authenticated users to /login
- * Example (use server component or middleware):
- *   const session = await getServerSession();
- *   if (!session) {
- *     redirect('/login');
- *   }
- */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const fetchStatus = useOnboardingStore((state) => state.fetchStatus);
   const breadcrumbs = useBreadcrumbs();
   const isDemoActive = useDemoMode();
 
-  // Fetch onboarding status on mount — skip in demo mode (no auth token)
   useEffect(() => {
     if (!isDemoActive) {
       fetchStatus();
@@ -37,49 +26,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Skip to Content - Accessibility */}
       <a href="#main-content" className="skip-to-content">
         Skip to main content
       </a>
 
-      {/* Demo Mode Banner — appears above everything when demo is active */}
       <DemoBanner />
 
-      {/* Sticky Header Container - Includes nav and breadcrumbs */}
+      {/* Sticky Header */}
       <div className="sticky top-0 z-50 bg-white dark:bg-gray-950 shadow-sm">
-        {/* Top Navigation - Shows on all authenticated pages */}
         <header role="banner">
           <TopNav />
         </header>
 
-        {/* Breadcrumb Navigation */}
         {breadcrumbs.length > 0 && (
-          <nav
-            aria-label="Breadcrumb"
-            className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
-          >
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
+          <div className="border-b border-gray-200 dark:border-gray-800">
+            <div className="px-4 sm:px-6 lg:px-8 py-2">
               <Breadcrumb items={breadcrumbs} />
             </div>
-          </nav>
+          </div>
         )}
       </div>
 
-      {/* Main Content Area */}
       <main id="main-content" role="main" tabIndex={-1}>
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
 
-      {/* Command Palette (Cmd+K) */}
       <CommandPalette />
-
-      {/* WebSocket Connection Indicator */}
       <ConnectionIndicator />
-
-      {/* Welcome Modal (Auto-opens on first login) */}
       <WelcomeModal />
-
-      {/* AI Chat Widget */}
       <AIChatWidget />
     </div>
   );

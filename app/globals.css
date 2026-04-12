@@ -579,10 +579,13 @@ html {
 @media (pointer: coarse) {
   button,
   [role="button"],
-  a,
   input,
   select,
   textarea {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  a:not(.breadcrumb-link) {
     min-height: 44px;
     min-width: 44px;
   }
