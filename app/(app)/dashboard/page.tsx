@@ -386,7 +386,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-10">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-snug mb-2">
-            AWS Cost & Risk Intelligence
+            Your AWS, Optimized — Cost, Risk & Savings Intelligence
           </h1>
           <p className="text-[13px] text-gray-500 leading-relaxed">
             {isAwsConnected
