@@ -278,6 +278,12 @@ export default function DashboardPage() {
   const hasPartialData  = !isDemoActive && !!stats && stats.monthlyAwsCost === 0 && stats.totalServices > 0
   const isBillingSyncing = !isDemoActive && isAwsConnected && !statsLoading && !!stats && stats.monthlyAwsCost === 0 && stats.totalServices === 0
 
+  useEffect(() => {
+  if (!isDemoActive && !statsLoading && !isAwsConnected && awsAccounts !== undefined) {
+    router.replace('/connect-aws')
+  }
+}, [isDemoActive, statsLoading, isAwsConnected, awsAccounts, router])
+
   const { data: systemIntelligence } = useQuery({
     queryKey: ['system-intelligence'],
     queryFn: fetchSystemIntelligence,
@@ -618,79 +624,7 @@ export default function DashboardPage() {
             ) : null}
           </>
         )
-      ) : (
-        /* ── UNCONNECTED STATE ── */
-        <div>
-          {/* AI insight banner */}
-          <div className="border border-slate-200 border-l-2 border-l-[#534AB7] rounded-lg px-4 py-3 mb-6 flex gap-2.5">
-            <div className="w-7 h-7 bg-[#EEEDFE] rounded-md shrink-0 flex items-center justify-center">
-              <span className="text-[#534AB7] text-base">✦</span>
-            </div>
-            <div>
-              <p className="text-[13px] font-medium text-[#534AB7] uppercase tracking-wider mb-0.5">Example insight you'll get in 2 minutes</p>
-              <p className="text-base text-slate-900 leading-relaxed">"3 EC2 instances running at 12% CPU — right-sizing saves $720/month with zero downtime risk"</p>
-              <p className="text-sm text-slate-500 mt-0.5">DevControl surfaces insights like this automatically, updated daily.</p>
-            </div>
-          </div>
-
-          {/* Connect card */}
-          <div className="bg-white rounded-2xl border border-slate-200 px-6 py-12 sm:px-10 sm:py-16 text-center mb-6">
-            <div className="w-13 h-13 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto mb-5 text-2xl">☁️</div>
-            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mb-2">Connect your AWS account to uncover cost leaks and infrastructure risks</h2>
-            <p className="text-base text-slate-500 max-w-md mx-auto mb-7 leading-relaxed">
-              DevControl uses read-only access to analyze your AWS environment and surface savings, risks, and inefficiencies — no changes made to your infrastructure.
-            </p>
-            <a href="/connect-aws" className="inline-flex items-center gap-2 bg-violet-700 text-white px-7 py-3 rounded-xl text-base font-semibold no-underline shadow-lg shadow-violet-200">
-              Connect AWS Account (2 min setup) →
-            </a>
-            <p className="text-sm text-gray-400 mt-3.5">✓ Read-only IAM role&nbsp;&nbsp;✓ No credentials stored&nbsp;&nbsp;✓ No changes to infrastructure&nbsp;&nbsp;✓ Cancel anytime</p>
-          </div>
-
-          {/* Social proof */}
-          <div className="bg-slate-50 rounded-lg px-4 py-3 text-center text-sm text-slate-500 mb-6">
-            Teams typically find <strong className="text-slate-900 font-medium">20–40% savings</strong> in unused or overprovisioned AWS resources on their first scan.
-          </div>
-
-          <div className="text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-3">What you'll unlock</div>
-
-          {/* Preview KPI grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
-            {[
-              { label: 'Total Cloud Spend',       value: '$12,480/mo', delta: '↑ +8% vs last month'      },
-              { label: 'Potential Savings',        value: '$3,200/mo',  delta: '↓ Identified waste'       },
-              { label: 'Security Posture',         value: '74 / 100',   delta: '↑ Stable · Above benchmark'},
-              { label: 'Resources Underutilized',  value: '42%',        delta: '— Right-size to save'     },
-            ].map(({ label, value, delta }) => (
-              <a key={label} href="/connect-aws" className="no-underline">
-                <div
-                  className="bg-white rounded-2xl border border-slate-100 p-6 relative overflow-hidden cursor-pointer transition-all hover:border-violet-200 hover:shadow-lg hover:shadow-violet-50"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/0 to-white/95 pointer-events-none z-10" style={{ background: 'linear-gradient(to bottom, transparent 35%, rgba(255,255,255,0.97) 75%)' }} />
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3.5">{label}</p>
-                  <div className="text-[2.3rem] font-bold text-slate-300 tracking-tight leading-none mb-2.5" style={{ filter: 'blur(6px)', userSelect: 'none' }}>{value}</div>
-                  <div className="text-sm text-slate-300 mb-5" style={{ filter: 'blur(4px)', userSelect: 'none' }}>{delta}</div>
-                  <div className="relative z-20 flex items-center gap-1.5 text-sm font-semibold text-violet-700">
-                    <span>🔒</span> <span className="text-[#534AB7]">Connect to unlock</span>
-                  </div>
-                </div>
-              </a>
-            ))}
-          </div>
-
-          {/* AI insight teaser */}
-          <div className="bg-violet-50 border border-violet-200 rounded-2xl px-7 py-6 flex gap-4 items-start">
-            <div className="w-9 h-9 bg-violet-700 rounded-xl flex items-center justify-center text-base shrink-0">✨</div>
-            <div>
-              <p className="text-[13px] font-bold text-violet-700 uppercase tracking-wider mb-1.5">What AI Insights looks like</p>
-              <p className="text-base text-violet-900 leading-relaxed">
-                After connecting, DevControl's AI will surface insights like:{' '}
-                <strong className="font-semibold">"3 EC2 instances running at 12% CPU — right-sizing saves $720/month with zero downtime risk."</strong>{' '}
-                You'll get this analysis automatically, updated daily.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      ) : null}
 
       {/* ── SYSTEM INTELLIGENCE BLOCK ── */}
       {displayIntelligence && isAwsConnected && !isBillingSyncing && !hasPartialData && (
