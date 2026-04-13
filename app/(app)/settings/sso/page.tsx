@@ -150,11 +150,9 @@ export default function SSOSettingsPage() {
             SAML SSO is available on the Enterprise plan. Upgrade to enable single sign-on for your entire team.
           </p>
           
-            href="/settings/billing?upgrade=enterprise"
-            className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline"
-          >
-            Upgrade to Enterprise
-          </a>
+           <a href="/settings/billing?upgrade=enterprise" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+  Upgrade to Enterprise
+</a>
         </div>
       </div>
     );
