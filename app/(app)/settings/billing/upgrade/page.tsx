@@ -134,7 +134,7 @@ export default function UpgradePage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
+    <div className="max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10">
       {/* Header */}
       <div className="mb-8">
         <Link

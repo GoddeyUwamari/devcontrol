@@ -71,7 +71,7 @@ export default function NotificationsSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Notification Settings</h1>

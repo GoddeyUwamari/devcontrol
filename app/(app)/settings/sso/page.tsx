@@ -1,17 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-
-function useWindowWidth() {
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    const update = () => setWidth(window.innerWidth)
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
-  return width
-}
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { Lock, ShieldCheck, Copy, Check, Trash2, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
@@ -58,9 +47,6 @@ function authHeaders() {
 }
 
 export default function SSOSettingsPage() {
-  const width = useWindowWidth()
-  const isMobile = width > 0 && width < 640
-  const isTablet = width >= 640 && width < 1024
   const { organization } = useAuth();
   const isEnterprise = organization?.subscriptionTier === "enterprise";
   const qc = useQueryClient();
@@ -70,7 +56,6 @@ export default function SSOSettingsPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Fetch existing config
   const { data: config, isLoading } = useQuery<SSOConfig | null>({
     queryKey: ["sso-config"],
     enabled: isEnterprise,
@@ -87,7 +72,7 @@ export default function SSOSettingsPage() {
         providerName: config.providerName,
         idpEntityId: config.idpEntityId,
         idpSsoUrl: config.idpSsoUrl,
-        idpCertificate: "", // never pre-fill certificate
+        idpCertificate: "",
         emailAttr: config.attributeMapping?.email ?? "email",
         nameAttr: config.attributeMapping?.name ?? "displayName",
         allowedDomains: (config.allowedDomains ?? []).join(", "),
@@ -141,62 +126,32 @@ export default function SSOSettingsPage() {
 
   const handleCopyMetadata = async () => {
     if (!config?.spEntityId) return;
-    const orgId = organization?.id;
-    const metadataUrl = `${API}/api/auth/saml/metadata?orgId=${orgId}`;
+    const metadataUrl = `${API}/api/auth/saml/metadata?orgId=${organization?.id}`;
     await navigator.clipboard.writeText(metadataUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const label = (text: string) => (
-    <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#9CA3AF", marginBottom: 6 }}>
-      {text}
-    </span>
-  );
-
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "8px 12px",
-    border: "1px solid #E5E7EB",
-    borderRadius: 6,
-    fontSize: "0.875rem",
-    background: "#fff",
-    color: "#111827",
-    outline: "none",
-    boxSizing: "border-box",
-  };
-
-  const sectionStyle: React.CSSProperties = {
-    background: "#fff",
-    border: "1px solid #E5E7EB",
-    borderRadius: 10,
-    padding: "28px 32px",
-    marginBottom: 24,
-  };
-
   // ── Locked state for non-enterprise ──────────────────────────────────────
   if (!isEnterprise) {
     return (
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: isMobile ? "24px 16px" : isTablet ? "40px 24px" : "40px 32px", background: "#F9FAFB", minHeight: "100vh" }}>
-        <div style={{ marginBottom: 32 }}>
-          <p style={{ fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7C3AED", marginBottom: 6 }}>
-            Security
-          </p>
-          <h1 style={{ fontSize: "1.6rem", fontWeight: 700, color: "#111827", margin: 0 }}>SSO & SAML</h1>
-          <p style={{ color: "#6B7280", fontSize: "0.9rem", marginTop: 6 }}>Configure SAML 2.0 single sign-on for your organization.</p>
+      <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 bg-gray-50 min-h-screen">
+        <div className="mb-8">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">SSO & SAML</h1>
+          <p className="text-gray-500 text-sm mt-1.5">Configure SAML 2.0 single sign-on for your organization.</p>
         </div>
-
-        <div style={{ ...sectionStyle, textAlign: "center", padding: "60px 40px" }}>
-          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-            <Lock style={{ width: 22, height: 22, color: "#9CA3AF" }} />
+        <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
+          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-5 h-5 text-gray-400" />
           </div>
-          <h2 style={{ fontSize: "1.1rem", fontWeight: 600, color: "#111827", marginBottom: 8 }}>Enterprise Feature</h2>
-          <p style={{ color: "#6B7280", fontSize: "0.875rem", maxWidth: 420, margin: "0 auto 24px" }}>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
             SAML SSO is available on the Enterprise plan. Upgrade to enable single sign-on for your entire team.
           </p>
-          <a
+          
             href="/settings/billing?upgrade=enterprise"
-            style={{ display: "inline-block", background: "#7C3AED", color: "#fff", padding: "10px 24px", borderRadius: 8, fontSize: "0.875rem", fontWeight: 600, textDecoration: "none" }}
+            className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline"
           >
             Upgrade to Enterprise
           </a>
@@ -206,60 +161,57 @@ export default function SSOSettingsPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1320, margin: "0 auto", padding: isMobile ? "24px 16px" : isTablet ? "40px 24px" : "40px 32px", background: "#F9FAFB", minHeight: "100vh" }}>
+    <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 bg-gray-50 min-h-screen">
+
       {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <p style={{ fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7C3AED", marginBottom: 6 }}>
-          Security
-        </p>
-        <h1 style={{ fontSize: "1.6rem", fontWeight: 700, color: "#111827", margin: 0 }}>SSO & SAML</h1>
-        <p style={{ color: "#6B7280", fontSize: "0.9rem", marginTop: 6 }}>
+      <div className="mb-8">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">SSO & SAML</h1>
+        <p className="text-gray-500 text-sm mt-1.5">
           Configure SAML 2.0 single sign-on. Your IdP will authenticate users and redirect back to DevControl.
         </p>
       </div>
 
       {isLoading ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#6B7280", padding: 32 }}>
-          <Loader2 style={{ width: 18, height: 18, animation: "spin 1s linear infinite" }} />
-          <span style={{ fontSize: "0.875rem" }}>Loading SSO configuration&hellip;</span>
+        <div className="flex items-center gap-2.5 text-gray-500 p-8">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Loading SSO configuration…</span>
         </div>
       ) : (
         <>
-          {/* SP Metadata (read-only) */}
+          {/* SP Metadata */}
           {config && (
-            <div style={sectionStyle}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-                <ShieldCheck style={{ width: 18, height: 18, color: "#7C3AED" }} />
-                <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "#111827", margin: 0 }}>Service Provider Details</h2>
-                <span style={{ marginLeft: "auto", fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: config.isActive ? "#059669" : "#9CA3AF", background: config.isActive ? "#ECFDF5" : "#F3F4F6", padding: "2px 8px", borderRadius: 4 }}>
+            <div className="bg-white border border-gray-200 rounded-xl px-8 py-7 mb-6">
+              <div className="flex items-center gap-2 mb-5">
+                <ShieldCheck className="w-4 h-4 text-violet-700" />
+                <h2 className="text-base font-semibold text-gray-900 m-0">Service Provider Details</h2>
+                <span className={`ml-auto text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${config.isActive ? 'text-emerald-700 bg-emerald-50' : 'text-gray-400 bg-gray-100'}`}>
                   {config.isActive ? "Active" : "Inactive"}
                 </span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "16px 32px" }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-x-8">
                 <div>
-                  {label("SP Entity ID")}
-                  <code style={{ display: "block", fontSize: "0.78rem", color: "#374151", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 6, padding: "8px 12px", wordBreak: "break-all" }}>
-                    {config.spEntityId}
-                  </code>
+                  <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">SP Entity ID</span>
+                  <code className="block text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 break-all">{config.spEntityId}</code>
                 </div>
                 <div>
-                  {label("ACS (Callback) URL")}
-                  <code style={{ display: "block", fontSize: "0.78rem", color: "#374151", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 6, padding: "8px 12px", wordBreak: "break-all" }}>
-                    {`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/auth/saml/callback?orgId=${organization?.id}`}
+                  <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">ACS (Callback) URL</span>
+                  <code className="block text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 break-all">
+                    {`${API}/api/auth/saml/callback?orgId=${organization?.id}`}
                   </code>
                 </div>
               </div>
-              <div style={{ marginTop: 16 }}>
-                {label("SP Metadata URL")}
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <code style={{ flex: 1, fontSize: "0.78rem", color: "#374151", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 6, padding: "8px 12px", wordBreak: "break-all" }}>
-                    {`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/auth/saml/metadata?orgId=${organization?.id}`}
+              <div className="mt-4">
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">SP Metadata URL</span>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 break-all">
+                    {`${API}/api/auth/saml/metadata?orgId=${organization?.id}`}
                   </code>
                   <button
                     onClick={handleCopyMetadata}
-                    style={{ padding: "8px 12px", border: "1px solid #E5E7EB", borderRadius: 6, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: "#374151" }}
+                    className="flex items-center gap-1 px-3 py-2 border border-gray-200 rounded-md bg-white cursor-pointer text-xs text-gray-700 hover:bg-gray-50 transition-colors shrink-0"
                   >
-                    {copied ? <Check style={{ width: 14, height: 14, color: "#059669" }} /> : <Copy style={{ width: 14, height: 14 }} />}
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                     {copied ? "Copied" : "Copy"}
                   </button>
                 </div>
@@ -268,19 +220,19 @@ export default function SSOSettingsPage() {
           )}
 
           {/* Configuration Form */}
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "#111827", marginBottom: 24, marginTop: 0 }}>
+          <div className="bg-white border border-gray-200 rounded-xl px-8 py-7 mb-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-6">
               {config ? "Update SAML Configuration" : "Configure SAML IdP"}
             </h2>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "20px 32px" }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-x-8">
               {/* Provider Name */}
               <div>
-                {label("Identity Provider")}
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Identity Provider</span>
                 <select
                   value={form.providerName}
                   onChange={(e) => setForm((f) => ({ ...f, providerName: e.target.value }))}
-                  style={{ ...inputStyle, background: "#fff" }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white text-gray-900 outline-none"
                 >
                   <option>Okta</option>
                   <option>Azure AD</option>
@@ -294,23 +246,21 @@ export default function SSOSettingsPage() {
 
               {/* Allowed Domains */}
               <div>
-                {label("Allowed Email Domains")}
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Allowed Email Domains</span>
                 <input
-                  style={inputStyle}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white text-gray-900 outline-none"
                   placeholder="company.com, subsidiary.com"
                   value={form.allowedDomains}
                   onChange={(e) => setForm((f) => ({ ...f, allowedDomains: e.target.value }))}
                 />
-                <p style={{ fontSize: "0.72rem", color: "#9CA3AF", marginTop: 4, marginBottom: 0 }}>
-                  Comma-separated. Users with these domains will see &quot;Sign in with SSO&quot; on the login page.
-                </p>
+                <p className="text-[11px] text-gray-400 mt-1">Comma-separated. Users with these domains will see &quot;Sign in with SSO&quot; on the login page.</p>
               </div>
 
               {/* IdP Entity ID */}
               <div>
-                {label("IdP Entity ID")}
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">IdP Entity ID</span>
                 <input
-                  style={inputStyle}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white text-gray-900 outline-none"
                   placeholder="https://your-idp.okta.com/..."
                   value={form.idpEntityId}
                   onChange={(e) => setForm((f) => ({ ...f, idpEntityId: e.target.value }))}
@@ -319,9 +269,9 @@ export default function SSOSettingsPage() {
 
               {/* IdP SSO URL */}
               <div>
-                {label("IdP SSO URL")}
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">IdP SSO URL</span>
                 <input
-                  style={inputStyle}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white text-gray-900 outline-none"
                   placeholder="https://your-idp.okta.com/app/.../sso/saml"
                   value={form.idpSsoUrl}
                   onChange={(e) => setForm((f) => ({ ...f, idpSsoUrl: e.target.value }))}
@@ -330,23 +280,21 @@ export default function SSOSettingsPage() {
 
               {/* Email Attribute */}
               <div>
-                {label("Email Attribute")}
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Email Attribute</span>
                 <input
-                  style={inputStyle}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white text-gray-900 outline-none"
                   placeholder="email"
                   value={form.emailAttr}
                   onChange={(e) => setForm((f) => ({ ...f, emailAttr: e.target.value }))}
                 />
-                <p style={{ fontSize: "0.72rem", color: "#9CA3AF", marginTop: 4, marginBottom: 0 }}>
-                  SAML attribute that contains the user&apos;s email address.
-                </p>
+                <p className="text-[11px] text-gray-400 mt-1">SAML attribute that contains the user&apos;s email address.</p>
               </div>
 
               {/* Name Attribute */}
               <div>
-                {label("Display Name Attribute")}
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Display Name Attribute</span>
                 <input
-                  style={inputStyle}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white text-gray-900 outline-none"
                   placeholder="displayName"
                   value={form.nameAttr}
                   onChange={(e) => setForm((f) => ({ ...f, nameAttr: e.target.value }))}
@@ -355,56 +303,45 @@ export default function SSOSettingsPage() {
             </div>
 
             {/* IdP Certificate */}
-            <div style={{ marginTop: 20 }}>
-              {label("IdP X.509 Certificate")}
+            <div className="mt-5">
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">IdP X.509 Certificate</span>
               <textarea
-                style={{ ...inputStyle, height: 140, resize: "vertical", fontFamily: "monospace", fontSize: "0.78rem" }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs font-mono bg-white text-gray-900 outline-none resize-y"
+                rows={6}
                 placeholder={config ? "Leave blank to keep existing certificate" : "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
                 value={form.idpCertificate}
                 onChange={(e) => setForm((f) => ({ ...f, idpCertificate: e.target.value }))}
               />
-              <p style={{ fontSize: "0.72rem", color: "#9CA3AF", marginTop: 4 }}>
-                Paste the X.509 certificate from your IdP (with or without headers). Stored encrypted at rest.
-              </p>
+              <p className="text-[11px] text-gray-400 mt-1">Paste the X.509 certificate from your IdP (with or without headers). Stored encrypted at rest.</p>
             </div>
 
             {/* Enable toggle */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 20, paddingTop: 20, borderTop: "1px solid #F3F4F6" }}>
+            <div className="flex items-center gap-3 mt-5 pt-5 border-t border-gray-100">
               <button
                 onClick={() => setForm((f) => ({ ...f, isActive: !f.isActive }))}
-                style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 8 }}
+                className="bg-transparent border-none cursor-pointer p-0 flex items-center gap-2"
               >
                 {form.isActive
-                  ? <ToggleRight style={{ width: 28, height: 28, color: "#7C3AED" }} />
-                  : <ToggleLeft style={{ width: 28, height: 28, color: "#D1D5DB" }} />
-                }
+                  ? <ToggleRight className="w-7 h-7 text-violet-700" />
+                  : <ToggleLeft className="w-7 h-7 text-gray-300" />}
               </button>
               <div>
-                <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "#111827", margin: 0 }}>
-                  {form.isActive ? "SSO Enabled" : "SSO Disabled"}
-                </p>
-                <p style={{ fontSize: "0.78rem", color: "#9CA3AF", margin: 0 }}>
-                  {form.isActive ? "Users can sign in with your IdP." : "Users must sign in with email and password."}
-                </p>
+                <p className="text-sm font-semibold text-gray-900 m-0">{form.isActive ? "SSO Enabled" : "SSO Disabled"}</p>
+                <p className="text-xs text-gray-400 m-0">{form.isActive ? "Users can sign in with your IdP." : "Users must sign in with email and password."}</p>
               </div>
             </div>
 
-            {/* Errors / success */}
-            {saveError && (
-              <p style={{ fontSize: "0.85rem", color: "#EF4444", marginTop: 16 }}>{saveError}</p>
-            )}
-            {saveSuccess && (
-              <p style={{ fontSize: "0.85rem", color: "#059669", marginTop: 16 }}>Configuration saved.</p>
-            )}
+            {saveError && <p className="text-sm text-red-500 mt-4">{saveError}</p>}
+            {saveSuccess && <p className="text-sm text-emerald-600 mt-4">Configuration saved.</p>}
 
             {/* Actions */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 24 }}>
+            <div className="flex items-center gap-3 mt-6">
               <button
                 onClick={() => saveMutation.mutate(form)}
                 disabled={saveMutation.isPending}
-                style={{ background: "#7C3AED", color: "#fff", border: "none", borderRadius: 8, padding: "9px 22px", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, opacity: saveMutation.isPending ? 0.7 : 1 }}
+                className="flex items-center gap-1.5 bg-violet-700 text-white border-none rounded-lg px-5 py-2.5 text-sm font-semibold cursor-pointer disabled:opacity-70"
               >
-                {saveMutation.isPending && <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />}
+                {saveMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {config ? "Update Configuration" : "Save Configuration"}
               </button>
 
@@ -416,22 +353,22 @@ export default function SSOSettingsPage() {
                     }
                   }}
                   disabled={deleteMutation.isPending}
-                  style={{ background: "none", border: "1px solid #E5E7EB", color: "#EF4444", borderRadius: 8, padding: "9px 18px", fontSize: "0.875rem", fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                  className="flex items-center gap-1.5 bg-transparent border border-gray-200 text-red-500 rounded-lg px-4 py-2.5 text-sm font-medium cursor-pointer hover:bg-red-50 transition-colors"
                 >
-                  <Trash2 style={{ width: 14, height: 14 }} />
+                  <Trash2 className="w-3.5 h-3.5" />
                   Remove SSO
                 </button>
               )}
             </div>
           </div>
 
-          {/* Info callout */}
-          <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 10, padding: "20px 24px" }}>
-            <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "#5B21B6", marginBottom: 8, marginTop: 0 }}>Setup Checklist</h3>
-            <ol style={{ margin: 0, paddingLeft: 20, color: "#6D28D9", fontSize: "0.85rem", lineHeight: 1.8 }}>
+          {/* Setup Checklist */}
+          <div className="bg-violet-50 border border-violet-200 rounded-xl px-6 py-5">
+            <h3 className="text-sm font-semibold text-violet-800 mb-2">Setup Checklist</h3>
+            <ol className="m-0 pl-5 text-violet-700 text-sm leading-relaxed space-y-1">
               <li>Copy the <strong>ACS URL</strong> and <strong>SP Entity ID</strong> above into your IdP&apos;s SAML application settings.</li>
               <li>Download your IdP&apos;s X.509 certificate and paste it into the Certificate field below.</li>
-              <li>Map your IdP attributes to <code>email</code> and <code>displayName</code> (or set custom attribute names).</li>
+              <li>Map your IdP attributes to <code className="text-xs bg-violet-100 px-1 py-0.5 rounded">email</code> and <code className="text-xs bg-violet-100 px-1 py-0.5 rounded">displayName</code> (or set custom attribute names).</li>
               <li>Add your organization&apos;s email domains to <strong>Allowed Domains</strong>.</li>
               <li>Enable SSO and save. Test by signing in from the login page.</li>
             </ol>
