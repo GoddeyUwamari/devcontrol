@@ -1,17 +1,6 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
-
-function useWindowWidth() {
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    const update = () => setWidth(window.innerWidth)
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
-  return width
-}
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
@@ -39,7 +28,6 @@ const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string 
   default:    { icon: Server,    color: '#64748B', bg: '#F8FAFC' },
 }
 
-// Dropdown filter pills
 const DROPDOWN_PILLS: { key: string; label: string; items: { value: string | null; label: string }[] }[] = [
   {
     key: 'all', label: 'All',
@@ -82,9 +70,7 @@ const DROPDOWN_PILLS: { key: string; label: string; items: { value: string | nul
   },
   {
     key: 'storage', label: 'Storage',
-    items: [
-      { value: 's3', label: 'S3' },
-    ],
+    items: [{ value: 's3', label: 'S3' }],
   },
   {
     key: 'networking', label: 'Networking',
@@ -106,52 +92,31 @@ const DROPDOWN_PILLS: { key: string; label: string; items: { value: string | nul
 
 const DEMO_RESOURCES: InfrastructureResource[] = [
   { id: 'r1', serviceId: 'svc-1', serviceName: 'api-gateway',         resourceType: 'ec2',    awsId: 'i-0a1b2c3d4e5f',    awsRegion: 'us-east-1', status: 'running', costPerMonth: 245.50, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r2', serviceId: 'svc-2', serviceName: 'auth-service',         resourceType: 'ec2',    awsId: 'arn:aws:ecs:auth',   awsRegion: 'us-east-1', status: 'running', costPerMonth: 178.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r3', serviceId: 'svc-3', serviceName: 'payment-processor',    resourceType: 'lambda', awsId: 'payment-fn-prod',    awsRegion: 'us-west-2', status: 'running', costPerMonth: 89.50,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r4', serviceId: 'svc-4', serviceName: 'notification-service', resourceType: 'lambda', awsId: 'notify-fn-prod',     awsRegion: 'us-east-1', status: 'running', costPerMonth: 156.30, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r5', serviceId: 'svc-5', serviceName: 'analytics-worker',     resourceType: 'ec2',    awsId: 'i-9z8y7x6w5v',      awsRegion: 'eu-west-1', status: 'running', costPerMonth: 312.80, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r6', serviceId: 'svc-1', serviceName: 'api-gateway',          resourceType: 'rds',    awsId: 'rds-prod-01',        awsRegion: 'us-east-1', status: 'running', costPerMonth: 445.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r7', serviceId: 'svc-2', serviceName: 'auth-service',         resourceType: 's3',     awsId: 'auth-assets-bucket', awsRegion: 'us-east-1', status: 'running', costPerMonth: 23.40,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r8', serviceId: 'svc-3', serviceName: 'payment-processor',    resourceType: 'rds',    awsId: 'rds-payments-01',    awsRegion: 'us-west-2', status: 'pending', costPerMonth: 398.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r2', serviceId: 'svc-2', serviceName: 'auth-service',        resourceType: 'ec2',    awsId: 'arn:aws:ecs:auth',   awsRegion: 'us-east-1', status: 'running', costPerMonth: 178.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r3', serviceId: 'svc-3', serviceName: 'payment-processor',   resourceType: 'lambda', awsId: 'payment-fn-prod',    awsRegion: 'us-west-2', status: 'running', costPerMonth: 89.50,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r4', serviceId: 'svc-4', serviceName: 'notification-service',resourceType: 'lambda', awsId: 'notify-fn-prod',     awsRegion: 'us-east-1', status: 'running', costPerMonth: 156.30, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r5', serviceId: 'svc-5', serviceName: 'analytics-worker',    resourceType: 'ec2',    awsId: 'i-9z8y7x6w5v',      awsRegion: 'eu-west-1', status: 'running', costPerMonth: 312.80, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r6', serviceId: 'svc-1', serviceName: 'api-gateway',         resourceType: 'rds',    awsId: 'rds-prod-01',        awsRegion: 'us-east-1', status: 'running', costPerMonth: 445.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r7', serviceId: 'svc-2', serviceName: 'auth-service',        resourceType: 's3',     awsId: 'auth-assets-bucket', awsRegion: 'us-east-1', status: 'running', costPerMonth: 23.40,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r8', serviceId: 'svc-3', serviceName: 'payment-processor',   resourceType: 'rds',    awsId: 'rds-payments-01',    awsRegion: 'us-west-2', status: 'pending', costPerMonth: 398.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
 ]
 
 async function fetchRealSavings(): Promise<number | null> {
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('accessToken')
-      : null
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   if (!token) return null
   try {
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization/results`,
-      {
-        headers: { 'Authorization': `Bearer ${token}` },
-        credentials: 'include',
-      }
+      { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' }
     )
     if (!res.ok) return null
     const data = await res.json()
     const results = data.results ?? []
-    return results.reduce(
-      (sum: number, r: any) => sum + (parseFloat(r.monthlySavings ?? r.monthly_savings) || 0),
-      0
-    )
-  } catch {
-    return null
-  }
+    return results.reduce((sum: number, r: any) => sum + (parseFloat(r.monthlySavings ?? r.monthly_savings) || 0), 0)
+  } catch { return null }
 }
 
-async function fetchSystemIntelligence(): Promise<{
-  system_score: number
-  status: string
-  top_action: string
-  top_drivers: any[]
-  components: {
-    cost:          { score: number; detail: string; status: string }
-    security:      { score: number; detail: string; status: string }
-    observability: { score: number; detail: string; status: string }
-  }
-} | null> {
+async function fetchSystemIntelligence(): Promise<any | null> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   if (!token) return null
   try {
@@ -162,85 +127,52 @@ async function fetchSystemIntelligence(): Promise<{
     if (!res.ok) return null
     const json = await res.json()
     return json.data ?? null
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
-async function fetchTopActions(): Promise<{
-  id: string
-  title: string
-  savings: number | null
-  risk: 'zero' | 'review'
-  urgency: 'now' | 'today' | 'schedule'
-  subtitle: string
-  type: 'cost' | 'reliability'
-}[] | null> {
+async function fetchTopActions(): Promise<any[] | null> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   if (!token) return null
   try {
     const [costRes, anomalyRes] = await Promise.all([
-      fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization/results`,
-        { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }
-      ),
-      fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/anomalies`,
-        { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }
-      ),
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization/results`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }),
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/anomalies`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }),
     ])
-
     const costData    = costRes.ok    ? await costRes.json()    : { results: [] }
     const anomalyData = anomalyRes.ok ? await anomalyRes.json() : { anomalies: [] }
-
     const costActions = (costData.results ?? [])
       .filter((r: any) => (parseFloat(r.monthlySavings ?? r.monthly_savings) || 0) > 0)
-      .sort((a: any, b: any) =>
-        (parseFloat(b.monthlySavings ?? b.monthly_savings) || 0) -
-        (parseFloat(a.monthlySavings ?? a.monthly_savings) || 0)
-      )
+      .sort((a: any, b: any) => (parseFloat(b.monthlySavings ?? b.monthly_savings) || 0) - (parseFloat(a.monthlySavings ?? a.monthly_savings) || 0))
       .slice(0, 3)
       .map((r: any, i: number) => ({
-        id:       r.id ?? `cost-${i}`,
-        title:    r.title ?? r.recommendation ?? 'Cost optimization available',
-        savings:  Math.round(parseFloat(r.monthlySavings ?? r.monthly_savings) || 0),
-        risk:     'zero' as const,
-        urgency:  i === 0 ? 'now' as const : 'today' as const,
+        id: r.id ?? `cost-${i}`, title: r.title ?? r.recommendation ?? 'Cost optimization available',
+        savings: Math.round(parseFloat(r.monthlySavings ?? r.monthly_savings) || 0),
+        risk: 'zero' as const, urgency: i === 0 ? 'now' as const : 'today' as const,
         subtitle: `${r.resourceName ?? r.resource_name ?? 'Resource'} · ${r.region ?? 'us-east-1'} · cost leakage active`,
-        type:     'cost' as const,
+        type: 'cost' as const,
       }))
-
     const reliabilityActions = (anomalyData.anomalies ?? anomalyData ?? [])
       .filter((a: any) => a.severity === 'critical' || a.severity === 'high')
       .slice(0, 1)
       .map((a: any) => ({
-        id:       a.id ?? 'anomaly-0',
-        title:    a.title ?? a.message ?? 'Reliability issue detected',
-        savings:  null,
-        risk:     'review' as const,
-        urgency:  'now' as const,
+        id: a.id ?? 'anomaly-0', title: a.title ?? a.message ?? 'Reliability issue detected',
+        savings: null, risk: 'review' as const, urgency: 'now' as const,
         subtitle: `${a.resourceName ?? a.resource ?? 'Resource'} · ${a.impact ?? 'potential downtime risk'}`,
-        type:     'reliability' as const,
+        type: 'reliability' as const,
       }))
-
     return [...reliabilityActions, ...costActions].slice(0, 4)
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 export default function InfrastructurePage() {
   return (
-    <Suspense fallback={<div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>Loading...</div>}>
+    <Suspense fallback={<div className="py-12 text-center text-sm text-gray-500">Loading...</div>}>
       <InfrastructureContent />
     </Suspense>
   )
 }
 
 function InfrastructureContent() {
-  const width = useWindowWidth()
-  const isMobile = width > 0 && width < 640
-  const isTablet = width >= 640 && width < 1024
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const targetResourceId = searchParams.get('resource')
@@ -248,40 +180,39 @@ function InfrastructureContent() {
   const [selectedType,  setSelectedType]  = useState<string | null>(null)
   const [openDropdown,  setOpenDropdown]  = useState<string | null>(null)
 
-  // Close dropdown on outside click
   useEffect(() => {
     const close = () => setOpenDropdown(null)
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
   }, [])
 
-  const demoMode = useDemoMode()
+  const demoMode     = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
-  const isDemoActive = demoMode || salesDemoMode
+  const isDemoActive  = demoMode || salesDemoMode
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
+  const [isSyncing,         setIsSyncing]         = useState(false)
+  const [syncComplete,      setSyncComplete]      = useState(false)
+  const [hoveredCard,       setHoveredCard]       = useState<string | null>(null)
+  const [statusFilter,      setStatusFilter]      = useState<string | null>(null)
+  const [showAllResources,  setShowAllResources]  = useState(false)
+  const [issueFilter,       setIssueFilter]       = useState<string>('all')
+  const [sortOrder,         setSortOrder]         = useState<string>('impact')
 
   const { data: resources = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['infrastructure', selectedType],
     queryFn: async () => {
-      const allResources = await infrastructureService.getAll(
-        selectedType ? { resourceType: selectedType as ResourceType } : undefined
-      )
-      return allResources.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
+      const all = await infrastructureService.getAll(selectedType ? { resourceType: selectedType as ResourceType } : undefined)
+      return all.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
     },
     enabled: !isDemoActive,
   })
 
   useEffect(() => {
-    if (isError && (error as any)?.response?.status === 402) {
-      setShowUpgradePrompt(true)
-    }
+    if (isError && (error as any)?.response?.status === 402) setShowUpgradePrompt(true)
   }, [isError, error])
 
-  // Scroll to and highlight a resource when ?resource= is present
   useEffect(() => {
-    console.log('targetResourceId:', targetResourceId)
-    console.log('found element:', document.getElementById(`resource-${targetResourceId}`))
     if (!targetResourceId || isLoading) return
     const el = document.getElementById(`resource-${targetResourceId}`)
     if (!el) return
@@ -289,13 +220,9 @@ function InfrastructureContent() {
     el.style.transition = 'background-color 0.3s ease'
     el.style.backgroundColor = '#EDE9FE'
     el.style.boxShadow = '0 0 0 2px #7C3AED'
-    setTimeout(() => {
-      el.style.backgroundColor = ''
-      el.style.boxShadow = ''
-    }, 2000)
+    setTimeout(() => { el.style.backgroundColor = ''; el.style.boxShadow = '' }, 2000)
   }, [targetResourceId, isLoading])
 
-  // All resources (unfiltered) — used for monthly cost in real mode
   const { data: allResources = [] } = useQuery({
     queryKey: ['infrastructure-all'],
     queryFn: async () => {
@@ -335,28 +262,17 @@ function InfrastructureContent() {
     enabled: !isDemoActive,
   })
 
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [syncComplete, setSyncComplete] = useState(false)
-  const [hoveredCard, setHoveredCard] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<string | null>(null)
-  const [showAllResources, setShowAllResources] = useState(false)
-  const [issueFilter, setIssueFilter] = useState<string>('all')
-  const [sortOrder, setSortOrder] = useState<string>('impact')
-
-  // FIX 3: Fetch real stats from /api/services/stats when not in demo mode
   const { data: apiStats, isLoading: statsLoading } = useQuery({
     queryKey: ['services-stats'],
     queryFn: awsServicesService.getStats,
     enabled: !isDemoActive,
   })
 
-  // FIX 2: Wire Sync AWS to real discovery endpoint
   const handleSyncAWS = async () => {
     if (isDemoActive) {
       setIsSyncing(true)
       await new Promise(r => setTimeout(r, 2000))
-      setIsSyncing(false)
-      setSyncComplete(true)
+      setIsSyncing(false); setSyncComplete(true)
       setTimeout(() => setSyncComplete(false), 3000)
       return
     }
@@ -374,8 +290,7 @@ function InfrastructureContent() {
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
       ])
       toast.success(`Sync complete — ${result.discovered} resources discovered`)
-      setSyncComplete(true)
-      setTimeout(() => setSyncComplete(false), 3000)
+      setSyncComplete(true); setTimeout(() => setSyncComplete(false), 3000)
     } catch {
       toast.error('Sync failed — check your AWS connection')
     } finally {
@@ -387,36 +302,28 @@ function InfrastructureContent() {
 
   const filteredResources = displayResources.filter((r: InfrastructureResource) => {
     if (selectedType && r.resourceType !== selectedType) return false
-    if (statusFilter === 'active') return r.status === 'running'
+    if (statusFilter === 'active')  return r.status === 'running'
     if (statusFilter === 'warning') return r.status === 'pending' || r.status === 'stopped'
     return true
   })
 
   const effectiveResources =
-    !isDemoActive &&
-    filteredResources.length === 0 &&
-    selectedType === null &&
-    statusFilter === null &&
-    allResources.length > 0
+    !isDemoActive && filteredResources.length === 0 && selectedType === null && statusFilter === null && allResources.length > 0
       ? allResources
       : filteredResources
 
-  // FIX 3: KPI stats — demo uses computed values, real mode uses API stats
-  const demoTotal       = DEMO_RESOURCES.length
-  const demoMonthlyCost = DEMO_RESOURCES.reduce((sum, r) => sum + (r.costPerMonth || 0), 0)
-  const demoActive      = DEMO_RESOURCES.filter(r => r.status === 'running').length
-  const demoWarning     = DEMO_RESOURCES.filter(r => r.status === 'pending' || r.status === 'stopped').length
-
-  const realMonthlyCost = allResources.reduce((sum: number, r: InfrastructureResource) => sum + (r.costPerMonth || 0), 0)
-
-  const totalResources  = isDemoActive ? demoTotal       : (statsLoading ? null : (apiStats?.total       ?? 0))
-  const totalMonthlyCost= isDemoActive ? demoMonthlyCost : realMonthlyCost
-  const activeCount     = isDemoActive ? demoActive      : (statsLoading ? null : (apiStats?.healthy      ?? 0))
-  const warningCount    = isDemoActive ? demoWarning     : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
+  const demoTotal        = DEMO_RESOURCES.length
+  const demoMonthlyCost  = DEMO_RESOURCES.reduce((sum, r) => sum + (r.costPerMonth || 0), 0)
+  const demoActive       = DEMO_RESOURCES.filter(r => r.status === 'running').length
+  const demoWarning      = DEMO_RESOURCES.filter(r => r.status === 'pending' || r.status === 'stopped').length
+  const realMonthlyCost  = allResources.reduce((sum: number, r: InfrastructureResource) => sum + (r.costPerMonth || 0), 0)
+  const totalResources   = isDemoActive ? demoTotal      : (statsLoading ? null : (apiStats?.total          ?? 0))
+  const totalMonthlyCost = isDemoActive ? demoMonthlyCost: realMonthlyCost
+  const activeCount      = isDemoActive ? demoActive     : (statsLoading ? null : (apiStats?.healthy         ?? 0))
+  const warningCount     = isDemoActive ? demoWarning    : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
 
   const DEMO_INTELLIGENCE = {
-    system_score: 73,
-    status: 'warning',
+    system_score: 73, status: 'warning',
     top_action: { message: 'Over-provisioned compute + unused storage', consequence: '', path: '/costs/cost-optimization', severity: 'high' },
     top_drivers: [],
     components: {
@@ -426,93 +333,48 @@ function InfrastructureContent() {
     },
   }
 
-  const intel = isDemoActive
-    ? DEMO_INTELLIGENCE
-    : (systemIntelligence ?? DEMO_INTELLIGENCE)
-
-  const intelComponents = intel.components ?? DEMO_INTELLIGENCE.components
-
-  const intelScore         = intel.system_score
-  const intelStatus        = intel.status === 'good' ? 'Healthy' : intel.status === 'warning' ? 'Partially Optimized' : 'At Risk'
-  const intelTopAction = typeof intel.top_action === 'string'
-    ? intel.top_action
-    : intel.top_action?.message ?? 'Over-provisioned compute + unused storage'
-  const intelCostScore     = intelComponents.cost.score
-  const intelSecurityScore = intelComponents.security.score
-  const intelObsScore      = intelComponents.observability.score
-  const intelScoreDelta    = isDemoActive ? 18 : (intel.system_score > 0 ? Math.min(Math.round((100 - intel.system_score) * 0.55), 25) : 0)
-  const intelWaste         = realSavingsTotal ?? (isDemoActive ? 1060 : 0)
-  const intelAnalyzed      = isDemoActive ? 19 : allResources.length
-  const intelTotal         = isDemoActive ? 20 : ((totalResources as number) || intelAnalyzed)
-  const scoreCircumference = 144.5
-  const scoreOffset        = intelScore > 0
-    ? scoreCircumference - (intelScore / 100) * scoreCircumference
-    : scoreCircumference
-
-  const scoreChip = (score: number) => ({
-    color: score >= 80 ? '#065F46' : '#92400E',
-    bg:    score >= 80 ? '#D1FAE5' : '#FEF3C7',
-  })
+  const intel            = isDemoActive ? DEMO_INTELLIGENCE : (systemIntelligence ?? DEMO_INTELLIGENCE)
+  const intelComponents  = intel.components ?? DEMO_INTELLIGENCE.components
+  const intelScore       = intel.system_score
+  const intelStatus      = intel.status === 'good' ? 'Healthy' : intel.status === 'warning' ? 'Partially Optimized' : 'At Risk'
+  const intelTopAction   = typeof intel.top_action === 'string' ? intel.top_action : intel.top_action?.message ?? 'Over-provisioned compute + unused storage'
+  const intelCostScore   = intelComponents.cost.score
+  const intelSecScore    = intelComponents.security.score
+  const intelObsScore    = intelComponents.observability.score
+  const intelScoreDelta  = isDemoActive ? 18 : (intel.system_score > 0 ? Math.min(Math.round((100 - intel.system_score) * 0.55), 25) : 0)
+  const intelWaste       = realSavingsTotal ?? (isDemoActive ? 1060 : 0)
+  const intelAnalyzed    = isDemoActive ? 19 : allResources.length
+  const intelTotal       = isDemoActive ? 20 : ((totalResources as number) || intelAnalyzed)
+  const scoreCirc        = 144.5
+  const scoreOffset      = intelScore > 0 ? scoreCirc - (intelScore / 100) * scoreCirc : scoreCirc
+  const scoreChip        = (score: number) => ({ color: score >= 80 ? '#065F46' : '#92400E', bg: score >= 80 ? '#D1FAE5' : '#FEF3C7' })
 
   const DEMO_TOP_ACTIONS = [
-    {
-      id: 'demo-1', rank: '01', urgency: 'now'   as const, risk: 'zero'   as const,
-      title: 'Downsize RDS cluster', savings: 740,
-      sub: 'production-postgres-primary · us-east-1 · cost leakage active',
-      bg: '#FFF8F8', border: '#FECACA', isTop: true,
-    },
-    {
-      id: 'demo-2', rank: '02', urgency: 'now'   as const, risk: 'review' as const,
-      title: 'Investigate CloudFront latency warnings', savings: null,
-      sub: 'production-cdn · potential downtime risk · degraded user experience',
-      bg: '#FFF8F8', border: '#FECACA', isTop: false,
-    },
-    {
-      id: 'demo-3', rank: '03', urgency: 'today' as const, risk: 'zero'   as const,
-      title: 'Remove unused EBS volumes', savings: 320,
-      sub: '6 unattached volumes · us-east-1 · no impact to workloads',
-      bg: '#F8FAFC', border: '#F1F5F9', isTop: false,
-    },
-    {
-      id: 'demo-4', rank: '04', urgency: 'today' as const, risk: 'zero'   as const,
-      title: 'Rightsize idle EC2 instances', savings: 580,
-      sub: 'analytics-warehouse · us-east-1 · avg 12% CPU utilization',
-      bg: '#F8FAFC', border: '#F1F5F9', isTop: false,
-    },
+    { id: 'demo-1', rank: '01', urgency: 'now'   as const, risk: 'zero'   as const, title: 'Downsize RDS cluster',                     savings: 740,  sub: 'production-postgres-primary · us-east-1 · cost leakage active',              isTop: true  },
+    { id: 'demo-2', rank: '02', urgency: 'now'   as const, risk: 'review' as const, title: 'Investigate CloudFront latency warnings',   savings: null, sub: 'production-cdn · potential downtime risk · degraded user experience',         isTop: false },
+    { id: 'demo-3', rank: '03', urgency: 'today' as const, risk: 'zero'   as const, title: 'Remove unused EBS volumes',                 savings: 320,  sub: '6 unattached volumes · us-east-1 · no impact to workloads',                  isTop: false },
+    { id: 'demo-4', rank: '04', urgency: 'today' as const, risk: 'zero'   as const, title: 'Rightsize idle EC2 instances',              savings: 580,  sub: 'analytics-warehouse · us-east-1 · avg 12% CPU utilization',                  isTop: false },
   ]
 
   const displayTopActions = isDemoActive
     ? DEMO_TOP_ACTIONS
     : (topActionsData ?? []).map((a, i) => ({
-        id:      a.id,
-        rank:    String(i + 1).padStart(2, '0'),
-        urgency: a.urgency,
-        risk:    a.risk,
-        title:   a.title,
-        savings: a.savings,
-        sub:     a.subtitle,
-        bg:      a.urgency === 'now'   ? '#FFF8F8' : '#F8FAFC',
-        border:  a.urgency === 'now'   ? '#FECACA' : '#F1F5F9',
-        isTop:   i === 0,
+        id: a.id, rank: String(i + 1).padStart(2, '0'),
+        urgency: a.urgency, risk: a.risk, title: a.title, savings: a.savings, sub: a.subtitle,
+        isTop: i === 0,
       }))
 
-  const zeroRiskCount       = displayTopActions.filter(a => a.risk === 'zero').length
-  const totalRecoverable    = displayTopActions.reduce((sum, a) => sum + (a.savings ?? 0), 0)
-
+  const zeroRiskCount    = displayTopActions.filter(a => a.risk === 'zero').length
+  const totalRecoverable = displayTopActions.reduce((sum, a) => sum + (a.savings ?? 0), 0)
   const displayRecommendationsCount = isDemoActive ? 3 : recommendationsCount
-
-  const formatSavings = (val: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
-
+  const formatSavings = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
   const potentialSavingsValue = isDemoActive
     ? '$1,697/mo'
     : realSavingsTotal != null && realSavingsTotal > 0
       ? `$${Math.round(realSavingsTotal).toLocaleString()}/mo`
-      : savingsLoading
-        ? '—'
-        : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
+      : savingsLoading ? '—'
+      : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
 
-  // Cost by service — group allResources by serviceName, sum costPerMonth
   const DEMO_COST_BY_SERVICE = [
     { name: 'analytics-worker',  cost: 312.80, pct: 41, barWidth: 100 },
     { name: 'api-gateway',       cost: 245.50, pct: 32, barWidth: 78  },
@@ -531,269 +393,170 @@ function InfrastructureContent() {
     const total = Object.values(map).reduce((s, v) => s + v, 0)
     if (total === 0) return []
     const maxCost = Math.max(...Object.values(map))
-    return Object.entries(map)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([name, cost]) => ({
-        name,
-        cost,
-        pct: Math.round((cost / total) * 100),
-        barWidth: Math.round((cost / maxCost) * 100),
-      }))
+    return Object.entries(map).sort(([, a], [, b]) => b - a).slice(0, 5).map(([name, cost]) => ({
+      name, cost, pct: Math.round((cost / total) * 100), barWidth: Math.round((cost / maxCost) * 100),
+    }))
   })()
 
-  // Values shown in the AI insight banner still use displayResources for region counts
   const regionCount = new Set(displayResources.map((r: InfrastructureResource) => r.awsRegion)).size
 
   const tableResources = (() => {
     let rows = [...effectiveResources]
-
-    // Issue filter
-    if (issueFilter === 'Cost Waste') {
-      rows = rows.filter(r => (r.costPerMonth ?? 0) > 400)
-    } else if (issueFilter === 'Reliability Risk') {
-      rows = rows.filter(r => r.status === 'pending' || r.status === 'stopped')
-    } else if (issueFilter === 'Healthy') {
-      rows = rows.filter(r => r.status === 'running' && (r.costPerMonth ?? 0) <= 400)
-    }
-
-    // Sort
-    if (sortOrder === 'impact') {
-      rows = rows.sort((a, b) => {
-        const aScore = (a.status === 'pending' || a.status === 'stopped') ? 999999 : (a.costPerMonth ?? 0)
-        const bScore = (b.status === 'pending' || b.status === 'stopped') ? 999999 : (b.costPerMonth ?? 0)
-        return bScore - aScore
-      })
-    } else if (sortOrder === 'cost-high') {
-      rows = rows.sort((a, b) => (b.costPerMonth ?? 0) - (a.costPerMonth ?? 0))
-    } else if (sortOrder === 'status') {
-      rows = rows.sort((a, b) => a.status.localeCompare(b.status))
-    }
-
+    if (issueFilter === 'Cost Waste')       rows = rows.filter(r => (r.costPerMonth ?? 0) > 400)
+    else if (issueFilter === 'Reliability Risk') rows = rows.filter(r => r.status === 'pending' || r.status === 'stopped')
+    else if (issueFilter === 'Healthy')     rows = rows.filter(r => r.status === 'running' && (r.costPerMonth ?? 0) <= 400)
+    if (sortOrder === 'impact') rows = rows.sort((a, b) => {
+      const aScore = (a.status === 'pending' || a.status === 'stopped') ? 999999 : (a.costPerMonth ?? 0)
+      const bScore = (b.status === 'pending' || b.status === 'stopped') ? 999999 : (b.costPerMonth ?? 0)
+      return bScore - aScore
+    })
+    else if (sortOrder === 'cost-high') rows = rows.sort((a, b) => (b.costPerMonth ?? 0) - (a.costPerMonth ?? 0))
+    else if (sortOrder === 'status')    rows = rows.sort((a, b) => a.status.localeCompare(b.status))
     return rows
   })()
 
   return (
-    <div style={{
-      padding: 'clamp(16px, 4vw, 56px) clamp(16px, 4vw, 56px) 64px',
-      maxWidth: '1320px',
-      margin: '0 auto',
-      minHeight: '100vh',
-      background: '#F9FAFB',
-      overflowX: 'hidden',
-      fontFamily: 'Inter, system-ui, sans-serif',
-    }}>
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto min-h-screen bg-gray-50 overflow-x-hidden">
 
-      {/* RESOURCE LIMIT UPGRADE PROMPT */}
+      {/* UPGRADE PROMPT */}
       {showUpgradePrompt && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: '10px',
-          padding: '14px 20px', marginBottom: '24px', gap: '16px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
-            <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#92400E' }}>
-              You've reached your resource limit. Upgrade your plan to see all resources.
-            </span>
+        <div className="flex items-center justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-6 gap-4">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">⚠️</span>
+            <span className="text-sm font-medium text-amber-800">You've reached your resource limit. Upgrade your plan to see all resources.</span>
           </div>
-          <a
-            href="/settings/billing/upgrade"
-            style={{
-              flexShrink: 0, fontSize: '0.8125rem', fontWeight: 600,
-              color: '#fff', background: '#D97706', borderRadius: '6px',
-              padding: '7px 16px', textDecoration: 'none', whiteSpace: 'nowrap',
-            }}
-          >
+          <a href="/settings/billing/upgrade" className="shrink-0 text-[13px] font-semibold text-white bg-amber-600 rounded-md px-4 py-1.5 whitespace-nowrap no-underline">
             Upgrade plan
           </a>
         </div>
       )}
 
       {/* PAGE HEADER */}
-      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px', gap: isMobile ? '0' : '24px' }}>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
-            Infrastructure
-          </p>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            AWS System Intelligence
-          </h1>
-          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            Real-time visibility into cost, health, and risk across your AWS infrastructure.
-          </p>
-          {isMobile && (
-            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-              <button
-                onClick={handleSyncAWS}
-                disabled={isSyncing}
-                style={{
-                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  background: syncComplete ? '#059669' : '#fff',
-                  color: syncComplete ? '#fff' : '#475569',
-                  padding: '10px 12px', borderRadius: '8px',
-                  fontSize: '0.8rem', fontWeight: 600,
-                  border: `1px solid ${syncComplete ? '#059669' : '#E2E8F0'}`,
-                  cursor: isSyncing ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s',
-                }}>
-                {isSyncing
-                  ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Syncing...</>
-                  : syncComplete
-                    ? <><Check size={14} /> Done</>
-                    : <><RefreshCw size={14} /> Sync AWS</>
-                }
-              </button>
-              <a
-                href="/cost-optimization"
-                style={{
-                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                  background: '#7C3AED', color: '#fff',
-                  padding: '10px 12px', borderRadius: '7px',
-                  fontSize: '0.8rem', fontWeight: 700, textDecoration: 'none',
-                }}
-              >
-                <Check size={13} /> Apply Fixes
-              </a>
-            </div>
-          )}
-        </div>
-        {!isMobile && (
-          <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
+        <div className="flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Infrastructure</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">AWS System Intelligence</h1>
+          <p className="text-sm text-slate-500 leading-relaxed">Real-time visibility into cost, health, and risk across your AWS infrastructure.</p>
+
+          {/* Mobile-only action buttons */}
+          <div className="flex gap-2 mt-4 sm:hidden">
             <button
               onClick={handleSyncAWS}
               disabled={isSyncing}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px',
-                background: syncComplete ? '#059669' : '#fff',
-                color: syncComplete ? '#fff' : '#475569',
-                padding: '10px 20px', borderRadius: '8px',
-                fontSize: '0.875rem', fontWeight: 600,
-                border: `1px solid ${syncComplete ? '#059669' : '#E2E8F0'}`,
-                cursor: isSyncing ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
-              }}>
-              {isSyncing
-                ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Syncing AWS...</>
-                : syncComplete
-                  ? <><Check size={15} /> Sync Complete</>
-                  : (!isDemoActive && allResources.length === 0)
-                    ? <><RefreshCw size={15} /> Scan My AWS for Cost & Risk</>
-                    : <><RefreshCw size={15} /> Sync AWS</>
-              }
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-semibold border transition-all ${syncComplete ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-500 border-slate-200'}`}
+            >
+              {isSyncing ? <><RefreshCw size={14} className="animate-spin" /> Syncing...</>
+                : syncComplete ? <><Check size={14} /> Done</>
+                : <><RefreshCw size={14} /> Sync AWS</>}
             </button>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-              <a
-                href="/cost-optimization"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '7px',
-                  background: '#7C3AED', color: '#fff',
-                  padding: '9px 18px', borderRadius: '7px',
-                  fontSize: '12px', fontWeight: 700, textDecoration: 'none',
-                }}
-              >
-                <Check size={13} /> Apply Recommended Fixes
-              </a>
-              <p style={{ fontSize: '0.65rem', color: '#64748B', margin: 0, textAlign: 'right' }}>
-                Applies 3 zero-risk optimizations · No downtime · Est. savings: $1,060/mo
-              </p>
-            </div>
+            <a href="/cost-optimization" className="flex-1 flex items-center justify-center gap-1.5 bg-violet-700 text-white px-3 py-2.5 rounded-lg text-xs font-bold no-underline">
+              <Check size={13} /> Apply Fixes
+            </a>
           </div>
-        )}
+        </div>
+
+        {/* Desktop-only action buttons */}
+        <div className="hidden sm:flex gap-3 shrink-0">
+          <button
+            onClick={handleSyncAWS}
+            disabled={isSyncing}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold border transition-all ${syncComplete ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-500 border-slate-200'}`}
+          >
+            {isSyncing ? <><RefreshCw size={15} className="animate-spin" /> Syncing AWS...</>
+              : syncComplete ? <><Check size={15} /> Sync Complete</>
+              : !isDemoActive && allResources.length === 0 ? <><RefreshCw size={15} /> Scan My AWS for Cost & Risk</>
+              : <><RefreshCw size={15} /> Sync AWS</>}
+          </button>
+          <div className="flex flex-col items-end gap-1">
+            <a href="/cost-optimization" className="flex items-center gap-1.5 bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold no-underline">
+              <Check size={13} /> Apply Recommended Fixes
+            </a>
+            <p className="text-[10px] text-slate-500 text-right">Applies 3 zero-risk optimizations · No downtime · Est. savings: $1,060/mo</p>
+          </div>
+        </div>
       </div>
 
       {/* SYSTEM INTELLIGENCE STRIP */}
-      <div style={{
-        background: '#fff', borderRadius: '10px',
-        border: '1px solid #E2E8F0', borderLeft: '4px solid #7C3AED',
-        padding: '20px 24px', marginBottom: '16px',
-        display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+      <div className="bg-white rounded-xl border border-slate-200 border-l-4 border-l-violet-700 px-6 py-5 mb-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-5 flex-wrap">
 
           {/* Score ring */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ position: 'relative', width: '54px', height: '54px', flexShrink: 0 }}>
+          <div className="flex items-center gap-3">
+            <div className="relative w-[54px] h-[54px] shrink-0">
               <svg width="54" height="54" viewBox="0 0 54 54">
                 <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
                 <circle cx="27" cy="27" r="23" fill="none" stroke="#7C3AED" strokeWidth="5"
                   strokeDasharray="144.5" strokeDashoffset={scoreOffset}
                   strokeLinecap="round" transform="rotate(-90 27 27)"/>
               </svg>
-              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>{intelScore}</span>
+              <span className="absolute inset-0 flex items-center justify-center text-[13px] font-bold text-slate-900">{intelScore}</span>
             </div>
             <div>
-              <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>System Score</p>
-              <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: '0 0 3px' }}>{intelStatus}</p>
-              <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>{`${intelAnalyzed}/${intelTotal} resources analyzed · High confidence`}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
+              <p className="text-base font-bold text-slate-900 mb-0.5">{intelStatus}</p>
+              <p className="text-[11px] text-slate-500">{intelAnalyzed}/{intelTotal} resources analyzed · High confidence</p>
             </div>
           </div>
 
-          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0, display: isMobile ? 'none' : 'block' }} />
+          <div className="hidden lg:block w-px h-11 bg-slate-200 shrink-0" />
 
           {/* Primary Issue */}
           <div>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Primary Issue</p>
-            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>{intelTopAction}</p>
-            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#DC2626', margin: 0 }}>{`$${Math.round(intelWaste).toLocaleString()}/mo active waste`}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Primary Issue</p>
+            <p className="text-sm font-semibold text-slate-900 mb-0.5">{intelTopAction}</p>
+            <p className="text-xs font-bold text-red-600">${Math.round(intelWaste).toLocaleString()}/mo active waste</p>
           </div>
 
-          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0, display: isMobile ? 'none' : 'block' }} />
+          <div className="hidden lg:block w-px h-11 bg-slate-200 shrink-0" />
 
           {/* Score Impact */}
           <div>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 4px' }}>Score Impact if Resolved</p>
-            <p style={{ fontSize: '0.95rem', fontWeight: 700, color: '#7C3AED', margin: '0 0 3px' }}>{`+${intelScoreDelta} pts`}</p>
-            <p style={{ fontSize: '0.68rem', color: '#64748B', margin: 0 }}>Within 24–48h after fixes applied</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Score Impact if Resolved</p>
+            <p className="text-base font-bold text-violet-700 mb-0.5">+{intelScoreDelta} pts</p>
+            <p className="text-[11px] text-slate-500">Within 24–48h after fixes applied</p>
           </div>
 
-          <div style={{ width: '1px', height: '44px', background: '#E2E8F0', flexShrink: 0, display: isMobile ? 'none' : 'block' }} />
+          <div className="hidden lg:block w-px h-11 bg-slate-200 shrink-0" />
 
           {/* Component scores */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+          <div className="grid grid-cols-3 gap-2.5">
             {[
-              { label: 'Cost',          score: `${intelCostScore}/100`,     chip: scoreChip(intelCostScore)     },
-              { label: 'Security',      score: `${intelSecurityScore}/100`, chip: scoreChip(intelSecurityScore) },
-              { label: 'Observability', score: `${intelObsScore}/100`,      chip: scoreChip(intelObsScore)      },
+              { label: 'Cost',          score: intelCostScore, chip: scoreChip(intelCostScore) },
+              { label: 'Security',      score: intelSecScore,  chip: scoreChip(intelSecScore)  },
+              { label: 'Observability', score: intelObsScore,  chip: scoreChip(intelObsScore)  },
             ].map(({ label, score, chip }) => (
-              <div key={label} style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: '9px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 4px' }}>{label}</p>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: chip.color, background: chip.bg, padding: '3px 10px', borderRadius: '100px' }}>{score}</span>
+              <div key={label} className="text-center">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ color: chip.color, background: chip.bg }}>{score}/100</span>
               </div>
             ))}
           </div>
-
         </div>
 
-        <a href="/ai-reports" style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <a href="/ai-reports" className="text-[11px] font-bold text-violet-700 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
           Full report <ArrowRight size={11} />
         </a>
       </div>
 
       {/* COST BY SERVICE */}
       {costByService.length > 0 && (
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', padding: '16px 20px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', color: '#6B7280', textTransform: 'uppercase' }}>Cost by Service</span>
-            <span style={{ fontSize: '0.75rem', color: '#9CA3AF' }}>Last 30 days</span>
+        <div className="bg-white border border-gray-200 rounded-lg px-5 py-4 mb-6">
+          <div className="flex items-center justify-between mb-3.5">
+            <span className="text-[11px] font-semibold tracking-widest text-gray-500 uppercase">Cost by Service</span>
+            <span className="text-xs text-gray-400">Last 30 days</span>
           </div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 14px' }}>
-            Top concentration:{' '}
-            <strong style={{ color: '#0F172A' }}>Analytics (20%)</strong> and{' '}
-            <strong style={{ color: '#0F172A' }}>PostgreSQL (16%)</strong> — primary rightsizing candidates driving $1,060/mo in recoverable waste.
+          <p className="text-[13px] text-slate-500 mb-3.5">
+            Top concentration: <strong className="text-slate-900">Analytics (20%)</strong> and <strong className="text-slate-900">PostgreSQL (16%)</strong> — primary rightsizing candidates driving $1,060/mo in recoverable waste.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div className="flex flex-col gap-2.5">
             {costByService.map((row) => (
-              <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 0' }}>
-                <span style={{ width: isMobile ? '80px' : '160px', fontSize: isMobile ? '0.75rem' : '0.875rem', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{row.name}</span>
-                <div style={{ flex: 1, height: '6px', background: '#F3F4F6', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{ width: `${row.barWidth}%`, height: '100%', background: '#7C3AED', borderRadius: '3px' }} />
+              <div key={row.name} className="flex items-center gap-3 py-1">
+                <span className="w-20 sm:w-40 text-xs sm:text-sm text-gray-900 overflow-hidden text-ellipsis whitespace-nowrap shrink-0">{row.name}</span>
+                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-violet-700 rounded-full" style={{ width: `${row.barWidth}%` }} />
                 </div>
-                <span style={{ width: isMobile ? '60px' : '80px', textAlign: 'right', fontSize: isMobile ? '0.75rem' : '0.875rem', fontWeight: 600, color: '#111827', flexShrink: 0 }}>
-                  ${row.cost.toFixed(2)}
-                </span>
-                <span style={{ display: isMobile ? 'none' : 'block', width: '45px', textAlign: 'right', fontSize: '0.8rem', color: '#6B7280', flexShrink: 0 }}>{row.pct}%</span>
+                <span className="w-16 sm:w-20 text-right text-xs sm:text-sm font-semibold text-gray-900 shrink-0">${row.cost.toFixed(2)}</span>
+                <span className="hidden sm:block w-11 text-right text-[13px] text-gray-500 shrink-0">{row.pct}%</span>
               </div>
             ))}
           </div>
@@ -801,169 +564,110 @@ function InfrastructureContent() {
       )}
 
       {/* 5 KPI CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)', gap: isMobile ? '12px' : '20px', marginBottom: '28px' }}>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-5 mb-7">
 
-        {/* Total Resources — display only */}
-        <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '0.5px solid #e5e7eb' }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Total Resources</p>
-          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (totalResources ?? '—')}</div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            {isDemoActive
-              ? 'Across all regions'
-              : regionCount > 0
-                ? `Across ${regionCount} region${regionCount !== 1 ? 's' : ''}`
-                : 'Across all regions'
-            }
-          </p>
+        {/* Total Resources */}
+        <div className="bg-white rounded-xl p-4 sm:p-8 border border-gray-200/50">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-4">Total Resources</p>
+          <div className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (totalResources ?? '—')}</div>
+          <p className="text-[13px] text-slate-500 leading-relaxed">{isDemoActive ? 'Across all regions' : regionCount > 0 ? `Across ${regionCount} region${regionCount !== 1 ? 's' : ''}` : 'Across all regions'}</p>
         </div>
 
-        {/* Monthly Cost — display only */}
-        <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '0.5px solid #e5e7eb' }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Monthly Cost</p>
-          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>
-            {isDemoActive
-              ? `$${Math.round(totalMonthlyCost).toLocaleString()}`
-              : totalMonthlyCost > 0
-                ? `$${Math.round(totalMonthlyCost).toLocaleString()}`
-                : '—'
-            }
+        {/* Monthly Cost */}
+        <div className="bg-white rounded-xl p-4 sm:p-8 border border-gray-200/50">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-4">Monthly Cost</p>
+          <div className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight leading-none mb-2">
+            {isDemoActive ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : totalMonthlyCost > 0 ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : '—'}
           </div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            {isDemoActive
-              ? 'All resources combined'
-              : totalMonthlyCost > 0
-                ? 'All resources combined'
-                : 'Syncing from Cost Explorer'
-            }
-          </p>
+          <p className="text-[13px] text-slate-500 leading-relaxed">{isDemoActive || totalMonthlyCost > 0 ? 'All resources combined' : 'Syncing from Cost Explorer'}</p>
         </div>
 
-        {/* Healthy — click to filter */}
+        {/* Healthy */}
         <div
-          style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: hoveredCard === 'active' || statusFilter === 'active' ? '0.5px solid #7C3AED' : '0.5px solid #e5e7eb', transition: 'border-color 0.15s ease', cursor: 'pointer' }}
+          className={`bg-white rounded-xl p-4 sm:p-8 border transition-colors cursor-pointer ${hoveredCard === 'active' || statusFilter === 'active' ? 'border-violet-700' : 'border-gray-200/50'}`}
           onMouseEnter={() => setHoveredCard('active')}
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'active' ? null : 'active')}
         >
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Healthy</p>
-          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#059669', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (activeCount ?? '—')}</div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>Running normally</p>
-          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Click to filter</p>
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-4">Healthy</p>
+          <div className="text-3xl sm:text-4xl font-bold text-emerald-600 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (activeCount ?? '—')}</div>
+          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">Running normally</p>
+          <p className="text-[11px] text-gray-400">Click to filter</p>
         </div>
 
-        {/* Critical Issues — click to filter */}
+        {/* Critical Issues */}
         <div
-          style={{
-            background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px',
-            border: hoveredCard === 'warning' || statusFilter === 'warning'
-              ? '0.5px solid #7C3AED'
-              : '1px solid #FECACA',
-            borderLeft: '3px solid #DC2626',
-            transition: 'border-color 0.15s ease', cursor: 'pointer',
-          }}
+          className={`bg-white rounded-xl p-4 sm:p-8 border-l-[3px] border-l-red-600 transition-colors cursor-pointer ${hoveredCard === 'warning' || statusFilter === 'warning' ? 'border border-violet-700' : 'border border-red-200'}`}
           onMouseEnter={() => setHoveredCard('warning')}
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'warning' ? null : 'warning')}
         >
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Critical Issues</p>
-          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#DC2626', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: '0 0 2px', lineHeight: 1.6 }}>
-            1 cost inefficiency · 1 reliability risk
-          </p>
-          <p style={{ fontSize: '0.68rem', color: '#DC2626', margin: 0, fontWeight: 500 }}>
-            Resolve now →
-          </p>
+          <p className="text-[11px] font-semibold text-red-600 uppercase tracking-widest mb-4">Critical Issues</p>
+          <div className="text-3xl sm:text-4xl font-bold text-red-600 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
+          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">1 cost inefficiency · 1 reliability risk</p>
+          <p className="text-[11px] text-red-600 font-medium">Resolve now →</p>
         </div>
 
-        {/* Recoverable Savings — display only */}
-        <div style={{ background: '#fff', borderRadius: '12px', padding: isMobile ? '16px 14px' : '32px', border: '1px solid #A7F3D0' }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>Recoverable Savings</p>
-          <div style={{ fontSize: isMobile ? '1.75rem' : '2.5rem', fontWeight: 700, color: '#16A34A', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '8px' }}>{potentialSavingsValue}</div>
-          <p style={{ fontSize: '0.72rem', color: '#64748B', margin: '0 0 4px' }}>
+        {/* Recoverable Savings */}
+        <div className="col-span-2 lg:col-span-1 bg-white rounded-xl p-4 sm:p-8 border border-emerald-200">
+          <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-widest mb-4">Recoverable Savings</p>
+          <div className="text-3xl sm:text-4xl font-bold text-green-600 tracking-tight leading-none mb-2">{potentialSavingsValue}</div>
+          <p className="text-[11px] text-slate-500 mb-1">
             {totalMonthlyCost > 0 && (realSavingsTotal ?? 0) > 0
               ? `${Math.round(((realSavingsTotal ?? 0) / totalMonthlyCost) * 100)}% of total spend`
-              : isDemoActive
-                ? '18% of total spend'
-                : ''
-            }
+              : isDemoActive ? '18% of total spend' : ''}
           </p>
-          <p style={{ fontSize: '0.78rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
-            {realSavingsTotal && realSavingsTotal > 0
-              ? 'Approve to capture savings'
-              : isDemoActive
-                ? 'Approve to capture savings'
-                : 'Run scan to identify savings'}
+          <p className="text-[13px] text-slate-500 leading-relaxed">
+            {realSavingsTotal && realSavingsTotal > 0 ? 'Approve to capture savings' : isDemoActive ? 'Approve to capture savings' : 'Run scan to identify savings'}
           </p>
           {(isDemoActive || (realSavingsTotal && realSavingsTotal > 0)) && (
-            <a
-              href="/cost-optimization"
-              style={{
-                fontSize: '0.72rem', fontWeight: 600, color: '#059669',
-                textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
-                gap: '3px', marginTop: '6px',
-              }}
-            >
+            <a href="/cost-optimization" className="text-[11px] font-semibold text-emerald-600 no-underline inline-flex items-center gap-1 mt-1.5">
               Review opportunities →
             </a>
           )}
         </div>
-
       </div>
 
       {/* TOP ACTIONS */}
-      <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px 24px', marginBottom: '18px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+      <div className="bg-white border border-slate-200 rounded-xl px-6 py-5 mb-4">
+        <div className="flex items-center justify-between mb-3.5">
           <div>
-            <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', margin: '0 0 3px' }}>Top Actions</p>
-            <p style={{ fontSize: '0.8rem', color: '#475569', margin: 0 }}>
-              Ranked by impact · {zeroRiskCount} zero-risk changes ready ·{' '}
-              <strong style={{ color: '#059669' }}>${totalRecoverable.toLocaleString()}/mo recoverable today</strong>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Top Actions</p>
+            <p className="text-[13px] text-slate-500">
+              Ranked by impact · {zeroRiskCount} zero-risk changes ready · <strong className="text-emerald-600">${totalRecoverable.toLocaleString()}/mo recoverable today</strong>
             </p>
           </div>
-          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', background: '#DC2626', color: '#fff' }}>Act Now</span>
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wide bg-red-600 text-white">Act Now</span>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+        <div className="flex flex-col gap-2.5">
           {displayTopActions.map((action) => (
-            <div key={action.id} style={{
-              display: 'flex', flexDirection: isMobile ? 'column' : 'row',
-              alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between',
-              gap: isMobile ? '12px' : '0',
-              padding: action.isTop ? '15px 16px' : '13px 16px', background: action.bg,
-              borderRadius: '8px', border: action.isTop ? `2px solid ${action.border}` : `1px solid ${action.border}`,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94A3B8', minWidth: '16px' }}>{action.rank}</span>
+            <div
+              key={action.id}
+              className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 rounded-lg border-2 ${action.isTop ? 'py-3.5' : 'py-3'}`}
+              style={{ background: action.urgency === 'now' ? '#FFF8F8' : '#F8FAFC', borderColor: action.urgency === 'now' ? '#FECACA' : '#F1F5F9', borderWidth: action.isTop ? '2px' : '1px' }}
+            >
+              <div className="flex items-center gap-3.5">
+                <span className="text-[11px] font-bold text-slate-400 min-w-[16px]">{action.rank}</span>
                 <div>
-                  <p style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0F172A', margin: '0 0 3px' }}>
+                  <p className="text-sm font-semibold text-slate-900 mb-0.5">
                     {action.title}
-                    {action.savings != null && <span style={{ color: '#059669', fontWeight: 700 }}> — save ${action.savings.toLocaleString()}/mo</span>}
+                    {action.savings != null && <span className="text-emerald-600 font-bold"> — save ${action.savings.toLocaleString()}/mo</span>}
                   </p>
-                  <p style={{ fontSize: '0.7rem', color: '#64748B', margin: 0 }}>{action.sub}</p>
+                  <p className="text-[11px] text-slate-500">{action.sub}</p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0, flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
                 {action.risk === 'zero'
-                  ? <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Zero Risk</span>
-                  : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#FEF3C7', color: '#92400E' }}>Review Impact</span>
-                }
-                {action.isTop && (
-                  <span style={{
-                    display: 'inline-flex', padding: '2px 7px', borderRadius: '4px',
-                    fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase',
-                    letterSpacing: '0.06em', background: '#7C3AED', color: '#fff',
-                  }}>
-                    Highest Impact
-                  </span>
-                )}
+                  ? <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-emerald-100 text-emerald-800">Zero Risk</span>
+                  : <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-amber-100 text-amber-800">Review Impact</span>}
+                {action.isTop && <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-violet-700 text-white">Highest Impact</span>}
                 {action.urgency === 'now'
-                  ? <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#DC2626', color: '#fff' }}>Now</span>
-                  : <span style={{ display: 'inline-flex', padding: '2px 7px', borderRadius: '4px', fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', background: '#D1FAE5', color: '#065F46' }}>Today</span>
-                }
+                  ? <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-red-600 text-white">Now</span>
+                  : <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-emerald-100 text-emerald-800">Today</span>}
                 {action.risk === 'zero'
-                  ? <a href="/cost-optimization" style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 13px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', width: isMobile ? '100%' : 'auto', textAlign: 'center' }}>Fix →</a>
-                  : <a href="/anomalies" style={{ background: 'transparent', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textDecoration: 'none', width: isMobile ? '100%' : 'auto', textAlign: 'center' }}>Review →</a>
-                }
+                  ? <a href="/cost-optimization" className="bg-emerald-600 text-white rounded-md px-3 py-1 text-[11px] font-bold no-underline sm:w-auto w-full text-center">Fix →</a>
+                  : <a href="/anomalies" className="bg-transparent text-slate-500 border border-slate-200 rounded-md px-3 py-1 text-[11px] font-semibold no-underline sm:w-auto w-full text-center">Review →</a>}
               </div>
             </div>
           ))}
@@ -971,84 +675,54 @@ function InfrastructureContent() {
       </div>
 
       {/* RESOURCE TABLE */}
-      <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #F1F5F9', overflow: 'hidden', overflowX: 'auto' }}>
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
 
-        {/* Table header + dropdown filter pills */}
-        <div style={{ padding: '20px 28px', borderBottom: '1px solid #F1F5F9' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        {/* Table header + filters */}
+        <div className="px-7 py-5 border-b border-slate-100">
+          <div className="flex items-center justify-between mb-3.5">
             <div>
               {isDemoActive
-                ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{DEMO_RESOURCES.length} resources (demo data)</p>
+                ? <p className="text-[13px] text-gray-400">{DEMO_RESOURCES.length} resources (demo data)</p>
                 : (totalResources !== null && (totalResources as number) > 0)
-                  ? <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{effectiveResources.length} of{' '}{totalResources ?? allResources.length}{' '}resources</p>
-                  : <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>0 resources</p>
-              }
+                  ? <p className="text-[13px] text-gray-400">{effectiveResources.length} of {totalResources ?? allResources.length} resources</p>
+                  : <p className="text-[13px] text-gray-400">0 resources</p>}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} style={{ fontSize: '11px', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB', borderRadius: '100px', padding: '4px 12px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <div className="flex gap-2 mb-3">
+            <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} className="text-[11px] font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
               <option value="all">View by Issue ▾</option>
               <option value="Cost Waste">Cost Waste</option>
               <option value="Reliability Risk">Reliability Risk</option>
               <option value="Healthy">Healthy</option>
             </select>
-            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} style={{ fontSize: '11px', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB', borderRadius: '100px', padding: '4px 12px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="text-[11px] font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
               <option value="impact">Sort: Impact ▾</option>
               <option value="cost-high">Sort: Cost (High)</option>
               <option value="status">Sort: Status</option>
             </select>
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div className="flex gap-2 flex-wrap">
             {DROPDOWN_PILLS.map((pill) => {
-              const isActive = pill.key === 'all'
-                ? selectedType === null
-                : pill.items.some(i => i.value === selectedType)
-              const isOpen = openDropdown === pill.key
+              const isActive = pill.key === 'all' ? selectedType === null : pill.items.some(i => i.value === selectedType)
+              const isOpen   = openDropdown === pill.key
               return (
-                <div key={pill.key} style={{ position: 'relative' }}>
+                <div key={pill.key} className="relative">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setOpenDropdown(isOpen ? null : pill.key)
-                    }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      padding: '5px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600,
-                      border: isActive ? 'none' : '1px solid #E5E7EB',
-                      cursor: 'pointer', transition: 'all 0.15s',
-                      background: isActive ? '#7C3AED' : '#fff',
-                      color: isActive ? '#fff' : '#374151',
-                    }}>
-                    {pill.label}
-                    <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>▼</span>
+                    onClick={(e) => { e.stopPropagation(); setOpenDropdown(isOpen ? null : pill.key) }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${isActive ? 'bg-violet-700 text-white border-transparent' : 'bg-white text-gray-700 border-gray-200'}`}
+                  >
+                    {pill.label} <span className="text-[9px] opacity-70">▼</span>
                   </button>
                   {isOpen && (
-                    <div
-                      onMouseDown={(e) => e.stopPropagation()}
-                      style={{
-                        position: 'absolute', top: 'calc(100% + 6px)', left: 0,
-                        background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.10)', zIndex: 50,
-                        minWidth: isMobile ? '0' : '160px', overflow: 'hidden',
-                      }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} className="absolute top-[calc(100%+6px)] left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[160px] overflow-hidden">
                       {pill.items.map((item) => {
                         const isSel = item.value === null ? selectedType === null : item.value === selectedType
                         return (
                           <button
                             key={item.value ?? '__all__'}
-                            onClick={() => {
-                              setSelectedType(item.value)
-                              setOpenDropdown(null)
-                            }}
-                            style={{
-                              display: 'block', width: '100%', textAlign: 'left',
-                              padding: '8px 16px', fontSize: '0.82rem', border: 'none',
-                              cursor: 'pointer', background: 'transparent',
-                              color: isSel ? '#7C3AED' : '#374151',
-                              fontWeight: isSel ? 600 : 400,
-                            }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#F9FAFB' }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}>
+                            onClick={() => { setSelectedType(item.value); setOpenDropdown(null) }}
+                            className={`block w-full text-left px-4 py-2 text-[13px] border-none bg-transparent cursor-pointer hover:bg-gray-50 ${isSel ? 'text-violet-700 font-semibold' : 'text-gray-700 font-normal'}`}
+                          >
                             {item.label}
                           </button>
                         )
@@ -1061,56 +735,35 @@ function InfrastructureContent() {
           </div>
         </div>
 
-        {/* Column headers — hidden on mobile (cards replace the grid) */}
-        <div style={{ display: isMobile ? 'none' : 'grid', gridTemplateColumns: isTablet ? '2fr 80px 100px 100px 90px' : '2fr 90px 150px 150px 110px 110px 110px', padding: '10px 28px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+        {/* Column headers — desktop only */}
+        <div className="hidden sm:grid grid-cols-[2fr_90px_150px_150px_110px_110px_110px] px-7 py-2.5 bg-slate-50 border-b border-slate-100">
           {['Resource', 'Type', 'AWS ID', 'Service', 'Region', 'Monthly Cost', 'Issue'].map(col => (
-            <span key={col} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col}</span>
+            <span key={col} className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{col}</span>
           ))}
         </div>
 
         {/* Rows */}
         {isLoading && !isDemoActive ? (
-          <div style={{ padding: isMobile ? '16px 14px' : '48px', textAlign: 'center' }}>
-            <RefreshCw size={20} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
-            <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Loading resources...</p>
+          <div className="py-12 text-center">
+            <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" />
+            <p className="text-sm text-slate-500">Loading resources...</p>
           </div>
         ) : !isDemoActive && effectiveResources.length === 0 ? (
-          <div style={{ padding: isMobile ? '16px 14px' : '64px', textAlign: 'center' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-              <Server size={22} style={{ color: '#94A3B8' }} />
+          <div className="px-4 py-16 text-center">
+            <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
+              <Server size={22} className="text-slate-400" />
             </div>
-            <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>
-                No infrastructure data yet
-              </p>
-              <p style={{ fontSize: '0.875rem', color: '#475569', margin: '0 0 20px', lineHeight: 1.6 }}>
-                Connect your AWS account to uncover cost leaks, security risks, and idle resources — first insights in under 2 minutes.
-              </p>
-              <div style={{
-                display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px',
-                maxWidth: '480px', margin: '0 auto 24px', textAlign: 'left',
-              }}>
-                {[
-                  '💸 Idle EC2 instances draining budget',
-                  '🗄️ Underutilized RDS databases',
-                  '🔒 Misconfigured security groups',
-                  '📦 Unused S3 storage accumulating',
-                ].map(item => (
-                  <div key={item} style={{
-                    fontSize: '0.78rem', color: '#475569', background: '#F8FAFC',
-                    borderRadius: '8px', padding: '10px 12px', border: '1px solid #F1F5F9',
-                  }}>
-                    {item}
-                  </div>
-                ))}
-              </div>
-              <p style={{ fontSize: '0.75rem', color: '#94A3B8', margin: '12px 0 0' }}>
-                Read-only access · No changes to infrastructure · Cancel anytime
-              </p>
+            <p className="text-base font-semibold text-slate-900 mb-1.5">No infrastructure data yet</p>
+            <p className="text-sm text-slate-500 mb-5 leading-relaxed max-w-md mx-auto">
+              Connect your AWS account to uncover cost leaks, security risks, and idle resources — first insights in under 2 minutes.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-sm mx-auto mb-6 text-left">
+              {['💸 Idle EC2 instances draining budget', '🗄️ Underutilized RDS databases', '🔒 Misconfigured security groups', '📦 Unused S3 storage accumulating'].map(item => (
+                <div key={item} className="text-[13px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">{item}</div>
+              ))}
             </div>
-            <button
-              onClick={handleSyncAWS}
-              style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <p className="text-xs text-gray-400 mb-4">Read-only access · No changes to infrastructure · Cancel anytime</p>
+            <button onClick={handleSyncAWS} className="bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer inline-flex items-center gap-2">
               <RefreshCw size={14} /> Scan My AWS for Cost &amp; Risk
             </button>
           </div>
@@ -1118,25 +771,14 @@ function InfrastructureContent() {
           (showAllResources ? tableResources : tableResources.slice(0, 8)).map((r: InfrastructureResource) => {
             const typeConf = resourceTypeConfig[r.resourceType?.toLowerCase() as string] || resourceTypeConfig.default
             const Icon = typeConf.icon
-
             const isReliabilityRisk = r.status === 'pending' || r.status === 'stopped'
-            const isCostWaste = r.costPerMonth != null && r.costPerMonth > 400
-
-            const statusLabel = r.status === 'running' && !isCostWaste
-              ? 'Healthy'
-              : isCostWaste && r.status === 'running'
-                ? 'Cost Waste'
-                : isReliabilityRisk
-                  ? 'Critical'
-                  : r.status ?? '—'
-
-            const statusColor = statusLabel === 'Critical'  ? '#fff'    : statusLabel === 'Cost Waste' ? '#92400E' : '#475569'
-            const statusBg    = statusLabel === 'Critical'  ? '#DC2626' : statusLabel === 'Cost Waste' ? '#FEF3C7' : '#F1F5F9'
-
-            const rowBg     = statusLabel === 'Critical'  ? '#FFF5F5' : statusLabel === 'Cost Waste' ? '#FFFBEB' : '#FFFFFF'
-            const rowBorder = statusLabel === 'Critical'  ? '#FEE2E2' : statusLabel === 'Cost Waste' ? '#FDE68A' : '#F8FAFC'
-
-            const issueLabel = statusLabel === 'Critical'
+            const isCostWaste       = r.costPerMonth != null && r.costPerMonth > 400
+            const statusLabel = r.status === 'running' && !isCostWaste ? 'Healthy' : isCostWaste && r.status === 'running' ? 'Cost Waste' : isReliabilityRisk ? 'Critical' : r.status ?? '—'
+            const statusColor = statusLabel === 'Critical' ? '#fff' : statusLabel === 'Cost Waste' ? '#fff' : '#475569'
+            const statusBg    = statusLabel === 'Critical' ? '#DC2626' : statusLabel === 'Cost Waste' ? '#D97706' : '#F1F5F9'
+            const rowBg       = statusLabel === 'Critical' ? '#FFF5F5' : statusLabel === 'Cost Waste' ? '#FFFBEB' : '#FFFFFF'
+            const rowBorder   = statusLabel === 'Critical' ? '#FEE2E2' : statusLabel === 'Cost Waste' ? '#FDE68A' : '#F8FAFC'
+            const issueLabel  = statusLabel === 'Critical'
               ? '⚠ Reliability risk · elevated error rate · potential downtime'
               : statusLabel === 'Cost Waste'
                 ? `↑ Cost waste · $${Math.round((r.costPerMonth ?? 0) * 0.4).toLocaleString()}/mo recoverable · downsize candidate`
@@ -1144,157 +786,70 @@ function InfrastructureContent() {
 
             return (
               <div key={r.id} id={`resource-${r.id}`}>
-                {isMobile ? (
-                  /* ── MOBILE CARD ── */
-                  <div style={{
-                    padding: '16px',
-                    background: rowBg,
-                    borderRadius: '10px',
-                    border: `1px solid ${rowBorder}`,
-                    marginBottom: '10px',
-                  }}>
-                    {/* Top row: icon + name + status badge */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: issueLabel ? '6px' : '10px' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: typeConf.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Icon size={14} style={{ color: typeConf.color }} />
-                      </div>
-                      <p style={{ flex: 1, fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}
-                      </p>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '100px', background: statusBg, color: statusColor, flexShrink: 0 }}>
-                        {statusLabel}
-                      </span>
+                {/* Mobile card */}
+                <div className="sm:hidden p-4 rounded-xl border mb-2.5" style={{ background: rowBg, borderColor: rowBorder }}>
+                  <div className={`flex items-center gap-2.5 ${issueLabel ? 'mb-1.5' : 'mb-2.5'}`}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: typeConf.bg }}>
+                      <Icon size={14} style={{ color: typeConf.color }} />
                     </div>
+                    <p className="flex-1 text-sm font-semibold text-slate-900 overflow-hidden text-ellipsis whitespace-nowrap">{r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}</p>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
+                  </div>
+                  {issueLabel && (
+                    <p className="text-[11px] font-semibold mb-2.5" style={{ color: statusLabel === 'Critical' ? '#DC2626' : '#D97706' }}>
+                      {issueLabel}
+                      {statusLabel === 'Critical' && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline" style={{ color: '#DC2626' }}>Investigate →</a>}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
+                    <span className="text-xs text-slate-500 font-mono">{r.awsRegion || '—'}</span>
+                    <span className="ml-auto text-sm font-bold text-slate-900">${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
 
-                    {/* Issue label */}
-                    {issueLabel && (
-                      <p style={{ fontSize: '0.72rem', color: statusLabel === 'Critical' ? '#DC2626' : '#D97706', margin: '0 0 10px', fontWeight: 600 }}>
-                        {issueLabel}
-                        {statusLabel === 'Critical' && (
-                          <a href={`/anomalies?resource=${r.awsId}`} style={{ marginLeft: '8px', color: '#DC2626', fontWeight: 700, textDecoration: 'underline' }}>
-                            Investigate →
-                          </a>
-                        )}
-                      </p>
-                    )}
-
-                    {/* Bottom row: type + region + cost */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', background: typeConf.bg, color: typeConf.color }}>
-                        {(r.resourceType as string)?.toUpperCase() ?? '—'}
-                      </span>
-                      <span style={{ fontSize: '0.75rem', color: '#64748B', fontFamily: 'monospace' }}>{r.awsRegion || '—'}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>
-                        ${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
+                {/* Desktop row */}
+                <div
+                  className="hidden sm:grid grid-cols-[2fr_90px_150px_150px_110px_110px_110px] px-7 py-3.5 border-b items-center transition-colors mb-3"
+                  style={{ background: rowBg, borderColor: rowBorder }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: typeConf.bg }}>
+                      <Icon size={14} style={{ color: typeConf.color }} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 mb-0.5">{r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}</p>
+                      {issueLabel
+                        ? <p className="text-[10px] font-bold" style={{ color: statusLabel === 'Critical' ? '#DC2626' : '#D97706' }}>
+                            {issueLabel}
+                            {statusLabel === 'Critical' && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline text-[10px]" style={{ color: '#DC2626' }}>Investigate →</a>}
+                          </p>
+                        : <p className="text-[10px] text-slate-400">Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
                     </div>
                   </div>
-                ) : (
-                  /* ── DESKTOP / TABLET GRID ROW ── */
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: isTablet ? '2fr 80px 100px 100px 90px' : '2fr 90px 150px 150px 110px 110px 110px',
-                      padding: '14px 28px',
-                      background: rowBg,
-                      borderBottom: `1px solid ${rowBorder}`,
-                      alignItems: 'center',
-                      transition: 'background 0.1s',
-                    }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg || '#F8FAFC' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg }}
-                  >
-                    {/* Resource name + icon */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: typeConf.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Icon size={14} style={{ color: typeConf.color }} />
-                      </div>
-                      <div>
-                        <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', margin: '0 0 1px' }}>
-                          {r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}
-                        </p>
-                        {issueLabel
-                          ? <p style={{ fontSize: '0.67rem', color: statusLabel === 'Critical' ? '#DC2626' : '#D97706', margin: 0, fontWeight: 700 }}>
-                              {issueLabel}
-                              {statusLabel === 'Critical' && (
-                                <a
-                                  href={`/anomalies?resource=${r.awsId}`}
-                                  style={{ marginLeft: '8px', color: '#DC2626', fontWeight: 700, fontSize: '0.67rem', textDecoration: 'underline' }}
-                                >
-                                  Investigate →
-                                </a>
-                              )}
-                            </p>
-                          : <p style={{ fontSize: '0.67rem', color: '#94A3B8', margin: 0 }}>
-                              Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                            </p>
-                        }
-                      </div>
-                    </div>
-
-                    {/* Type badge */}
-                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', background: typeConf.bg, color: typeConf.color, width: 'fit-content' }}>
-                      {(r.resourceType as string)?.toUpperCase() ?? '—'}
-                    </span>
-
-                    {/* AWS ID */}
-                    <span style={{ fontSize: '0.75rem', color: '#64748B', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                      {r.awsId || '—'}
-                    </span>
-
-                    {/* Service */}
-                    <span style={{ fontSize: '0.82rem', color: '#475569' }}>
-                      {r.serviceName || '—'}
-                    </span>
-
-                    {/* Region */}
-                    <span style={{ fontSize: '0.78rem', color: '#475569', fontFamily: 'monospace' }}>
-                      {r.awsRegion || '—'}
-                    </span>
-
-                    {/* Monthly Cost */}
-                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>
-                      ${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}
-                    </span>
-
-                    {/* Issue badge */}
-                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '100px', background: statusBg, color: statusColor, width: 'fit-content' }}>
-                      {statusLabel}
-                    </span>
-                  </div>
-                )}
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded w-fit" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
+                  <span className="text-xs text-slate-500 font-mono overflow-hidden text-ellipsis whitespace-nowrap block">{r.awsId || '—'}</span>
+                  <span className="text-[13px] text-slate-500">{r.serviceName || '—'}</span>
+                  <span className="text-[13px] text-slate-500 font-mono">{r.awsRegion || '—'}</span>
+                  <span className="text-sm font-bold text-slate-900">${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
+                </div>
               </div>
             )
           })
         )}
+
         {tableResources.length > 8 && (
-          <div style={{ padding: '14px 28px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
+          <div className="px-7 py-3.5 border-t border-slate-100 text-center">
             <button
               onClick={() => setShowAllResources(prev => !prev)}
-              style={{
-                background: 'transparent',
-                color: '#7C3AED',
-                border: '1px solid #DDD6FE',
-                borderRadius: '7px',
-                padding: '8px 24px',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
+              className="bg-transparent text-violet-700 border border-violet-200 rounded-lg px-6 py-2 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5"
             >
-              {showAllResources
-                ? <>Show less ↑</>
-                : <>{tableResources.length - 8} more resources ↓</>
-              }
+              {showAllResources ? 'Show less ↑' : `${tableResources.length - 8} more resources ↓`}
             </button>
           </div>
         )}
       </div>
-
     </div>
   )
 }
