@@ -91,10 +91,12 @@ export function AIChatWidget() {
   };
 
   const quickPrompts = [
-    'Why did my costs increase?',
-    'Which resources are underutilized?',
-    'Show me cost optimization opportunities',
-    'Are there any reliability risks?',
+    'What is my biggest cost driver this month?',
+    'Which EC2 instances can I rightsize today?',
+    'Are there any idle or unused resources I should delete?',
+    'What security risks need immediate attention?',
+    'How does my spend compare to last month?',
+    'Which services have anomalous cost spikes?',
   ];
 
   // Floating button when closed
@@ -102,7 +104,7 @@ export function AIChatWidget() {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full p-4 shadow-lg transition-all z-50 group"
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full p-4 shadow-lg transition-all z-50 group"
         aria-label="Open AI Assistant"
       >
         <Sparkles className="w-6 h-6 group-hover:scale-110 transition-transform" />
@@ -113,8 +115,8 @@ export function AIChatWidget() {
 
   return (
     <div
-      className={`fixed bottom-6 right-6 bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 transition-all duration-200 ${
-        isMinimized ? 'w-80 h-14' : 'w-[420px] h-[600px]'
+      className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 transition-all duration-200 ${
+        isMinimized ? 'w-72 h-14' : 'w-[calc(100vw-32px)] sm:w-[420px] h-[85vh] sm:h-[600px] max-w-[420px]'
       }`}
     >
       {/* Header */}
