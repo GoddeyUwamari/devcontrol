@@ -76,11 +76,6 @@ export default function ConnectAwsPage() {
 
           {/* LEFT */}
           <div>
-            <nav className="flex items-center gap-1.5 text-sm mb-5 flex-nowrap whitespace-nowrap overflow-hidden">
-              <a href="/dashboard" className="text-slate-500 hover:text-slate-900 transition-colors">Dashboard</a>
-              <span className="text-slate-400">›</span>
-              <span className="text-slate-900 font-medium">Connect AWS</span>
-            </nav>
 
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-2">
               Connect your AWS account
