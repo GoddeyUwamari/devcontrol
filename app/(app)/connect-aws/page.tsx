@@ -70,7 +70,7 @@ export default function ConnectAwsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans px-4 py-6 sm:px-6 sm:py-10 lg:px-14 lg:py-10">
+   <div className="min-h-screen bg-gray-50 font-sans px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 overflow-x-hidden">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-8 lg:gap-12 items-start">
 
