@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { forecastService } from '@/lib/services/forecast.service';
 import { CostForecast, Scenario, ScenarioType } from '@/types/forecast.types';
@@ -122,6 +122,19 @@ export default function ForecastPage() {
       </div>
     );
   }
+
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(0);
+
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setChartWidth(width);
+    });
+    observer.observe(chartContainerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   const isDemoMode = forecast.organizationId === 'demo';
   const allChartValues = chartData.flatMap(d => [d.historical, d.predicted, d.upper, d.lower].filter((v): v is number => v !== null));
@@ -271,8 +284,8 @@ export default function ForecastPage() {
                       </div>
                     </div>
                   ) : (
-                  <div style={{ width: "100%", height: 320 }}>
-                  <ResponsiveContainer width="100%" height={320}>
+                  <div ref={chartContainerRef} style={{ width: "100%", height: 320 }}>
+                  <ResponsiveContainer width={chartWidth || "100%"} height={320}>
                     <ComposedChart data={chartData}>
                       <defs>
                         <linearGradient id="colorHistorical" x1="0" y1="0" x2="0" y2="1">
