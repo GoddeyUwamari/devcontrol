@@ -37,6 +37,19 @@ export default function ForecastPage() {
 
   useEffect(() => { loadForecast(); }, []);
 
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(0);
+
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setChartWidth(width);
+    });
+    observer.observe(chartContainerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   const loadForecast = async () => {
     setIsLoading(true);
     try {
@@ -122,19 +135,6 @@ export default function ForecastPage() {
       </div>
     );
   }
-
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [chartWidth, setChartWidth] = useState(0);
-
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width;
-      if (width) setChartWidth(width);
-    });
-    observer.observe(chartContainerRef.current);
-    return () => observer.disconnect();
-  }, []);
 
   const isDemoMode = forecast.organizationId === 'demo';
   const allChartValues = chartData.flatMap(d => [d.historical, d.predicted, d.upper, d.lower].filter((v): v is number => v !== null));
