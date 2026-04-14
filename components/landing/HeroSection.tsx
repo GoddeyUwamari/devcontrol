@@ -30,7 +30,7 @@ export function HeroSection() {
   return (
     <section
       className="relative overflow-hidden flex items-center"
-      style={{ width: '100%', paddingTop: isMobile ? '40px' : '60px', paddingBottom: '0' }}
+      style={{ width: '100%', paddingTop: isMobile ? '16px' : '24px', paddingBottom: '0' }}
     >
       <AnimatedBackground />
       <div className="absolute inset-0 -z-10" style={{ background: 'linear-gradient(to bottom, #faf5ff, #ffffff)', pointerEvents: 'none' }} />
@@ -42,10 +42,10 @@ export function HeroSection() {
       }}>
 
         {/* Headline */}
-        <h1 className="font-extrabold leading-tight" style={{ fontSize: isMobile ? '2rem' : isTablet ? '2.8rem' : 'clamp(2.5rem, 6vw, 4rem)', marginBottom: '20px' }}>
-          <span style={{ color: '#7c3aed' }}>Your AWS Is Leaking Money.</span>
+        <h1 className="font-extrabold leading-tight" style={{ fontSize: isMobile ? '1.6rem' : isTablet ? '2.8rem' : 'clamp(2.5rem, 6vw, 3.4rem)', marginBottom: '20px' }}>
+          <span style={{ color: '#7c3aed', display: 'block', marginBottom: '8px' }}>Your AWS Is Leaking Money.</span>
           <div style={{ marginTop: isMobile ? '-8px' : '-18px' }}>
-            <span style={{ color: '#111827', fontSize: isMobile ? '1.5rem' : isTablet ? '2rem' : 'clamp(2rem, 5vw, 2.6rem)' }}>DevControl Shows You Exactly Where.</span>
+            <span style={{ color: '#111827', fontSize: isMobile ? '1.2rem' : isTablet ? '2rem' : 'clamp(2rem, 5vw, 2.6rem)' }}>DevControl Shows You Exactly Where.</span>
           </div>
         </h1>
 
