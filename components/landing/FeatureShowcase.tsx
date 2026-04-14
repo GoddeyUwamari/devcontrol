@@ -89,7 +89,8 @@ export function FeatureShowcase() {
 
         <p
           style={{
-            fontSize: isMobile ? '1rem' : '1.2rem',
+            fontSi
+            ze: isMobile ? '1rem' : '1.2rem',
             color: '#374151',
             maxWidth: '680px',
             textAlign: 'center',
@@ -134,13 +135,9 @@ export function FeatureShowcase() {
                 style={{
                   backgroundColor: '#fff',
                   borderRadius: '16px',
-                  border: feature.highlight
-                    ? '2px solid #7c3aed'
-                    : '1.5px solid #e5e7eb',
+                  border: '2px solid #e5e7eb',
                   padding: isMobile ? '24px' : '40px',
-                  boxShadow: feature.highlight
-                    ? '0 8px 32px rgba(124,58,237,0.15)'
-                    : 'none',
+                  boxShadow: 'none',
                   transition: 'all 0.2s ease',
                 }}
               >

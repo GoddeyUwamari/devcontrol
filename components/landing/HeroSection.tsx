@@ -106,12 +106,12 @@ export function HeroSection() {
               justifyContent: 'center',
               gap: '8px',
               backgroundColor: 'transparent',
-              color: '#374151',
+              color: '#7c3aed',
               fontSize: '0.95rem',
-              fontWeight: 500,
+              fontWeight: 600,
               padding: '14px 24px',
               borderRadius: '10px',
-              border: '1.5px solid #e5e7eb',
+              border: '1.5px solid #7c3aed',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
               textDecoration: 'none',
@@ -122,8 +122,8 @@ export function HeroSection() {
               e.currentTarget.style.color = '#7c3aed'
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.borderColor = '#e5e7eb'
-              e.currentTarget.style.color = '#374151'
+              e.currentTarget.style.borderColor = '#7c3aed'
+              e.currentTarget.style.color = '#7c3aed'
             }}
           >
             <Play className="h-4 w-4" />

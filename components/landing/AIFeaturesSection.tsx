@@ -162,12 +162,8 @@ export function AIFeaturesSection() {
                   background: '#fff',
                   borderRadius: '18px',
                   padding: isMobile ? '20px' : '32px',
-                  border: feature.highlight
-                    ? '2px solid #7c3aed'
-                    : '1px solid #e5e7eb',
-                  boxShadow: feature.highlight
-                    ? '0 10px 30px rgba(124,58,237,0.15)'
-                    : '0 4px 12px rgba(0,0,0,0.04)',
+                  border: '2px solid #e5e7eb',
+                  boxShadow: 'none',
                   transition: 'all 0.2s ease',
                 }}
               >
