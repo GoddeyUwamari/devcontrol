@@ -63,6 +63,7 @@ const navItems: NavItem[] = [
       { label: 'Forecast', href: '/forecast', icon: BarChart3, desc: 'Predictive budget forecasting' },
       { label: 'Invoices', href: '/invoices', icon: FileText, desc: 'Billing history' },
       { label: 'AI Reports', href: '/ai-reports', icon: Sparkles, desc: 'AI-generated cost reports' },
+      { label: 'Efficiency', href: '/costs/efficiency', icon: Activity, desc: 'Resource efficiency analysis' },
     ],
   },
   {
@@ -127,6 +128,7 @@ const mobileSections = [
       { label: 'Forecast', href: '/forecast' },
       { label: 'Invoices', href: '/invoices' },
       { label: 'AI Reports', href: '/ai-reports' },
+      { label: 'Efficiency', href: '/costs/efficiency' },
     ],
   },
   {

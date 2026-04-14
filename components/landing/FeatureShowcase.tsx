@@ -72,7 +72,7 @@ export function FeatureShowcase() {
   const isTablet = width >= 640 && width < 1024
 
   return (
-    <section style={{ width: '100%', padding: isMobile ? '60px 0' : isTablet ? '80px 0' : '100px 0', backgroundColor: '#fff' }}>
+    <section style={{ width: '100%', padding: isMobile ? '40px 0' : isTablet ? '56px 0' : '64px 0', backgroundColor: '#fff' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
 
         <h2
@@ -212,7 +212,7 @@ export function FeatureShowcase() {
           })}
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: '64px' }}>
+        <div style={{ textAlign: 'center', marginTop: '40px' }}>
           <Link
             href="/register"
             style={{

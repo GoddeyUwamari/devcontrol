@@ -75,7 +75,7 @@ export function AIFeaturesSection() {
   const isTablet = width >= 640 && width < 1024
 
   return (
-    <section style={{ width: '100%', padding: isMobile ? '60px 0' : isTablet ? '80px 0' : '100px 0', background: '#f9fafb' }}>
+    <section style={{ width: '100%', padding: isMobile ? '40px 0' : isTablet ? '56px 0' : '64px 0', background: '#f9fafb' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 24px' }}>
 
         {/* Header */}
@@ -224,7 +224,7 @@ export function AIFeaturesSection() {
         </div>
 
         {/* Bottom CTA */}
-        <div style={{ textAlign: 'center', marginTop: isMobile ? '48px' : '72px' }}>
+        <div style={{ textAlign: 'center', marginTop: isMobile ? '32px' : '48px' }}>
           <Link
             href="/register"
             style={{

@@ -30,7 +30,7 @@ export function HeroSection() {
   return (
     <section
       className="relative overflow-hidden flex items-center"
-      style={{ width: '100%', paddingTop: isMobile ? '40px' : '60px', paddingBottom: '32px' }}
+      style={{ width: '100%', paddingTop: isMobile ? '40px' : '60px', paddingBottom: '0' }}
     >
       <AnimatedBackground />
       <div className="absolute inset-0 -z-10" style={{ background: 'linear-gradient(to bottom, #faf5ff, #ffffff)', pointerEvents: 'none' }} />
@@ -180,65 +180,8 @@ export function HeroSection() {
           </div>
         </div>
 
-        {/* How it works */}
-        <div style={{
-          width: '100%',
-          background: 'rgba(124,58,237,0.04)',
-          border: '1.5px solid rgba(124,58,237,0.1)',
-          borderRadius: '20px',
-          padding: isMobile ? '20px 16px' : '28px 32px',
-          marginTop: '48px',
-        }}>
-          <div style={{
-            textAlign: 'center',
-            fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed',
-            letterSpacing: '0.12em', textTransform: 'uppercase' as const,
-            marginBottom: '20px',
-          }}>
-            How it works — 4 steps, 15 minutes
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile || isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-            gap: '16px',
-            width: '100%',
-          }}>
-            {[
-              { step: '1', title: 'Connect AWS', sub: 'Read-only, 60 seconds' },
-              { step: '2', title: 'Scan Everything', sub: 'Every resource, automatically' },
-              { step: '3', title: 'Identify Cost Leaks + Risks', sub: 'Prioritized insights instantly' },
-              { step: '4', title: 'Fix With One Click', sub: 'AI-powered recommendations' },
-            ].map(({ step, title, sub }) => (
-              <div key={step} style={{
-                background: '#fff',
-                border: '1.5px solid #e5e7eb',
-                borderRadius: '14px',
-                padding: isMobile ? '16px 12px' : '24px 16px',
-                textAlign: 'center',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-              }}>
-                <div style={{
-                  width: '32px', height: '32px', borderRadius: '50%',
-                  background: '#7c3aed', color: '#fff',
-                  fontSize: '0.85rem', fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  margin: '0 auto 12px',
-                }}>
-                  {step}
-                </div>
-                <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
-                  {title}
-                </div>
-                <div style={{ fontSize: isMobile ? '0.72rem' : '0.78rem', color: '#374151' }}>
-                  {sub}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* Dashboard Screenshot */}
-        <div style={{ marginTop: '64px', width: '100%' }}>
+        <div style={{ marginTop: '24px', width: '100%' }}>
           <DashboardPreview />
         </div>
 
