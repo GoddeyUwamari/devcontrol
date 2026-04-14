@@ -153,6 +153,9 @@ export function FeatureComparisonTable() {
         overflow: 'hidden',
         width: '100%',
       }}>
+        <p className="sm:hidden text-xs text-gray-400 text-center py-2 border-b border-gray-100">
+          ← Scroll to see all plans →
+        </p>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse' }}>
             <thead>

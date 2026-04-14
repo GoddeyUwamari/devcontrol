@@ -180,7 +180,7 @@ export function PricingFAQ() {
     <div style={{ width: '100%', maxWidth: '1400px', margin: '0 auto', padding: '0', display: 'flex', flexDirection: 'column', gap: '40px' }}>
 
       {/* FAQ Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', width: '100%' }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {leftColumn.map((faq, index) => renderFAQItem(faq, index, 0))}
         </div>
