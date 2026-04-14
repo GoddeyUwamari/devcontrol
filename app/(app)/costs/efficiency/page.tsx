@@ -1,26 +1,25 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ScatterChart, Scatter, ZAxis,
-  ReferenceLine, Cell,
+  ReferenceLine,
 } from 'recharts'
 import {
-  TrendingUp, TrendingDown, Activity, DollarSign,
-  Zap, Download, RefreshCw, ArrowRight,
+  TrendingUp, TrendingDown, Zap, Download, ArrowRight,
+  AlertTriangle, Activity,
 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
-import { forecastService } from '@/lib/services/forecast.service'
 import type { InfrastructureResource } from '@/lib/types'
 import Link from 'next/link'
 
-// ── Demo data ────────────────────────────────────────────────────────────────
+// ── Demo data ─────────────────────────────────────────────────────────────────
 
 const DEMO_KPIS = {
   totalSpend:      94280,
@@ -56,6 +55,35 @@ const DEMO_SCATTER_DATA = [
   { x: 32000, y: 78,  name: 'cloudfront',    q: 'efficient' },
 ]
 
+const DEMO_WASTEFUL_RESOURCES = [
+  { name: 'analytics-warehouse',      type: 'RDS',    region: 'us-west-2', cost: 2341.60, efficiency: 22, issue: 'Oversized · avg 8% CPU',        savings: 937  },
+  { name: 'production-postgres-primary', type: 'RDS', region: 'us-east-1', cost: 1876.30, efficiency: 31, issue: 'Reserved Instance available',    savings: 751  },
+  { name: 'production-kubernetes',    type: 'EKS',    region: 'us-east-1', cost: 1456.20, efficiency: 28, issue: 'Over-provisioned node group',    savings: 582  },
+  { name: 'payment-processor',        type: 'EC2',    region: 'us-east-1', cost: 1243.20, efficiency: 35, issue: 'Idle 60% of the time',           savings: 497  },
+  { name: 'production-postgres-replica', type: 'RDS', region: 'us-east-1', cost: 938.15,  efficiency: 41, issue: 'Replica rarely read from',       savings: 375  },
+]
+
+const DEMO_ANOMALIES = [
+  { service: 'payment-processor', type: 'EC2',    delta: +178, severity: 'critical', date: 'Apr 13', detail: 'Lambda invocation spike' },
+  { service: 'analytics-worker',  type: 'EC2',    delta: +94,  severity: 'high',     date: 'Apr 12', detail: 'CPU overload detected'   },
+  { service: 'rds-prod-primary',  type: 'RDS',    delta: +67,  severity: 'high',     date: 'Apr 11', detail: 'Unusual query volume'     },
+  { service: 's3-data-lake',      type: 'S3',     delta: +43,  severity: 'medium',   date: 'Apr 10', detail: 'Storage growth spike'     },
+]
+
+const DEMO_SERVICE_EFFICIENCY = [
+  { name: 'k8s-cluster',      score: 91, cost: 30000, type: 'EKS'    },
+  { name: 'cdn-cluster',      score: 88, cost: 26000, type: 'CF'     },
+  { name: 'prod-ec2-1',       score: 82, cost: 18000, type: 'EC2'    },
+  { name: 'aurora-db',        score: 84, cost: 28000, type: 'RDS'    },
+  { name: 'cloudfront',       score: 78, cost: 32000, type: 'CDN'    },
+  { name: 'rds-primary',      score: 71, cost: 22000, type: 'RDS'    },
+  { name: 'elb-prod',         score: 62, cost: 16000, type: 'ELB'    },
+  { name: 'lambda-api',       score: 55, cost: 24000, type: 'Lambda' },
+  { name: 'staging-rds',      score: 45, cost: 10000, type: 'RDS'    },
+  { name: 'dev-ec2',          score: 38, cost: 14000, type: 'EC2'    },
+  { name: 's3-archive',       score: 28, cost: 8000,  type: 'S3'     },
+]
+
 const SERVICE_COLORS: Record<string, string> = {
   EC2:    '#4f8ef7',
   RDS:    '#38c9a0',
@@ -78,7 +106,13 @@ const QUADRANT_LABELS: Record<string, string> = {
   'low-roi':   'Low ROI',
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: '#e05d2e',
+  high:     '#f59e0b',
+  medium:   '#4f8ef7',
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function deriveEfficiencyScore(r: InfrastructureResource): number {
   if (r.status === 'stopped') return 15
@@ -100,7 +134,13 @@ function deriveQuadrant(cost: number, efficiency: number): string {
   return 'at-risk'
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+function efficiencyColor(score: number): string {
+  if (score >= 75) return '#38c9a0'
+  if (score >= 50) return '#f59e0b'
+  return '#e05d2e'
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
 function KPICard({
   label, value, delta, prefix = '', suffix = '', accent = false,
@@ -114,23 +154,15 @@ function KPICard({
     : isPositiveDelta ? '#38c9a0' : '#e05d2e'
 
   return (
-    <div style={{
-      background: '#1a1f2e',
-      border: accent ? '1px solid #4f8ef755' : '1px solid #2d3748',
-      borderRadius: '10px',
-      padding: '16px',
-      borderLeft: accent ? '3px solid #4f8ef7' : undefined,
-    }}>
+    <div style={{ background: '#1a1f2e', border: accent ? '1px solid #4f8ef755' : '1px solid #2d3748', borderRadius: '10px', padding: '16px', borderLeft: accent ? '3px solid #4f8ef7' : undefined }}>
       <p style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>{label}</p>
       <p style={{ fontSize: '24px', fontWeight: 600, color: '#f1f5f9', lineHeight: 1, marginBottom: '8px' }}>
         {prefix}{typeof value === 'number' ? value.toLocaleString() : value}{suffix}
       </p>
       {delta !== undefined && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          {(delta > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />)}
-          <span style={{ fontSize: '11px', fontWeight: 600, color: deltaColor }}>
-            {delta > 0 ? '+' : ''}{delta}%
-          </span>
+          {delta > 0 ? <TrendingUp size={12} style={{ color: deltaColor }} /> : <TrendingDown size={12} style={{ color: deltaColor }} />}
+          <span style={{ fontSize: '11px', fontWeight: 600, color: deltaColor }}>{delta > 0 ? '+' : ''}{delta}%</span>
           <span style={{ fontSize: '11px', color: '#475569' }}>vs previous</span>
         </div>
       )}
@@ -147,9 +179,7 @@ const CustomScatterTooltip = ({ active, payload }: any) => {
       <p style={{ fontSize: '12px', fontWeight: 600, color: '#f1f5f9', marginBottom: '4px' }}>{d.name}</p>
       <p style={{ fontSize: '11px', color: '#94a3b8' }}>Cost: ${(d.x / 1000).toFixed(1)}K/mo</p>
       <p style={{ fontSize: '11px', color: '#94a3b8' }}>Efficiency: {d.y}%</p>
-      <p style={{ fontSize: '11px', fontWeight: 600, marginTop: '4px' }} style2={{ color: QUADRANT_COLORS[d.q] }}>
-        {QUADRANT_LABELS[d.q]}
-      </p>
+      <p style={{ fontSize: '11px', fontWeight: 600, color: QUADRANT_COLORS[d.q], marginTop: '4px' }}>{QUADRANT_LABELS[d.q]}</p>
     </div>
   )
 }
@@ -173,18 +203,18 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function EfficiencyPage() {
-  const demoMode    = useDemoMode()
+  const demoMode         = useDemoMode()
   const { enabled: salesDemo } = useSalesDemo()
-  const isDemoActive = demoMode || salesDemo
-  const { canAccess } = usePlan('pro')
+  const isDemoActive     = demoMode || salesDemo
+  const { canAccess }    = usePlan('pro')
 
-  const [barGrouping, setBarGrouping] = useState<'service' | 'region' | 'team'>('service')
-  const [scatterFilter, setScatterFilter] = useState<'all' | 'at-risk' | 'efficient' | 'strategic' | 'low-roi'>('all')
+  const [barGrouping,    setBarGrouping]    = useState<'service' | 'region' | 'team'>('service')
+  const [scatterFilter,  setScatterFilter]  = useState<'all' | 'at-risk' | 'efficient' | 'strategic' | 'low-roi'>('all')
 
-  const { data: resources = [], isLoading: resLoading } = useQuery({
+  const { data: resources = [] } = useQuery({
     queryKey: ['infrastructure-all'],
     queryFn: async () => {
       const all = await infrastructureService.getAll()
@@ -200,10 +230,10 @@ export default function EfficiencyPage() {
   })
 
   // ── Derived real data ──
-  const realTotalSpend    = resources.reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
-  const realIdleCost      = resources.filter(r => r.status !== 'running').reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
-  const realCostPerRes    = resources.length > 0 ? realTotalSpend / resources.length : 0
-  const realSavings       = savingsStats?.totalPotentialSavings ?? 0
+  const realTotalSpend = resources.reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
+  const realIdleCost   = resources.filter(r => r.status !== 'running').reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
+  const realCostPerRes = resources.length > 0 ? realTotalSpend / resources.length : 0
+  const realSavings    = savingsStats?.totalPotentialSavings ?? 0
 
   const kpis = isDemoActive ? DEMO_KPIS : {
     totalSpend:      realTotalSpend,
@@ -216,61 +246,84 @@ export default function EfficiencyPage() {
     savingsDelta:    0,
   }
 
-  // ── Scatter data from real resources ──
+  // ── Scatter data ──
   const scatterData = isDemoActive
     ? DEMO_SCATTER_DATA
     : resources.map(r => {
         const cost = (r.costPerMonth ?? 0) * 30
         const eff  = deriveEfficiencyScore(r)
         return {
-          x: Math.round(cost),
-          y: eff,
+          x:    Math.round(cost),
+          y:    eff,
           name: (r as any).serviceName || r.serviceId?.slice(0, 12) || 'Unknown',
-          q: deriveQuadrant(cost, eff),
+          q:    deriveQuadrant(cost, eff),
         }
       })
 
-  const filteredScatter = scatterFilter === 'all'
-    ? scatterData
-    : scatterData.filter(d => d.q === scatterFilter)
-
-  // Group scatter by quadrant for separate Scatter components
+  const filteredScatter = scatterFilter === 'all' ? scatterData : scatterData.filter(d => d.q === scatterFilter)
   const scatterByQ = ['strategic', 'efficient', 'at-risk', 'low-roi'].map(q => ({
-    q,
-    data: filteredScatter.filter(d => d.q === q),
+    q, data: filteredScatter.filter(d => d.q === q),
   }))
 
-  const barData = DEMO_BAR_DATA // real bar data would need time-series from forecast API
+  // ── Wasteful resources ──
+  const wastefulResources = isDemoActive
+    ? DEMO_WASTEFUL_RESOURCES
+    : resources
+        .filter(r => deriveEfficiencyScore(r) < 50)
+        .sort((a, b) => (b.costPerMonth ?? 0) - (a.costPerMonth ?? 0))
+        .slice(0, 5)
+        .map(r => ({
+          name:       (r as any).serviceName || r.serviceId?.slice(0, 16) || 'Unknown',
+          type:       (r.resourceType as string)?.toUpperCase() ?? '—',
+          region:     r.awsRegion || '—',
+          cost:       r.costPerMonth ?? 0,
+          efficiency: deriveEfficiencyScore(r),
+          issue:      r.status !== 'running' ? 'Resource not running' : 'Low efficiency score',
+          savings:    Math.round((r.costPerMonth ?? 0) * 0.4),
+        }))
+
+  // ── Service efficiency ──
+  const serviceEfficiency = isDemoActive
+    ? DEMO_SERVICE_EFFICIENCY
+    : (() => {
+        const map: Record<string, { cost: number; scores: number[] }> = {}
+        resources.forEach(r => {
+          const key = (r as any).serviceName || r.resourceType || 'Unknown'
+          if (!map[key]) map[key] = { cost: 0, scores: [] }
+          map[key].cost += r.costPerMonth ?? 0
+          map[key].scores.push(deriveEfficiencyScore(r))
+        })
+        return Object.entries(map)
+          .map(([name, { cost, scores }]) => ({
+            name,
+            score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+            cost:  Math.round(cost * 30),
+            type:  '',
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 11)
+      })()
+
+  const barData = DEMO_BAR_DATA
 
   return (
-    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen"
-      style={{ background: '#0a0d14', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div
+      className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen"
+      style={{ background: '#0a0d14', fontFamily: 'Inter, system-ui, sans-serif' }}
+    >
 
       {/* ── HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <p style={{ fontSize: '10px', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>Costs</p>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#f1f5f9', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-            Cloud Efficiency Overview
-          </h1>
-          <p style={{ fontSize: '0.875rem', color: '#64748b' }}>
-            Resource efficiency, spend breakdown, and cost-to-value analysis across your AWS environment.
-          </p>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#f1f5f9', margin: '0 0 6px', letterSpacing: '-0.02em' }}>Cloud Efficiency Overview</h1>
+          <p style={{ fontSize: '0.875rem', color: '#64748b' }}>Resource efficiency, spend breakdown, and cost-to-value analysis across your AWS environment.</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Link href="/cost-optimization" style={{
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: '#7C3AED', color: '#fff', padding: '9px 18px',
-            borderRadius: '8px', fontSize: '13px', fontWeight: 600,
-            textDecoration: 'none',
-          }}>
+          <Link href="/cost-optimization" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#7C3AED', color: '#fff', padding: '9px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
             <Zap size={14} /> Apply Optimizations
           </Link>
-          <button style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            background: '#1a1f2e', border: '1px solid #2d3748', color: '#94a3b8',
-            padding: '9px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-          }}>
+          <button style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#1a1f2e', border: '1px solid #2d3748', color: '#94a3b8', padding: '9px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>
             <Download size={14} /> Export
           </button>
         </div>
@@ -278,14 +331,14 @@ export default function EfficiencyPage() {
 
       {/* ── KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KPICard label="Total Spend"        value={kpis.totalSpend}      delta={kpis.totalSpendDelta} prefix="$" accent />
-        <KPICard label="Cost Per Resource"  value={kpis.costPerResource.toFixed(2)} delta={kpis.costPerDelta} prefix="$" />
-        <KPICard label="Idle Resource Cost" value={kpis.idleCost}        delta={kpis.idleDelta}       prefix="$" />
-        <KPICard label="Savings Realized"   value={kpis.savingsRealized} delta={kpis.savingsDelta}    prefix="$" />
+        <KPICard label="Total Spend"        value={kpis.totalSpend}                   delta={kpis.totalSpendDelta} prefix="$" accent />
+        <KPICard label="Cost Per Resource"  value={kpis.costPerResource.toFixed(2)}   delta={kpis.costPerDelta}    prefix="$" />
+        <KPICard label="Idle Resource Cost" value={kpis.idleCost}                     delta={kpis.idleDelta}       prefix="$" />
+        <KPICard label="Savings Realized"   value={kpis.savingsRealized}              delta={kpis.savingsDelta}    prefix="$" />
       </div>
 
       {/* ── CHARTS ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
 
         {/* Stacked Bar */}
         <div style={{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '20px' }}>
@@ -294,27 +347,19 @@ export default function EfficiencyPage() {
               <p style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>Spend breakdown</p>
               <p style={{ fontSize: '11px', color: '#64748b', margin: '2px 0 0' }}>Monthly cost by service · Last 6 months</p>
             </div>
-            <select
-              value={barGrouping}
-              onChange={e => setBarGrouping(e.target.value as any)}
-              style={{ background: '#0f1117', border: '1px solid #2d3748', color: '#94a3b8', fontSize: '11px', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}
-            >
+            <select value={barGrouping} onChange={e => setBarGrouping(e.target.value as any)} style={{ background: '#0f1117', border: '1px solid #2d3748', color: '#94a3b8', fontSize: '11px', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}>
               <option value="service">By Service</option>
               <option value="region">By Region</option>
               <option value="team">By Team</option>
             </select>
           </div>
-
-          {/* Legend */}
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
             {Object.entries(SERVICE_COLORS).map(([name, color]) => (
               <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#94a3b8' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color, display: 'inline-block' }} />
-                {name}
+                <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color, display: 'inline-block' }} />{name}
               </span>
             ))}
           </div>
-
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={barData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2433" />
@@ -335,11 +380,7 @@ export default function EfficiencyPage() {
               <p style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>Resource efficiency vs cost</p>
               <p style={{ fontSize: '11px', color: '#64748b', margin: '2px 0 0' }}>Quadrant analysis · {isDemoActive ? '11' : scatterData.length} resources</p>
             </div>
-            <select
-              value={scatterFilter}
-              onChange={e => setScatterFilter(e.target.value as any)}
-              style={{ background: '#0f1117', border: '1px solid #2d3748', color: '#94a3b8', fontSize: '11px', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}
-            >
+            <select value={scatterFilter} onChange={e => setScatterFilter(e.target.value as any)} style={{ background: '#0f1117', border: '1px solid #2d3748', color: '#94a3b8', fontSize: '11px', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}>
               <option value="all">All resources</option>
               <option value="at-risk">At Risk only</option>
               <option value="efficient">Efficient only</option>
@@ -347,49 +388,24 @@ export default function EfficiencyPage() {
               <option value="low-roi">Low ROI only</option>
             </select>
           </div>
-
-          {/* Legend */}
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
             {Object.entries(QUADRANT_LABELS).map(([q, label]) => (
               <span key={q} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#94a3b8' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: QUADRANT_COLORS[q], display: 'inline-block' }} />
-                {label}
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: QUADRANT_COLORS[q], display: 'inline-block' }} />{label}
               </span>
             ))}
           </div>
-
           <ResponsiveContainer width="100%" height={240}>
             <ScatterChart margin={{ top: 4, right: 4, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2433" />
-              <XAxis
-                type="number" dataKey="x" name="cost"
-                domain={[0, 40000]}
-                tick={{ fill: '#64748b', fontSize: 10 }}
-                axisLine={{ stroke: '#2d3748' }} tickLine={false}
-                tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'}
-                label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, fill: '#475569', fontSize: 11 }}
-              />
-              <YAxis
-                type="number" dataKey="y" name="efficiency"
-                domain={[0, 100]}
-                tick={{ fill: '#64748b', fontSize: 10 }}
-                axisLine={false} tickLine={false}
-                tickFormatter={v => v + '%'}
-                label={{ value: 'Efficiency', angle: -90, position: 'insideLeft', fill: '#475569', fontSize: 11 }}
-              />
+              <XAxis type="number" dataKey="x" name="cost" domain={[0, 40000]} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={{ stroke: '#2d3748' }} tickLine={false} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'} label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, fill: '#475569', fontSize: 11 }} />
+              <YAxis type="number" dataKey="y" name="efficiency" domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={{ value: 'Efficiency', angle: -90, position: 'insideLeft', fill: '#475569', fontSize: 11 }} />
               <ZAxis range={[60, 60]} />
               <Tooltip cursor={{ strokeDasharray: '3 3', stroke: '#2d3748' }} content={<CustomScatterTooltip />} />
-              {/* Quadrant dividers */}
               <ReferenceLine x={20000} stroke="#2d3748" strokeDasharray="4 4" />
               <ReferenceLine y={65}    stroke="#2d3748" strokeDasharray="4 4" />
               {scatterByQ.map(({ q, data }) => (
-                <Scatter
-                  key={q}
-                  name={QUADRANT_LABELS[q]}
-                  data={data}
-                  fill={QUADRANT_COLORS[q]}
-                  fillOpacity={0.85}
-                />
+                <Scatter key={q} name={QUADRANT_LABELS[q]} data={data} fill={QUADRANT_COLORS[q]} fillOpacity={0.85} />
               ))}
             </ScatterChart>
           </ResponsiveContainer>
@@ -397,12 +413,12 @@ export default function EfficiencyPage() {
       </div>
 
       {/* ── QUADRANT SUMMARY ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { q: 'at-risk',   icon: '⚠', title: 'At Risk',   sub: 'High cost, low efficiency — act now',       cta: '/cost-optimization', ctaLabel: 'Fix now →'    },
-          { q: 'low-roi',   icon: '↓',  title: 'Low ROI',   sub: 'Spending high, returns not justified',      cta: '/cost-optimization', ctaLabel: 'Review →'    },
-          { q: 'strategic', icon: '★',  title: 'Strategic', sub: 'High value, high cost — justified spend',   cta: '/infrastructure',    ctaLabel: 'Monitor →'   },
-          { q: 'efficient', icon: '✓',  title: 'Efficient', sub: 'Low cost, high efficiency — keep going',    cta: '/infrastructure',    ctaLabel: 'View →'      },
+          { q: 'at-risk',   icon: '⚠', title: 'At Risk',   sub: 'High cost, low efficiency — act now',     cta: '/cost-optimization', ctaLabel: 'Fix now →'  },
+          { q: 'low-roi',   icon: '↓',  title: 'Low ROI',   sub: 'Spending high, returns not justified',    cta: '/cost-optimization', ctaLabel: 'Review →'   },
+          { q: 'strategic', icon: '★',  title: 'Strategic', sub: 'High value, high cost — justified spend', cta: '/infrastructure',    ctaLabel: 'Monitor →'  },
+          { q: 'efficient', icon: '✓',  title: 'Efficient', sub: 'Low cost, high efficiency — keep going',  cta: '/infrastructure',    ctaLabel: 'View →'     },
         ].map(({ q, icon, title, sub, cta, ctaLabel }) => {
           const count = scatterData.filter(d => d.q === q).length
           const color = QUADRANT_COLORS[q]
@@ -420,9 +436,139 @@ export default function EfficiencyPage() {
         })}
       </div>
 
-      {/* ── PRO GATE for non-pro users ── */}
+      {/* ── NEW SECTION 1: TOP WASTEFUL RESOURCES ── */}
+      <div style={{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div>
+            <p style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>Top wasteful resources</p>
+            <p style={{ fontSize: '11px', color: '#64748b', margin: '2px 0 0' }}>Ranked by recoverable savings · Immediate action recommended</p>
+          </div>
+          <Link href="/cost-optimization" style={{ fontSize: '11px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            Fix all → 
+          </Link>
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #2d3748' }}>
+                {['Resource', 'Type', 'Region', 'Monthly Cost', 'Efficiency', 'Issue', 'Potential Savings', ''].map(h => (
+                  <th key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '8px 12px', textAlign: h === 'Monthly Cost' || h === 'Potential Savings' ? 'right' : 'left' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {wastefulResources.map((r, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #1e2433' }}>
+                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 500, color: '#f1f5f9' }}>{r.name}</td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#4f8ef7', background: '#4f8ef722', padding: '2px 7px', borderRadius: '4px' }}>{r.type}</span>
+                  </td>
+                  <td style={{ padding: '12px', fontSize: '12px', color: '#64748b', fontFamily: 'monospace' }}>{r.region}</td>
+                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 600, color: '#f1f5f9', textAlign: 'right' }}>${r.cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td style={{ padding: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ flex: 1, height: '4px', background: '#2d3748', borderRadius: '2px', minWidth: '60px' }}>
+                        <div style={{ width: `${r.efficiency}%`, height: '100%', borderRadius: '2px', background: efficiencyColor(r.efficiency) }} />
+                      </div>
+                      <span style={{ fontSize: '11px', color: efficiencyColor(r.efficiency), fontWeight: 600, minWidth: '28px' }}>{r.efficiency}%</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: '12px', fontSize: '12px', color: '#f59e0b' }}>{r.issue}</td>
+                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 700, color: '#38c9a0', textAlign: 'right' }}>-${r.savings.toLocaleString()}/mo</td>
+                  <td style={{ padding: '12px' }}>
+                    <Link href="/cost-optimization" style={{ fontSize: '11px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', background: '#7C3AED22', padding: '4px 10px', borderRadius: '6px' }}>Fix →</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile cards */}
+        <div className="sm:hidden flex flex-col gap-3">
+          {wastefulResources.map((r, i) => (
+            <div key={i} style={{ background: '#0f1117', border: '1px solid #2d3748', borderRadius: '8px', padding: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>{r.name}</span>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#4f8ef7', background: '#4f8ef722', padding: '2px 7px', borderRadius: '4px' }}>{r.type}</span>
+              </div>
+              <p style={{ fontSize: '11px', color: '#f59e0b', marginBottom: '8px' }}>{r.issue}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>${r.cost.toFixed(0)}/mo</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#38c9a0' }}>Save ${r.savings}/mo</span>
+                <Link href="/cost-optimization" style={{ fontSize: '11px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>Fix →</Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── NEW SECTION 2: COST ANOMALIES ── */}
+      <div style={{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div>
+            <p style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>Recent cost anomalies</p>
+            <p style={{ fontSize: '11px', color: '#64748b', margin: '2px 0 0' }}>Unusual cost spikes detected in the last 7 days</p>
+          </div>
+          <Link href="/anomalies" style={{ fontSize: '11px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>
+            View all →
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {DEMO_ANOMALIES.map((a, i) => {
+            const color = SEVERITY_COLORS[a.severity]
+            return (
+              <div key={i} style={{ background: '#0f1117', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: '8px', padding: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color, background: color + '22', padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase' }}>{a.severity}</span>
+                  <span style={{ fontSize: '10px', color: '#475569' }}>{a.date}</span>
+                </div>
+                <p style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9', marginBottom: '4px' }}>{a.service}</p>
+                <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>{a.detail}</p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color, background: color + '22', padding: '2px 7px', borderRadius: '4px' }}>{a.type}</span>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color }}>+{a.delta}%</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── NEW SECTION 3: EFFICIENCY SCORE BY SERVICE ── */}
+      <div style={{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div>
+            <p style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>Efficiency score by service</p>
+            <p style={{ fontSize: '11px', color: '#64748b', margin: '2px 0 0' }}>How well each service is utilizing its allocated resources</p>
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            {[['#38c9a0', '75%+'], ['#f59e0b', '50–74%'], ['#e05d2e', '<50%']].map(([color, label]) => (
+              <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#94a3b8' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color as string, display: 'inline-block' }} />{label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {serviceEfficiency.map((s, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '12px', color: '#94a3b8', width: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.name}</span>
+              <div style={{ flex: 1, height: '6px', background: '#2d3748', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ width: `${s.score}%`, height: '100%', borderRadius: '3px', background: efficiencyColor(s.score), transition: 'width 0.4s ease' }} />
+              </div>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: efficiencyColor(s.score), width: '36px', textAlign: 'right', flexShrink: 0 }}>{s.score}%</span>
+              <span style={{ fontSize: '11px', color: '#475569', width: '70px', textAlign: 'right', flexShrink: 0 }}>${(s.cost / 1000).toFixed(1)}K/mo</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── PRO GATE ── */}
       {!canAccess && !isDemoActive && (
-        <div style={{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '32px', textAlign: 'center', marginTop: '24px' }}>
+        <div style={{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '32px', textAlign: 'center', marginTop: '8px' }}>
           <p style={{ fontSize: '1rem', fontWeight: 600, color: '#f1f5f9', marginBottom: '8px' }}>Full Efficiency Analysis — Pro Plan</p>
           <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Upgrade to unlock detailed resource efficiency scoring, quadrant drill-down, and export.</p>
           <Link href="/settings/billing/upgrade" style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
