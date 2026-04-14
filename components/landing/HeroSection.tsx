@@ -154,11 +154,11 @@ export function HeroSection() {
           width: '100%',
           borderTop: '1px solid #e5e7eb',
           borderBottom: '1px solid #e5e7eb',
-          padding: '14px 0',
+          padding: '20px 0',
           marginTop: '32px',
-          background: 'rgba(255,255,255,0.6)',
+          background: '#f9fafb',
         }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'center', marginBottom: '10px' }}>
+          <p style={{ fontSize: '0.78rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'center', marginBottom: '12px' }}>
             What you get in 15 minutes
           </p>
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: '0', flexWrap: 'wrap' }}>
@@ -169,11 +169,11 @@ export function HeroSection() {
               'Ranked fixes with dollar impact',
             ].map((item, i) => (
               <div key={item} style={{ display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#0F172A', padding: isMobile ? '4px 12px' : '0 20px' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', padding: isMobile ? '4px 12px' : '0 20px' }}>
                   {item}
                 </span>
                 {i < 3 && !isMobile && (
-                  <span style={{ color: '#CBD5E1', fontSize: '1rem' }}>·</span>
+                  <span style={{ color: '#7c3aed', fontSize: '0.6rem' }}>•</span>
                 )}
               </div>
             ))}
