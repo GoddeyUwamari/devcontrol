@@ -76,8 +76,8 @@ export function SocialProofSection() {
                   backgroundColor: '#fff',
                   borderRadius: '16px',
                   padding: isMobile ? '24px 20px' : '40px 32px',
-                  border: '1px solid #f3f4f6',
-                  boxShadow: '0 4px 20px rgba(124,58,237,0.12)',
+                  border: '2px solid #e5e7eb',
+                  boxShadow: 'none',
                 }}
               >
                 <div

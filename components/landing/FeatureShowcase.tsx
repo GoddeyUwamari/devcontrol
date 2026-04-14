@@ -89,8 +89,7 @@ export function FeatureShowcase() {
 
         <p
           style={{
-            fontSi
-            ze: isMobile ? '1rem' : '1.2rem',
+            fontSize: isMobile ? '1rem' : '1.2rem',
             color: '#374151',
             maxWidth: '680px',
             textAlign: 'center',

@@ -122,7 +122,7 @@ export function TestimonialsSection() {
               key={t.name}
               style={{
                 background: '#fff',
-                border: '1px solid #E2E8F0',
+                border: '2px solid #e5e7eb',
                 borderRadius: '18px',
                 padding: isMobile ? '20px' : '28px',
                 transition: 'all 0.25s ease',

@@ -140,7 +140,7 @@ export function MarketingContent() {
                   className="flex flex-col items-center gap-3 bg-white rounded-2xl cursor-pointer"
                   style={{
                     padding: isMobile ? '20px 12px' : '28px 16px',
-                    border: '1px solid #f3f4f6',
+                    border: '2px solid #e5e7eb',
                     transition: 'all 0.2s ease',
                   }}
                   onMouseEnter={(e) => {
@@ -153,7 +153,7 @@ export function MarketingContent() {
                     const el = e.currentTarget;
                     el.style.boxShadow = 'none';
                     el.style.transform = 'translateY(0)';
-                    el.style.borderColor = '#f3f4f6';
+                    el.style.borderColor = '#e5e7eb';
                   }}
                 >
                   <Icon className="h-10 w-10" style={{ color: integration.color }} />
@@ -220,7 +220,7 @@ export function MarketingContent() {
                   className="flex items-start gap-5 bg-white rounded-2xl"
                   style={{
                     padding: isMobile ? '20px' : '32px',
-                    border: '1px solid #f3f4f6',
+                    border: '2px solid #e5e7eb',
                     transition: 'all 0.2s ease',
                   }}
                   onMouseEnter={(e) => {
@@ -233,7 +233,7 @@ export function MarketingContent() {
                     const el = e.currentTarget;
                     el.style.boxShadow = 'none';
                     el.style.transform = 'translateY(0)';
-                    el.style.borderColor = '#f3f4f6';
+                    el.style.borderColor = '#e5e7eb';
                   }}
                 >
                   <div

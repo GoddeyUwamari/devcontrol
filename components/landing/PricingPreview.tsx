@@ -122,8 +122,8 @@ export function PricingPreview() {
               key={tier.name}
               className="relative bg-white rounded-2xl flex flex-col"
               style={{
-                border: tier.highlighted ? '2px solid #7c3aed' : '1px solid #f3f4f6',
-                boxShadow: tier.highlighted ? '0 8px 30px rgba(124,58,237,0.15)' : '0 2px 8px rgba(0,0,0,0.04)',
+                border: tier.highlighted ? '2px solid #7c3aed' : '2px solid #e5e7eb',
+                boxShadow: tier.highlighted ? '0 8px 30px rgba(124,58,237,0.15)' : 'none',
                 transform: tier.highlighted && !isMobile ? 'scale(1.03)' : 'none',
                 padding: isMobile ? '24px 16px' : '32px 24px',
               }}
