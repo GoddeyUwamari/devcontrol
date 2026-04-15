@@ -114,7 +114,7 @@ export function AIFeaturesSection() {
           <p
             style={{
               fontSize: isMobile ? '1rem' : '1.15rem',
-              color: '#374151',
+              color: '#111827',
               maxWidth: '680px',
               margin: '0 auto',
               lineHeight: 1.7,
@@ -137,7 +137,7 @@ export function AIFeaturesSection() {
             marginBottom: isMobile ? '40px' : '64px',
             fontSize: isMobile ? '0.85rem' : '0.95rem',
             fontWeight: 500,
-            color: '#374151',
+            color: '#111827',
           }}
         >
           <span>💰 Identify savings automatically</span>
@@ -208,7 +208,7 @@ export function AIFeaturesSection() {
                 <p
                   style={{
                     fontSize: isMobile ? '0.88rem' : '0.95rem',
-                    color: '#374151',
+                    color: '#111827',
                     lineHeight: 1.6,
                   }}
                 >
@@ -246,7 +246,7 @@ export function AIFeaturesSection() {
             style={{
               marginTop: '12px',
               fontSize: '0.9rem',
-              color: '#374151',
+              color: '#111827',
             }}
           >
             No setup. No risk. First insights in 15 minutes.
