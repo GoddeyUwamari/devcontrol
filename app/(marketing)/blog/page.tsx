@@ -299,7 +299,7 @@ export default function BlogPage() {
                     <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>
                       {post.title}
                     </h3>
-                    <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.6, marginBottom: '20px' }}>
+                    <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.6, marginBottom: '20px' }}>
                       {post.description}
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -339,7 +339,7 @@ export default function BlogPage() {
             <div style={{ padding: '64px 24px', textAlign: 'center', border: '1px solid #e5e7eb', borderRadius: '16px' }}>
               <FileText style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
               <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>No articles found</h3>
-              <p style={{ color: '#6b7280', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
+              <p style={{ color: '#374151', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
               <button
                 onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }}
                 style={{
@@ -385,7 +385,7 @@ export default function BlogPage() {
                     <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.35, marginBottom: '8px' }}>
                       {post.title}
                     </h3>
-                    <p style={{ fontSize: '0.82rem', color: '#374151', lineHeight: 1.55, flex: 1, marginBottom: '16px' }}>
+                    <p style={{ fontSize: '0.88rem', color: '#374151', lineHeight: 1.55, flex: 1, marginBottom: '16px' }}>
                       {post.description}
                     </p>
                     <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '14px' }}>
@@ -567,7 +567,7 @@ export default function BlogPage() {
                 <span style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a' }}>Documentation</span>
                 <ArrowRight style={{ width: '14px', height: '14px', color: '#7c3aed', marginLeft: 'auto' }} />
               </div>
-              <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: 0 }}>
+              <p style={{ fontSize: '0.95rem', color: '#374151', margin: 0 }}>
                 Comprehensive guides, tutorials, and API references
               </p>
             </div>
@@ -587,7 +587,7 @@ export default function BlogPage() {
                 <span style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a' }}>Changelog</span>
                 <ArrowRight style={{ width: '14px', height: '14px', color: '#7c3aed', marginLeft: 'auto' }} />
               </div>
-              <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: 0 }}>
+              <p style={{ fontSize: '0.95rem', color: '#374151', margin: 0 }}>
                 See what&apos;s new and improved in DevControl
               </p>
             </div>

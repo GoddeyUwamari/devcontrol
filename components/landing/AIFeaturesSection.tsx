@@ -245,8 +245,8 @@ export function AIFeaturesSection() {
           <p
             style={{
               marginTop: '12px',
-              fontSize: '0.85rem',
-              color: '#6b7280',
+              fontSize: '0.9rem',
+              color: '#374151',
             }}
           >
             No setup. No risk. First insights in 15 minutes.

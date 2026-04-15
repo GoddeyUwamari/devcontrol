@@ -121,7 +121,7 @@ function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
                   <span style={{ fontSize: isMobile ? '0.875rem' : '1rem', fontWeight: 700, color: '#0f172a' }}>{item.title}</span>
                   <ArrowRight style={{ width: '14px', height: '14px', color: '#7c3aed' }} />
                 </div>
-                <p style={{ fontSize: '0.85rem', color: '#374151', lineHeight: 1.5, margin: 0 }}>{item.description}</p>
+                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.5, margin: 0 }}>{item.description}</p>
               </div>
             </Link>
           ))}
@@ -429,7 +429,7 @@ function ResourcesSection({ isMobile, isTablet }: ResponsiveProps) {
                   {resource.title}
                   {resource.external && <ExternalLink style={{ width: '11px', height: '11px', color: '#9ca3af' }} />}
                 </div>
-                <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: 0 }}>{resource.description}</p>
+                <p style={{ fontSize: '0.78rem', color: '#374151', margin: 0 }}>{resource.description}</p>
               </div>
             </Link>
           ))}

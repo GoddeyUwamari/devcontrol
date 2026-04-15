@@ -309,7 +309,7 @@ export default function PlatformEngineersPage() {
                 <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: 500, marginBottom: '24px' }}>
+                <p style={{ fontSize: '0.8rem', color: '#374151', fontWeight: 500, marginBottom: '24px' }}>
                   {subtitle}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

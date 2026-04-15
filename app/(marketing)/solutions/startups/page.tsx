@@ -335,7 +335,7 @@ export default function StartupsPage() {
               }}>
                 <p style={{ fontSize: '0.68rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 10px' }}>{week}</p>
                 <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', margin: '0 0 8px' }}>{title}</h3>
-                <p style={{ fontSize: '0.82rem', color: '#374151', lineHeight: 1.6, margin: '0 0 16px' }}>{body}</p>
+                <p style={{ fontSize: '0.88rem', color: '#374151', lineHeight: 1.6, margin: '0 0 16px' }}>{body}</p>
                 <span style={{
                   display: 'inline-block',
                   background: color === '#059669' ? '#ECFDF5' : '#EDE9FE',

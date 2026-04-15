@@ -266,7 +266,7 @@ export default function CommunityPage() {
                     {members} members
                   </span>
                 </div>
-                <p style={{ fontSize: '0.82rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{desc}</p>
+                <p style={{ fontSize: '0.88rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{desc}</p>
               </div>
             ))}
           </div>

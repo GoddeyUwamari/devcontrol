@@ -313,7 +313,7 @@ export default function FinOpsPage() {
                 <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.82rem', color: '#374151', lineHeight: 1.7, flex: 1 }}>
+                <p style={{ fontSize: '0.88rem', color: '#374151', lineHeight: 1.7, flex: 1 }}>
                   {desc}
                 </p>
               </div>

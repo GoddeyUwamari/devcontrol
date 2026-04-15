@@ -133,7 +133,7 @@ export default function ContactPage() {
                     </div>
                     <div>
                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{title}</p>
-                      <p style={{ fontSize: '0.82rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{desc}</p>
+                      <p style={{ fontSize: '0.88rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{desc}</p>
                     </div>
                   </div>
                 ))}
@@ -151,7 +151,7 @@ export default function ContactPage() {
                 <p style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
                   Schedule via Calendly
                 </p>
-                <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '20px' }}>
+                <p style={{ fontSize: '0.9rem', color: '#374151', marginBottom: '20px' }}>
                   Pick a time that works for you — no back-and-forth email needed.
                 </p>
                 <a

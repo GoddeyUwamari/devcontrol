@@ -410,7 +410,7 @@ export default function ScaleupsPage() {
                   <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
                     {title}
                   </h3>
-                  <p style={{ fontSize: '0.85rem', color: '#374151', lineHeight: 1.7 }}>
+                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7 }}>
                     {desc}
                   </p>
                 </div>

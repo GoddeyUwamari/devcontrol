@@ -268,7 +268,7 @@ export default function DevOpsPage() {
                 <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.4, marginBottom: '10px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+                <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
                   {desc}
                 </p>
               </div>
@@ -332,7 +332,7 @@ export default function DevOpsPage() {
                         {time}
                       </span>
                     </div>
-                    <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+                    <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
                       {desc}
                     </p>
                   </div>

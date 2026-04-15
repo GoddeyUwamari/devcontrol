@@ -342,7 +342,7 @@ export default function ChangelogPage() {
                       {new Date(release.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </div>
                     <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>{release.title}</h3>
-                    <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.6, marginBottom: '20px' }}>{release.summary}</p>
+                    <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.6, marginBottom: '20px' }}>{release.summary}</p>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.78rem', color: '#6b7280', flexWrap: 'wrap' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -385,7 +385,7 @@ export default function ChangelogPage() {
             <div style={{ padding: '64px 24px', textAlign: 'center', border: '1px solid #e5e7eb', borderRadius: '16px' }}>
               <Package style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
               <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>No releases found</h3>
-              <p style={{ color: '#6b7280', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
+              <p style={{ color: '#374151', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
               <button
                 onClick={() => { setSearchQuery(''); setSelectedFilter('all'); }}
                 style={{
@@ -484,7 +484,7 @@ export default function ChangelogPage() {
                                 </span>
                               </div>
                               <div>
-                                <p style={{ fontSize: '0.875rem', color: '#0f172a', margin: 0 }}>{change.text}</p>
+                                <p style={{ fontSize: '0.95rem', color: '#0f172a', margin: 0 }}>{change.text}</p>
                                 {change.category && (
                                   <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{change.category}</span>
                                 )}
@@ -609,7 +609,7 @@ export default function ChangelogPage() {
                     <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0f172a' }}>{item.title}</span>
                     <ArrowRight style={{ width: '13px', height: '13px', color: '#7c3aed', marginLeft: 'auto' }} />
                   </div>
-                  <p style={{ fontSize: '0.82rem', color: '#6b7280', margin: 0 }}>{item.desc}</p>
+                  <p style={{ fontSize: '0.88rem', color: '#374151', margin: 0 }}>{item.desc}</p>
                 </div>
               </a>
             );
