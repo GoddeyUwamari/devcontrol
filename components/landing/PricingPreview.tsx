@@ -138,7 +138,7 @@ export function PricingPreview() {
               )}
 
               <div style={{ marginBottom: '24px' }}>
-                <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '4px', lineHeight: 1.3 }}>{tier.name}</h3>
+                <h3 className="font-bold" style={{ fontSize: '1.2rem', color: '#0f172a', marginBottom: '4px', lineHeight: 1.3 }}>{tier.name}</h3>
                 <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '16px' }}>{tier.highlight}</p>
                 <div className="flex items-baseline gap-1">
                   <span className="font-extrabold" style={{ fontSize: isMobile ? '1.8rem' : '2.25rem', color: '#111827' }}>{tier.price}</span>

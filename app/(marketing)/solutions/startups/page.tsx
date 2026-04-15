@@ -54,7 +54,7 @@ export default function StartupsPage() {
 
           <div style={{
             display: 'inline-flex', alignItems: 'center',
-            background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
             borderRadius: '100px', padding: '6px 16px',
             fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
             marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
@@ -201,13 +201,13 @@ export default function StartupsPage() {
                 )}
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
-                  background: 'rgba(124,58,237,0.08)',
+                  background: 'rgba(124,58,237,0.14)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '20px',
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -253,7 +253,7 @@ export default function StartupsPage() {
                 }}>
                   {step}
                 </div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '12px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -281,7 +281,7 @@ export default function StartupsPage() {
             }}>
               From Seed to Enterprise-Ready in 6 Weeks
             </h2>
-            <p style={{ fontSize: '1rem', color: '#475569', maxWidth: '480px', margin: '0 auto' }}>
+            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '480px', margin: '0 auto' }}>
               How a seed-stage fintech used DevControl to cut costs, close enterprise deals, and raise their Series A.
             </p>
           </div>
@@ -334,8 +334,8 @@ export default function StartupsPage() {
                 position: 'relative',
               }}>
                 <p style={{ fontSize: '0.68rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 10px' }}>{week}</p>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>{title}</h3>
-                <p style={{ fontSize: '0.82rem', color: '#475569', lineHeight: 1.6, margin: '0 0 16px' }}>{body}</p>
+                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', margin: '0 0 8px' }}>{title}</h3>
+                <p style={{ fontSize: '0.82rem', color: '#374151', lineHeight: 1.6, margin: '0 0 16px' }}>{body}</p>
                 <span style={{
                   display: 'inline-block',
                   background: color === '#059669' ? '#ECFDF5' : '#EDE9FE',
@@ -379,7 +379,7 @@ export default function StartupsPage() {
               borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
-                display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
+                display: 'inline-flex', background: 'rgba(124,58,237,0.14)',
                 borderRadius: '100px', padding: '6px 16px',
                 fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',

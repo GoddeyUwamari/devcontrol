@@ -196,7 +196,7 @@ export default function ChangelogPage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: 'rgba(124,58,237,0.1)', borderRadius: '20px',
+            background: 'rgba(124,58,237,0.15)', borderRadius: '20px',
             padding: '4px 14px', marginBottom: '20px',
           }}>
             <Sparkles style={{ width: '14px', height: '14px', color: '#7c3aed' }} />
@@ -297,7 +297,7 @@ export default function ChangelogPage() {
           <div style={{ marginBottom: '48px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
               <Star style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Featured Releases</h2>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>Featured Releases</h2>
             </div>
             <div style={{
               display: 'grid',
@@ -308,7 +308,7 @@ export default function ChangelogPage() {
                 <div
                   key={release.version}
                   style={{
-                    border: '1px solid #e5e7eb', borderRadius: '16px', overflow: 'hidden',
+                    border: '1.5px solid #e5e7eb', borderRadius: '16px', overflow: 'hidden',
                     background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     cursor: 'pointer', transition: 'box-shadow 0.2s ease',
                   }}
@@ -341,8 +341,8 @@ export default function ChangelogPage() {
                       <Calendar style={{ width: '12px', height: '12px' }} />
                       {new Date(release.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </div>
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>{release.title}</h3>
-                    <p style={{ fontSize: '0.875rem', color: '#4b5563', lineHeight: 1.6, marginBottom: '20px' }}>{release.summary}</p>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>{release.title}</h3>
+                    <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.6, marginBottom: '20px' }}>{release.summary}</p>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.78rem', color: '#6b7280', flexWrap: 'wrap' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -375,7 +375,7 @@ export default function ChangelogPage() {
 
         {/* All Releases */}
         <div style={{ marginBottom: '48px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', marginBottom: '24px' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '24px' }}>
             {selectedFilter !== 'all' || searchQuery !== ''
               ? `${filteredReleases.length} ${filteredReleases.length === 1 ? 'Release' : 'Releases'}${searchQuery ? ` matching "${searchQuery}"` : ''}`
               : 'All Releases'}
@@ -384,7 +384,7 @@ export default function ChangelogPage() {
           {filteredReleases.length === 0 ? (
             <div style={{ padding: '64px 24px', textAlign: 'center', border: '1px solid #e5e7eb', borderRadius: '16px' }}>
               <Package style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>No releases found</h3>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>No releases found</h3>
               <p style={{ color: '#6b7280', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
               <button
                 onClick={() => { setSearchQuery(''); setSelectedFilter('all'); }}
@@ -402,7 +402,7 @@ export default function ChangelogPage() {
                 <div
                   key={release.version}
                   style={{
-                    border: '1px solid #e5e7eb', borderRadius: '16px', background: '#fff',
+                    border: '1.5px solid #e5e7eb', borderRadius: '16px', background: '#fff',
                     boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden',
                     transition: 'box-shadow 0.15s ease',
                   }}
@@ -427,9 +427,9 @@ export default function ChangelogPage() {
                             {new Date(release.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                           </span>
                         </div>
-                        <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>{release.title}</h3>
+                        <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>{release.title}</h3>
                         {release.summary && (
-                          <p style={{ fontSize: '0.9rem', color: '#4b5563', lineHeight: 1.6, margin: 0 }}>{release.summary}</p>
+                          <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6, margin: 0 }}>{release.summary}</p>
                         )}
                       </div>
                       {release.blogPost && (
@@ -504,7 +504,7 @@ export default function ChangelogPage() {
         <div
           id="subscribe"
           style={{
-            background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(124,58,237,0.03))',
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.14), rgba(124,58,237,0.03))',
             border: '1px solid rgba(124,58,237,0.15)',
             borderRadius: '20px', padding: isMobile ? '32px 20px' : '48px 32px',
             textAlign: 'center', marginBottom: '48px',
@@ -517,10 +517,10 @@ export default function ChangelogPage() {
           }}>
             <Mail style={{ width: '22px', height: '22px', color: '#7c3aed' }} />
           </div>
-          <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+          <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
             Never Miss an Update
           </h3>
-          <p style={{ color: '#4b5563', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
+          <p style={{ color: '#374151', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
             Get notified about new features, improvements, and important updates delivered to your inbox every week.
           </p>
           <div style={{
@@ -597,7 +597,7 @@ export default function ChangelogPage() {
               >
                 <div
                   style={{
-                    border: '1px solid #e5e7eb', borderRadius: '14px', padding: '20px 24px',
+                    border: '1.5px solid #e5e7eb', borderRadius: '14px', padding: '20px 24px',
                     background: '#fff', cursor: 'pointer',
                     boxShadow: '0 1px 4px rgba(0,0,0,0.05)', transition: 'box-shadow 0.15s ease',
                   }}

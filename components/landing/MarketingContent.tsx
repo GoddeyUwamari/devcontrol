@@ -250,7 +250,7 @@ export function MarketingContent() {
                     <Icon style={{ color: '#7c3aed' }} size={22} />
                   </div>
                   <div>
-                    <h3 className="font-bold" style={{ fontSize: isMobile ? '1rem' : '1.1rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{item.title}</h3>
+                    <h3 className="font-bold" style={{ fontSize: isMobile ? '1rem' : '1.2rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{item.title}</h3>
                     <p style={{ color: '#374151', fontSize: isMobile ? '0.88rem' : '0.95rem', lineHeight: 1.65 }}>{item.description}</p>
                   </div>
                 </div>

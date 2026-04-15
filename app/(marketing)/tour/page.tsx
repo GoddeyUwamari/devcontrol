@@ -194,7 +194,7 @@ function DoraMock() {
   const metrics = [
     { label: 'Deployment Frequency', value: '4.2/day', badge: 'Elite', badgeColor: '#16a34a', badgeBg: 'rgba(22,163,74,0.1)', trend: '↑ +0.8 vs last week' },
     { label: 'Lead Time for Changes', value: '2.1 hrs', badge: 'Elite', badgeColor: '#16a34a', badgeBg: 'rgba(22,163,74,0.1)', trend: '↓ −0.4 hrs' },
-    { label: 'Change Failure Rate', value: '3.2%', badge: 'High', badgeColor: '#7c3aed', badgeBg: 'rgba(124,58,237,0.1)', trend: '↓ −0.5%' },
+    { label: 'Change Failure Rate', value: '3.2%', badge: 'High', badgeColor: '#7c3aed', badgeBg: 'rgba(124,58,237,0.15)', trend: '↓ −0.5%' },
     { label: 'MTTR', value: '24 min', badge: 'Elite', badgeColor: '#16a34a', badgeBg: 'rgba(22,163,74,0.1)', trend: '↓ −6 min' },
   ]
   return (
@@ -222,7 +222,7 @@ function ActionsMock() {
     { title: 'Block public S3 bucket access', desc: 'logs-prod has public read ACL enabled', savings: 'Security', severity: 'fail' },
   ]
   const severityColor = { warn: '#f59e0b', info: '#7c3aed', fail: '#ef4444' }
-  const severityBg = { warn: 'rgba(245,158,11,0.08)', info: 'rgba(124,58,237,0.06)', fail: 'rgba(239,68,68,0.06)' }
+  const severityBg = { warn: 'rgba(245,158,11,0.08)', info: 'rgba(124,58,237,0.12)', fail: 'rgba(239,68,68,0.06)' }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {actions.map((a, i) => (
@@ -406,7 +406,7 @@ export default function TourPage() {
       }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: '6px',
-          background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+          background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
           borderRadius: '100px', padding: '6px 16px',
           fontSize: '0.78rem', fontWeight: 600, color: '#7c3aed',
           marginBottom: '24px', letterSpacing: '0.04em', textTransform: 'uppercase',

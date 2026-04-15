@@ -236,7 +236,7 @@ export default function DevOpsPage() {
                 onMouseEnter={e => {
                   if (!isFirst) {
                     e.currentTarget.style.background = '#faf5ff'
-                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(124,58,237,0.1)'
+                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(124,58,237,0.15)'
                   }
                 }}
                 onMouseLeave={e => {
@@ -259,13 +259,13 @@ export default function DevOpsPage() {
                 )}
                 <div style={{
                   width: '44px', height: '44px', borderRadius: '10px',
-                  background: 'rgba(124,58,237,0.08)',
+                  background: 'rgba(124,58,237,0.14)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '16px',
                 }}>
                   <Icon size={20} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.4, marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.4, marginBottom: '10px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
@@ -301,7 +301,7 @@ export default function DevOpsPage() {
             <div style={{
               position: 'absolute', left: '27px', top: '28px',
               width: '2px', bottom: '28px',
-              background: 'linear-gradient(to bottom, #7c3aed, rgba(124,58,237,0.1))',
+              background: 'linear-gradient(to bottom, #7c3aed, rgba(124,58,237,0.15))',
             }} />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -321,12 +321,12 @@ export default function DevOpsPage() {
                     borderRadius: '12px', padding: isMobile ? '16px' : '20px 24px', flex: 1,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
                         {title}
                       </h3>
                       <span style={{
                         fontSize: '0.75rem', fontWeight: 600, color: '#7c3aed',
-                        background: 'rgba(124,58,237,0.08)', padding: '3px 10px',
+                        background: 'rgba(124,58,237,0.14)', padding: '3px 10px',
                         borderRadius: '100px',
                       }}>
                         {time}
@@ -430,7 +430,7 @@ export default function DevOpsPage() {
               borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
-                display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
+                display: 'inline-flex', background: 'rgba(124,58,237,0.14)',
                 borderRadius: '100px', padding: '6px 16px',
                 fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',

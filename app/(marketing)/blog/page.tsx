@@ -162,7 +162,7 @@ export default function BlogPage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: 'rgba(124,58,237,0.1)', borderRadius: '20px',
+            background: 'rgba(124,58,237,0.15)', borderRadius: '20px',
             padding: '4px 14px', marginBottom: '20px',
           }}>
             <FileText style={{ width: '14px', height: '14px', color: '#7c3aed' }} />
@@ -249,7 +249,7 @@ export default function BlogPage() {
           <div style={{ marginBottom: '48px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
               <Star style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Featured Articles</h2>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>Featured Articles</h2>
             </div>
             <div style={{
               display: 'grid',
@@ -260,7 +260,7 @@ export default function BlogPage() {
                 <Link key={post.id} href={'/blog/' + post.id} style={{ textDecoration: 'none', display: 'block' }}>
                 <div
                   style={{
-                    border: '1px solid #e5e7eb', borderRadius: '16px',
+                    border: '1.5px solid #e5e7eb', borderRadius: '16px',
                     overflow: 'hidden', background: '#fff',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     transition: 'box-shadow 0.2s ease',
@@ -296,17 +296,17 @@ export default function BlogPage() {
                         {post.readTime}
                       </span>
                     </div>
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>
                       {post.title}
                     </h3>
-                    <p style={{ fontSize: '0.875rem', color: '#4b5563', lineHeight: 1.6, marginBottom: '20px' }}>
+                    <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.6, marginBottom: '20px' }}>
                       {post.description}
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{
                           width: '32px', height: '32px', borderRadius: '50%',
-                          background: 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(124,58,237,0.1))',
+                          background: 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(124,58,237,0.15))',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: '0.7rem', fontWeight: 700, color: '#7c3aed',
                         }}>
@@ -329,7 +329,7 @@ export default function BlogPage() {
 
         {/* Regular Posts */}
         <div style={{ marginBottom: '48px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', marginBottom: '24px' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '24px' }}>
             {selectedCategory !== 'All' || searchQuery !== ''
               ? `${filteredPosts.length} ${filteredPosts.length === 1 ? 'Article' : 'Articles'}${searchQuery ? ` matching "${searchQuery}"` : ''}`
               : 'Latest Articles'}
@@ -338,7 +338,7 @@ export default function BlogPage() {
           {filteredPosts.length === 0 ? (
             <div style={{ padding: '64px 24px', textAlign: 'center', border: '1px solid #e5e7eb', borderRadius: '16px' }}>
               <FileText style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>No articles found</h3>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>No articles found</h3>
               <p style={{ color: '#6b7280', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
               <button
                 onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }}
@@ -361,7 +361,7 @@ export default function BlogPage() {
                 <Link key={post.id} href={'/blog/' + post.id} style={{ textDecoration: 'none', display: 'block' }}>
                 <div
                   style={{
-                    border: '1px solid #e5e7eb', borderRadius: '14px', overflow: 'hidden',
+                    border: '1.5px solid #e5e7eb', borderRadius: '14px', overflow: 'hidden',
                     background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
                     display: 'flex', flexDirection: 'column', cursor: 'pointer',
                     transition: 'box-shadow 0.2s ease',
@@ -382,10 +382,10 @@ export default function BlogPage() {
                         {post.readTime}
                       </span>
                     </div>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.35, marginBottom: '8px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.35, marginBottom: '8px' }}>
                       {post.title}
                     </h3>
-                    <p style={{ fontSize: '0.82rem', color: '#4b5563', lineHeight: 1.55, flex: 1, marginBottom: '16px' }}>
+                    <p style={{ fontSize: '0.82rem', color: '#374151', lineHeight: 1.55, flex: 1, marginBottom: '16px' }}>
                       {post.description}
                     </p>
                     <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '14px' }}>
@@ -393,13 +393,13 @@ export default function BlogPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <div style={{
                             width: '28px', height: '28px', borderRadius: '50%',
-                            background: 'linear-gradient(135deg, rgba(124,58,237,0.25), rgba(124,58,237,0.08))',
+                            background: 'linear-gradient(135deg, rgba(124,58,237,0.25), rgba(124,58,237,0.14))',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '0.65rem', fontWeight: 700, color: '#7c3aed',
                           }}>
                             {post.author.avatar}
                           </div>
-                          <span style={{ fontSize: '0.78rem', color: '#4b5563' }}>{post.author.name}</span>
+                          <span style={{ fontSize: '0.78rem', color: '#374151' }}>{post.author.name}</span>
                         </div>
                         <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
                           {new Date(post.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -428,7 +428,7 @@ export default function BlogPage() {
 
         {/* Newsletter */}
         <div style={{
-          background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(124,58,237,0.03))',
+          background: 'linear-gradient(135deg, rgba(124,58,237,0.14), rgba(124,58,237,0.03))',
           border: '1px solid rgba(124,58,237,0.15)',
           borderRadius: '20px', padding: isMobile ? '32px 20px' : '48px 32px',
           textAlign: 'center', marginBottom: '48px',
@@ -440,10 +440,10 @@ export default function BlogPage() {
           }}>
             <Mail style={{ width: '22px', height: '22px', color: '#7c3aed' }} />
           </div>
-          <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+          <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
             Stay Updated with DevControl
           </h3>
-          <p style={{ color: '#4b5563', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
+          <p style={{ color: '#374151', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
             Get the latest platform engineering insights, product updates, and best practices delivered to your inbox every week.
           </p>
           <div style={{
@@ -502,7 +502,7 @@ export default function BlogPage() {
 
         {/* Popular Topics */}
         <div style={{ marginBottom: '48px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', marginBottom: '24px' }}>Popular Topics</h2>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '24px' }}>Popular Topics</h2>
           <div style={{
             display: 'grid',
             gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
@@ -530,7 +530,7 @@ export default function BlogPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{
                       width: '40px', height: '40px', borderRadius: '10px',
-                      background: 'rgba(124,58,237,0.1)', display: 'flex',
+                      background: 'rgba(124,58,237,0.15)', display: 'flex',
                       alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                     }}>
                       <Icon style={{ width: '18px', height: '18px', color: '#7c3aed' }} />
@@ -555,7 +555,7 @@ export default function BlogPage() {
           <Link href="/docs" style={{ textDecoration: 'none' }}>
             <div
               style={{
-                border: '1px solid #e5e7eb', borderRadius: '14px', padding: '24px',
+                border: '1.5px solid #e5e7eb', borderRadius: '14px', padding: '24px',
                 background: '#fff', cursor: 'pointer', transition: 'box-shadow 0.15s ease',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
               }}
@@ -575,7 +575,7 @@ export default function BlogPage() {
           <Link href="/changelog" style={{ textDecoration: 'none' }}>
             <div
               style={{
-                border: '1px solid #e5e7eb', borderRadius: '14px', padding: '24px',
+                border: '1.5px solid #e5e7eb', borderRadius: '14px', padding: '24px',
                 background: '#fff', cursor: 'pointer', transition: 'box-shadow 0.15s ease',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
               }}

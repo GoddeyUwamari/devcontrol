@@ -157,7 +157,7 @@ export function FeatureShowcase() {
 
                 <div
                   style={{
-                    backgroundColor: 'rgba(124,58,237,0.06)',
+                    backgroundColor: 'rgba(124,58,237,0.12)',
                     borderRadius: '14px',
                     padding: '12px',
                     display: 'inline-flex',
@@ -170,7 +170,7 @@ export function FeatureShowcase() {
                 <h3
                   style={{
                     fontSize: isMobile ? '1rem' : '1.15rem',
-                    fontWeight: 700,
+                    fontWeight: 800,
                     color: '#0f172a',
                     marginBottom: '10px',
                   }}

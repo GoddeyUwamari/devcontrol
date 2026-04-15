@@ -109,7 +109,7 @@ export function SocialProofSection() {
               <div
                 key={badge.label}
                 className="flex items-center gap-3 rounded-full bg-white"
-                style={{ padding: isMobile ? '8px 16px' : '10px 24px', border: '1px solid #e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}
+                style={{ padding: isMobile ? '8px 16px' : '10px 24px', border: '1.5px solid #e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}
               >
                 <Icon className="h-5 w-5" style={{ color: '#7c3aed' }} />
                 <span className="font-medium" style={{ color: '#374151' }}>{badge.label}</span>

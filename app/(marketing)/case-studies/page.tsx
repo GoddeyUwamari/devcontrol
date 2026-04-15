@@ -117,7 +117,7 @@ export default function CaseStudiesPage() {
       }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: '6px',
-          background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+          background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
           borderRadius: '100px', padding: '6px 16px',
           fontSize: '0.78rem', fontWeight: 600, color: '#7c3aed',
           marginBottom: '24px', letterSpacing: '0.04em', textTransform: 'uppercase' as const,
@@ -208,7 +208,7 @@ export default function CaseStudiesPage() {
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {cs.tags.map(tag => (
                   <span key={tag} style={{
-                    background: 'rgba(124,58,237,0.06)', color: '#7c3aed',
+                    background: 'rgba(124,58,237,0.12)', color: '#7c3aed',
                     border: '1px solid rgba(124,58,237,0.15)',
                     borderRadius: '100px', padding: '4px 12px',
                     fontSize: '0.75rem', fontWeight: 600,
@@ -276,7 +276,7 @@ export default function CaseStudiesPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {cs.results.map((r, i) => (
                     <div key={r.label} style={{
-                      borderBottom: i < cs.results.length - 1 ? '1px solid rgba(124,58,237,0.1)' : 'none',
+                      borderBottom: i < cs.results.length - 1 ? '1px solid rgba(124,58,237,0.15)' : 'none',
                       paddingBottom: i < cs.results.length - 1 ? '20px' : '0',
                     }}>
                       <div style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>

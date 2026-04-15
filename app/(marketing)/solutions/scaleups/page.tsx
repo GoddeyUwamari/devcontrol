@@ -199,7 +199,7 @@ export default function ScaleupsPage() {
             <div>
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+                background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
                 borderRadius: '100px', padding: '6px 16px',
                 fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.1em',
@@ -275,13 +275,13 @@ export default function ScaleupsPage() {
               >
                 <div style={{
                   width: '52px', height: '52px', borderRadius: '14px',
-                  background: 'rgba(124,58,237,0.08)', flexShrink: 0,
+                  background: 'rgba(124,58,237,0.14)', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <Icon size={24} style={{ color: '#7c3aed' }} />
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
                     {title}
                   </h3>
                   <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -407,7 +407,7 @@ export default function ScaleupsPage() {
                   }}>
                     {step}
                   </div>
-                  <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
                     {title}
                   </h3>
                   <p style={{ fontSize: '0.85rem', color: '#374151', lineHeight: 1.7 }}>
@@ -451,7 +451,7 @@ export default function ScaleupsPage() {
               }}>
                 <div style={{
                   display: 'inline-flex',
-                  background: i === 1 ? '#7c3aed' : 'rgba(124,58,237,0.08)',
+                  background: i === 1 ? '#7c3aed' : 'rgba(124,58,237,0.14)',
                   borderRadius: '100px', padding: '5px 14px',
                   fontSize: '0.72rem', fontWeight: 700,
                   color: i === 1 ? '#fff' : '#7c3aed',

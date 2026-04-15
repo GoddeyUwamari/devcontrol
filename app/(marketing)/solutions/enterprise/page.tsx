@@ -196,7 +196,7 @@ export default function EnterprisePage() {
               }}
                 onMouseEnter={e => {
                   e.currentTarget.style.borderColor = '#7c3aed'
-                  e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.1)'
+                  e.currentTarget.style.boxShadow = '0 8px 32px rgba(124,58,237,0.15)'
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.borderColor = i % 2 === 0 ? '#e5e7eb' : 'rgba(124,58,237,0.15)'
@@ -205,13 +205,13 @@ export default function EnterprisePage() {
               >
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
-                  background: 'rgba(124,58,237,0.08)', flexShrink: 0,
+                  background: 'rgba(124,58,237,0.14)', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
                     {title}
                   </h3>
                   <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -373,7 +373,7 @@ export default function EnterprisePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center',
-            background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
             borderRadius: '100px', padding: '6px 16px',
             fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
             marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',

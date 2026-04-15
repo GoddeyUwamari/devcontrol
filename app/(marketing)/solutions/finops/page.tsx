@@ -41,7 +41,7 @@ export default function FinOpsPage() {
     {
       phase: 'Inform',
       color: '#7c3aed',
-      bg: 'rgba(124,58,237,0.06)',
+      bg: 'rgba(124,58,237,0.12)',
       border: 'rgba(124,58,237,0.2)',
       desc: 'Complete cost visibility across all AWS accounts, teams, and services in real time.',
       items: ['Unified cost dashboard', 'Team cost attribution', 'Service-level breakdown'],
@@ -86,7 +86,7 @@ export default function FinOpsPage() {
             <div>
               <div style={{
                 display: 'inline-flex', alignItems: 'center',
-                background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+                background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
                 borderRadius: '100px', padding: '6px 16px',
                 fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
                 marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
@@ -293,7 +293,7 @@ export default function FinOpsPage() {
               >
                 <div style={{
                   width: '40px', height: '40px', borderRadius: '10px',
-                  background: 'rgba(124,58,237,0.08)',
+                  background: 'rgba(124,58,237,0.14)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '16px',
                 }}>
@@ -310,7 +310,7 @@ export default function FinOpsPage() {
                   </div>
                 </div>
 
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.82rem', color: '#374151', lineHeight: 1.7, flex: 1 }}>
@@ -510,7 +510,7 @@ export default function FinOpsPage() {
               borderRadius: '20px', padding: isMobile ? '28px' : '40px',
             }}>
               <div style={{
-                display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
+                display: 'inline-flex', background: 'rgba(124,58,237,0.14)',
                 borderRadius: '100px', padding: '6px 16px',
                 fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',

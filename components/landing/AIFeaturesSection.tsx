@@ -184,7 +184,7 @@ export function AIFeaturesSection() {
 
                 <div
                   style={{
-                    background: 'rgba(124,58,237,0.1)',
+                    background: 'rgba(124,58,237,0.15)',
                     borderRadius: '12px',
                     padding: '10px',
                     display: 'inline-flex',
@@ -196,8 +196,8 @@ export function AIFeaturesSection() {
 
                 <h3
                   style={{
-                    fontSize: isMobile ? '0.95rem' : '1.05rem',
-                    fontWeight: 700,
+                    fontSize: isMobile ? '1rem' : '1.15rem',
+                    fontWeight: 800,
                     color: '#111827',
                     marginBottom: '8px',
                   }}
@@ -208,7 +208,7 @@ export function AIFeaturesSection() {
                 <p
                   style={{
                     fontSize: isMobile ? '0.88rem' : '0.95rem',
-                    color: '#4b5563',
+                    color: '#374151',
                     lineHeight: 1.6,
                   }}
                 >

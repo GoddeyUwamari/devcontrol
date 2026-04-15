@@ -84,7 +84,7 @@ export function HowItWorks() {
                       {step.number}
                     </div>
                   </div>
-                  <h3 className="font-bold" style={{ fontSize: '1.1rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{step.title}</h3>
+                  <h3 className="font-bold" style={{ fontSize: '1.2rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{step.title}</h3>
                   <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: 1.65 }}>{step.description}</p>
                 </div>
 

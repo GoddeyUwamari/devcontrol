@@ -57,7 +57,7 @@ export default function ContactPage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
             borderRadius: '100px', padding: '6px 16px',
             fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
             marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
@@ -126,14 +126,14 @@ export default function ContactPage() {
                   <div key={title} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                     <div style={{
                       width: '40px', height: '40px', borderRadius: '10px',
-                      background: 'rgba(124,58,237,0.08)', flexShrink: 0,
+                      background: 'rgba(124,58,237,0.14)', flexShrink: 0,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                       <Icon size={18} style={{ color: '#7c3aed' }} />
                     </div>
                     <div>
                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{title}</p>
-                      <p style={{ fontSize: '0.82rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{desc}</p>
+                      <p style={{ fontSize: '0.82rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{desc}</p>
                     </div>
                   </div>
                 ))}
@@ -203,7 +203,7 @@ export default function ContactPage() {
                   borderRadius: '16px', padding: '40px', textAlign: 'center',
                 }}>
                   <CheckCircle size={40} style={{ color: '#16a34a', margin: '0 auto 16px' }} />
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
                     Message Sent
                   </h3>
                   <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7 }}>

@@ -201,13 +201,13 @@ export default function CommunityPage() {
               >
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
-                  background: 'rgba(124,58,237,0.08)',
+                  background: 'rgba(124,58,237,0.14)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '20px',
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75, margin: 0 }}>
@@ -251,7 +251,7 @@ export default function CommunityPage() {
               { channel: '#show-and-tell', desc: 'Share dashboards, architecture decisions, and AWS wins with the community', members: '320+' },
             ].map(({ channel, desc, members }) => (
               <div key={channel} style={{
-                background: '#fff', border: '1px solid #e5e7eb',
+                background: '#fff', border: '1.5px solid #e5e7eb',
                 borderRadius: '12px', padding: isMobile ? '16px' : '20px 24px',
                 display: 'flex', flexDirection: 'column', gap: '8px',
               }}>
@@ -266,7 +266,7 @@ export default function CommunityPage() {
                     {members} members
                   </span>
                 </div>
-                <p style={{ fontSize: '0.82rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>{desc}</p>
+                <p style={{ fontSize: '0.82rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{desc}</p>
               </div>
             ))}
           </div>

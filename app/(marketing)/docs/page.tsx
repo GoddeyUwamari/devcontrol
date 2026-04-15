@@ -36,7 +36,7 @@ function DocsHero({ isMobile, isTablet }: ResponsiveProps) {
       <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: '6px',
-          background: 'rgba(124,58,237,0.1)', borderRadius: '20px',
+          background: 'rgba(124,58,237,0.15)', borderRadius: '20px',
           padding: '4px 14px', marginBottom: '20px',
         }}>
           <Book style={{ width: '14px', height: '14px', color: '#7c3aed' }} />
@@ -96,14 +96,14 @@ function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
           {quickStart.map((item) => (
             <Link key={item.title} href={item.href} style={{ textDecoration: 'none' }}>
               <div style={{
-                height: '100%', border: '1px solid #e5e7eb', borderRadius: '14px',
+                height: '100%', border: '1.5px solid #e5e7eb', borderRadius: '14px',
                 padding: isMobile ? '16px' : '24px', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
                 cursor: 'pointer',
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <div style={{
                     width: '40px', height: '40px', borderRadius: '10px',
-                    background: 'rgba(124,58,237,0.1)', display: 'flex',
+                    background: 'rgba(124,58,237,0.15)', display: 'flex',
                     alignItems: 'center', justifyContent: 'center',
                   }}>
                     <item.icon style={{ width: '18px', height: '18px', color: '#7c3aed' }} />
@@ -121,7 +121,7 @@ function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
                   <span style={{ fontSize: isMobile ? '0.875rem' : '1rem', fontWeight: 700, color: '#0f172a' }}>{item.title}</span>
                   <ArrowRight style={{ width: '14px', height: '14px', color: '#7c3aed' }} />
                 </div>
-                <p style={{ fontSize: '0.85rem', color: '#4b5563', lineHeight: 1.5, margin: 0 }}>{item.description}</p>
+                <p style={{ fontSize: '0.85rem', color: '#374151', lineHeight: 1.5, margin: 0 }}>{item.description}</p>
               </div>
             </Link>
           ))}
@@ -150,10 +150,10 @@ function PopularTopicsSection({ isMobile, isTablet }: ResponsiveProps) {
     <section style={{ background: '#fafafa', padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
             Popular Topics
           </h2>
-          <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>Most frequently accessed documentation</p>
+          <p style={{ color: '#374151', fontSize: '0.95rem' }}>Most frequently accessed documentation</p>
         </div>
         <div style={{
           display: 'grid',
@@ -163,7 +163,7 @@ function PopularTopicsSection({ isMobile, isTablet }: ResponsiveProps) {
           {topics.map((topic) => (
             <Link key={topic.title} href={topic.href} style={{ textDecoration: 'none' }}>
               <div style={{
-                border: '1px solid #e5e7eb', borderRadius: '12px', padding: '14px 16px',
+                border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '14px 16px',
                 background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                 display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
               }}>
@@ -255,10 +255,10 @@ function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
     <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
             Documentation by Category
           </h2>
-          <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>Browse documentation organized by topic</p>
+          <p style={{ color: '#374151', fontSize: '0.95rem' }}>Browse documentation organized by topic</p>
         </div>
         <div style={{
           display: 'grid',
@@ -269,14 +269,14 @@ function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
             <div
               key={category.title}
               style={{
-                border: '1px solid #e5e7eb', borderRadius: '14px', padding: isMobile ? '20px' : '24px',
+                border: '1.5px solid #e5e7eb', borderRadius: '14px', padding: isMobile ? '20px' : '24px',
                 background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                 <div style={{
                   width: '40px', height: '40px', borderRadius: '10px',
-                  background: 'rgba(124,58,237,0.1)', display: 'flex',
+                  background: 'rgba(124,58,237,0.15)', display: 'flex',
                   alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}>
                   <category.icon style={{ width: '18px', height: '18px', color: '#7c3aed' }} />
@@ -291,7 +291,7 @@ function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
                   <li key={link.title}>
                     <Link href={link.href} style={{
                       display: 'flex', alignItems: 'center', gap: '6px',
-                      fontSize: '0.875rem', color: '#4b5563', textDecoration: 'none',
+                      fontSize: '0.875rem', color: '#374151', textDecoration: 'none',
                     }}>
                       <ArrowRight style={{ width: '12px', height: '12px', color: '#7c3aed', flexShrink: 0 }} />
                       {link.title}
@@ -338,10 +338,10 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
     <section style={{ background: '#fafafa', padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
             Quick Reference
           </h2>
-          <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>Common commands and code snippets</p>
+          <p style={{ color: '#374151', fontSize: '0.95rem' }}>Common commands and code snippets</p>
         </div>
         <div style={{
           display: 'grid',
@@ -352,7 +352,7 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
             <div
               key={block.title}
               style={{
-                border: '1px solid #e5e7eb', borderRadius: '14px', overflow: 'hidden',
+                border: '1.5px solid #e5e7eb', borderRadius: '14px', overflow: 'hidden',
                 background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
               }}
             >
@@ -367,7 +367,7 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
                 }}>
                   <code style={{
                     fontSize: isMobile ? '0.78rem' : '0.875rem',
-                    color: '#4b5563', fontFamily: 'monospace', whiteSpace: 'pre',
+                    color: '#374151', fontFamily: 'monospace', whiteSpace: 'pre',
                   }}>
                     {block.code}
                   </code>
@@ -396,10 +396,10 @@ function ResourcesSection({ isMobile, isTablet }: ResponsiveProps) {
     <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
             Additional Resources
           </h2>
-          <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>More ways to get help and stay updated</p>
+          <p style={{ color: '#374151', fontSize: '0.95rem' }}>More ways to get help and stay updated</p>
         </div>
         <div style={{
           display: 'grid',
@@ -414,13 +414,13 @@ function ResourcesSection({ isMobile, isTablet }: ResponsiveProps) {
               style={{ textDecoration: 'none' }}
             >
               <div style={{
-                border: '1px solid #e5e7eb', borderRadius: '14px', padding: isMobile ? '16px 12px' : '20px 16px',
+                border: '1.5px solid #e5e7eb', borderRadius: '14px', padding: isMobile ? '16px 12px' : '20px 16px',
                 background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
                 textAlign: 'center', cursor: 'pointer',
               }}>
                 <div style={{
                   width: '40px', height: '40px', borderRadius: '10px',
-                  background: 'rgba(124,58,237,0.1)', display: 'flex',
+                  background: 'rgba(124,58,237,0.15)', display: 'flex',
                   alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px',
                 }}>
                   <resource.icon style={{ width: '18px', height: '18px', color: '#7c3aed' }} />
@@ -448,11 +448,11 @@ function CTASection({ isMobile, isTablet }: ResponsiveProps) {
       <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
         <h2 style={{
           fontSize: isMobile ? '1.6rem' : 'clamp(1.4rem, 3vw, 1.8rem)',
-          fontWeight: 700, color: '#0f172a', marginBottom: '12px',
+          fontWeight: 800, color: '#0f172a', marginBottom: '12px',
         }}>
           Can&apos;t Find What You&apos;re Looking For?
         </h2>
-        <p style={{ color: '#4b5563', maxWidth: '480px', margin: '0 auto 28px', lineHeight: 1.6, fontSize: '0.95rem' }}>
+        <p style={{ color: '#374151', maxWidth: '480px', margin: '0 auto 28px', lineHeight: 1.6, fontSize: '0.95rem' }}>
           Our team is here to help. Reach out and we&apos;ll get you pointed in the right direction.
         </p>
         <div style={{

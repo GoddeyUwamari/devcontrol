@@ -104,7 +104,7 @@ export function TestimonialsSection() {
           >
             Trusted by Engineering Leaders
           </h2>
-          <p style={{ color: '#475569', fontSize: isMobile ? '14px' : '16px' }}>
+          <p style={{ color: '#374151', fontSize: isMobile ? '14px' : '16px' }}>
             Real outcomes from teams optimizing cost, performance, and risk at scale.
           </p>
         </div>

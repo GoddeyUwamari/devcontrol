@@ -78,7 +78,7 @@ export default function ServiceHealthPage() {
 
           <div style={{
             display: 'inline-flex', alignItems: 'center',
-            background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
             borderRadius: '100px', padding: '6px 16px',
             fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
             marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
@@ -237,13 +237,13 @@ export default function ServiceHealthPage() {
                 )}
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
-                  background: 'rgba(124,58,237,0.08)',
+                  background: 'rgba(124,58,237,0.14)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '20px',
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -364,7 +364,7 @@ export default function ServiceHealthPage() {
                 }}>
                   {step}
                 </div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '12px' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
@@ -404,14 +404,14 @@ export default function ServiceHealthPage() {
               borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
-                display: 'inline-flex', background: 'rgba(124,58,237,0.08)',
+                display: 'inline-flex', background: 'rgba(124,58,237,0.14)',
                 borderRadius: '100px', padding: '6px 16px',
                 fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
               }}>
                 For DevOps & Platform Engineers
               </div>
-              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.2rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Stop Flying Blind During Incidents
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -442,7 +442,7 @@ export default function ServiceHealthPage() {
               }}>
                 For Engineering Leaders
               </div>
-              <h3 style={{ fontSize: isMobile ? '1.1rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.2rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
                 Prove Reliability to Your Board
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
