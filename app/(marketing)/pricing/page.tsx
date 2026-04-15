@@ -136,7 +136,7 @@ function ROICalculator() {
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 tracking-tight mb-3">
             How Much AWS Spend Are You Wasting?
           </h2>
-          <p className="text-base text-gray-900 max-w-lg mx-auto leading-relaxed">
+          <p className="text-base text-gray-700 max-w-lg mx-auto leading-relaxed">
             Move the slider to your monthly AWS spend. See what is likely leaking — and what you could recover.
           </p>
         </div>
@@ -195,7 +195,7 @@ function ROICalculator() {
           <div className="px-5 py-7 sm:px-8 border-b border-gray-100">
             <p className="text-[11px] font-bold text-violet-700 uppercase tracking-widest mb-2.5">Competitive positioning</p>
             <h3 className="text-xl font-extrabold text-slate-900 mb-1.5">Why not just use AWS Cost Explorer?</h3>
-            <p className="text-sm text-gray-900 leading-relaxed">
+            <p className="text-sm text-gray-700 leading-relaxed">
               Cost Explorer shows what you spent. DevControl shows exactly what to fix — and how much you will save doing it.
             </p>
           </div>
@@ -215,7 +215,7 @@ function ROICalculator() {
                 ].map(text => (
                   <div key={text} className="flex gap-2 items-start">
                     <span className="text-red-600 font-bold shrink-0 mt-0.5">✗</span>
-                    <span className="text-sm text-gray-900 leading-relaxed">{text}</span>
+                    <span className="text-sm text-gray-700 leading-relaxed">{text}</span>
                   </div>
                 ))}
               </div>
@@ -235,7 +235,7 @@ function ROICalculator() {
                 ].map(text => (
                   <div key={text} className="flex gap-2 items-start">
                     <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
-                    <span className="text-sm text-gray-900 leading-relaxed">{text}</span>
+                    <span className="text-sm text-gray-700 leading-relaxed">{text}</span>
                   </div>
                 ))}
               </div>
@@ -243,7 +243,7 @@ function ROICalculator() {
           </div>
           <div className="px-5 py-4 sm:px-8 bg-slate-50 border-t border-gray-100 flex items-start gap-2.5">
             <span className="text-violet-700 shrink-0">ℹ</span>
-            <p className="text-sm text-gray-900 leading-relaxed">
+            <p className="text-sm text-gray-700 leading-relaxed">
               <strong>Cost Explorer is a good starting point.</strong> DevControl is what you use when you are serious about eliminating waste — and do not have time to build a FinOps team from scratch.
             </p>
           </div>
@@ -278,7 +278,7 @@ export default function PricingPage() {
             Simple Pricing.{' '}
             <span className="text-violet-700">Serious Savings.</span>
           </h1>
-          <p className="text-base sm:text-lg text-gray-900 leading-relaxed max-w-lg mx-auto mb-7">
+          <p className="text-base sm:text-lg text-gray-700 leading-relaxed max-w-lg mx-auto mb-7">
             Start free. Upgrade when you are ready for AI-powered cost optimization, security scanning, and DORA metrics.{' '}
             <strong className="text-slate-900">Average ROI on Pro: 8x within 30 days.</strong>
           </p>
@@ -426,7 +426,7 @@ export default function PricingPage() {
           })}
         </div>
         <div className="max-w-[1400px] mx-auto mt-8 text-center">
-          <p className="text-sm text-gray-900 font-medium mb-3">
+          <p className="text-sm text-gray-700 font-medium mb-3">
             All paid plans include a <strong>14-day money-back guarantee</strong>
           </p>
           <div className="flex flex-wrap justify-center gap-3 sm:gap-5 text-xs text-gray-500">

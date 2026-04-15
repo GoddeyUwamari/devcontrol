@@ -50,12 +50,12 @@ export function HeroSection() {
         </h1>
 
         {/* Subheadline */}
-        <p className="leading-relaxed" style={{ fontSize: isMobile ? '1rem' : '1.4rem', color: '#111827', maxWidth: '680px', margin: '0 auto 16px' }}>
+        <p className="leading-relaxed" style={{ fontSize: isMobile ? '1rem' : '1.4rem', color: '#374151', maxWidth: '680px', margin: '0 auto 16px' }}>
          See exactly where your cloud spend is leaking, what risks exist, and what's slowing your team down — in one unified view.
         </p>
 
         {/* ROI line */}
-        <p style={{ fontSize: isMobile ? '0.85rem' : '1rem', color: '#111827', marginBottom: '36px' }}>
+        <p style={{ fontSize: isMobile ? '0.85rem' : '1rem', color: '#374151', marginBottom: '36px' }}>
           <strong style={{ color: '#059669' }}>$2,400/month avg savings (~$28,800/year)</strong>
           {' · '}
           First insight in <strong style={{ color: '#059669' }}>15 min</strong>
@@ -131,7 +131,7 @@ export function HeroSection() {
           </a>
         </div>
 
-        <p style={{ fontSize: '0.9rem', color: '#111827', marginBottom: '24px' }}>
+        <p style={{ fontSize: '0.9rem', color: '#374151', marginBottom: '24px' }}>
           Or <a href="/contact" style={{ color: '#7c3aed', fontWeight: 600, textDecoration: 'none' }}>book a 15-min AWS audit</a> with our team — free, no commitment
         </p>
 
@@ -169,7 +169,7 @@ export function HeroSection() {
               'Ranked fixes with dollar impact',
             ].map((item, i) => (
               <div key={item} style={{ display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#111827', padding: isMobile ? '4px 12px' : '0 20px' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', padding: isMobile ? '4px 12px' : '0 20px' }}>
                   {item}
                 </span>
                 {i < 3 && !isMobile && (
