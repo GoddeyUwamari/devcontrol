@@ -742,13 +742,13 @@ export default function DashboardPage() {
               </div>
               {securityRows.map(({ label, value, status }) => (
                 <div key={label} className="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span className="text-[13px] text-slate-500">{label}</span>
+                  <span className="text-[12px] text-slate-400">{label}</span>
                   <span className="text-[13px] font-bold" style={{ color: status === 'good' ? '#059669' : '#D97706' }}>{value}</span>
                 </div>
               ))}
               <div className="py-2 border-b border-slate-100">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[13px] text-slate-500">Compliance Status</span>
+                  <span className="text-[12px] text-slate-400">Compliance Status</span>
                   <span className="text-xs font-bold text-emerald-600">3 / 3 passing</span>
                 </div>
                 <div className="flex gap-1.5">
@@ -792,13 +792,13 @@ export default function DashboardPage() {
               </div>
               {securityRows.map(({ label, value, status }) => (
                 <div key={label} className="flex items-center justify-between py-2.5 border-b border-slate-100">
-                  <span className="text-[13px] text-gray-500">{label}</span>
+                  <span className="text-[12px] text-slate-400">{label}</span>
                   <span className="text-[13px] font-bold" style={{ color: status === 'good' ? '#059669' : '#D97706' }}>{value}</span>
                 </div>
               ))}
               <div className="py-3 border-b border-slate-100">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[13px] text-gray-500">Compliance Status</span>
+                  <span className="text-[12px] text-slate-400">Compliance Status</span>
                   <span className="text-xs font-bold text-emerald-600">3 / 3 passing</span>
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
