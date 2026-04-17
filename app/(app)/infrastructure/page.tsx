@@ -16,6 +16,7 @@ import awsServicesService from '@/lib/services/aws-services.service'
 import type { InfrastructureResource, ResourceType } from '@/lib/types'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import { usePlan } from '@/lib/hooks/use-plan'
 
 const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
   ec2:        { icon: Server,    color: '#3B82F6', bg: '#EFF6FF' },
@@ -189,6 +190,14 @@ function InfrastructureContent() {
   const demoMode     = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive  = demoMode || salesDemoMode
+  const { isFree, isStarter, isPro } = usePlan()
+  const FREE_RESOURCE_TYPES = ['ec2', 'rds', 's3', 'EC2', 'RDS', 'S3']
+  const STARTER_RESOURCE_TYPES = [
+    'ec2', 'rds', 's3', 'lambda', 'eks', 'ecs', 'elb', 'alb',
+    'cloudfront', 'dynamodb', 'elasticache', 'sqs', 'sns', 'route53', 'vpc',
+    'EC2', 'RDS', 'S3', 'Lambda', 'EKS', 'ECS', 'ELB', 'ALB',
+    'CloudFront', 'DynamoDB', 'ElastiCache', 'SQS', 'SNS', 'Route53', 'VPC',
+  ]
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
   const [isSyncing,         setIsSyncing]         = useState(false)
@@ -203,7 +212,10 @@ function InfrastructureContent() {
     queryKey: ['infrastructure', selectedType],
     queryFn: async () => {
       const all = await infrastructureService.getAll(selectedType ? { resourceType: selectedType as ResourceType } : undefined)
-      return all.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
+      const filtered = all.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
+      if (isFree) return filtered.filter(r => FREE_RESOURCE_TYPES.includes(r.resourceType as string))
+      if (isStarter && !isPro) return filtered.filter(r => STARTER_RESOURCE_TYPES.includes(r.resourceType as string))
+      return filtered
     },
     enabled: !isDemoActive,
   })
@@ -227,7 +239,10 @@ function InfrastructureContent() {
     queryKey: ['infrastructure-all'],
     queryFn: async () => {
       const all = await infrastructureService.getAll()
-      return all.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
+      const filtered = all.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
+      if (isFree) return filtered.filter(r => FREE_RESOURCE_TYPES.includes(r.resourceType as string))
+      if (isStarter && !isPro) return filtered.filter(r => STARTER_RESOURCE_TYPES.includes(r.resourceType as string))
+      return filtered
     },
     enabled: !isDemoActive,
   })
@@ -475,6 +490,29 @@ function InfrastructureContent() {
           </div>
         </div>
       </div>
+
+      {isFree && !isDemoActive && (
+        <div className="mb-5 flex items-center justify-between bg-violet-50 border border-violet-200 rounded-xl px-5 py-3">
+          <p className="text-sm text-violet-800 font-medium">
+            Free plan shows EC2, RDS, and S3 only.
+            <span className="text-slate-500 font-normal ml-1">Upgrade to Starter to unlock 15 resource types.</span>
+          </p>
+          <Link href="/settings/billing/upgrade" className="text-xs font-semibold text-white bg-violet-700 px-4 py-1.5 rounded-lg no-underline shrink-0 ml-4">
+            Upgrade →
+          </Link>
+        </div>
+      )}
+      {isStarter && !isPro && !isDemoActive && (
+        <div className="mb-5 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-5 py-3">
+          <p className="text-sm text-blue-800 font-medium">
+            Starter plan shows 15 resource types.
+            <span className="text-slate-500 font-normal ml-1">Upgrade to Pro to unlock all 50+ resource types.</span>
+          </p>
+          <Link href="/settings/billing/upgrade" className="text-xs font-semibold text-white bg-blue-600 px-4 py-1.5 rounded-lg no-underline shrink-0 ml-4">
+            Upgrade →
+          </Link>
+        </div>
+      )}
 
       {/* SYSTEM INTELLIGENCE STRIP */}
       <div className="bg-white rounded-xl border border-slate-200 border-l-4 border-l-violet-700 px-6 py-5 mb-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
