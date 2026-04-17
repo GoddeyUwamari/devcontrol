@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Shield, RefreshCw, Download, CheckCircle2, XCircle, MinusCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Shield, RefreshCw, Download, CheckCircle2, XCircle, MinusCircle, ChevronDown, ChevronRight, Lock } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { demoModeService } from '@/lib/services/demo-mode.service';
@@ -155,6 +155,30 @@ export default function CompliancePage() {
   const hasResults = soc2Result !== null || hipaaResult !== null;
   const isDemoActive = demoModeService.isEnabled();
   const displayError = isDemoActive ? null : error;
+
+  if (!isEnterprise) {
+    return (
+      <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
+        <div className="mb-8">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Compliance Frameworks</h1>
+          <p className="text-gray-500 text-sm mt-1.5">SOC 2, HIPAA, and CIS compliance scanning.</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
+          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-5 h-5 text-gray-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+            Compliance scanning is available on the Enterprise plan. Upgrade to run SOC 2, HIPAA, and CIS scans.
+          </p>
+          <a href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+            Upgrade to Enterprise
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
