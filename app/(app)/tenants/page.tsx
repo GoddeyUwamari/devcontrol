@@ -16,14 +16,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import { usePlan } from '@/lib/hooks/use-plan'
 import { api } from '@/lib/api'
 import { Tenant } from '@/lib/types'
 import { toast } from 'sonner'
 import {
   Search, Sparkles, RefreshCw, Plus,
   Users, XCircle,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Lock
 } from 'lucide-react'
+import Link from 'next/link'
 
 // FIX 3: plan field added to each demo tenant
 const DEMO_TENANTS: Tenant[] = [
@@ -70,6 +72,7 @@ export default function TenantsPage() {
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
+  const { isEnterprise } = usePlan()
 
   // FIX 1: corrected API path from /api/auth/tenants → /api/tenants
   const { data: tenants, isLoading, error, refetch } = useQuery<Tenant[]>({
@@ -135,6 +138,30 @@ export default function TenantsPage() {
   const inactiveCount = displayTenants.filter(t => t.status === 'inactive').length
 
   const isAuthError = !isDemoActive && !!error && ((error as any)?.response?.status === 401 || (error as any)?.status === 401)
+
+  if (!isEnterprise && !isDemoActive) {
+    return (
+      <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
+        <div className="mb-8">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Enterprise</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Multi-Account Monitoring</h1>
+          <p className="text-gray-500 text-sm mt-1.5">Monitor revenue, churn risk, and expansion signals across your tenant base.</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
+          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-5 h-5 text-gray-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+            Multi-account monitoring is available on the Enterprise plan. Track tenant health, churn risk, and expansion signals across all your accounts.
+          </p>
+          <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+            Upgrade to Enterprise
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{
