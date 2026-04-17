@@ -54,7 +54,7 @@ function PlatformHero() {
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
-              <Link href="/services">
+              <Link href="/platform/infrastructure">
                 View Demo
               </Link>
             </Button>

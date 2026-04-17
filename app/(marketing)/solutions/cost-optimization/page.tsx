@@ -54,7 +54,7 @@ function CostHero() {
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
-              <Link href="/infrastructure/recommendations">
+              <Link href="/cost-optimization">
                 View Demo
               </Link>
             </Button>
