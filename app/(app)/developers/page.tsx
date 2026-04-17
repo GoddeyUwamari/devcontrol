@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Copy, Check, Trash2, Eye, EyeOff, Github, Slack, Bell, Trello, Cloud, Database, Server, BarChart2, Activity, Mail } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { usePlan } from '@/lib/hooks/use-plan'
 import { toast } from 'sonner'
 import developersService from '@/lib/services/developers.service'
 
@@ -74,6 +75,7 @@ const INITIAL_INTEGRATIONS = (demoMode: boolean): Integration[] => [
 export default function DevelopersPage() {
   const demoMode = useDemoMode()
   const router = useRouter()
+  const { isPro, isEnterprise } = usePlan()
 
   const [apiKeys, setApiKeys] = useState<ApiKey[]>(demoMode ? DEMO_API_KEYS : [])
   const [showNewKey, setShowNewKey] = useState(false)
@@ -84,6 +86,8 @@ export default function DevelopersPage() {
   const [copied, setCopied] = useState(false)
 
   const [webhooks, setWebhooks] = useState<WebhookEndpoint[]>(demoMode ? DEMO_WEBHOOKS : [])
+  const webhookLimit = isEnterprise ? Infinity : isPro ? 5 : 0
+  const atWebhookLimit = webhooks.length >= webhookLimit
   const [showNewWebhook, setShowNewWebhook] = useState(false)
   const [webhookUrl, setWebhookUrl] = useState('')
   const [webhookError, setWebhookError] = useState('')
@@ -260,9 +264,20 @@ export default function DevelopersPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Webhooks</p>
-            <p className="text-xs text-slate-400">{webhooks.length} endpoint{webhooks.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-slate-400">
+              {webhooks.length}{isPro && !isEnterprise ? '/5' : ''} endpoint{webhooks.length !== 1 ? 's' : ''}
+              {atWebhookLimit && <span className="ml-2 text-amber-600 font-semibold">Limit reached</span>}
+            </p>
           </div>
-          <button onClick={() => setShowNewWebhook(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors whitespace-nowrap self-start sm:self-auto">
+          <button
+            onClick={() => !atWebhookLimit && setShowNewWebhook(true)}
+            disabled={atWebhookLimit}
+            title={atWebhookLimit ? 'Upgrade to Enterprise for unlimited webhooks' : 'Add webhook endpoint'}
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold border-none transition-colors whitespace-nowrap self-start sm:self-auto ${
+              atWebhookLimit
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-violet-600 hover:bg-violet-700 text-white cursor-pointer'
+            }`}>
             <Plus size={13} /> Add Endpoint
           </button>
         </div>
