@@ -262,7 +262,7 @@ export function TopNav() {
           </button>
           <Link
             href="/dashboard"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '1.2rem', color: '#0F172A', letterSpacing: '-0.01em' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '1.2rem', color: '#1e1b4b', letterSpacing: '-0.01em' }}
           >
             <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'linear-gradient(135deg, #2563EB, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>DC</span>
@@ -332,7 +332,7 @@ export function TopNav() {
                     href={item.href}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-2 text-base font-medium rounded-md transition-colors',
-                      'hover:bg-accent hover:text-[#0F172A]',
+                      'hover:bg-accent hover:text-[#1e1b4b]',
                       isActive ? 'bg-accent text-foreground' : 'text-[#1E293B]'
                     )}
                   >
@@ -351,7 +351,7 @@ export function TopNav() {
                   <button
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-2 text-base font-medium rounded-md transition-colors',
-                      'hover:bg-accent hover:text-[#0F172A]',
+                      'hover:bg-accent hover:text-[#1e1b4b]',
                       isActive ? 'bg-accent text-foreground' : 'text-[#1E293B]'
                     )}
                   >
@@ -402,7 +402,7 @@ export function TopNav() {
                               <ChildIcon size={16} style={{ color: '#7c3aed' }} />
                             </div>
                             <div>
-                              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.3 }}>{child.label}</div>
+                              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e1b4b', lineHeight: 1.3 }}>{child.label}</div>
                               <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>{child.desc}</div>
                             </div>
                           </Link>
@@ -513,7 +513,7 @@ export function TopNav() {
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       width: '100%', padding: '14px 20px',
-                      fontSize: '1rem', fontWeight: 600, color: '#0F172A',
+                      fontSize: '1rem', fontWeight: 600, color: '#1e1b4b',
                       background: 'none', border: 'none', borderBottom: '1px solid #F1F5F9',
                       cursor: 'pointer', textAlign: 'left',
                     }}
