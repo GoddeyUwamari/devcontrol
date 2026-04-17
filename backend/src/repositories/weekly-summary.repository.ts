@@ -160,6 +160,7 @@ export class WeeklySummaryRepository {
          AND u.email_weekly_summary = true
          AND u.email IS NOT NULL
          AND u.is_email_verified = true
+         AND o.subscription_tier = 'enterprise'
        ORDER BY o.created_at DESC
        LIMIT 100`
     );
