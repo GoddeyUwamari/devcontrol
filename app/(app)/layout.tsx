@@ -12,11 +12,16 @@ import { useBreadcrumbs } from '@/lib/hooks/useBreadcrumbs';
 import { DemoBanner } from '@/components/demo/DemoBanner';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
+import { usePlan } from '@/lib/hooks/use-plan';
+import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const fetchStatus = useOnboardingStore((state) => state.fetchStatus);
   const breadcrumbs = useBreadcrumbs();
   const isDemoActive = useDemoMode();
+  const { enabled: salesDemo } = useSalesDemo();
+  const { isPro } = usePlan();
+  const showAIChat = isPro || isDemoActive || salesDemo;
 
   useEffect(() => {
     if (!isDemoActive) {
@@ -54,7 +59,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <CommandPalette />
       <ConnectionIndicator />
       <WelcomeModal />
-      <AIChatWidget />
+      {showAIChat && <AIChatWidget />}
     </div>
   );
 }
