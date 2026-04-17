@@ -99,6 +99,26 @@ export default function CostsByTeamPage() {
     )
   }
 
+  const handleExportCSV = () => {
+    const teamRows = data?.by_team?.map(d => [d.team_name, d.cost]) ?? []
+    const serviceRows = data?.by_service?.map(d => [d.service_name, d.cost]) ?? []
+    const resourceRows = data?.by_resource_type?.map(d => [d.resource_type, d.cost]) ?? []
+    const rows = [
+      ['Category', 'Name', 'Monthly Cost'],
+      ...teamRows.map(r => ['Team', ...r]),
+      ...serviceRows.map(r => ['Service', ...r]),
+      ...resourceRows.map(r => ['Resource Type', ...r]),
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cost-attribution-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const tabs = [
     { key: 'team',     label: 'By Team',          data: data?.by_team?.map(d => ({ name: d.team_name, cost: d.cost })) ?? []     },
     { key: 'service',  label: 'By Service',        data: data?.by_service?.map(d => ({ name: d.service_name, cost: d.cost })) ?? [] },
@@ -120,7 +140,7 @@ export default function CostsByTeamPage() {
             See exactly how much each team, service, and resource type is spending on AWS.
           </p>
         </div>
-        <button className="flex items-center gap-2 bg-white border border-gray-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium shrink-0 hover:border-violet-300 hover:text-violet-700 transition-colors">
+        <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white border border-gray-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium shrink-0 hover:border-violet-300 hover:text-violet-700 transition-colors">
           <Download size={14} /> Export CSV
         </button>
       </div>

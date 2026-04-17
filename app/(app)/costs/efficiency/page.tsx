@@ -306,6 +306,24 @@ export default function EfficiencyPage() {
 
   const barData = DEMO_BAR_DATA
 
+  const handleExport = () => {
+    const rows = [
+      ['Month', 'EC2', 'RDS', 'S3', 'Lambda', 'Other', 'Total'],
+      ...barData.map(d => [
+        d.month, d.EC2, d.RDS, d.S3, d.Lambda, d.Other,
+        d.EC2 + d.RDS + d.S3 + d.Lambda + d.Other,
+      ]),
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cloud-efficiency-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div
       className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen"
@@ -323,7 +341,7 @@ export default function EfficiencyPage() {
           <Link href="/cost-optimization" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#7C3AED', color: '#fff', padding: '9px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
             <Zap size={14} /> Apply Optimizations
           </Link>
-          <button style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', color: '#374151', padding: '9px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>
+          <button onClick={handleExport} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', color: '#374151', padding: '9px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>
             <Download size={14} /> Export
           </button>
         </div>
