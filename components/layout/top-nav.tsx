@@ -423,7 +423,7 @@ export function TopNav() {
             variant="outline"
             size="sm"
             onClick={handleSearchClick}
-            className="hidden md:flex items-center gap-2 text-sm text-muted-foreground md:w-32 lg:w-48 justify-start"
+            className="hidden md:flex items-center gap-2 text-base text-slate-500 md:w-32 lg:w-48 justify-start rounded-lg border border-slate-200 bg-white hover:border-slate-300"
           >
             <Search className="h-4 w-4" />
             <span>Search...</span>
@@ -435,7 +435,7 @@ export function TopNav() {
           {/* Quick Actions Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" className="gap-1.5 shrink-0 bg-blue-600 hover:bg-blue-700 text-white">
+              <Button size="default" className="gap-1.5 shrink-0 bg-violet-700 hover:bg-violet-800 text-white px-3 py-1.5">
                 <Plus className="h-4 w-4" />
                 <span className="hidden lg:inline">New</span>
               </Button>

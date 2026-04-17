@@ -34,8 +34,8 @@ export function UserDropdown({ user, onLogout }: UserDropdownProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button className="flex items-center gap-2 p-1 rounded-full hover:bg-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-          <Avatar className="w-8 h-8">
-            <AvatarFallback className="bg-muted text-muted-foreground text-sm font-medium border border-border">
+          <Avatar className="w-9 h-9">
+            <AvatarFallback className="bg-muted text-muted-foreground text-base font-semibold border border-border">
               {user.initials}
             </AvatarFallback>
           </Avatar>
