@@ -64,7 +64,7 @@ export default function StartupsPage() {
 
           <h1 style={{
             fontSize: isMobile ? '1.9rem' : 'clamp(2.2rem, 5vw, 3.2rem)',
-            fontWeight: 800, color: '#0f172a',
+            fontWeight: 700, color: '#1e1b4b',
             lineHeight: 1.15, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
           }}>
@@ -73,7 +73,7 @@ export default function StartupsPage() {
           </h1>
 
           <p style={{
-            fontSize: isMobile ? '1rem' : '1.15rem', color: '#374151',
+            fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937',
             lineHeight: 1.75, maxWidth: '620px',
             margin: '0 auto 36px',
           }}>
@@ -114,7 +114,7 @@ export default function StartupsPage() {
             justifyContent: 'center', gap: '16px',
             flexDirection: isMobile ? 'column' : 'row',
             alignItems: 'center',
-            fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+            fontSize: '0.875rem', fontWeight: 500, color: '#1f2937',
           }}>
             {['Free plan available', '15-minute setup', 'No DevOps hire needed'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -122,7 +122,7 @@ export default function StartupsPage() {
               </span>
             ))}
           </div>
-          <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+          <p style={{ fontSize: '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
             {'A seed-stage startup cut their AWS bill by $1,800/month and closed their first enterprise deal within 6 weeks of connecting DevControl.'}
           </p>
         </div>
@@ -140,7 +140,7 @@ export default function StartupsPage() {
               <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -159,12 +159,12 @@ export default function StartupsPage() {
               Built for Startup Velocity
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything a Startup Needs. Nothing It Doesn&apos;t.
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               Enterprise-grade AWS visibility at a price and complexity level that works for lean teams.
             </p>
           </div>
@@ -207,10 +207,10 @@ export default function StartupsPage() {
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '10px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.75 }}>
                   {desc}
                 </p>
               </div>
@@ -230,8 +230,8 @@ export default function StartupsPage() {
               Quick Setup
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Up and Running Before Lunch
             </h2>
@@ -253,10 +253,10 @@ export default function StartupsPage() {
                 }}>
                   {step}
                 </div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '12px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.75 }}>
                   {desc}
                 </p>
               </div>
@@ -276,12 +276,12 @@ export default function StartupsPage() {
               Real Startup Result
             </p>
             <h2 style={{
-              fontSize: isMobile ? '1.3rem' : 'clamp(1.5rem, 2.5vw, 2rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '8px',
+              fontSize: isMobile ? '1.3rem' : 'clamp(1.5rem, 2.5vw, 2rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '8px',
             }}>
               From Seed to Enterprise-Ready in 6 Weeks
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '480px', margin: '0 auto' }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '480px', margin: '0 auto' }}>
               How a seed-stage fintech used DevControl to cut costs, close enterprise deals, and raise their Series A.
             </p>
           </div>
@@ -334,8 +334,8 @@ export default function StartupsPage() {
                 position: 'relative',
               }}>
                 <p style={{ fontSize: '0.68rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 10px' }}>{week}</p>
-                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', margin: '0 0 8px' }}>{title}</h3>
-                <p style={{ fontSize: '0.88rem', color: '#374151', lineHeight: 1.6, margin: '0 0 16px' }}>{body}</p>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b', margin: '0 0 8px' }}>{title}</h3>
+                <p style={{ fontSize: '0.88rem', color: '#1f2937', lineHeight: 1.6, margin: '0 0 16px' }}>{body}</p>
                 <span style={{
                   display: 'inline-block',
                   background: color === '#059669' ? '#ECFDF5' : '#EDE9FE',
@@ -362,8 +362,8 @@ export default function StartupsPage() {
               Your Stage. Your Needs.
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
@@ -386,7 +386,7 @@ export default function StartupsPage() {
               }}>
                 For Founders &amp; CEOs
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                 Close More Deals. Raise Your Next Round.
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -398,7 +398,7 @@ export default function StartupsPage() {
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                   </div>
                 ))}
               </div>
@@ -417,7 +417,7 @@ export default function StartupsPage() {
               }}>
                 For CTOs &amp; Lead Engineers
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                 Enterprise Tooling Without the Enterprise Overhead
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -429,7 +429,7 @@ export default function StartupsPage() {
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                   </div>
                 ))}
               </div>

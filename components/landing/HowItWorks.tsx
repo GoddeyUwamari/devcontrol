@@ -45,7 +45,7 @@ export function HowItWorks() {
           <h2 className="font-extrabold" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '16px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
             From zero to insights in 15 minutes
           </h2>
-          <p style={{ fontSize: '1.15rem', color: '#374151', lineHeight: 1.75 }}>
+          <p style={{ fontSize: '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
             No complex configuration. No agents to install. Just connect and go.
           </p>
         </div>
@@ -84,8 +84,8 @@ export function HowItWorks() {
                       {step.number}
                     </div>
                   </div>
-                  <h3 className="font-bold" style={{ fontSize: '1.2rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{step.title}</h3>
-                  <p style={{ color: '#374151', fontSize: '0.95rem', lineHeight: 1.65 }}>{step.description}</p>
+                  <h3 className="font-bold" style={{ fontSize: '1.2rem', color: '#1e1b4b', marginBottom: '8px', lineHeight: 1.3 }}>{step.title}</h3>
+                  <p style={{ color: '#1f2937', fontSize: '1.05rem', lineHeight: 1.65 }}>{step.description}</p>
                 </div>
 
                 {/* Arrow connector (desktop only, between steps) */}

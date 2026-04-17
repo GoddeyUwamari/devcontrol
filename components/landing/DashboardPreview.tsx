@@ -23,7 +23,7 @@ export function DashboardPreview() {
       ) : (
         <div style={{ background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', borderRadius: '16px', aspectRatio: '16/9', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #e5e7eb' }}>
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📊</div>
-          <p style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Dashboard Preview</p>
+          <p style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1f2937', marginBottom: '8px' }}>Dashboard Preview</p>
           <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>Add screenshot at /public/landing/dashboard-preview.png</p>
         </div>
       )}

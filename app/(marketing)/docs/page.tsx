@@ -45,14 +45,14 @@ function DocsHero({ isMobile, isTablet }: ResponsiveProps) {
           </span>
         </div>
         <h1 style={{
-          color: '#0f172a', fontWeight: 800,
+          color: '#1e1b4b', fontWeight: 700,
           fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 2.8rem)',
           marginBottom: '16px', letterSpacing: '-0.02em', lineHeight: 1.2,
         }}>
           Everything You Need to Build with DevControl
         </h1>
         <p style={{
-          color: '#374151', fontSize: isMobile ? '0.95rem' : '1.1rem',
+          color: '#1f2937', fontSize: isMobile ? '1.05rem' : '1.1rem',
           maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6,
         }}>
           Guides, tutorials, API references, and best practices — everything to get you started and keep you moving.
@@ -121,7 +121,7 @@ function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
                   <span style={{ fontSize: isMobile ? '0.875rem' : '1rem', fontWeight: 700, color: '#0f172a' }}>{item.title}</span>
                   <ArrowRight style={{ width: '14px', height: '14px', color: '#7c3aed' }} />
                 </div>
-                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.5, margin: 0 }}>{item.description}</p>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.5, margin: 0 }}>{item.description}</p>
               </div>
             </Link>
           ))}
@@ -150,10 +150,10 @@ function PopularTopicsSection({ isMobile, isTablet }: ResponsiveProps) {
     <section style={{ background: '#fafafa', padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
             Popular Topics
           </h2>
-          <p style={{ color: '#374151', fontSize: '0.95rem' }}>Most frequently accessed documentation</p>
+          <p style={{ color: '#1f2937', fontSize: '1.05rem' }}>Most frequently accessed documentation</p>
         </div>
         <div style={{
           display: 'grid',
@@ -255,10 +255,10 @@ function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
     <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
             Documentation by Category
           </h2>
-          <p style={{ color: '#374151', fontSize: '0.95rem' }}>Browse documentation organized by topic</p>
+          <p style={{ color: '#1f2937', fontSize: '1.05rem' }}>Browse documentation organized by topic</p>
         </div>
         <div style={{
           display: 'grid',
@@ -338,10 +338,10 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
     <section style={{ background: '#fafafa', padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
             Quick Reference
           </h2>
-          <p style={{ color: '#374151', fontSize: '0.95rem' }}>Common commands and code snippets</p>
+          <p style={{ color: '#1f2937', fontSize: '1.05rem' }}>Common commands and code snippets</p>
         </div>
         <div style={{
           display: 'grid',
@@ -367,7 +367,7 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
                 }}>
                   <code style={{
                     fontSize: isMobile ? '0.78rem' : '0.875rem',
-                    color: '#374151', fontFamily: 'monospace', whiteSpace: 'pre',
+                    color: '#1f2937', fontFamily: 'monospace', whiteSpace: 'pre',
                   }}>
                     {block.code}
                   </code>
@@ -396,10 +396,10 @@ function ResourcesSection({ isMobile, isTablet }: ResponsiveProps) {
     <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
             Additional Resources
           </h2>
-          <p style={{ color: '#374151', fontSize: '0.95rem' }}>More ways to get help and stay updated</p>
+          <p style={{ color: '#1f2937', fontSize: '1.05rem' }}>More ways to get help and stay updated</p>
         </div>
         <div style={{
           display: 'grid',
@@ -429,7 +429,7 @@ function ResourcesSection({ isMobile, isTablet }: ResponsiveProps) {
                   {resource.title}
                   {resource.external && <ExternalLink style={{ width: '11px', height: '11px', color: '#9ca3af' }} />}
                 </div>
-                <p style={{ fontSize: '0.78rem', color: '#374151', margin: 0 }}>{resource.description}</p>
+                <p style={{ fontSize: '0.78rem', color: '#1f2937', margin: 0 }}>{resource.description}</p>
               </div>
             </Link>
           ))}
@@ -448,11 +448,11 @@ function CTASection({ isMobile, isTablet }: ResponsiveProps) {
       <div style={{ maxWidth: '1400px', margin: '0 auto', textAlign: 'center' }}>
         <h2 style={{
           fontSize: isMobile ? '1.6rem' : 'clamp(1.4rem, 3vw, 1.8rem)',
-          fontWeight: 800, color: '#0f172a', marginBottom: '12px',
+          fontWeight: 700, color: '#1e1b4b', marginBottom: '12px',
         }}>
           Can&apos;t Find What You&apos;re Looking For?
         </h2>
-        <p style={{ color: '#374151', maxWidth: '480px', margin: '0 auto 28px', lineHeight: 1.6, fontSize: '0.95rem' }}>
+        <p style={{ color: '#1f2937', maxWidth: '480px', margin: '0 auto 28px', lineHeight: 1.6, fontSize: '1.05rem' }}>
           Our team is here to help. Reach out and we&apos;ll get you pointed in the right direction.
         </p>
         <div style={{
@@ -474,7 +474,7 @@ function CTASection({ isMobile, isTablet }: ResponsiveProps) {
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             padding: '10px 24px', borderRadius: '8px',
             border: '1px solid #e5e7eb', background: '#fff',
-            color: '#374151', fontWeight: 500,
+            color: '#1f2937', fontWeight: 500,
             fontSize: '0.9rem', textDecoration: 'none',
             width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
           }}>

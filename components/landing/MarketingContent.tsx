@@ -126,7 +126,7 @@ export function MarketingContent() {
             >
               Works with your entire stack
             </h2>
-            <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', color: '#374151', lineHeight: 1.75 }}>
+            <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
               DevControl connects to the tools your team already uses. One platform, zero friction.
             </p>
           </div>
@@ -157,7 +157,7 @@ export function MarketingContent() {
                   }}
                 >
                   <Icon className="h-10 w-10" style={{ color: integration.color }} />
-                  <span className="font-semibold" style={{ fontSize: '14px', color: '#374151' }}>{integration.name}</span>
+                  <span className="font-semibold" style={{ fontSize: '14px', color: '#1f2937' }}>{integration.name}</span>
                 </div>
               );
             })}
@@ -203,7 +203,7 @@ export function MarketingContent() {
             >
               Your data is safe with us
             </h2>
-            <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', color: '#374151', lineHeight: 1.75, marginBottom: '12px' }}>
+            <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75, marginBottom: '12px' }}>
               We built DevControl with a security-first mindset. Enterprise-grade protections out of the box — no add-ons required.
             </p>
             <p style={{ fontSize: '15px', fontWeight: 600, color: '#7c3aed' }}>
@@ -250,8 +250,8 @@ export function MarketingContent() {
                     <Icon style={{ color: '#7c3aed' }} size={22} />
                   </div>
                   <div>
-                    <h3 className="font-bold" style={{ fontSize: isMobile ? '1rem' : '1.2rem', color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>{item.title}</h3>
-                    <p style={{ color: '#374151', fontSize: isMobile ? '0.88rem' : '0.95rem', lineHeight: 1.65 }}>{item.description}</p>
+                    <h3 className="font-bold" style={{ fontSize: isMobile ? '1rem' : '1.2rem', color: '#1e1b4b', marginBottom: '8px', lineHeight: 1.3 }}>{item.title}</h3>
+                    <p style={{ color: '#1f2937', fontSize: isMobile ? '0.88rem' : '1.05rem', lineHeight: 1.65 }}>{item.description}</p>
                   </div>
                 </div>
               );

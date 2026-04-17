@@ -26,7 +26,7 @@ export function TrustedBySection() {
   return (
     <div style={{ overflow: 'hidden', maxWidth: '100%' }}>
     <section style={{ width: '100%', padding: isMobile ? '32px 0' : '48px 0', background: '#fafafa', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6', overflow: 'hidden' }}>
-      <p style={{ textAlign: 'center', fontSize: isMobile ? '11px' : '14px', fontWeight: '600', letterSpacing: '0.15em', color: '#374151', textTransform: 'uppercase', marginBottom: isMobile ? '20px' : '28px' }}>
+      <p style={{ textAlign: 'center', fontSize: isMobile ? '11px' : '14px', fontWeight: '600', letterSpacing: '0.15em', color: '#1f2937', textTransform: 'uppercase', marginBottom: isMobile ? '20px' : '28px' }}>
         Trusted by engineers from companies including
       </p>
 
@@ -49,14 +49,14 @@ export function TrustedBySection() {
               style={{
                 fontSize: '22px',
                 fontWeight: '700',
-                color: '#374151',
+                color: '#1f2937',
                 whiteSpace: 'nowrap',
                 letterSpacing: '-0.02em',
                 transition: 'color 0.2s ease',
                 cursor: 'default',
               }}
               onMouseEnter={e => (e.currentTarget.style.color = '#7c3aed')}
-              onMouseLeave={e => (e.currentTarget.style.color = '#374151')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#1f2937')}
             >
               {name}
             </span>

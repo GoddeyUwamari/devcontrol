@@ -185,7 +185,7 @@ export default function DevOpsPage() {
               <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -204,12 +204,12 @@ export default function DevOpsPage() {
               DevOps Capabilities
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything Your DevOps Team Needs in One Place
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               Stop context switching. Get costs, security, performance, and DORA metrics from a single control plane.
             </p>
           </div>
@@ -265,10 +265,10 @@ export default function DevOpsPage() {
                 }}>
                   <Icon size={20} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.4, marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b', lineHeight: 1.4, marginBottom: '10px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+                <p style={{ fontSize: '1.05rem', color: '#1f2937', lineHeight: 1.7, margin: 0 }}>
                   {desc}
                 </p>
               </div>
@@ -289,8 +289,8 @@ export default function DevOpsPage() {
               Onboarding Timeline
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Fully Operational in 2 Weeks
             </h2>
@@ -321,7 +321,7 @@ export default function DevOpsPage() {
                     borderRadius: '12px', padding: isMobile ? '16px' : '20px 24px', flex: 1,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b' }}>
                         {title}
                       </h3>
                       <span style={{
@@ -332,7 +332,7 @@ export default function DevOpsPage() {
                         {time}
                       </span>
                     </div>
-                    <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+                    <p style={{ fontSize: '1.05rem', color: '#1f2937', lineHeight: 1.7, margin: 0 }}>
                       {desc}
                     </p>
                   </div>
@@ -413,8 +413,8 @@ export default function DevOpsPage() {
               Built For Your Team
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
@@ -437,7 +437,7 @@ export default function DevOpsPage() {
               }}>
                 For DevOps Engineers
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                 Stop Firefighting. Start Engineering.
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -449,7 +449,7 @@ export default function DevOpsPage() {
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                   </div>
                 ))}
               </div>
@@ -468,7 +468,7 @@ export default function DevOpsPage() {
               }}>
                 For Engineering Managers
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                 Prove Team Performance with Real Data
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -480,7 +480,7 @@ export default function DevOpsPage() {
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                   </div>
                 ))}
               </div>

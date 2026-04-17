@@ -96,7 +96,7 @@ export default function FinOpsPage() {
 
               <h1 style={{
                 fontSize: isMobile ? '1.9rem' : 'clamp(2rem, 4vw, 3rem)',
-                fontWeight: 800, color: '#0f172a',
+                fontWeight: 700, color: '#1e1b4b',
                 lineHeight: 1.15, marginBottom: '20px',
                 letterSpacing: '-0.02em',
               }}>
@@ -105,7 +105,7 @@ export default function FinOpsPage() {
               </h1>
 
               <p style={{
-                fontSize: isMobile ? '1rem' : '1.1rem', color: '#374151',
+                fontSize: isMobile ? '1.1rem' : '1.1rem', color: '#1f2937',
                 lineHeight: 1.75, marginBottom: '36px',
               }}>
                 AI-powered cloud cost intelligence for FinOps teams. Get complete spend
@@ -142,7 +142,7 @@ export default function FinOpsPage() {
               <div style={{
                 display: 'flex', flexWrap: 'wrap', gap: '20px',
                 flexDirection: isMobile ? 'column' : 'row',
-                fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+                fontSize: '0.875rem', fontWeight: 500, color: '#1f2937',
               }}>
                 {['No credit card required', 'ROI in first week', '15-minute setup'].map(t => (
                   <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -151,7 +151,7 @@ export default function FinOpsPage() {
                 ))}
               </div>
 
-              <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+              <p style={{ fontSize: '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
                 {'A FinOps team reduced their AWS bill by 38% in 30 days — recovering $18,200/month that had been invisible in their cost explorer.'}
               </p>
             </div>
@@ -209,7 +209,7 @@ export default function FinOpsPage() {
                 ].map(({ service, pct, amount }) => (
                   <div key={service} style={{ marginBottom: '10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151' }}>{service}</span>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1f2937' }}>{service}</span>
                       <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>{amount}</span>
                     </div>
                     <div style={{ height: '6px', background: '#f3f4f6', borderRadius: '100px' }}>
@@ -239,7 +239,7 @@ export default function FinOpsPage() {
               <div style={{ fontSize: isMobile ? '1.5rem' : '2.2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -258,12 +258,12 @@ export default function FinOpsPage() {
               FinOps Capabilities
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Every Dollar. Every Team. Every Month.
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               Eight AI-powered tools that give FinOps teams complete control over cloud spend.
             </p>
           </div>
@@ -310,10 +310,10 @@ export default function FinOpsPage() {
                   </div>
                 </div>
 
-                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.88rem', color: '#374151', lineHeight: 1.7, flex: 1 }}>
+                <p style={{ fontSize: '0.88rem', color: '#1f2937', lineHeight: 1.7, flex: 1 }}>
                   {desc}
                 </p>
               </div>
@@ -333,12 +333,12 @@ export default function FinOpsPage() {
               FinOps Framework
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               DevControl Across the FinOps Lifecycle
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               Built around the Inform → Optimize → Operate FinOps cycle used by leading cloud finance teams.
             </p>
           </div>
@@ -362,14 +362,14 @@ export default function FinOpsPage() {
                 }}>
                   {phase}
                 </div>
-                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7, marginBottom: '24px' }}>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.7, marginBottom: '24px' }}>
                   {desc}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {items.map(item => (
                     <div key={item} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <span style={{ color, fontWeight: 700 }}>✓</span>
-                      <span style={{ fontSize: '0.875rem', color: '#374151', fontWeight: 500 }}>{item}</span>
+                      <span style={{ fontSize: '0.875rem', color: '#1f2937', fontWeight: 500 }}>{item}</span>
                     </div>
                   ))}
                 </div>
@@ -450,7 +450,7 @@ export default function FinOpsPage() {
                   borderRadius: '14px',
                   padding: '24px',
                 }}>
-                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7, fontStyle: 'italic', margin: '0 0 16px' }}>
+                  <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.7, fontStyle: 'italic', margin: '0 0 16px' }}>
                     {'\u201C'}{quote}{'\u201D'}
                   </p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -493,8 +493,8 @@ export default function FinOpsPage() {
               Built For Your Team
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
@@ -517,7 +517,7 @@ export default function FinOpsPage() {
               }}>
                 For FinOps &amp; Finance Teams
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                 Complete Cloud Cost Control
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -529,7 +529,7 @@ export default function FinOpsPage() {
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                   </div>
                 ))}
               </div>
@@ -548,7 +548,7 @@ export default function FinOpsPage() {
               }}>
                 For CTOs &amp; Engineering Leaders
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                 Engineering Accountability for Cloud Spend
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -560,7 +560,7 @@ export default function FinOpsPage() {
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                   </div>
                 ))}
               </div>

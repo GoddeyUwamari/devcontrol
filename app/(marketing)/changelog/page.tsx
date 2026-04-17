@@ -205,14 +205,14 @@ export default function ChangelogPage() {
             </span>
           </div>
           <h1 style={{
-            color: '#0f172a', fontWeight: 800,
+            color: '#1e1b4b', fontWeight: 700,
             fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 2.8rem)',
             marginBottom: '16px', letterSpacing: '-0.02em', lineHeight: 1.2,
           }}>
             What&apos;s New in DevControl
           </h1>
           <p style={{
-            color: '#374151', fontSize: isMobile ? '0.95rem' : '1.1rem',
+            color: '#1f2937', fontSize: isMobile ? '1.05rem' : '1.1rem',
             maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6,
           }}>
             All the latest updates, improvements, and fixes. We ship new features every week to help you build better.
@@ -279,7 +279,7 @@ export default function ChangelogPage() {
                     padding: '7px 14px', borderRadius: '8px', cursor: 'pointer',
                     border: active ? 'none' : '1px solid #e5e7eb',
                     background: active ? '#7c3aed' : '#fff',
-                    color: active ? '#fff' : '#374151',
+                    color: active ? '#fff' : '#1f2937',
                     fontSize: '0.875rem', fontWeight: 500,
                     transition: 'all 0.15s ease',
                   }}
@@ -297,7 +297,7 @@ export default function ChangelogPage() {
           <div style={{ marginBottom: '48px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
               <Star style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>Featured Releases</h2>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e1b4b', margin: 0 }}>Featured Releases</h2>
             </div>
             <div style={{
               display: 'grid',
@@ -341,8 +341,8 @@ export default function ChangelogPage() {
                       <Calendar style={{ width: '12px', height: '12px' }} />
                       {new Date(release.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </div>
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>{release.title}</h3>
-                    <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.6, marginBottom: '20px' }}>{release.summary}</p>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>{release.title}</h3>
+                    <p style={{ fontSize: '1.05rem', color: '#1f2937', lineHeight: 1.6, marginBottom: '20px' }}>{release.summary}</p>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.78rem', color: '#6b7280', flexWrap: 'wrap' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -375,7 +375,7 @@ export default function ChangelogPage() {
 
         {/* All Releases */}
         <div style={{ marginBottom: '48px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '24px' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '24px' }}>
             {selectedFilter !== 'all' || searchQuery !== ''
               ? `${filteredReleases.length} ${filteredReleases.length === 1 ? 'Release' : 'Releases'}${searchQuery ? ` matching "${searchQuery}"` : ''}`
               : 'All Releases'}
@@ -384,8 +384,8 @@ export default function ChangelogPage() {
           {filteredReleases.length === 0 ? (
             <div style={{ padding: '64px 24px', textAlign: 'center', border: '1px solid #e5e7eb', borderRadius: '16px' }}>
               <Package style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>No releases found</h3>
-              <p style={{ color: '#374151', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#1e1b4b', marginBottom: '8px' }}>No releases found</h3>
+              <p style={{ color: '#1f2937', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
               <button
                 onClick={() => { setSearchQuery(''); setSelectedFilter('all'); }}
                 style={{
@@ -427,9 +427,9 @@ export default function ChangelogPage() {
                             {new Date(release.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                           </span>
                         </div>
-                        <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>{release.title}</h3>
+                        <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '6px' }}>{release.title}</h3>
                         {release.summary && (
-                          <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6, margin: 0 }}>{release.summary}</p>
+                          <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6, margin: 0 }}>{release.summary}</p>
                         )}
                       </div>
                       {release.blogPost && (
@@ -517,10 +517,10 @@ export default function ChangelogPage() {
           }}>
             <Mail style={{ width: '22px', height: '22px', color: '#7c3aed' }} />
           </div>
-          <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+          <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
             Never Miss an Update
           </h3>
-          <p style={{ color: '#374151', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
+          <p style={{ color: '#1f2937', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
             Get notified about new features, improvements, and important updates delivered to your inbox every week.
           </p>
           <div style={{
@@ -609,7 +609,7 @@ export default function ChangelogPage() {
                     <span style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0f172a' }}>{item.title}</span>
                     <ArrowRight style={{ width: '13px', height: '13px', color: '#7c3aed', marginLeft: 'auto' }} />
                   </div>
-                  <p style={{ fontSize: '0.88rem', color: '#374151', margin: 0 }}>{item.desc}</p>
+                  <p style={{ fontSize: '0.88rem', color: '#1f2937', margin: 0 }}>{item.desc}</p>
                 </div>
               </a>
             );

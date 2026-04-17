@@ -102,8 +102,8 @@ export function AIFeaturesSection() {
           <h2
             style={{
               fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2.2rem, 4vw, 2.8rem)',
-              fontWeight: 800,
-              color: '#111827',
+              fontWeight: 700,
+              color: '#1e1b4b',
               marginBottom: isMobile ? '12px' : '16px',
               lineHeight: 1.2,
             }}
@@ -114,7 +114,7 @@ export function AIFeaturesSection() {
           <p
             style={{
               fontSize: isMobile ? '1rem' : '1.15rem',
-              color: '#374151',
+              color: '#1f2937',
               maxWidth: '680px',
               margin: '0 auto',
               lineHeight: 1.7,
@@ -137,7 +137,7 @@ export function AIFeaturesSection() {
             marginBottom: isMobile ? '40px' : '64px',
             fontSize: isMobile ? '0.85rem' : '0.95rem',
             fontWeight: 500,
-            color: '#374151',
+            color: '#1f2937',
           }}
         >
           <span>💰 Identify savings automatically</span>
@@ -197,8 +197,8 @@ export function AIFeaturesSection() {
                 <h3
                   style={{
                     fontSize: isMobile ? '1rem' : '1.15rem',
-                    fontWeight: 800,
-                    color: '#111827',
+                    fontWeight: 700,
+                    color: '#1e1b4b',
                     marginBottom: '8px',
                   }}
                 >
@@ -208,7 +208,7 @@ export function AIFeaturesSection() {
                 <p
                   style={{
                     fontSize: isMobile ? '0.88rem' : '0.95rem',
-                    color: '#374151',
+                    color: '#1f2937',
                     lineHeight: 1.6,
                   }}
                 >
@@ -246,7 +246,7 @@ export function AIFeaturesSection() {
             style={{
               marginTop: '12px',
               fontSize: '0.9rem',
-              color: '#374151',
+              color: '#1f2937',
             }}
           >
             No setup. No risk. First insights in 15 minutes.

@@ -152,7 +152,7 @@ export default function EnterprisePage() {
               <div style={{ fontSize: isMobile ? '1.4rem' : '2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -171,12 +171,12 @@ export default function EnterprisePage() {
               Enterprise Capabilities
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Built for Large Engineering Organizations
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               Every feature your security, finance, and engineering teams need to govern AWS at enterprise scale.
             </p>
           </div>
@@ -211,10 +211,10 @@ export default function EnterprisePage() {
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
                     {title}
                   </h3>
-                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                  <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.75 }}>
                     {desc}
                   </p>
                 </div>
@@ -309,8 +309,8 @@ export default function EnterprisePage() {
               Enterprise vs Pro
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               What Enterprise Teams Get
             </h2>
@@ -341,7 +341,7 @@ export default function EnterprisePage() {
                 borderBottom: i === tableRows.length - 1 ? '1px solid #e5e7eb' : '1px solid #f1f5f9',
                 borderRadius: i === tableRows.length - 1 ? '0 0 12px 12px' : '0',
               }}>
-                <div style={{ fontSize: isMobile ? '0.8rem' : '0.875rem', color: '#374151', fontWeight: 500 }}>{feature}</div>
+                <div style={{ fontSize: isMobile ? '0.8rem' : '0.875rem', color: '#1f2937', fontWeight: 500 }}>{feature}</div>
                 <div style={{
                   fontSize: isMobile ? '0.8rem' : '0.875rem', fontWeight: 700,
                   color: enterprise === '✗' ? '#9ca3af' : '#7c3aed',
@@ -351,7 +351,7 @@ export default function EnterprisePage() {
                 </div>
                 <div style={{
                   fontSize: isMobile ? '0.8rem' : '0.875rem', fontWeight: 500,
-                  color: pro === '\u2014' ? '#9ca3af' : '#374151',
+                  color: pro === '\u2014' ? '#9ca3af' : '#1f2937',
                   textAlign: 'center',
                 }}>
                   {pro}
@@ -381,13 +381,13 @@ export default function EnterprisePage() {
             Ready to Scale with DevControl
           </div>
           <h2 style={{
-            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,
-            color: '#0f172a', marginBottom: '16px', letterSpacing: '-0.02em',
+            fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 700,
+            color: '#1e1b4b', marginBottom: '16px', letterSpacing: '-0.02em',
           }}>
             Let&apos;s Talk About Your Infrastructure
           </h2>
           <p style={{
-            fontSize: '1.1rem', color: '#374151',
+            fontSize: '1.1rem', color: '#1f2937',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
             Our enterprise team will walk you through a custom deployment plan,

@@ -65,7 +65,7 @@ export default function CostOptimizationPage() {
 
           <h1 style={{
             fontSize: isMobile ? 'clamp(1.8rem,5vw,2.6rem)' : 'clamp(2.2rem,5vw,3.2rem)',
-            fontWeight: 800, color: '#0f172a',
+            fontWeight: 700, color: '#1e1b4b',
             lineHeight: 1.15, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
           }}>
@@ -74,7 +74,7 @@ export default function CostOptimizationPage() {
           </h1>
 
           <p style={{
-            fontSize: isMobile ? '0.95rem' : '1.15rem', color: '#374151',
+            fontSize: isMobile ? '1.05rem' : '1.2rem', color: '#1f2937',
             lineHeight: 1.75, maxWidth: '600px',
             margin: '0 auto 36px',
           }}>
@@ -121,7 +121,7 @@ export default function CostOptimizationPage() {
             flexWrap: 'wrap',
             justifyContent: 'center',
             gap: isMobile ? '10px' : '24px',
-            fontSize: '0.875rem', fontWeight: 500, color: '#374151',
+            fontSize: '0.875rem', fontWeight: 500, color: '#1f2937',
             alignItems: 'center',
           }}>
             {['AI-powered recommendations', 'No code changes required', 'ROI in first week'].map(t => (
@@ -130,7 +130,7 @@ export default function CostOptimizationPage() {
               </span>
             ))}
           </div>
-          <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', marginTop: '24px', fontStyle: 'italic' }}>
+          <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
             {'A fintech team cut their AWS bill by $3,100 in the first month after connecting DevControl.'}
           </p>
         </div>
@@ -152,7 +152,7 @@ export default function CostOptimizationPage() {
               <div style={{ fontSize: isMobile ? '1.8rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -171,12 +171,12 @@ export default function CostOptimizationPage() {
               Cost Intelligence
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Every Dollar Accounted For
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               Six AI-powered tools to find waste, forecast spend, and act on savings — automatically.
             </p>
           </div>
@@ -209,10 +209,10 @@ export default function CostOptimizationPage() {
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '10px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.75 }}>
                   {desc}
                 </p>
               </div>
@@ -232,8 +232,8 @@ export default function CostOptimizationPage() {
               Quick Setup
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               From Zero to Savings in 15 Minutes
             </h2>
@@ -255,10 +255,10 @@ export default function CostOptimizationPage() {
                 }}>
                   {step}
                 </div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '12px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.75 }}>
                   {desc}
                 </p>
               </div>
@@ -278,8 +278,8 @@ export default function CostOptimizationPage() {
               Built For Your Team
             </div>
             <h2 style={{
-              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               {"Who It's For"}
             </h2>
@@ -302,7 +302,7 @@ export default function CostOptimizationPage() {
               }}>
                 For CFOs & Engineering Leaders
               </div>
-              <h3 style={{ fontSize: isMobile ? '1.2rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.2rem' : '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                 Control Cloud Spend at the Board Level
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -314,7 +314,7 @@ export default function CostOptimizationPage() {
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                   </div>
                 ))}
               </div>
@@ -333,7 +333,7 @@ export default function CostOptimizationPage() {
               }}>
                 For Platform Engineers & FinOps Teams
               </div>
-              <h3 style={{ fontSize: isMobile ? '1.2rem' : '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: isMobile ? '1.2rem' : '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                 Find and Fix Waste at the Resource Level
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -345,7 +345,7 @@ export default function CostOptimizationPage() {
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                    <span style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                   </div>
                 ))}
               </div>

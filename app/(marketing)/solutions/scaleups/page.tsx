@@ -207,12 +207,12 @@ export default function ScaleupsPage() {
                 ✦ Signature Feature
               </div>
               <h2 style={{
-                fontSize: isMobile ? '1.4rem' : 'clamp(1.6rem, 3vw, 2.2rem)', fontWeight: 800,
-                color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+                fontSize: isMobile ? '1.4rem' : 'clamp(1.6rem, 3vw, 2.2rem)', fontWeight: 700,
+                color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
               }}>
                 {signatureFeature.title}
               </h2>
-              <p style={{ fontSize: '1rem', color: '#374151', lineHeight: 1.75 }}>
+              <p style={{ fontSize: '1.1rem', color: '#1f2937', lineHeight: 1.75 }}>
                 {signatureFeature.desc}
               </p>
             </div>
@@ -225,7 +225,7 @@ export default function ScaleupsPage() {
                   display: 'flex', alignItems: 'center',
                   justifyContent: 'space-between',
                 }}>
-                  <span style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500 }}>{label}</span>
+                  <span style={{ fontSize: '0.9rem', color: '#1f2937', fontWeight: 500 }}>{label}</span>
                   <span style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed' }}>{value}</span>
                 </div>
               ))}
@@ -245,8 +245,8 @@ export default function ScaleupsPage() {
               Platform Capabilities
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Built for Teams Growing Fast
             </h2>
@@ -281,10 +281,10 @@ export default function ScaleupsPage() {
                   <Icon size={24} style={{ color: '#7c3aed' }} />
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
                     {title}
                   </h3>
-                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75 }}>
+                  <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.75 }}>
                     {desc}
                   </p>
                 </div>
@@ -374,8 +374,8 @@ export default function ScaleupsPage() {
               Quick Setup
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Multi-Account Visibility in 15 Minutes
             </h2>
@@ -407,10 +407,10 @@ export default function ScaleupsPage() {
                   }}>
                     {step}
                   </div>
-                  <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '10px' }}>
                     {title}
                   </h3>
-                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7 }}>
+                  <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.7 }}>
                     {desc}
                   </p>
                 </div>
@@ -431,8 +431,8 @@ export default function ScaleupsPage() {
               Every Role Covered
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Who It&apos;s For
             </h2>
@@ -459,14 +459,14 @@ export default function ScaleupsPage() {
                 }}>
                   {role}
                 </div>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
                   {title}
                 </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {points.map(point => (
                     <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                       <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                      <span style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.6 }}>{point}</span>
+                      <span style={{ fontSize: '0.875rem', color: '#1f2937', lineHeight: 1.6 }}>{point}</span>
                     </div>
                   ))}
                 </div>

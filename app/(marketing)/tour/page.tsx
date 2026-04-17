@@ -118,7 +118,7 @@ function AIMock() {
             <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#b45309', background: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cost Alert</span>
           </div>
           <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px' }}>EC2 spend up 34% this week</div>
-          <div style={{ fontSize: '0.75rem', color: '#374151', lineHeight: 1.5 }}>
+          <div style={{ fontSize: '0.75rem', color: '#1f2937', lineHeight: 1.5 }}>
             3 new t3.large instances in us-east-1 were launched Tuesday and are running idle 80% of the time. Estimated waste: $340/month.
           </div>
         </div>
@@ -127,7 +127,7 @@ function AIMock() {
             <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#b91c1c', background: 'rgba(239,68,68,0.12)', padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Security</span>
           </div>
           <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px' }}>2 S3 buckets are publicly accessible</div>
-          <div style={{ fontSize: '0.75rem', color: '#374151', lineHeight: 1.5 }}>
+          <div style={{ fontSize: '0.75rem', color: '#1f2937', lineHeight: 1.5 }}>
             Buckets <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7rem' }}>logs-prod</code> and <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7rem' }}>assets-staging</code> have public ACLs. Fix in one click.
           </div>
         </div>
@@ -168,14 +168,14 @@ function SecurityMock() {
         </div>
         <div>
           <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>Security Score</div>
-          <div style={{ fontSize: '0.75rem', color: '#374151', marginTop: '2px' }}>4 passing · 1 warning · 1 critical</div>
+          <div style={{ fontSize: '0.75rem', color: '#1f2937', marginTop: '2px' }}>4 passing · 1 warning · 1 critical</div>
           <div style={{ fontSize: '0.7rem', color: '#7c3aed', fontWeight: 600, marginTop: '4px' }}>↑ +5 from last week</div>
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
         {items.map((item) => (
           <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f9fafb', borderRadius: '8px', padding: '8px 10px', gap: '6px' }}>
-            <span style={{ fontSize: '0.73rem', fontWeight: 500, color: '#374151' }}>{item.label}</span>
+            <span style={{ fontSize: '0.73rem', fontWeight: 500, color: '#1f2937' }}>{item.label}</span>
             <span style={{
               fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px',
               color: statusColor[item.status as keyof typeof statusColor],
@@ -234,7 +234,7 @@ function ActionsMock() {
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', marginBottom: '2px' }}>{a.title}</div>
-            <div style={{ fontSize: '0.72rem', color: '#374151', lineHeight: 1.4 }}>{a.desc}</div>
+            <div style={{ fontSize: '0.72rem', color: '#1f2937', lineHeight: 1.4 }}>{a.desc}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
             <span style={{ fontSize: '0.72rem', fontWeight: 700, color: a.severity === 'fail' ? '#ef4444' : '#16a34a' }}>
@@ -415,15 +415,15 @@ export default function TourPage() {
         </div>
 
         <h1 style={{
-          fontSize: isMobile ? 'clamp(1.8rem, 4vw, 2.4rem)' : 'clamp(2rem, 4vw, 3rem)', fontWeight: 800,
-          color: '#0f172a', lineHeight: 1.15, marginBottom: '16px',
+          fontSize: isMobile ? 'clamp(1.8rem, 4vw, 2.4rem)' : 'clamp(2rem, 4vw, 3rem)', fontWeight: 700,
+          color: '#1e1b4b', lineHeight: 1.15, marginBottom: '16px',
           letterSpacing: '-0.02em',
         }}>
           See <span style={{ color: '#7c3aed' }}>DevControl</span> in Action
         </h1>
 
         <p style={{
-          fontSize: isMobile ? '0.95rem' : '1.1rem', color: '#374151', lineHeight: 1.7,
+          fontSize: isMobile ? '1.05rem' : '1.1rem', color: '#1f2937', lineHeight: 1.7,
           maxWidth: '520px', margin: '0 auto',
         }}>
           Walk through 6 steps to see how engineering teams get complete
@@ -478,7 +478,7 @@ export default function TourPage() {
               {!isMobile && (
                 <div style={{
                   fontSize: '0.72rem', fontWeight: 600,
-                  color: i === currentStep ? '#7c3aed' : i < currentStep ? '#374151' : '#9ca3af',
+                  color: i === currentStep ? '#7c3aed' : i < currentStep ? '#1f2937' : '#9ca3af',
                   textAlign: 'center', letterSpacing: '0.02em',
                 }}>
                   {step.navLabel}
@@ -517,14 +517,14 @@ export default function TourPage() {
             </div>
 
             <h2 style={{
-              fontSize: isMobile ? '1.4rem' : isTablet ? '1.6rem' : '1.8rem', fontWeight: 800, color: '#0f172a',
+              fontSize: isMobile ? '1.4rem' : isTablet ? '1.6rem' : '1.8rem', fontWeight: 700, color: '#1e1b4b',
               lineHeight: 1.2, marginBottom: '16px', letterSpacing: '-0.02em',
             }}>
               {steps[currentStep].title}
             </h2>
 
             <p style={{
-              fontSize: isMobile ? '0.9rem' : '1rem', color: '#374151',
+              fontSize: isMobile ? '0.9rem' : '1.1rem', color: '#1f2937',
               lineHeight: 1.7, marginBottom: '24px',
             }}>
               {steps[currentStep].description}
@@ -537,7 +537,7 @@ export default function TourPage() {
                     width: '6px', height: '6px', borderRadius: '50%',
                     background: '#7c3aed', marginTop: '7px', flexShrink: 0,
                   }} />
-                  <span style={{ fontSize: '0.875rem', color: '#374151', fontWeight: 500 }}>{h}</span>
+                  <span style={{ fontSize: '0.875rem', color: '#1f2937', fontWeight: 500 }}>{h}</span>
                 </div>
               ))}
             </div>

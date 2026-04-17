@@ -105,10 +105,10 @@ function FeatureCard({ icon: Icon, title, desc }: { icon: React.ElementType; tit
       }}>
         <Icon size={20} style={{ color: '#7c3aed' }} />
       </div>
-      <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.4, marginBottom: '10px' }}>
+      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b', lineHeight: 1.4, marginBottom: '10px' }}>
         {title}
       </h3>
-      <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+      <p style={{ fontSize: '0.875rem', color: '#1f2937', lineHeight: 1.7, margin: 0 }}>
         {desc}
       </p>
     </div>
@@ -253,7 +253,7 @@ export default function MidMarketPage() {
               <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                 {value}
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
                 {label}
               </div>
             </div>
@@ -272,13 +272,13 @@ export default function MidMarketPage() {
               Mid-Market Capabilities
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything Growing Teams Need.{' '}
               <span style={{ display: 'block' }}>None of What They Don&apos;t.</span>
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               Purpose-built for 20–100 engineer organizations scaling their AWS footprint.
             </p>
           </div>
@@ -306,8 +306,8 @@ export default function MidMarketPage() {
               Common Growing Pains
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               The Problems Teams Hit at 20–100 Engineers
             </h2>
@@ -365,7 +365,7 @@ export default function MidMarketPage() {
                       <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>
                         DevControl Solution
                       </p>
-                      <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.6, margin: 0 }}>
+                      <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6, margin: 0 }}>
                         {solution}
                       </p>
                     </div>
@@ -480,8 +480,8 @@ export default function MidMarketPage() {
               Onboarding Timeline
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Operational in 2 Weeks
             </h2>
@@ -512,7 +512,7 @@ export default function MidMarketPage() {
                     borderRadius: '12px', padding: isMobile ? '16px' : '20px 24px', flex: 1,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b' }}>
                         {title}
                       </h3>
                       <span style={{
@@ -523,7 +523,7 @@ export default function MidMarketPage() {
                         {time}
                       </span>
                     </div>
-                    <p style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.7, margin: 0 }}>
+                    <p style={{ fontSize: '0.875rem', color: '#1f2937', lineHeight: 1.7, margin: 0 }}>
                       {desc}
                     </p>
                   </div>
@@ -545,12 +545,12 @@ export default function MidMarketPage() {
               Transparent Pricing
             </div>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               One Plan. No Per-Seat Surprises.
             </h2>
-            <p style={{ fontSize: '1rem', color: '#374151', maxWidth: '480px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '480px', margin: '0 auto', lineHeight: 1.75 }}>
               Pay for AWS resources monitored, not team members. Add your whole org — engineers, security, finance — at no extra cost.
             </p>
           </div>
@@ -574,7 +574,7 @@ export default function MidMarketPage() {
                   <span style={{ fontSize: '2.8rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>$199</span>
                   <span style={{ fontSize: '1rem', color: '#94a3b8' }}>/month</span>
                 </div>
-                <p style={{ fontSize: '0.9rem', color: '#374151', marginTop: '8px' }}>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', marginTop: '8px' }}>
                   Up to 500 AWS resources · Unlimited team members
                 </p>
               </div>
@@ -587,7 +587,7 @@ export default function MidMarketPage() {
                 {pricingFeatures.map(feature => (
                   <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: '#059669', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>✓</span>
-                    <span style={{ fontSize: '0.875rem', color: '#374151' }}>{feature}</span>
+                    <span style={{ fontSize: '0.875rem', color: '#1f2937' }}>{feature}</span>
                   </div>
                 ))}
               </div>

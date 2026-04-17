@@ -133,7 +133,7 @@ function ROICalculator() {
       <div className="max-w-[1400px] mx-auto">
         <div className="text-center mb-12">
           <div className="text-[11px] font-bold text-violet-700 uppercase tracking-widest mb-3">ROI Calculator</div>
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 tracking-tight mb-3">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-indigo-950 tracking-tight mb-3">
             How Much AWS Spend Are You Wasting?
           </h2>
           <p className="text-base text-gray-700 max-w-lg mx-auto leading-relaxed">
@@ -274,7 +274,7 @@ export default function PricingPage() {
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             Teams save an average of $2,400/month · $28,800/year
           </div>
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 leading-tight tracking-tight mb-3">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-indigo-950 leading-tight tracking-tight mb-3">
             Simple Pricing.{' '}
             <span className="text-violet-700">Serious Savings.</span>
           </h1>
@@ -445,7 +445,7 @@ export default function PricingPage() {
       {/* FEATURE COMPARISON */}
       <section className="px-4 py-8 sm:px-6 sm:py-10 lg:px-12 lg:py-16 w-full bg-gray-50">
         <div className="max-w-[1400px] mx-auto">
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 text-center mb-8 sm:mb-12 tracking-tight">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-indigo-950 text-center mb-8 sm:mb-12 tracking-tight">
             Compare Plans
           </h2>
           <FeatureComparisonTable />
@@ -455,7 +455,7 @@ export default function PricingPage() {
       {/* FAQ */}
       <section className="px-4 py-10 sm:px-6 sm:py-12 lg:px-12 lg:py-16 w-full">
         <div className="max-w-[1400px] mx-auto">
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 text-center mb-8 sm:mb-12 tracking-tight">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-indigo-950 text-center mb-8 sm:mb-12 tracking-tight">
             Frequently Asked Questions
           </h2>
           <PricingFAQ />

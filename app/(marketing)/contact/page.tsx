@@ -66,7 +66,7 @@ export default function ContactPage() {
           </div>
           <h1 style={{
             fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem,5vw,3rem)',
-            fontWeight: 800, color: '#0f172a',
+            fontWeight: 700, color: '#1e1b4b',
             lineHeight: 1.15, marginBottom: '16px',
             letterSpacing: '-0.02em',
           }}>
@@ -74,7 +74,7 @@ export default function ContactPage() {
             <span style={{ color: '#7c3aed' }}>AWS Infrastructure</span>
           </h1>
           <p style={{
-            fontSize: isMobile ? '0.95rem' : '1.1rem', color: '#374151',
+            fontSize: isMobile ? '1.05rem' : '1.1rem', color: '#1f2937',
             lineHeight: 1.75, maxWidth: '520px',
             margin: '0 auto',
           }}>
@@ -105,11 +105,11 @@ export default function ContactPage() {
                 </div>
                 <h2 style={{
                   fontSize: isMobile ? 'clamp(1.4rem,4vw,1.8rem)' : '1.8rem',
-                  fontWeight: 800, color: '#0f172a', marginBottom: '12px', letterSpacing: '-0.02em',
+                  fontWeight: 700, color: '#1e1b4b', marginBottom: '12px', letterSpacing: '-0.02em',
                 }}>
                   See DevControl in 30 Minutes
                 </h2>
-                <p style={{ fontSize: isMobile ? '0.95rem' : '0.95rem', color: '#374151', lineHeight: 1.75 }}>
+                <p style={{ fontSize: isMobile ? '1.05rem' : '1.05rem', color: '#1f2937', lineHeight: 1.75 }}>
                   We&apos;ll walk you through a live demo tailored to your infrastructure,
                   show you exactly how much you could save, and answer every question you have.
                 </p>
@@ -133,7 +133,7 @@ export default function ContactPage() {
                     </div>
                     <div>
                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{title}</p>
-                      <p style={{ fontSize: '0.88rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{desc}</p>
+                      <p style={{ fontSize: '0.88rem', color: '#1f2937', margin: 0, lineHeight: 1.6 }}>{desc}</p>
                     </div>
                   </div>
                 ))}
@@ -151,7 +151,7 @@ export default function ContactPage() {
                 <p style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
                   Schedule via Calendly
                 </p>
-                <p style={{ fontSize: '0.9rem', color: '#374151', marginBottom: '20px' }}>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', marginBottom: '20px' }}>
                   Pick a time that works for you — no back-and-forth email needed.
                 </p>
                 <a
@@ -187,11 +187,11 @@ export default function ContactPage() {
                 </div>
                 <h2 style={{
                   fontSize: isMobile ? 'clamp(1.4rem,4vw,1.8rem)' : '1.8rem',
-                  fontWeight: 800, color: '#0f172a', marginBottom: '12px', letterSpacing: '-0.02em',
+                  fontWeight: 700, color: '#1e1b4b', marginBottom: '12px', letterSpacing: '-0.02em',
                 }}>
                   Get in Touch Directly
                 </h2>
-                <p style={{ fontSize: isMobile ? '0.95rem' : '0.95rem', color: '#374151', lineHeight: 1.75 }}>
+                <p style={{ fontSize: isMobile ? '1.05rem' : '1.05rem', color: '#1f2937', lineHeight: 1.75 }}>
                   Prefer to reach out by email? Fill in the form below and
                   we&apos;ll get back to you within 2 hours on business days.
                 </p>
@@ -203,10 +203,10 @@ export default function ContactPage() {
                   borderRadius: '16px', padding: '40px', textAlign: 'center',
                 }}>
                   <CheckCircle size={40} style={{ color: '#16a34a', margin: '0 auto 16px' }} />
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
                     Message Sent
                   </h3>
-                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.7 }}>
+                  <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.7 }}>
                     Your email client should have opened. If not, email us directly at{' '}
                     <a href="mailto:hello@getdevcontrol.com" style={{ color: '#7c3aed', fontWeight: 600 }}>
                       hello@getdevcontrol.com
@@ -240,7 +240,7 @@ export default function ContactPage() {
                             padding: '7px 14px', borderRadius: '8px', cursor: 'pointer',
                             border: formState.reason === value ? 'none' : '1px solid #e5e7eb',
                             background: formState.reason === value ? '#7c3aed' : '#fff',
-                            color: formState.reason === value ? '#fff' : '#374151',
+                            color: formState.reason === value ? '#fff' : '#1f2937',
                             fontSize: '0.82rem', fontWeight: 500,
                             transition: 'all 0.15s ease',
                           }}
@@ -414,7 +414,7 @@ export default function ContactPage() {
             ].map(({ value, label }) => (
               <div key={label}>
                 <p style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px', lineHeight: 1 }}>{value}</p>
-                <p style={{ fontSize: '0.875rem', color: '#374151', margin: 0 }}>{label}</p>
+                <p style={{ fontSize: '0.875rem', color: '#1f2937', margin: 0 }}>{label}</p>
               </div>
             ))}
           </div>

@@ -111,7 +111,7 @@ export function PricingPreview() {
           <h2 className="font-extrabold" style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
             Start free. Scale as you grow.
           </h2>
-          <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', color: '#374151', lineHeight: 1.75 }}>
+          <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
             Starter and Pro include a 14-day free trial. Free plan available forever. No credit card required.
           </p>
         </div>
@@ -138,8 +138,8 @@ export function PricingPreview() {
               )}
 
               <div style={{ marginBottom: '24px' }}>
-                <h3 className="font-bold" style={{ fontSize: '1.2rem', color: '#0f172a', marginBottom: '4px', lineHeight: 1.3 }}>{tier.name}</h3>
-                <p style={{ fontSize: '12px', color: '#374151', marginBottom: '16px' }}>{tier.highlight}</p>
+                <h3 className="font-bold" style={{ fontSize: '1.2rem', color: '#1e1b4b', marginBottom: '4px', lineHeight: 1.3 }}>{tier.name}</h3>
+                <p style={{ fontSize: '12px', color: '#1f2937', marginBottom: '16px' }}>{tier.highlight}</p>
                 <div className="flex items-baseline gap-1">
                   <span className="font-extrabold" style={{ fontSize: isMobile ? '1.8rem' : '2.25rem', color: '#111827' }}>{tier.price}</span>
                   {tier.period && <span style={{ color: '#6b7280', fontSize: '14px' }}>{tier.period}</span>}
@@ -165,7 +165,7 @@ export function PricingPreview() {
 
               <ul style={{ marginBottom: '24px', flex: 1 }} className="space-y-3">
                 {tier.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2" style={{ fontSize: '14px', color: '#374151' }}>
+                  <li key={feature} className="flex items-center gap-2" style={{ fontSize: '14px', color: '#1f2937' }}>
                     <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#7c3aed' }} />
                     {feature}
                   </li>
@@ -182,7 +182,7 @@ export function PricingPreview() {
                   transition: 'all 0.15s ease',
                   ...(tier.highlighted
                     ? { backgroundColor: '#7c3aed', color: '#fff' }
-                    : { backgroundColor: '#f3f4f6', color: '#374151' }),
+                    : { backgroundColor: '#f3f4f6', color: '#1f2937' }),
                 }}
                 onMouseEnter={(e) => {
                   const el = e.currentTarget as HTMLAnchorElement

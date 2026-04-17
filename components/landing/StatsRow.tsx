@@ -99,7 +99,7 @@ export function StatsRow() {
             <div style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', fontWeight: 800, color: '#7c3aed', lineHeight: 1, marginBottom: '8px' }}>
               {stat.value}
             </div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginTop: '6px' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#1f2937', marginTop: '6px' }}>
               {stat.label}
             </div>
             <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '4px' }}>

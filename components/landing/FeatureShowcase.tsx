@@ -90,7 +90,7 @@ export function FeatureShowcase() {
         <p
           style={{
             fontSize: isMobile ? '1rem' : '1.2rem',
-            color: '#374151',
+            color: '#1f2937',
             maxWidth: '680px',
             textAlign: 'center',
             margin: isMobile ? '0 auto 24px' : '0 auto 32px',
@@ -110,7 +110,7 @@ export function FeatureShowcase() {
             flexWrap: 'wrap',
             marginBottom: isMobile ? '32px' : '56px',
             fontSize: isMobile ? '0.85rem' : '0.95rem',
-            color: '#374151',
+            color: '#1f2937',
             fontWeight: 500,
           }}
         >
@@ -170,8 +170,8 @@ export function FeatureShowcase() {
                 <h3
                   style={{
                     fontSize: isMobile ? '1rem' : '1.15rem',
-                    fontWeight: 800,
-                    color: '#0f172a',
+                    fontWeight: 700,
+                    color: '#1e1b4b',
                     marginBottom: '10px',
                   }}
                 >
@@ -181,7 +181,7 @@ export function FeatureShowcase() {
                 <p
                   style={{
                     fontSize: isMobile ? '0.88rem' : '0.95rem',
-                    color: '#374151',
+                    color: '#1f2937',
                     lineHeight: 1.65,
                   }}
                 >

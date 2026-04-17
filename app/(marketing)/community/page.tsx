@@ -169,12 +169,12 @@ export default function CommunityPage() {
               Why Join
             </p>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '16px',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '16px',
             }}>
               Everything in One Place
             </h2>
-            <p style={{ fontSize: isMobile ? '0.95rem' : '1rem', color: '#374151', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
+            <p style={{ fontSize: isMobile ? '1.05rem' : '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
               A private community for engineers who take AWS infrastructure seriously.
             </p>
           </div>
@@ -207,10 +207,10 @@ export default function CommunityPage() {
                 }}>
                   <Icon size={22} style={{ color: '#7c3aed' }} />
                 </div>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '10px' }}>
                   {title}
                 </h3>
-                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.75, margin: 0 }}>
+                <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.75, margin: 0 }}>
                   {desc}
                 </p>
               </div>
@@ -230,8 +230,8 @@ export default function CommunityPage() {
               Community Channels
             </p>
             <h2 style={{
-              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 800,
-              color: '#0f172a', letterSpacing: '-0.02em',
+              fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
+              color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
               Find Your People
             </h2>
@@ -266,7 +266,7 @@ export default function CommunityPage() {
                     {members} members
                   </span>
                 </div>
-                <p style={{ fontSize: '0.88rem', color: '#374151', margin: 0, lineHeight: 1.6 }}>{desc}</p>
+                <p style={{ fontSize: '0.88rem', color: '#1f2937', margin: 0, lineHeight: 1.6 }}>{desc}</p>
               </div>
             ))}
           </div>

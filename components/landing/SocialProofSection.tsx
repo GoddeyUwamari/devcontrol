@@ -96,7 +96,7 @@ export function SocialProofSection() {
                 <div className="font-extrabold" style={{ fontSize: isMobile ? 'clamp(1.6rem, 4vw, 2.2rem)' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, lineHeight: 1, marginBottom: '10px' }}>
                   {stat.value}
                 </div>
-                <div style={{ color: '#374151', fontWeight: 500, fontSize: isMobile ? '0.8rem' : '0.875rem', marginTop: '6px' }}>{stat.label}</div>
+                <div style={{ color: '#1f2937', fontWeight: 500, fontSize: isMobile ? '0.8rem' : '0.875rem', marginTop: '6px' }}>{stat.label}</div>
               </div>
             )
           })}
@@ -112,7 +112,7 @@ export function SocialProofSection() {
                 style={{ padding: isMobile ? '8px 16px' : '10px 24px', border: '1.5px solid #e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}
               >
                 <Icon className="h-5 w-5" style={{ color: '#7c3aed' }} />
-                <span className="font-medium" style={{ color: '#374151' }}>{badge.label}</span>
+                <span className="font-medium" style={{ color: '#1f2937' }}>{badge.label}</span>
               </div>
             )
           })}

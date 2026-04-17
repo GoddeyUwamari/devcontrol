@@ -171,14 +171,14 @@ export default function BlogPage() {
             </span>
           </div>
           <h1 style={{
-            color: '#0f172a', fontWeight: 800,
+            color: '#1e1b4b', fontWeight: 700,
             fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 2.8rem)',
             marginBottom: '16px', letterSpacing: '-0.02em', lineHeight: 1.2,
           }}>
             Engineering Insights &amp; Product Updates
           </h1>
           <p style={{
-            color: '#374151', fontSize: isMobile ? '0.95rem' : '1.1rem',
+            color: '#1f2937', fontSize: isMobile ? '1.05rem' : '1.1rem',
             maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6,
           }}>
             Platform engineering insights, product updates, and best practices from industry leaders and the DevControl team.
@@ -223,7 +223,7 @@ export default function BlogPage() {
                     padding: '7px 14px', borderRadius: '8px', cursor: 'pointer',
                     border: active ? 'none' : '1px solid #e5e7eb',
                     background: active ? '#7c3aed' : '#fff',
-                    color: active ? '#fff' : '#374151',
+                    color: active ? '#fff' : '#1f2937',
                     fontSize: '0.875rem', fontWeight: 500,
                     transition: 'all 0.15s ease',
                   }}
@@ -249,7 +249,7 @@ export default function BlogPage() {
           <div style={{ marginBottom: '48px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
               <Star style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>Featured Articles</h2>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e1b4b', margin: 0 }}>Featured Articles</h2>
             </div>
             <div style={{
               display: 'grid',
@@ -296,10 +296,10 @@ export default function BlogPage() {
                         {post.readTime}
                       </span>
                     </div>
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px', lineHeight: 1.3 }}>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px', lineHeight: 1.3 }}>
                       {post.title}
                     </h3>
-                    <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.6, marginBottom: '20px' }}>
+                    <p style={{ fontSize: '1.05rem', color: '#1f2937', lineHeight: 1.6, marginBottom: '20px' }}>
                       {post.description}
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -329,7 +329,7 @@ export default function BlogPage() {
 
         {/* Regular Posts */}
         <div style={{ marginBottom: '48px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '24px' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '24px' }}>
             {selectedCategory !== 'All' || searchQuery !== ''
               ? `${filteredPosts.length} ${filteredPosts.length === 1 ? 'Article' : 'Articles'}${searchQuery ? ` matching "${searchQuery}"` : ''}`
               : 'Latest Articles'}
@@ -338,8 +338,8 @@ export default function BlogPage() {
           {filteredPosts.length === 0 ? (
             <div style={{ padding: '64px 24px', textAlign: 'center', border: '1px solid #e5e7eb', borderRadius: '16px' }}>
               <FileText style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>No articles found</h3>
-              <p style={{ color: '#374151', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#1e1b4b', marginBottom: '8px' }}>No articles found</h3>
+              <p style={{ color: '#1f2937', marginBottom: '20px' }}>Try adjusting your search or filter criteria</p>
               <button
                 onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }}
                 style={{
@@ -382,10 +382,10 @@ export default function BlogPage() {
                         {post.readTime}
                       </span>
                     </div>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.35, marginBottom: '8px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b', lineHeight: 1.35, marginBottom: '8px' }}>
                       {post.title}
                     </h3>
-                    <p style={{ fontSize: '0.88rem', color: '#374151', lineHeight: 1.55, flex: 1, marginBottom: '16px' }}>
+                    <p style={{ fontSize: '0.88rem', color: '#1f2937', lineHeight: 1.55, flex: 1, marginBottom: '16px' }}>
                       {post.description}
                     </p>
                     <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '14px' }}>
@@ -399,7 +399,7 @@ export default function BlogPage() {
                           }}>
                             {post.author.avatar}
                           </div>
-                          <span style={{ fontSize: '0.78rem', color: '#374151' }}>{post.author.name}</span>
+                          <span style={{ fontSize: '0.78rem', color: '#1f2937' }}>{post.author.name}</span>
                         </div>
                         <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
                           {new Date(post.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -440,10 +440,10 @@ export default function BlogPage() {
           }}>
             <Mail style={{ width: '22px', height: '22px', color: '#7c3aed' }} />
           </div>
-          <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+          <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
             Stay Updated with DevControl
           </h3>
-          <p style={{ color: '#374151', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
+          <p style={{ color: '#1f2937', maxWidth: '480px', margin: '0 auto 24px', lineHeight: 1.6 }}>
             Get the latest platform engineering insights, product updates, and best practices delivered to your inbox every week.
           </p>
           <div style={{
@@ -502,7 +502,7 @@ export default function BlogPage() {
 
         {/* Popular Topics */}
         <div style={{ marginBottom: '48px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '24px' }}>Popular Topics</h2>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '24px' }}>Popular Topics</h2>
           <div style={{
             display: 'grid',
             gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
@@ -567,7 +567,7 @@ export default function BlogPage() {
                 <span style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a' }}>Documentation</span>
                 <ArrowRight style={{ width: '14px', height: '14px', color: '#7c3aed', marginLeft: 'auto' }} />
               </div>
-              <p style={{ fontSize: '0.95rem', color: '#374151', margin: 0 }}>
+              <p style={{ fontSize: '1.05rem', color: '#1f2937', margin: 0 }}>
                 Comprehensive guides, tutorials, and API references
               </p>
             </div>
@@ -587,7 +587,7 @@ export default function BlogPage() {
                 <span style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a' }}>Changelog</span>
                 <ArrowRight style={{ width: '14px', height: '14px', color: '#7c3aed', marginLeft: 'auto' }} />
               </div>
-              <p style={{ fontSize: '0.95rem', color: '#374151', margin: 0 }}>
+              <p style={{ fontSize: '1.05rem', color: '#1f2937', margin: 0 }}>
                 See what&apos;s new and improved in DevControl
               </p>
             </div>

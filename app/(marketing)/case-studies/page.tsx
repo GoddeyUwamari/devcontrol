@@ -127,15 +127,15 @@ export default function CaseStudiesPage() {
 
         <h1 style={{
           fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 3rem)',
-          fontWeight: 800,
-          color: '#0f172a', lineHeight: 1.15, marginBottom: '16px',
+          fontWeight: 700,
+          color: '#1e1b4b', lineHeight: 1.15, marginBottom: '16px',
           letterSpacing: '-0.02em',
         }}>
           Real Teams. Real Results.
         </h1>
 
         <p style={{
-          fontSize: isMobile ? '0.95rem' : '1.1rem', color: '#374151', lineHeight: 1.7,
+          fontSize: isMobile ? '1.05rem' : '1.1rem', color: '#1f2937', lineHeight: 1.7,
           maxWidth: '520px', margin: '0 auto',
         }}>
           See how engineering teams use DevControl to cut AWS costs,
@@ -233,7 +233,7 @@ export default function CaseStudiesPage() {
                 }}>
                   The Challenge
                 </div>
-                <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.7, marginBottom: '24px' }}>
+                <p style={{ fontSize: '1.05rem', color: '#1f2937', lineHeight: 1.7, marginBottom: '24px' }}>
                   {cs.challenge}
                 </p>
 
@@ -243,7 +243,7 @@ export default function CaseStudiesPage() {
                 }}>
                   The Solution
                 </div>
-                <p style={{ fontSize: '0.95rem', color: '#374151', lineHeight: 1.7, marginBottom: '24px' }}>
+                <p style={{ fontSize: '1.05rem', color: '#1f2937', lineHeight: 1.7, marginBottom: '24px' }}>
                   {cs.solution}
                 </p>
 
@@ -282,7 +282,7 @@ export default function CaseStudiesPage() {
                       <div style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
                         {r.metric}
                       </div>
-                      <div style={{ fontSize: '0.82rem', color: '#374151', fontWeight: 500, marginTop: '4px' }}>
+                      <div style={{ fontSize: '0.82rem', color: '#1f2937', fontWeight: 500, marginTop: '4px' }}>
                         {r.label}
                       </div>
                     </div>

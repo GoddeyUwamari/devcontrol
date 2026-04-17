@@ -136,7 +136,7 @@ function MegaMenuItem({ item, onClose }: { item: NavItem; onClose?: () => void }
       </div>
       <div style={{ minWidth: 0, wordBreak: 'break-word' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px', display: 'block', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
+          <span style={{ fontSize: '0.925rem', fontWeight: 600, color: '#1e1b4b', marginBottom: '3px', display: 'block', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
             {title}
           </span>
           {!href && (
@@ -145,7 +145,7 @@ function MegaMenuItem({ item, onClose }: { item: NavItem; onClose?: () => void }
             </span>
           )}
         </div>
-        <div style={{ fontSize: '0.78rem', fontWeight: 400, color: '#374151', lineHeight: 1.45 }}>{desc}</div>
+        <div style={{ fontSize: '0.825rem', fontWeight: 400, color: '#1f2937', lineHeight: 1.45 }}>{desc}</div>
       </div>
     </>
   )
@@ -207,9 +207,9 @@ function NavTrigger({
           alignItems: 'center',
           gap: '4px',
           padding: '6px 12px',
-          fontSize: '0.9rem',
+          fontSize: '0.95rem',
           fontWeight: isOpen ? 600 : 500,
-          color: isOpen ? '#7c3aed' : '#0f172a',
+          color: isOpen ? '#7c3aed' : '#1e1b4b',
           letterSpacing: '-0.01em',
           background: 'none',
           border: 'none',
@@ -369,16 +369,16 @@ export function MarketingNav() {
             <Link
               href="/login"
               style={{
-                color: '#0f172a',
+                color: '#1e1b4b',
                 fontWeight: 500,
-                fontSize: '0.9rem',
+                fontSize: '0.95rem',
                 padding: '8px 16px',
                 textDecoration: 'none',
                 borderRadius: '8px',
                 transition: 'color 0.15s ease',
               }}
               onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#7c3aed')}
-              onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#0f172a')}
+              onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#1e1b4b')}
             >
               Sign In
             </Link>
@@ -454,7 +454,7 @@ export function MarketingNav() {
               {/* Platform expandable */}
               <button
                 onClick={() => toggleSection('platform')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
               >
                 Platform
                 <ChevronDown style={{ width: '16px', height: '16px', transition: 'transform 0.2s ease', transform: expandedSection === 'platform' ? 'rotate(180deg)' : 'rotate(0deg)' }} />
@@ -462,7 +462,7 @@ export function MarketingNav() {
               {expandedSection === 'platform' && (
                 <div style={{ backgroundColor: '#faf5ff', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
                   {platformItems.map(item => (
-                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '14px', color: '#374151', textDecoration: 'none' }}>
+                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '15px', color: '#1f2937', textDecoration: 'none' }}>
                       <item.icon style={{ width: '14px', height: '14px', color: '#7c3aed', flexShrink: 0 }} />
                       {item.title}
                     </Link>
@@ -473,7 +473,7 @@ export function MarketingNav() {
               {/* Solutions expandable */}
               <button
                 onClick={() => toggleSection('solutions')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
               >
                 Solutions
                 <ChevronDown style={{ width: '16px', height: '16px', transition: 'transform 0.2s ease', transform: expandedSection === 'solutions' ? 'rotate(180deg)' : 'rotate(0deg)' }} />
@@ -481,7 +481,7 @@ export function MarketingNav() {
               {expandedSection === 'solutions' && (
                 <div style={{ backgroundColor: '#faf5ff', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
                   {solutionsItems.map(item => (
-                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '14px', color: '#374151', textDecoration: 'none' }}>
+                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '15px', color: '#1f2937', textDecoration: 'none' }}>
                       <item.icon style={{ width: '14px', height: '14px', color: '#7c3aed', flexShrink: 0 }} />
                       {item.title}
                     </Link>
@@ -492,7 +492,7 @@ export function MarketingNav() {
               {/* Resources expandable */}
               <button
                 onClick={() => toggleSection('resources')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
               >
                 Resources
                 <ChevronDown style={{ width: '16px', height: '16px', transition: 'transform 0.2s ease', transform: expandedSection === 'resources' ? 'rotate(180deg)' : 'rotate(0deg)' }} />
@@ -500,7 +500,7 @@ export function MarketingNav() {
               {expandedSection === 'resources' && (
                 <div style={{ backgroundColor: '#faf5ff', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
                   {resourcesItems.map(item => (
-                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '14px', color: '#374151', textDecoration: 'none' }}>
+                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '15px', color: '#1f2937', textDecoration: 'none' }}>
                       <item.icon style={{ width: '14px', height: '14px', color: '#7c3aed', flexShrink: 0 }} />
                       {item.title}
                     </Link>
@@ -508,20 +508,20 @@ export function MarketingNav() {
                 </div>
               )}
 
-              <Link href="/pricing" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
+              <Link href="/pricing" style={{ display: 'block', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', textDecoration: 'none' }}>
                 Pricing
               </Link>
-              <Link href="/solutions/enterprise" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
+              <Link href="/solutions/enterprise" style={{ display: 'block', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', textDecoration: 'none' }}>
                 Enterprise
               </Link>
-              <Link href="/docs" style={{ display: 'block', padding: '10px 24px', fontSize: '15px', fontWeight: 500, color: '#0f172a', textDecoration: 'none' }}>
+              <Link href="/docs" style={{ display: 'block', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', textDecoration: 'none' }}>
                 Developers
               </Link>
 
               <div style={{ borderTop: '1px solid #f3f4f6', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 24px' }}>
                 <Link
                   href="/login"
-                  style={{ display: 'block', textAlign: 'center', padding: '10px 0', fontSize: '15px', fontWeight: 500, color: '#374151', border: '1px solid #e5e7eb', borderRadius: '8px', textDecoration: 'none' }}
+                  style={{ display: 'block', textAlign: 'center', padding: '10px 0', fontSize: '16px', fontWeight: 500, color: '#374151', border: '1px solid #e5e7eb', borderRadius: '8px', textDecoration: 'none' }}
                 >
                   Sign In
                 </Link>
@@ -555,10 +555,10 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
       onMouseLeave={() => setHovered(false)}
       style={{
         padding: '6px 12px',
-        fontSize: '0.9rem',
+        fontSize: '0.95rem',
         fontWeight: 500,
         letterSpacing: '-0.01em',
-        color: hovered ? '#7c3aed' : '#0f172a',
+        color: hovered ? '#7c3aed' : '#1e1b4b',
         textDecoration: 'none',
         borderRadius: '8px',
         transition: 'color 0.15s ease',
