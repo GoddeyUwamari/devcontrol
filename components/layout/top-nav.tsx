@@ -7,7 +7,7 @@ import {
   Plus, Rocket, Activity, Lightbulb, Building, TrendingDown,
   BarChart3, FileText, Sparkles, AlertTriangle, CheckSquare,
   ClipboardList, Users, Building2, Code, ChevronDown, BellDot,
-  Search, Menu, X, Bell, Clock, Target,
+  Search, Menu, X, Bell, Clock, Target, SlidersHorizontal,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -72,6 +72,7 @@ const navItems: NavItem[] = [
     children: [
       { label: 'Security Overview', href: '/security', icon: Shield, desc: 'Security posture and score' },
       { label: 'Anomalies', href: '/anomalies', icon: AlertTriangle, desc: 'Detected threats and issues' },
+      { label: 'Anomaly Rules', href: '/anomalies/rules', icon: SlidersHorizontal, desc: 'Custom detection thresholds' },
       { label: 'Compliance', href: '/compliance/frameworks', icon: CheckSquare, desc: 'CIS, NIST, SOC 2 frameworks' },
       { label: 'Audit Logs', href: '/audit-logs', icon: ClipboardList, desc: 'Full activity audit trail' },
     ],
