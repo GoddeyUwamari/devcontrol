@@ -132,7 +132,7 @@ export function DeploymentAPIExample() {
           {/* Links */}
           <div className="flex items-center gap-4 pt-4 border-t">
             <Link
-              href="/settings/api-keys"
+              href="/settings"
               className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
             >
               Get API Key
