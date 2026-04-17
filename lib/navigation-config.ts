@@ -313,8 +313,8 @@ export const userNavSections: NavSection[] = [
         icon: CreditCard,
       },
       {
-        label: 'View Pricing',
-        href: '/pricing',
+        label: 'Upgrade Plan',
+        href: '/settings/billing/upgrade',
         icon: DollarSign,
       },
     ],
