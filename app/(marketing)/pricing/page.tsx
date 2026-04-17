@@ -97,7 +97,7 @@ const pricingTiers: PricingTier[] = [
       '✨ Scheduled AI Reports (weekly/monthly)',
       '✨ Weekly AI Email Summaries',
       '✨ Custom Anomaly Detection Rules',
-      '✨ Advanced AI Insights',
+      '✨ Executive AI Reports (auto-delivered monthly to leadership)',
       '───────────────',
       'Unlimited AWS resources',
       'Custom compliance frameworks',
