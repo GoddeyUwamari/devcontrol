@@ -15,6 +15,7 @@ export default function HomePage() {
     }
   }, [user, isLoading, router]);
 
-  if (isLoading || user) return null;
+  if (user) return null;
+
   return <MarketingContent />;
 }
