@@ -13,7 +13,7 @@ const TRUST_POLICY = JSON.stringify(
       {
         Effect: 'Allow',
         Principal: {
-          AWS: 'arn:aws:iam::123456789:root',
+          AWS: 'arn:aws:iam::815931739526:root',
         },
         Action: 'sts:AssumeRole',
       },
