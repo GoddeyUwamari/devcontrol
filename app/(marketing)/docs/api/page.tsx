@@ -450,7 +450,7 @@ export default function ApiReferencePage() {
                   </Link>
                 </Button>
                 <Button asChild size="sm" variant="outline" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>
-                  <Link href="/docs/api-security">
+                  <Link href="/docs/api">
                     <BookOpen className="w-4 h-4" />
                     Security Guide
                   </Link>
@@ -933,7 +933,7 @@ export default function ApiReferencePage() {
                   npm install -g @devcontrol/cli
                 </code>
                 <Button asChild size="sm" variant="outline" className="w-full gap-2">
-                  <Link href="/docs/cli">
+                  <Link href="/docs">
                     <BookOpen className="w-4 h-4" />
                     View Docs
                   </Link>

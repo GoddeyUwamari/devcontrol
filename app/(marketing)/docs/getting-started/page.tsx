@@ -366,7 +366,7 @@ devcontrol service create --name my-service`;
                   <AlertCircle className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                   <span>
                     Requires Node.js 18+ and npm 9+.{' '}
-                    <Link href="/docs/cli" className="text-primary hover:underline">
+                    <Link href="/docs" className="text-primary hover:underline">
                       View full CLI docs
                     </Link>
                   </span>
@@ -405,7 +405,7 @@ devcontrol service create --name my-service`;
                   <AccordionContent className="text-sm text-muted-foreground">
                     We require read-only access (Describe*, List*, Get*). No write or
                     modification permissions.{' '}
-                    <Link href="/docs/aws-iam" className="text-primary hover:underline">
+                    <Link href="/docs" className="text-primary hover:underline">
                       View IAM policy template
                     </Link>
                   </AccordionContent>
@@ -423,7 +423,7 @@ devcontrol service create --name my-service`;
               </Accordion>
 
               <Button asChild variant="link" className="mt-2 px-0 gap-1 text-sm" size="sm">
-                <Link href="/docs/faq">
+                <Link href="/docs">
                   View all FAQs
                   <ChevronRight className="w-4 h-4" />
                 </Link>
@@ -454,7 +454,7 @@ devcontrol service create --name my-service`;
                   </Link>
                 </Button>
                 <Button asChild size="sm" variant="ghost" className="gap-2">
-                  <Link href="/docs/team-management">
+                  <Link href="/docs">
                     <BookOpen className="w-4 h-4" />
                     Learn about roles
                   </Link>

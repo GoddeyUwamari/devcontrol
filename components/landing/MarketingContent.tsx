@@ -165,7 +165,7 @@ export function MarketingContent() {
 
           <div style={{ textAlign: 'center' }}>
             <Link
-              href="/platform/integrations"
+              href="/platform/infrastructure"
               className="inline-flex items-center gap-2 font-semibold"
               style={{ color: '#7c3aed', fontSize: '15px', textDecoration: 'none', transition: 'all 0.15s ease' }}
               onMouseEnter={(e) => {
