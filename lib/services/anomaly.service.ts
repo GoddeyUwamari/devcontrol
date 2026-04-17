@@ -3,7 +3,7 @@ import { demoModeService } from './demo-mode.service';
 
 class AnomalyService {
   private baseUrl = process.env.NEXT_PUBLIC_API_URL
-    ? `${process.env.NEXT_PUBLIC_API_URL}/anomalies`
+    ? `${process.env.NEXT_PUBLIC_API_URL}/api/anomalies`
     : 'http://localhost:8080/api/anomalies';
 
   private getHeaders(): HeadersInit {
