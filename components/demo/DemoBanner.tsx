@@ -37,7 +37,7 @@ export function DemoBanner() {
   return (
     <div
       className="flex items-center justify-between flex-wrap gap-y-1 px-3 sm:px-6 py-2 relative z-[60]"
-      style={{ background: 'linear-gradient(to right, #2563eb, #4f46e5, #7c3aed)', borderBottom: '1px solid rgba(0,0,0,0.15)' }}
+      style={{ background: '#6d28d9', borderTop: '1px solid #4c1d95', borderBottom: '1px solid #4c1d95' }}
     >
       <div className="flex items-center gap-2 min-w-0">
         <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 inline-block" />
@@ -54,8 +54,8 @@ export function DemoBanner() {
           onClick={handleSwitch}
           className="text-[0.72rem] sm:text-[0.78rem] font-semibold px-2 sm:px-3 py-1 rounded-md cursor-pointer"
           style={{
-            background: '#fff',
-            color: '#4c1d95',
+            background: 'transparent',
+            color: '#fff',
             border: '1px solid #fff',
             fontWeight: 700,
           }}
