@@ -37,14 +37,14 @@ export function DemoBanner() {
   return (
     <div
       className="flex items-center justify-between flex-wrap gap-y-1 px-3 sm:px-6 py-2 relative z-[60]"
-      style={{ background: '#7C3AED', borderBottom: '1px solid #6D28D9' }}
+      style={{ background: '#4c1d95', borderBottom: '1px solid #3b0764' }}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <span className="w-1.5 h-1.5 rounded-full bg-purple-100 shrink-0 inline-block" />
+        <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 inline-block" />
         <span className="text-xs sm:text-[0.82rem] font-semibold text-white">
           {salesDemoMode ? 'Sales Demo Mode active' : 'Demo Mode active'}
         </span>
-        <span className="hidden sm:inline text-[0.82rem] text-purple-100">
+        <span className="hidden sm:inline text-[0.82rem] text-white/80">
           · Showing curated data for presentations
         </span>
       </div>
@@ -52,21 +52,23 @@ export function DemoBanner() {
       <div className="flex items-center gap-2">
         <button
           onClick={handleSwitch}
-          className="text-[0.72rem] sm:text-[0.78rem] font-semibold text-white px-2 sm:px-3 py-1 rounded-md cursor-pointer"
+          className="text-[0.72rem] sm:text-[0.78rem] font-semibold px-2 sm:px-3 py-1 rounded-md cursor-pointer"
           style={{
-            background: 'rgba(255,255,255,0.15)',
-            border: '1px solid rgba(255,255,255,0.25)',
+            background: '#fff',
+            color: '#4c1d95',
+            border: '1px solid #fff',
+            fontWeight: 700,
           }}
         >
           Switch to real data
         </button>
         <button
           onClick={handleDismiss}
-          className="p-1.5 flex items-center text-purple-100 hover:text-white cursor-pointer"
+          className="p-2 flex items-center text-purple-100 hover:text-white hover:bg-white/10 rounded-md cursor-pointer"
           style={{ background: 'transparent', border: 'none' }}
           aria-label="Dismiss banner"
         >
-          <X size={14} />
+          <X size={16} />
         </button>
       </div>
     </div>
