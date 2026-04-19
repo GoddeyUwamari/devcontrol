@@ -139,27 +139,31 @@ const mobileSections = [
     label: 'Security',
     items: [
       { label: 'Security Overview', href: '/security' },
-      { label: 'Compliance', href: '/compliance' },
       { label: 'Anomalies', href: '/anomalies' },
+      { label: 'Anomaly Rules', href: '/anomalies/rules' },
+      { label: 'Compliance', href: '/compliance/frameworks' },
+      { label: 'Audit Logs', href: '/audit-logs' },
     ],
   },
   {
     key: 'observability',
     label: 'Observability',
     items: [
-      { label: 'Alerts', href: '/observability/alerts' },
+      { label: 'Monitoring Overview', href: '/monitoring' },
+      { label: 'Active Alerts', href: '/observability/alerts' },
       { label: 'Alert History', href: '/observability/alert-history' },
-      { label: 'SLOs', href: '/monitoring/slos' },
-      { label: 'DORA Metrics', href: '/app/dora-metrics' },
+      { label: 'SLO Dashboard', href: '/monitoring/slos' },
+      { label: 'Status Page', href: '/status' },
     ],
   },
   {
     key: 'devops',
     label: 'DevOps',
     items: [
+      { label: 'DORA Metrics', href: '/app/dora-metrics' },
       { label: 'Teams', href: '/teams' },
-      { label: 'Audit Logs', href: '/audit-logs' },
-      { label: 'Admin', href: '/admin/monitoring' },
+      { label: 'Enterprise', href: '/enterprise' },
+      { label: 'Developers', href: '/developers' },
     ],
   },
 ];
