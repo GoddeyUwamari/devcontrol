@@ -234,7 +234,7 @@ export default function MonitoringPage() {
           <p className="text-sm text-violet-600 font-medium mb-8">No agents. No setup. Read-only access via AWS CloudWatch.</p>
           <p className="text-xs text-slate-400 mb-6">Takes less than 2 minutes · Zero risk to your infrastructure · Read-only access</p>
           <div className="flex flex-wrap gap-3 justify-center mb-8">
-            <a href="/connect-aws" className="bg-violet-600 hover:bg-violet-700 text-white px-7 py-3 rounded-lg text-sm font-semibold no-underline inline-flex items-center gap-2 transition-colors">☁️ Connect AWS Account →</a>
+            <a href="/connect-aws" className="bg-violet-600 hover:bg-violet-700 text-white px-7 py-3 rounded-lg text-sm font-semibold no-underline inline-flex items-center gap-2 transition-colors">☁️ Enable CloudWatch Monitoring →</a>
             <button onClick={() => { const event = new CustomEvent('demo-mode-changed', { detail: { enabled: true } }); window.dispatchEvent(event) }}
               className="bg-white text-violet-600 border border-violet-200 px-7 py-3 rounded-lg text-sm font-semibold cursor-pointer hover:bg-violet-50 transition-colors">Explore Demo Data</button>
           </div>
