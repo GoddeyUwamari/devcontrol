@@ -166,6 +166,7 @@ function LoginContent() {
                 setValue("rememberMe", checked as boolean)
               }
               disabled={isLoading}
+              style={{ width: '16px', height: '16px', minWidth: '16px', minHeight: '16px', maxWidth: '16px', maxHeight: '16px' }}
             />
             <Label
               htmlFor="rememberMe"
