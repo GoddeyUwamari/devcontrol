@@ -17,14 +17,14 @@ import { useOnboarding } from '@/lib/stores/onboarding-store';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 
 export function WelcomeModal() {
-  const { currentStage, completeStep, dismiss } = useOnboarding();
+  const { currentStage, completedStages, completeStep, dismiss } = useOnboarding();
   const [open, setOpen] = useState(false);
   const isDemoActive = useDemoMode();
 
   useEffect(() => {
     if (isDemoActive) return;
-    // Auto-open on welcome stage
-    if (currentStage === 'welcome') {
+    // Auto-open on welcome stage only when AWS is not yet connected
+    if (currentStage === 'welcome' && !completedStages.includes('connect_aws')) {
       // Small delay for better UX
       const timer = setTimeout(() => {
         setOpen(true);
