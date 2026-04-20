@@ -15,7 +15,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { toast } from 'sonner'
 
-const API_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8080'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
 
 interface ServiceHealth {
@@ -84,24 +84,24 @@ export default function MonitoringPage() {
   }
 
   const loadSnapshot = useCallback(async () => {
-    try { const res = await fetch(`${API_URL}/api/prometheus/snapshot`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` } }); const data = await res.json(); if (data.success && data.data) setLastSnapshot(data.data) } catch {}
+    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/prometheus/snapshot`, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data) setLastSnapshot(data.data) } catch {}
   }, [])
 
   const checkAwsConnection = useCallback(async () => {
-    try { const res = await fetch(`${API_URL}/api/cloudwatch/status`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` } }); const data = await res.json(); setAwsConnected(data.success ? data.data.connected : false) } catch { setAwsConnected(false) }
+    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/cloudwatch/status`, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); setAwsConnected(data.success ? data.data.connected : false) } catch { setAwsConnected(false) }
   }, [])
 
   const fetchCloudWatchMetrics = useCallback(async () => {
-    try { const res = await fetch(`${API_URL}/api/cloudwatch/metrics`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` } }); const data = await res.json(); if (data.success && data.data) { setCloudWatchMetrics(data.data); return data.data } return null } catch { return null }
+    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/cloudwatch/metrics`, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data) { setCloudWatchMetrics(data.data); return data.data } return null } catch { return null }
   }, [])
 
   const saveSnapshot = useCallback(async (metrics: any) => {
-    try { await fetch(`${API_URL}/api/prometheus/snapshot`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }, body: JSON.stringify(metrics) }) } catch {}
+    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); await fetch(`${API_URL}/api/prometheus/snapshot`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(metrics) }) } catch {}
   }, [])
 
   const runDiagnostic = useCallback(async () => {
     setIsDiagnosing(true); setDiagnosticResult(null)
-    try { const res = await fetch(`${API_URL}/api/prometheus/diagnose`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` } }); const data = await res.json(); if (data.success) setDiagnosticResult(data.data) } catch {} finally { setIsDiagnosing(false) }
+    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/prometheus/diagnose`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success) setDiagnosticResult(data.data) } catch {} finally { setIsDiagnosing(false) }
   }, [])
 
   const generateTimeSeriesData = (baseValue: number, points: number = 12) => {
