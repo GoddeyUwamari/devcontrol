@@ -494,6 +494,7 @@ export class OrganizationService {
          o.slug,
          o.display_name,
          o.logo_url,
+         o.subscription_tier,
          om.role,
          o.created_at
        FROM organization_memberships om
@@ -512,6 +513,7 @@ export class OrganizationService {
       slug: row.slug,
       displayName: row.display_name,
       logoUrl: row.logo_url,
+      subscriptionTier: row.subscription_tier,
       role: row.role,
       createdAt: row.created_at,
     }));

@@ -37,7 +37,7 @@ export function WelcomeModal() {
 
       return () => clearTimeout(timer);
     }
-  }, [currentStage, isDemoActive]);
+  }, [currentStage, completedStages, isDemoActive]);
 
   const handleGetStarted = async () => {
     // Track analytics
