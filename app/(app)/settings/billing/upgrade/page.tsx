@@ -12,7 +12,7 @@ const plans = [
     tier: 'starter',
     price: 49,
     annualPrice: 63,
-    priceId: 'price_1TJBsAHTCYC33EIRTp9R4IMh',
+    priceId: 'price_1TJBsAHTCYC33ElRTp9R4lMh',
     annualPriceId: 'price_1TJBwMHTCYC33EIR9RdjFpGW',
     description: 'Identify and eliminate the most common sources of AWS waste.',
     features: [
@@ -33,7 +33,7 @@ const plans = [
     tier: 'pro',
     price: 199,
     annualPrice: 239,
-    priceId: 'price_1TJC3AHTCYC33EIRjY1RN0I6',
+    priceId: 'price_1TJC3AHTCYC33ElRJY1RN0l6',
     annualPriceId: 'price_1TJC4DHTCYC33EIRbANhi4iF',
     popular: true,
     description: 'Turn your AWS into a predictable, optimized system.',
