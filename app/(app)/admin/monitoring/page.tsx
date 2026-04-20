@@ -180,7 +180,7 @@ export default function MonitoringPage() {
     return () => clearInterval(interval)
   }, [checkAwsConnection, fetchCloudWatchMetrics, fetchMetrics, loadSnapshot])
 
-  if (!metricsAvailable && !isDemoActive && !loading && !error) {
+  if (!metricsAvailable && !isDemoActive && !loading && !error && awsConnected !== true && !cloudWatchMetrics) {
     return (
       <ErrorBoundary>
         <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
