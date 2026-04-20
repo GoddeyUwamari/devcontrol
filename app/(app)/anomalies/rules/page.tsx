@@ -110,6 +110,7 @@ export default function AnomalyRulesPage() {
 
   const loadRules = useCallback(async () => {
     if (isDemoActive) { setRules(DEMO_RULES); setIsLoading(false); return }
+    if (!isEnterprise) { setIsLoading(false); return }
     try {
       const data = await customAnomalyRulesService.getRules()
       setRules(data)
