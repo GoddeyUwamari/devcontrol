@@ -391,9 +391,12 @@ export default function DashboardPage() {
       {/* ── COMMAND HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-10">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-snug mb-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-snug mb-1">
             AWS Infrastructure Intelligence
           </h1>
+          <p className="text-[13px] text-slate-500 leading-relaxed mb-1">
+            Real-time visibility into cost waste, security posture, and infrastructure efficiency — across your entire AWS environment.
+          </p>
           <p className="text-[13px] text-gray-500 leading-relaxed">
             {isAwsConnected
               ? `WayUP Technology · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}`
@@ -406,7 +409,6 @@ export default function DashboardPage() {
           </a>
         )}
       </div>
-
       {/* ── RISK ALERT BANNER ── */}
       {(demoMode || salesDemoMode || criticalAlerts > 0) && (
         <div className="flex items-center gap-3.5 bg-orange-50 border border-orange-200 rounded-xl px-5 py-3.5 mb-7">
