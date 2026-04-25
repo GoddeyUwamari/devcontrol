@@ -394,7 +394,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-snug mb-1">
             AWS Infrastructure Intelligence
           </h1>
-          <p className="text-[13px] text-slate-500 leading-relaxed mb-1">
+          <p className="text-[13px] text-slate-600 leading-relaxed mb-1">
             Real-time visibility into cost waste, security posture, and infrastructure efficiency — across your entire AWS environment.
           </p>
           <p className="text-[13px] text-gray-500 leading-relaxed">
