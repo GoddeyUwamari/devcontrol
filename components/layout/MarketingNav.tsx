@@ -287,12 +287,12 @@ export function MarketingNav() {
       >
         <p style={{ color: '#ffffff', fontSize: isMobile ? '0.75rem' : '0.875rem', fontWeight: 500, letterSpacing: '0.01em', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           <span style={{ marginRight: '8px' }}>🚀</span>
-          NEW: 8 AI-Powered Features Now Available!{' '}
+          ⚡ New: Auto-detection for idle RDS, EBS, and snapshot waste!{' '}
           <a
             href="/platform/infrastructure"
             style={{ color: '#ffffff', fontSize: isMobile ? '0.75rem' : '0.875rem', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: '2px', marginLeft: '4px' }}
           >
-            Learn More →
+        See what&apos;s new →
           </a>
         </p>
       </div>
