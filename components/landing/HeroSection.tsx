@@ -143,7 +143,7 @@ export function HeroSection() {
           margin: '0 auto 24px',
           backgroundColor: '#faf5ff',
         }}>
-          <span style={{ fontSize: '0.9rem', color: '#1f2937' }}>
+          <span style={{ fontSize: '0.9rem', color: '#1f2937', whiteSpace: 'nowrap' }}>
             Or{' '}
             <a href="/contact" style={{ color: '#7c3aed', fontWeight: 700, textDecoration: 'none' }}>
               book a 15-min AWS audit
