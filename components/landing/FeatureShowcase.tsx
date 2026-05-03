@@ -75,6 +75,19 @@ export function FeatureShowcase() {
     <section style={{ width: '100%', padding: isMobile ? '40px 0' : isTablet ? '56px 0' : '64px 0', backgroundColor: '#fff' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
 
+        {/* Eyebrow label */}
+        <p style={{
+          fontSize: '0.78rem',
+          fontWeight: 700,
+          color: '#7c3aed',
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+          textAlign: 'center',
+          marginBottom: '12px',
+        }}>
+          🔍 AWS Cost &amp; Risk Audit
+        </p>
+
         <h2
           style={{
             fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2.6rem, 5vw, 3rem)',
