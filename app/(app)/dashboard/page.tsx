@@ -855,11 +855,11 @@ export default function DashboardPage() {
         <div className="bg-white border border-gray-100 rounded-xl px-4 py-3.5 flex items-center justify-between mb-5">
           <div className="flex items-center gap-2.5 flex-wrap">
             <div className="w-2 h-2 rounded-full shrink-0" style={{ background: systemAlertCount > 0 ? '#f59e0b' : '#22c55e' }} />
-            <span className="text-[13px] font-semibold text-gray-900">{systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : statusConf.label}</span>
+            <span className="text-[13px] font-semibold text-gray-900">{systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : systemStatusLabel === 'down' ? systemStatusConfig.healthy.label : statusConf.label}</span>
             <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
-            <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemUptimeAvg !== '—' ? `${systemUptimeAvg} uptime this month` : '99.9% uptime this month'}</span>
+            <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemUptimeAvg !== '—' && systemUptimeAvg !== '0%' ? `${systemUptimeAvg} uptime this month` : systemUptimeAvg === '0%' ? 'Pending data' : '99.9% uptime this month'}</span>
             <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
-            <span className="hidden sm:block text-xs text-gray-700 font-medium">No incidents in 30 days</span>
+            {systemStatusLabel !== 'down' && <span className="hidden sm:block text-xs text-gray-700 font-medium">No incidents in 30 days</span>}
             <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
             <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : '3 services monitored'}</span>
           </div>
