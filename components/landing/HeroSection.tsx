@@ -66,13 +66,13 @@ export function HeroSection() {
         {/* CTA Buttons */}
         <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
           <a
-            href="/register"
+            href="/tour"
             style={{
               backgroundColor: '#7c3aed',
               color: '#fff',
-              fontSize: '1rem',
-              fontWeight: 700,
-              padding: '14px 32px',
+              fontSize: '0.95rem',
+              fontWeight: 600,
+              padding: '14px 24px',
               borderRadius: '10px',
               border: 'none',
               cursor: 'pointer',
@@ -94,12 +94,12 @@ export function HeroSection() {
               e.currentTarget.style.transform = 'translateY(0)'
             }}
           >
-            Scan My AWS for Waste
-            <ArrowRight size={18} />
+            <Play className="h-4 w-4" />
+            Take a Product Tour
           </a>
 
           <a
-            href="/tour"
+            href="/register"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -107,9 +107,9 @@ export function HeroSection() {
               gap: '8px',
               backgroundColor: 'transparent',
               color: '#7c3aed',
-              fontSize: '0.95rem',
-              fontWeight: 600,
-              padding: '14px 24px',
+              fontSize: '1rem',
+              fontWeight: 700,
+              padding: '14px 32px',
               borderRadius: '10px',
               border: '1.5px solid #7c3aed',
               cursor: 'pointer',
@@ -126,8 +126,8 @@ export function HeroSection() {
               e.currentTarget.style.color = '#7c3aed'
             }}
           >
-            <Play className="h-4 w-4" />
-            Take a Product Tour
+            Scan My AWS for Waste
+            <ArrowRight size={18} />
           </a>
         </div>
 
