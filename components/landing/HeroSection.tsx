@@ -56,12 +56,12 @@ export function HeroSection() {
 
         {/* ROI line */}
         <p style={{ fontSize: isMobile ? '0.85rem' : '1.1rem', color: '#1f2937', marginBottom: '36px' }}>
-          <strong style={{ color: '#059669' }}>$2,400/month avg savings (~$28,800/year)</strong>
-          {' · '}
-          First insight in <strong style={{ color: '#059669' }}>15 min</strong>
-          {' · '}
-          Read-only, zero risk
-        </p>
+  Teams identify <strong style={{ color: '#059669' }}>$800–$8,000+/month</strong> in waste
+  {' · '}
+  First insight in <strong style={{ color: '#059669' }}>15 min</strong>
+  {' · '}
+  Read-only, zero risk
+</p>
 
         {/* CTA Buttons */}
         <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
