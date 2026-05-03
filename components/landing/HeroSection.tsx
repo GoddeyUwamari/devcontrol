@@ -131,9 +131,26 @@ export function HeroSection() {
           </a>
         </div>
 
-        <p style={{ fontSize: '0.9rem', color: '#1f2937', marginBottom: '24px' }}>
-          Or <a href="/contact" style={{ color: '#7c3aed', fontWeight: 600, textDecoration: 'none' }}>book a 15-min AWS audit</a> with our team — free, no commitment
-        </p>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          border: '1px solid #e5e7eb',
+          borderRadius: '10px',
+          padding: '12px 24px',
+          maxWidth: isMobile ? '100%' : '420px',
+          margin: '0 auto 24px',
+          backgroundColor: '#faf5ff',
+        }}>
+          <span style={{ fontSize: '0.9rem', color: '#1f2937' }}>
+            Or{' '}
+            <a href="/contact" style={{ color: '#7c3aed', fontWeight: 700, textDecoration: 'none' }}>
+              book a 15-min AWS audit
+            </a>
+            {' '}with our team — free, no commitment
+          </span>
+        </div>
 
         {/* Trust badges — tight under buttons */}
         <div style={{
