@@ -79,7 +79,7 @@ export default function CostOptimizationPage() {
             margin: '0 auto 36px',
           }}>
             AI-powered cost intelligence that finds waste, forecasts spend, and recommends
-            savings automatically. Average team saves $2,400/month in the first week.
+            savings automatically. Teams typically uncover $800–$8,000+/month in waste in the first week.
           </p>
 
           <div style={{
@@ -372,7 +372,7 @@ export default function CostOptimizationPage() {
             fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
-            Join 500+ engineering teams saving an average of $2,400/month with DevControl.
+            Join 500+ engineering teams identifying $800–$8,000+/month in waste with DevControl.
           </p>
           <div style={{
             display: 'flex',

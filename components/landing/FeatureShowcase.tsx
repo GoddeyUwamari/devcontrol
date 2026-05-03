@@ -20,7 +20,7 @@ const features = [
     icon: DollarSign,
     title: 'Cut Cloud Spend Immediately',
     description:
-      'Surface unused resources, over-provisioned services, and hidden waste — so you can reduce costs the same day. Average team saves $2,400/month.',
+      'Surface unused resources, over-provisioned services, and hidden waste — so you can reduce costs the same day. Teams typically uncover $800–$8,000+/month in waste.',
     highlight: true,
     href: '/features/cost-optimization',
   },

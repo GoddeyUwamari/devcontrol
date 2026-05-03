@@ -40,7 +40,7 @@ export default function ScaleupsPage() {
   ]
 
   const impacts = [
-    { value: '$2,400', label: 'Avg monthly savings' },
+    { value: '$800–$8K+', label: 'Monthly waste identified' },
     { value: '10+', label: 'Accounts unified' },
     { value: 'Elite', label: 'DORA tier achieved' },
     { value: '2 weeks', label: 'To establish compliance baseline' },

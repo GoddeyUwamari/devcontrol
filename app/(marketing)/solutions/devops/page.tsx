@@ -158,11 +158,11 @@ export default function DevOpsPage() {
                 <div style={{ color: '#3fb950' }}>✓ Discovered 847 resources across 6 regions</div>
                 <div style={{ color: '#3fb950' }}>✓ DORA metrics calculated from 234 deployments</div>
                 <div style={{ color: '#ff7b72' }}>⚠ 3 security misconfigurations found</div>
-                <div style={{ color: '#ff7b72' }}>⚠ $2,400/mo in idle resources detected</div>
+                <div style={{ color: '#ff7b72' }}>⚠ $8,000/mo in idle resources detected</div>
                 <div style={{ color: '#8b949e', marginTop: '8px' }}>────────────────────────────────</div>
                 <div><span style={{ color: '#8b949e' }}>Security Score:</span> <span style={{ color: '#a78bfa', fontWeight: 700 }}>87/100</span></div>
                 <div><span style={{ color: '#8b949e' }}>DORA Tier:</span> <span style={{ color: '#3fb950', fontWeight: 700 }}>Elite</span></div>
-                <div><span style={{ color: '#8b949e' }}>Monthly Savings:</span> <span style={{ color: '#3fb950', fontWeight: 700 }}>$2,400 identified</span></div>
+                <div><span style={{ color: '#8b949e' }}>Monthly Savings:</span> <span style={{ color: '#3fb950', fontWeight: 700 }}>$8,000+ identified</span></div>
                 <div style={{ color: '#8b949e', marginTop: '8px' }}>────────────────────────────────</div>
                 <div><span style={{ color: '#8b949e' }}>$</span> <span style={{ color: '#8b949e' }}>█</span></div>
               </div>

@@ -15,7 +15,7 @@ function useWindowWidth() {
 const stats = [
   {
     icon: DollarSign,
-    value: '$2,400/mo',
+    value: '$800–$8K+/mo',
     label: 'Average monthly savings per team',
   },
   {

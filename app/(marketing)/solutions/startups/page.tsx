@@ -29,7 +29,7 @@ export default function StartupsPage() {
   ]
 
   const impacts = [
-    { value: '$2,400', label: 'Average monthly savings found' },
+    { value: '$800–$8K+', label: 'Monthly waste identified' },
     { value: '15min', label: 'Time to first insight' },
     { value: '2 weeks', label: 'To establish SOC 2 compliance baseline' },
   ]

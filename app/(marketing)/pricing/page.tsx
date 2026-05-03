@@ -272,7 +272,7 @@ export default function PricingPage() {
         <div className="max-w-[1400px] mx-auto">
           <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-xs font-semibold text-emerald-700 mb-5">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            Teams save an average of $2,400/month · $28,800/year
+            Teams identify $800–$8,000+/month in waste
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-indigo-950 leading-tight tracking-tight mb-3">
             Simple Pricing.{' '}
@@ -469,7 +469,7 @@ export default function PricingPage() {
             Ready to Optimize Your AWS Costs?
           </h2>
           <p className="text-base sm:text-lg text-white/85 max-w-md mx-auto mb-8 leading-relaxed">
-            Join 500+ engineering teams saving an average of $2,400/month with DevControl.
+            Join 500+ engineering teams identifying $800–$8,000+/month in waste with DevControl.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 flex-wrap">
             <a href="/register" className="w-full sm:w-auto text-center bg-white text-violet-700 px-8 py-3.5 rounded-xl font-bold text-base no-underline">

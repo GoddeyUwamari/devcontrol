@@ -385,7 +385,7 @@ export default function CaseStudiesPage() {
           fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
           maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
         }}>
-          Join 500+ engineering teams saving an average of $2,400/month.
+          Join 500+ engineering teams identifying $800–$8,000+/month in waste.
         </p>
         <div style={{
           display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap',

@@ -409,7 +409,7 @@ export default function ContactPage() {
           }}>
             {[
               { value: '500+', label: 'Engineering teams onboarded' },
-              { value: '$2,400', label: 'Average monthly savings found' },
+              { value: '$800–$8K+', label: 'Monthly waste identified' },
               { value: '2 hrs', label: 'Typical response time' },
             ].map(({ value, label }) => (
               <div key={label}>

@@ -14,7 +14,7 @@ function useWindowWidth() {
 }
 
 const stats = [
-  { value: '$2,400', suffix: '/mo', label: 'Average monthly savings per team' },
+  { value: '$800–$8K+', suffix: '/mo', label: 'Monthly waste identified' },
   { value: '15', suffix: ' min', label: 'From signup to first insight' },
   { value: '99.9', suffix: '%', label: 'Platform uptime SLA' },
 ];

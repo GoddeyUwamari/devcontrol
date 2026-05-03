@@ -34,7 +34,7 @@ export function CTASection() {
             Your AWS bill is too high.<br />Let&apos;s fix that.
           </h2>
           <p style={{ fontSize: isMobile ? '1rem' : '1.125rem', color: '#ddd6fe', marginBottom: isMobile ? '28px' : '36px', lineHeight: 1.7 }}>
-            Join 500+ engineering teams saving an average of $2,400/month with DevControl.
+            Join 500+ engineering teams identifying $800–$8,000+/month in waste with DevControl.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">

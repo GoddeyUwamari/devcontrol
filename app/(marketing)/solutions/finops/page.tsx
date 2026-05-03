@@ -20,7 +20,7 @@ export default function FinOpsPage() {
   const isTablet = width >= 640 && width < 1024
 
   const features = [
-    { icon: DollarSign, stat: '$2,400', statSub: 'avg monthly savings', title: 'AI Cost Recommendations', desc: 'Machine learning identifies idle resources, right-sizing opportunities, and reserved instance gaps. Every recommendation comes with projected savings before you act.' },
+    { icon: DollarSign, stat: '$800–$8K+', statSub: 'monthly waste identified', title: 'AI Cost Recommendations', desc: 'Machine learning identifies idle resources, right-sizing opportunities, and reserved instance gaps. Every recommendation comes with projected savings before you act.' },
     { icon: BarChart3, stat: '30%', statSub: 'typical cost reduction', title: 'Real-Time Spend Tracking', desc: 'Live cost breakdown by service, team, environment, and tag. Allocate every dollar of AWS spend to the right cost center — automatically, without manual tagging.' },
     { icon: Bell, stat: '< 5min', statSub: 'time to anomaly alert', title: 'Anomaly Detection & Alerts', desc: 'Instant notifications when spend spikes beyond expected thresholds. Catch runaway Lambda costs, accidental data transfer, and forgotten dev environments before month end.' },
     { icon: TrendingDown, stat: '95%', statSub: 'forecast accuracy', title: 'Predictive Budget Forecasting', desc: 'Predict next month\'s AWS bill with 95% accuracy. Set budgets by team, product, or environment and get alerts before you breach them — not after.' },
@@ -31,7 +31,7 @@ export default function FinOpsPage() {
   ]
 
   const impacts = [
-    { value: '$2,400', label: 'Average monthly savings' },
+    { value: '$800–$8K+', label: 'Monthly waste identified' },
     { value: '8x', label: 'Average ROI on Pro plan' },
     { value: '30%', label: 'Typical AWS cost reduction' },
     { value: '95%', label: 'Budget forecast accuracy' },
@@ -391,10 +391,10 @@ export default function FinOpsPage() {
             {/* Left — big number */}
             <div style={{ textAlign: 'center', paddingTop: '16px' }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
-                Avg. First Month
+                Typical First Month
               </p>
               <p style={{ fontSize: isMobile ? '3rem' : '4rem', fontWeight: 900, color: '#7c3aed', lineHeight: 1, margin: '0 0 8px', letterSpacing: '-0.04em' }}>
-                $2,400
+                $800–$8K+
               </p>
               <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>
                 in savings found
@@ -590,7 +590,7 @@ export default function FinOpsPage() {
           }}>
             {[
               { label: 'DevControl Pro Cost', value: '$199/mo' },
-              { label: 'Average Savings Found', value: '$2,400/mo' },
+              { label: 'Waste Identified', value: '$800–$8K+/mo' },
               { label: 'Your ROI', value: '8x' },
             ].map(({ label, value }) => (
               <div key={label} style={{ textAlign: 'center' }}>

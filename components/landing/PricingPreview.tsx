@@ -157,7 +157,7 @@ export function PricingPreview() {
                       padding: '3px 10px',
                       borderRadius: '99px'
                     }}>
-                      Avg. team saves $2,400/mo — 8× ROI
+                      Teams identify $800–$8,000+/mo in waste
                     </span>
                   </div>
                 )}
