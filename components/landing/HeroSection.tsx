@@ -132,17 +132,17 @@ export function HeroSection() {
         </div>
 
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px',
-          border: '1px solid #e5e7eb',
-          borderRadius: '10px',
-          padding: '12px 24px',
-          maxWidth: isMobile ? '100%' : '420px',
-          margin: '0 auto 24px',
-          backgroundColor: '#faf5ff',
-        }}>
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '8px',
+  border: '1px solid #e5e7eb',
+  borderRadius: '10px',
+  padding: '12px 32px',
+  width: 'fit-content',
+  margin: '0 auto 24px',
+  backgroundColor: '#faf5ff',
+}}>
           <span style={{ fontSize: '0.9rem', color: '#1f2937', whiteSpace: 'nowrap' }}>
             Or{' '}
             <a href="/contact" style={{ color: '#7c3aed', fontWeight: 700, textDecoration: 'none' }}>
