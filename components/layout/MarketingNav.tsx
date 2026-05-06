@@ -262,7 +262,7 @@ export function MarketingNav() {
   }
 
   return (
-    <header style={{ position: 'sticky', top: 0, zIndex: 50, width: '100%' }}>
+    <header style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50 }}>
       <style>{`
         @keyframes megaFadeIn {
           from { opacity: 0; transform: translateY(-4px); }
