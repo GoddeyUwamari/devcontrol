@@ -9,7 +9,7 @@ export default function MarketingLayout({
   return (
     <div className="min-h-screen bg-white" style={{ overflowX: 'hidden' }}>
       <MarketingNav />
-      <main style={{ paddingTop: '104px' }}>{children}</main>
+      <main>{children}</main>
       <Footer />
     </div>
   );

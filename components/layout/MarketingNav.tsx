@@ -262,7 +262,7 @@ export function MarketingNav() {
   }
 
   return (
-    <>
+    <header style={{ position: 'sticky', top: 0, zIndex: 50, width: '100%' }}>
       <style>{`
         @keyframes megaFadeIn {
           from { opacity: 0; transform: translateY(-4px); }
@@ -277,11 +277,6 @@ export function MarketingNav() {
           padding: isMobile ? '8px 12px' : '10px 0',
           textAlign: 'center',
           background: 'linear-gradient(to right, #7c3aed, #6d28d9)',
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 51,
           overflow: 'hidden',
         }}
       >
@@ -300,11 +295,6 @@ export function MarketingNav() {
       {/* Navbar */}
       <nav
         style={{
-          position: 'fixed',
-          top: '40px',
-          left: 0,
-          right: 0,
-          zIndex: 50,
           backgroundColor: 'rgba(255,255,255,0.95)',
           backdropFilter: 'blur(12px)',
           borderBottom: '1px solid #f3f4f6',
@@ -542,7 +532,7 @@ export function MarketingNav() {
           </div>
         )}
       </nav>
-    </>
+    </header>
   )
 }
 
