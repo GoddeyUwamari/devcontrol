@@ -244,3 +244,4 @@ export function FeatureShowcase() {
       </div>
     </section>
   )
+  }
