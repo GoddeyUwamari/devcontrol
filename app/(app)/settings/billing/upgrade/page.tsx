@@ -11,9 +11,9 @@ const plans = [
     name: 'Cost Control',
     tier: 'starter',
     price: 49,
-    annualPrice: 63,
+    annualPrice: 41,
     priceId: 'price_1TJBsAHTCYC33ElRTp9R4lMh',
-    annualPriceId: 'price_1TJBwMHTCYC33EIR9RdjFpGW',
+    annualPriceId: 'price_1TJBwMHTCYC33ElR9RdjFpGW',
     description: 'Identify and eliminate the most common sources of AWS waste.',
     features: [
       'Up to 60 AWS resources',
@@ -32,9 +32,9 @@ const plans = [
     name: 'Optimization Engine',
     tier: 'pro',
     price: 199,
-    annualPrice: 239,
+    annualPrice: 166,
     priceId: 'price_1TJC3AHTCYC33ElRJY1RN0l6',
-    annualPriceId: 'price_1TJC4DHTCYC33EIRbANhi4iF',
+    annualPriceId: 'price_1TJC4DHTCYC33ElRbANhI4iF',
     popular: true,
     description: 'Turn your AWS into a predictable, optimized system.',
     features: [
