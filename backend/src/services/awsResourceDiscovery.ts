@@ -160,6 +160,11 @@ export class AWSResourceDiscoveryService {
     let jobId: string;
 
     try {
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [organizationId]
+      );
+
       // Get organization's subscription tier
       const tier = await this.getOrganizationTier(organizationId);
       const allowedTypes = this.getAllowedResourceTypes(tier);

@@ -107,6 +107,11 @@ export class RiskTrackingService {
 
       for (const org of result.rows) {
         try {
+          await this.pool.query(
+            "SELECT set_config('app.current_organization_id', $1, false)",
+            [org.id]
+          );
+
           await this.storeDailySnapshot(org.id);
           console.log(`[Risk Tracking] Snapshot stored for ${org.name}`);
         } catch (error: any) {

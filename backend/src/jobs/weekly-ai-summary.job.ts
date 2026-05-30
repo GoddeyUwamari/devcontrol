@@ -134,6 +134,11 @@ export class WeeklyAISummaryJob {
    * Send summary for a single organization
    */
   private async sendSummaryForOrganization(organizationId: string): Promise<void> {
+    await this.pool.query(
+      "SELECT set_config('app.current_organization_id', $1, false)",
+      [organizationId]
+    );
+
     if (!this.resend) {
       throw new Error('Resend email client not configured');
     }

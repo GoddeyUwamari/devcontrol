@@ -61,6 +61,11 @@ export class AnomalyDetectionJob {
 
       for (const org of orgsResult.rows) {
         try {
+          await this.pool.query(
+            "SELECT set_config('app.current_organization_id', $1, false)",
+            [org.id]
+          );
+
           // Auto-resolve old anomalies before scanning
           await this.autoResolveOldAnomalies(org.id);
 

@@ -56,6 +56,11 @@ export class ScheduledReportsService {
     console.log(`[ScheduledReports] Executing report: ${report.name} (${report.id})`);
 
     try {
+      await this.pool.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [report.organization_id]
+      );
+
       // Verify organization still has Enterprise tier
       const tierCheck = await this.pool.query(
         'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
