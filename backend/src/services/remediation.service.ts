@@ -131,23 +131,34 @@ export class RemediationService {
     sessionToken: string;
     region: string;
   }> {
-    // Fetch first active AWS account for this org
-    // (In production, aws_accounts would be scoped per org)
     const result = await this.pool.query(
-      `SELECT role_arn, account_id FROM aws_accounts WHERE status = 'active' LIMIT 1`
+      `SELECT role_arn, account_id, external_id FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1`,
+      [organizationId]
     );
 
     if (result.rows.length === 0) {
       throw new Error('No active AWS account configured. Connect an AWS account first.');
     }
 
-    const { role_arn: roleArn } = result.rows[0];
+    const { role_arn: roleArn, external_id: externalId } = result.rows[0];
+
+    if (!externalId) {
+      throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} aws_accounts row is missing external_id`);
+    }
+
     const region = process.env.AWS_DEFAULT_REGION || 'us-east-1';
 
-    const sts = new STSClient({ region });
+    const sts = new STSClient({
+      region,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    });
     const assumed = await sts.send(new AssumeRoleCommand({
       RoleArn: roleArn,
       RoleSessionName: `devcontrol-remediation-${Date.now()}`,
+      ExternalId: externalId,
       DurationSeconds: 900, // 15 minutes — enough for any single action
     }));
 

@@ -28,21 +28,33 @@ export interface CloudWatchServiceHealth {
 export class CloudWatchService {
   private async getCredentialsForOrg(organizationId: string) {
     const result = await pool.query(
-      `SELECT account_id, role_arn, nickname
+      `SELECT account_id, role_arn, nickname, external_id
        FROM aws_accounts
-       WHERE status = 'active'
+       WHERE org_id = $1
+         AND status = 'active'
        ORDER BY connected_at DESC
-       LIMIT 1`
+       LIMIT 1`,
+      [organizationId]
     )
     if (result.rows.length === 0) return null
     return result.rows[0]
   }
 
-  private async assumeRole(roleArn: string) {
-    const sts = new STSClient({ region: 'us-east-1' })
+  private async assumeRole(roleArn: string, externalId: string) {
+    if (!externalId) {
+      throw new Error(`AWS_NOT_CONNECTED: aws_accounts row is missing external_id`)
+    }
+    const sts = new STSClient({
+      region: 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    })
     const command = new AssumeRoleCommand({
       RoleArn: roleArn,
       RoleSessionName: 'devcontrol-monitoring',
+      ExternalId: externalId,
       DurationSeconds: 3600,
     })
     const response = await sts.send(command)
@@ -100,7 +112,7 @@ export class CloudWatchService {
       const account = await this.getCredentialsForOrg(organizationId)
       if (!account) return null
 
-      const credentials = await this.assumeRole(account.role_arn)
+      const credentials = await this.assumeRole(account.role_arn, account.external_id)
       const client = this.getCloudWatchClient(credentials)
 
       // EC2 CPU utilization — proxy for uptime/health
@@ -181,7 +193,8 @@ export class CloudWatchService {
   async hasConnectedAccount(organizationId: string): Promise<boolean> {
     try {
       const result = await pool.query(
-        `SELECT id FROM aws_accounts WHERE status = 'active' LIMIT 1`
+        `SELECT id FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1`,
+        [organizationId]
       )
       return result.rows.length > 0
     } catch {

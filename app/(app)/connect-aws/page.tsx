@@ -1,32 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
-import awsAccountsService from '@/lib/services/aws-accounts.service'
+import awsAccountsService, { ConnectInitData } from '@/lib/services/aws-accounts.service'
 import { toast } from 'sonner'
-
-const TRUST_POLICY = JSON.stringify(
-  {
-    Version: '2012-10-17',
-    Statement: [
-      {
-        Effect: 'Allow',
-        Principal: {
-          AWS: 'arn:aws:iam::815931739526:root',
-        },
-        Action: 'sts:AssumeRole',
-      },
-    ],
-  },
-  null,
-  2
-)
 
 export default function ConnectAwsPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
 
+  const [initData, setInitData] = useState<ConnectInitData | null>(null)
+  const [initError, setInitError] = useState(false)
   const [roleArn, setRoleArn] = useState('')
   const [nickname, setNickname] = useState('')
   const [connecting, setConnecting] = useState(false)
@@ -34,6 +19,17 @@ export default function ConnectAwsPage() {
   const [copied, setCopied] = useState(false)
   const [roleArnFocused, setRoleArnFocused] = useState(false)
   const [nicknameFocused, setNicknameFocused] = useState(false)
+
+  // Fetch external_id and trust policy on mount so the user sees them
+  // before creating the IAM role in AWS Console.
+  useEffect(() => {
+    awsAccountsService.connectInit()
+      .then(setInitData)
+      .catch(() => {
+        setInitError(true)
+        toast.error('Could not start the connect flow. Please refresh and try again.')
+      })
+  }, [])
 
   function extractAccountId(arn: string): string {
     const match = arn.match(/arn:aws:iam::(\d{12}):role\//)
@@ -43,8 +39,13 @@ export default function ConnectAwsPage() {
   const arnValid = /^arn:aws:iam::\d{12}:role\/\S+$/.test(roleArn.trim())
   const extractedId = extractAccountId(roleArn.trim())
 
+  const trustPolicyStr = initData
+    ? JSON.stringify(initData.trustPolicy, null, 2)
+    : null
+
   function handleCopy() {
-    navigator.clipboard.writeText(TRUST_POLICY).then(() => {
+    if (!trustPolicyStr) return
+    navigator.clipboard.writeText(trustPolicyStr).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
@@ -52,6 +53,7 @@ export default function ConnectAwsPage() {
 
   const handleConnect = async () => {
     if (connecting || success) return
+    if (!initData) { toast.error('Connect session not ready — please wait a moment.'); return }
     if (!roleArn.trim()) { toast.error('Role ARN is required'); return }
     if (!arnValid) { toast.error('Role ARN must match format: arn:aws:iam::123456789012:role/RoleName'); return }
 
@@ -62,21 +64,22 @@ export default function ConnectAwsPage() {
       queryClient.invalidateQueries({ queryKey: ['aws-accounts'] })
       toast.success('AWS account connected successfully')
       setTimeout(() => router.push('/dashboard'), 1500)
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Failed to connect AWS account. Please check your Role ARN and try again.')
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        ?? 'Failed to connect AWS account. Please check your Role ARN and try again.'
+      toast.error(message)
     } finally {
       setConnecting(false)
     }
   }
 
   return (
-   <div className="min-h-screen bg-gray-50 font-sans px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 overflow-x-hidden">
+    <div className="min-h-screen bg-gray-50 font-sans px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 overflow-x-hidden">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-8 lg:gap-12 items-start">
 
           {/* LEFT */}
           <div>
-
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-2">
               Connect your AWS account
             </h1>
@@ -94,12 +97,24 @@ export default function ConnectAwsPage() {
                     <p className="text-sm text-slate-500 leading-relaxed mb-4">
                       In your AWS Console, create a new IAM role with the following trust policy. This gives DevControl read-only access to your account.
                     </p>
-                    <div className="bg-slate-900 rounded-xl p-4 mb-3 overflow-x-auto">
-                      <pre className="text-sm text-slate-200 font-mono whitespace-pre-wrap break-words leading-relaxed">{TRUST_POLICY}</pre>
-                    </div>
-                    <button onClick={handleCopy} className="border border-slate-200 rounded-lg px-3.5 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-900 hover:border-slate-300 cursor-pointer transition-colors mb-3 bg-transparent">
-                      {copied ? '✓ Copied!' : 'Copy policy →'}
-                    </button>
+
+                    {initError ? (
+                      <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                        Could not load your trust policy. Please refresh the page.
+                      </div>
+                    ) : !trustPolicyStr ? (
+                      <div className="bg-slate-900 rounded-xl p-4 mb-3 animate-pulse h-40" />
+                    ) : (
+                      <>
+                        <div className="bg-slate-900 rounded-xl p-4 mb-3 overflow-x-auto">
+                          <pre className="text-sm text-slate-200 font-mono whitespace-pre-wrap break-words leading-relaxed">{trustPolicyStr}</pre>
+                        </div>
+                        <button onClick={handleCopy} className="border border-slate-200 rounded-lg px-3.5 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-900 hover:border-slate-300 cursor-pointer transition-colors mb-3 bg-transparent">
+                          {copied ? '✓ Copied!' : 'Copy policy →'}
+                        </button>
+                      </>
+                    )}
+
                     <p className="text-xs text-slate-400">
                       Attach the <strong className="text-slate-500">ReadOnlyAccess</strong> managed policy to this role.
                     </p>
@@ -149,8 +164,8 @@ export default function ConnectAwsPage() {
                     </div>
                     <button
                       onClick={handleConnect}
-                      disabled={connecting || success}
-                      className={`w-full py-3.5 rounded-xl text-base font-semibold text-white transition-colors shadow-lg shadow-violet-500/25 mb-4 ${connecting || success ? 'bg-violet-400 cursor-default' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}
+                      disabled={connecting || success || !initData}
+                      className={`w-full py-3.5 rounded-xl text-base font-semibold text-white transition-colors shadow-lg shadow-violet-500/25 mb-4 ${connecting || success || !initData ? 'bg-violet-400 cursor-default' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}
                     >
                       {connecting ? 'Verifying connection...' : 'Connect Account →'}
                     </button>

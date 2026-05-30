@@ -261,7 +261,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('lambda', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Lambda functions...`);
         try {
-          const lambdaResources = await this.discoverLambdaFunctions(organizationId, awsClients.region);
+          const lambdaResources = await this.discoverLambdaFunctions(organizationId, awsClients.lambda, awsClients.region);
           for (const resource of lambdaResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -281,7 +281,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('ecs', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering ECS services...`);
         try {
-          const ecsResources = await this.discoverECSServices(organizationId, awsClients.region);
+          const ecsResources = await this.discoverECSServices(organizationId, awsClients.ecs, awsClients.region);
           for (const resource of ecsResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -301,7 +301,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('load-balancer', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Load Balancers...`);
         try {
-          const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.region);
+          const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.elb, awsClients.region);
           for (const resource of lbResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -341,7 +341,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('eks', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EKS clusters...`);
         try {
-          const eksResources = await this.discoverEKSClusters(organizationId, awsClients.region);
+          const eksResources = await this.discoverEKSClusters(organizationId, awsClients.eks, awsClients.region);
           for (const resource of eksResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -361,7 +361,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('dynamodb', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering DynamoDB tables...`);
         try {
-          const dynamoResources = await this.discoverDynamoDBTables(organizationId, awsClients.region);
+          const dynamoResources = await this.discoverDynamoDBTables(organizationId, awsClients.dynamodb, awsClients.region);
           for (const resource of dynamoResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -381,7 +381,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('cloudfront', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering CloudFront distributions...`);
         try {
-          const cfResources = await this.discoverCloudFrontDistributions(organizationId);
+          const cfResources = await this.discoverCloudFrontDistributions(organizationId, awsClients.cloudFront);
           for (const resource of cfResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -401,7 +401,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('api-gateway', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering API Gateway REST APIs...`);
         try {
-          const agResources = await this.discoverAPIGatewayAPIs(organizationId, awsClients.region);
+          const agResources = await this.discoverAPIGatewayAPIs(organizationId, awsClients.apiGateway, awsClients.region);
           for (const resource of agResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -421,7 +421,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('elasticache', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering ElastiCache clusters...`);
         try {
-          const ecResources = await this.discoverElastiCacheClusters(organizationId, awsClients.region);
+          const ecResources = await this.discoverElastiCacheClusters(organizationId, awsClients.elastiCache, awsClients.region);
           for (const resource of ecResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -441,7 +441,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('aurora', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Aurora clusters...`);
         try {
-          const auroraResources = await this.discoverAuroraClusters(organizationId, awsClients.region);
+          const auroraResources = await this.discoverAuroraClusters(organizationId, awsClients.rds, awsClients.region);
           for (const resource of auroraResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -461,7 +461,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('sqs', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering SQS queues...`);
         try {
-          const sqsResources = await this.discoverSQSQueues(organizationId, awsClients.region);
+          const sqsResources = await this.discoverSQSQueues(organizationId, awsClients.sqs, awsClients.region);
           for (const resource of sqsResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -481,7 +481,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('sns', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering SNS topics...`);
         try {
-          const snsResources = await this.discoverSNSTopics(organizationId, awsClients.region);
+          const snsResources = await this.discoverSNSTopics(organizationId, awsClients.sns, awsClients.region);
           for (const resource of snsResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -891,9 +891,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverLambdaFunctions(
     organizationId: string,
+    lambdaClient: LambdaClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const lambdaClient = new LambdaClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -964,9 +964,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverECSServices(
     organizationId: string,
+    ecsClient: ECSClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const ecsClient = new ECSClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1050,9 +1050,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverLoadBalancers(
     organizationId: string,
+    elbClient: ElasticLoadBalancingV2Client,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const elbClient = new ElasticLoadBalancingV2Client({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1171,9 +1171,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverEKSClusters(
     organizationId: string,
+    eksClient: EKSClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const eksClient = new EKSClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1233,9 +1233,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverDynamoDBTables(
     organizationId: string,
+    dynamoClient: DynamoDBClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const dynamoClient = new DynamoDBClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1296,9 +1296,9 @@ export class AWSResourceDiscoveryService {
    * CloudFront is a global service — uses us-east-1 endpoint
    */
   private async discoverCloudFrontDistributions(
-    organizationId: string
+    organizationId: string,
+    cfClient: CloudFrontClient
   ): Promise<CreateAWSResourceInput[]> {
-    const cfClient = new CloudFrontClient({ region: 'us-east-1' });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1351,9 +1351,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverAPIGatewayAPIs(
     organizationId: string,
+    agClient: APIGatewayClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const agClient = new APIGatewayClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1403,9 +1403,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverElastiCacheClusters(
     organizationId: string,
+    ecClient: ElastiCacheClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const ecClient = new ElastiCacheClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1465,9 +1465,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverAuroraClusters(
     organizationId: string,
+    rdsClient: RDSClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const rdsClient = new RDSClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1530,9 +1530,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverSQSQueues(
     organizationId: string,
+    sqsClient: SQSClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const sqsClient = new SQSClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {
@@ -1598,9 +1598,9 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverSNSTopics(
     organizationId: string,
+    snsClient: SNSClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const snsClient = new SNSClient({ region });
     const resources: CreateAWSResourceInput[] = [];
 
     try {

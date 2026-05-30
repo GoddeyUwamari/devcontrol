@@ -266,7 +266,11 @@ export default function DashboardPage() {
   const { data: awsAccounts } = useQuery({
     queryKey: ['aws-accounts'],
     queryFn: async () => {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/aws/accounts`, { credentials: 'include' })
+      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/aws/accounts`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include'
+      })
       const json = await res.json(); return json.data ?? []
     },
     staleTime: 30000,

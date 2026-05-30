@@ -116,6 +116,10 @@ router.post('/discover', authenticateToken, checkDiscoveryLimit, async (req: Req
     });
   } catch (err: any) {
     console.error('[Services/discover]', err);
+    if (err.message?.startsWith('AWS_NOT_CONNECTED:')) {
+      res.status(409).json({ error: 'aws_not_connected', message: 'Please connect your AWS account in Settings to run audits.' });
+      return;
+    }
     res.status(500).json({ success: false, error: err.message || 'Discovery failed — check AWS connection' });
   }
 });

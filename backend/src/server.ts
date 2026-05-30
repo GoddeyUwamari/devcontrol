@@ -168,17 +168,7 @@ const anomalyRepository = new AnomalyRepository(pool);
 const anomalyDetectionService = new AnomalyDetectionService(pool);
 const anomalyAIService = new AnomalyAIService();
 
-// Make authentication optional for testing
-// TODO: Re-enable in production
-// anomalyRouter.use(authenticateToken);
-
-// Set default org for demo when not authenticated
-anomalyRouter.use((req, res, next) => {
-  if (!req.headers.authorization && !(req as any).user) {
-    (req as any).user = { organizationId: 'a8ea4c8f-5f93-4073-b627-160c61aa064f' };
-  }
-  next();
-});
+anomalyRouter.use(authenticateToken);
 
 anomalyRouter.get('/', async (req, res) => {
   try {
