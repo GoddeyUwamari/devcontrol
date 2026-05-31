@@ -159,7 +159,7 @@ export default function DashboardPage() {
     previousCost: stats.monthlyAwsCost * 0.95,
     currentCost: stats.monthlyAwsCost,
     percentageIncrease: stats.costChange ?? 0,
-    topSpenders: generateCostBreakdownData().slice(0, 3).map(item => ({ service: item.name, cost: item.value, change: item.change })),
+    topSpenders: demoMode ? generateCostBreakdownData().slice(0, 3).map(item => ({ service: item.name, cost: item.value, change: item.change })) : [],
     timeRange: 'last 30 days',
   } : null
 
@@ -348,7 +348,7 @@ export default function DashboardPage() {
   const securityRows: { label: string; value: string | number; status: 'good' | 'warn' }[] = [
     { label: 'Critical Vulnerabilities', value: demoMode ? 0 : 0,                              status: 'good' },
     { label: 'Compliance Frameworks',    value: '4/4',                                          status: 'good' },
-    { label: 'Active Risks',             value: demoMode ? 3 : (statsLoading ? '—' : 3),       status: 'warn' },
+    { label: 'Active Risks',             value: demoMode ? 3 : '—',                             status: 'warn' },
   ]
 
   // Reusable inline component for intelligence score bars
@@ -420,7 +420,7 @@ export default function DashboardPage() {
         </div>
         {isAwsConnected && (
           <a href="/cost-optimization" className="inline-flex items-center gap-1.5 bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap shrink-0">
-            {isBillingSyncing ? 'Approve actions (3) →' : 'Review & Approve Savings (3) →'}
+            {isBillingSyncing ? `Approve actions (${topRecs.length}) →` : `Review & Approve Savings (${topRecs.length}) →`}
           </a>
         )}
       </div>
