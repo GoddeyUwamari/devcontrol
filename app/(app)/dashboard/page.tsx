@@ -185,7 +185,7 @@ export default function DashboardPage() {
     enabled: !demoMode && !salesDemoMode,
   })
 
-  const { data: costRecsRaw = [] } = useQuery<Array<{ id: string; title: string; estimated_savings?: number; status?: string }>>({
+  const { data: costRecsRaw = [] } = useQuery<Array<{ id: string; issue: string; potential_savings?: number; status?: string }>>({
     queryKey: ['cost-recommendations'],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -261,7 +261,7 @@ export default function DashboardPage() {
   const currentSpend    = demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0)
   const costChange      = demoMode ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0)
   const securityScore   = demoMode ? 87 : (riskScoreData?.current.score ?? null)
-  const wasteAmount     = demoMode ? 1922 : Math.round(costRecsRaw.reduce((sum, r) => sum + (r.estimated_savings ?? 0), 0))
+  const wasteAmount     = demoMode ? 1922 : Math.round(costRecsRaw.reduce((sum, r) => sum + (r.potential_savings ?? 0), 0))
   const efficiencyRatio = demoMode
     ? Math.round(((12847 - wasteAmount) / 12847) * 100)
     : currentSpend > 0 ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100) : null
@@ -331,8 +331,8 @@ export default function DashboardPage() {
         { label: 'Enable S3 Intelligent-Tiering',     savings: '$340/mo', effort: 'Medium', time: '~10 min' },
       ]
     : costRecsRaw.slice(0, 5).map(r => ({
-        label:   r.title,
-        savings: r.estimated_savings != null ? `$${Math.round(r.estimated_savings).toLocaleString()}/mo` : '',
+        label:   r.issue || 'Optimization',
+        savings: r.potential_savings != null ? `$${Math.round(r.potential_savings).toLocaleString()}/mo` : '',
         effort:  'Low' as const,
         time:    '~5 min',
       }))
@@ -347,7 +347,7 @@ export default function DashboardPage() {
 
   const securityRows: { label: string; value: string | number; status: 'good' | 'warn' }[] = [
     { label: 'Critical Vulnerabilities', value: demoMode ? 0 : 0,                              status: 'good' },
-    { label: 'Compliance Frameworks',    value: '4/4',                                          status: 'good' },
+    { label: 'Compliance Frameworks',    value: isDemoActive ? '4/4' : '—',                    status: 'good' },
     { label: 'Active Risks',             value: demoMode ? 3 : '—',                             status: 'warn' },
   ]
 
@@ -503,14 +503,15 @@ export default function DashboardPage() {
                 {(securityScore === null || securityScore === 0) && !isDemoActive ? (
                   <>
                     <div className="text-base font-semibold text-gray-900 leading-none mb-2">Scanning...</div>
-                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
                   </>
                 ) : (
                   <>
                     <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
                       {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-gray-400 font-normal">/100</span>
                     </div>
-                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                    {securityScore !== null && securityScore >= 85 && (
+                      <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                    )}
                   </>
                 )}
               </div>
@@ -592,7 +593,9 @@ export default function DashboardPage() {
                       {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-gray-400 font-normal">/100</span>
                     </div>
                   )}
-                  <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                  {securityScore !== null && securityScore >= 85 && (
+                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                  )}
                   <div className="flex items-center gap-1.5 mt-2">
                     <SecurityDeltaIcon size={12} style={{ color: securityDeltaColor }} />
                     <span className="text-xs font-semibold" style={{ color: securityDeltaColor }}>
@@ -636,7 +639,9 @@ export default function DashboardPage() {
                   <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
                     {securityScore ?? '—'}<span className="text-base text-gray-400 font-normal">/100</span>
                   </div>
-                  <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                  {securityScore !== null && securityScore >= 85 && (
+                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                  )}
                 </div>
                 <div className="bg-white rounded-xl p-4 border border-gray-100">
                   <IntelKPICard />
@@ -757,9 +762,12 @@ export default function DashboardPage() {
             <div className="bg-white rounded-2xl p-8 border border-slate-100">
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Security Posture</p>
               <div className="text-center py-3 border-b border-slate-100 mb-3.5">
-                <div className="text-5xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? '87'}<span className="text-base text-slate-400 font-normal"> (preliminary)</span></div>
+                <div className="text-5xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}<span className="text-base text-slate-400 font-normal"> (preliminary)</span></div>
                 <div className="text-[11px] text-slate-400 mt-1">Scan in progress</div>
-                <div className="text-xs text-emerald-600 font-semibold mt-0.5">Elite Tier</div>
+                {securityScore !== null && securityScore >= 85
+                  ? <div className="text-xs text-emerald-600 font-semibold mt-0.5">Elite Tier</div>
+                  : <div className="text-xs text-slate-400 font-normal mt-0.5">Scan in progress</div>
+                }
               </div>
               {securityRows.map(({ label, value, status }) => (
                 <div key={label} className="flex items-center justify-between py-2 border-b border-slate-100">
@@ -770,13 +778,17 @@ export default function DashboardPage() {
               <div className="py-2 border-b border-slate-100">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[12px] text-slate-400">Compliance Status</span>
-                  <span className="text-xs font-bold text-emerald-600">3 / 3 passing</span>
+                  {isDemoActive
+                    ? <span className="text-xs font-bold text-emerald-600">3 / 3 passing</span>
+                    : <span className="text-xs font-medium text-slate-400">Run compliance scan</span>}
                 </div>
-                <div className="flex gap-1.5">
-                  {['SOC2', 'CIS AWS', 'GDPR'].map((f) => (
-                    <span key={f} className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">{f}</span>
-                  ))}
-                </div>
+                {isDemoActive && (
+                  <div className="flex gap-1.5">
+                    {['SOC2', 'CIS AWS', 'GDPR'].map((f) => (
+                      <span key={f} className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">{f}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               <a href="/security" className="flex items-center justify-center gap-1.5 mt-3.5 text-[13px] font-semibold text-violet-700 no-underline">View Security Report →</a>
             </div>
@@ -806,7 +818,7 @@ export default function DashboardPage() {
             <div className="lg:col-span-2 bg-white rounded-xl p-4 border border-gray-100">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-4">Security Posture</p>
               <div className="text-center py-5 border-b border-slate-100 mb-5">
-                <div className="text-6xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? '87'}</div>
+                <div className="text-6xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}</div>
                 <div className="text-sm font-semibold mt-2" style={{ color: securityScore !== null && securityScore >= 80 ? '#059669' : securityScore !== null && securityScore >= 60 ? '#D97706' : '#94A3B8' }}>
                   {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : securityScore !== null ? 'Needs attention' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
                 </div>
@@ -820,13 +832,17 @@ export default function DashboardPage() {
               <div className="py-3 border-b border-slate-100">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[12px] text-slate-400">Compliance Status</span>
-                  <span className="text-xs font-bold text-emerald-600">3 / 3 passing</span>
+                  {isDemoActive
+                    ? <span className="text-xs font-bold text-emerald-600">3 / 3 passing</span>
+                    : <span className="text-xs font-medium text-slate-400">Run compliance scan</span>}
                 </div>
-                <div className="flex gap-1.5 flex-wrap">
-                  {['SOC2', 'CIS AWS', 'GDPR'].map((framework) => (
-                    <span key={framework} className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">{framework}</span>
-                  ))}
-                </div>
+                {isDemoActive && (
+                  <div className="flex gap-1.5 flex-wrap">
+                    {['SOC2', 'CIS AWS', 'GDPR'].map((framework) => (
+                      <span key={framework} className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">{framework}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               <a href="/security" className="flex items-center justify-center gap-1.5 mt-5 text-[13px] font-semibold text-violet-700 no-underline">
                 View Security Report <ArrowRight size={13} />
