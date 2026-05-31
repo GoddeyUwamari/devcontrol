@@ -88,18 +88,31 @@ router.post('/sync', async (req: Request, res: Response) => {
 // Must be registered before GET /accounts to avoid shadowing.
 router.get('/accounts/connect-init', async (req: Request, res: Response) => {
   const orgId = req.user!.organizationId
-  const externalId = randomBytes(24).toString('base64url') // 32 URL-safe chars
 
   try {
-    await pool.query(
-      `INSERT INTO aws_connect_sessions (org_id, external_id, expires_at)
-       VALUES ($1, $2, NOW() + INTERVAL '1 hour')
-       ON CONFLICT (org_id) DO UPDATE
-         SET external_id = EXCLUDED.external_id,
-             created_at  = NOW(),
-             expires_at  = NOW() + INTERVAL '1 hour'`,
-      [orgId, externalId]
+    // Reuse existing session if valid — don't generate a new ExternalId on every page load,
+    // which would force the user to update their AWS trust policy each time.
+    const existing = await pool.query(
+      `SELECT external_id FROM aws_connect_sessions
+       WHERE org_id = $1 AND expires_at > NOW()`,
+      [orgId]
     )
+
+    const externalId = existing.rows.length > 0
+      ? existing.rows[0].external_id
+      : randomBytes(24).toString('base64url')
+
+    if (existing.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO aws_connect_sessions (org_id, external_id, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '1 hour')
+         ON CONFLICT (org_id) DO UPDATE
+           SET external_id = EXCLUDED.external_id,
+               created_at  = NOW(),
+               expires_at  = NOW() + INTERVAL '1 hour'`,
+        [orgId, externalId]
+      )
+    }
 
     return res.json({
       success: true,
