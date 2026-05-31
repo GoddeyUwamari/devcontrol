@@ -727,7 +727,7 @@ export default function DashboardPage() {
         isBillingSyncing ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
             {/* AI Advisor */}
-            <div className="bg-white rounded-2xl p-8 border border-slate-100">
+            {topRecs.length > 0 ? <div className="bg-white rounded-2xl p-8 border border-slate-100">
               <div className="flex items-start justify-between mb-1">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-2">AI Advisor</p>
@@ -735,7 +735,7 @@ export default function DashboardPage() {
                 </div>
                 <a href="/cost-optimization" className="text-xs font-semibold text-violet-700 no-underline whitespace-nowrap">All →</a>
               </div>
-              <p className="text-xs text-gray-700 mb-4 leading-relaxed">These 3 changes reduce AWS waste immediately · zero downtime · fully reversible · takes &lt; 15 min</p>
+              {topRecs.length > 0 && <p className="text-xs text-gray-700 mb-4 leading-relaxed">These {topRecs.length} changes reduce AWS waste immediately · zero downtime · fully reversible · takes &lt; 15 min</p>}
               {topRecs.map((rec, i) => (
                 <div key={i} className="flex items-start gap-3 py-3 border-b border-slate-100">
                   <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-violet-700" /></div>
@@ -758,9 +758,9 @@ export default function DashboardPage() {
                   <div className="text-[13px] font-semibold text-gray-900 mb-0.5">Estimated impact</div>
                   <div className="text-xs text-gray-700 font-medium">Savings estimate available once billing sync completes</div>
                 </div>
-                <a href="/cost-optimization" className="bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline whitespace-nowrap ml-4">Approve actions (3) →</a>
+                <a href="/cost-optimization" className="bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline whitespace-nowrap ml-4">Approve actions ({topRecs.length}) →</a>
               </div>
-            </div>
+            </div> : <div className="bg-white rounded-2xl p-8 border border-slate-100 flex items-center justify-center"><p className="text-sm text-gray-400">No recommendations yet — scan in progress</p></div>}
 
             {/* Security Posture */}
             <div className="bg-white rounded-2xl p-8 border border-slate-100">
@@ -933,13 +933,13 @@ export default function DashboardPage() {
               <a href="/cost-optimization" className="flex items-center gap-3 px-4 py-3.5 bg-violet-700 border border-violet-800 rounded-xl mb-2 no-underline">
                 <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0"><CheckCircle size={14} className="text-white" /></div>
                 <div>
-                  <div className="text-sm font-bold text-white mb-0.5">Approve actions (3)</div>
+                  <div className="text-sm font-bold text-white mb-0.5">Approve actions ({topRecs.length})</div>
                   <div className="text-[11px] text-violet-200 font-medium">Zero downtime · fully reversible · &lt; 5 min</div>
                 </div>
                 <span className="ml-auto text-sm text-white font-bold">→</span>
               </a>
               {[
-                { href: '/security',    iconBg: '#F0FDF4', iconColor: '#059669', title: 'Explore security report',   sub: '87 score · 3 anomalies'          },
+                { href: '/security',    iconBg: '#F0FDF4', iconColor: '#059669', title: 'Explore security report',   sub: securityScore !== null ? `${securityScore} score` : 'Run security scan'          },
                 { href: '/deployments', iconBg: '#F8FAFC', iconColor: '#475569', title: 'Connect CI/CD pipeline',     sub: 'Track deployments · velocity'   },
                 { href: '/costs',       iconBg: '#FFFBEB', iconColor: '#D97706', title: 'Monitor billing sync',       sub: 'Cost data within 24–48h'         },
               ].map(({ href, iconBg, iconColor, title, sub }) => (
@@ -1052,7 +1052,7 @@ export default function DashboardPage() {
                   <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
                     <div className="text-[11px] font-semibold text-slate-500 mb-0.5">Total potential</div>
                     {showSavingsDollars
-                      ? <div className="text-lg font-bold text-emerald-600 tracking-tight">$1,270/mo</div>
+                      ? <div className="text-lg font-bold text-emerald-600 tracking-tight">${wasteAmount > 0 ? `${wasteAmount.toLocaleString()}/mo` : 'Calculating...'}</div>
                       : <div className="text-[13px] text-gray-400 italic">Calculated once billing syncs</div>}
                   </div>
                 </div>
