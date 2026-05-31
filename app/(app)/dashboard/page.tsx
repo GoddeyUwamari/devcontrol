@@ -307,8 +307,8 @@ export default function DashboardPage() {
   const efficiencyDeltaColor = efficiencyRatio !== null ? efficiencyRatio >= 90 ? '#059669' : efficiencyRatio >= 75 ? '#D97706' : '#DC2626' : '#D97706'
   const EfficiencyDeltaIcon  = efficiencyRatio !== null ? efficiencyRatio >= 90 ? TrendingUp : efficiencyRatio >= 75 ? Minus : TrendingDown : Minus
 
-  const costScore           = isDemoActive ? 82 : (efficiencyRatio ?? 0)
-  const securityScore_health = isDemoActive ? 87 : (securityScore ?? 0)
+  const costScore           = isDemoActive ? 82 : (efficiencyRatio ?? null)
+  const securityScore_health = isDemoActive ? 87 : (securityScore ?? null)
   const reliabilityScore    = isDemoActive ? 91 : systemHealth?.status === 'operational' ? 95 : systemHealth?.status === 'degraded' ? 72 : stats ? null : 0
   const systemStatusLabel   = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'healthy'
   const systemResponseTime  = isDemoActive ? '145ms' : '—'
@@ -494,8 +494,10 @@ export default function DashboardPage() {
               {/* Savings Actions */}
               <div className="bg-white rounded-xl p-4 border border-gray-100">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Savings Actions</p>
-                <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">3</div>
-                <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">{topRecs.length}</div>
+                {topRecs.length > 0 && (
+                  <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                )}
               </div>
               {/* Security Posture */}
               <div className="bg-white rounded-xl p-4 border border-gray-100">
@@ -610,7 +612,9 @@ export default function DashboardPage() {
                   <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">
                     {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
                   </div>
-                  <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                  {topRecs.length > 0 && (
+                    <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                  )}
                   <div className="flex items-center gap-1.5 mt-2">
                     <TrendingUp size={14} className="text-emerald-600" />
                     <span className="text-[13px] font-semibold text-emerald-600">${wasteAmount.toLocaleString()}/month in savings opportunities</span>
@@ -911,7 +915,7 @@ export default function DashboardPage() {
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1.5">Engineering Health</p>
-                  <span className="text-xl font-bold text-gray-900">Elite</span>
+                  <span className="text-xl font-bold text-gray-900">{isDemoActive ? 'Elite' : '—'}</span>
                 </div>
                 <a href="/app/dora-metrics" className="text-[11px] font-semibold text-violet-700 no-underline flex items-center gap-1">Full report <ArrowRight size={12} /></a>
               </div>
@@ -991,13 +995,13 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1.5">Engineering Health</p>
                   <div className="flex items-center gap-2">
-                    <span className="text-xl font-semibold text-gray-900">Elite</span>
-                    <span className="text-[11px] font-bold bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full">Top 10%</span>
+                    <span className="text-xl font-semibold text-gray-900">{isDemoActive ? 'Elite' : '—'}</span>
+                    {isDemoActive && <span className="text-[11px] font-bold bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full">Top 10%</span>}
                   </div>
                 </div>
                 <a href="/app/dora-metrics" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">Full report <ArrowRight size={12} /></a>
               </div>
-              <p className="text-xs text-gray-500 mb-3 leading-relaxed">Elite performance across all 4 DORA metrics</p>
+              <p className="text-xs text-gray-500 mb-3 leading-relaxed">{isDemoActive ? 'Elite performance across all 4 DORA metrics' : 'Connect CI/CD pipeline to see DORA metrics'}</p>
               {doraRows.map(({ label, value, tier, showTier }) => (
                 <div key={label} className="flex items-center justify-between py-2.5 border-b border-gray-50">
                   <span className="text-[13px] text-gray-500">{label}</span>
