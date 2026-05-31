@@ -47,7 +47,7 @@ import { deploymentsService } from '@/lib/services/deployments.service'
 import type { PlatformDashboardStats, Deployment, DeploymentStatus } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
-import { subDays, format, formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { DemoModeBanner } from '@/components/demo/DemoModeBanner'
@@ -69,20 +69,6 @@ const DEMO_DEPLOYMENTS: Deployment[] = [
   { id: 'demo-deploy-4', serviceId: 'svc-notification-service', serviceName: 'notification-service', environment: 'production', awsRegion: 'eu-west-1', status: 'running' as DeploymentStatus, costEstimate: 156.30, deployedBy: 'emma.davis@company.com', deployedAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(), createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(), updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString() },
   { id: 'demo-deploy-5', serviceId: 'svc-analytics-worker', serviceName: 'analytics-worker', environment: 'production', awsRegion: 'us-east-1', status: 'running' as DeploymentStatus, costEstimate: 312.80, deployedBy: 'david.kim@company.com', deployedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString() },
 ]
-
-function generateCostTrendData(days: number) {
-  const data = []
-  for (let i = days - 1; i >= 0; i--) {
-    const date = subDays(new Date(), i)
-    const compute = Math.random() * 300 + 200
-    const storage = Math.random() * 150 + 100
-    const database = Math.random() * 200 + 150
-    const network = Math.random() * 80 + 50
-    const other = Math.random() * 70 + 30
-    data.push({ date: format(date, 'yyyy-MM-dd'), compute, storage, database, network, other, total: compute + storage + database + network + other, forecast: i < -7 })
-  }
-  return data
-}
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -199,6 +185,23 @@ export default function DashboardPage() {
     enabled: !demoMode && !salesDemoMode,
   })
 
+  const { data: costRecsRaw = [] } = useQuery<Array<{ id: string; title: string; estimated_savings?: number; status?: string }>>({
+    queryKey: ['cost-recommendations'],
+    queryFn: async () => {
+      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-recommendations`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
+      })
+      if (!res.ok) return []
+      const json = await res.json()
+      return json.data ?? []
+    },
+    staleTime: 60_000, refetchInterval: 300_000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !demoMode && !salesDemoMode,
+  })
+
   useEffect(() => {
     if (!socket) return
     const WS_DEBOUNCE_MS = 5_000
@@ -258,7 +261,7 @@ export default function DashboardPage() {
   const currentSpend    = demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0)
   const costChange      = demoMode ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0)
   const securityScore   = demoMode ? 87 : (riskScoreData?.current.score ?? null)
-  const wasteAmount     = 1922
+  const wasteAmount     = demoMode ? 1922 : Math.round(costRecsRaw.reduce((sum, r) => sum + (r.estimated_savings ?? 0), 0))
   const efficiencyRatio = demoMode
     ? Math.round(((12847 - wasteAmount) / 12847) * 100)
     : currentSpend > 0 ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100) : null
@@ -306,7 +309,7 @@ export default function DashboardPage() {
 
   const costScore           = isDemoActive ? 82 : (efficiencyRatio ?? 0)
   const securityScore_health = isDemoActive ? 87 : (securityScore ?? 0)
-  const reliabilityScore    = isDemoActive ? 91 : systemHealth?.status === 'operational' ? 95 : systemHealth?.status === 'degraded' ? 72 : stats ? Math.min(100, 100 - 0) : 0
+  const reliabilityScore    = isDemoActive ? 91 : systemHealth?.status === 'operational' ? 95 : systemHealth?.status === 'degraded' ? 72 : stats ? null : 0
   const systemStatusLabel   = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'healthy'
   const systemResponseTime  = isDemoActive ? '145ms' : '—'
   const systemAlertCount    = isDemoActive ? 2 : 0
@@ -319,19 +322,27 @@ export default function DashboardPage() {
   }
   const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.healthy
 
-  const cloudHealthScore = Math.round((costScore + securityScore_health + reliabilityScore) / 3) || null
-  const topRecs = [
-    { label: 'Right-size 3 EC2 instances',        savings: '$720/mo', effort: 'Low',    time: '~15 min' },
-    { label: 'Delete unattached EBS volumes',     savings: '$210/mo', effort: 'Low',    time: '~5 min'  },
-    { label: 'Enable S3 Intelligent-Tiering',     savings: '$340/mo', effort: 'Medium', time: '~10 min' },
-  ]
+  const _healthComponents = ([costScore, securityScore_health, reliabilityScore] as (number | null)[]).filter((s): s is number => s !== null)
+  const cloudHealthScore = _healthComponents.length > 0 ? Math.round(_healthComponents.reduce((a, b) => a + b, 0) / _healthComponents.length) : null
+  const topRecs = isDemoActive
+    ? [
+        { label: 'Right-size 3 EC2 instances',        savings: '$720/mo', effort: 'Low',    time: '~15 min' },
+        { label: 'Delete unattached EBS volumes',     savings: '$210/mo', effort: 'Low',    time: '~5 min'  },
+        { label: 'Enable S3 Intelligent-Tiering',     savings: '$340/mo', effort: 'Medium', time: '~10 min' },
+      ]
+    : costRecsRaw.slice(0, 5).map(r => ({
+        label:   r.title,
+        savings: r.estimated_savings != null ? `$${Math.round(r.estimated_savings).toLocaleString()}/mo` : '',
+        effort:  'Low' as const,
+        time:    '~5 min',
+      }))
   const criticalAlerts = demoMode ? DEMO_DASHBOARD_STATS.criticalAlerts : 0
 
   const doraRows: { label: string; value: string; tier: 'Elite' | 'High'; showTier?: boolean }[] = [
-    { label: 'Deployment Frequency', value: demoMode ? '4.2/day' : (stats?.activeDeployments ? `${stats.activeDeployments}/week` : '—'), tier: 'Elite', showTier: demoMode || !!(stats?.activeDeployments) },
-    { label: 'Lead Time for Changes', value: '2.4 hours',  tier: 'Elite' },
-    { label: 'Change Failure Rate',   value: '8.3%',       tier: 'High'  },
-    { label: 'Mean Time to Recovery', value: '36 min',     tier: 'Elite' },
+    { label: 'Deployment Frequency',  value: demoMode ? '4.2/day' : (stats?.activeDeployments ? `${stats.activeDeployments}/week` : '—'), tier: 'Elite', showTier: demoMode || !!(stats?.activeDeployments) },
+    { label: 'Lead Time for Changes', value: isDemoActive ? '2.4 hours' : '—', tier: 'Elite', showTier: isDemoActive },
+    { label: 'Change Failure Rate',   value: isDemoActive ? '8.3%' : '—',      tier: 'High',  showTier: isDemoActive },
+    { label: 'Mean Time to Recovery', value: isDemoActive ? '36 min' : '—',    tier: 'Elite', showTier: isDemoActive },
   ]
 
   const securityRows: { label: string; value: string | number; status: 'good' | 'warn' }[] = [
@@ -438,7 +449,11 @@ export default function DashboardPage() {
         <div className="bg-violet-50 border-2 border-violet-700 rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
           <div>
             <div className="text-[10px] font-bold text-violet-700 tracking-widest uppercase mb-1">Recommended Action</div>
-            <div className="text-base font-semibold text-indigo-950 mb-2">Save $800–$2,400/month by approving 3 optimizations</div>
+            <div className="text-base font-semibold text-indigo-950 mb-2">
+              {isDemoActive
+                ? 'Save $800–$2,400/month by approving 3 optimizations'
+                : `Save $${wasteAmount.toLocaleString()}/month by approving ${topRecs.length} optimization${topRecs.length !== 1 ? 's' : ''}`}
+            </div>
             <div className="flex gap-1.5 flex-wrap">
               {['Zero downtime', 'Fully reversible', 'Takes < 5 min'].map((pill) => (
                 <span key={pill} className="bg-white border border-gray-200 rounded-full px-2.5 py-0.5 text-[11px] text-gray-700">{pill}</span>
@@ -462,7 +477,7 @@ export default function DashboardPage() {
                 <span className="text-[13px] text-gray-700 font-medium">
                   Billing sync in progress (24–48h) · Preliminary savings already identified:
                 </span>
-                <span className="text-emerald-600 font-semibold text-[13px]">$800–$2,400/month</span>
+                <span className="text-emerald-600 font-semibold text-[13px]">{wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}/month` : 'calculating...'}</span>
               </div>
               <span className="text-gray-700 text-[11px] font-medium">Infrastructure + Security ready</span>
             </div>
