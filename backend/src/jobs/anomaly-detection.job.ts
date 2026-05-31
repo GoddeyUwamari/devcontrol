@@ -62,7 +62,7 @@ export class AnomalyDetectionJob {
       for (const org of orgsResult.rows) {
         try {
           await this.pool.query(
-            "SELECT set_config('app.current_organization_id', $1, false)",
+            "SELECT set_config('app.current_organization_id', $1, true)",
             [org.id]
           );
 

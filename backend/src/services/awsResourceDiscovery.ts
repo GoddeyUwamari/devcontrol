@@ -161,7 +161,7 @@ export class AWSResourceDiscoveryService {
 
     try {
       await client.query(
-        "SELECT set_config('app.current_organization_id', $1, false)",
+        "SELECT set_config('app.current_organization_id', $1, true)",
         [organizationId]
       );
 
