@@ -760,7 +760,23 @@ export default function DashboardPage() {
                 </div>
                 <a href="/cost-optimization" className="bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline whitespace-nowrap ml-4">Approve actions ({topRecs.length}) →</a>
               </div>
-            </div> : <div className="bg-white rounded-2xl p-8 border border-slate-100 flex items-center justify-center"><p className="text-sm text-gray-400">No recommendations yet — scan in progress</p></div>}
+            </div> : <div className="bg-white rounded-2xl p-8 border border-slate-100">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-2">AI Advisor</p>
+                  <p className="text-base font-bold text-gray-900">Infrastructure analysis in progress</p>
+                </div>
+                <a href="/cost-optimization" className="text-xs font-semibold text-violet-700 no-underline whitespace-nowrap">All →</a>
+              </div>
+              <div className="flex flex-col items-center justify-center py-8 gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
+                  <Sparkles size={18} className="text-violet-400" />
+                </div>
+                <p className="text-sm font-semibold text-gray-900 text-center">Scanning your AWS environment</p>
+                <p className="text-xs text-gray-500 text-center leading-relaxed max-w-[220px]">Cost optimization opportunities will appear here once billing sync completes in 24–48h</p>
+                <a href="/infrastructure" className="mt-1 text-[13px] font-semibold text-violet-700 no-underline">View infrastructure →</a>
+              </div>
+            </div>}
 
             {/* Security Posture */}
             <div className="bg-white rounded-2xl p-8 border border-slate-100">
