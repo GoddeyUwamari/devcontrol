@@ -224,10 +224,10 @@ export class SystemIntelligenceService {
       // existing risk_score_service
       // or security scan results
       const secResult = await pool.query(
-        `SELECT score, computed_at
+        `SELECT score, created_at
          FROM security_scores
-         WHERE organization_id = $1
-         ORDER BY computed_at DESC
+         WHERE org_id = $1
+         ORDER BY created_at DESC
          LIMIT 1`,
         [organizationId]
       )
