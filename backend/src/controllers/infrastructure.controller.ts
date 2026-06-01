@@ -232,7 +232,8 @@ export class InfrastructureController {
       // Fetch monthly costs from AWS Cost Explorer
       let awsCosts;
       try {
-        awsCosts = await awsCostService.fetchMonthlyCosts();
+        const organizationId = (req as any).user?.organizationId;
+        awsCosts = await awsCostService.fetchMonthlyCosts(organizationId);
       } catch (error: any) {
         // Check if it's a Cost Explorer not enabled error
         if (error.message && error.message.includes('not enabled')) {

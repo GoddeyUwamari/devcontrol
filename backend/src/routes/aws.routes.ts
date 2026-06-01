@@ -44,7 +44,8 @@ function mapStsError(err: any): string {
 // GET /api/aws/costs/monthly
 router.get('/costs/monthly', async (req: Request, res: Response) => {
   try {
-    const costs = await awsCostService.fetchMonthlyCosts()
+    const orgId = req.user!.organizationId
+    const costs = await awsCostService.fetchMonthlyCosts(orgId)
     res.json(costs)
   } catch (error) {
     console.error('Error fetching monthly costs:', error)
