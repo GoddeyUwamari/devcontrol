@@ -536,7 +536,7 @@ Provide:
 3. DORA_SUMMARY: One sentence highlighting biggest improvement or concern
 4. RECOMMENDATION: One actionable recommendation with estimated savings if applicable
 
-Keep it concise and actionable.`;
+Keep it concise and actionable. Do not use markdown formatting, asterisks, bullet points, or bold syntax in your response.`;
 
       console.log('[AI Insights] Generating weekly summary with Claude...');
       const message = await this.anthropic.messages.create({
