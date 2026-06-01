@@ -824,14 +824,33 @@ export default function DashboardPage() {
                 </div>
                 <a href="/costs" className="text-slate-400"><MoreHorizontal size={16} /></a>
               </div>
-              <CostBreakdownBarList
-                data={generateCostBreakdownData()}
-                totalCost={demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : generateCostBreakdownData().reduce((sum, item) => sum + item.value, 0)}
-                isLoading={!demoMode && statsLoading}
-                dateRange={costDateRange}
-                onDateRangeChange={setCostDateRange}
-                onExport={() => { toast.success('Exporting cost data...') }}
-              />
+              {isDemoActive ? (
+                <CostBreakdownBarList
+                  data={generateCostBreakdownData()}
+                  totalCost={DEMO_DASHBOARD_STATS.monthlyAwsCost}
+                  isLoading={false}
+                  dateRange={costDateRange}
+                  onDateRangeChange={setCostDateRange}
+                  onExport={() => { toast.success('Exporting cost data...') }}
+                />
+              ) : hasBillingData ? (
+                <CostBreakdownBarList
+                  data={[]}
+                  totalCost={currentSpend}
+                  isLoading={statsLoading}
+                  dateRange={costDateRange}
+                  onDateRangeChange={setCostDateRange}
+                  onExport={() => { toast.success('Exporting cost data...') }}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
+                    <DollarSign size={18} className="text-slate-300" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-900">Cost data syncing</p>
+                  <p className="text-xs text-gray-500 text-center leading-relaxed max-w-[220px]">Billing data available within 24–48h of connecting your AWS account</p>
+                </div>
+              )}
             </div>
 
             {/* Security Posture — 2fr */}
