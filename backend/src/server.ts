@@ -41,6 +41,7 @@ dotenv.config();
 validateEnv();
 
 const app = express();
+app.set('trust proxy', 1); // Trust Nginx reverse proxy for correct client IP in rate limiting
 const PORT = process.env.PORT || 8080;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
