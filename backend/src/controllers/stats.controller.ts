@@ -1,57 +1,69 @@
 import { Request, Response } from 'express';
-import { ServicesRepository } from '../repositories/services.repository';
 import { DeploymentsRepository } from '../repositories/deployments.repository';
-import { InfrastructureRepository } from '../repositories/infrastructure.repository';
 import { ApiResponse, PlatformStats } from '../types';
+import { pool } from '../config/database';
 
-const servicesRepo = new ServicesRepository();
 const deploymentsRepo = new DeploymentsRepository();
-const infrastructureRepo = new InfrastructureRepository();
 
 export class StatsController {
   async getDashboardStats(req: Request, res: Response): Promise<void> {
     try {
-      // Fetch all stats in parallel
+      const organizationId = (req as any).user?.organizationId;
+
+      if (!organizationId) {
+        const stats: PlatformStats = {
+          total_services: 0,
+          active_deployments: 0,
+          total_infrastructure_cost: 0,
+          free_tier_remaining: 25,
+          recent_deployments: [],
+          service_health: { healthy: 0, unhealthy: 0 },
+        };
+        const response: ApiResponse<PlatformStats> = { success: true, data: stats };
+        res.json(response);
+        return;
+      }
+
       const [
-        servicesData,
+        resourceCountResult,
+        costResult,
+        healthyCountResult,
         activeDeployments,
-        totalCost,
         recentDeployments,
-        activeServices,
       ] = await Promise.all([
-        servicesRepo.findAll({ limit: 1000 }),
+        pool.query(
+          'SELECT COUNT(*) as total FROM aws_resources WHERE organization_id = $1',
+          [organizationId]
+        ),
+        pool.query(
+          'SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1',
+          [organizationId]
+        ),
+        pool.query(
+          "SELECT COUNT(*) as healthy FROM aws_resources WHERE organization_id = $1 AND status IN ('running', 'active', 'available')",
+          [organizationId]
+        ),
         deploymentsRepo.countByStatus('running'),
-        infrastructureRepo.getTotalMonthlyCost(),
         deploymentsRepo.findRecentByLimit(5),
-        servicesRepo.findAll({ status: 'active', limit: 1000 }),
       ]);
 
-      // Calculate free tier remaining (AWS free tier is ~$300/year = ~$25/month)
-      const freeTierMonthly = 25.00;
-      const freeTierRemaining = Math.max(0, freeTierMonthly - totalCost);
-
-      // Calculate service health
-      const totalServices = servicesData.total;
-      const healthyServices = activeServices.services.length;
-      const unhealthyServices = totalServices - healthyServices;
+      const totalResources = parseInt(resourceCountResult.rows[0].total, 10);
+      const totalCost = parseFloat(costResult.rows[0].total);
+      const healthyResources = parseInt(healthyCountResult.rows[0].healthy, 10);
 
       const stats: PlatformStats = {
-        total_services: totalServices,
+        total_services: totalResources,
         active_deployments: activeDeployments,
         total_infrastructure_cost: totalCost,
-        free_tier_remaining: freeTierRemaining,
+        free_tier_remaining: Math.max(0, 25 - totalCost),
         recent_deployments: recentDeployments,
         service_health: {
-          healthy: healthyServices,
-          unhealthy: unhealthyServices,
+          healthy: healthyResources,
+          unhealthy: totalResources - healthyResources,
         },
       };
 
-      const response: ApiResponse<PlatformStats> = {
-        success: true,
-        data: stats,
-      };
-
+      const response: ApiResponse<PlatformStats> = { success: true, data: stats };
       res.json(response);
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
