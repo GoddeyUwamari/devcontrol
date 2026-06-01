@@ -19,6 +19,8 @@ import {
   ListBucketsCommand,
   GetBucketLocationCommand,
 } from '@aws-sdk/client-s3'
+import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
+import { Pool } from 'pg'
 import { pool } from '../config/database'
 
 interface ResourceCost {
@@ -51,7 +53,7 @@ class AWSCostService {
   private s3Client: S3Client
   private enabled: boolean
 
-  constructor() {
+  constructor(private dbPool?: Pool) {
     this.enabled = this.checkAWSCredentials()
 
     if (this.enabled) {
@@ -76,6 +78,47 @@ class AWSCostService {
     }
   }
 
+  /**
+   * Create an AWSCostService instance scoped to a specific org via STS AssumeRole.
+   * Queries aws_accounts for the org's role_arn / external_id / region, then assumes
+   * the role and initialises all AWS clients with the temporary credentials.
+   */
+  static async createForOrg(organizationId: string, dbPool: Pool): Promise<AWSCostService> {
+    const result = await dbPool.query(
+      "SELECT role_arn, external_id, region FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1",
+      [organizationId]
+    )
+
+    if (result.rows.length === 0) {
+      throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`)
+    }
+
+    const { role_arn: roleArn, external_id: externalId, region } = result.rows[0]
+
+    const stsClient = new STSClient({ region: 'us-east-1' })
+    const assumed = await stsClient.send(new AssumeRoleCommand({
+      RoleArn: roleArn,
+      RoleSessionName: 'DevControlCostSession',
+      ExternalId: externalId,
+      DurationSeconds: 3600,
+    }))
+
+    const credentials = {
+      accessKeyId: assumed.Credentials!.AccessKeyId!,
+      secretAccessKey: assumed.Credentials!.SecretAccessKey!,
+      sessionToken: assumed.Credentials!.SessionToken!,
+    }
+
+    const instance = new AWSCostService(dbPool)
+    instance.costExplorerClient = new CostExplorerClient({ region, credentials })
+    instance.ec2Client = new EC2Client({ region, credentials })
+    instance.rdsClient = new RDSClient({ region, credentials })
+    instance.s3Client = new S3Client({ region, credentials })
+    instance.enabled = true
+
+    return instance
+  }
+
   private checkAWSCredentials(): boolean {
     return !!(
       process.env.AWS_ACCESS_KEY_ID &&
@@ -85,9 +128,16 @@ class AWSCostService {
   }
 
   /**
-   * Fetch monthly costs from AWS Cost Explorer
+   * Fetch monthly costs from AWS Cost Explorer.
+   * If organizationId is supplied, assumes the org's IAM role via STS before calling
+   * Cost Explorer; otherwise falls back to platform-level env-var credentials.
    */
-  async fetchMonthlyCosts(): Promise<MonthlyCost> {
+  async fetchMonthlyCosts(organizationId?: string): Promise<MonthlyCost> {
+    if (organizationId) {
+      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
+      return orgService.fetchMonthlyCosts()
+    }
+
     if (!this.enabled) {
       console.log('AWS credentials not configured, returning mock data')
       return {
@@ -361,4 +411,6 @@ class AWSCostService {
   }
 }
 
+export { AWSCostService }
+// @deprecated — use AWSCostService.createForOrg(organizationId, pool) for per-org credential isolation
 export default new AWSCostService()
