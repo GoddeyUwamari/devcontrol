@@ -56,7 +56,8 @@ jobs:
 
       - name: Build backend
         run: cd backend && npm run build
-
+      - name: Copy static assets to dist
+        run: cp -r backend/src/templates backend/dist/
       - name: Copy dist to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
