@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { CheckCircle2, Zap, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { createCheckoutSession, getSubscription, openCustomerPortal } from '@/lib/services/stripe.service'
+import { trackLeadQualified } from '@/lib/gtag'
 import Link from 'next/link'
 
 const plans = [
@@ -268,6 +269,7 @@ export default function UpgradePage() {
                     ) : (
                       <button
                         onClick={() => {
+                          trackLeadQualified(plan.name)
                           if (isCurrent) return
                           if (isDowngrade) { handleDowngrade(); return }
                           handleUpgrade(plan)

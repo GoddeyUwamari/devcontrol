@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle2, ArrowRight, Receipt } from 'lucide-react';
 import { getSubscription } from '@/lib/services/stripe.service';
 import { Subscription } from '@/types/billing';
+import { trackPurchase, trackLeadConverted } from '@/lib/gtag';
 
 function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
@@ -40,6 +41,8 @@ function CheckoutSuccessContent() {
         }
         if (subscription) {
           setSubscription(subscription)
+          trackPurchase(0, subscription.tier || 'pro_monthly')
+          trackLeadConverted()
         }
       } catch (error) {
         console.error('Error fetching subscription:', error)

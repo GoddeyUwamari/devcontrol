@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import awsAccountsService, { ConnectInitData } from '@/lib/services/aws-accounts.service'
 import { toast } from 'sonner'
+import { trackLeadQualified } from '@/lib/gtag'
 
 export default function ConnectAwsPage() {
   const router = useRouter()
@@ -52,6 +53,7 @@ export default function ConnectAwsPage() {
   }
 
   const handleConnect = async () => {
+    trackLeadQualified('aws_connect')
     if (connecting || success) return
     if (!initData) { toast.error('Connect session not ready — please wait a moment.'); return }
     if (!roleArn.trim()) { toast.error('Role ARN is required'); return }
