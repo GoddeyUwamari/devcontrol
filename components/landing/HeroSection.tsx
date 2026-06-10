@@ -43,15 +43,12 @@ export function HeroSection() {
 
         {/* Headline */}
         <h1 className="font-bold leading-tight" style={{ fontSize: isMobile ? '1.6rem' : isTablet ? '2.8rem' : 'clamp(2.5rem, 6vw, 3.4rem)', marginBottom: '20px' }}>
-          <span style={{ color: '#7c3aed', display: 'block', marginBottom: '8px' }}>Your AWS Is Leaking Money.</span>
-          <div style={{ marginTop: isMobile ? '-8px' : '-18px' }}>
-            <span style={{ color: '#1e1b4b', fontSize: isMobile ? '1.2rem' : isTablet ? '2rem' : 'clamp(2rem, 5vw, 2.6rem)' }}>DevControl Shows You Exactly Where.</span>
-          </div>
-        </h1>
+  <span style={{ color: '#7c3aed', display: 'block' }}>Full AWS Visibility for Multi-Tenant SaaS.</span>
+</h1>
 
         {/* Subheadline */}
         <p className="leading-relaxed" style={{ fontSize: isMobile ? '1.1rem' : '1.4rem', color: '#1f2937', maxWidth: '680px', margin: '0 auto 16px' }}>
-         See exactly where your cloud spend is leaking, what risks exist, and what's slowing your team down — in one unified view.
+        See exactly what each tenant costs, identify idle resources and risks, and cut waste — in minutes. Read-only. Zero risk.
         </p>
 
         {/* ROI line */}
