@@ -43,7 +43,7 @@ export function HeroSection() {
 
         {/* Headline */}
         <h1 className="font-bold leading-tight" style={{ fontSize: isMobile ? '1.6rem' : isTablet ? '2.8rem' : 'clamp(2.5rem, 6vw, 3.4rem)', marginBottom: '20px' }}>
-  <span style={{ color: '#7c3aed', display: 'block' }}>Full AWS Visibility for Multi-Tenant SaaS.</span>
+  <span style={{ color: '#7c3aed', display: 'block' }}>Full AWS Visibility for Multi-Tenant SaaS</span>
 </h1>
 
         {/* Subheadline */}
