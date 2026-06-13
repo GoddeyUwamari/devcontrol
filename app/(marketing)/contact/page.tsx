@@ -78,7 +78,7 @@ export default function ContactPage() {
             lineHeight: 1.75, maxWidth: '520px',
             margin: '0 auto',
           }}>
-            Book a 30-minute demo or send us a message.
+            Book a 15-minute AWS audit or send us a message.
             Our team typically responds within 2 hours on business days.
           </p>
         </div>
@@ -107,7 +107,7 @@ export default function ContactPage() {
                   fontSize: isMobile ? 'clamp(1.4rem,4vw,1.8rem)' : '1.8rem',
                   fontWeight: 700, color: '#1e1b4b', marginBottom: '12px', letterSpacing: '-0.02em',
                 }}>
-                  See DevControl in 30 Minutes
+                  See DevControl in 15 Minutes
                 </h2>
                 <p style={{ fontSize: isMobile ? '1.05rem' : '1.05rem', color: '#1f2937', lineHeight: 1.75 }}>
                   We&apos;ll walk you through a live demo tailored to your infrastructure,
@@ -155,7 +155,7 @@ export default function ContactPage() {
                   Pick a time that works for you — no back-and-forth email needed.
                 </p>
                 <a
-                  href="https://calendly.com/uwamarigoddey/30min"
+                  href="https://calendly.com/uwamarigoddey/15min"
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{
@@ -168,7 +168,7 @@ export default function ContactPage() {
                   }}
                 >
                   <Calendar size={16} />
-                  Book a 30-Min Demo
+                  Book a 15-Min AWS Audit
                 </a>
                 <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '12px' }}>
                   Usually available within 24 hours
