@@ -43,21 +43,21 @@ export function HeroSection() {
 
         {/* Headline */}
         <h1 className="font-bold leading-tight" style={{ fontSize: isMobile ? '1.6rem' : isTablet ? '2.8rem' : 'clamp(2.5rem, 6vw, 3.4rem)', marginBottom: '20px' }}>
-  <span style={{ color: '#7c3aed', display: 'block' }}>Full AWS Visibility for Multi-Tenant SaaS</span>
+  <span style={{ color: '#7c3aed', display: 'block' }}>Know Exactly Where Your AWS Money Goes</span>
 </h1>
 
         {/* Subheadline */}
         <p className="leading-relaxed" style={{ fontSize: isMobile ? '1.1rem' : '1.4rem', color: '#1f2937', maxWidth: '680px', margin: '0 auto 16px' }}>
-        See exactly what each tenant costs, identify idle resources and risks, and cut waste — in minutes. Read-only. Zero risk.
+        Real-time cost visibility for multi-tenant SaaS teams. See tenant-level spend, uncover infrastructure waste, and reduce cloud costs without changing your code.
         </p>
 
         {/* ROI line */}
         <p style={{ fontSize: isMobile ? '0.85rem' : '1.1rem', color: '#1f2937', marginBottom: '36px' }}>
-  Teams identify <strong style={{ color: '#059669' }}>$800–$8,000+/month</strong> in waste
+  Find hidden AWS waste in <strong style={{ color: '#059669' }}>15 minutes</strong>
   {' · '}
-  First insight in <strong style={{ color: '#059669' }}>15 min</strong>
+  <strong style={{ color: '#059669' }}>$800–$8,000+/month</strong> potential savings
   {' · '}
-  Read-only, zero risk
+  Read-only access
 </p>
 
         {/* CTA Buttons */}
@@ -123,7 +123,7 @@ export function HeroSection() {
               e.currentTarget.style.color = '#7c3aed'
             }}
           >
-            Scan My AWS for Waste
+            Find My AWS Waste
             <ArrowRight size={18} />
           </a>
         </div>
@@ -157,10 +157,11 @@ export function HeroSection() {
           marginTop: '16px',
           marginBottom: '0',
         }}>
-          <span>🔐 AES-256 Encrypted</span>
-          <span>🏅 SOC 2 In Progress</span>
+          <span>🔐 Read-only IAM Access</span>
           <span>☁️ AWS Cloud Partner</span>
-          <span>🇪🇺 GDPR Friendly</span>
+          <span>🔒 AES-256 Encrypted</span>
+          <span>🏅 SOC 2 In Progress</span>
+          <span>🇪🇺 GDPR Ready</span>
         </div>
 
         {/* Micro-preview strip */}
