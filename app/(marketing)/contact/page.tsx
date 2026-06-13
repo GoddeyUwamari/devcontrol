@@ -118,7 +118,7 @@ export default function ContactPage() {
               {/* What to expect */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '36px' }}>
                 {[
-                  { icon: Clock, title: '30-minute call', desc: 'No pressure, no sales pitch — just a live walkthrough of your specific AWS setup' },
+                  { icon: Clock, title: '15-minute call', desc: 'No pressure, no sales pitch — just a live walkthrough of your specific AWS setup' },
                   { icon: Zap, title: 'Live savings analysis', desc: 'We\'ll show you estimated savings based on your actual AWS spend and infrastructure' },
                   { icon: Users, title: 'Meet the team', desc: 'Talk directly with the engineers who built DevControl — not a sales rep' },
                   { icon: CheckCircle, title: 'Custom deployment plan', desc: 'Leave with a clear plan for getting your team set up in under 15 minutes' },
