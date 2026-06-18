@@ -13,7 +13,7 @@ export function HeroSection() {
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
         
         {/* Headline */}
-<h1 className="font-bold leading-tight text-3xl sm:text-4xl lg:text-5xl mt-8 mb-5 text-center">
+<h1 className="font-bold leading-tight text-3xl sm:text-4xl lg:text-5xl mt-6 mb-5 text-center">
   <span className="text-violet-600 block">
     Know Exactly Where Your AWS Money Is Going
   </span>
