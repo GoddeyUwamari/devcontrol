@@ -15,14 +15,13 @@ export function HeroSection() {
         {/* Headline */}
         <h1 className="font-bold leading-tight text-3xl sm:text-4xl lg:text-5xl mb-5 text-center">
           <span className="text-violet-600 block">
-            Know Exactly Where Your AWS Money Goes
+            Know Exactly Where Your AWS Money Is Going
           </span>
         </h1>
 
         {/* Subheadline */}
         <p className="text-lg sm:text-xl text-slate-700 leading-relaxed max-w-[680px] mx-auto mb-4 text-center">
-          Real-time cost visibility, infrastructure health, and risk detection for multi-tenant SaaS teams. 
-          See tenant-level spend, uncover waste, and identify security risks — without changing your code.
+          Real-time cost visibility, infrastructure health, and risk detection for multi-tenant SaaS teams. See tenant-level spend, uncover hidden waste, and reduce cloud costs — without changing a single line of code.
         </p>
 
         {/* ROI line */}
