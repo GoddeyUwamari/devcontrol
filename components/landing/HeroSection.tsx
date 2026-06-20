@@ -45,18 +45,18 @@ export function HeroSection() {
         <div className="mb-6 flex flex-col justify-center gap-4 sm:flex-row">
           <a
             href="/tour"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-6 py-3.5 font-semibold text-white shadow-lg shadow-violet-600/35 transition-all hover:-translate-y-0.5 hover:opacity-90 sm:w-auto"
+            className="group inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-6 py-3.5 font-semibold text-white shadow-lg shadow-violet-600/35 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-violet-700 hover:shadow-xl motion-reduce:transform-none motion-reduce:transition-none sm:w-auto"
           >
-            <Play className="h-4 w-4" />
+            <Play className="h-4 w-4 transition-transform duration-300 group-hover:scale-110" />
             Take a Product Tour
           </a>
 
           <a
             href="/register"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border-2 border-violet-600 px-8 py-3.5 font-bold text-violet-600 transition-all hover:border-violet-700 hover:text-violet-700 sm:w-auto"
+            className="group inline-flex w-full items-center justify-center gap-2 rounded-lg border-2 border-violet-600 px-8 py-3.5 font-bold text-violet-600 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-violet-700 hover:bg-violet-50 hover:text-violet-700 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:w-auto"
           >
             Find My AWS Waste
-            <ArrowRight size={18} />
+            <ArrowRight size={18} className="transition-transform duration-300 group-hover:translate-x-1" />
           </a>
         </div>
 
