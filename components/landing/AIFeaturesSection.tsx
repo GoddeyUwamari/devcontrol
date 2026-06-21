@@ -76,7 +76,7 @@ export function AIFeaturesSection() {
 
   return (
     <section style={{ width: '100%', padding: isMobile ? '40px 0' : isTablet ? '56px 0' : '64px 0', background: '#f9fafb' }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 24px' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 24px' }}>
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: isMobile ? '32px' : '56px' }}>
