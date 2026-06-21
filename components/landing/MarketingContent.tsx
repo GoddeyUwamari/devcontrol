@@ -5,11 +5,9 @@ import { HeroSection } from '@/components/landing/HeroSection'
 import { TrustedBySection } from '@/components/landing/TrustedBySection';
 import { FeatureShowcase } from '@/components/landing/FeatureShowcase';
 import { AIFeaturesSection } from '@/components/landing/AIFeaturesSection';
-import { SocialProofSection } from '@/components/landing/SocialProofSection';
+import { PersonaSection } from '@/components/landing/PersonaSection';
 import { PricingPreview } from '@/components/landing/PricingPreview';
 import { CTASection } from '@/components/landing/CTASection';
-import { StatsBar } from './StatsBar';
-import { TestimonialsSection } from './TestimonialsSection';
 import {
   Cloud,
   GitBranch,
@@ -103,7 +101,6 @@ export function MarketingContent() {
       <HeroSection />
 
       {/* Stats Bar */}
-      <StatsBar />
 
       {/* Social Proof / Logo Ticker */}
       <TrustedBySection />
@@ -114,6 +111,8 @@ export function MarketingContent() {
       {/* AI Features */}
       <AIFeaturesSection />
 
+      {/* Persona Tabs */}
+      <PersonaSection />
 
       {/* Integrations */}
       <section id="integrations" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#f8f8f8' }}>
@@ -261,10 +260,8 @@ export function MarketingContent() {
       </section>
 
       {/* Social Proof / Stats */}
-      <SocialProofSection />
 
       {/* Testimonials */}
-      <TestimonialsSection />
 
       {/* Pricing */}
       <PricingPreview />
