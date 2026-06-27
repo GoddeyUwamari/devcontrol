@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import { HeroSection } from '@/components/landing/HeroSection'
 import { TrustedBySection } from '@/components/landing/TrustedBySection';
-import { FeatureShowcase } from '@/components/landing/FeatureShowcase';
 import { AIFeaturesSection } from '@/components/landing/AIFeaturesSection';
 import { PersonaSection } from '@/components/landing/PersonaSection';
 import { FounderSection } from './FounderSection';
+import { FeaturePanels } from '@/components/landing/FeaturePanels';
 import { PricingPreview } from '@/components/landing/PricingPreview';
 import { CTASection } from '@/components/landing/CTASection';
 import {
@@ -107,9 +107,9 @@ export function MarketingContent() {
       <TrustedBySection />
 
       {/* Platform Features */}
-      <FeatureShowcase />
 
       {/* AI Features */}
+      <FeaturePanels />
       <AIFeaturesSection />
 
       {/* Persona Tabs */}
