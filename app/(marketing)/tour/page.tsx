@@ -406,9 +406,9 @@ export default function TourPage() {
       }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: '6px',
-          background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
+          background: '#7c3aed', border: 'none',
           borderRadius: '100px', padding: '6px 16px',
-          fontSize: '0.78rem', fontWeight: 600, color: '#7c3aed',
+          fontSize: '0.78rem', fontWeight: 600, color: '#ffffff',
           marginBottom: '24px', letterSpacing: '0.04em', textTransform: 'uppercase',
         }}>
           ⚡ Interactive Product Tour · 3 minutes · No signup needed
