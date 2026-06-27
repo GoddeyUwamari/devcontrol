@@ -11,13 +11,6 @@ const trustBadges = [
   { label: 'GDPR Ready', icon: Globe },
 ]
 
-const deliverables = [
-  'Top cost leaks by service',
-  'Risk exposure summary',
-  'Service-level health',
-  'Ranked fixes with dollar impact',
-]
-
 export function HeroSection() {
   return (
     <section className="relative overflow-hidden pt-8 pb-16 sm:pt-10">
@@ -79,22 +72,6 @@ export function HeroSection() {
               {label}
             </span>
           ))}
-        </div>
-
-        <div className="mt-8 w-full rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
-          <p className="mb-4 text-center text-xs font-bold uppercase tracking-wider text-violet-600">
-            What you get in 15 minutes
-          </p>
-          <div className="flex flex-wrap justify-center gap-3">
-            {deliverables.map((item) => (
-              <span
-                key={item}
-                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                {item}
-              </span>
-            ))}
-          </div>
         </div>
 
       </div>
