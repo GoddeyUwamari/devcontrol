@@ -1,11 +1,12 @@
 'use client'
 
-import { Play, ArrowRight, Lock, Cloud, Shield, BadgeCheck, Globe } from 'lucide-react'
+import { Play, ArrowRight, Lock, Cloud, Shield, BadgeCheck, Globe, ShoppingBag } from 'lucide-react'
 import { AnimatedBackground } from './AnimatedBackground'
 
 const trustBadges = [
   { label: 'Read-only IAM', icon: Lock },
   { label: 'AWS Partner', icon: Cloud },
+  { label: 'AWS Marketplace', icon: ShoppingBag },
   { label: 'AES-256 Encryption', icon: Shield },
   { label: 'SOC 2 In Progress', icon: BadgeCheck },
   { label: 'GDPR Ready', icon: Globe },
@@ -63,9 +64,9 @@ export function HeroSection() {
         </div>
 
         <div className="flex flex-wrap justify-center gap-3 text-xs font-medium text-slate-700 sm:text-sm">
-          {trustBadges.map(({ label, icon: Icon }) => (
+          {trustBadges.map(({ label, icon: Icon }, i) => (
             <span
-              key={label}
+              key={`${label}-${i}`}
               className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm"
             >
               <Icon className="h-4 w-4 text-violet-600" />
