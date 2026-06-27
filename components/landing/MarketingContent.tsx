@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { HeroSection } from '@/components/landing/HeroSection'
-import { TrustedBySection } from '@/components/landing/TrustedBySection';
+import { DashboardPreview } from '@/components/landing/DashboardPreview';
 import { AIFeaturesSection } from '@/components/landing/AIFeaturesSection';
 import { PersonaSection } from '@/components/landing/PersonaSection';
 import { FounderSection } from './FounderSection';
@@ -75,20 +75,10 @@ const securityItems = [
   },
 ];
 
-
 const inner: React.CSSProperties = {
   maxWidth: '1400px',
   margin: '0 auto',
   padding: '0 32px',
-};
-
-const eyebrow: React.CSSProperties = {
-  color: '#7c3aed',
-  fontSize: '11px',
-  letterSpacing: '0.12em',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  marginBottom: '12px',
 };
 
 export function MarketingContent() {
@@ -101,12 +91,8 @@ export function MarketingContent() {
       {/* Hero */}
       <HeroSection />
 
-      {/* Stats Bar */}
-
       {/* Social Proof / Logo Ticker */}
-      <TrustedBySection />
-
-      {/* Platform Features */}
+      <DashboardPreview />
 
       {/* AI Features */}
       <FeaturePanels />
@@ -120,7 +106,24 @@ export function MarketingContent() {
       <section id="integrations" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#f8f8f8' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
           <div style={{ textAlign: 'center', maxWidth: '600px', margin: isMobile ? '0 auto 28px' : '0 auto 40px' }}>
-            <p style={eyebrow}>Integrations</p>
+
+            {/* Eyebrow pill — solid violet matching page standard */}
+            <div style={{ marginBottom: '16px' }}>
+              <span style={{
+                display: 'inline-block',
+                backgroundColor: '#7c3aed',
+                color: '#ffffff',
+                padding: '6px 14px',
+                borderRadius: '999px',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+              }}>
+                Integrations
+              </span>
+            </div>
+
             <h2
               className="font-extrabold"
               style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
@@ -188,16 +191,30 @@ export function MarketingContent() {
       </section>
 
       {/* Security */}
-      <section id="security" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#fff' }}>
+      <section id="security" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#f9f7ff' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
           <div style={{ textAlign: 'center', maxWidth: '600px', margin: isMobile ? '0 auto 32px' : '0 auto 48px' }}>
-            <div
-              className="inline-flex items-center gap-2 rounded-full font-semibold"
-              style={{ color: '#7c3aed', backgroundColor: '#ede9fe', padding: '6px 16px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '16px' }}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              Security &amp; Trust
+
+            {/* Eyebrow pill — solid violet matching page standard */}
+            <div style={{ marginBottom: '16px' }}>
+              <span
+                className="inline-flex items-center gap-2"
+                style={{
+                  backgroundColor: '#7c3aed',
+                  color: '#ffffff',
+                  padding: '6px 14px',
+                  borderRadius: '999px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                <ShieldCheck size={12} />
+                Security &amp; Trust
+              </span>
             </div>
+
             <h2
               className="font-extrabold"
               style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
@@ -237,9 +254,10 @@ export function MarketingContent() {
                     el.style.borderColor = '#e5e7eb';
                   }}
                 >
+                  {/* Solid violet icon background with white icon */}
                   <div
                     style={{
-                      backgroundColor: 'rgba(124,58,237,0.12)',
+                      backgroundColor: '#7c3aed',
                       borderRadius: '14px',
                       padding: '12px',
                       display: 'inline-flex',
@@ -248,7 +266,7 @@ export function MarketingContent() {
                       flexShrink: 0,
                     }}
                   >
-                    <Icon style={{ color: '#7c3aed' }} size={22} />
+                    <Icon style={{ color: '#ffffff' }} size={22} />
                   </div>
                   <div>
                     <h3 className="font-bold" style={{ fontSize: isMobile ? '1rem' : '1.2rem', color: '#1e1b4b', marginBottom: '8px', lineHeight: 1.3 }}>{item.title}</h3>
@@ -260,10 +278,6 @@ export function MarketingContent() {
           </div>
         </div>
       </section>
-
-      {/* Social Proof / Stats */}
-
-      {/* Testimonials */}
 
       {/* Pricing */}
       <PricingPreview />

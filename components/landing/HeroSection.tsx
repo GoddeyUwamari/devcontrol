@@ -2,7 +2,6 @@
 
 import { Play, ArrowRight, Lock, Cloud, Shield, BadgeCheck, Globe } from 'lucide-react'
 import { AnimatedBackground } from './AnimatedBackground'
-import { DashboardPreview } from './DashboardPreview'
 
 const trustBadges = [
   { label: 'Read-only IAM', icon: Lock },
@@ -98,9 +97,6 @@ export function HeroSection() {
           </div>
         </div>
 
-        <div className="mt-6 w-full">
-          <DashboardPreview />
-        </div>
       </div>
     </section>
   )

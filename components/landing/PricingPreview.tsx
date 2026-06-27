@@ -89,15 +89,6 @@ const inner: React.CSSProperties = {
   padding: '0 32px',
 }
 
-const eyebrow: React.CSSProperties = {
-  color: '#7c3aed',
-  fontSize: '11px',
-  letterSpacing: '0.12em',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  marginBottom: '12px',
-}
-
 export function PricingPreview() {
   const width = useWindowWidth()
   const isMobile = width > 0 && width < 640
@@ -107,7 +98,24 @@ export function PricingPreview() {
     <section id="pricing" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#fff' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
         <div style={{ textAlign: 'center', maxWidth: '600px', margin: isMobile ? '0 auto 32px' : '0 auto 48px' }}>
-          <p style={eyebrow}>Pricing</p>
+
+          {/* Eyebrow pill — solid violet matching page standard */}
+          <div style={{ marginBottom: '16px' }}>
+            <span style={{
+              display: 'inline-block',
+              backgroundColor: '#7c3aed',
+              color: '#ffffff',
+              padding: '6px 14px',
+              borderRadius: '999px',
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+            }}>
+              Pricing
+            </span>
+          </div>
+
           <h2 className="font-extrabold" style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
             Start free. Scale as you grow.
           </h2>
@@ -157,7 +165,7 @@ export function PricingPreview() {
                       padding: '3px 10px',
                       borderRadius: '99px'
                     }}>
-                      Teams identify $800–$8,000+/mo in waste
+                      Potential savings: $800–$8,000+/mo
                     </span>
                   </div>
                 )}
