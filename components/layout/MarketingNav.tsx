@@ -122,7 +122,7 @@ function MegaMenuItem({ item, onClose }: { item: NavItem; onClose?: () => void }
     <>
       <div
         style={{
-          backgroundColor: 'rgba(124,58,237,0.08)',
+          backgroundColor: '#7c3aed',
           borderRadius: '10px',
           padding: '8px',
           display: 'flex',
@@ -132,7 +132,7 @@ function MegaMenuItem({ item, onClose }: { item: NavItem; onClose?: () => void }
           marginTop: '2px',
         }}
       >
-        <Icon style={{ width: '16px', height: '16px', color: '#7c3aed' }} />
+        <Icon style={{ width: '16px', height: '16px', color: '#ffffff' }} />
       </div>
       <div style={{ minWidth: 0, wordBreak: 'break-word' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
