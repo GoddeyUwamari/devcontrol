@@ -96,7 +96,7 @@ export function AIFeaturesSection() {
             }}
           >
             <Sparkles size={14} />
-            AI-POWERED INTELLIGENCE
+            ALWAYS ON
           </div>
 
           <h2
@@ -104,45 +104,12 @@ export function AIFeaturesSection() {
               fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2.2rem, 4vw, 2.8rem)',
               fontWeight: 700,
               color: '#1e1b4b',
-              marginBottom: isMobile ? '12px' : '16px',
+              marginBottom: 0,
               lineHeight: 1.2,
             }}
           >
-            Your AI Cloud Analyst — Working 24/7
+            What DevControl Does While You Sleep
           </h2>
-
-          <p
-            style={{
-              fontSize: isMobile ? '1rem' : '1.15rem',
-              color: '#1f2937',
-              maxWidth: '680px',
-              margin: '0 auto',
-              lineHeight: 1.7,
-            }}
-          >
-            DevControl continuously analyzes your infrastructure, explains what&apos;s happening,
-            and tells you exactly what to do next — without dashboards, spreadsheets, or manual investigation.
-          </p>
-        </div>
-
-        {/* Proof Strip */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: isMobile ? '12px' : '32px',
-            flexWrap: 'wrap',
-            marginBottom: isMobile ? '40px' : '64px',
-            fontSize: isMobile ? '0.85rem' : '0.95rem',
-            fontWeight: 500,
-            color: '#1f2937',
-          }}
-        >
-          <span>💰 Identify savings automatically</span>
-          <span>⚠️ Detect risks before incidents</span>
-          <span>⚡ Get answers in seconds</span>
         </div>
 
         {/* Grid */}
@@ -184,14 +151,14 @@ export function AIFeaturesSection() {
 
                 <div
                   style={{
-                    background: 'rgba(124,58,237,0.15)',
+                    background: '#7c3aed',
                     borderRadius: '12px',
                     padding: '10px',
                     display: 'inline-flex',
                     marginBottom: '16px',
                   }}
                 >
-                  <Icon size={20} color="#7c3aed" />
+                  <Icon size={20} color="#ffffff" />
                 </div>
 
                 <h3

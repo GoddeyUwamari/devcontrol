@@ -20,8 +20,7 @@ export function FeaturePanels() {
         </div>
 
         {/* Two-column panel */}
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-
+        <div className="grid lg:grid-cols-[65%_35%] gap-12 lg:gap-16 items-center">
           {/* Left — Image */}
           <div>
             <Image
@@ -34,7 +33,7 @@ export function FeaturePanels() {
           </div>
 
           {/* Right — Text */}
-          <div>
+           <div className="pr-4">
             <p className="text-slate-600 text-lg leading-relaxed">
               DevControl continuously monitors your AWS environment, surfaces cost anomalies before they become budget surprises, and delivers plain-English explanations of what&apos;s happening — without dashboards, spreadsheets, or manual investigation.
             </p>
