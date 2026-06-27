@@ -199,9 +199,9 @@ export default function ScaleupsPage() {
             <div>
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
-                borderRadius: '100px', padding: '6px 16px',
-                fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                background: '#7c3aed', border: 'none',
+                borderRadius: '999px', padding: '6px 14px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#ffffff',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.1em',
               }}>
                 ✦ Signature Feature
@@ -275,10 +275,10 @@ export default function ScaleupsPage() {
               >
                 <div style={{
                   width: '52px', height: '52px', borderRadius: '14px',
-                  background: 'rgba(124,58,237,0.14)', flexShrink: 0,
+                  background: '#7c3aed', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Icon size={24} style={{ color: '#7c3aed' }} />
+                  <Icon size={24} style={{ color: '#ffffff' }} />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>

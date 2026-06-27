@@ -54,9 +54,9 @@ export default function DoraMetricsPage() {
 
           <div style={{
             display: 'inline-flex', alignItems: 'center',
-            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
-            borderRadius: '100px', padding: '6px 16px',
-            fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+            background: '#7c3aed', border: 'none',
+            borderRadius: '999px', padding: '6px 14px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#ffffff',
             marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
           }}>
             Platform · DORA Metrics
@@ -203,11 +203,11 @@ export default function DoraMetricsPage() {
               >
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
-                  background: 'rgba(124,58,237,0.14)',
+                  background: '#7c3aed',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '20px',
                 }}>
-                  <Icon size={22} style={{ color: '#7c3aed' }} />
+                  <Icon size={22} style={{ color: '#ffffff' }} />
                 </div>
                 <h3 style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '10px' }}>
                   {title}
@@ -361,9 +361,9 @@ export default function DoraMetricsPage() {
               borderRadius: '20px', padding: isMobile ? '24px 20px' : '40px',
             }}>
               <div style={{
-                display: 'inline-flex', background: 'rgba(124,58,237,0.14)',
-                borderRadius: '100px', padding: '6px 16px',
-                fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+                display: 'inline-flex', background: '#7c3aed',
+                borderRadius: '999px', padding: '6px 14px',
+                fontSize: '0.75rem', fontWeight: 700, color: '#ffffff',
                 marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.08em',
               }}>
                 For CTOs & Engineering Leaders

@@ -57,9 +57,9 @@ export default function ContactPage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
-            borderRadius: '100px', padding: '6px 16px',
-            fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+            background: '#7c3aed', border: 'none',
+            borderRadius: '999px', padding: '6px 14px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#ffffff',
             marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
           }}>
             Get in Touch
@@ -126,10 +126,10 @@ export default function ContactPage() {
                   <div key={title} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                     <div style={{
                       width: '40px', height: '40px', borderRadius: '10px',
-                      background: 'rgba(124,58,237,0.14)', flexShrink: 0,
+                      background: '#7c3aed', flexShrink: 0,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
-                      <Icon size={18} style={{ color: '#7c3aed' }} />
+                      <Icon size={18} style={{ color: '#ffffff' }} />
                     </div>
                     <div>
                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{title}</p>

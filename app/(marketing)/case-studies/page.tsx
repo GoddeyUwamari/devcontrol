@@ -117,9 +117,9 @@ export default function CaseStudiesPage() {
       }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: '6px',
-          background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
-          borderRadius: '100px', padding: '6px 16px',
-          fontSize: '0.78rem', fontWeight: 600, color: '#7c3aed',
+          background: '#7c3aed', border: 'none',
+          borderRadius: '999px', padding: '6px 14px',
+          fontSize: '0.78rem', fontWeight: 600, color: '#ffffff',
           marginBottom: '24px', letterSpacing: '0.04em', textTransform: 'uppercase' as const,
         }}>
           Customer Stories

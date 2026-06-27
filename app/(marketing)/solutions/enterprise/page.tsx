@@ -205,10 +205,10 @@ export default function EnterprisePage() {
               >
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
-                  background: 'rgba(124,58,237,0.14)', flexShrink: 0,
+                  background: '#7c3aed', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Icon size={22} style={{ color: '#7c3aed' }} />
+                  <Icon size={22} style={{ color: '#ffffff' }} />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
@@ -373,9 +373,9 @@ export default function EnterprisePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center',
-            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.2)',
-            borderRadius: '100px', padding: '6px 16px',
-            fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
+            background: '#7c3aed', border: 'none',
+            borderRadius: '999px', padding: '6px 14px',
+            fontSize: '0.75rem', fontWeight: 700, color: '#ffffff',
             marginBottom: '24px', letterSpacing: '0.12em', textTransform: 'uppercase',
           }}>
             Ready to Scale with DevControl

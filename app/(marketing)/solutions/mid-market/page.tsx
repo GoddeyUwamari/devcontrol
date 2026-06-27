@@ -99,11 +99,11 @@ function FeatureCard({ icon: Icon, title, desc }: { icon: React.ElementType; tit
     >
       <div style={{
         width: '44px', height: '44px', borderRadius: '10px',
-        background: 'rgba(124,58,237,0.14)',
+        background: '#7c3aed',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         marginBottom: '16px',
       }}>
-        <Icon size={20} style={{ color: '#7c3aed' }} />
+        <Icon size={20} style={{ color: '#ffffff' }} />
       </div>
       <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b', lineHeight: 1.4, marginBottom: '10px' }}>
         {title}

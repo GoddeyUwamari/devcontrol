@@ -201,11 +201,11 @@ export default function CommunityPage() {
               >
                 <div style={{
                   width: '48px', height: '48px', borderRadius: '12px',
-                  background: 'rgba(124,58,237,0.14)',
+                  background: '#7c3aed',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '20px',
                 }}>
-                  <Icon size={22} style={{ color: '#7c3aed' }} />
+                  <Icon size={22} style={{ color: '#ffffff' }} />
                 </div>
                 <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '10px' }}>
                   {title}
