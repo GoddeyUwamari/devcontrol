@@ -6,6 +6,7 @@ import { TrustedBySection } from '@/components/landing/TrustedBySection';
 import { FeatureShowcase } from '@/components/landing/FeatureShowcase';
 import { AIFeaturesSection } from '@/components/landing/AIFeaturesSection';
 import { PersonaSection } from '@/components/landing/PersonaSection';
+import { FounderSection } from './FounderSection';
 import { PricingPreview } from '@/components/landing/PricingPreview';
 import { CTASection } from '@/components/landing/CTASection';
 import {
@@ -113,6 +114,7 @@ export function MarketingContent() {
 
       {/* Persona Tabs */}
       <PersonaSection />
+      <FounderSection />
 
       {/* Integrations */}
       <section id="integrations" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#f8f8f8' }}>
