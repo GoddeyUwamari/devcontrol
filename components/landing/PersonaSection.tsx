@@ -8,12 +8,12 @@ const personas = [
   {
     id: 'eng-leaders',
     label: 'Eng Leaders',
-    headline: 'Lead With Confidence',
-    hook: 'Connect infra spend to business outcomes.',
+    headline: 'Ship Faster Without Losing Control',
+    hook: 'Understand infrastructure health and cost impact.',
     bullets: [
       'Executive AI Reports auto-delivered monthly',
       'Risk score and trends at a glance',
-      'Forecast spend with DORA context',
+      'Make confident scaling decisions',
     ],
     image: '/landing/personas/eng-leaders.png',
     // replace with real customer before launch
@@ -46,10 +46,10 @@ const personas = [
   {
     id: 'platform-engineers',
     label: 'Platform Eng',
-    headline: 'Find Waste Fast, Fix It Faster',
+    headline: 'Optimize Infrastructure at Scale',
     hook: 'Operational tools for the people doing the work every day.',
     bullets: [
-      'Idle and orphaned resource detection',
+      'Detect idle and over-provisioned resources',
       'Anomaly detection with auto-remediation workflows',
       'Slack and Jira integrations',
     ],
@@ -134,10 +134,10 @@ export function PersonaSection() {
             Built for Every Team
           </p>
           <h2 className="text-3xl font-extrabold leading-tight tracking-tight text-violet-600 sm:text-4xl lg:text-5xl">
-            One Platform, Six Perspectives
+            One Infrastructure View. Every Team Sees What Matters.
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-slate-600">
-            DevControl surfaces the right signals for every role — no configuration required.
+            DevControl turns complex AWS data into clear decisions for every team — from engineering efficiency to financial control.
           </p>
         </div>
 

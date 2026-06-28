@@ -47,7 +47,7 @@ export function TrustedBySection() {
             <span
               key={i}
               style={{
-                fontSize: '22px',
+                fontSize: '28px',
                 fontWeight: '700',
                 color: '#1f2937',
                 whiteSpace: 'nowrap',

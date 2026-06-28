@@ -14,8 +14,8 @@ export function FeaturePanels() {
           <span className="inline-block bg-violet-600 text-white px-4 py-1.5 text-xs font-semibold tracking-widest rounded-full uppercase">
             AI-Powered Intelligence
           </span>
-          <h2 className="text-slate-900 font-bold text-3xl sm:text-4xl leading-tight mt-4">
-            Your AWS Infrastructure, Analyzed 24/7
+           <h2 className="text-violet-600 font-bold text-3xl sm:text-4xl leading-tight mt-4 pt-3">
+            Your AWS Infrastructure, Continuously Optimized
           </h2>
         </div>
 
