@@ -38,48 +38,38 @@ function useWindowWidth() {
 }
 
 const integrations = [
-  { name: 'AWS', icon: Cloud, color: '#f97316' },
-  { name: 'GitHub', icon: GitBranch, color: '#1f2937' },
-  { name: 'Slack', icon: MessageSquare, color: '#7c3aed' },
-  { name: 'Terraform', icon: Layers, color: '#6d28d9' },
-  { name: 'PagerDuty', icon: AlertCircle, color: '#16a34a' },
-  { name: 'Kubernetes', icon: Container, color: '#7c3aed' },
-  { name: 'Datadog', icon: BarChart2, color: '#a855f7' },
-  { name: 'Jira', icon: Database, color: '#7c3aed' },
+  { name: 'AWS',        desc: 'Cloud cost, resources, and infrastructure intelligence',  icon: Cloud,        color: '#f97316' },
+  { name: 'Kubernetes', desc: 'Cluster visibility and workload efficiency',               icon: Container,    color: '#7c3aed' },
+  { name: 'Terraform',  desc: 'Infrastructure changes and resource tracking',             icon: Layers,       color: '#6d28d9' },
+  { name: 'GitHub',     desc: 'Code ownership and deployment context',                   icon: GitBranch,    color: '#1f2937' },
+  { name: 'Datadog',    desc: 'Observability signals and system health',                  icon: BarChart2,    color: '#a855f7' },
+  { name: 'PagerDuty',  desc: 'Incident context and operational risk',                   icon: AlertCircle,  color: '#16a34a' },
+  { name: 'Slack',      desc: 'Alerts and insights where your team works',               icon: MessageSquare, color: '#7c3aed' },
+  { name: 'Jira',       desc: 'Engineering priorities and ownership',                    icon: Database,     color: '#7c3aed' },
 ];
 
 const securityItems = [
   {
     icon: ShieldCheck,
     title: 'Read-Only AWS Access',
-    description:
-      'We only request the minimum permissions needed. No write access, ever. Your infrastructure stays fully under your control.',
+    description: 'We only request the minimum permissions needed. No write access, ever. Your infrastructure stays fully under your control.',
   },
   {
     icon: Lock,
     title: 'End-to-End Encryption',
-    description:
-      'All data is encrypted in transit with TLS 1.3 and at rest with AES-256. Your cloud metadata never leaves our secure environment unencrypted.',
+    description: 'All data is encrypted in transit with TLS 1.3 and at rest with AES-256. Your cloud metadata never leaves our secure environment unencrypted.',
   },
   {
     icon: Eye,
     title: 'Zero Data Selling',
-    description:
-      "Your infrastructure data is yours. We never sell, share, or use it to train models beyond your own account's AI features.",
+    description: "Your infrastructure data is yours. We never sell, share, or use it to train models beyond your own account's AI features.",
   },
   {
     icon: FileCheck,
     title: 'SOC 2 Audit Underway',
-    description:
-      'SOC 2 Type II audit in progress, built from the ground up with compliance in mind. GDPR and HIPAA-friendly architecture.',
+    description: 'SOC 2 Type II audit in progress, built from the ground up with compliance in mind. GDPR and HIPAA-friendly architecture.',
   },
 ];
-
-const inner: React.CSSProperties = {
-  maxWidth: '1400px',
-  margin: '0 auto',
-  padding: '0 32px',
-};
 
 export function MarketingContent() {
   const width = useWindowWidth()
@@ -91,7 +81,7 @@ export function MarketingContent() {
       {/* Hero */}
       <HeroSection />
 
-      {/* Social Proof / Logo Ticker */}
+      {/* Dashboard + Ticker */}
       <DashboardPreview />
 
       {/* AI Features */}
@@ -105,9 +95,7 @@ export function MarketingContent() {
       {/* Integrations */}
       <section id="integrations" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#f8f8f8' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
-          <div style={{ textAlign: 'center', maxWidth: '600px', margin: isMobile ? '0 auto 28px' : '0 auto 40px' }}>
-
-            {/* Eyebrow pill — solid violet matching page standard */}
+          <div style={{ textAlign: 'center', maxWidth: '640px', margin: isMobile ? '0 auto 28px' : '0 auto 40px' }}>
             <div style={{ marginBottom: '16px' }}>
               <span style={{
                 display: 'inline-block',
@@ -123,12 +111,11 @@ export function MarketingContent() {
                 Integrations
               </span>
             </div>
-
             <h2
               className="font-extrabold"
               style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
             >
-              Connects With Your Existing Stack
+              Your Infrastructure Data, Unified in One Place
             </h2>
             <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
               DevControl connects with the tools your engineering teams already use — bringing cloud costs, reliability signals, and operational insights together without replacing your workflow.
@@ -141,11 +128,13 @@ export function MarketingContent() {
               return (
                 <div
                   key={integration.name}
-                  className="flex flex-col items-center gap-3 bg-white rounded-2xl cursor-pointer"
+                  className="flex flex-col items-center bg-white rounded-2xl cursor-pointer"
                   style={{
-                    padding: isMobile ? '20px 12px' : '28px 16px',
+                    padding: isMobile ? '20px 12px' : '24px 16px',
                     border: '2px solid #e5e7eb',
                     transition: 'all 0.2s ease',
+                    textAlign: 'center',
+                    gap: '10px',
                   }}
                   onMouseEnter={(e) => {
                     const el = e.currentTarget;
@@ -160,8 +149,11 @@ export function MarketingContent() {
                     el.style.borderColor = '#e5e7eb';
                   }}
                 >
-                  <Icon className="h-10 w-10" style={{ color: integration.color }} />
-                  <span className="font-semibold" style={{ fontSize: '14px', color: '#1f2937' }}>{integration.name}</span>
+                  <Icon className="h-9 w-9" style={{ color: integration.color, flexShrink: 0 }} />
+                  <div>
+                    <div className="font-bold" style={{ fontSize: '14px', color: '#1e1b4b', marginBottom: '4px' }}>{integration.name}</div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', lineHeight: 1.4 }}>{integration.desc}</div>
+                  </div>
                 </div>
               );
             })}
@@ -183,7 +175,7 @@ export function MarketingContent() {
                 el.style.textDecoration = 'none';
               }}
             >
-              View all integrations
+              View All Integrations
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
@@ -194,8 +186,6 @@ export function MarketingContent() {
       <section id="security" style={{ width: '100%', padding: isMobile ? '40px 0' : '64px 0', backgroundColor: '#f9f7ff' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: isMobile ? '0 16px' : isTablet ? '0 24px' : '0 32px' }}>
           <div style={{ textAlign: 'center', maxWidth: '600px', margin: isMobile ? '0 auto 32px' : '0 auto 48px' }}>
-
-            {/* Eyebrow pill — solid violet matching page standard */}
             <div style={{ marginBottom: '16px' }}>
               <span
                 className="inline-flex items-center gap-2"
@@ -214,7 +204,6 @@ export function MarketingContent() {
                 Security &amp; Trust
               </span>
             </div>
-
             <h2
               className="font-extrabold"
               style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
@@ -254,7 +243,6 @@ export function MarketingContent() {
                     el.style.borderColor = '#e5e7eb';
                   }}
                 >
-                  {/* Solid violet icon background with white icon */}
                   <div
                     style={{
                       backgroundColor: '#7c3aed',
