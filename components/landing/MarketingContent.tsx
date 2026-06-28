@@ -152,7 +152,7 @@ export function MarketingContent() {
                   <Icon className="h-9 w-9" style={{ color: integration.color, flexShrink: 0 }} />
                   <div>
                     <div className="font-bold" style={{ fontSize: '14px', color: '#1e1b4b', marginBottom: '4px' }}>{integration.name}</div>
-                    <div style={{ fontSize: '11px', color: '#6b7280', lineHeight: 1.4 }}>{integration.desc}</div>
+                    <div style={{ fontSize: '11px', color: '#374151', lineHeight: 1.4 }}>{integration.desc}</div>
                   </div>
                 </div>
               );

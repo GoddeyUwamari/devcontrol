@@ -27,42 +27,42 @@ function useWindowWidth() {
 const features = [
   {
     icon: DollarSign,
-    title: "Know Exactly Where You're Losing Money",
+    title: "Find Hidden AWS Waste Before It Becomes a Budget Problem",
     description:
       'Understand what caused cost spikes and uncover hidden waste — with clear actions to reduce spend immediately.',
     highlight: true,
   },
   {
     icon: AlertTriangle,
-    title: 'Detect Risks Before They Become Incidents',
+    title: 'Detect Infrastructure Risk Before Customers Feel It',
     description:
       'Automatically surface anomalies, misconfigurations, and unusual activity before they impact customers or revenue.',
     highlight: false,
   },
   {
     icon: TrendingUp,
-    title: 'See Future Costs Before They Happen',
+    title: 'Forecast Cloud Spend Before Surprises Hit',
     description:
       'Forecast your AWS spend and prevent budget surprises with accurate forward-looking insights.',
     highlight: false,
   },
   {
     icon: MessageSquare,
-    title: 'Ask Anything, Get Instant Answers',
+    title: 'Ask Anything, Get Infrastructure Intelligence',
     description:
-      'Query your entire infrastructure in plain English — no dashboards, no queries, no complexity.',
+      'Query your entire AWS environment in plain English — discover costs, risks, and optimization opportunities without digging through dashboards or writing queries.',
     highlight: false,
   },
   {
     icon: FileText,
-    title: 'Get Executive-Ready Reports Instantly',
+    title: 'Generate Executive-Ready Cloud Reports Instantly',
     description:
-      'Generate clear, decision-ready reports for leadership, audits, or internal reviews in seconds.',
+      'Create clear, decision-ready reports for engineering leaders, finance teams, audits, and cost reviews in seconds.',
     highlight: false,
   },
   {
     icon: Search,
-    title: 'Find Anything Across Your Infrastructure',
+    title: 'Find Anything Across Your AWS Environment',
     description:
       'Instantly locate resources, costs, or risks using natural language — no filters or manual digging.',
     highlight: false,
@@ -85,8 +85,8 @@ export function AIFeaturesSection() {
               display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
-              background: '#ede9fe',
-              color: '#7c3aed',
+              background: '#7c3aed',
+              color: '#ffffff',
               padding: '6px 14px',
               borderRadius: '999px',
               fontSize: '12px',
@@ -103,7 +103,7 @@ export function AIFeaturesSection() {
             style={{
               fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2.2rem, 4vw, 2.8rem)',
               fontWeight: 700,
-              color: '#1e1b4b',
+              color: '#7c3aed',
               marginBottom: 0,
               lineHeight: 1.2,
             }}
