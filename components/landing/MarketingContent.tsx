@@ -128,10 +128,10 @@ export function MarketingContent() {
               className="font-extrabold"
               style={{ fontSize: isMobile ? '1.8rem' : isTablet ? '2.2rem' : 'clamp(2rem, 4vw, 2.8rem)', color: '#7c3aed', fontWeight: 800, marginBottom: '14px', lineHeight: 1.15, letterSpacing: '-0.02em' }}
             >
-              Works with your entire stack
+              Connects With Your Existing Stack
             </h2>
             <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
-              DevControl connects to the tools your team already uses. One platform, zero friction.
+              DevControl connects with the tools your engineering teams already use — bringing cloud costs, reliability signals, and operational insights together without replacing your workflow.
             </p>
           </div>
 
