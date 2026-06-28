@@ -30,7 +30,7 @@ export function DashboardPreview() {
       <section style={{
         width: '100%',
         background: 'linear-gradient(to bottom, #ede9fe, #ffffff)',
-        padding: '56px 48px 72px',
+        padding: isMobile ? '24px 16px 32px' : '56px 48px 72px',
       }}>
         <div style={{ maxWidth: '1300px', margin: '0 auto', width: '100%' }}>
           {!imageError ? (
@@ -39,8 +39,8 @@ export function DashboardPreview() {
               alt="DevControl Dashboard"
               style={{
                 width: '100%',
-                borderRadius: '20px',
-                boxShadow: '0 32px 80px rgba(0,0,0,0.5)',
+                borderRadius: isMobile ? '12px' : '20px',
+                boxShadow: isMobile ? '0 8px 32px rgba(0,0,0,0.2)' : '0 32px 80px rgba(0,0,0,0.5)',
                 display: 'block',
               }}
               onError={() => setImageError(true)}
@@ -48,7 +48,7 @@ export function DashboardPreview() {
           ) : (
             <div style={{
               background: 'rgba(255,255,255,0.08)',
-              borderRadius: '20px',
+              borderRadius: isMobile ? '12px' : '20px',
               aspectRatio: '16/9',
               display: 'flex',
               flexDirection: 'column',
@@ -69,8 +69,8 @@ export function DashboardPreview() {
         overflow: 'hidden',
         maxWidth: '100%',
         backgroundColor: '#fafafa',
-        paddingTop: '70px',
-        paddingBottom: '56px',
+        paddingTop: isMobile ? '40px' : '70px',
+        paddingBottom: isMobile ? '40px' : '56px',
         borderBottom: '1px solid #f3f4f6',
       }}>
         <p style={{
@@ -86,13 +86,13 @@ export function DashboardPreview() {
         </p>
 
         <div style={{ position: 'relative', overflow: 'hidden', maxWidth: '100vw', contain: 'paint' }}>
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: isMobile ? '60px' : '120px', background: 'linear-gradient(to right, #ffffff, transparent)', zIndex: 2 }} />
-          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: isMobile ? '60px' : '120px', background: 'linear-gradient(to left, #ffffff, transparent)', zIndex: 2 }} />
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: isMobile ? '40px' : '120px', background: 'linear-gradient(to right, #fafafa, transparent)', zIndex: 2 }} />
+          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: isMobile ? '40px' : '120px', background: 'linear-gradient(to left, #fafafa, transparent)', zIndex: 2 }} />
 
           <div
             style={{
               display: 'flex',
-              gap: isMobile ? '32px' : '56px',
+              gap: isMobile ? '24px' : '56px',
               alignItems: 'center',
               animation: 'ticker-scroll 30s linear infinite',
               width: 'max-content',
@@ -102,7 +102,7 @@ export function DashboardPreview() {
               <span
                 key={i}
                 style={{
-                  fontSize: '24px',
+                  fontSize: isMobile ? '18px' : '24px',
                   fontWeight: 700,
                   color: '#1f2937',
                   whiteSpace: 'nowrap',
