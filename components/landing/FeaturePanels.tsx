@@ -15,7 +15,7 @@ export function FeaturePanels() {
             AI-Powered Intelligence
           </span>
            <h2 className="text-violet-600 font-bold text-3xl sm:text-4xl leading-tight mt-4 pt-3">
-            Your AWS Infrastructure, Continuously Optimized
+            Make Better AWS Decisions with Full Visibility
           </h2>
         </div>
 

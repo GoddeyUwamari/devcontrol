@@ -24,7 +24,7 @@ export function HeroSection() {
         </h1>
 
         <p className="mx-auto mb-4 mt-5 max-w-[680px] text-center text-lg leading-relaxed text-slate-700 sm:text-xl">
-          Real-time cost visibility, infrastructure health, and risk detection for multi-tenant SaaS teams. See tenant-level spend, uncover hidden waste, and reduce cloud costs — without changing a single line of code.
+          Real-time cost visibility, infrastructure health, and risk detection for multi-tenant SaaS teams — without changing a single line of code.
         </p>
 
         <p className="mb-9 text-center text-sm text-slate-700 sm:text-base">
