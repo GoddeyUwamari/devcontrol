@@ -9,15 +9,16 @@ export function FeaturePanels() {
     <section className="w-full bg-white pt-8 pb-16 sm:pt-10 sm:pb-20">
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
 
-        {/* Centered header */}
-        <div className="text-center mb-8 sm:mb-12">
-          <span className="inline-block bg-violet-600 text-white px-4 py-1.5 text-xs font-semibold tracking-widest rounded-full uppercase">
-            AI-Powered Intelligence
-          </span>
-           <h2 className="text-violet-600 font-bold text-3xl sm:text-4xl leading-tight mt-4 pt-3">
-            Make Better AWS Decisions with Full Visibility
-          </h2>
-        </div>
+        {/* Header */}
+<div className="mb-8 sm:mb-12">
+  <span className="inline-block bg-violet-600 text-white px-4 py-1.5 text-xs font-semibold tracking-widest rounded-full uppercase">
+    AI-Powered Intelligence
+  </span>
+  
+  <h2 className="text-violet-600 font-bold text-3xl sm:text-4xl leading-tight mt-4 pt-3 text-left md:text-center">
+    Make Better AWS Decisions with Full Visibility
+  </h2>
+</div>
 
         {/* Two-column panel */}
          <div className="grid lg:grid-cols-[65%_35%] gap-8 lg:gap-16 items-center">
