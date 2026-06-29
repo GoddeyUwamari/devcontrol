@@ -10,7 +10,7 @@ export function FeaturePanels() {
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
 
         {/* Centered header */}
-        <div className="text-center mb-12">
+        <div className="text-center mb-8 sm:mb-12">
           <span className="inline-block bg-violet-600 text-white px-4 py-1.5 text-xs font-semibold tracking-widest rounded-full uppercase">
             AI-Powered Intelligence
           </span>
@@ -20,7 +20,7 @@ export function FeaturePanels() {
         </div>
 
         {/* Two-column panel */}
-        <div className="grid lg:grid-cols-[65%_35%] gap-12 lg:gap-16 items-center">
+         <div className="grid lg:grid-cols-[65%_35%] gap-8 lg:gap-16 items-center">
           {/* Left — Image */}
           <div>
             <Image
