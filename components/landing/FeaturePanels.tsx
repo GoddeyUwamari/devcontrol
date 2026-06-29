@@ -10,12 +10,12 @@ export function FeaturePanels() {
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
 
         {/* Header */}
-<div className="text-left md:text-center mb-8 sm:mb-12">
+<div className="text-center mb-8 sm:mb-12">
   <span className="inline-block bg-violet-600 text-white px-4 py-1.5 text-xs font-semibold tracking-widest rounded-full uppercase">
     AI-Powered Intelligence
   </span>
   
-  <h2 className="text-violet-600 font-bold text-3xl sm:text-4xl leading-tight mt-4 pt-3 text-left md:text-center">
+  <h2 className="text-violet-600 font-bold text-3xl sm:text-4xl leading-tight mt-4 pt-3 text-center">
     Make Better AWS Decisions with Full Visibility
   </h2>
 </div>
