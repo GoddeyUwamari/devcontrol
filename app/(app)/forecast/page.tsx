@@ -240,37 +240,6 @@ export default function ForecastPage() {
         </div>
       </div>
 
-      {/* ── RECOMMENDED ACTIONS ── */}
-      <div className="bg-white border border-slate-100 rounded-xl p-4 sm:p-5 mb-7">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <span className="text-sm font-medium text-slate-900">Recommended actions based on this forecast</span>
-          <button className="bg-violet-700 hover:bg-violet-800 text-white text-xs font-medium px-3.5 py-2 rounded-lg border-none cursor-pointer transition-colors whitespace-nowrap">
-            Apply all recommendations
-          </button>
-        </div>
-        <div className="flex flex-col gap-2">
-          {[
-            { title: 'Switch to Reserved Instance pricing', sub: 'RDS · Eliminates on-demand premium · Zero risk', savings: '$120/mo savings', action: () => router.push('/cost-optimization'), actionLabel: 'Apply →' },
-            { title: 'Remove idle EC2 instances', sub: 'EC2 · 3 instances at <5% CPU for 21+ days', savings: 'Save $40/mo', action: () => router.push('/cost-optimization'), actionLabel: 'Review →' },
-            { title: 'Set forecast-based budget alert', sub: 'Alert at $180 — 10% below predicted spend', savings: 'Prevent overrun', action: () => document.getElementById('forecast-alert-cta')?.scrollIntoView({ behavior: 'smooth' }), actionLabel: 'Create →' },
-          ].map(({ title, sub, savings, action, actionLabel }) => (
-            <div key={title} className="flex items-center justify-between bg-slate-50 rounded-lg px-3.5 py-3 gap-2">
-              <div className="flex items-start gap-2.5">
-                <span className="text-green-600 font-bold text-sm shrink-0">→</span>
-                <div>
-                  <p className="text-xs font-medium text-slate-900 m-0">{title}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5 m-0">{sub}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 pl-5 sm:pl-0 shrink-0">
-                <span className="text-xs font-medium text-green-700">{savings}</span>
-                <button onClick={action} className="text-[11px] text-violet-700 bg-violet-100 border-none rounded px-2.5 py-1 cursor-pointer hover:bg-violet-200 transition-colors">{actionLabel}</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* ── TABS ── */}
       <div className="flex gap-2 mb-6">
         <Button variant={activeTab === 'forecast' ? 'default' : 'outline'} onClick={() => setActiveTab('forecast')} className="gap-2">
@@ -346,28 +315,30 @@ export default function ForecastPage() {
             </div>
 
             {/* Driver panel */}
-            <div className="w-full lg:w-64 shrink-0 bg-white border border-slate-100 rounded-xl p-5">
-              <p className="text-xs font-medium text-slate-900 mb-3">What&apos;s driving this forecast</p>
-              {[
-                { name: 'Compute (EC2)', pct: 62, amount: '$121/mo', color: '#534AB7' },
-                { name: 'Storage (S3)',  pct: 18, amount: '$35/mo',  color: '#1D9E75' },
-                { name: 'Database (RDS)', pct: 12, amount: '$23/mo', color: '#7F77DD' },
-                { name: 'Network',       pct: 8,  amount: '$16/mo',  color: '#BA7517' },
-              ].map((d) => (
-                <div key={d.name} className="mb-3.5">
-                  <div className="flex justify-between items-baseline mb-1">
-                    <span className="text-xs text-slate-700">{d.name}</span>
-                    <div className="text-right">
-                      <span className="text-xs font-medium text-slate-900">{d.pct}%</span>
-                      <span className="text-[11px] text-slate-400 ml-1">{d.amount}</span>
+            {isDemoMode && (
+              <div className="w-full lg:w-64 shrink-0 bg-white border border-slate-100 rounded-xl p-5">
+                <p className="text-xs font-medium text-slate-900 mb-3">What&apos;s driving this forecast</p>
+                {[
+                  { name: 'Compute (EC2)', pct: 62, amount: '$121/mo', color: '#534AB7' },
+                  { name: 'Storage (S3)',  pct: 18, amount: '$35/mo',  color: '#1D9E75' },
+                  { name: 'Database (RDS)', pct: 12, amount: '$23/mo', color: '#7F77DD' },
+                  { name: 'Network',       pct: 8,  amount: '$16/mo',  color: '#BA7517' },
+                ].map((d) => (
+                  <div key={d.name} className="mb-3.5">
+                    <div className="flex justify-between items-baseline mb-1">
+                      <span className="text-xs text-slate-700">{d.name}</span>
+                      <div className="text-right">
+                        <span className="text-xs font-medium text-slate-900">{d.pct}%</span>
+                        <span className="text-[11px] text-slate-400 ml-1">{d.amount}</span>
+                      </div>
+                    </div>
+                    <div className="h-1 bg-slate-100 rounded-full">
+                      <div className="h-full rounded-full" style={{ width: `${d.pct}%`, background: d.color }} />
                     </div>
                   </div>
-                  <div className="h-1 bg-slate-100 rounded-full">
-                    <div className="h-full rounded-full" style={{ width: `${d.pct}%`, background: d.color }} />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Risks & Recommendations */}
@@ -378,15 +349,10 @@ export default function ForecastPage() {
               </CardHeader>
               <CardContent>
                 <ul className="list-none p-0 m-0">
-                  {[
-                    { dot: '#3B6D11', text: 'No significant risks detected — low volatility, predictable billing expected' },
-                    { dot: '#EF9F27', text: 'Monitor: traffic spikes could increase compute ~8% if sustained beyond 72hrs' },
-                    { dot: '#EF9F27', text: 'Watch: S3 storage growing slowly — may exceed current tier in ~45 days' },
-                    { dot: '#EF9F27', text: 'Note: seasonal load patterns could affect Q2 billing cycle' },
-                  ].map((item, i, arr) => (
+                  {forecast.aiRisks.map((risk, i, arr) => (
                     <li key={i} className={`flex items-start gap-2 py-2 ${i < arr.length - 1 ? 'border-b border-slate-50' : ''}`}>
-                      <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ background: item.dot }} />
-                      <span className="text-xs text-slate-500 leading-relaxed">{item.text}</span>
+                      <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ background: risk.toLowerCase().includes('no significant') ? '#3B6D11' : '#EF9F27' }} />
+                      <span className="text-xs text-slate-500 leading-relaxed">{stripMarkdown(risk)}</span>
                     </li>
                   ))}
                 </ul>

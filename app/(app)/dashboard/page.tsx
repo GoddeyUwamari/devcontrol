@@ -129,7 +129,7 @@ const scoreChip = (score: number) => ({
 })
 
 export default function DashboardPage() {
-  const { user, isLoading: authLoading } = useAuth()
+  const { user, organization, isLoading: authLoading } = useAuth()
   const { socket, isConnected } = useWebSocket()
   const queryClient = useQueryClient()
   const demoMode = useDemoMode()
@@ -414,7 +414,7 @@ export default function DashboardPage() {
           </p>
           <p className="text-[13px] text-gray-500 leading-relaxed">
             {isAwsConnected
-              ? `WayUP Technology · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}`
+              ? `${isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'Your organization')} · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}`
               : 'Connect your AWS account to get started · Setup takes 2 minutes'}
           </p>
         </div>
@@ -898,7 +898,7 @@ export default function DashboardPage() {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1">Executive ROI Summary</p>
               <p className="text-lg font-semibold text-slate-900">
-                DEVCONTROL has saved WayUP Technology{' '}
+                DEVCONTROL has saved {isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')}{' '}
                 <span className="text-emerald-600">${(wasteAmount * 12).toLocaleString()}</span> annualised
               </p>
             </div>

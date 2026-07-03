@@ -662,25 +662,27 @@ export default function CostsPage() {
       </div>
 
       {/* ── DEVCONTROL VALUE DELIVERED ── */}
-      <div className="bg-slate-50 rounded-2xl p-5 sm:p-8 border border-slate-100 mb-4">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">DevControl value delivered</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[
-            { label: 'Saved this year',       value: '$23,400' },
-            { label: 'Optimizations applied', value: '27' },
-            { label: 'Efficiency score',      value: '100%',   note: '↑ from 72%' },
-            { label: 'Anomalies caught',      value: '14' },
-            { label: 'Monthly ROI',           value: '47×' },
-            { label: 'Policies running',      value: '3' },
-          ].map(({ label, value, note }) => (
-            <div key={label} className="bg-white rounded-xl p-4 border border-slate-100">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p>
-              <p className="text-xl font-bold text-slate-900 m-0 tracking-tight leading-none">{value}</p>
-              {note && <p className="text-[10px] text-green-600 mt-1 font-medium">{note}</p>}
-            </div>
-          ))}
+      {isDemoActive && (
+        <div className="bg-slate-50 rounded-2xl p-5 sm:p-8 border border-slate-100 mb-4">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">DevControl value delivered</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: 'Saved this year',       value: '$23,400' },
+              { label: 'Optimizations applied', value: '27' },
+              { label: 'Efficiency score',      value: '100%',   note: '↑ from 72%' },
+              { label: 'Anomalies caught',      value: '14' },
+              { label: 'Monthly ROI',           value: '47×' },
+              { label: 'Policies running',      value: '3' },
+            ].map(({ label, value, note }) => (
+              <div key={label} className="bg-white rounded-xl p-4 border border-slate-100">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p>
+                <p className="text-xl font-bold text-slate-900 m-0 tracking-tight leading-none">{value}</p>
+                {note && <p className="text-[10px] text-green-600 mt-1 font-medium">{note}</p>}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── AI COST NARRATIVE ── */}
       {forecast?.aiSummary && (

@@ -4,6 +4,7 @@ import {
 } from './observability-readiness.service'
 import { CloudWatchService }
   from './cloudwatch.service'
+import awsCostService from './aws-cost.service'
 
 // ── Types ────────────────────────────────
 
@@ -119,12 +120,27 @@ export class SystemIntelligenceService {
           ?.count ?? '0'
       )
 
-      // Known monthly spend from
-      // Cost Explorer ($585 real value)
-      // Use scan total_savings as proxy
-      // for spend context
       const latestScan = scanResult.rows[0]
-      const monthlySpend = 585
+
+      // Real monthly spend: try live Cost Explorer first,
+      // fall back to the DB cost estimate — same pattern as
+      // stats.controller.ts's dashboard stats endpoint.
+      let monthlySpend = 0
+      try {
+        const liveCost = await awsCostService.fetchMonthlyCosts(organizationId)
+        monthlySpend = liveCost.total
+      } catch (costErr) {
+        console.error('[Intelligence] Live cost fetch failed, falling back to estimate:', costErr)
+      }
+      if (monthlySpend <= 0) {
+        const estimateResult = await pool.query(
+          `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total
+           FROM aws_resources
+           WHERE organization_id = $1`,
+          [organizationId]
+        )
+        monthlySpend = parseFloat(estimateResult.rows[0]?.total ?? '0')
+      }
 
       // Scoring model:
       // Base: 70 (having scan data
@@ -145,9 +161,9 @@ export class SystemIntelligenceService {
           : 0
 
       // Waste penalty: 0–20 pts
-      // $585 spend, $2039 waste =
+      // e.g. spend $585, waste $2039 →
       // ratio > 1 → capped at 1 → -20
-      // But $500 waste on $5000 spend =
+      // but $500 waste on $5000 spend →
       // 0.1 ratio → only -2 pts
       const wastePenalty =
         Math.round(wasteVsSpend * 20)
@@ -204,12 +220,12 @@ export class SystemIntelligenceService {
         err
       )
       return {
-        score: 55,
+        score: 0,
         label: 'Cost Efficiency',
-        detail: '$2,039/mo savings identified · 8 opportunities',
-        severity: 'high',
+        detail: 'Cost score unavailable — please try again shortly',
+        severity: 'critical',
         delta: null,
-        status: 'warning',
+        status: 'risk',
       }
     }
   }
@@ -311,12 +327,12 @@ export class SystemIntelligenceService {
         err
       )
       return {
-        score: 87,
+        score: 0,
         label: 'Security Posture',
-        detail: 'Score based on last security scan',
-        severity: 'healthy',
+        detail: 'Security score unavailable — please try again shortly',
+        severity: 'critical',
         delta: null,
-        status: 'good',
+        status: 'risk',
       }
     }
   }
