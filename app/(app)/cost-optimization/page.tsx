@@ -52,7 +52,6 @@ function mapAIResultToRec(r: any): any {
     effort: 'low', estimatedTime: '~2 minutes',
     downtime: r.riskLevel === 'Low' ? 'Zero downtime' : 'Brief restart',
     status: r.status ?? 'pending', confidence: 90, impactLabel: r.impactLabel,
-    isFallback: !!r.isFallback,
   };
 }
 
@@ -554,9 +553,6 @@ export default function CostOptimizationPage() {
                         <span className="text-sm font-semibold text-slate-900">{rec.title}</span>
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${riskClass}`}>{riskLabel}</span>
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{rec.service}</span>
-                        {rec.isFallback && (
-                          <span title="Generated without AI analysis — approximate savings" className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Estimated</span>
-                        )}
                       </div>
                       <p className="text-xs text-slate-500 leading-relaxed mb-2.5">{compressedDesc}</p>
                       <div className="flex flex-wrap gap-2 text-xs text-violet-600">

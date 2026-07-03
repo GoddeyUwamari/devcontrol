@@ -27,7 +27,6 @@ export interface CostOptimizationResult {
   recommendedConfig: Record<string, any> | null;
   impactLabel: string | null;
   status: 'pending' | 'applied' | 'ignored';
-  isFallback: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,7 +38,6 @@ export interface CostOptimizationScan {
   totalSavings: number | null;
   opportunityCount: number | null;
   completedAt: Date | null;
-  isFallback: boolean;
   createdAt: Date;
 }
 
@@ -123,17 +121,17 @@ export class CostOptimizationAIService {
     const resources = resourcesResult.rows;
     console.log(`[CostOptAI] Analyzing ${resources.length} resources`);
 
-    const { recommendations, isFallback } = process.env.ANTHROPIC_API_KEY
+    const recommendations = process.env.ANTHROPIC_API_KEY
       ? await this.generateAIRecommendations(resources)
-      : { recommendations: this.generateFallbackRecommendations(resources), isFallback: true };
+      : this.generateFallbackRecommendations(resources);
 
     if (recommendations.length > 0) {
       const insertQuery = `
         INSERT INTO cost_optimization_results
           (id, org_id, scan_id, resource_type, resource_id, title, description,
            monthly_savings, annual_savings, risk_level, current_config, recommended_config,
-           impact_label, status, is_fallback)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pending',$14)
+           impact_label, status)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pending')
       `;
 
       for (const rec of recommendations) {
@@ -151,7 +149,6 @@ export class CostOptimizationAIService {
           rec.currentConfig ? JSON.stringify(rec.currentConfig) : null,
           rec.recommendedConfig ? JSON.stringify(rec.recommendedConfig) : null,
           rec.impactLabel || null,
-          isFallback,
         ]);
       }
     }
@@ -160,9 +157,9 @@ export class CostOptimizationAIService {
 
     await this.pool.query(
       `UPDATE cost_optimization_scans
-       SET status = 'complete', total_savings = $2, opportunity_count = $3, completed_at = NOW(), is_fallback = $4
+       SET status = 'complete', total_savings = $2, opportunity_count = $3, completed_at = NOW()
        WHERE id = $1`,
-      [scanId, totalSavings, recommendations.length, isFallback]
+      [scanId, totalSavings, recommendations.length]
     );
 
     console.log(`[CostOptAI] Scan ${scanId} complete — ${recommendations.length} opportunities, $${totalSavings.toFixed(2)}/mo savings`);
@@ -171,8 +168,8 @@ export class CostOptimizationAIService {
   /**
    * Call Claude to generate recommendations from resource list.
    */
-  private async generateAIRecommendations(resources: AWSResource[]): Promise<{ recommendations: AIRecommendation[]; isFallback: boolean }> {
-    if (resources.length === 0) return { recommendations: [], isFallback: false };
+  private async generateAIRecommendations(resources: AWSResource[]): Promise<AIRecommendation[]> {
+    if (resources.length === 0) return [];
 
     const resourceSummary = resources.map((r) => ({
       id: r.resource_id,
@@ -212,18 +209,18 @@ Return ONLY valid JSON array. No markdown, no explanation.`;
       });
 
       const content = message.content[0];
-      if (content.type !== 'text') return { recommendations: this.generateFallbackRecommendations(resources), isFallback: true };
+      if (content.type !== 'text') return this.generateFallbackRecommendations(resources);
 
       const text = content.text.trim();
       const jsonStart = text.indexOf('[');
       const jsonEnd = text.lastIndexOf(']');
-      if (jsonStart === -1 || jsonEnd === -1) return { recommendations: this.generateFallbackRecommendations(resources), isFallback: true };
+      if (jsonStart === -1 || jsonEnd === -1) return this.generateFallbackRecommendations(resources);
 
       const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as AIRecommendation[];
-      return { recommendations: Array.isArray(parsed) ? parsed : [], isFallback: false };
+      return Array.isArray(parsed) ? parsed : [];
     } catch (err) {
       console.error('[CostOptAI] Claude API error, using fallback:', err);
-      return { recommendations: this.generateFallbackRecommendations(resources), isFallback: true };
+      return this.generateFallbackRecommendations(resources);
     }
   }
 
@@ -383,7 +380,6 @@ Return ONLY valid JSON array. No markdown, no explanation.`;
       recommendedConfig: row.recommended_config,
       impactLabel: row.impact_label,
       status: row.status,
-      isFallback: row.is_fallback ?? false,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };
@@ -397,7 +393,6 @@ Return ONLY valid JSON array. No markdown, no explanation.`;
       totalSavings: row.total_savings !== null ? parseFloat(row.total_savings) : null,
       opportunityCount: row.opportunity_count !== null ? parseInt(row.opportunity_count) : null,
       completedAt: row.completed_at ? new Date(row.completed_at) : null,
-      isFallback: row.is_fallback ?? false,
       createdAt: new Date(row.created_at),
     };
   }
