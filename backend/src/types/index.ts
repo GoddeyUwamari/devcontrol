@@ -131,6 +131,7 @@ export interface PlatformStats {
   total_services: number;
   active_deployments: number;
   total_infrastructure_cost: number;
+  cost_source: 'actual' | 'estimated';
   free_tier_remaining: number;
   recent_deployments: Deployment[];
   service_health: {

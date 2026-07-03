@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { DeploymentsRepository } from '../repositories/deployments.repository';
 import { ApiResponse, PlatformStats } from '../types';
 import { pool } from '../config/database';
+import awsCostService from '../services/aws-cost.service';
 
 const deploymentsRepo = new DeploymentsRepository();
 
@@ -15,6 +16,7 @@ export class StatsController {
           total_services: 0,
           active_deployments: 0,
           total_infrastructure_cost: 0,
+          cost_source: 'estimated',
           free_tier_remaining: 25,
           recent_deployments: [],
           service_health: { healthy: 0, unhealthy: 0 },
@@ -26,17 +28,12 @@ export class StatsController {
 
       const [
         resourceCountResult,
-        costResult,
         healthyCountResult,
         activeDeployments,
         recentDeployments,
       ] = await Promise.all([
         pool.query(
           'SELECT COUNT(*) as total FROM aws_resources WHERE organization_id = $1',
-          [organizationId]
-        ),
-        pool.query(
-          'SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1',
           [organizationId]
         ),
         pool.query(
@@ -47,14 +44,39 @@ export class StatsController {
         deploymentsRepo.findRecentByLimit(5),
       ]);
 
+      // Try live Cost Explorer first; fall back to DB estimate on error or no data.
+      let totalCost: number;
+      let costSource: 'actual' | 'estimated';
+      try {
+        const liveCost = await awsCostService.fetchMonthlyCosts(organizationId);
+        if (liveCost.total > 0) {
+          totalCost = liveCost.total;
+          costSource = 'actual';
+        } else {
+          const estimateResult = await pool.query(
+            'SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1',
+            [organizationId]
+          );
+          totalCost = parseFloat(estimateResult.rows[0].total);
+          costSource = 'estimated';
+        }
+      } catch (_err) {
+        const estimateResult = await pool.query(
+          'SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1',
+          [organizationId]
+        );
+        totalCost = parseFloat(estimateResult.rows[0].total);
+        costSource = 'estimated';
+      }
+
       const totalResources = parseInt(resourceCountResult.rows[0].total, 10);
-      const totalCost = parseFloat(costResult.rows[0].total);
       const healthyResources = parseInt(healthyCountResult.rows[0].healthy, 10);
 
       const stats: PlatformStats = {
         total_services: totalResources,
         active_deployments: activeDeployments,
         total_infrastructure_cost: totalCost,
+        cost_source: costSource,
         free_tier_remaining: Math.max(0, 25 - totalCost),
         recent_deployments: recentDeployments,
         service_health: {

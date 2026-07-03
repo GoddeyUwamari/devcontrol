@@ -58,7 +58,7 @@ const tiers = [
       'All 8 AI features',
       '90-day history',
       'DORA metrics',
-      'Unlimited members',
+      'Up to 10 members',
       'Priority support',
     ],
     cta: 'Start Free Trial',

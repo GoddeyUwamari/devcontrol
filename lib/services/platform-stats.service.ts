@@ -17,6 +17,7 @@ export const platformStatsService = {
       deploymentsChange: 0,
       costChange: 0,
       teamsChange: 0,
+      costSource: (result.cost_source as 'actual' | 'estimated') ?? 'estimated',
     };
   },
 };

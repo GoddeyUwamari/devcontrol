@@ -514,6 +514,7 @@ export interface PlatformDashboardStats {
   costChange: number;
   totalTeams: number;
   teamsChange: number;
+  costSource?: 'actual' | 'estimated';
 }
 
 // Cost Metrics

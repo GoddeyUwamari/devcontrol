@@ -281,9 +281,9 @@ export default function DashboardPage() {
 
   const isDemoActive    = demoMode || salesDemoMode
   const isAwsConnected  = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
-  const hasBillingData  = !isDemoActive && !!stats && stats.monthlyAwsCost > 0
-  const hasPartialData  = !isDemoActive && !!stats && stats.monthlyAwsCost === 0 && stats.totalServices > 0
-  const isBillingSyncing = !isDemoActive && isAwsConnected && !statsLoading && !!stats && stats.monthlyAwsCost === 0 && stats.totalServices === 0
+  const hasBillingData   = !isDemoActive && !!stats && (stats.costSource === 'actual' || stats.monthlyAwsCost > 0)
+  const hasServicesOnly  = !isDemoActive && !!stats && stats.totalServices > 0 && !hasBillingData
+  const isBillingSyncing = !isDemoActive && isAwsConnected && !statsLoading && !!stats && stats.totalServices === 0 && !hasBillingData
 
   useEffect(() => {
   if (!isDemoActive && !statsLoading && !isAwsConnected && awsAccounts !== undefined) {
@@ -525,7 +525,7 @@ export default function DashboardPage() {
           </>
         ) : (
           <>
-            {hasPartialData && (
+            {hasServicesOnly && (
               <>
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 mb-5 flex items-center gap-3">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -626,7 +626,7 @@ export default function DashboardPage() {
                   <IntelKPICard />
                 </div>
               </div>
-            ) : isAwsConnected && (isBillingSyncing || hasPartialData) ? (
+            ) : isAwsConnected && (isBillingSyncing || hasServicesOnly) ? (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-white rounded-2xl p-8 border border-slate-100 border-l-[3px] border-l-violet-700">
                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Total Cloud Spend</p>
@@ -657,7 +657,7 @@ export default function DashboardPage() {
       ) : null}
 
       {/* ── SYSTEM INTELLIGENCE BLOCK ── */}
-      {displayIntelligence && isAwsConnected && !isBillingSyncing && !hasPartialData && (
+      {displayIntelligence && isAwsConnected && !isBillingSyncing && !hasServicesOnly && (
         <div className="bg-white rounded-2xl border border-slate-200 px-6 py-5 mb-6">
           {displayIntelligence.top_action && (
             <div
@@ -701,7 +701,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── EXECUTIVE INSIGHTS ── */}
-      {!insightDismissed && isAwsConnected && !isBillingSyncing && !hasPartialData && (demoMode || insightMessage) && (
+      {!insightDismissed && isAwsConnected && !isBillingSyncing && !hasServicesOnly && (demoMode || insightMessage) && (
         <div className="bg-slate-50 border border-slate-200 border-l-2 border-l-violet-700 rounded-lg px-4 py-3.5 mb-8 relative">
           <div className="flex items-start gap-4">
             <div className="w-7 h-7 rounded-lg bg-violet-100 shrink-0 flex items-center justify-center">
@@ -892,7 +892,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── EXECUTIVE ROI SUMMARY ── */}
-      {isAwsConnected && !isBillingSyncing && !hasPartialData && (
+      {isAwsConnected && !isBillingSyncing && !hasServicesOnly && (
         <div className="bg-white rounded-xl p-4 border border-gray-100 mb-8">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
             <div>

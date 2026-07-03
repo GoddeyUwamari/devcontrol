@@ -159,7 +159,7 @@ export class AuthService {
           organizationName,
           `Personal workspace for ${fullName}`,
           'free',
-          10,
+          5,
           5
         ]
       );
