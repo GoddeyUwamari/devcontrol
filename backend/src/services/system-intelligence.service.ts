@@ -16,6 +16,12 @@ export interface ComponentScore {
     | 'medium' | 'healthy'
   delta: number | null
   status: 'good' | 'warning' | 'risk'
+  // true only when this component has a real
+  // computed result behind it (a completed scan,
+  // a stored score, non-null readiness) — false
+  // for every error/fallback path so callers can
+  // tell "bad score" apart from "no data yet"
+  ready: boolean
 }
 
 export interface SystemDriver {
@@ -42,9 +48,9 @@ export interface TopAction {
 }
 
 export interface SystemIntelligenceResult {
-  system_score: number
+  system_score: number | null
   status: 'Healthy' | 'Stable'
-    | 'Degraded' | 'At Risk'
+    | 'Degraded' | 'At Risk' | 'Pending'
   components: {
     cost: ComponentScore
     security: ComponentScore
@@ -213,6 +219,7 @@ export class SystemIntelligenceService {
           score >= 75 ? 'good'
           : score >= 55 ? 'warning'
           : 'risk',
+        ready: !!latestScan,
       }
     } catch (err) {
       console.error(
@@ -226,6 +233,7 @@ export class SystemIntelligenceService {
         severity: 'critical',
         delta: null,
         status: 'risk',
+        ready: false,
       }
     }
   }
@@ -296,10 +304,13 @@ export class SystemIntelligenceService {
             score >= 80 ? 'good'
             : score >= 60 ? 'warning'
             : 'risk',
+          ready: true,
         }
       }
 
-      // Fallback: compute from anomalies
+      // Fallback: no security_scores row yet —
+      // this is a guess from anomaly count alone,
+      // not a real scan result
       const baseScore = Math.max(
         0,
         87 - criticalIssues * 5
@@ -320,6 +331,7 @@ export class SystemIntelligenceService {
           baseScore >= 80 ? 'good'
           : baseScore >= 60 ? 'warning'
           : 'risk',
+        ready: false,
       }
     } catch (err) {
       console.error(
@@ -333,6 +345,7 @@ export class SystemIntelligenceService {
         severity: 'critical',
         delta: null,
         status: 'risk',
+        ready: false,
       }
     }
   }
@@ -354,6 +367,7 @@ export class SystemIntelligenceService {
         severity: 'critical',
         delta: null,
         status: 'risk',
+        ready: false,
       }
     }
 
@@ -375,6 +389,7 @@ export class SystemIntelligenceService {
           : score >= 60
             ? 'warning'
             : 'risk',
+      ready: true,
     }
   }
 
@@ -387,7 +402,7 @@ export class SystemIntelligenceService {
   ): SystemDriver[] {
     const drivers: SystemDriver[] = []
 
-    if (cost.status !== 'good') {
+    if (cost.ready && cost.status !== 'good') {
       drivers.push({
         id: 'cost-efficiency',
         type: 'cost',
@@ -409,7 +424,7 @@ export class SystemIntelligenceService {
       })
     }
 
-    if (security.status !== 'good') {
+    if (security.ready && security.status !== 'good') {
       drivers.push({
         id: 'security-posture',
         type: 'security',
@@ -434,7 +449,7 @@ export class SystemIntelligenceService {
       })
     }
 
-    if (observability.status !== 'good') {
+    if (observability.ready && observability.status !== 'good') {
       drivers.push({
         id: 'observability-readiness',
         type: 'observability',
@@ -508,14 +523,22 @@ export class SystemIntelligenceService {
         ),
       ])
 
-    const system_score = Math.round(
-      cost.score * 0.30 +
-      security.score * 0.40 +
-      observability.score * 0.30
-    )
+    const allReady =
+      cost.ready &&
+      security.ready &&
+      observability.ready
 
-    const status =
-      this.scoreToStatus(system_score)
+    let system_score: number | null = null
+    let status: SystemIntelligenceResult['status'] = 'Pending'
+
+    if (allReady) {
+      system_score = Math.round(
+        cost.score * 0.30 +
+        security.score * 0.40 +
+        observability.score * 0.30
+      )
+      status = this.scoreToStatus(system_score)
+    }
 
     const top_drivers =
       this.buildDrivers(

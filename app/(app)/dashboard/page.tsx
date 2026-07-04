@@ -302,8 +302,8 @@ export default function DashboardPage() {
 
   const costDeltaColor  = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706'
   const CostDeltaIcon   = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus
-  const securityDeltaColor = securityScore !== null && securityScore >= 80 ? '#059669' : isDemoActive ? '#059669' : securityScore !== null ? '#DC2626' : '#94A3B8'
-  const SecurityDeltaIcon  = securityScore !== null && securityScore >= 80 ? TrendingUp : isDemoActive ? TrendingUp : TrendingDown
+  const securityDeltaColor = isDemoActive ? '#059669' : (securityScore !== null && securityScore > 0) ? (securityScore >= 80 ? '#059669' : '#DC2626') : '#94A3B8'
+  const SecurityDeltaIcon  = isDemoActive ? TrendingUp : (securityScore !== null && securityScore > 0) ? (securityScore >= 80 ? TrendingUp : TrendingDown) : Minus
   const efficiencyDeltaColor = efficiencyRatio !== null ? efficiencyRatio >= 90 ? '#059669' : efficiencyRatio >= 75 ? '#D97706' : '#DC2626' : '#D97706'
   const EfficiencyDeltaIcon  = efficiencyRatio !== null ? efficiencyRatio >= 90 ? TrendingUp : efficiencyRatio >= 75 ? Minus : TrendingDown : Minus
 
@@ -345,8 +345,10 @@ export default function DashboardPage() {
     { label: 'Mean Time to Recovery', value: isDemoActive ? '36 min' : '—',    tier: 'Elite', showTier: isDemoActive },
   ]
 
-  const securityRows: { label: string; value: string | number; status: 'good' | 'warn' }[] = [
-    { label: 'Critical Vulnerabilities', value: demoMode ? 0 : 0,                              status: 'good' },
+  const noSecurityData = !isDemoActive && (securityScore === null || securityScore === 0)
+
+  const securityRows: { label: string; value: string | number; status: 'good' | 'warn' | 'neutral' }[] = [
+    { label: 'Critical Vulnerabilities', value: noSecurityData ? '—' : 0,                       status: noSecurityData ? 'neutral' : 'good' },
     { label: 'Compliance Frameworks',    value: isDemoActive ? '4/4' : '—',                    status: 'good' },
     { label: 'Active Risks',             value: demoMode ? 3 : '—',                             status: 'warn' },
   ]
@@ -377,6 +379,15 @@ export default function DashboardPage() {
 
   // Reusable System Intelligence KPI card content
   const IntelKPICard = () => {
+    const notReady = !isDemoActive && (displayIntelligence == null || displayIntelligence.system_score == null)
+    if (notReady) {
+      return (
+        <>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">System Intelligence</p>
+          <div className="text-base font-semibold text-gray-900 leading-none mb-2">Calculating...</div>
+        </>
+      )
+    }
     const score = displayIntelligence?.system_score ?? cloudHealthScore ?? 0
     const chipLabel = score < 50 ? 'Poor — needs optimization' : score >= 85 ? 'Elite tier' : 'Needs optimization'
     const chipStyle = score < 50 || (score < 85 && score > 0) ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
@@ -489,7 +500,9 @@ export default function DashboardPage() {
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Total Cloud Spend</p>
                 <div className="text-base font-semibold text-gray-900 leading-none mb-1">Syncing...</div>
                 <div className="text-xs text-gray-500 font-medium mb-2">Full data in 24–48h</div>
-                <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                {wasteAmount > 0 && (
+                  <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                )}
               </div>
               {/* Savings Actions */}
               <div className="bg-white rounded-xl p-4 border border-gray-100">
@@ -577,7 +590,9 @@ export default function DashboardPage() {
                   ) : (
                     <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">${currentSpend.toLocaleString()}</div>
                   )}
-                  <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                  {wasteAmount > 0 && (
+                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                  )}
                   <div className="flex items-center gap-1.5 mt-2">
                     <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
                     <span className="text-[13px] font-semibold" style={{ color: costDeltaColor }}>{costChange > 0 ? '+' : ''}{Math.abs(costChange)}%</span>
@@ -610,8 +625,11 @@ export default function DashboardPage() {
                 <div className="bg-white rounded-xl p-4 border border-gray-100">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Savings Actions</p>
                   <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">
-                    {efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
+                    {wasteAmount > 0 && efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
                   </div>
+                  {wasteAmount <= 0 && (
+                    <div className="text-xs text-gray-500 font-medium mb-2">No opportunities identified yet</div>
+                  )}
                   {topRecs.length > 0 && (
                     <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
                   )}
@@ -640,11 +658,17 @@ export default function DashboardPage() {
                 </div>
                 <div className="bg-white rounded-xl p-4 border border-gray-100">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-3">Security Posture</p>
-                  <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
-                    {securityScore ?? '—'}<span className="text-base text-gray-400 font-normal">/100</span>
-                  </div>
-                  {securityScore !== null && securityScore >= 85 && (
-                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                  {(securityScore === null || securityScore === 0) && !isDemoActive ? (
+                    <div className="text-base font-semibold text-gray-900 leading-none mb-2">Scanning...</div>
+                  ) : (
+                    <>
+                      <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
+                        {securityScore ?? '—'}<span className="text-base text-gray-400 font-normal">/100</span>
+                      </div>
+                      {securityScore !== null && securityScore >= 85 && (
+                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="bg-white rounded-xl p-4 border border-gray-100">
@@ -782,7 +806,11 @@ export default function DashboardPage() {
             <div className="bg-white rounded-2xl p-8 border border-slate-100">
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Security Posture</p>
               <div className="text-center py-3 border-b border-slate-100 mb-3.5">
-                <div className="text-5xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}<span className="text-base text-slate-400 font-normal"> (preliminary)</span></div>
+                {(securityScore === null || securityScore === 0) && !isDemoActive ? (
+                  <div className="text-base font-semibold text-slate-900 leading-none">Scanning...</div>
+                ) : (
+                  <div className="text-5xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}<span className="text-base text-slate-400 font-normal"> (preliminary)</span></div>
+                )}
                 <div className="text-[11px] text-slate-400 mt-1">Scan in progress</div>
                 {securityScore !== null && securityScore >= 85
                   ? <div className="text-xs text-emerald-600 font-semibold mt-0.5">Elite Tier</div>
@@ -792,7 +820,7 @@ export default function DashboardPage() {
               {securityRows.map(({ label, value, status }) => (
                 <div key={label} className="flex items-center justify-between py-2 border-b border-slate-100">
                   <span className="text-[12px] text-slate-400">{label}</span>
-                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? '#059669' : '#D97706' }}>{value}</span>
+                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? '#059669' : status === 'neutral' ? '#94A3B8' : '#D97706' }}>{value}</span>
                 </div>
               ))}
               <div className="py-2 border-b border-slate-100">
@@ -857,15 +885,21 @@ export default function DashboardPage() {
             <div className="lg:col-span-2 bg-white rounded-xl p-4 border border-gray-100">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-4">Security Posture</p>
               <div className="text-center py-5 border-b border-slate-100 mb-5">
-                <div className="text-6xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}</div>
-                <div className="text-sm font-semibold mt-2" style={{ color: securityScore !== null && securityScore >= 80 ? '#059669' : securityScore !== null && securityScore >= 60 ? '#D97706' : '#94A3B8' }}>
-                  {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : securityScore !== null ? 'Needs attention' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
-                </div>
+                {(securityScore === null || securityScore === 0) && !isDemoActive ? (
+                  <div className="text-base font-semibold text-slate-900 leading-none">Scanning...</div>
+                ) : (
+                  <>
+                    <div className="text-6xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}</div>
+                    <div className="text-sm font-semibold mt-2" style={{ color: securityScore !== null && securityScore >= 80 ? '#059669' : securityScore !== null && securityScore >= 60 ? '#D97706' : '#94A3B8' }}>
+                      {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : securityScore !== null ? 'Needs attention' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
+                    </div>
+                  </>
+                )}
               </div>
               {securityRows.map(({ label, value, status }) => (
                 <div key={label} className="flex items-center justify-between py-2.5 border-b border-slate-100">
                   <span className="text-[12px] text-slate-400">{label}</span>
-                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? '#059669' : '#D97706' }}>{value}</span>
+                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? '#059669' : status === 'neutral' ? '#94A3B8' : '#D97706' }}>{value}</span>
                 </div>
               ))}
               <div className="py-3 border-b border-slate-100">
