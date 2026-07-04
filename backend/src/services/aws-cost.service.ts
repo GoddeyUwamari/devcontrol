@@ -63,20 +63,25 @@ type CostCategory = 'compute' | 'storage' | 'database' | 'network' | 'other'
 /**
  * AWS Cost Explorer SERVICE dimension values vary in exact wording across
  * accounts/regions, so categorize by keyword rather than an exact-match table.
+ *
+ * "Tax", AWS Support plan fees, and any other non-service charges intentionally
+ * fall through to 'other' — they aren't a real spend category (compute/storage/
+ * database/network), so bucketing them there is correct, not a mapping gap.
  */
 function categorizeAwsService(serviceName: string): CostCategory {
   const name = serviceName.toLowerCase()
   if (
     name.includes('compute cloud') || name.includes('lambda') ||
     name.includes('container service') || name.includes('kubernetes') ||
-    name.includes('fargate') || name.includes('elastic beanstalk')
+    name.includes('fargate') || name.includes('elastic beanstalk') ||
+    name.includes('container registry') || name.includes('savings plans')
   ) {
     return 'compute'
   }
   if (
     name.includes('simple storage') || name.includes('elastic block store') ||
     name.includes('elastic file system') || name.includes('backup') ||
-    name.includes('glacier')
+    name.includes('glacier') || name.includes('ec2 - other')
   ) {
     return 'storage'
   }
@@ -302,25 +307,40 @@ class AWSCostService {
     const response = await this.costExplorerClient.send(command)
 
     const points: CostTrendPoint[] = (response.ResultsByTime || []).map((result) => {
-      const point: CostTrendPoint = {
-        date: result.TimePeriod?.Start || '',
+      const raw: Record<CostCategory, number> = {
         compute: 0,
         storage: 0,
         database: 0,
         network: 0,
         other: 0,
-        total: 0,
       }
 
       for (const group of result.Groups || []) {
         const serviceName = group.Keys?.[0] || ''
         const amount = parseFloat(group.Metrics?.UnblendedCost?.Amount || '0')
         const category = categorizeAwsService(serviceName)
-        point[category] += amount
-        point.total += amount
+        raw[category] += amount
       }
 
-      return point
+      // Floor each category at 0 — credits/refunds can make a category net-negative
+      // for a day, but a stacked category-breakdown chart can't meaningfully render
+      // negative segments. The true bill total (including credits) is reported
+      // separately via fetchMonthlyCosts, not reconciled through this breakdown.
+      const compute = Math.max(0, raw.compute)
+      const storage = Math.max(0, raw.storage)
+      const database = Math.max(0, raw.database)
+      const network = Math.max(0, raw.network)
+      const other = Math.max(0, raw.other)
+
+      return {
+        date: result.TimePeriod?.Start || '',
+        compute,
+        storage,
+        database,
+        network,
+        other,
+        total: compute + storage + database + network + other,
+      }
     })
 
     return points

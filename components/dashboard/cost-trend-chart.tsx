@@ -150,6 +150,14 @@ export function CostTrendChart({
     { key: 'other', name: 'Other', color: '#6b7280' },
   ];
 
+  // A "spike" must be both proportionally large (1.5x the average day) AND a
+  // meaningful dollar amount above average — otherwise cent-level noise on a
+  // near-zero-spend account trips the banner.
+  const SPIKE_RATIO = 1.5;
+  const MIN_SPIKE_DELTA = 20; // dollars above average required to flag
+  const avgTotal = data.length > 0 ? data.reduce((sum, d) => sum + d.total, 0) / data.length : 0;
+  const hasSpike = data.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
+
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
@@ -165,13 +173,13 @@ export function CostTrendChart({
                 {dateRangeOptions.map((option) => (
                   <Button
                     key={option.value}
-                    variant={dateRange === option.value ? 'default' : 'ghost'}
+                    variant="ghost"
                     size="sm"
                     onClick={() => onDateRangeChange(option.value as any)}
                     className={`h-7 px-3 text-xs ${
                       dateRange === option.value
-                        ? 'bg-white shadow-sm'
-                        : 'hover:bg-white/50'
+                        ? 'bg-white text-gray-900 shadow-sm hover:bg-white'
+                        : 'text-gray-500 hover:bg-white/50'
                     }`}
                   >
                     {option.label}
@@ -230,6 +238,7 @@ export function CostTrendChart({
               style={{ fontSize: '12px' }}
             />
             <YAxis
+              domain={[0, 'auto']}
               tickFormatter={formatCurrency}
               stroke="#9ca3af"
               style={{ fontSize: '12px' }}
@@ -264,7 +273,7 @@ export function CostTrendChart({
         </ResponsiveContainer>
 
         {/* Anomaly Indicators */}
-        {data.some(d => d.total > (data.reduce((sum, d) => sum + d.total, 0) / data.length) * 1.5) && (
+        {hasSpike && (
           <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
             <p className="text-sm text-orange-800">
               <span className="font-semibold">⚠️ Cost Spike Detected:</span> Unusual spending pattern identified. Review details above.
