@@ -2,9 +2,10 @@ import { Request, Response } from 'express';
 import { DeploymentsRepository } from '../repositories/deployments.repository';
 import { ApiResponse, PlatformStats } from '../types';
 import { pool } from '../config/database';
-import awsCostService from '../services/aws-cost.service';
+import awsCostService, { CostTrendRange } from '../services/aws-cost.service';
 
 const deploymentsRepo = new DeploymentsRepository();
+const VALID_TREND_RANGES: CostTrendRange[] = ['7d', '30d', '90d', '6mo', '1yr'];
 
 export class StatsController {
   async getDashboardStats(req: Request, res: Response): Promise<void> {
@@ -94,6 +95,34 @@ export class StatsController {
         error: 'Failed to fetch dashboard stats',
       };
       res.status(500).json(response);
+    }
+  }
+
+  /**
+   * GET /api/platform/costs/trend
+   * Time-series cost breakdown by category (compute/storage/database/network/other)
+   * from AWS Cost Explorer, for the requested range.
+   */
+  async getCostTrend(req: Request, res: Response): Promise<void> {
+    const organizationId = (req as any).user?.organizationId;
+    const rangeParam = (req.query.range as string) || '90d';
+
+    if (!VALID_TREND_RANGES.includes(rangeParam as CostTrendRange)) {
+      res.status(400).json({
+        success: false,
+        error: `Invalid range. Must be one of: ${VALID_TREND_RANGES.join(', ')}`,
+      });
+      return;
+    }
+
+    try {
+      const data = await awsCostService.fetchCostTrend(organizationId, rangeParam as CostTrendRange);
+      res.json({ success: true, data });
+    } catch (error) {
+      // Not-connected / Cost Explorer hiccups shouldn't break the dashboard —
+      // degrade to an honest empty series rather than a 500.
+      console.error('Error fetching cost trend:', error);
+      res.json({ success: true, data: [] });
     }
   }
 }

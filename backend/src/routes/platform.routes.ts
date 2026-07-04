@@ -6,5 +6,6 @@ const router = Router();
 const controller = new StatsController();
 
 router.get('/stats/dashboard', authenticateToken, (req, res) => controller.getDashboardStats(req, res));
+router.get('/costs/trend', authenticateToken, (req, res) => controller.getCostTrend(req, res));
 
 export default router;

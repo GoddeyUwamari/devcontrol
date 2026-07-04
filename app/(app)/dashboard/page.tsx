@@ -300,6 +300,23 @@ export default function DashboardPage() {
 
   const displayIntelligence = isDemoActive ? DEMO_INTELLIGENCE : systemIntelligence ?? null
 
+  const { data: costTrend = [], isLoading: costTrendLoading } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
+    queryKey: ['cost-trend', costDateRange],
+    queryFn: async () => {
+      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=${costDateRange}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
+      })
+      if (!res.ok) return []
+      const json = await res.json()
+      return json.data ?? []
+    },
+    staleTime: 60_000, refetchInterval: 300_000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !isDemoActive && hasBillingData,
+  })
+
   const costDeltaColor  = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706'
   const CostDeltaIcon   = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus
   const securityDeltaColor = isDemoActive ? '#059669' : (securityScore !== null && securityScore > 0) ? (securityScore >= 80 ? '#059669' : '#DC2626') : '#94A3B8'
@@ -891,10 +908,9 @@ export default function DashboardPage() {
                   onExport={() => { toast.success('Exporting cost data...') }}
                 />
               ) : hasBillingData ? (
-                <CostBreakdownBarList
-                  data={[]}
-                  totalCost={currentSpend}
-                  isLoading={statsLoading}
+                <CostTrendChart
+                  data={costTrend}
+                  isLoading={costTrendLoading}
                   dateRange={costDateRange}
                   onDateRangeChange={setCostDateRange}
                   onExport={() => { toast.success('Exporting cost data...') }}

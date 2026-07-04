@@ -46,6 +46,57 @@ interface MonthlyCost {
   }
 }
 
+export type CostTrendRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
+
+export interface CostTrendPoint {
+  date: string
+  compute: number
+  storage: number
+  database: number
+  network: number
+  other: number
+  total: number
+}
+
+type CostCategory = 'compute' | 'storage' | 'database' | 'network' | 'other'
+
+/**
+ * AWS Cost Explorer SERVICE dimension values vary in exact wording across
+ * accounts/regions, so categorize by keyword rather than an exact-match table.
+ */
+function categorizeAwsService(serviceName: string): CostCategory {
+  const name = serviceName.toLowerCase()
+  if (
+    name.includes('compute cloud') || name.includes('lambda') ||
+    name.includes('container service') || name.includes('kubernetes') ||
+    name.includes('fargate') || name.includes('elastic beanstalk')
+  ) {
+    return 'compute'
+  }
+  if (
+    name.includes('simple storage') || name.includes('elastic block store') ||
+    name.includes('elastic file system') || name.includes('backup') ||
+    name.includes('glacier')
+  ) {
+    return 'storage'
+  }
+  if (
+    name.includes('relational database') || name.includes('dynamodb') ||
+    name.includes('elasticache') || name.includes('redshift') ||
+    name.includes('documentdb') || name.includes('neptune')
+  ) {
+    return 'database'
+  }
+  if (
+    name.includes('data transfer') || name.includes('cloudfront') ||
+    name.includes('elastic load balancing') || name.includes('direct connect') ||
+    name.includes('route 53') || name.includes('virtual private cloud')
+  ) {
+    return 'network'
+  }
+  return 'other'
+}
+
 class AWSCostService {
   private costExplorerClient: CostExplorerClient
   private ec2Client: EC2Client
@@ -192,6 +243,87 @@ class AWSCostService {
       console.error('Error fetching monthly costs:', error)
       throw error
     }
+  }
+
+  /**
+   * Compute the TimePeriod + Granularity for a given trend range.
+   * Short ranges use DAILY granularity; 6mo/1yr use MONTHLY (calendar-month aligned,
+   * current partial month included).
+   */
+  private resolveTrendPeriod(range: CostTrendRange): { start: string; end: string; granularity: Granularity } {
+    const now = new Date()
+    const toISODate = (d: Date) => d.toISOString().split('T')[0]
+
+    if (range === '6mo' || range === '1yr') {
+      const monthsBack = range === '6mo' ? 6 : 12
+      const start = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1)
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      return { start: toISODate(start), end: toISODate(end), granularity: Granularity.MONTHLY }
+    }
+
+    const daysBack = range === '7d' ? 7 : range === '30d' ? 30 : 90
+    const start = new Date(now)
+    start.setDate(start.getDate() - daysBack)
+    const end = new Date(now)
+    end.setDate(end.getDate() + 1) // Cost Explorer's End is exclusive; include today
+    return { start: toISODate(start), end: toISODate(end), granularity: Granularity.DAILY }
+  }
+
+  /**
+   * Fetch a cost time-series broken down by category (compute/storage/database/network/other)
+   * for the given range, from AWS Cost Explorer.
+   * If organizationId is supplied, assumes the org's IAM role via STS before calling
+   * Cost Explorer; otherwise falls back to platform-level env-var credentials.
+   */
+  async fetchCostTrend(organizationId: string | undefined, range: CostTrendRange): Promise<CostTrendPoint[]> {
+    if (organizationId) {
+      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
+      return orgService.fetchCostTrend(undefined, range)
+    }
+
+    if (!this.enabled) {
+      return []
+    }
+
+    const { start, end, granularity } = this.resolveTrendPeriod(range)
+
+    const command = new GetCostAndUsageCommand({
+      TimePeriod: { Start: start, End: end },
+      Granularity: granularity,
+      Metrics: [Metric.UNBLENDED_COST],
+      GroupBy: [
+        {
+          Type: 'DIMENSION',
+          Key: 'SERVICE',
+        },
+      ],
+    })
+
+    const response = await this.costExplorerClient.send(command)
+
+    const points: CostTrendPoint[] = (response.ResultsByTime || []).map((result) => {
+      const point: CostTrendPoint = {
+        date: result.TimePeriod?.Start || '',
+        compute: 0,
+        storage: 0,
+        database: 0,
+        network: 0,
+        other: 0,
+        total: 0,
+      }
+
+      for (const group of result.Groups || []) {
+        const serviceName = group.Keys?.[0] || ''
+        const amount = parseFloat(group.Metrics?.UnblendedCost?.Amount || '0')
+        const category = categorizeAwsService(serviceName)
+        point[category] += amount
+        point.total += amount
+      }
+
+      return point
+    })
+
+    return points
   }
 
   /**
