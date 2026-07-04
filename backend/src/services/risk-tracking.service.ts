@@ -69,17 +69,16 @@ export class RiskTrackingService {
     const stats = await this.resourcesRepository.getStats(organizationId);
     const riskScore = await this.calculateCurrentRiskScore(organizationId);
 
-    const findFactor = (name: string) => riskScore.factors.find(f => f.name === name)?.score ?? 0;
     await this.repository.createSnapshot({
       organizationId,
       snapshotDate: new Date(),
-      overallScore: riskScore.total,
+      overallScore: riskScore.score,
       grade: riskScore.grade,
-      encryptionScore: findFactor('Encryption'),
-      publicAccessScore: findFactor('Public Access'),
-      backupScore: findFactor('Backup'),
-      complianceScore: findFactor('Compliance'),
-      resourceManagementScore: findFactor('Resource Management'),
+      encryptionScore: riskScore.factors.encryption,
+      publicAccessScore: riskScore.factors.publicAccess,
+      backupScore: riskScore.factors.backup,
+      complianceScore: riskScore.factors.compliance,
+      resourceManagementScore: riskScore.factors.resourceManagement,
       totalResources: stats.total_resources || 0,
       unencryptedCount: stats.unencrypted_count || 0,
       publicCount: stats.public_count || 0,
