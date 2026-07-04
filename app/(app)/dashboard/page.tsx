@@ -185,11 +185,11 @@ export default function DashboardPage() {
     enabled: !demoMode && !salesDemoMode,
   })
 
-  const { data: costRecsRaw = [] } = useQuery<Array<{ id: string; issue: string; potential_savings?: number; status?: string }>>({
+  const { data: costRecsRaw = [] } = useQuery<Array<{ id: string; issue: string; potential_savings?: number; status?: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH' }>>({
     queryKey: ['cost-recommendations'],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-recommendations`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-recommendations?status=ACTIVE`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: 'include',
       })
@@ -309,9 +309,12 @@ export default function DashboardPage() {
 
   const costScore           = isDemoActive ? 82 : (efficiencyRatio ?? null)
   const securityScore_health = isDemoActive ? 87 : (securityScore ?? null)
-  const reliabilityScore    = isDemoActive ? 91 : systemHealth?.status === 'operational' ? 95 : systemHealth?.status === 'degraded' ? 72 : stats ? null : 0
-  const systemStatusLabel   = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'healthy'
-  const systemResponseTime  = isDemoActive ? '145ms' : '—'
+  const reliabilityScore    = isDemoActive ? 91 : (systemHealth?.healthPercentage ?? (stats ? null : 0))
+  const systemStatusLabel   = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'unknown'
+  const avgServiceResponseTime = systemHealth?.services?.length
+    ? Math.round(systemHealth.services.reduce((sum, s) => sum + s.responseTime, 0) / systemHealth.services.length)
+    : null
+  const systemResponseTime  = isDemoActive ? '145ms' : (avgServiceResponseTime != null ? `${avgServiceResponseTime}ms` : '—')
   const systemAlertCount    = isDemoActive ? 2 : 0
   const systemUptimeAvg     = isDemoActive ? '99.4%' : (systemHealth?.healthPercentage != null ? `${systemHealth.healthPercentage}%` : '—')
 
@@ -319,39 +322,49 @@ export default function DashboardPage() {
     healthy:  { color: '#059669', bg: '#F0FDF4', border: '#BBF7D0', dot: '#059669', label: 'All systems operational' },
     degraded: { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', dot: '#D97706', label: 'Degraded performance detected' },
     down:     { color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', dot: '#DC2626', label: 'System outage detected' },
+    unknown:  { color: '#94A3B8', bg: '#F8FAFC', border: '#E2E8F0', dot: '#94A3B8', label: 'Status pending' },
   }
-  const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.healthy
+  const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.unknown
 
   const _healthComponents = ([costScore, securityScore_health, reliabilityScore] as (number | null)[]).filter((s): s is number => s !== null)
   const cloudHealthScore = _healthComponents.length > 0 ? Math.round(_healthComponents.reduce((a, b) => a + b, 0) / _healthComponents.length) : null
-  const topRecs = isDemoActive
+  const topRecs: { label: string; savings: string; effort?: string; time?: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH' }[] = isDemoActive
     ? [
         { label: 'Right-size 3 EC2 instances',        savings: '$720/mo', effort: 'Low',    time: '~15 min' },
         { label: 'Delete unattached EBS volumes',     savings: '$210/mo', effort: 'Low',    time: '~5 min'  },
         { label: 'Enable S3 Intelligent-Tiering',     savings: '$340/mo', effort: 'Medium', time: '~10 min' },
       ]
     : costRecsRaw.slice(0, 5).map(r => ({
-        label:   r.issue || 'Optimization',
-        savings: r.potential_savings != null ? `$${Math.round(r.potential_savings).toLocaleString()}/mo` : '',
-        effort:  'Low' as const,
-        time:    '~5 min',
+        label:    r.issue || 'Optimization',
+        savings:  r.potential_savings != null ? `$${Math.round(r.potential_savings).toLocaleString()}/mo` : '',
+        severity: r.severity,
       }))
   const criticalAlerts = demoMode ? DEMO_DASHBOARD_STATS.criticalAlerts : 0
 
   const doraRows: { label: string; value: string; tier: 'Elite' | 'High'; showTier?: boolean }[] = [
-    { label: 'Deployment Frequency',  value: demoMode ? '4.2/day' : (stats?.activeDeployments ? `${stats.activeDeployments}/week` : '—'), tier: 'Elite', showTier: demoMode || !!(stats?.activeDeployments) },
+    { label: 'Deployment Frequency',  value: demoMode ? '4.2/day' : '—', tier: 'Elite', showTier: demoMode },
     { label: 'Lead Time for Changes', value: isDemoActive ? '2.4 hours' : '—', tier: 'Elite', showTier: isDemoActive },
     { label: 'Change Failure Rate',   value: isDemoActive ? '8.3%' : '—',      tier: 'High',  showTier: isDemoActive },
     { label: 'Mean Time to Recovery', value: isDemoActive ? '36 min' : '—',    tier: 'Elite', showTier: isDemoActive },
   ]
 
-  const noSecurityData = !isDemoActive && (securityScore === null || securityScore === 0)
-
   const securityRows: { label: string; value: string | number; status: 'good' | 'warn' | 'neutral' }[] = [
-    { label: 'Critical Vulnerabilities', value: noSecurityData ? '—' : 0,                       status: noSecurityData ? 'neutral' : 'good' },
+    { label: 'Critical Vulnerabilities', value: isDemoActive ? 0 : '—',                          status: isDemoActive ? 'good' : 'neutral' },
     { label: 'Compliance Frameworks',    value: isDemoActive ? '4/4' : '—',                    status: 'good' },
     { label: 'Active Risks',             value: demoMode ? 3 : '—',                             status: 'warn' },
   ]
+
+  // Real severity-derived risk badge for a recommendation (no fabricated risk/effort/time claims)
+  const RiskBadge = ({ severity }: { severity?: 'LOW' | 'MEDIUM' | 'HIGH' }) => {
+    if (!severity) return null
+    const styles = {
+      LOW:    'text-emerald-700 bg-emerald-50 border-emerald-200',
+      MEDIUM: 'text-amber-700 bg-amber-50 border-amber-200',
+      HIGH:   'text-red-700 bg-red-50 border-red-200',
+    }
+    const labels = { LOW: 'Low risk', MEDIUM: 'Medium risk', HIGH: 'High risk' }
+    return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${styles[severity]}`}>{labels[severity]}</span>
+  }
 
   // Reusable inline component for intelligence score bars
   const IntelScoreBars = ({ intel }: { intel: typeof DEMO_INTELLIGENCE | null }) => (
@@ -465,11 +478,13 @@ export default function DashboardPage() {
                 ? 'Save $800–$2,400/month by approving 3 optimizations'
                 : `Save $${wasteAmount.toLocaleString()}/month by approving ${topRecs.length} optimization${topRecs.length !== 1 ? 's' : ''}`}
             </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {['Zero downtime', 'Fully reversible', 'Takes < 5 min'].map((pill) => (
-                <span key={pill} className="bg-white border border-gray-200 rounded-full px-2.5 py-0.5 text-[11px] text-gray-700">{pill}</span>
-              ))}
-            </div>
+            {isDemoActive && (
+              <div className="flex gap-1.5 flex-wrap">
+                {['Zero downtime', 'Fully reversible', 'Takes < 5 min'].map((pill) => (
+                  <span key={pill} className="bg-white border border-gray-200 rounded-full px-2.5 py-0.5 text-[11px] text-gray-700">{pill}</span>
+                ))}
+              </div>
+            )}
           </div>
           <a href="/cost-optimization" className="bg-violet-700 text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap shrink-0">
             Approve all changes
@@ -593,11 +608,13 @@ export default function DashboardPage() {
                   {wasteAmount > 0 && (
                     <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
                   )}
-                  <div className="flex items-center gap-1.5 mt-2">
-                    <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
-                    <span className="text-[13px] font-semibold" style={{ color: costDeltaColor }}>{costChange > 0 ? '+' : ''}{Math.abs(costChange)}%</span>
-                    <span className="text-[13px] text-gray-500">vs last month</span>
-                  </div>
+                  {isDemoActive && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
+                      <span className="text-[13px] font-semibold" style={{ color: costDeltaColor }}>{costChange > 0 ? '+' : ''}{Math.abs(costChange)}%</span>
+                      <span className="text-[13px] text-gray-500">vs last month</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Security Posture */}
@@ -736,7 +753,7 @@ export default function DashboardPage() {
               <p className="text-sm text-slate-800 leading-relaxed">
                 {demoMode
                   ? <>Compute costs are driving spend ($5,200, +12%).{' '}<a href="/cost-optimization" className="text-violet-700 font-semibold no-underline">Review optimization opportunities →</a></>
-                  : (insightMessage || `Your infrastructure is being actively analyzed. ${displayIntelligence?.top_drivers?.[0]?.message ? displayIntelligence.top_drivers[0].message + ' — ' + displayIntelligence.top_drivers[0].consequence : '3 optimization opportunities identified with zero downtime risk.'}`)}
+                  : (insightMessage || `Your infrastructure is being actively analyzed. ${displayIntelligence?.top_drivers?.[0]?.message ? displayIntelligence.top_drivers[0].message + ' — ' + displayIntelligence.top_drivers[0].consequence : topRecs.length > 0 ? `${topRecs.length} optimization opportunit${topRecs.length !== 1 ? 'ies' : 'y'} identified.` : 'No insights available yet.'}`)}
               </p>
             </div>
             <button onClick={() => setInsightDismissed(true)} className="bg-transparent border-none cursor-pointer text-slate-400 p-1 shrink-0 leading-none">
@@ -759,7 +776,13 @@ export default function DashboardPage() {
                 </div>
                 <a href="/cost-optimization" className="text-xs font-semibold text-violet-700 no-underline whitespace-nowrap">All →</a>
               </div>
-              {topRecs.length > 0 && <p className="text-xs text-gray-700 mb-4 leading-relaxed">These {topRecs.length} changes reduce AWS waste immediately · zero downtime · fully reversible · takes &lt; 15 min</p>}
+              {topRecs.length > 0 && (
+                <p className="text-xs text-gray-700 mb-4 leading-relaxed">
+                  {isDemoActive
+                    ? <>These {topRecs.length} changes reduce AWS waste immediately · zero downtime · fully reversible · takes &lt; 15 min</>
+                    : <>These {topRecs.length} changes may reduce AWS waste — review each before approving</>}
+                </p>
+              )}
               {topRecs.map((rec, i) => (
                 <div key={i} className="flex items-start gap-3 py-3 border-b border-slate-100">
                   <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-violet-700" /></div>
@@ -767,12 +790,18 @@ export default function DashboardPage() {
                     <div className="text-sm font-semibold text-gray-900 mb-1">{rec.label}</div>
                     <div className="text-xs text-gray-700 font-medium mb-1">Cost impact pending billing sync</div>
                     <div className="flex gap-1.5 flex-wrap">
-                      {i < 2 ? (
-                        <><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">No downtime</span></>
+                      {isDemoActive ? (
+                        <>
+                          {i < 2 ? (
+                            <><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">No downtime</span></>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Low risk</span>
+                          )}
+                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">{rec.time}</span>
+                        </>
                       ) : (
-                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Low risk</span>
+                        <RiskBadge severity={rec.severity} />
                       )}
-                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">{rec.time}</span>
                     </div>
                   </div>
                 </div>
@@ -932,8 +961,14 @@ export default function DashboardPage() {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1">Executive ROI Summary</p>
               <p className="text-lg font-semibold text-slate-900">
-                DEVCONTROL has saved {isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')}{' '}
-                <span className="text-emerald-600">${(wasteAmount * 12).toLocaleString()}</span> annualised
+                {isDemoActive || wasteAmount > 0 ? (
+                  <>
+                    DEVCONTROL has saved {isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')}{' '}
+                    <span className="text-emerald-600">${(wasteAmount * 12).toLocaleString()}</span> annualised
+                  </>
+                ) : (
+                  <>No cost-saving opportunities identified yet for {organization?.displayName || organization?.name || 'your organization'}</>
+                )}
               </p>
             </div>
             <div className="flex gap-2.5 shrink-0">
@@ -943,10 +978,10 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
             {[
-              { label: 'Monthly Savings',         value: `$${wasteAmount.toLocaleString()}`,          sub: 'AI-identified waste',    color: '#059669' },
-              { label: 'Annual Projection',        value: `$${(wasteAmount * 12).toLocaleString()}`,   sub: 'At current run rate',    color: '#059669' },
-              { label: 'Avg. ROI Payback',         value: '< 15 min',                                  sub: 'Zero-risk changes only', color: '#7C3AED' },
-              { label: 'Open Recommendations',     value: `${topRecs.length}`,                         sub: 'Ready to action',        color: '#D97706' },
+              { label: 'Monthly Savings',         value: wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}` : '—',            sub: wasteAmount > 0 ? 'AI-identified waste' : 'No opportunities identified yet',    color: wasteAmount > 0 ? '#059669' : '#94A3B8' },
+              { label: 'Annual Projection',        value: wasteAmount > 0 ? `$${(wasteAmount * 12).toLocaleString()}` : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? '#059669' : '#94A3B8' },
+              { label: 'Avg. ROI Payback',         value: isDemoActive ? '< 15 min' : '—',                                      sub: isDemoActive ? 'Zero-risk changes only' : 'Not yet available',                  color: isDemoActive ? '#7C3AED' : '#94A3B8' },
+              { label: 'Open Recommendations',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: '#D97706' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="px-4 py-4 bg-slate-50 rounded-xl border border-slate-100">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">{label}</p>
@@ -962,14 +997,14 @@ export default function DashboardPage() {
       {isAwsConnected && (
         <div className="bg-white border border-gray-100 rounded-xl px-4 py-3.5 flex items-center justify-between mb-5">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: systemAlertCount > 0 ? '#f59e0b' : '#22c55e' }} />
-            <span className="text-[13px] font-semibold text-gray-900">{systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : systemStatusLabel === 'down' ? systemStatusConfig.healthy.label : statusConf.label}</span>
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: systemAlertCount > 0 ? '#f59e0b' : statusConf.dot }} />
+            <span className="text-[13px] font-semibold text-gray-900">{systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : statusConf.label}</span>
             <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
-            <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemUptimeAvg !== '—' && systemUptimeAvg !== '0%' ? `${systemUptimeAvg} uptime this month` : systemUptimeAvg === '0%' ? 'Pending data' : '99.9% uptime this month'}</span>
+            <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemUptimeAvg !== '—' && systemUptimeAvg !== '0%' ? `${systemUptimeAvg} uptime this month` : systemUptimeAvg === '0%' ? 'Pending data' : isDemoActive ? '99.9% uptime this month' : 'Uptime data pending'}</span>
             <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
-            {systemStatusLabel !== 'down' && <span className="hidden sm:block text-xs text-gray-700 font-medium">No incidents in 30 days</span>}
+            {isDemoActive && systemStatusLabel !== 'down' && <span className="hidden sm:block text-xs text-gray-700 font-medium">No incidents in 30 days</span>}
             <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
-            <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : '3 services monitored'}</span>
+            <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : isDemoActive ? '3 services monitored' : (systemHealth?.totalServices ? `${systemHealth.totalServices} services monitored` : 'Monitoring pending')}</span>
           </div>
           <a href="/monitoring" className="text-emerald-600 font-semibold text-xs no-underline">View observability →</a>
         </div>
@@ -1097,7 +1132,9 @@ export default function DashboardPage() {
                     <a href="/cost-optimization" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">All <ArrowRight size={12} /></a>
                   </div>
                   <p className="text-xs text-gray-700 mb-3 leading-relaxed px-3 py-2.5 bg-emerald-50 rounded-lg border border-gray-100">
-                    These {topRecs.length} changes reduce AWS waste immediately — zero downtime · fully reversible
+                    {isDemoActive
+                      ? <>These {topRecs.length} changes reduce AWS waste immediately — zero downtime · fully reversible</>
+                      : <>These {topRecs.length} changes may reduce AWS waste — review each before approving</>}
                   </p>
                   {topRecs.map((rec, i) => (
                     <div key={i} className="flex items-start gap-3 border border-gray-100 rounded-xl px-3 py-2.5 mb-1.5">
@@ -1108,12 +1145,18 @@ export default function DashboardPage() {
                           {showSavingsDollars
                             ? <span className="text-[11px] font-bold text-emerald-600">{rec.savings}</span>
                             : <span className="text-[11px] text-gray-400 italic">Cost impact pending billing sync</span>}
-                          {i < 2 ? (
-                            <><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">No downtime</span><span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">High confidence</span></>
+                          {isDemoActive ? (
+                            <>
+                              {i < 2 ? (
+                                <><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">No downtime</span><span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">High confidence</span></>
+                              ) : (
+                                <><span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">Effort: Medium</span></>
+                              )}
+                              <span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">{rec.time}</span>
+                            </>
                           ) : (
-                            <><span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">Effort: Medium</span></>
+                            <RiskBadge severity={rec.severity} />
                           )}
-                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">{rec.time}</span>
                         </div>
                       </div>
                     </div>
@@ -1121,7 +1164,9 @@ export default function DashboardPage() {
                   <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
                     <div className="text-[11px] font-semibold text-slate-500 mb-0.5">Total potential</div>
                     {showSavingsDollars
-                      ? <div className="text-lg font-bold text-emerald-600 tracking-tight">${wasteAmount > 0 ? `${wasteAmount.toLocaleString()}/mo` : 'Calculating...'}</div>
+                      ? (wasteAmount > 0
+                          ? <div className="text-lg font-bold text-emerald-600 tracking-tight">${wasteAmount.toLocaleString()}/mo</div>
+                          : <div className="text-[13px] text-gray-400 italic">{isDemoActive ? 'Calculating...' : 'No savings opportunities identified yet'}</div>)
                       : <div className="text-[13px] text-gray-400 italic">Calculated once billing syncs</div>}
                   </div>
                 </div>
