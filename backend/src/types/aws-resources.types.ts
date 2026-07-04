@@ -56,6 +56,8 @@ export interface AWSResource {
   is_public: boolean;
   has_backup: boolean;
   compliance_issues: ComplianceIssue[];
+  is_orphaned: boolean;
+  orphaned_monthly_savings: number;
   last_synced_at: Date | null;
   first_discovered_at: Date;
   created_at: Date;
@@ -216,9 +218,9 @@ export interface ResourceStats {
   unencrypted_count: number;
   public_count: number;
   missing_backup_count: number;
-  // True once compliance scanning + orphaned-resource detection are wired into the sync
-  // pipeline (see complianceScanner.ts / orphanedResourceDetector.ts). Both are currently
-  // dead code, so this is always false — flip it there once P1/P2 wiring lands.
+  // True once ComplianceScannerService + OrphanedResourceDetectorService have both
+  // completed at least one discovery run without error for this org — see
+  // resource_discovery_jobs.compliance_scan_completed, set in awsResourceDiscovery.ts.
   scan_completed: boolean;
 }
 

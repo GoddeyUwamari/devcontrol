@@ -83,6 +83,8 @@ import {
   S3BucketMetadata,
 } from '../types/aws-resources.types';
 import { SubscriptionTier } from '../middleware/subscription.middleware';
+import { ComplianceScannerService } from './complianceScanner';
+import { OrphanedResourceDetectorService } from './orphanedResourceDetector';
 
 /**
  * Resource types allowed by subscription tier
@@ -502,6 +504,70 @@ export class AWSResourceDiscoveryService {
         skippedTypes.push('sns');
       }
 
+      // Compliance scan: evaluate every currently-known resource for this org against
+      // real encryption/public-access/backup/tag/SOC2/HIPAA checks, persisting genuine
+      // compliance_issues instead of the stubbed always-[] value.
+      let complianceScanCompleted = false;
+      try {
+        console.log(`🔎 [Discovery] Running compliance scan...`);
+        const scanner = new ComplianceScannerService();
+        const { rows: allResources } = await client.query(
+          `SELECT * FROM aws_resources WHERE organization_id = $1`,
+          [organizationId]
+        );
+
+        for (const resource of allResources as AWSResource[]) {
+          const issues = await scanner.scanResource(resource);
+
+          if (resource.resource_type === 's3') {
+            try {
+              const enhanced = await scanner.checkS3PublicAccessEnhanced(resource, resource.region);
+              issues.push(...enhanced);
+            } catch (error: any) {
+              console.error(`[Discovery] S3 enhanced check failed for ${resource.resource_arn}:`, error.message);
+            }
+          }
+
+          await client.query(
+            `UPDATE aws_resources SET compliance_issues = $1 WHERE id = $2`,
+            [JSON.stringify(issues), resource.id]
+          );
+        }
+
+        console.log(`✅ [Discovery] Compliance scan complete (${allResources.length} resources scanned)`);
+        complianceScanCompleted = true;
+      } catch (error: any) {
+        console.error(`❌ [Discovery] Compliance scan failed:`, error.message);
+        errors.push(`Compliance scan: ${error.message}`);
+      }
+
+      // Orphaned-resource detection: identify stopped/unused resources from what's
+      // already synced, persisting real is_orphaned / orphaned_monthly_savings instead
+      // of the stubbed always-0 orphaned_count.
+      try {
+        console.log(`🔎 [Discovery] Running orphaned-resource detection...`);
+        const detector = new OrphanedResourceDetectorService(this.pool);
+        const orphaned = await detector.detectOrphaned(organizationId);
+
+        await client.query(
+          `UPDATE aws_resources SET is_orphaned = false, orphaned_monthly_savings = 0 WHERE organization_id = $1`,
+          [organizationId]
+        );
+
+        for (const o of orphaned) {
+          await client.query(
+            `UPDATE aws_resources SET is_orphaned = true, orphaned_monthly_savings = $1 WHERE id = $2`,
+            [o.potential_savings, o.resource.id]
+          );
+        }
+
+        console.log(`✅ [Discovery] Orphaned-resource detection complete (${orphaned.length} found)`);
+      } catch (error: any) {
+        console.error(`❌ [Discovery] Orphaned-resource detection failed:`, error.message);
+        errors.push(`Orphaned detection: ${error.message}`);
+        complianceScanCompleted = false;
+      }
+
       // Update job status
       console.log(`\n📊 [Discovery] Discovery Summary:`);
       console.log(`  - Subscription tier: ${tier}`);
@@ -523,13 +589,14 @@ export class AWSResourceDiscoveryService {
 
       await client.query(
         `UPDATE resource_discovery_jobs
-         SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, error_message = $4
-         WHERE id = $5`,
+         SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, error_message = $4, compliance_scan_completed = $5
+         WHERE id = $6`,
         [
           errors.length > 0 ? 'failed' : 'completed',
           totalDiscovered,
           totalUpdated,
           errors.length > 0 ? errors.join('; ') : null,
+          complianceScanCompleted,
           jobId
         ]
       );

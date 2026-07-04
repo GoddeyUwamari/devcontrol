@@ -216,6 +216,25 @@ export class AWSResourcesRepository {
       );
       const missingBackupCount = parseInt(missingBackupResult.rows[0].count);
 
+      const orphanedResult = await client.query(
+        `SELECT COUNT(*) as count, COALESCE(SUM(orphaned_monthly_savings), 0) as savings
+         FROM aws_resources WHERE organization_id = $1 AND is_orphaned = true`,
+        [organizationId]
+      );
+      const orphanedCount = parseInt(orphanedResult.rows[0].count);
+      const orphanedSavings = parseFloat(orphanedResult.rows[0].savings);
+
+      // A genuine scan means ComplianceScannerService + OrphanedResourceDetectorService
+      // have both completed without error for this org at least once — see
+      // awsResourceDiscovery.ts::discoverAllResources.
+      const scanResult = await client.query(
+        `SELECT 1 FROM resource_discovery_jobs
+         WHERE organization_id = $1 AND compliance_scan_completed = true
+         LIMIT 1`,
+        [organizationId]
+      );
+      const scanCompleted = (scanResult.rowCount ?? 0) > 0;
+
       return {
         total_resources: total,
         by_type: byType,
@@ -224,12 +243,12 @@ export class AWSResourcesRepository {
         total_monthly_cost: totalMonthlyCost,
         cost_by_type: costByType,
         compliance_stats: complianceStats,
-        orphaned_count: 0, // Will be populated by orphaned detector
-        orphaned_savings: 0,
+        orphaned_count: orphanedCount,
+        orphaned_savings: orphanedSavings,
         unencrypted_count: unencryptedCount,
         public_count: publicCount,
         missing_backup_count: missingBackupCount,
-        scan_completed: false, // Orphaned detector & compliance scanner are not wired in yet — see field comment on ResourceStats
+        scan_completed: scanCompleted,
       };
     } finally {
       client.release();
