@@ -63,9 +63,13 @@ export default function SecurityPage() {
     staleTime: 2 * 60 * 1000,
   })
 
-  const score = riskScore?.score ?? 87
-  const scoreLabel = score >= 90 ? 'Excellent' : score >= 80 ? 'Good' : score >= 70 ? 'Fair' : 'At Risk'
-  const scoreColor = score >= 80 ? '#059669' : score >= 70 ? '#D97706' : '#DC2626'
+  // Real accounts: compliance + orphaned-resource scanning haven't run yet (backend stub),
+  // so an undefined/errored fetch must not fall back to a fabricated "87 Good" — treat it
+  // as preliminary/unknown instead. Demo data is always final.
+  const isPreliminary = !demoMode && (!riskScore || riskScore.isPreliminary)
+  const score = riskScore?.score ?? (demoMode ? 87 : 0)
+  const scoreLabel = isPreliminary ? 'Preliminary' : score >= 90 ? 'Excellent' : score >= 80 ? 'Good' : score >= 70 ? 'Fair' : 'At Risk'
+  const scoreColor = isPreliminary ? '#D97706' : score >= 80 ? '#059669' : score >= 70 ? '#D97706' : '#DC2626'
   const activeAnomalies = anomalyStats?.active || anomalyData?.anomalies?.length || 0
   const criticalAnomalies = anomalyData?.anomalies?.filter((a: AnomalyDetection) => a.severity === 'critical' && a.status === 'active').length ?? 0
 
@@ -131,6 +135,7 @@ export default function SecurityPage() {
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Security Command Center</h1>
             {demoMode && <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Demo Mode</span>}
+            {isPreliminary && <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Preliminary — full scan pending</span>}
           </div>
           <p className="text-sm text-slate-500 leading-relaxed">Security posture, anomaly detection, compliance frameworks, and audit trail</p>
         </div>
@@ -226,7 +231,7 @@ export default function SecurityPage() {
               </div>
               <span className="text-xs font-semibold" style={{ color: scoreColor }}>{scoreLabel}</span>
               <span className={`block text-xs mt-0.5 ${(criticalAnomalies > 0 || activeAnomalies > 0) ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>
-                {(criticalAnomalies > 0 || activeAnomalies > 0) ? 'Unstable — active critical risks' : 'Above benchmark'}
+                {(criticalAnomalies > 0 || activeAnomalies > 0) ? 'Unstable — active critical risks' : isPreliminary ? 'Full security scan pending' : 'Above benchmark'}
               </span>
             </>
           )}

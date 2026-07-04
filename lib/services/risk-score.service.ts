@@ -14,6 +14,8 @@ export interface RiskScore {
   color: string;
   factors: RiskScoreFactors;
   frameworksAtRisk: string[];
+  // False until a genuine compliance + orphaned-resource scan has run — see backend riskScoring.ts
+  isPreliminary: boolean;
 }
 
 export interface RiskScoreTrendPoint {

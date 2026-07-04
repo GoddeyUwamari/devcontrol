@@ -56,6 +56,7 @@ export class RiskTrackingService {
         low: 0,
       },
       orphanedResources: stats.orphaned_count || 0,
+      scanCompleted: stats.scan_completed,
     };
 
     return calculateRiskScore(factors);

@@ -12,6 +12,10 @@ export interface RiskScore {
   color: string;
   factors: RiskScoreFactors;
   frameworksAtRisk: string[];
+  // False until compliance scanning + orphaned-resource detection have actually run —
+  // until then, compliance/resourceManagement inputs are stubs and the score/grade
+  // must not be presented as a confident, final assessment.
+  isPreliminary: boolean;
 }
 
 export function calculateRiskScore(factors: {
@@ -21,6 +25,7 @@ export function calculateRiskScore(factors: {
   complianceIssues: { critical: number; high: number; medium: number; low: number };
   missingBackups: number;
   orphanedResources: number;
+  scanCompleted: boolean;
 }): RiskScore {
   const publicAccessScore = factors.totalResources > 0
     ? (1 - factors.publicResources / factors.totalResources) * 100
@@ -73,5 +78,6 @@ export function calculateRiskScore(factors: {
     },
     // Severity counts alone don't identify which frameworks are impacted; leave honest until compliance_issues carries framework tags.
     frameworksAtRisk: [],
+    isPreliminary: !factors.scanCompleted,
   };
 }

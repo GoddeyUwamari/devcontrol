@@ -216,6 +216,10 @@ export interface ResourceStats {
   unencrypted_count: number;
   public_count: number;
   missing_backup_count: number;
+  // True once compliance scanning + orphaned-resource detection are wired into the sync
+  // pipeline (see complianceScanner.ts / orphanedResourceDetector.ts). Both are currently
+  // dead code, so this is always false — flip it there once P1/P2 wiring lands.
+  scan_completed: boolean;
 }
 
 // =====================================================

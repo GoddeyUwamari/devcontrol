@@ -229,6 +229,7 @@ export class AWSResourcesRepository {
         unencrypted_count: unencryptedCount,
         public_count: publicCount,
         missing_backup_count: missingBackupCount,
+        scan_completed: false, // Orphaned detector & compliance scanner are not wired in yet — see field comment on ResourceStats
       };
     } finally {
       client.release();

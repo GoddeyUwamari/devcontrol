@@ -280,6 +280,23 @@ export default function DashboardPage() {
   })
 
   const isDemoActive    = demoMode || salesDemoMode
+  // Real accounts: compliance + orphaned-resource scanning haven't run yet (backend stub),
+  // so the score can't be presented as a confident, final tier. Demo data is always final.
+  const securityIsPreliminary = !isDemoActive && (riskScoreData?.current?.isPreliminary ?? true)
+  const securityTierLabel = isDemoActive
+    ? 'Elite Tier'
+    : securityScore === null ? 'Scan in progress'
+    : securityIsPreliminary ? 'Preliminary — full scan pending'
+    : securityScore >= 80 ? 'Elite Tier'
+    : securityScore >= 60 ? 'Above baseline'
+    : 'Needs attention'
+  const securityTierColor = isDemoActive ? '#059669'
+    : securityScore === null ? '#94A3B8'
+    : securityIsPreliminary ? '#D97706'
+    : securityScore >= 80 ? '#059669'
+    : securityScore >= 60 ? '#D97706'
+    : '#DC2626'
+  const securityShowEliteBadge = isDemoActive || (!securityIsPreliminary && securityScore !== null && securityScore >= 85)
   const isAwsConnected  = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
   const hasBillingData   = !isDemoActive && !!stats && (stats.costSource === 'actual' || stats.monthlyAwsCost > 0)
   const hasServicesOnly  = !isDemoActive && !!stats && stats.totalServices > 0 && !hasBillingData
@@ -319,8 +336,7 @@ export default function DashboardPage() {
 
   const costDeltaColor  = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706'
   const CostDeltaIcon   = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus
-  const securityDeltaColor = isDemoActive ? '#059669' : (securityScore !== null && securityScore > 0) ? (securityScore >= 80 ? '#059669' : '#DC2626') : '#94A3B8'
-  const SecurityDeltaIcon  = isDemoActive ? TrendingUp : (securityScore !== null && securityScore > 0) ? (securityScore >= 80 ? TrendingUp : TrendingDown) : Minus
+  const SecurityDeltaIcon  = isDemoActive ? TrendingUp : securityIsPreliminary ? Minus : (securityScore !== null && securityScore > 0) ? (securityScore >= 80 ? TrendingUp : TrendingDown) : Minus
   const efficiencyDeltaColor = efficiencyRatio !== null ? efficiencyRatio >= 90 ? '#059669' : efficiencyRatio >= 75 ? '#D97706' : '#DC2626' : '#D97706'
   const EfficiencyDeltaIcon  = efficiencyRatio !== null ? efficiencyRatio >= 90 ? TrendingUp : efficiencyRatio >= 75 ? Minus : TrendingDown : Minus
 
@@ -556,8 +572,11 @@ export default function DashboardPage() {
                     <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
                       {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-gray-400 font-normal">/100</span>
                     </div>
-                    {securityScore !== null && securityScore >= 85 && (
+                    {securityShowEliteBadge && (
                       <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                    )}
+                    {securityScore !== null && securityIsPreliminary && (
+                      <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
                     )}
                   </>
                 )}
@@ -644,13 +663,13 @@ export default function DashboardPage() {
                       {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-gray-400 font-normal">/100</span>
                     </div>
                   )}
-                  {securityScore !== null && securityScore >= 85 && (
+                  {securityShowEliteBadge && (
                     <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
                   )}
                   <div className="flex items-center gap-1.5 mt-2">
-                    <SecurityDeltaIcon size={12} style={{ color: securityDeltaColor }} />
-                    <span className="text-xs font-semibold" style={{ color: securityDeltaColor }}>
-                      {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
+                    <SecurityDeltaIcon size={12} style={{ color: securityTierColor }} />
+                    <span className="text-xs font-semibold" style={{ color: securityTierColor }}>
+                      {securityTierLabel}
                     </span>
                   </div>
                 </div>
@@ -699,8 +718,11 @@ export default function DashboardPage() {
                       <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
                         {securityScore ?? '—'}<span className="text-base text-gray-400 font-normal">/100</span>
                       </div>
-                      {securityScore !== null && securityScore >= 85 && (
+                      {securityShowEliteBadge && (
                         <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                      )}
+                      {securityScore !== null && securityIsPreliminary && (
+                        <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
                       )}
                     </>
                   )}
@@ -855,13 +877,11 @@ export default function DashboardPage() {
                 {(securityScore === null || securityScore === 0) && !isDemoActive ? (
                   <div className="text-base font-semibold text-slate-900 leading-none">Scanning...</div>
                 ) : (
-                  <div className="text-5xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}<span className="text-base text-slate-400 font-normal"> (preliminary)</span></div>
+                  <div className="text-5xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}<span className="text-base text-slate-400 font-normal">/100</span></div>
                 )}
-                <div className="text-[11px] text-slate-400 mt-1">Scan in progress</div>
-                {securityScore !== null && securityScore >= 85
-                  ? <div className="text-xs text-emerald-600 font-semibold mt-0.5">Elite Tier</div>
-                  : <div className="text-xs text-slate-400 font-normal mt-0.5">Scan in progress</div>
-                }
+                {securityScore !== null && (
+                  <div className="text-xs font-semibold mt-1" style={{ color: securityTierColor }}>{securityTierLabel}</div>
+                )}
               </div>
               {securityRows.map(({ label, value, status }) => (
                 <div key={label} className="flex items-center justify-between py-2 border-b border-slate-100">
@@ -935,8 +955,8 @@ export default function DashboardPage() {
                 ) : (
                   <>
                     <div className="text-6xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}</div>
-                    <div className="text-sm font-semibold mt-2" style={{ color: securityScore !== null && securityScore >= 80 ? '#059669' : securityScore !== null && securityScore >= 60 ? '#D97706' : '#94A3B8' }}>
-                      {securityScore !== null && securityScore >= 80 ? 'Elite Tier' : securityScore !== null && securityScore >= 60 ? 'Above baseline' : securityScore !== null ? 'Needs attention' : isDemoActive ? 'Elite Tier' : 'Scan in progress'}
+                    <div className="text-sm font-semibold mt-2" style={{ color: securityTierColor }}>
+                      {securityTierLabel}
                     </div>
                   </>
                 )}
