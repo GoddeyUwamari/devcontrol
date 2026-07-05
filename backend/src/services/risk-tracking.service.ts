@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { RiskScoreHistoryRepository } from '../repositories/risk-score-history.repository';
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { calculateRiskScore, RiskScore } from '../utils/riskScoring';
@@ -41,8 +41,8 @@ export class RiskTrackingService {
    * Calculate current risk score for an organization
    * Reuses existing risk scoring logic from lib/utils/riskScoring.ts
    */
-  async calculateCurrentRiskScore(organizationId: string): Promise<RiskScore> {
-    const stats = await this.resourcesRepository.getStats(organizationId);
+  async calculateCurrentRiskScore(organizationId: string, client?: PoolClient): Promise<RiskScore> {
+    const stats = await this.resourcesRepository.getStats(organizationId, client);
 
     const factors = {
       totalResources: stats.total_resources || 0,
@@ -66,9 +66,9 @@ export class RiskTrackingService {
    * Store daily risk score snapshot
    * Should be called once per day via cron job
    */
-  async storeDailySnapshot(organizationId: string): Promise<void> {
-    const stats = await this.resourcesRepository.getStats(organizationId);
-    const riskScore = await this.calculateCurrentRiskScore(organizationId);
+  async storeDailySnapshot(organizationId: string, client?: PoolClient): Promise<void> {
+    const stats = await this.resourcesRepository.getStats(organizationId, client);
+    const riskScore = await this.calculateCurrentRiskScore(organizationId, client);
 
     await this.repository.createSnapshot({
       organizationId,
@@ -91,7 +91,7 @@ export class RiskTrackingService {
         low: 0,
       },
       orphanedCount: stats.orphaned_count || 0,
-    });
+    }, client);
   }
 
   /**
@@ -107,12 +107,15 @@ export class RiskTrackingService {
 
       for (const org of result.rows) {
         try {
-          await this.pool.query(
-            "SELECT set_config('app.current_organization_id', $1, true)",
+          // Session-scoped (is_local = false): this same `client` is threaded through
+          // every query below with no wrapping BEGIN/COMMIT, so a `true` (local) value
+          // would revert before storeDailySnapshot's first query ever ran.
+          await client.query(
+            "SELECT set_config('app.current_organization_id', $1, false)",
             [org.id]
           );
 
-          await this.storeDailySnapshot(org.id);
+          await this.storeDailySnapshot(org.id, client);
           console.log(`[Risk Tracking] Snapshot stored for ${org.name}`);
         } catch (error: any) {
           console.error(`[Risk Tracking] Failed for ${org.name}:`, error.message);

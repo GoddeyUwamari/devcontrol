@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { AnomalyDetectionService } from '../services/anomaly-detection.service';
 import { AnomalyAIService } from '../services/anomaly-ai.service';
 import { AnomalyRepository } from '../repositories/anomaly.repository';
@@ -48,6 +48,7 @@ export class AnomalyDetectionJob {
 
     this.isRunning = true;
 
+    const client = await this.pool.connect();
     try {
       console.log('[Anomaly Detection Job] Running detection scan...');
 
@@ -55,36 +56,39 @@ export class AnomalyDetectionJob {
       const orgsQuery = `
         SELECT id FROM organizations WHERE is_active = true
       `;
-      const orgsResult = await this.pool.query(orgsQuery);
+      const orgsResult = await client.query(orgsQuery);
 
       let totalAnomalies = 0;
 
       for (const org of orgsResult.rows) {
         try {
-          await this.pool.query(
-            "SELECT set_config('app.current_organization_id', $1, true)",
+          // Session-scoped (is_local = false): `client` is threaded through every
+          // query below with no wrapping BEGIN/COMMIT, so a `true` (local) value
+          // would revert before the first downstream query ever ran.
+          await client.query(
+            "SELECT set_config('app.current_organization_id', $1, false)",
             [org.id]
           );
 
           // Auto-resolve old anomalies before scanning
-          await this.autoResolveOldAnomalies(org.id);
+          await this.autoResolveOldAnomalies(org.id, client);
 
           // Detect anomalies — statistical detectors + custom rules in parallel
           const [statisticalAnomalies, customRuleAnomalies] = await Promise.all([
-            this.detectionService.scanForAnomalies(org.id),
-            this.customRulesService.evaluateRules(org.id),
+            this.detectionService.scanForAnomalies(org.id, client),
+            this.customRulesService.evaluateRules(org.id, client),
           ]);
           let anomalies = [...statisticalAnomalies, ...customRuleAnomalies];
 
           // Filter out duplicates (anomalies we've already detected recently)
-          anomalies = await this.filterDuplicates(anomalies);
+          anomalies = await this.filterDuplicates(anomalies, client);
 
           if (anomalies.length > 0) {
             // Enrich with AI explanations
             anomalies = await this.aiService.explainAnomalies(anomalies);
 
             // Save to database
-            await this.repository.saveAnomalies(anomalies);
+            await this.repository.saveAnomalies(anomalies, client);
 
             totalAnomalies += anomalies.length;
 
@@ -99,6 +103,7 @@ export class AnomalyDetectionJob {
     } catch (error) {
       console.error('[Anomaly Detection Job] Error:', error);
     } finally {
+      client.release();
       this.isRunning = false;
     }
   }
@@ -106,9 +111,9 @@ export class AnomalyDetectionJob {
   /**
    * Auto-resolve old anomalies (older than 24 hours)
    */
-  private async autoResolveOldAnomalies(organizationId: string): Promise<void> {
+  private async autoResolveOldAnomalies(organizationId: string, client?: PoolClient): Promise<void> {
     try {
-      const result = await this.pool.query(
+      const result = await (client ?? this.pool).query(
         `
         UPDATE anomaly_detections
         SET
@@ -134,7 +139,7 @@ export class AnomalyDetectionJob {
   /**
    * Filter out anomalies that have been detected recently (deduplication)
    */
-  private async filterDuplicates(anomalies: AnomalyDetection[]): Promise<AnomalyDetection[]> {
+  private async filterDuplicates(anomalies: AnomalyDetection[], client?: PoolClient): Promise<AnomalyDetection[]> {
     const uniqueAnomalies: AnomalyDetection[] = [];
 
     for (const anomaly of anomalies) {
@@ -143,7 +148,8 @@ export class AnomalyDetectionJob {
         anomaly.type,
         anomaly.resourceId || null,
         anomaly.metric,
-        60 // 60 minute cooldown
+        60, // 60 minute cooldown
+        client
       );
 
       if (!hasSimilar) {
@@ -160,29 +166,42 @@ export class AnomalyDetectionJob {
   async triggerManual(organizationId: string): Promise<AnomalyDetection[]> {
     console.log(`[Anomaly Detection Job] Manual trigger for org ${organizationId}...`);
 
-    // Auto-resolve old anomalies (older than 24 hours)
-    await this.autoResolveOldAnomalies(organizationId);
+    const client = await this.pool.connect();
+    try {
+      // Session-scoped (is_local = false) — see runDetection() for why local (true)
+      // is unsafe here: `client` is threaded through every query below with no
+      // wrapping BEGIN/COMMIT.
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [organizationId]
+      );
 
-    // Detect new anomalies — statistical detectors + custom rules in parallel
-    const [statisticalAnomalies, customRuleAnomalies] = await Promise.all([
-      this.detectionService.scanForAnomalies(organizationId),
-      this.customRulesService.evaluateRules(organizationId),
-    ]);
-    let anomalies = [...statisticalAnomalies, ...customRuleAnomalies];
+      // Auto-resolve old anomalies (older than 24 hours)
+      await this.autoResolveOldAnomalies(organizationId, client);
 
-    // Filter out duplicates (same as scheduled job)
-    anomalies = await this.filterDuplicates(anomalies);
+      // Detect new anomalies — statistical detectors + custom rules in parallel
+      const [statisticalAnomalies, customRuleAnomalies] = await Promise.all([
+        this.detectionService.scanForAnomalies(organizationId, client),
+        this.customRulesService.evaluateRules(organizationId, client),
+      ]);
+      let anomalies = [...statisticalAnomalies, ...customRuleAnomalies];
 
-    if (anomalies.length > 0) {
-      // Enrich with AI explanations
-      anomalies = await this.aiService.explainAnomalies(anomalies);
+      // Filter out duplicates (same as scheduled job)
+      anomalies = await this.filterDuplicates(anomalies, client);
 
-      // Save to database
-      await this.repository.saveAnomalies(anomalies);
+      if (anomalies.length > 0) {
+        // Enrich with AI explanations
+        anomalies = await this.aiService.explainAnomalies(anomalies);
+
+        // Save to database
+        await this.repository.saveAnomalies(anomalies, client);
+      }
+
+      console.log(`[Anomaly Detection Job] Manual trigger complete: ${anomalies.length} new anomalies`);
+      return anomalies;
+    } finally {
+      client.release();
     }
-
-    console.log(`[Anomaly Detection Job] Manual trigger complete: ${anomalies.length} new anomalies`);
-    return anomalies;
   }
 
   /**

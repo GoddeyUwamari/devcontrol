@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { AnomalyDetection, AnomalyStats, AnomalySeverity, AnomalyType } from '../types/anomaly.types';
 
 export class AnomalyRepository {
@@ -7,7 +7,7 @@ export class AnomalyRepository {
   /**
    * Save detected anomalies
    */
-  async saveAnomalies(anomalies: AnomalyDetection[]): Promise<void> {
+  async saveAnomalies(anomalies: AnomalyDetection[], executor?: PoolClient): Promise<void> {
     if (anomalies.length === 0) return;
 
     const query = `
@@ -38,7 +38,7 @@ export class AnomalyRepository {
         updated_at           = NOW()
     `;
 
-    const client = await this.pool.connect();
+    const client = executor ?? await this.pool.connect();
     try {
       await client.query('BEGIN');
 
@@ -77,7 +77,7 @@ export class AnomalyRepository {
       console.error('[Anomaly Repo] Error saving anomalies:', error);
       throw error;
     } finally {
-      client.release();
+      if (!executor) client.release();
     }
   }
 
@@ -230,7 +230,8 @@ export class AnomalyRepository {
     type: string,
     resourceId: string | null,
     metric: string,
-    cooldownMinutes: number = 60
+    cooldownMinutes: number = 60,
+    client?: PoolClient
   ): Promise<boolean> {
     const query = `
       SELECT EXISTS(
@@ -244,7 +245,7 @@ export class AnomalyRepository {
       ) as exists
     `;
 
-    const result = await this.pool.query(query, [
+    const result = await (client ?? this.pool).query(query, [
       organizationId,
       type,
       resourceId,

@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 export interface RiskScoreSnapshot {
   id?: string;
@@ -32,7 +32,7 @@ export class RiskScoreHistoryRepository {
    * Create a daily snapshot (upsert)
    * Uses ON CONFLICT to ensure only one snapshot per org per day
    */
-  async createSnapshot(snapshot: RiskScoreSnapshot): Promise<void> {
+  async createSnapshot(snapshot: RiskScoreSnapshot, executor?: PoolClient): Promise<void> {
     const query = `
       INSERT INTO risk_score_history (
         organization_id, snapshot_date, overall_score, grade,
@@ -77,7 +77,7 @@ export class RiskScoreHistoryRepository {
       snapshot.orphanedCount,
     ];
 
-    await this.pool.query(query, values);
+    await (executor ?? this.pool).query(query, values);
   }
 
   /**
@@ -85,7 +85,7 @@ export class RiskScoreHistoryRepository {
    * @param organizationId - Organization UUID
    * @param days - Number of days to retrieve (7, 30, or 90)
    */
-  async getHistory(organizationId: string, days: number): Promise<any[]> {
+  async getHistory(organizationId: string, days: number, executor?: PoolClient): Promise<any[]> {
     const query = `
       SELECT *
       FROM risk_score_history
@@ -94,7 +94,7 @@ export class RiskScoreHistoryRepository {
       ORDER BY snapshot_date DESC
     `;
 
-    const result = await this.pool.query(query, [organizationId]);
+    const result = await (executor ?? this.pool).query(query, [organizationId]);
     return result.rows;
   }
 

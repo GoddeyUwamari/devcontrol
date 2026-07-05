@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { AnomalyDetection, AnomalyType, AnomalySeverity } from '../types/anomaly.types';
 
@@ -32,8 +32,8 @@ export class CustomAnomalyRulesService {
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
 
-  async getRules(organizationId: string): Promise<CustomAnomalyRule[]> {
-    const result = await this.pool.query(
+  async getRules(organizationId: string, client?: PoolClient): Promise<CustomAnomalyRule[]> {
+    const result = await (client ?? this.pool).query(
       `SELECT * FROM custom_anomaly_rules
        WHERE organization_id = $1
        ORDER BY created_at DESC`,
@@ -111,8 +111,8 @@ export class CustomAnomalyRulesService {
    * Returns AnomalyDetection[] in the same shape as the statistical detectors
    * so the AI enrichment layer treats them identically.
    */
-  async evaluateRules(organizationId: string): Promise<AnomalyDetection[]> {
-    const rules = await this.getRules(organizationId);
+  async evaluateRules(organizationId: string, client?: PoolClient): Promise<AnomalyDetection[]> {
+    const rules = await this.getRules(organizationId, client);
     const enabled = rules.filter(r => r.enabled);
     if (enabled.length === 0) return [];
 
@@ -120,7 +120,7 @@ export class CustomAnomalyRulesService {
 
     for (const rule of enabled) {
       try {
-        const result = await this.evaluateSingleRule(organizationId, rule);
+        const result = await this.evaluateSingleRule(organizationId, rule, client);
         if (result) anomalies.push(result);
       } catch (err) {
         console.error(`[Custom Rules] Error evaluating rule ${rule.id}:`, err);
@@ -132,10 +132,12 @@ export class CustomAnomalyRulesService {
 
   private async evaluateSingleRule(
     organizationId: string,
-    rule: CustomAnomalyRule
+    rule: CustomAnomalyRule,
+    client?: PoolClient
   ): Promise<AnomalyDetection | null> {
+    const runner = client ?? this.pool;
     // Fetch current metric value from aws_resources tags
-    const currentResult = await this.pool.query(
+    const currentResult = await runner.query(
       `SELECT AVG((tags->$1)::numeric) as current_value
        FROM aws_resources
        WHERE organization_id = $2
@@ -148,7 +150,7 @@ export class CustomAnomalyRulesService {
     if (currentValue === 0) return null;
 
     // Fetch historical average for the time window
-    const historicalResult = await this.pool.query(
+    const historicalResult = await runner.query(
       `SELECT AVG((tags->$1)::numeric) as historical_avg,
               STDDEV((tags->$1)::numeric) as historical_std
        FROM aws_resources

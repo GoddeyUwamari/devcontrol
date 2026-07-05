@@ -125,8 +125,8 @@ export class AWSResourcesRepository {
   /**
    * Get resource statistics
    */
-  async getStats(organizationId: string): Promise<ResourceStats> {
-    const client = await this.pool.connect();
+  async getStats(organizationId: string, executor?: PoolClient): Promise<ResourceStats> {
+    const client = executor ?? await this.pool.connect();
     try {
       // Total resources
       const totalResult = await client.query(
@@ -251,7 +251,7 @@ export class AWSResourcesRepository {
         scan_completed: scanCompleted,
       };
     } finally {
-      client.release();
+      if (!executor) client.release();
     }
   }
 

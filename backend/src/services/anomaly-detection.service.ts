@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { AnomalyDetection, AnomalyType, AnomalySeverity, TimeSeriesDataPoint } from '../types/anomaly.types';
 import { AnomalyStatsService } from './anomaly-stats.service';
@@ -13,7 +13,7 @@ export class AnomalyDetectionService {
   /**
    * Scan for all anomalies across organization
    */
-  async scanForAnomalies(organizationId: string): Promise<AnomalyDetection[]> {
+  async scanForAnomalies(organizationId: string, client?: PoolClient): Promise<AnomalyDetection[]> {
     console.log(`[Anomaly Detection] Scanning org ${organizationId}...`);
 
     const anomalies: AnomalyDetection[] = [];
@@ -25,10 +25,10 @@ export class AnomalyDetectionService {
       invocationAnomalies,
       errorRateAnomalies,
     ] = await Promise.all([
-      this.detectCostAnomalies(organizationId),
-      this.detectCpuAnomalies(organizationId),
-      this.detectInvocationAnomalies(organizationId),
-      this.detectErrorRateAnomalies(organizationId),
+      this.detectCostAnomalies(organizationId, client),
+      this.detectCpuAnomalies(organizationId, client),
+      this.detectInvocationAnomalies(organizationId, client),
+      this.detectErrorRateAnomalies(organizationId, client),
     ]);
 
     anomalies.push(
@@ -45,7 +45,7 @@ export class AnomalyDetectionService {
   /**
    * Detect cost anomalies (spikes or drops)
    */
-  private async detectCostAnomalies(organizationId: string): Promise<AnomalyDetection[]> {
+  private async detectCostAnomalies(organizationId: string, client?: PoolClient): Promise<AnomalyDetection[]> {
     // Get current total cost
     const currentCostQuery = `
       SELECT
@@ -67,9 +67,10 @@ export class AnomalyDetectionService {
     `;
 
     try {
+      const runner = client ?? this.pool;
       const [currentResult, historicalResult] = await Promise.all([
-        this.pool.query(currentCostQuery, [organizationId]),
-        this.pool.query(historicalQuery, [organizationId]),
+        runner.query(currentCostQuery, [organizationId]),
+        runner.query(historicalQuery, [organizationId]),
       ]);
 
       const currentCost = parseFloat(currentResult.rows[0]?.total_cost || 0);
@@ -124,7 +125,7 @@ export class AnomalyDetectionService {
   /**
    * Detect CPU utilization anomalies
    */
-  private async detectCpuAnomalies(organizationId: string): Promise<AnomalyDetection[]> {
+  private async detectCpuAnomalies(organizationId: string, client?: PoolClient): Promise<AnomalyDetection[]> {
     const query = `
       SELECT
         resource_id,
@@ -141,7 +142,7 @@ export class AnomalyDetectionService {
     `;
 
     try {
-      const result = await this.pool.query(query, [organizationId]);
+      const result = await (client ?? this.pool).query(query, [organizationId]);
 
       return result.rows.map(row => {
         const cpuCurrent = parseFloat(row.cpu_current);
@@ -185,7 +186,7 @@ export class AnomalyDetectionService {
   /**
    * Detect Lambda invocation spikes
    */
-  private async detectInvocationAnomalies(organizationId: string): Promise<AnomalyDetection[]> {
+  private async detectInvocationAnomalies(organizationId: string, client?: PoolClient): Promise<AnomalyDetection[]> {
     const query = `
       SELECT
         resource_id,
@@ -201,7 +202,7 @@ export class AnomalyDetectionService {
     `;
 
     try {
-      const result = await this.pool.query(query, [organizationId]);
+      const result = await (client ?? this.pool).query(query, [organizationId]);
 
       return result.rows
         .filter(row => {
@@ -250,7 +251,7 @@ export class AnomalyDetectionService {
   /**
    * Detect error rate anomalies
    */
-  private async detectErrorRateAnomalies(organizationId: string): Promise<AnomalyDetection[]> {
+  private async detectErrorRateAnomalies(organizationId: string, client?: PoolClient): Promise<AnomalyDetection[]> {
     // Simplified - would integrate with CloudWatch metrics in production
     // For now, check if error_rate tag exists and is high
     const query = `
@@ -268,7 +269,7 @@ export class AnomalyDetectionService {
     `;
 
     try {
-      const result = await this.pool.query(query, [organizationId]);
+      const result = await (client ?? this.pool).query(query, [organizationId]);
 
       return result.rows.map(row => {
         const errorRate = parseFloat(row.error_rate);
