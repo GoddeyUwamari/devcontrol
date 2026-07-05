@@ -75,30 +75,26 @@ export class SystemIntelligenceService {
     organizationId: string
   ): Promise<ComponentScore> {
     try {
-      // Get savings from results
-      // org_id = organizationId directly
+      // Get savings from active cost recommendations (the table the Dashboard's
+      // Savings Actions card also reads — see cost-recommendations.repository.ts).
       const savingsResult = await pool.query(
         `SELECT
            COUNT(*) as total_opps,
-           COALESCE(SUM(monthly_savings), 0)
-             as total_savings,
-           COALESCE(SUM(annual_savings), 0)
-             as total_annual
-         FROM cost_optimization_results
-         WHERE org_id = $1`,
+           COALESCE(SUM(potential_savings), 0)
+             as total_savings
+         FROM cost_recommendations
+         WHERE organization_id = $1
+           AND status = 'ACTIVE'`,
         [organizationId]
       )
 
-      // Get latest completed scan
+      // Has a cost analysis ever completed for this org? cost_recommendations row
+      // count alone can't distinguish "never analyzed" from "analyzed, found
+      // nothing" — this flag (set by awsResourceDiscovery.ts::discoverAllResources)
+      // is the real readiness signal.
       const scanResult = await pool.query(
-        `SELECT
-           total_savings,
-           opportunity_count,
-           completed_at
-         FROM cost_optimization_scans
-         WHERE org_id = $1
-           AND status = 'complete'
-         ORDER BY completed_at DESC
+        `SELECT 1 FROM resource_discovery_jobs
+         WHERE organization_id = $1 AND cost_analysis_completed = true
          LIMIT 1`,
         [organizationId]
       )
@@ -126,7 +122,7 @@ export class SystemIntelligenceService {
           ?.count ?? '0'
       )
 
-      const latestScan = scanResult.rows[0]
+      const costAnalysisRan = (scanResult.rowCount ?? 0) > 0
 
       // Real monthly spend: try live Cost Explorer first,
       // fall back to the DB cost estimate — same pattern as
@@ -182,7 +178,7 @@ export class SystemIntelligenceService {
       // Bonus: having completed scans
       // shows active monitoring (+5)
       const scanBonus =
-        latestScan ? 5 : 0
+        costAnalysisRan ? 5 : 0
 
       const raw =
         70 -
@@ -199,7 +195,7 @@ export class SystemIntelligenceService {
           ? `$${Math.round(
               totalSavings
             ).toLocaleString()}/mo savings identified · ${totalOpps} opportunities`
-          : latestScan
+          : costAnalysisRan
             ? 'Last scan found no savings opportunities'
             : 'No cost scan run yet'
 
@@ -219,7 +215,7 @@ export class SystemIntelligenceService {
           score >= 75 ? 'good'
           : score >= 55 ? 'warning'
           : 'risk',
-        ready: !!latestScan,
+        ready: costAnalysisRan,
       }
     } catch (err) {
       console.error(

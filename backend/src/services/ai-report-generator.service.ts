@@ -718,7 +718,7 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
     }));
 
     // Get unused resources from cost recommendations
-    const unusedRecommendations = await this.costRecommendationsRepo.findAll({
+    const unusedRecommendations = await this.costRecommendationsRepo.findAll(organizationId, {
       status: 'ACTIVE',
       limit: 10,
     });

@@ -16,6 +16,7 @@ import {
   DBInstance,
 } from '@aws-sdk/client-rds';
 import { CreateRecommendationRequest, RecommendationSeverity } from '../types';
+import { AWSClientFactory } from './aws-client-factory.service';
 
 interface OptimizationIssue {
   resourceId: string;
@@ -30,56 +31,24 @@ interface OptimizationIssue {
 }
 
 class CostOptimizationService {
-  private cloudWatchClient: CloudWatchClient;
-  private ec2Client: EC2Client;
-  private rdsClient: RDSClient;
-  private enabled: boolean;
-
-  constructor() {
-    this.enabled = this.checkAWSCredentials();
-
-    if (this.enabled) {
-      const config = {
-        region: process.env.AWS_REGION || 'us-east-1',
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-        },
-      };
-
-      this.cloudWatchClient = new CloudWatchClient(config);
-      this.ec2Client = new EC2Client(config);
-      this.rdsClient = new RDSClient(config);
-    } else {
-      this.cloudWatchClient = {} as CloudWatchClient;
-      this.ec2Client = {} as EC2Client;
-      this.rdsClient = {} as RDSClient;
-    }
-  }
-
-  private checkAWSCredentials(): boolean {
-    return !!(
-      process.env.AWS_ACCESS_KEY_ID &&
-      process.env.AWS_SECRET_ACCESS_KEY &&
-      process.env.AWS_REGION
-    );
-  }
-
   /**
    * Main analysis function - detects all cost optimization opportunities
+   * for the given organization's connected AWS account.
    */
-  async analyzeAllResources(): Promise<CreateRecommendationRequest[]> {
-    if (!this.enabled) {
-      console.log('AWS credentials not configured, skipping analysis');
+  async analyzeAllResources(organizationId: string): Promise<CreateRecommendationRequest[]> {
+    const clients = await AWSClientFactory.createClients(organizationId);
+
+    if (!clients.enabled) {
+      console.log(`AWS not connected for org ${organizationId}, skipping cost analysis`);
       return [];
     }
 
     try {
       const [idleEC2, oversizedRDS, unusedEIPs, riOpportunities] = await Promise.all([
-        this.detectIdleEC2Instances(),
-        this.detectOversizedRDSInstances(),
-        this.detectUnusedElasticIPs(),
-        this.detectReservedInstanceOpportunities(),
+        this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch),
+        this.detectOversizedRDSInstances(clients.rds),
+        this.detectUnusedElasticIPs(clients.ec2),
+        this.detectReservedInstanceOpportunities(clients.ec2),
       ]);
 
       const allIssues = [...idleEC2, ...oversizedRDS, ...unusedEIPs, ...riOpportunities];
@@ -105,9 +74,10 @@ class CostOptimizationService {
   /**
    * Detect idle EC2 instances (CPU < 5% for 7+ days)
    */
-  private async detectIdleEC2Instances(): Promise<OptimizationIssue[]> {
-    if (!this.enabled) return [];
-
+  private async detectIdleEC2Instances(
+    ec2Client: EC2Client,
+    cloudWatchClient: CloudWatchClient
+  ): Promise<OptimizationIssue[]> {
     try {
       const command = new DescribeInstancesCommand({
         Filters: [
@@ -118,7 +88,7 @@ class CostOptimizationService {
         ],
       });
 
-      const response = await this.ec2Client.send(command);
+      const response = await ec2Client.send(command);
       const issues: OptimizationIssue[] = [];
 
       for (const reservation of response.Reservations || []) {
@@ -127,6 +97,7 @@ class CostOptimizationService {
 
           // Check CPU utilization for the last 7 days
           const avgCPU = await this.getAverageCPUUtilization(
+            cloudWatchClient,
             instance.InstanceId,
             7
           );
@@ -164,12 +135,10 @@ class CostOptimizationService {
   /**
    * Detect oversized RDS instances (dev/staging using production-sized instances)
    */
-  private async detectOversizedRDSInstances(): Promise<OptimizationIssue[]> {
-    if (!this.enabled) return [];
-
+  private async detectOversizedRDSInstances(rdsClient: RDSClient): Promise<OptimizationIssue[]> {
     try {
       const command = new DescribeDBInstancesCommand({});
-      const response = await this.rdsClient.send(command);
+      const response = await rdsClient.send(command);
       const issues: OptimizationIssue[] = [];
 
       for (const instance of response.DBInstances || []) {
@@ -225,12 +194,10 @@ class CostOptimizationService {
   /**
    * Detect unused Elastic IPs
    */
-  private async detectUnusedElasticIPs(): Promise<OptimizationIssue[]> {
-    if (!this.enabled) return [];
-
+  private async detectUnusedElasticIPs(ec2Client: EC2Client): Promise<OptimizationIssue[]> {
     try {
       const command = new DescribeAddressesCommand({});
-      const response = await this.ec2Client.send(command);
+      const response = await ec2Client.send(command);
       const issues: OptimizationIssue[] = [];
 
       for (const address of response.Addresses || []) {
@@ -265,9 +232,9 @@ class CostOptimizationService {
   /**
    * Detect Reserved Instance opportunities
    */
-  private async detectReservedInstanceOpportunities(): Promise<OptimizationIssue[]> {
-    if (!this.enabled) return [];
-
+  private async detectReservedInstanceOpportunities(
+    ec2Client: EC2Client
+  ): Promise<OptimizationIssue[]> {
     try {
       // Get running instances
       const instancesCommand = new DescribeInstancesCommand({
@@ -278,7 +245,7 @@ class CostOptimizationService {
           },
         ],
       });
-      const instancesResponse = await this.ec2Client.send(instancesCommand);
+      const instancesResponse = await ec2Client.send(instancesCommand);
 
       // Get existing Reserved Instances
       const riCommand = new DescribeReservedInstancesCommand({
@@ -289,7 +256,7 @@ class CostOptimizationService {
           },
         ],
       });
-      const riResponse = await this.ec2Client.send(riCommand);
+      const riResponse = await ec2Client.send(riCommand);
 
       // Count instances by type
       const instanceCounts: Record<string, number> = {};
@@ -349,6 +316,7 @@ class CostOptimizationService {
    * Get average CPU utilization from CloudWatch
    */
   private async getAverageCPUUtilization(
+    cloudWatchClient: CloudWatchClient,
     instanceId: string,
     days: number
   ): Promise<number> {
@@ -371,7 +339,7 @@ class CostOptimizationService {
         Statistics: [Statistic.Average],
       });
 
-      const response = await this.cloudWatchClient.send(command);
+      const response = await cloudWatchClient.send(command);
 
       if (!response.Datapoints || response.Datapoints.length === 0) {
         return 0;

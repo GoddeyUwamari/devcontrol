@@ -85,6 +85,8 @@ import {
 import { SubscriptionTier } from '../middleware/subscription.middleware';
 import { ComplianceScannerService } from './complianceScanner';
 import { OrphanedResourceDetectorService } from './orphanedResourceDetector';
+import costOptimizationService from './cost-optimization.service';
+import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 
 /**
  * Resource types allowed by subscription tier
@@ -574,6 +576,25 @@ export class AWSResourceDiscoveryService {
         complianceScanCompleted = false;
       }
 
+      // Cost optimization analysis: run the same CloudWatch/EC2/RDS checks the manual
+      // "Analyze Costs" button triggers, persisting real cost_recommendations instead
+      // of leaving the table permanently empty (it previously had no automatic trigger).
+      let costAnalysisCompleted = false;
+      try {
+        console.log(`🔎 [Discovery] Running cost optimization analysis...`);
+        const recommendations = await costOptimizationService.analyzeAllResources(organizationId);
+
+        const recommendationsRepo = new CostRecommendationsRepository();
+        await recommendationsRepo.deleteAllActive(organizationId);
+        await recommendationsRepo.createBulk(recommendations, organizationId);
+
+        console.log(`✅ [Discovery] Cost optimization analysis complete (${recommendations.length} opportunities found)`);
+        costAnalysisCompleted = true;
+      } catch (error: any) {
+        console.error(`❌ [Discovery] Cost optimization analysis failed:`, error.message);
+        errors.push(`Cost analysis: ${error.message}`);
+      }
+
       // Update job status
       console.log(`\n📊 [Discovery] Discovery Summary:`);
       console.log(`  - Subscription tier: ${tier}`);
@@ -595,14 +616,15 @@ export class AWSResourceDiscoveryService {
 
       await client.query(
         `UPDATE resource_discovery_jobs
-         SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, error_message = $4, compliance_scan_completed = $5
-         WHERE id = $6`,
+         SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, error_message = $4, compliance_scan_completed = $5, cost_analysis_completed = $6
+         WHERE id = $7`,
         [
           errors.length > 0 ? 'failed' : 'completed',
           totalDiscovered,
           totalUpdated,
           errors.length > 0 ? errors.join('; ') : null,
           complianceScanCompleted,
+          costAnalysisCompleted,
           jobId
         ]
       );

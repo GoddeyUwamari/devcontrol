@@ -12,6 +12,12 @@ export class CostRecommendationsController {
    */
   async getAll(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const filters: RecommendationFilters = {
         severity: req.query.severity as any,
         status: req.query.status as any,
@@ -20,7 +26,7 @@ export class CostRecommendationsController {
         offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
       };
 
-      const recommendations = await repository.findAll(filters);
+      const recommendations = await repository.findAll(organizationId, filters);
 
       const response: ApiResponse = {
         success: true,
@@ -45,7 +51,13 @@ export class CostRecommendationsController {
    */
   async getStats(req: Request, res: Response): Promise<void> {
     try {
-      const stats = await repository.getStats();
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const stats = await repository.getStats(organizationId);
 
       const response: ApiResponse = {
         success: true,
@@ -69,8 +81,14 @@ export class CostRecommendationsController {
    */
   async getById(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { id } = req.params;
-      const recommendation = await repository.findById(id);
+      const recommendation = await repository.findById(id, organizationId);
 
       if (!recommendation) {
         const response: ApiResponse = {
@@ -103,34 +121,25 @@ export class CostRecommendationsController {
    */
   async analyze(req: Request, res: Response): Promise<void> {
     try {
-      // Check if AWS credentials are configured
-      const isConfigured =
-        process.env.AWS_ACCESS_KEY_ID &&
-        process.env.AWS_SECRET_ACCESS_KEY &&
-        process.env.AWS_REGION;
-
-      if (!isConfigured) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'AWS credentials not configured. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION.',
-        };
-        res.status(400).json(response);
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
       }
 
-      console.log('Starting cost optimization analysis...');
+      console.log(`Starting cost optimization analysis for org ${organizationId}...`);
 
-      // Run the analysis
-      const recommendations = await costOptimizationService.analyzeAllResources();
+      // Run the analysis against this org's connected AWS account
+      const recommendations = await costOptimizationService.analyzeAllResources(organizationId);
 
       // Clear existing ACTIVE recommendations before inserting new ones
-      await repository.deleteAllActive();
+      await repository.deleteAllActive(organizationId);
 
       // Save new recommendations
-      const insertedCount = await repository.createBulk(recommendations);
+      const insertedCount = await repository.createBulk(recommendations, organizationId);
 
       // Get updated stats
-      const stats = await repository.getStats();
+      const stats = await repository.getStats(organizationId);
 
       const response: ApiResponse = {
         success: true,
@@ -147,6 +156,15 @@ export class CostRecommendationsController {
       console.error('Error analyzing AWS resources:', error);
 
       // Check for specific AWS errors
+      if (error.message && error.message.includes('AWS_NOT_CONNECTED')) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'No AWS account connected for this organization. Connect one to run cost analysis.',
+        };
+        res.status(400).json(response);
+        return;
+      }
+
       if (error.message && error.message.includes('not enabled')) {
         const response: ApiResponse = {
           success: false,
@@ -170,9 +188,15 @@ export class CostRecommendationsController {
    */
   async resolve(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { id } = req.params;
 
-      const updated = await repository.updateStatus(id, 'RESOLVED');
+      const updated = await repository.updateStatus(id, 'RESOLVED', organizationId);
 
       if (!updated) {
         const response: ApiResponse = {
@@ -206,9 +230,15 @@ export class CostRecommendationsController {
    */
   async dismiss(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { id } = req.params;
 
-      const updated = await repository.updateStatus(id, 'DISMISSED');
+      const updated = await repository.updateStatus(id, 'DISMISSED', organizationId);
 
       if (!updated) {
         const response: ApiResponse = {
@@ -242,8 +272,14 @@ export class CostRecommendationsController {
    */
   async delete(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { id } = req.params;
-      const deleted = await repository.delete(id);
+      const deleted = await repository.delete(id, organizationId);
 
       if (!deleted) {
         const response: ApiResponse = {
