@@ -162,8 +162,14 @@ export class AWSResourceDiscoveryService {
     let jobId: string;
 
     try {
+      // NOTE: must be session-scoped (is_local = false), not transaction-local.
+      // This method issues many separate statements on `client` with no wrapping
+      // BEGIN/COMMIT, so each one auto-commits its own implicit transaction — a
+      // `true` (local) setting reverts the instant this SELECT's transaction ends,
+      // leaving every later statement (including the resource_discovery_jobs INSERT)
+      // without the org context RLS requires.
       await client.query(
-        "SELECT set_config('app.current_organization_id', $1, true)",
+        "SELECT set_config('app.current_organization_id', $1, false)",
         [organizationId]
       );
 
