@@ -150,7 +150,9 @@ export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
     queryFn: platformStatsService.getDashboardStats,
-    staleTime: 60_000, refetchInterval: 300_000,
+    // AWS cost data changes slowly — long staleTime/gcTime avoids re-hitting Cost Explorer
+    // (billed per API call) on every render/tab-switch. Manual refresh still works via refetchStats().
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !demoMode && !salesDemoMode,
   })
@@ -329,7 +331,10 @@ export default function DashboardPage() {
       const json = await res.json()
       return json.data ?? []
     },
-    staleTime: 60_000, refetchInterval: 300_000,
+    // Cost Explorer is billed per API call and this data doesn't change minute-to-minute —
+    // cache aggressively per range so switching 7d/30d/90d/6mo/1yr tabs reuses prior fetches
+    // instead of re-hitting AWS each time. Manual refresh still works via handleRefreshDashboard.
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && hasBillingData,
   })
