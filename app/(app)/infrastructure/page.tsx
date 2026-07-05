@@ -303,6 +303,11 @@ function InfrastructureContent() {
         queryClient.invalidateQueries({ queryKey: ['top-actions'] }),
         queryClient.invalidateQueries({ queryKey: ['infra-real-savings'] }),
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
+        // A scan can flip compliance_scan_completed, which changes isPreliminary —
+        // without this, the security score stays on its pre-scan cached value for
+        // up to staleTime (5 min).
+        queryClient.invalidateQueries({ queryKey: ['risk-score-trend'] }),
+        queryClient.invalidateQueries({ queryKey: ['risk-score-current'] }),
       ])
       toast.success(`Sync complete — ${result.discovered} resources discovered`)
       setSyncComplete(true); setTimeout(() => setSyncComplete(false), 3000)

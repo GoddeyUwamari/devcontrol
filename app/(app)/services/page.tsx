@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -59,6 +60,7 @@ function typeStyle(t: string) {
 }
 
 export default function ServicesPage() {
+  const queryClient = useQueryClient()
   const [envFilter,      setEnvFilter]      = useState<string>('all')
   const [templateFilter, setTemplateFilter] = useState<string>('all')
   const [search,         setSearch]         = useState<string>('')
@@ -127,6 +129,11 @@ export default function ServicesPage() {
       setDiscoveryMsg(result.message); setDiscoveryComplete(true)
       setTimeout(() => { setDiscoveryComplete(false); setDiscoveryMsg(null) }, 6000)
       await fetchServices()
+      // A scan can flip compliance_scan_completed, which changes isPreliminary —
+      // without this, the security score (dashboard/security pages) stays on its
+      // pre-scan cached value for up to staleTime (5 min).
+      queryClient.invalidateQueries({ queryKey: ['risk-score-trend'] })
+      queryClient.invalidateQueries({ queryKey: ['risk-score-current'] })
     } catch (err: any) {
       if (err.response?.status === 402) setShowUpgradePrompt(true)
       else setError(err.message || 'Discovery failed — check your AWS connection')
