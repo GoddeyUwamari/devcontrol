@@ -1,3 +1,4 @@
+import { PoolClient } from 'pg'
 import { pool } from '../config/database'
 import {
   ObservabilityReadinessService,
@@ -243,7 +244,21 @@ export class SystemIntelligenceService {
   private async computeSecurityScore(
     organizationId: string
   ): Promise<ComponentScore> {
+    let client: PoolClient | undefined
     try {
+      client = await pool.connect()
+
+      // Session-scoped (is_local = false): this same `client` is threaded through
+      // calculateCurrentRiskScore -> getStats (~10 sequential queries) and the
+      // anomaly lookup below, with no wrapping BEGIN/COMMIT — a `true` (local)
+      // value would revert before the first RLS-protected query ever ran, silently
+      // zeroing out aws_resources/resource_discovery_jobs results on whatever
+      // connection the pool handed back next. Same fix as a1f894b / 3687608.
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [organizationId]
+      )
+
       // Live risk score — same computation and readiness signal
       // (resource_discovery_jobs.compliance_scan_completed, via
       // AWSResourcesRepository.getStats().scan_completed) that backs
@@ -251,12 +266,13 @@ export class SystemIntelligenceService {
       const riskScore =
         await this.riskTrackingService
           .calculateCurrentRiskScore(
-            organizationId
+            organizationId,
+            client
           )
 
       // Get critical anomalies
       const anomalyResult =
-        await pool.query(
+        await client.query(
           `SELECT COUNT(*) as count
            FROM anomaly_detections
            WHERE organization_id = $1
@@ -314,6 +330,8 @@ export class SystemIntelligenceService {
         status: 'risk',
         ready: false,
       }
+    } finally {
+      client?.release()
     }
   }
 
