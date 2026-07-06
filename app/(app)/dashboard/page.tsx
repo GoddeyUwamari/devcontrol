@@ -217,16 +217,19 @@ export default function DashboardPage() {
       if (!shouldUpdate('metrics:costs')) return
       toast.info('AWS costs updated', { description: `New total: $${data.totalCost.toFixed(2)}` })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
     })
     socket.on('alert:created', (data) => {
       if (!shouldUpdate('alert:created')) return
       toast.error(`New ${data.severity} Alert`, { description: data.message })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
     })
     socket.on('deployment:started', (data) => {
       if (!shouldUpdate('deployment:started')) return
       toast.info(`Deployment started: ${data.serviceName}`, { description: `Environment: ${data.environment} | By: ${data.deployedBy}` })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['recent-deployments'] })
     })
     socket.on('deployment:completed', (data) => {
@@ -234,12 +237,14 @@ export default function DashboardPage() {
       const isSuccess = data.status === 'success'
       toast[isSuccess ? 'success' : 'error'](`Deployment ${isSuccess ? 'succeeded' : 'failed'}: ${data.serviceName}`, { description: isSuccess ? `Duration: ${data.duration}` : 'Check logs for details' })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['recent-deployments'] })
     })
     socket.on('service:health', (data) => {
       if (!shouldUpdate('service:health')) return
       if (data.status !== 'healthy') toast.warning(`Service ${data.serviceName} is ${data.status}`, { description: `Health score: ${data.healthScore}%` })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
     })
     return () => {
       socket.off('metrics:costs'); socket.off('alert:created')

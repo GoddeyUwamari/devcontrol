@@ -5,6 +5,8 @@ import {
 import { CloudWatchService }
   from './cloudwatch.service'
 import awsCostService from './aws-cost.service'
+import { RiskTrackingService }
+  from './risk-tracking.service'
 
 // ── Types ────────────────────────────────
 
@@ -68,6 +70,8 @@ export class SystemIntelligenceService {
     new ObservabilityReadinessService()
   private cloudWatchService =
     new CloudWatchService()
+  private riskTrackingService =
+    new RiskTrackingService(pool)
 
   // ── Cost Score ───────────────────────
 
@@ -240,17 +244,15 @@ export class SystemIntelligenceService {
     organizationId: string
   ): Promise<ComponentScore> {
     try {
-      // Get security score from
-      // existing risk_score_service
-      // or security scan results
-      const secResult = await pool.query(
-        `SELECT score, created_at
-         FROM security_scores
-         WHERE org_id = $1
-         ORDER BY created_at DESC
-         LIMIT 1`,
-        [organizationId]
-      )
+      // Live risk score — same computation and readiness signal
+      // (resource_discovery_jobs.compliance_scan_completed, via
+      // AWSResourcesRepository.getStats().scan_completed) that backs
+      // risk-tracking.service.ts / the Security Posture dashboard card.
+      const riskScore =
+        await this.riskTrackingService
+          .calculateCurrentRiskScore(
+            organizationId
+          )
 
       // Get critical anomalies
       const anomalyResult =
@@ -268,66 +270,35 @@ export class SystemIntelligenceService {
           ?.count ?? '0'
       )
 
-      // If we have a stored score use it
-      if (secResult.rows.length > 0) {
-        const rawScore =
-          parseFloat(
-            secResult.rows[0].score
-          )
-        // Penalize for active critical
-        // anomalies
-        const penalized = Math.max(
-          0,
-          rawScore -
-          criticalIssues * 5
-        )
-        const score =
-          Math.round(penalized)
-
-        return {
-          score,
-          label: 'Security Posture',
-          detail: criticalIssues > 0
-            ? `${criticalIssues} critical issue${criticalIssues !== 1 ? 's' : ''} active · Score ${score}/100`
-            : `Score ${score}/100 · No critical issues`,
-          severity:
-            score >= 80 ? 'healthy'
-            : score >= 65 ? 'medium'
-            : score >= 50 ? 'high'
-            : 'critical',
-          delta: null,
-          status:
-            score >= 80 ? 'good'
-            : score >= 60 ? 'warning'
-            : 'risk',
-          ready: true,
-        }
-      }
-
-      // Fallback: no security_scores row yet —
-      // this is a guess from anomaly count alone,
-      // not a real scan result
-      const baseScore = Math.max(
+      // Penalize for active critical
+      // anomalies
+      const penalized = Math.max(
         0,
-        87 - criticalIssues * 5
+        riskScore.score -
+        criticalIssues * 5
       )
+      const score =
+        Math.round(penalized)
+
       return {
-        score: baseScore,
+        score,
         label: 'Security Posture',
         detail: criticalIssues > 0
-          ? `${criticalIssues} critical issue${criticalIssues !== 1 ? 's' : ''} require attention`
-          : 'No critical issues detected',
+          ? `${criticalIssues} critical issue${criticalIssues !== 1 ? 's' : ''} active · Score ${score}/100`
+          : `Score ${score}/100 · No critical issues`,
         severity:
-          baseScore >= 80 ? 'healthy'
-          : baseScore >= 65 ? 'medium'
-          : baseScore >= 50 ? 'high'
+          score >= 80 ? 'healthy'
+          : score >= 65 ? 'medium'
+          : score >= 50 ? 'high'
           : 'critical',
         delta: null,
         status:
-          baseScore >= 80 ? 'good'
-          : baseScore >= 60 ? 'warning'
+          score >= 80 ? 'good'
+          : score >= 60 ? 'warning'
           : 'risk',
-        ready: false,
+        // isPreliminary is true until compliance scanning + orphaned-resource
+        // detection have actually run for this org — mirrors costAnalysisRan.
+        ready: !riskScore.isPreliminary,
       }
     } catch (err) {
       console.error(
