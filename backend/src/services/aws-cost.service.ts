@@ -46,6 +46,11 @@ interface MonthlyCost {
   }
 }
 
+interface MonthlyCostCacheEntry {
+  data: MonthlyCost
+  timestamp: number
+}
+
 export type CostTrendRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
 
 export interface CostTrendPoint {
@@ -108,6 +113,14 @@ class AWSCostService {
   private rdsClient: RDSClient
   private s3Client: S3Client
   private enabled: boolean
+
+  // Per-org cache for fetchMonthlyCosts — Cost Explorer is billed per API call and rate
+  // limited, and this same singleton is polled every ~2min by system-intelligence plus
+  // invalidated on every cost/alert/deployment WebSocket event, so uncached it re-runs
+  // STS AssumeRole + GetCostAndUsageCommand far more often than the data actually changes.
+  // TTL matches the 4h staleTime already used for cost data on the frontend (dashboard/page.tsx).
+  private monthlyCostCache: Map<string, MonthlyCostCacheEntry> = new Map()
+  private static readonly MONTHLY_COST_CACHE_TTL = 4 * 60 * 60 * 1000
 
   constructor(private dbPool?: Pool) {
     this.enabled = this.checkAWSCredentials()
@@ -190,8 +203,15 @@ class AWSCostService {
    */
   async fetchMonthlyCosts(organizationId?: string): Promise<MonthlyCost> {
     if (organizationId) {
+      const cached = this.monthlyCostCache.get(organizationId)
+      if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
+        return cached.data
+      }
+
       const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
-      return orgService.fetchMonthlyCosts()
+      const result = await orgService.fetchMonthlyCosts()
+      this.monthlyCostCache.set(organizationId, { data: result, timestamp: Date.now() })
+      return result
     }
 
     if (!this.enabled) {
