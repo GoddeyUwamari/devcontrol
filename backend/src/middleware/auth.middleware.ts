@@ -5,7 +5,41 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/auth.service';
-import { pool } from '../config/database';
+import { pool, requestContext } from '../config/database';
+
+/**
+ * Check out a dedicated client, set RLS context on it, and run `next()` (and
+ * everything downstream — route handlers, services, repositories — via
+ * AsyncLocalStorage) inside that context, so plain `pool.query()` calls
+ * anywhere in the request automatically use this exact, correctly-tagged
+ * connection instead of a fresh one from the pool that may carry a stale or
+ * different org's RLS tag. Released once the response finishes (or the
+ * connection drops before it does).
+ */
+async function runWithOrgClient(
+  organizationId: string,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const client = await pool.connect();
+
+  let released = false;
+  const release = () => {
+    if (!released) {
+      released = true;
+      client.release();
+    }
+  };
+  res.on('finish', release);
+  res.on('close', release);
+
+  await client.query(
+    "SELECT set_config('app.current_organization_id', $1, false)",
+    [organizationId]
+  );
+
+  requestContext.run(client, next);
+}
 
 // Extend Express Request type to include user and organization data
 declare global {
@@ -66,23 +100,22 @@ export const authenticate = async (
 
     req.organizationId = decoded.organizationId;
 
-    // Set PostgreSQL session variable for Row-Level Security
-    // This ensures all queries automatically filter by organization_id
-    await pool.query(
-      "SELECT set_config('app.current_organization_id', $1, false)",
-      [decoded.organizationId]
-    );
+    // Set PostgreSQL session variable for Row-Level Security on a dedicated,
+    // request-scoped connection — see runWithOrgClient — so every query for
+    // this request (including the one below) is guaranteed to run on a
+    // connection actually tagged for this org.
+    await runWithOrgClient(decoded.organizationId, res, () => {
+      // Track API request for usage metering (fire-and-forget, non-blocking)
+      pool.query(
+        `INSERT INTO api_usage (organization_id, hour, request_count)
+         VALUES ($1, date_trunc('hour', NOW()), 1)
+         ON CONFLICT (organization_id, hour)
+         DO UPDATE SET request_count = api_usage.request_count + 1`,
+        [decoded.organizationId]
+      ).catch(() => { /* non-critical */ });
 
-    // Track API request for usage metering (fire-and-forget, non-blocking)
-    pool.query(
-      `INSERT INTO api_usage (organization_id, hour, request_count)
-       VALUES ($1, date_trunc('hour', NOW()), 1)
-       ON CONFLICT (organization_id, hour)
-       DO UPDATE SET request_count = api_usage.request_count + 1`,
-      [decoded.organizationId]
-    ).catch(() => { /* non-critical */ });
-
-    next();
+      next();
+    });
   } catch (error: any) {
     if (error.message === 'Token has expired') {
       res.status(401).json({
@@ -130,10 +163,8 @@ export const optionalAuthenticate = async (
 
       req.organizationId = decoded.organizationId;
 
-      await pool.query(
-        "SELECT set_config('app.current_organization_id', $1, false)",
-        [decoded.organizationId]
-      );
+      await runWithOrgClient(decoded.organizationId, res, next);
+      return;
     }
 
     next();

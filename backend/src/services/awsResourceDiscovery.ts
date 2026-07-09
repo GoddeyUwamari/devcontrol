@@ -87,6 +87,7 @@ import { ComplianceScannerService } from './complianceScanner';
 import { OrphanedResourceDetectorService } from './orphanedResourceDetector';
 import costOptimizationService from './cost-optimization.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { PoolClient } from 'pg';
 
 /**
  * Resource types allowed by subscription tier
@@ -126,8 +127,8 @@ export class AWSResourceDiscoveryService {
   /**
    * Get organization's subscription tier
    */
-  private async getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
-    const result = await this.pool.query(
+  private async getOrganizationTier(organizationId: string, executor?: PoolClient): Promise<SubscriptionTier> {
+    const result = await (executor ?? this.pool).query(
       'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
       [organizationId]
     );
@@ -176,7 +177,7 @@ export class AWSResourceDiscoveryService {
       );
 
       // Get organization's subscription tier
-      const tier = await this.getOrganizationTier(organizationId);
+      const tier = await this.getOrganizationTier(organizationId, client);
       const allowedTypes = this.getAllowedResourceTypes(tier);
 
       console.log(`🎫 [Discovery] Subscription tier: ${tier}`);

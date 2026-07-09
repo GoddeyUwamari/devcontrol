@@ -38,6 +38,38 @@ export class RiskTrackingService {
   }
 
   /**
+   * Check out a dedicated client, set RLS context on it, and thread it through fn —
+   * same pattern as computeSecurityScore(). Callers must not use `this.pool` directly
+   * for org-scoped queries inside fn.
+   */
+  private async withOrgClient<T>(
+    organizationId: string,
+    fn: (client: PoolClient) => Promise<T>
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [organizationId]
+      );
+      return await fn(client);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Calculate current risk score for an organization, checking out and RLS-tagging
+   * its own dedicated client. Use this from API routes / anywhere that doesn't
+   * already have an org-scoped client to pass in.
+   */
+  async getCurrentRiskScore(organizationId: string): Promise<RiskScore> {
+    return this.withOrgClient(organizationId, (client) =>
+      this.calculateCurrentRiskScore(organizationId, client)
+    );
+  }
+
+  /**
    * Calculate current risk score for an organization
    * Reuses existing risk scoring logic from lib/utils/riskScoring.ts
    */
@@ -137,7 +169,7 @@ export class RiskTrackingService {
   ): Promise<RiskScoreTrendResponse> {
     const days = parseInt(dateRange);
     const history = await this.repository.getHistory(organizationId, days);
-    const current = await this.calculateCurrentRiskScore(organizationId);
+    const current = await this.getCurrentRiskScore(organizationId);
 
     // Calculate trend
     let trend: 'improving' | 'stable' | 'declining' = 'stable';

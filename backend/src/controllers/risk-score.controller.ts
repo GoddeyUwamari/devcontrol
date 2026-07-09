@@ -66,7 +66,7 @@ export class RiskScoreController {
         return;
       }
 
-      const current = await this.service.calculateCurrentRiskScore(organizationId);
+      const current = await this.service.getCurrentRiskScore(organizationId);
 
       res.json({
         success: true,
