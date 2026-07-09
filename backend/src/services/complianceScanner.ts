@@ -493,14 +493,12 @@ export class ComplianceScannerService {
    * Enhanced S3 public access check
    * Checks both ACL and bucket policy for public access
    */
-  async checkS3PublicAccessEnhanced(resource: AWSResource, region: string): Promise<ComplianceIssue[]> {
+  async checkS3PublicAccessEnhanced(resource: AWSResource, s3Client: S3Client): Promise<ComplianceIssue[]> {
     if (resource.resource_type !== 's3') return [];
 
     const issues: ComplianceIssue[] = [];
 
     try {
-      const s3Client = new S3Client({ region });
-
       // Check bucket ACL
       try {
         const { Grants } = await s3Client.send(
@@ -562,11 +560,10 @@ export class ComplianceScannerService {
    * Check for overly permissive security groups
    * Identifies security groups with 0.0.0.0/0 ingress rules
    */
-  async checkSecurityGroups(region: string, accountId?: string): Promise<ComplianceIssue[]> {
+  async checkSecurityGroups(ec2Client: EC2Client, region: string, accountId?: string): Promise<ComplianceIssue[]> {
     const issues: ComplianceIssue[] = [];
 
     try {
-      const ec2Client = new EC2Client({ region });
       const { SecurityGroups } = await ec2Client.send(new DescribeSecurityGroupsCommand({}));
 
       for (const sg of SecurityGroups || []) {
@@ -620,11 +617,10 @@ export class ComplianceScannerService {
    * Check IAM security best practices
    * Checks for MFA on users and access key rotation
    */
-  async checkIAMSecurity(): Promise<ComplianceIssue[]> {
+  async checkIAMSecurity(iamClient: IAMClient): Promise<ComplianceIssue[]> {
     const issues: ComplianceIssue[] = [];
 
     try {
-      const iamClient = new IAMClient({ region: 'us-east-1' }); // IAM is global
       const { Users } = await iamClient.send(new ListUsersCommand({}));
 
       for (const user of Users || []) {

@@ -87,6 +87,7 @@ import { ComplianceScannerService } from './complianceScanner';
 import { OrphanedResourceDetectorService } from './orphanedResourceDetector';
 import costOptimizationService from './cost-optimization.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { PoolClient } from 'pg';
 
 /**
@@ -530,7 +531,7 @@ export class AWSResourceDiscoveryService {
 
           if (resource.resource_type === 's3') {
             try {
-              const enhanced = await scanner.checkS3PublicAccessEnhanced(resource, resource.region);
+              const enhanced = await scanner.checkS3PublicAccessEnhanced(resource, awsClients.s3!);
               issues.push(...enhanced);
             } catch (error: any) {
               console.error(`[Discovery] S3 enhanced check failed for ${resource.resource_arn}:`, error.message);
@@ -548,6 +549,33 @@ export class AWSResourceDiscoveryService {
       } catch (error: any) {
         console.error(`❌ [Discovery] Compliance scan failed:`, error.message);
         errors.push(`Compliance scan: ${error.message}`);
+      }
+
+      // Account-level security findings: security groups and IAM users aren't rows in
+      // aws_resources, so these run once per org (not per-resource) against the same
+      // org-scoped AWS clients, persisting into account_security_findings instead.
+      try {
+        console.log(`🔎 [Discovery] Running account-level security scan (security groups + IAM)...`);
+        const scanner = new ComplianceScannerService();
+        const scanStartedAt = new Date();
+
+        const [sgIssues, iamIssues] = await Promise.all([
+          scanner.checkSecurityGroups(awsClients.ec2!, awsClients.region, awsClients.accountId),
+          scanner.checkIAMSecurity(awsClients.iam!),
+        ]);
+
+        const findingsRepo = new AccountSecurityFindingsRepository();
+        const findings = AccountSecurityFindingsRepository.fromComplianceIssues(
+          [...sgIssues, ...iamIssues],
+          awsClients.region
+        );
+        const { active, resolved } = await findingsRepo.reconcileScan(organizationId, scanStartedAt, findings);
+
+        console.log(`✅ [Discovery] Account-level security scan complete (${active} active, ${resolved} resolved)`);
+      } catch (error: any) {
+        console.error(`❌ [Discovery] Account-level security scan failed:`, error.message);
+        errors.push(`Account-level security scan: ${error.message}`);
+        complianceScanCompleted = false;
       }
 
       // Orphaned-resource detection: identify stopped/unused resources from what's

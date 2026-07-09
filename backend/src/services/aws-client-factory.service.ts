@@ -18,6 +18,7 @@ import { APIGatewayClient } from '@aws-sdk/client-api-gateway';
 import { ElastiCacheClient } from '@aws-sdk/client-elasticache';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { SNSClient } from '@aws-sdk/client-sns';
+import { IAMClient } from '@aws-sdk/client-iam';
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 import { pool } from '../config/database';
 
@@ -37,8 +38,17 @@ interface AWSClients {
   elastiCache: ElastiCacheClient;
   sqs: SQSClient;
   sns: SNSClient;
+  iam: IAMClient;
   region: string;
   enabled: boolean;
+  // 12-digit account ID parsed from role_arn, when available — lets account-level
+  // checks (e.g. security group findings) build a real resource ARN instead of '*'.
+  accountId?: string;
+}
+
+/** Extracts the 12-digit account ID from an IAM role/user ARN, e.g. arn:aws:iam::123456789012:role/x */
+function parseAccountIdFromArn(arn: string): string | undefined {
+  return arn.match(/^arn:aws:iam::(\d{12}):/)?.[1];
 }
 
 export class AWSClientFactory {
@@ -117,8 +127,10 @@ export class AWSClientFactory {
       elastiCache: new ElastiCacheClient(config),
       sqs: new SQSClient(config),
       sns: new SNSClient(config),
+      iam: new IAMClient({ ...config, region: 'us-east-1' }), // IAM is global
       region: awsRegion,
       enabled: true,
+      accountId: parseAccountIdFromArn(role_arn),
     };
   }
 
@@ -161,6 +173,7 @@ export class AWSClientFactory {
       elastiCache: new ElastiCacheClient(config),
       sqs: new SQSClient(config),
       sns: new SNSClient(config),
+      iam: new IAMClient({ ...config, region: 'us-east-1' }), // IAM is global
       region: config.region,
       enabled: true,
     };
@@ -183,6 +196,7 @@ export class AWSClientFactory {
       elastiCache: {} as ElastiCacheClient,
       sqs: {} as SQSClient,
       sns: {} as SNSClient,
+      iam: {} as IAMClient,
       region: 'us-east-1',
       enabled: false,
     };

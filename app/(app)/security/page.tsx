@@ -13,11 +13,26 @@ import {
 } from 'lucide-react'
 import { useCurrentRiskScore, useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
 import { useComplianceFrameworks } from '@/lib/hooks/useComplianceFrameworks'
+import { useAccountSecurityFindings } from '@/lib/hooks/useAccountSecurityFindings'
 import { anomalyService } from '@/lib/services/anomaly.service'
 import { demoModeService } from '@/lib/services/demo-mode.service'
 import type { AnomalyDetection } from '@/types/anomaly.types'
 
 type FrameworkDisplay = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing' }
+type FindingDisplay = {
+  id: string
+  severity: 'critical' | 'high' | 'medium' | 'low'
+  title: string
+  recommendation: string
+  resourceIdentifier: string
+  category: 'networking' | 'iam'
+}
+
+const FALLBACK_FINDINGS: FindingDisplay[] = [
+  { id: '1', severity: 'critical', title: 'Security group "web-sg" (sg-0a1b2c3d) allows SSH (port 22) from anywhere (0.0.0.0/0)', recommendation: 'Restrict SSH access to specific IP addresses or use AWS Systems Manager Session Manager instead.', resourceIdentifier: 'sg-0a1b2c3d', category: 'networking' },
+  { id: '2', severity: 'high', title: 'IAM user "ci-deploy" does not have MFA enabled', recommendation: 'Enable multi-factor authentication (MFA) for all IAM users, especially those with console access.', resourceIdentifier: 'ci-deploy', category: 'iam' },
+  { id: '3', severity: 'medium', title: 'IAM user "data-pipeline" has an access key that is 124 days old', recommendation: 'Rotate access keys every 90 days.', resourceIdentifier: 'data-pipeline', category: 'iam' },
+]
 
 const FALLBACK_FRAMEWORKS: FrameworkDisplay[] = [
   { id: '1', name: 'CIS AWS Benchmark', complianceScore: 87, status: 'passing' },
@@ -43,6 +58,9 @@ const actionMap: Record<string, { statement: string; link: string }> = {
 const severityColor = (s: AnomalyDetection['severity']) => s === 'critical' ? '#DC2626' : s === 'warning' ? '#D97706' : '#64748B'
 const severityBadgeBg = (s: AnomalyDetection['severity']) => s === 'critical' ? '#FEE2E2' : s === 'warning' ? '#FDE68A' : '#F1F5F9'
 
+const findingSeverityColor = (s: FindingDisplay['severity']) => s === 'critical' ? '#DC2626' : s === 'high' ? '#D97706' : s === 'medium' ? '#D97706' : '#64748B'
+const findingSeverityBadgeBg = (s: FindingDisplay['severity']) => s === 'critical' ? '#FEE2E2' : s === 'high' ? '#FDE68A' : s === 'medium' ? '#FEF3C7' : '#F1F5F9'
+
 export default function SecurityPage() {
   const [acknowledging, setAcknowledging] = useState<string | null>(null)
   const demoMode = demoModeService.isEnabled()
@@ -62,6 +80,8 @@ export default function SecurityPage() {
     queryFn: () => anomalyService.getStats(),
     staleTime: 2 * 60 * 1000,
   })
+
+  const { data: accountFindings, isLoading: findingsLoading } = useAccountSecurityFindings(5, !demoMode)
 
   // Real accounts: compliance + orphaned-resource scanning haven't run yet (backend stub),
   // so an undefined/errored fetch must not fall back to a fabricated "87 Good" — treat it
@@ -112,6 +132,17 @@ export default function SecurityPage() {
       ]
 
   const topAnomalies = anomalyData?.anomalies?.slice(0, 3) ?? FALLBACK_ANOMALIES
+
+  const findings: FindingDisplay[] = demoMode
+    ? FALLBACK_FINDINGS
+    : (accountFindings?.map((f) => ({
+        id: f.id,
+        severity: f.severity,
+        title: f.title,
+        recommendation: f.recommendation,
+        resourceIdentifier: f.resource_identifier,
+        category: f.category,
+      })) ?? [])
 
   const navCards = [
     { icon: AlertTriangle, label: 'All Anomalies', desc: criticalAnomalies > 0 ? `${criticalAnomalies} critical — investigate now` : 'Investigate and resolve threats', href: '/anomalies', color: criticalAnomalies > 0 ? '#DC2626' : '#D97706', bg: criticalAnomalies > 0 ? '#FEF2F2' : '#FFFBEB' },
@@ -330,8 +361,8 @@ export default function SecurityPage() {
         </div>
       </div>
 
-      {/* ── ANOMALIES + COMPLIANCE ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-7">
+      {/* ── ANOMALIES + COMPLIANCE + ACCOUNT FINDINGS ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-7">
         {/* Active Anomalies */}
         <div className="bg-white rounded-xl p-5 border border-slate-100">
           <div className="flex items-center justify-between mb-5">
@@ -409,6 +440,42 @@ export default function SecurityPage() {
                 </div>
               )
             })}
+          </div>
+        </div>
+
+        {/* Account Security Findings */}
+        <div className="bg-white rounded-xl p-5 border border-slate-100">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Account Security Findings</h2>
+          </div>
+          <div className="flex flex-col gap-3">
+            {findingsLoading && !demoMode ? (
+              <div className="py-8 flex items-center justify-center"><Loader2 size={18} className="text-slate-300 animate-spin" /></div>
+            ) : (
+              <>
+                {findings.map((finding) => (
+                  <div key={finding.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3.5">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: findingSeverityColor(finding.severity) }} />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 mb-0.5 leading-snug">{finding.title}</p>
+                          <span className="text-[10px] text-slate-400">{finding.category === 'iam' ? 'IAM' : 'Security Group'} · {finding.resourceIdentifier}</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 capitalize" style={{ background: findingSeverityBadgeBg(finding.severity), color: findingSeverityColor(finding.severity) }}>{finding.severity}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 pl-4">{finding.recommendation}</p>
+                  </div>
+                ))}
+                {findings.length === 0 && (
+                  <div className="text-center py-8">
+                    <Check size={22} className="text-green-500 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400">No active findings · Security groups and IAM users look clean</p>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
