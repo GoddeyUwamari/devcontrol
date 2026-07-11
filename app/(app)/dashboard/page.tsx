@@ -705,7 +705,7 @@ export default function DashboardPage() {
                 {/* System Intelligence — composite score promoted to primary anchor;
                     Total Cloud Spend / Security Posture / Savings Actions become
                     supporting context in the row beneath. */}
-                <div className="bg-white rounded-xl p-6 border border-gray-100 border-l-4 border-l-violet-700 mb-4">
+                <div className="bg-white rounded-xl p-6 border border-gray-100 mb-4">
                   <IntelKPICard />
                 </div>
 
