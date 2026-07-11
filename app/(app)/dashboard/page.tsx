@@ -36,6 +36,7 @@ import { CostOptimizationCard, generateDemoCostOpportunities } from '@/component
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { AIInsightCard } from '@/components/ai/AIInsightCard'
 import { useAIInsights } from '@/lib/hooks/useAIInsights'
+import { useAISummary } from '@/lib/hooks/useAISummary'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -256,12 +257,14 @@ export default function DashboardPage() {
       toast.info('AWS costs updated', { description: `New total: $${data.totalCost.toFixed(2)}` })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
     })
     socket.on('alert:created', (data) => {
       if (!shouldUpdate('alert:created')) return
       toast.error(`New ${data.severity} Alert`, { description: data.message })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
     })
     socket.on('deployment:started', (data) => {
       if (!shouldUpdate('deployment:started')) return
@@ -269,6 +272,7 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['recent-deployments'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
     })
     socket.on('deployment:completed', (data) => {
       if (!shouldUpdate('deployment:completed')) return
@@ -277,12 +281,14 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['recent-deployments'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
     })
     socket.on('service:health', (data) => {
       if (!shouldUpdate('service:health')) return
       if (data.status !== 'healthy') toast.warning(`Service ${data.serviceName} is ${data.status}`, { description: `Health score: ${data.healthScore}%` })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
     })
     return () => {
       socket.off('metrics:costs'); socket.off('alert:created')
@@ -401,6 +407,15 @@ export default function DashboardPage() {
   const MtdCostDeltaIcon = monthOverMonthCostChange !== null
     ? (monthOverMonthCostChange > 0 ? TrendingUp : monthOverMonthCostChange < 0 ? TrendingDown : Minus)
     : Minus
+
+  // Real-data-only, like every other computed-metric feature on this dashboard — no
+  // demo-mode fabrication. costDeltaPct reuses the already-computed value above so the
+  // backend doesn't need a second, separately-billed Cost Explorer call to reference spend trend.
+  const { data: aiSummaryData, isLoading: aiSummaryLoading, isError: aiSummaryError } = useAISummary(
+    organization?.id,
+    monthOverMonthCostChange,
+    !isDemoActive && hasBillingData
+  )
 
   const costDeltaColor  = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706'
   const CostDeltaIcon   = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus
@@ -705,13 +720,6 @@ export default function DashboardPage() {
             {/* KPI grid — gated on data state */}
             {(isDemoActive || hasBillingData) ? (
               <>
-                {/* System Intelligence — composite score promoted to primary anchor;
-                    Total Cloud Spend / Security Posture / Savings Actions become
-                    supporting context in the row beneath. */}
-                <div className="bg-white rounded-xl p-6 border border-gray-100 mb-4">
-                  <IntelKPICard hero />
-                </div>
-
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                   {/* Total Cloud Spend */}
                   <div className="bg-white rounded-xl p-4 border border-gray-100">
@@ -787,6 +795,31 @@ export default function DashboardPage() {
                       <span className="text-[13px] font-semibold text-emerald-600">Potential savings: ${wasteAmount.toLocaleString()}/month</span>
                     </div>
                   </div>
+                </div>
+
+                {/* AI Summary — plain-English narrative synthesizing the real numbers
+                    above. Skeleton while generating; renders nothing on error or when
+                    there's no real data to summarize (never a fabricated placeholder
+                    or an error state). */}
+                {!aiSummaryError && (aiSummaryLoading || aiSummaryData?.summary) && (
+                  <div className="bg-white rounded-xl p-6 border border-gray-100 mb-4">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">AI Summary</p>
+                    {aiSummaryLoading ? (
+                      <div className="flex flex-col gap-2">
+                        <Skeleton className="h-3.5 w-full" />
+                        <Skeleton className="h-3.5 w-5/6" />
+                        <Skeleton className="h-3.5 w-2/3" />
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-800 leading-relaxed">{aiSummaryData?.summary}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* System Intelligence — composite score anchor, positioned as the
+                    bridge into the Highest Priority Action section below. */}
+                <div className="bg-white rounded-xl p-6 border border-gray-100 mb-4">
+                  <IntelKPICard hero />
                 </div>
               </>
             ) : isAwsConnected && (isBillingSyncing || hasServicesOnly) ? (

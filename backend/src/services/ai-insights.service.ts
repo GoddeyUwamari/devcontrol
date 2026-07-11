@@ -286,6 +286,36 @@ Focus on AWS cost optimization opportunities.`;
   }
 
   /**
+   * Generate a short natural-language dashboard summary from a pre-built, fact-only
+   * prompt (see ai-summary.service.ts for fact-gathering and caching). Unlike the
+   * cost-analysis methods above, this never returns canned fallback text — the caller
+   * must be able to tell "no API key" / "API error" apart from "here is a real
+   * summary" so it can omit the card entirely rather than show a plausible-looking
+   * placeholder that isn't actually grounded in the org's real data.
+   */
+  async generateDashboardSummary(prompt: string): Promise<string | null> {
+    if (!this.anthropic) {
+      console.log('[AI Insights] No API key - skipping dashboard summary');
+      return null;
+    }
+
+    try {
+      const message = await this.anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const response = this.extractTextContent(message.content).trim();
+      return response.length > 0 ? response : null;
+    } catch (error: any) {
+      console.error('[AI Insights] Dashboard summary API error:', error.message);
+      return null;
+    }
+  }
+
+  /**
    * Build detailed prompt for cost analysis
    */
   private buildCostAnalysisPrompt(data: CostData): string {
