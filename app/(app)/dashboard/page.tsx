@@ -97,6 +97,44 @@ function getDeploymentStatusColor(status: DeploymentStatus): string {
   }
 }
 
+// Month-over-month cost delta, derived from the already-fetched costTrend daily series
+// (no new API call). Compares this month's spend-to-date against the same number of
+// days into last month, calendar-string-parsed to avoid UTC/local timezone day-shift.
+// Only returns a value when both windows have enough real daily coverage to trust the
+// comparison — otherwise null, so the caller can hide the line rather than fabricate it.
+function computeMonthOverMonthCostChange(
+  costTrend: Array<{ date: string; total: number }>
+): number | null {
+  if (!costTrend || costTrend.length === 0) return null
+
+  const now = new Date()
+  const curYear = now.getFullYear()
+  const curMonth = now.getMonth()
+  const dayOfMonth = now.getDate()
+  const lastMonth = curMonth === 0 ? 11 : curMonth - 1
+  const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear
+
+  let currentSum = 0, currentDays = 0
+  let lastSum = 0, lastDays = 0
+
+  for (const entry of costTrend) {
+    const [y, m, d] = entry.date.split('-').map(Number)
+    const month = m - 1
+    if (y === curYear && month === curMonth && d <= dayOfMonth) {
+      currentSum += entry.total
+      currentDays++
+    } else if (y === lastMonthYear && month === lastMonth && d <= dayOfMonth) {
+      lastSum += entry.total
+      lastDays++
+    }
+  }
+
+  const minDays = Math.max(1, Math.floor(dayOfMonth * 0.8))
+  if (currentDays < minDays || lastDays < minDays || lastSum <= 0) return null
+
+  return Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10
+}
+
 const INTELLIGENCE_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 async function fetchSystemIntelligence() {
@@ -343,6 +381,14 @@ export default function DashboardPage() {
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && hasBillingData,
   })
+
+  const monthOverMonthCostChange = isDemoActive ? null : computeMonthOverMonthCostChange(costTrend)
+  const mtdCostDeltaColor = monthOverMonthCostChange !== null
+    ? (monthOverMonthCostChange > 0 ? '#DC2626' : monthOverMonthCostChange < 0 ? '#059669' : '#D97706')
+    : '#D97706'
+  const MtdCostDeltaIcon = monthOverMonthCostChange !== null
+    ? (monthOverMonthCostChange > 0 ? TrendingUp : monthOverMonthCostChange < 0 ? TrendingDown : Minus)
+    : Minus
 
   const costDeltaColor  = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706'
   const CostDeltaIcon   = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus
@@ -662,6 +708,13 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-1.5 mt-2">
                       <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
                       <span className="text-[13px] font-semibold" style={{ color: costDeltaColor }}>{costChange > 0 ? '+' : ''}{Math.abs(costChange)}%</span>
+                      <span className="text-[13px] text-gray-500">vs last month</span>
+                    </div>
+                  )}
+                  {!isDemoActive && monthOverMonthCostChange !== null && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <MtdCostDeltaIcon size={14} style={{ color: mtdCostDeltaColor }} />
+                      <span className="text-[13px] font-semibold" style={{ color: mtdCostDeltaColor }}>{monthOverMonthCostChange > 0 ? '+' : ''}{monthOverMonthCostChange}%</span>
                       <span className="text-[13px] text-gray-500">vs last month</span>
                     </div>
                   )}
