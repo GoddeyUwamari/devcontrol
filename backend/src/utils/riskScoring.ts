@@ -6,11 +6,22 @@ export interface RiskScoreFactors {
   resourceManagement: number;
 }
 
+export interface ComplianceIssueCounts {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
 export interface RiskScore {
   score: number;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   color: string;
   factors: RiskScoreFactors;
+  // Raw counts behind `factors.compliance` — per-resource compliance_issues merged with
+  // account_security_findings (see RiskTrackingService.calculateCurrentRiskScore). Exposed
+  // so the UI can explain the score instead of just showing a bare number.
+  complianceIssueCounts: ComplianceIssueCounts;
   frameworksAtRisk: string[];
   // False until compliance scanning + orphaned-resource detection have actually run —
   // until then, compliance/resourceManagement inputs are stubs and the score/grade
@@ -76,6 +87,7 @@ export function calculateRiskScore(factors: {
       compliance: Math.round(complianceScore),
       resourceManagement: Math.round(resourceMgmtScore),
     },
+    complianceIssueCounts: factors.complianceIssues,
     // Severity counts alone don't identify which frameworks are impacted; leave honest until compliance_issues carries framework tags.
     frameworksAtRisk: [],
     isPreliminary: !factors.scanCompleted,

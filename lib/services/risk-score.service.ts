@@ -8,11 +8,19 @@ export interface RiskScoreFactors {
   resourceManagement: number;
 }
 
+export interface ComplianceIssueCounts {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
 export interface RiskScore {
   score: number;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   color: string;
   factors: RiskScoreFactors;
+  complianceIssueCounts: ComplianceIssueCounts;
   frameworksAtRisk: string[];
   // False until a genuine compliance + orphaned-resource scan has run — see backend riskScoring.ts
   isPreliminary: boolean;
