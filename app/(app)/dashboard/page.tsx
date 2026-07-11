@@ -501,7 +501,7 @@ export default function DashboardPage() {
     if (notReady) {
       return (
         <>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">System Intelligence</p>
+          <p className="text-sm font-extrabold uppercase tracking-wider text-gray-900 mb-3">System Intelligence</p>
           <div className="text-base font-semibold text-gray-900 leading-none mb-2">Calculating...</div>
         </>
       )
@@ -511,7 +511,7 @@ export default function DashboardPage() {
     const chipStyle = score < 50 || (score < 85 && score > 0) ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
     return (
       <>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">System Intelligence</p>
+        <p className="text-sm font-extrabold uppercase tracking-wider text-gray-900 mb-3">System Intelligence</p>
         <div className="text-4xl font-semibold leading-none mb-2" style={{ color: score < 50 ? '#DC2626' : '#111827' }}>
           {score || '—'}<span className="text-base text-gray-400 font-normal">/100</span>
         </div>
