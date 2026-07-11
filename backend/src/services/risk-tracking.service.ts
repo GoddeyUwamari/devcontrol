@@ -1,7 +1,10 @@
 import { Pool, PoolClient } from 'pg';
 import { RiskScoreHistoryRepository } from '../repositories/risk-score-history.repository';
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
+import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { calculateRiskScore, RiskScore } from '../utils/riskScoring';
+
+type SeverityCounts = { critical: number; high: number; medium: number; low: number };
 
 export interface RiskScoreTrendPoint {
   date: string; // ISO date string
@@ -31,10 +34,12 @@ export interface RiskScoreTrendResponse {
 export class RiskTrackingService {
   private repository: RiskScoreHistoryRepository;
   private resourcesRepository: AWSResourcesRepository;
+  private accountFindingsRepository: AccountSecurityFindingsRepository;
 
   constructor(private pool: Pool) {
     this.repository = new RiskScoreHistoryRepository(pool);
     this.resourcesRepository = new AWSResourcesRepository(pool);
+    this.accountFindingsRepository = new AccountSecurityFindingsRepository();
   }
 
   /**
@@ -70,23 +75,38 @@ export class RiskTrackingService {
   }
 
   /**
+   * Account-level findings (open security groups, IAM MFA/key-rotation — see P1-(b))
+   * aren't rows in aws_resources, so they're folded into the same severity-count shape
+   * as per-resource compliance_issues before calculateRiskScore() applies its existing
+   * critical/high/medium/low deduction weights. Combined score still floors at 0 via
+   * calculateRiskScore()'s Math.max(0, ...) — no separate cap needed here.
+   */
+  private combineSeverityCounts(a: SeverityCounts, b: SeverityCounts): SeverityCounts {
+    return {
+      critical: a.critical + b.critical,
+      high: a.high + b.high,
+      medium: a.medium + b.medium,
+      low: a.low + b.low,
+    };
+  }
+
+  /**
    * Calculate current risk score for an organization
    * Reuses existing risk scoring logic from lib/utils/riskScoring.ts
    */
   async calculateCurrentRiskScore(organizationId: string, client?: PoolClient): Promise<RiskScore> {
     const stats = await this.resourcesRepository.getStats(organizationId, client);
+    const accountFindings = await this.accountFindingsRepository.getStats(organizationId, client);
 
     const factors = {
       totalResources: stats.total_resources || 0,
       unencryptedResources: stats.unencrypted_count || 0,
       publicResources: stats.public_count || 0,
       missingBackups: stats.missing_backup_count || 0,
-      complianceIssues: stats.compliance_stats?.by_severity || {
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0,
-      },
+      complianceIssues: this.combineSeverityCounts(
+        stats.compliance_stats?.by_severity || { critical: 0, high: 0, medium: 0, low: 0 },
+        accountFindings.bySeverity
+      ),
       orphanedResources: stats.orphaned_count || 0,
       scanCompleted: stats.scan_completed,
     };
@@ -100,6 +120,7 @@ export class RiskTrackingService {
    */
   async storeDailySnapshot(organizationId: string, client?: PoolClient): Promise<void> {
     const stats = await this.resourcesRepository.getStats(organizationId, client);
+    const accountFindings = await this.accountFindingsRepository.getStats(organizationId, client);
     const riskScore = await this.calculateCurrentRiskScore(organizationId, client);
 
     await this.repository.createSnapshot({
@@ -116,12 +137,10 @@ export class RiskTrackingService {
       unencryptedCount: stats.unencrypted_count || 0,
       publicCount: stats.public_count || 0,
       missingBackupCount: stats.missing_backup_count || 0,
-      complianceIssues: stats.compliance_stats?.by_severity || {
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0,
-      },
+      complianceIssues: this.combineSeverityCounts(
+        stats.compliance_stats?.by_severity || { critical: 0, high: 0, medium: 0, low: 0 },
+        accountFindings.bySeverity
+      ),
       orphanedCount: stats.orphaned_count || 0,
     }, client);
   }

@@ -204,10 +204,13 @@ export class AccountSecurityFindingsRepository {
   }
 
   /**
-   * Active-finding counts by severity and category, for a summary card.
+   * Active-finding counts by severity and category. Accepts an already org-tagged
+   * `client` (e.g. from RiskTrackingService's scoring chain) to run on that same
+   * connection instead of opening a second one; falls back to its own tagged
+   * connection when called standalone (e.g. from the stats endpoint).
    */
-  async getStats(organizationId: string): Promise<AccountFindingStats> {
-    return this.withOrgClient(organizationId, async (client) => {
+  async getStats(organizationId: string, client?: PoolClient): Promise<AccountFindingStats> {
+    const run = async (client: PoolClient) => {
       const result = await client.query(
         `SELECT severity, category, COUNT(*) as count
          FROM account_security_findings
@@ -228,6 +231,8 @@ export class AccountSecurityFindingsRepository {
       }
 
       return { total, bySeverity, byCategory };
-    });
+    };
+
+    return client ? run(client) : this.withOrgClient(organizationId, run);
   }
 }
