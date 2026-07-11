@@ -42,6 +42,8 @@ CREATE POLICY account_security_findings_isolation_policy ON account_security_fin
 CREATE POLICY account_security_findings_insert_policy ON account_security_findings
   FOR INSERT WITH CHECK (organization_id::text = current_setting('app.current_organization_id', true));
 
+GRANT ALL ON TABLE account_security_findings TO devcontrol;
+
 COMMENT ON TABLE account_security_findings IS
   'Account-level compliance findings (security groups, IAM users) from ComplianceScannerService.checkSecurityGroups/checkIAMSecurity — not tied to a single aws_resources row, one scan per org per discovery run.';
 COMMENT ON COLUMN account_security_findings.finding_key IS
