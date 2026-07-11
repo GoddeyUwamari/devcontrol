@@ -474,7 +474,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-10">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-snug mb-1">
-            AWS Infrastructure Intelligence
+            AWS Cost, Security & Infrastructure Intelligence
           </h1>
           <p className="text-[13px] text-slate-700 leading-relaxed mb-1">
             Real-time visibility into cost waste, security posture, and infrastructure efficiency — across your entire AWS environment.
