@@ -496,12 +496,15 @@ export default function DashboardPage() {
   )
 
   // Reusable System Intelligence KPI card content
-  const IntelKPICard = () => {
+  const IntelKPICard = ({ hero = false }: { hero?: boolean } = {}) => {
     const notReady = !isDemoActive && (displayIntelligence == null || displayIntelligence.system_score == null)
+    const intelLabelClass = hero
+      ? 'text-lg font-extrabold uppercase tracking-wide text-gray-900 mb-3'
+      : 'text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3'
     if (notReady) {
       return (
         <>
-          <p className="text-sm font-extrabold uppercase tracking-wider text-gray-900 mb-3">System Intelligence</p>
+          <p className={intelLabelClass}>System Intelligence</p>
           <div className="text-base font-semibold text-gray-900 leading-none mb-2">Calculating...</div>
         </>
       )
@@ -511,7 +514,7 @@ export default function DashboardPage() {
     const chipStyle = score < 50 || (score < 85 && score > 0) ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
     return (
       <>
-        <p className="text-sm font-extrabold uppercase tracking-wider text-gray-900 mb-3">System Intelligence</p>
+        <p className={intelLabelClass}>System Intelligence</p>
         <div className="text-4xl font-semibold leading-none mb-2" style={{ color: score < 50 ? '#DC2626' : '#111827' }}>
           {score || '—'}<span className="text-base text-gray-400 font-normal">/100</span>
         </div>
@@ -706,7 +709,7 @@ export default function DashboardPage() {
                     Total Cloud Spend / Security Posture / Savings Actions become
                     supporting context in the row beneath. */}
                 <div className="bg-white rounded-xl p-6 border border-gray-100 mb-4">
-                  <IntelKPICard />
+                  <IntelKPICard hero />
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
