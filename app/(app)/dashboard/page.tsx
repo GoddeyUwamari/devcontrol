@@ -759,12 +759,15 @@ export default function DashboardPage() {
               }}
             >
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706' }}>Top Priority</p>
-                <p className="text-sm font-semibold text-slate-900 mb-0.5">{displayIntelligence.top_action.message}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706' }}>Highest Priority Action</p>
+                <p className="text-sm font-semibold text-slate-900 mb-0.5">{displayIntelligence.top_drivers?.[0]?.action?.label ?? displayIntelligence.top_action.message}</p>
                 <p className="text-xs font-medium" style={{ color: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706' }}>{displayIntelligence.top_action.consequence}</p>
+                <p className="text-[11px] font-semibold text-slate-500 mt-1">
+                  Business Risk: {displayIntelligence.top_action.severity === 'critical' || displayIntelligence.top_action.severity === 'high' ? 'High' : displayIntelligence.top_action.severity === 'medium' ? 'Medium' : 'Low'}
+                </p>
               </div>
               <a href={displayIntelligence.top_action.path} className="text-white px-4 py-2 rounded-lg text-xs font-bold no-underline whitespace-nowrap shrink-0" style={{ background: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#7C3AED' }}>
-                Fix now →
+                Review →
               </a>
             </div>
           )}
