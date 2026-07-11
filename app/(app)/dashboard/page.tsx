@@ -378,7 +378,7 @@ export default function DashboardPage() {
         { label: 'Enable S3 Intelligent-Tiering',     savings: '$340/mo', effort: 'Medium', time: '~10 min' },
       ]
     : costRecsRaw.slice(0, 5).map(r => ({
-        label:    r.issue || 'Optimization',
+        label:    r.issue || 'Can reduce monthly AWS spend',
         savings:  r.potential_savings != null ? `$${Math.round(r.potential_savings).toLocaleString()}/mo` : '',
         severity: r.severity,
       }))
@@ -392,7 +392,7 @@ export default function DashboardPage() {
   ]
 
   const securityRows: { label: string; value: string | number; status: 'good' | 'warn' | 'neutral' }[] = [
-    { label: 'Critical Vulnerabilities', value: isDemoActive ? 0 : '—',                          status: isDemoActive ? 'good' : 'neutral' },
+    { label: 'May expose production resources to unauthorized access', value: isDemoActive ? 0 : '—',                          status: isDemoActive ? 'good' : 'neutral' },
     { label: 'Compliance Frameworks',    value: isDemoActive ? '4/4' : '—',                    status: 'good' },
     { label: 'Active Risks',             value: demoMode ? 3 : '—',                             status: 'warn' },
   ]
@@ -1027,7 +1027,7 @@ export default function DashboardPage() {
               { label: 'Monthly Savings',         value: wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}` : '—',            sub: wasteAmount > 0 ? 'AI-identified waste' : 'No opportunities identified yet',    color: wasteAmount > 0 ? '#059669' : '#94A3B8' },
               { label: 'Annual Projection',        value: wasteAmount > 0 ? `$${(wasteAmount * 12).toLocaleString()}` : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? '#059669' : '#94A3B8' },
               { label: 'Avg. ROI Payback',         value: isDemoActive ? '< 15 min' : '—',                                      sub: isDemoActive ? 'Zero-risk changes only' : 'Not yet available',                  color: isDemoActive ? '#7C3AED' : '#94A3B8' },
-              { label: 'Open Recommendations',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: '#D97706' },
+              { label: 'Can reduce monthly AWS spend',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: '#D97706' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="px-4 py-4 bg-slate-50 rounded-xl border border-slate-100">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">{label}</p>

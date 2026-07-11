@@ -276,7 +276,7 @@ export function CostTrendChart({
         {hasSpike && (
           <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
             <p className="text-sm text-orange-800">
-              <span className="font-semibold">⚠️ Cost Spike Detected:</span> Unusual spending pattern identified. Review details above.
+              <span className="font-semibold">⚠️ May cause unexpected AWS bill increase</span> — unusual spending pattern identified. Review details above.
             </p>
           </div>
         )}
