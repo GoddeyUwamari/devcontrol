@@ -701,87 +701,91 @@ export default function DashboardPage() {
 
             {/* KPI grid — gated on data state */}
             {(isDemoActive || hasBillingData) ? (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                {/* Total Cloud Spend */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Total Cloud Spend</p>
-                  {(statsLoading && !demoMode) || (currentSpend === 0 && !demoMode) ? (
-                    <>
-                      <div className="text-base font-semibold text-gray-900 leading-none mb-1">Syncing...</div>
-                      <div className="text-xs text-gray-500 font-medium mb-2">Full data in 24–48h</div>
-                    </>
-                  ) : (
-                    <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">${currentSpend.toLocaleString()}</div>
-                  )}
-                  {wasteAmount > 0 && (
-                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
-                  )}
-                  {isDemoActive && (
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
-                      <span className="text-[13px] font-semibold" style={{ color: costDeltaColor }}>{costChange > 0 ? '+' : ''}{Math.abs(costChange)}%</span>
-                      <span className="text-[13px] text-gray-500">vs last month</span>
-                    </div>
-                  )}
-                  {!isDemoActive && monthOverMonthCostChange !== null && (
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <MtdCostDeltaIcon size={14} style={{ color: mtdCostDeltaColor }} />
-                      <span className="text-[13px] font-semibold" style={{ color: mtdCostDeltaColor }}>{monthOverMonthCostChange > 0 ? '+' : ''}{monthOverMonthCostChange}%</span>
-                      <span className="text-[13px] text-gray-500">vs last month</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Security Posture */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Security Posture</p>
-                  {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                    <div className="text-base font-semibold text-gray-900 leading-none mb-2">Scanning...</div>
-                  ) : (
-                    <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
-                      {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-gray-400 font-normal">/100</span>
-                    </div>
-                  )}
-                  {securityShowEliteBadge && (
-                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
-                  )}
-                  <div className="flex items-center gap-1.5 mt-2">
-                    <SecurityDeltaIcon size={12} style={{ color: securityTierColor }} />
-                    <span className="text-xs font-semibold" style={{ color: securityTierColor }}>
-                      {securityTierLabel}
-                    </span>
-                  </div>
-                  {securityBreakdown && (
-                    <p className="text-[11px] text-slate-500 mt-1">{securityBreakdown}</p>
-                  )}
-                </div>
-
-                {/* Savings Actions */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Savings Actions</p>
-                  <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">
-                    {topRecs.length > 0 ? `${topRecs.length} Opportunit${topRecs.length !== 1 ? 'ies' : 'y'}` : '—'}
-                  </div>
-                  {wasteAmount <= 0 && (
-                    <div className="text-xs text-gray-500 font-medium mb-2">No opportunities identified yet</div>
-                  )}
-                  {topRecs.length > 0 && (
-                    <>
-                      <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
-                      <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5 ml-1.5">ROI: {savingsROI}</span>
-                    </>
-                  )}
-                  <div className="flex items-center gap-1.5 mt-2">
-                    <TrendingUp size={14} className="text-emerald-600" />
-                    <span className="text-[13px] font-semibold text-emerald-600">Potential savings: ${wasteAmount.toLocaleString()}/month</span>
-                  </div>
-                </div>
-
-                {/* System Intelligence */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <>
+                {/* System Intelligence — composite score promoted to primary anchor;
+                    Total Cloud Spend / Security Posture / Savings Actions become
+                    supporting context in the row beneath. */}
+                <div className="bg-white rounded-xl p-6 border border-gray-100 border-l-4 border-l-violet-700 mb-4">
                   <IntelKPICard />
                 </div>
-              </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                  {/* Total Cloud Spend */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-100">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Total Cloud Spend</p>
+                    {(statsLoading && !demoMode) || (currentSpend === 0 && !demoMode) ? (
+                      <>
+                        <div className="text-base font-semibold text-gray-900 leading-none mb-1">Syncing...</div>
+                        <div className="text-xs text-gray-500 font-medium mb-2">Full data in 24–48h</div>
+                      </>
+                    ) : (
+                      <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">${currentSpend.toLocaleString()}</div>
+                    )}
+                    {wasteAmount > 0 && (
+                      <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                    )}
+                    {isDemoActive && (
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
+                        <span className="text-[13px] font-semibold" style={{ color: costDeltaColor }}>{costChange > 0 ? '+' : ''}{Math.abs(costChange)}%</span>
+                        <span className="text-[13px] text-gray-500">vs last month</span>
+                      </div>
+                    )}
+                    {!isDemoActive && monthOverMonthCostChange !== null && (
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <MtdCostDeltaIcon size={14} style={{ color: mtdCostDeltaColor }} />
+                        <span className="text-[13px] font-semibold" style={{ color: mtdCostDeltaColor }}>{monthOverMonthCostChange > 0 ? '+' : ''}{monthOverMonthCostChange}%</span>
+                        <span className="text-[13px] text-gray-500">vs last month</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Security Posture */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-100">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Security Posture</p>
+                    {(securityScore === null || securityScore === 0) && !isDemoActive ? (
+                      <div className="text-base font-semibold text-gray-900 leading-none mb-2">Scanning...</div>
+                    ) : (
+                      <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
+                        {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-gray-400 font-normal">/100</span>
+                      </div>
+                    )}
+                    {securityShowEliteBadge && (
+                      <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                    )}
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <SecurityDeltaIcon size={12} style={{ color: securityTierColor }} />
+                      <span className="text-xs font-semibold" style={{ color: securityTierColor }}>
+                        {securityTierLabel}
+                      </span>
+                    </div>
+                    {securityBreakdown && (
+                      <p className="text-[11px] text-slate-500 mt-1">{securityBreakdown}</p>
+                    )}
+                  </div>
+
+                  {/* Savings Actions */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-100">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Savings Actions</p>
+                    <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">
+                      {topRecs.length > 0 ? `${topRecs.length} Opportunit${topRecs.length !== 1 ? 'ies' : 'y'}` : '—'}
+                    </div>
+                    {wasteAmount <= 0 && (
+                      <div className="text-xs text-gray-500 font-medium mb-2">No opportunities identified yet</div>
+                    )}
+                    {topRecs.length > 0 && (
+                      <>
+                        <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5 ml-1.5">ROI: {savingsROI}</span>
+                      </>
+                    )}
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <TrendingUp size={14} className="text-emerald-600" />
+                      <span className="text-[13px] font-semibold text-emerald-600">Potential savings: ${wasteAmount.toLocaleString()}/month</span>
+                    </div>
+                  </div>
+                </div>
+              </>
             ) : isAwsConnected && (isBillingSyncing || hasServicesOnly) ? (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-white rounded-2xl p-8 border border-slate-100 border-l-[3px] border-l-violet-700">
