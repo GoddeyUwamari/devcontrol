@@ -382,6 +382,10 @@ export default function DashboardPage() {
         savings:  r.potential_savings != null ? `$${Math.round(r.potential_savings).toLocaleString()}/mo` : '',
         severity: r.severity,
       }))
+  // ROI badge for the Savings Actions KPI card: High if the aggregate opportunity is
+  // sizeable or the top recommendation is flagged high-severity — both already-computed
+  // fields, no new data source.
+  const savingsROI = wasteAmount > 50 || topRecs[0]?.severity === 'HIGH' ? 'High' : 'Medium'
   const criticalAlerts = demoMode ? DEMO_DASHBOARD_STATS.criticalAlerts : 0
 
   const doraRows: { label: string; value: string; tier: 'Elite' | 'High'; showTier?: boolean }[] = [
@@ -688,17 +692,20 @@ export default function DashboardPage() {
                 <div className="bg-white rounded-xl p-4 border border-gray-100">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Savings Actions</p>
                   <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">
-                    {wasteAmount > 0 && efficiencyRatio !== null ? `${efficiencyRatio}%` : '—'}
+                    {topRecs.length > 0 ? `${topRecs.length} Opportunit${topRecs.length !== 1 ? 'ies' : 'y'}` : '—'}
                   </div>
                   {wasteAmount <= 0 && (
                     <div className="text-xs text-gray-500 font-medium mb-2">No opportunities identified yet</div>
                   )}
                   {topRecs.length > 0 && (
-                    <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                    <>
+                      <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                      <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5 ml-1.5">ROI: {savingsROI}</span>
+                    </>
                   )}
                   <div className="flex items-center gap-1.5 mt-2">
                     <TrendingUp size={14} className="text-emerald-600" />
-                    <span className="text-[13px] font-semibold text-emerald-600">${wasteAmount.toLocaleString()}/month in savings opportunities</span>
+                    <span className="text-[13px] font-semibold text-emerald-600">Potential savings: ${wasteAmount.toLocaleString()}/month</span>
                   </div>
                 </div>
 
