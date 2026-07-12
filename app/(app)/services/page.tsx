@@ -154,9 +154,10 @@ export default function ServicesPage() {
   const totalServices = displayStats?.total          ?? allServices.length
   const healthyCount  = displayStats?.healthy         ?? allServices.filter((s: any) => s.status === 'healthy').length
   const warningCount  = displayStats?.needs_attention ?? allServices.filter((s: any) => s.status !== 'healthy').length
+  const servicesWithUptime = allServices.filter((s: any) => s.uptime != null)
   const avgUptime     = displayStats?.avg_uptime
-    ?? (allServices.length > 0
-      ? parseFloat((allServices.reduce((sum: number, s: any) => sum + (s.uptime || 0), 0) / allServices.length).toFixed(1))
+    ?? (servicesWithUptime.length > 0
+      ? parseFloat((servicesWithUptime.reduce((sum: number, s: any) => sum + s.uptime, 0) / servicesWithUptime.length).toFixed(1))
       : null)
   const avgUptimeDisplay  = avgUptime != null ? `${avgUptime}%` : '—'
   const visibleServices   = showAll ? filteredServices : filteredServices.slice(0, INITIAL_VISIBLE)
@@ -209,25 +210,33 @@ export default function ServicesPage() {
         <div className="flex flex-col gap-4 sm:hidden">
           {/* Score + headline */}
           <div className="flex items-center gap-3">
-            <div className="relative w-14 h-14 shrink-0">
-              <svg width="54" height="54" viewBox="0 0 54 54">
-                <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
-                <circle cx="27" cy="27" r="23" fill="none"
-                  stroke={warningCount > 0 ? '#D97706' : '#059669'}
-                  strokeWidth="5" strokeDasharray="144.5"
-                  strokeDashoffset={warningCount > 0 ? 43 : 14}
-                  strokeLinecap="round" transform="rotate(-90 27 27)"/>
-              </svg>
-              <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-slate-900">
-                {warningCount > 0 ? 78 : 95}
-              </span>
-            </div>
+            {isDemoActive && (
+              <div className="relative w-14 h-14 shrink-0">
+                <svg width="54" height="54" viewBox="0 0 54 54">
+                  <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
+                  <circle cx="27" cy="27" r="23" fill="none"
+                    stroke={warningCount > 0 ? '#D97706' : '#059669'}
+                    strokeWidth="5" strokeDasharray="144.5"
+                    strokeDashoffset={warningCount > 0 ? 43 : 14}
+                    strokeLinecap="round" transform="rotate(-90 27 27)"/>
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-slate-900">
+                  {warningCount > 0 ? 78 : 95}
+                </span>
+              </div>
+            )}
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">Service Health Score</p>
-              <p className="text-base font-bold text-slate-900 leading-tight">
-                {warningCount > 0 ? 'Performance Risk Emerging' : 'All Systems Healthy'}
+              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">
+                {isDemoActive ? 'Service Health Score' : 'Service Status'}
               </p>
-              <p className="text-xs font-medium text-slate-500">{totalServices}/{totalServices} services · High confidence</p>
+              <p className="text-base font-bold text-slate-900 leading-tight">
+                {isDemoActive
+                  ? (warningCount > 0 ? 'Performance Risk Emerging' : 'All Systems Healthy')
+                  : (warningCount === 0 ? 'All Healthy' : `${warningCount} of ${totalServices} at risk`)}
+              </p>
+              {isDemoActive && (
+                <p className="text-xs font-medium text-slate-500">{totalServices}/{totalServices} services · High confidence</p>
+              )}
             </div>
           </div>
           {/* Stats row */}
@@ -257,25 +266,33 @@ export default function ServicesPage() {
           <div className="flex items-center gap-5 flex-wrap">
             {/* Score ring */}
             <div className="flex items-center gap-3">
-              <div className="relative w-14 h-14 shrink-0">
-                <svg width="54" height="54" viewBox="0 0 54 54">
-                  <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
-                  <circle cx="27" cy="27" r="23" fill="none"
-                    stroke={warningCount > 0 ? '#D97706' : '#059669'}
-                    strokeWidth="5" strokeDasharray="144.5"
-                    strokeDashoffset={warningCount > 0 ? 43 : 14}
-                    strokeLinecap="round" transform="rotate(-90 27 27)"/>
-                </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-slate-900">
-                  {warningCount > 0 ? 78 : 95}
-                </span>
-              </div>
+              {isDemoActive && (
+                <div className="relative w-14 h-14 shrink-0">
+                  <svg width="54" height="54" viewBox="0 0 54 54">
+                    <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
+                    <circle cx="27" cy="27" r="23" fill="none"
+                      stroke={warningCount > 0 ? '#D97706' : '#059669'}
+                      strokeWidth="5" strokeDasharray="144.5"
+                      strokeDashoffset={warningCount > 0 ? 43 : 14}
+                      strokeLinecap="round" transform="rotate(-90 27 27)"/>
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-slate-900">
+                    {warningCount > 0 ? 78 : 95}
+                  </span>
+                </div>
+              )}
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">Service Health Score</p>
-                <p className="text-base font-bold text-slate-900">
-                  {warningCount > 0 ? 'System Stable — Performance Risk Emerging in Production' : 'All Systems Healthy'}
+                <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">
+                  {isDemoActive ? 'Service Health Score' : 'Service Status'}
                 </p>
-                <p className="text-xs font-medium text-slate-500">{totalServices}/{totalServices} services measured · High confidence</p>
+                <p className="text-base font-bold text-slate-900">
+                  {isDemoActive
+                    ? (warningCount > 0 ? 'System Stable — Performance Risk Emerging in Production' : 'All Systems Healthy')
+                    : (warningCount === 0 ? 'All Healthy' : `${warningCount} of ${totalServices} at risk`)}
+                </p>
+                {isDemoActive && (
+                  <p className="text-xs font-medium text-slate-500">{totalServices}/{totalServices} services measured · High confidence</p>
+                )}
               </div>
             </div>
 
@@ -458,7 +475,7 @@ export default function ServicesPage() {
                 ? 'Connect AWS to unlock real-time cost insights, security risks, and performance signals.'
                 : warningCount > 0
                   ? <>{warningCount} service{warningCount > 1 ? 's' : ''} showing early degradation signals. No current outage risk, but performance instability detected.</>
-                  : <>{totalServices} services running with {avgUptimeDisplay} average uptime. No active issues.</>
+                  : <>All {totalServices} service{totalServices !== 1 ? 's' : ''} healthy. No active issues.</>
             }
           </p>
           <p className="text-xs text-slate-500 font-medium m-0">
@@ -549,7 +566,7 @@ export default function ServicesPage() {
                         <p className="text-sm font-semibold text-slate-900 mb-1">
                           {svc.name} ({(svc.type as string)?.toUpperCase()}) — <span className="text-red-600">at risk</span>
                         </p>
-                        <p className="text-xs text-slate-600 font-medium mb-1">{svc.environment} · {svc.region || 'us-east-1'} · uptime {svc.uptime}%</p>
+                        <p className="text-xs text-slate-600 font-medium mb-1">{svc.environment} · {svc.region || 'us-east-1'} · uptime {svc.uptime != null ? `${svc.uptime}%` : '—'}</p>
                         <p className="text-red-800 text-[11px] font-medium m-0">Potential impact: Revenue disruption · SLA breach risk</p>
                       </div>
                     </div>
@@ -722,7 +739,7 @@ export default function ServicesPage() {
                     <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>
                       {svc.environment}
                     </span>
-                    {svc.uptime && <span className="text-xs text-slate-500">{svc.uptime}% uptime</span>}
+                    <span className="text-xs text-slate-500">{svc.uptime != null ? `${svc.uptime}% uptime` : '— uptime'}</span>
                     {svc.monthly_cost && <span className="text-xs text-slate-500">${svc.monthly_cost.toLocaleString()}/mo</span>}
                     <a
                       href={isAtRisk ? `/anomalies?service=${svc.name}` : `/services/${svc.id}`}

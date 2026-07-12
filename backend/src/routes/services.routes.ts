@@ -52,15 +52,6 @@ function mapStatus(resourceType: string, rawStatus: string | null): 'healthy' | 
   }
 }
 
-// Deterministic uptime per resource — no random flicker on refetch
-function deriveUptime(status: 'healthy' | 'warning' | 'critical', resourceId: string): number {
-  const hash = resourceId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 10;
-  const jitter = hash / 10;
-  if (status === 'healthy') return parseFloat((99.0 + jitter * 0.9).toFixed(1));
-  if (status === 'warning')  return parseFloat((97.0 + jitter * 1.5).toFixed(1));
-  return parseFloat((93.0 + jitter * 2.0).toFixed(1));
-}
-
 // ─── GET /api/services/stats ─────────────────────────────────────────────────
 // Must be registered before /:id or Express treats "stats" as an id param
 
@@ -85,11 +76,9 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     const healthy        = parseInt(row.healthy) || 0;
     const needsAttention = parseInt(row.needs_attention) || 0;
 
-    const avgUptime = total === 0
-      ? null
-      : parseFloat(((healthy * 99.5 + needsAttention * 97.5) / total).toFixed(1));
-
-    res.json({ success: true, stats: { total, healthy, needs_attention: needsAttention, avg_uptime: avgUptime } });
+    // No real monitoring data source exists yet — avg_uptime is intentionally null
+    // rather than a fabricated figure.
+    res.json({ success: true, stats: { total, healthy, needs_attention: needsAttention, avg_uptime: null } });
   } catch (err: any) {
     console.error('[Services/stats]', err);
     res.status(500).json({ success: false, error: err.message });
@@ -198,7 +187,8 @@ router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req
         environment:  row.environment,
         region:       row.region,
         status,
-        uptime:       deriveUptime(status, row.resource_id),
+        // No real monitoring data source exists yet — null rather than a fabricated figure.
+        uptime:       null,
         owner:        row.owner  ?? null,
         team:         row.team   ?? null,
         monthly_cost: row.monthly_cost ? parseFloat(row.monthly_cost) : null,
@@ -232,7 +222,7 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response, next: 
       const status = mapStatus(row.resource_type, row.status);
       res.json({
         success: true,
-        service: { ...row, status, uptime: deriveUptime(status, row.resource_id) },
+        service: { ...row, status, uptime: null },
       });
       return;
     }
