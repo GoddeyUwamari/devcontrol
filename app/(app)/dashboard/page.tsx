@@ -37,6 +37,8 @@ import { QuickActions } from '@/components/dashboard/quick-actions'
 import { AIInsightCard } from '@/components/ai/AIInsightCard'
 import { useAIInsights } from '@/lib/hooks/useAIInsights'
 import { useAISummary } from '@/lib/hooks/useAISummary'
+import { useActivityFeed } from '@/lib/hooks/useActivityFeed'
+import type { ActivityEventType } from '@/lib/services/activity-feed.service'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -63,14 +65,6 @@ const DEMO_DASHBOARD_STATS = {
   securityScore: 87,
 }
 
-const DEMO_DEPLOYMENTS: Deployment[] = [
-  { id: 'demo-deploy-1', serviceId: 'svc-api-gateway', serviceName: 'api-gateway', environment: 'production', awsRegion: 'us-east-1', status: 'running' as DeploymentStatus, costEstimate: 423.50, deployedBy: 'sarah.chen@company.com', deployedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(), createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(), updatedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString() },
-  { id: 'demo-deploy-2', serviceId: 'svc-payment-processor', serviceName: 'payment-processor', environment: 'production', awsRegion: 'us-east-1', status: 'deploying' as DeploymentStatus, costEstimate: 891.20, deployedBy: 'james.wilson@company.com', deployedAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(), createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(), updatedAt: new Date(Date.now() - 1000 * 60 * 45).toISOString() },
-  { id: 'demo-deploy-3', serviceId: 'svc-auth-service', serviceName: 'auth-service', environment: 'staging', awsRegion: 'us-west-2', status: 'running' as DeploymentStatus, costEstimate: 234.80, deployedBy: 'sarah.chen@company.com', deployedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString() },
-  { id: 'demo-deploy-4', serviceId: 'svc-notification-service', serviceName: 'notification-service', environment: 'production', awsRegion: 'eu-west-1', status: 'running' as DeploymentStatus, costEstimate: 156.30, deployedBy: 'emma.davis@company.com', deployedAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(), createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(), updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString() },
-  { id: 'demo-deploy-5', serviceId: 'svc-analytics-worker', serviceName: 'analytics-worker', environment: 'production', awsRegion: 'us-east-1', status: 'running' as DeploymentStatus, costEstimate: 312.80, deployedBy: 'david.kim@company.com', deployedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString() },
-]
-
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
   'Storage (S3, EBS)': '#06B6D4',
@@ -87,15 +81,6 @@ function generateCostBreakdownData() {
     { name: 'Network (Data Transfer)', value: 1200, change: 3, color: SERVICE_COLORS['Network (Data Transfer)'] },
     { name: 'Other Services', value: 247, change: -2, color: SERVICE_COLORS['Other Services'] },
   ]
-}
-
-function getDeploymentStatusColor(status: DeploymentStatus): string {
-  switch (status) {
-    case 'running': return '#059669'
-    case 'failed': return '#DC2626'
-    case 'deploying': return '#D97706'
-    default: return '#94A3B8'
-  }
 }
 
 // Month-over-month cost delta, derived from the already-fetched costTrend daily series
@@ -258,6 +243,7 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     })
     socket.on('alert:created', (data) => {
       if (!shouldUpdate('alert:created')) return
@@ -265,6 +251,7 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     })
     socket.on('deployment:started', (data) => {
       if (!shouldUpdate('deployment:started')) return
@@ -273,6 +260,7 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['recent-deployments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     })
     socket.on('deployment:completed', (data) => {
       if (!shouldUpdate('deployment:completed')) return
@@ -282,6 +270,7 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['recent-deployments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     })
     socket.on('service:health', (data) => {
       if (!shouldUpdate('service:health')) return
@@ -289,6 +278,7 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     })
     return () => {
       socket.off('metrics:costs'); socket.off('alert:created')
@@ -304,7 +294,6 @@ export default function DashboardPage() {
     } catch { setSyncStatus('error') }
   }
 
-  const activeDeployments = demoMode ? DEMO_DEPLOYMENTS : deployments
   const insightMessage = demoMode
     ? 'Lambda function costs increased 23% due to higher invocation count — enable reserved concurrency and consider Graviton2 for up to $540/year savings.'
     : (aiInsight?.rootCause || aiInsight?.recommendation || null)
@@ -416,6 +405,62 @@ export default function DashboardPage() {
     monthOverMonthCostChange,
     !isDemoActive && hasBillingData
   )
+
+  // Real-data-only, hidden in demo mode — same pattern as AI Summary.
+  const { data: activityFeedData, isLoading: activityFeedLoading, isError: activityFeedError } = useActivityFeed(
+    organization?.id,
+    !isDemoActive
+  )
+
+  const activityDotColor = (type: ActivityEventType): string => {
+    switch (type) {
+      case 'sync': return '#059669'
+      case 'optimization': return '#D97706'
+      case 'security':
+      case 'anomaly': return '#DC2626'
+      case 'score': return '#2563EB'
+      default: return '#94A3B8'
+    }
+  }
+
+  // Reusable Recent Activity card — reconstructed from real data (sync, cost
+  // optimization, security findings, score changes, anomalies), not deployments.
+  // Hidden in demo mode; used at both Recent Activity render sites in this file.
+  const RecentActivityCard = () => {
+    if (isDemoActive) return null
+    return (
+      <div className="bg-white border border-gray-100 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700">Recent Activity</p>
+        </div>
+        <div className="flex flex-col">
+          {activityFeedLoading ? (
+            <div className="flex flex-col gap-3 py-2">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
+          ) : activityFeedError || !activityFeedData || activityFeedData.length === 0 ? (
+            <div className="text-center py-10 flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center mb-1"><Activity size={18} className="text-gray-400" /></div>
+              <p className="text-sm font-semibold text-gray-900">No activity yet</p>
+              <p className="text-xs text-gray-500 leading-relaxed">Activity will appear here once resources sync, findings are detected, or scores update</p>
+            </div>
+          ) : (
+            activityFeedData.map((event, i) => (
+              <div key={`${event.type}-${event.timestamp}-${i}`} className="flex items-center justify-between py-2.5 border-b border-gray-50">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: activityDotColor(event.type) }} />
+                  <div className="text-[13px] font-medium text-gray-900 leading-snug">{event.message}</div>
+                </div>
+                <div className="text-[11px] text-gray-400 whitespace-nowrap shrink-0 ml-3">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    )
+  }
 
   const costDeltaColor  = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706'
   const CostDeltaIcon   = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus
@@ -1222,38 +1267,7 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            {/* Recent Activity */}
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700">Recent Activity</p>
-                <a href="/deployments" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">View all <ArrowRight size={12} /></a>
-              </div>
-              <div className="flex flex-col">
-                {activeDeployments.slice(0, 5).map((d: Deployment) => (
-                  <div key={d.id} className="flex items-center justify-between py-2.5 border-b border-gray-50">
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: getDeploymentStatusColor(d.status) }} />
-                      <div>
-                        <div className="text-[13px] font-medium text-gray-900 leading-snug">{d.serviceName || d.serviceId.slice(0, 8)}</div>
-                        <div className="text-[11px] text-gray-500">{d.environment}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-bold capitalize" style={{ color: getDeploymentStatusColor(d.status) }}>{d.status}</div>
-                      <div className="text-[11px] text-gray-400">{formatDistanceToNow(new Date(d.deployedAt), { addSuffix: true })}</div>
-                    </div>
-                  </div>
-                ))}
-                {activeDeployments.length === 0 && (
-                  <div className="text-center py-10 flex flex-col items-center gap-2">
-                    <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center mb-1"><Activity size={18} className="text-gray-400" /></div>
-                    <p className="text-sm font-semibold text-gray-900">No deployment data yet</p>
-                    <p className="text-xs text-gray-500 leading-relaxed">Connect your CI/CD pipeline to unlock deployment velocity insights</p>
-                    <a href="/deployments" className="mt-2 text-[13px] font-semibold text-violet-700 no-underline">Connect CI/CD pipeline →</a>
-                  </div>
-                )}
-              </div>
-            </div>
+            <RecentActivityCard />
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1337,38 +1351,7 @@ export default function DashboardPage() {
               )
             })()}
 
-            {/* Recent Activity */}
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700">Recent Activity</p>
-                <a href="/deployments" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">View all <ArrowRight size={12} /></a>
-              </div>
-              <div className="flex flex-col">
-                {activeDeployments.slice(0, 5).map((d: Deployment) => (
-                  <div key={d.id} className="flex items-center justify-between py-2.5 border-b border-gray-50">
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: getDeploymentStatusColor(d.status) }} />
-                      <div>
-                        <div className="text-[13px] font-medium text-gray-900 leading-snug">{d.serviceName || d.serviceId.slice(0, 8)}</div>
-                        <div className="text-[11px] text-gray-400">{d.environment}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-bold capitalize" style={{ color: getDeploymentStatusColor(d.status) }}>{d.status}</div>
-                      <div className="text-[11px] text-gray-500">{formatDistanceToNow(new Date(d.deployedAt), { addSuffix: true })}</div>
-                    </div>
-                  </div>
-                ))}
-                {activeDeployments.length === 0 && (
-                  <div className="text-center py-10 flex flex-col items-center gap-2">
-                    <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center mb-1"><Activity size={18} className="text-gray-400" /></div>
-                    <p className="text-sm font-medium text-gray-900">No deployment data yet</p>
-                    <p className="text-xs text-gray-500 leading-relaxed">Connect your CI/CD pipeline to unlock deployment velocity insights, change failure rate tracking, and incident impact analysis</p>
-                    <a href="/deployments" className="mt-2 text-[13px] font-semibold text-violet-700 no-underline">Connect CI/CD pipeline →</a>
-                  </div>
-                )}
-              </div>
-            </div>
+            <RecentActivityCard />
           </div>
         )
       )}
