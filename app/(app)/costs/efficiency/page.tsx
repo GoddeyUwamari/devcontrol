@@ -16,7 +16,9 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import { anomalyService } from '@/lib/services/anomaly.service'
 import type { InfrastructureResource } from '@/lib/types'
+import type { AnomalyDetection } from '@/types/anomaly.types'
 import Link from 'next/link'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
@@ -84,12 +86,24 @@ const DEMO_SERVICE_EFFICIENCY = [
   { name: 's3-archive',       score: 28, cost: 8000,  type: 'S3'     },
 ]
 
-const SERVICE_COLORS: Record<string, string> = {
+// Demo bar data uses per-service labels; real data comes from AWS Cost Explorer's
+// category breakdown (compute/storage/database/network/other) via /api/platform/costs/trend
+// — Lambda and EC2 both fold into "Compute" there, so the two datasets use different
+// legends rather than forcing real spend into fake per-service buckets.
+const DEMO_SERVICE_COLORS: Record<string, string> = {
   EC2:    '#4f8ef7',
   RDS:    '#38c9a0',
   S3:     '#a78bfa',
   Lambda: '#f59e0b',
   Other:  '#64748b',
+}
+
+const REAL_SERVICE_COLORS: Record<string, string> = {
+  Compute:  '#4f8ef7',
+  Storage:  '#a78bfa',
+  Database: '#38c9a0',
+  Network:  '#f59e0b',
+  Other:    '#64748b',
 }
 
 const QUADRANT_COLORS: Record<string, string> = {
@@ -110,6 +124,11 @@ const SEVERITY_COLORS: Record<string, string> = {
   critical: '#ef4444',
   high:     '#f59e0b',
   medium:   '#7c3aed',
+  // Real AnomalyDetection.severity values (info/warning/critical) differ from the
+  // demo vocabulary above (medium/high/critical) — both are supported rather than
+  // force-mapped, since they come from genuinely different taxonomies.
+  warning:  '#f59e0b',
+  info:     '#3b82f6',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -229,6 +248,37 @@ export default function EfficiencyPage() {
     enabled: !isDemoActive,
   })
 
+  // Same endpoint app/(app)/dashboard/page.tsx uses for its cost trend chart —
+  // real AWS Cost Explorer data, degrades to [] (not fabricated) when not connected.
+  const { data: realCostTrend = [] } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
+    queryKey: ['cost-trend', '6mo'],
+    queryFn: async () => {
+      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=6mo`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
+      })
+      if (!res.ok) return []
+      const json = await res.json()
+      return json.data ?? []
+    },
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !isDemoActive,
+  })
+
+  // Same anomalyService the Security and Anomalies pages already use.
+  const { data: realAnomalies = [] } = useQuery<AnomalyDetection[]>({
+    queryKey: ['anomalies', 'efficiency-page'],
+    queryFn: async () => {
+      const { anomalies } = await anomalyService.getAnomalies()
+      return anomalies
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    enabled: !isDemoActive,
+  })
+
   // ── Derived real data ──
   const realTotalSpend = resources.reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
   const realIdleCost   = resources.filter(r => r.status !== 'running').reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
@@ -304,14 +354,39 @@ export default function EfficiencyPage() {
           .slice(0, 11)
       })()
 
-  const barData = DEMO_BAR_DATA
+  const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+  const barColors = isDemoActive ? DEMO_SERVICE_COLORS : REAL_SERVICE_COLORS
+  const barData: Array<Record<string, string | number>> = isDemoActive
+    ? DEMO_BAR_DATA
+    : realCostTrend.map(p => ({
+        month:    MONTH_LABELS[parseInt(p.date.slice(5, 7), 10) - 1] ?? p.date,
+        Compute:  Math.round(p.compute),
+        Storage:  Math.round(p.storage),
+        Database: Math.round(p.database),
+        Network:  Math.round(p.network),
+        Other:    Math.round(p.other),
+      }))
+
+  // ── Anomalies ──
+  const anomalies = isDemoActive
+    ? DEMO_ANOMALIES
+    : realAnomalies.map(a => ({
+        service:  a.resourceName || a.resourceId || a.title || 'Unknown resource',
+        type:     (a.resourceType || '').toUpperCase() || '—',
+        delta:    Math.round(a.deviation),
+        severity: a.severity,
+        date:     new Date(a.detectedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        detail:   a.description || a.title,
+      }))
 
   const handleExport = () => {
+    const cols = Object.keys(barColors)
     const rows = [
-      ['Month', 'EC2', 'RDS', 'S3', 'Lambda', 'Other', 'Total'],
+      ['Month', ...cols, 'Total'],
       ...barData.map(d => [
-        d.month, d.EC2, d.RDS, d.S3, d.Lambda, d.Other,
-        d.EC2 + d.RDS + d.S3 + d.Lambda + d.Other,
+        d.month, ...cols.map(c => d[c] ?? 0),
+        cols.reduce((sum, c) => sum + (Number(d[c]) || 0), 0),
       ]),
     ]
     const csv = rows.map(r => r.join(',')).join('\n')
@@ -371,24 +446,32 @@ export default function EfficiencyPage() {
               <option value="team">By Team</option>
             </select>
           </div>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
-            {Object.entries(SERVICE_COLORS).map(([name, color]) => (
-              <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#374151' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color, display: 'inline-block' }} />{name}
-              </span>
-            ))}
-          </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={barData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-              <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
-              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'} />
-              <Tooltip content={<CustomBarTooltip />} />
-              {Object.entries(SERVICE_COLORS).map(([name, color]) => (
-                <Bar key={name} dataKey={name} stackId="a" fill={color} radius={name === 'Other' ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
+          {barData.length > 0 ? (
+            <>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                {Object.entries(barColors).map(([name, color]) => (
+                  <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#374151' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color, display: 'inline-block' }} />{name}
+                  </span>
+                ))}
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={barData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
+                  <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'} />
+                  <Tooltip content={<CustomBarTooltip />} />
+                  {Object.entries(barColors).map(([name, color]) => (
+                    <Bar key={name} dataKey={name} stackId="a" fill={color} radius={name === 'Other' ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </>
+          ) : (
+            <div style={{ padding: '48px 0', textAlign: 'center' }}>
+              <p style={{ fontSize: '13px', color: '#6b7280' }}>No cost trend data available yet</p>
+            </div>
+          )}
         </div>
 
         {/* Scatter Plot */}
@@ -534,25 +617,31 @@ export default function EfficiencyPage() {
             View all →
           </Link>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {DEMO_ANOMALIES.map((a, i) => {
-            const color = SEVERITY_COLORS[a.severity]
-            return (
-              <div key={i} style={{ background: '#f9fafb', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: '8px', padding: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 700, color, background: color + '22', padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase' }}>{a.severity}</span>
-                  <span style={{ fontSize: '10px', color: '#9ca3af' }}>{a.date}</span>
+        {anomalies.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {anomalies.map((a, i) => {
+              const color = SEVERITY_COLORS[a.severity] ?? SEVERITY_COLORS.medium
+              return (
+                <div key={i} style={{ background: '#f9fafb', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: '8px', padding: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color, background: color + '22', padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase' }}>{a.severity}</span>
+                    <span style={{ fontSize: '10px', color: '#9ca3af' }}>{a.date}</span>
+                  </div>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>{a.service}</p>
+                  <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '8px' }}>{a.detail}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color, background: color + '22', padding: '2px 7px', borderRadius: '4px' }}>{a.type}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color }}>{a.delta >= 0 ? '+' : ''}{a.delta}%</span>
+                  </div>
                 </div>
-                <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>{a.service}</p>
-                <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '8px' }}>{a.detail}</p>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 700, color, background: color + '22', padding: '2px 7px', borderRadius: '4px' }}>{a.type}</span>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color }}>+{a.delta}%</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ padding: '32px 0', textAlign: 'center' }}>
+            <p style={{ fontSize: '13px', color: '#6b7280' }}>No cost anomalies detected</p>
+          </div>
+        )}
       </div>
 
       {/* ── NEW SECTION 3: EFFICIENCY SCORE BY SERVICE ── */}
