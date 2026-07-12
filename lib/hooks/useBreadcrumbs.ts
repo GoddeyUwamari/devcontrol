@@ -58,7 +58,7 @@ const routeLabels: Record<string, string> = {
   'ai-reports': 'AI Reports',
 };
 
-const parentPaths: Record<string, { label: string; href: string }[]> = {
+const parentPaths: Record<string, { label: string; href?: string }[]> = {
   '/deployments':      [{ label: 'Services', href: '/services' }],
   '/dependencies':     [{ label: 'Services', href: '/services' }],
   '/services/new':     [],
@@ -73,6 +73,7 @@ const parentPaths: Record<string, { label: string; href: string }[]> = {
   '/teams':            [{ label: 'DevOps', href: '/devops' }],
   '/enterprise':       [{ label: 'DevOps', href: '/devops' }],
   '/developers':       [{ label: 'DevOps', href: '/devops' }],
+  '/remediation':      [{ label: 'DevOps' }], // no standalone /devops page — non-clickable
   '/cost-optimization': [{ label: 'Costs', href: '/costs' }],
   '/forecast':          [{ label: 'Costs', href: '/costs' }],
   '/invoices':          [{ label: 'Costs', href: '/costs' }],
