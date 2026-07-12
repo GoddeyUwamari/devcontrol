@@ -701,42 +701,47 @@ export class AWSResourceDiscoveryService {
     const command = new DescribeInstancesCommand({});
     const response = await ec2Client.send(command);
 
+    const instances: Instance[] = [];
+    for (const reservation of response.Reservations || []) {
+      instances.push(...(reservation.Instances || []));
+    }
+
+    const volumeEncryptionMap = await this.getVolumeEncryptionMap(ec2Client, instances);
+
     const resources: CreateAWSResourceInput[] = [];
 
-    for (const reservation of response.Reservations || []) {
-      for (const instance of reservation.Instances || []) {
-        if (!instance.InstanceId) continue;
+    for (const instance of instances) {
+      if (!instance.InstanceId) continue;
 
-        const tags = this.extractTags(instance.Tags);
-        const name = tags.Name || instance.InstanceId;
+      const tags = this.extractTags(instance.Tags);
+      const name = tags.Name || instance.InstanceId;
 
-        const metadata: EC2InstanceMetadata = {
-          instance_type: instance.InstanceType || 'unknown',
-          platform: instance.Platform,
-          vpc_id: instance.VpcId,
-          subnet_id: instance.SubnetId,
-          public_ip: instance.PublicIpAddress,
-          private_ip: instance.PrivateIpAddress,
-          availability_zone: instance.Placement?.AvailabilityZone,
-          launch_time: instance.LaunchTime?.toISOString(),
-        };
+      const metadata: EC2InstanceMetadata = {
+        instance_type: instance.InstanceType || 'unknown',
+        platform: instance.Platform,
+        vpc_id: instance.VpcId,
+        subnet_id: instance.SubnetId,
+        public_ip: instance.PublicIpAddress,
+        private_ip: instance.PrivateIpAddress,
+        availability_zone: instance.Placement?.AvailabilityZone,
+        launch_time: instance.LaunchTime?.toISOString(),
+      };
 
-        resources.push({
-          organization_id: organizationId,
-          resource_arn: `arn:aws:ec2:${region}:*:instance/${instance.InstanceId}`,
-          resource_id: instance.InstanceId,
-          resource_name: name,
-          resource_type: 'ec2',
-          region,
-          tags,
-          metadata,
-          status: this.mapEC2Status(instance.State?.Name),
-          estimated_monthly_cost: this.estimateEC2Cost(instance.InstanceType || 'unknown'),
-          is_encrypted: this.checkEC2Encryption(instance),
-          is_public: !!instance.PublicIpAddress,
-          has_backup: false, // Will be determined by compliance scanner
-        });
-      }
+      resources.push({
+        organization_id: organizationId,
+        resource_arn: `arn:aws:ec2:${region}:*:instance/${instance.InstanceId}`,
+        resource_id: instance.InstanceId,
+        resource_name: name,
+        resource_type: 'ec2',
+        region,
+        tags,
+        metadata,
+        status: this.mapEC2Status(instance.State?.Name),
+        estimated_monthly_cost: this.estimateEC2Cost(instance.InstanceType || 'unknown'),
+        is_encrypted: this.checkEC2Encryption(instance, volumeEncryptionMap),
+        is_public: !!instance.PublicIpAddress,
+        has_backup: false, // Will be determined by compliance scanner
+      });
     }
 
     return resources;
@@ -954,12 +959,58 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
-   * Check if EC2 instance has encrypted volumes
+   * Fetch real encryption status for every EBS volume attached to the given instances,
+   * via a single batched DescribeVolumes call (chunked at 200 IDs, the API limit).
+   * On a failed lookup, the affected volumes are simply absent from the map rather than
+   * defaulted to unencrypted, so checkEC2Encryption doesn't fabricate a finding.
    */
-  private checkEC2Encryption(instance: Instance): boolean {
-    // Check if EBS volumes are encrypted
-    // For simplicity, assume not encrypted (real check would query volumes)
-    return false;
+  private async getVolumeEncryptionMap(
+    ec2Client: EC2Client,
+    instances: Instance[]
+  ): Promise<Map<string, boolean>> {
+    const volumeIds = Array.from(new Set(
+      instances.flatMap(instance =>
+        (instance.BlockDeviceMappings || [])
+          .map(mapping => mapping.Ebs?.VolumeId)
+          .filter((id): id is string => !!id)
+      )
+    ));
+
+    const encryptionMap = new Map<string, boolean>();
+    if (volumeIds.length === 0) return encryptionMap;
+
+    const chunkSize = 200;
+    for (let i = 0; i < volumeIds.length; i += chunkSize) {
+      const chunk = volumeIds.slice(i, i + chunkSize);
+      try {
+        const { Volumes } = await ec2Client.send(new DescribeVolumesCommand({ VolumeIds: chunk }));
+        for (const volume of Volumes || []) {
+          if (volume.VolumeId) {
+            encryptionMap.set(volume.VolumeId, volume.Encrypted ?? false);
+          }
+        }
+      } catch (error: any) {
+        console.error(`[Discovery] DescribeVolumes failed for ${chunk.length} volume(s):`, error.message);
+      }
+    }
+
+    return encryptionMap;
+  }
+
+  /**
+   * Check if EC2 instance has encrypted volumes.
+   * An instance counts as encrypted only if every EBS volume in its BlockDeviceMappings
+   * is confirmed Encrypted via DescribeVolumes. Volumes whose lookup failed are skipped
+   * (treated as compliant) rather than reported unencrypted — see getVolumeEncryptionMap.
+   */
+  private checkEC2Encryption(instance: Instance, volumeEncryptionMap: Map<string, boolean>): boolean {
+    const volumeIds = (instance.BlockDeviceMappings || [])
+      .map(mapping => mapping.Ebs?.VolumeId)
+      .filter((id): id is string => !!id);
+
+    if (volumeIds.length === 0) return true;
+
+    return volumeIds.every(id => volumeEncryptionMap.get(id) ?? true);
   }
 
   /**
