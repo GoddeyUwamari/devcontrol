@@ -159,6 +159,29 @@ function efficiencyColor(score: number): string {
   return '#ef4444'
 }
 
+// deriveEfficiencyScore() is a cost-tier heuristic, not a real utilization metric —
+// shown to real accounts only via quadrant placement (see deriveQuadrant), never as
+// a displayed percentage. This is the explanation surfaced in its place.
+const EFFICIENCY_UNAVAILABLE_TOOLTIP =
+  "Efficiency analysis available after enabling CloudWatch metrics. We'll calculate utilization, identify over-provisioned resources, and recommend right-sizing opportunities."
+
+function EfficiencyInfoBadge() {
+  return (
+    <span
+      title={EFFICIENCY_UNAVAILABLE_TOOLTIP}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: '13px', height: '13px', borderRadius: '50%',
+        background: '#e5e7eb', color: '#6b7280',
+        fontSize: '9px', fontWeight: 700, textTransform: 'none', letterSpacing: 'normal',
+        marginLeft: '5px', cursor: 'help',
+      }}
+    >
+      i
+    </span>
+  )
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 function KPICard({
@@ -189,7 +212,7 @@ function KPICard({
   )
 }
 
-const CustomScatterTooltip = ({ active, payload }: any) => {
+const CustomScatterTooltip = ({ active, payload, isDemoActive }: any) => {
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload
   if (!d) return null
@@ -197,7 +220,7 @@ const CustomScatterTooltip = ({ active, payload }: any) => {
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
       <p style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>{d.name}</p>
       <p style={{ fontSize: '11px', color: '#374151' }}>Cost: ${(d.x / 1000).toFixed(1)}K/mo</p>
-      <p style={{ fontSize: '11px', color: '#374151' }}>Efficiency: {d.y}%</p>
+      {isDemoActive && <p style={{ fontSize: '11px', color: '#374151' }}>Efficiency: {d.y}%</p>}
       <p style={{ fontSize: '11px', fontWeight: 600, color: QUADRANT_COLORS[d.q], marginTop: '4px' }}>{QUADRANT_LABELS[d.q]}</p>
     </div>
   )
@@ -500,9 +523,9 @@ export default function EfficiencyPage() {
             <ScatterChart margin={{ top: 4, right: 4, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
               <XAxis type="number" dataKey="x" name="cost" domain={[0, 40000]} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'} label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, fill: '#6b7280', fontSize: 11 }} />
-              <YAxis type="number" dataKey="y" name="efficiency" domain={[0, 100]} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={{ value: 'Efficiency', angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 11 }} />
+              <YAxis type="number" dataKey="y" name="efficiency" domain={[0, 100]} tick={isDemoActive ? { fill: '#6b7280', fontSize: 10 } : false} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={isDemoActive ? { value: 'Efficiency', angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 11 } : undefined} />
               <ZAxis range={[60, 60]} />
-              <Tooltip cursor={{ strokeDasharray: '3 3', stroke: '#e5e7eb' }} content={<CustomScatterTooltip />} />
+              <Tooltip cursor={{ strokeDasharray: '3 3', stroke: '#e5e7eb' }} content={<CustomScatterTooltip isDemoActive={isDemoActive} />} />
               <ReferenceLine x={20000} stroke="#e5e7eb" strokeDasharray="4 4" />
               <ReferenceLine y={65}    stroke="#e5e7eb" strokeDasharray="4 4" />
               {scatterByQ.map(({ q, data }) => (
@@ -555,7 +578,10 @@ export default function EfficiencyPage() {
             <thead>
               <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
                 {['Resource', 'Type', 'Region', 'Monthly Cost', 'Efficiency', 'Issue', 'Potential Savings', ''].map(h => (
-                  <th key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '8px 12px', textAlign: h === 'Monthly Cost' || h === 'Potential Savings' ? 'right' : 'left' }}>{h}</th>
+                  <th key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '8px 12px', textAlign: h === 'Monthly Cost' || h === 'Potential Savings' ? 'right' : 'left' }}>
+                    {h}
+                    {h === 'Efficiency' && !isDemoActive && <EfficiencyInfoBadge />}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -569,12 +595,16 @@ export default function EfficiencyPage() {
                   <td style={{ padding: '12px', fontSize: '12px', color: '#6b7280', fontFamily: 'monospace' }}>{r.region}</td>
                   <td style={{ padding: '12px', fontSize: '13px', fontWeight: 600, color: '#0f172a', textAlign: 'right' }}>${r.cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td style={{ padding: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ flex: 1, height: '4px', background: '#f3f4f6', borderRadius: '2px', minWidth: '60px' }}>
-                        <div style={{ width: `${r.efficiency}%`, height: '100%', borderRadius: '2px', background: efficiencyColor(r.efficiency) }} />
+                    {isDemoActive ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ flex: 1, height: '4px', background: '#f3f4f6', borderRadius: '2px', minWidth: '60px' }}>
+                          <div style={{ width: `${r.efficiency}%`, height: '100%', borderRadius: '2px', background: efficiencyColor(r.efficiency) }} />
+                        </div>
+                        <span style={{ fontSize: '11px', color: efficiencyColor(r.efficiency), fontWeight: 600, minWidth: '28px' }}>{r.efficiency}%</span>
                       </div>
-                      <span style={{ fontSize: '11px', color: efficiencyColor(r.efficiency), fontWeight: 600, minWidth: '28px' }}>{r.efficiency}%</span>
-                    </div>
+                    ) : (
+                      <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 600 }}>—</span>
+                    )}
                   </td>
                   <td style={{ padding: '12px', fontSize: '12px', color: '#f59e0b' }}>{r.issue}</td>
                   <td style={{ padding: '12px', fontSize: '13px', fontWeight: 700, color: '#16a34a', textAlign: 'right' }}>-${r.savings.toLocaleString()}/mo</td>
@@ -648,25 +678,32 @@ export default function EfficiencyPage() {
       <div style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <div>
-            <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Efficiency score by service</p>
+            <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: 0 }}>
+              Efficiency score by service
+              {!isDemoActive && <EfficiencyInfoBadge />}
+            </p>
             <p style={{ fontSize: '11px', color: '#6b7280', margin: '2px 0 0' }}>How well each service is utilizing its allocated resources</p>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            {[['#16a34a', '75%+'], ['#f59e0b', '50–74%'], ['#ef4444', '<50%']].map(([color, label]) => (
-              <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#374151' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color as string, display: 'inline-block' }} />{label}
-              </span>
-            ))}
-          </div>
+          {isDemoActive && (
+            <div style={{ display: 'flex', gap: '12px' }}>
+              {[['#16a34a', '75%+'], ['#f59e0b', '50–74%'], ['#ef4444', '<50%']].map(([color, label]) => (
+                <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#374151' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color as string, display: 'inline-block' }} />{label}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {serviceEfficiency.map((s, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ fontSize: '12px', color: '#374151', width: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.name}</span>
               <div style={{ flex: 1, height: '6px', background: '#f3f4f6', borderRadius: '3px', overflow: 'hidden' }}>
-                <div style={{ width: `${s.score}%`, height: '100%', borderRadius: '3px', background: efficiencyColor(s.score), transition: 'width 0.4s ease' }} />
+                {isDemoActive && (
+                  <div style={{ width: `${s.score}%`, height: '100%', borderRadius: '3px', background: efficiencyColor(s.score), transition: 'width 0.4s ease' }} />
+                )}
               </div>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: efficiencyColor(s.score), width: '36px', textAlign: 'right', flexShrink: 0 }}>{s.score}%</span>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: isDemoActive ? efficiencyColor(s.score) : '#9ca3af', width: '36px', textAlign: 'right', flexShrink: 0 }}>{isDemoActive ? `${s.score}%` : '—'}</span>
               <span style={{ fontSize: '11px', color: '#6b7280', width: '70px', textAlign: 'right', flexShrink: 0 }}>${(s.cost / 1000).toFixed(1)}K/mo</span>
             </div>
           ))}
