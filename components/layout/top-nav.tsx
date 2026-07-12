@@ -7,7 +7,7 @@ import {
   Plus, Rocket, Activity, Lightbulb, Building, TrendingDown,
   BarChart3, FileText, Sparkles, AlertTriangle, CheckSquare,
   ClipboardList, Users, Building2, Code, ChevronDown, BellDot,
-  Search, Menu, X, Bell, Clock, Target, SlidersHorizontal,
+  Search, Menu, X, Bell, Clock, Target, SlidersHorizontal, Wrench,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -27,6 +27,7 @@ type NavChild = {
   href: string;
   icon: React.ElementType;
   desc: string;
+  badge?: string;
 };
 
 type NavItem =
@@ -96,6 +97,7 @@ const navItems: NavItem[] = [
       { label: 'DORA Metrics', href: '/app/dora-metrics', icon: BarChart3, desc: 'Deployment frequency and MTTR' },
       { label: 'Teams', href: '/teams', icon: Users, desc: 'Team management and access' },
       { label: 'Enterprise', href: '/enterprise', icon: Building2, desc: 'Enterprise controls' },
+      { label: 'Auto-Remediation', href: '/remediation', icon: Wrench, desc: 'Approval-based infrastructure fixes', badge: 'Enterprise' },
       { label: 'Developers', href: '/developers', icon: Code, desc: 'API keys and integrations' },
     ],
   },
@@ -163,6 +165,7 @@ const mobileSections = [
       { label: 'DORA Metrics', href: '/app/dora-metrics' },
       { label: 'Teams', href: '/teams' },
       { label: 'Enterprise', href: '/enterprise' },
+      { label: 'Auto-Remediation', href: '/remediation' },
       { label: 'Developers', href: '/developers' },
     ],
   },
@@ -409,7 +412,14 @@ export function TopNav() {
                               <ChildIcon size={16} style={{ color: '#7c3aed' }} />
                             </div>
                             <div>
-                              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e1b4b', lineHeight: 1.3 }}>{child.label}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e1b4b', lineHeight: 1.3 }}>{child.label}</div>
+                                {child.badge && (
+                                  <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: '#fff', background: '#7c3aed', borderRadius: '4px', padding: '1px 6px' }}>
+                                    {child.badge}
+                                  </span>
+                                )}
+                              </div>
                               <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>{child.desc}</div>
                             </div>
                           </Link>
