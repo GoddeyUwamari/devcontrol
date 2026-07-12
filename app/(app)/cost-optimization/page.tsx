@@ -108,16 +108,29 @@ export default function CostOptimizationPage() {
         </div>
       ) : recommendations.length === 0 ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
-          <p className="text-base font-medium text-slate-900">No optimization opportunities identified yet — run a scan to check for savings</p>
+          <p className="text-base font-medium text-slate-900 mb-2">🎉 No optimization opportunities detected</p>
+          <p className="text-sm text-slate-500">Your infrastructure is running efficiently. Run a scan to check for new savings opportunities.</p>
         </div>
       ) : (
         <>
-          <div className="bg-white rounded-xl p-6 border border-slate-200 mb-6 flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Total potential savings</p>
-              <p className="text-2xl font-bold text-green-600">{formatSavings(totalSavings)}</p>
+          <div className="bg-white rounded-xl p-6 border border-slate-200 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Monthly Savings</p>
+                <p className="text-2xl font-bold text-green-600">{formatSavings(totalSavings)}</p>
+                {totalSavings > 0 && (
+                  <p className="text-xs text-slate-400 mt-1">≈ ${Math.round(totalSavings * 12).toLocaleString()}/year</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Annual Savings</p>
+                <p className="text-2xl font-bold text-green-600">{totalSavings > 0 ? `$${Math.round(totalSavings * 12).toLocaleString()}/yr` : '—'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Opportunities</p>
+                <p className="text-2xl font-bold text-slate-900">{recommendations.length}</p>
+              </div>
             </div>
-            <p className="text-sm text-slate-500">{recommendations.length} active recommendation{recommendations.length !== 1 ? 's' : ''}</p>
           </div>
 
           <div className="flex flex-col gap-3">
@@ -133,11 +146,11 @@ export default function CostOptimizationPage() {
                       <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{rec.status || '—'}</span>
                     </div>
                     {rec.description && <p className="text-xs text-slate-500 leading-relaxed mb-2.5">{rec.description}</p>}
-                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
-                      <span className="font-mono">{rec.resourceId || '—'}</span>
-                      {rec.resourceName && <><span>·</span><span>{rec.resourceName}</span></>}
-                      {rec.resourceType && <><span>·</span><span>{rec.resourceType}</span></>}
-                      {rec.awsRegion && <><span>·</span><span>{rec.awsRegion}</span></>}
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">{rec.resourceId || '—'}</span>
+                      {rec.resourceName && <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">{rec.resourceName}</span>}
+                      {rec.resourceType && <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">{rec.resourceType}</span>}
+                      {rec.awsRegion && <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">{rec.awsRegion}</span>}
                     </div>
                   </div>
                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3">
