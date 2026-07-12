@@ -3,7 +3,7 @@
  * Fetches aggregated data for weekly AI-powered email summaries
  */
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 export interface WeeklyDataQuery {
   organizationId: string;
@@ -22,9 +22,9 @@ export class WeeklySummaryRepository {
   /**
    * Get cost data for the week
    */
-  async getWeeklyCostData(query: WeeklyDataQuery) {
+  async getWeeklyCostData(query: WeeklyDataQuery, client?: PoolClient) {
     try {
-      const result = await this.pool.query(
+      const result = await (client ?? this.pool).query(
         `SELECT
           COALESCE(SUM(estimated_monthly_cost), 0) as total_cost,
           resource_type,
@@ -47,9 +47,9 @@ export class WeeklySummaryRepository {
   /**
    * Get previous week cost data for comparison
    */
-  async getPreviousWeekCostData(query: WeeklyDataQuery): Promise<number> {
+  async getPreviousWeekCostData(query: WeeklyDataQuery, client?: PoolClient): Promise<number> {
     try {
-      const result = await this.pool.query(
+      const result = await (client ?? this.pool).query(
         `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total_cost
          FROM aws_resources
          WHERE organization_id = $1`,
@@ -66,10 +66,10 @@ export class WeeklySummaryRepository {
   /**
    * Get alerts for the week (gracefully handles missing table)
    */
-  async getWeeklyAlerts(query: WeeklyDataQuery) {
+  async getWeeklyAlerts(query: WeeklyDataQuery, client?: PoolClient) {
     try {
       // First check if alert_history table exists (used by this codebase)
-      const tableCheck = await this.pool.query(
+      const tableCheck = await (client ?? this.pool).query(
         `SELECT EXISTS (
           SELECT FROM information_schema.tables
           WHERE table_name = 'alert_history'
@@ -80,7 +80,7 @@ export class WeeklySummaryRepository {
         return { total: 0, critical: 0, topAlert: null };
       }
 
-      const result = await this.pool.query(
+      const result = await (client ?? this.pool).query(
         `SELECT
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE severity = 'critical') as critical
@@ -104,9 +104,9 @@ export class WeeklySummaryRepository {
   /**
    * Get user info for organization owner
    */
-  async getUserInfo(organizationId: string): Promise<UserInfo | null> {
+  async getUserInfo(organizationId: string, client?: PoolClient): Promise<UserInfo | null> {
     try {
-      const result = await this.pool.query(
+      const result = await (client ?? this.pool).query(
         `SELECT u.email, u.full_name
          FROM users u
          JOIN organization_memberships om ON u.id = om.user_id
@@ -172,10 +172,10 @@ export class WeeklySummaryRepository {
   /**
    * Get DORA metrics for the week (aggregated)
    */
-  async getWeeklyDORAMetrics(query: WeeklyDataQuery) {
+  async getWeeklyDORAMetrics(query: WeeklyDataQuery, client?: PoolClient) {
     try {
       // Get deployment count for frequency
-      const deploymentResult = await this.pool.query(
+      const deploymentResult = await (client ?? this.pool).query(
         `SELECT COUNT(*) as deployment_count
          FROM deployments
          WHERE organization_id = $1
@@ -188,7 +188,7 @@ export class WeeklySummaryRepository {
       const deploymentFrequency = days > 0 ? (deploymentCount / days).toFixed(1) : '0';
 
       // Get lead time (average time from commit to deploy)
-      const leadTimeResult = await this.pool.query(
+      const leadTimeResult = await (client ?? this.pool).query(
         `SELECT AVG(EXTRACT(EPOCH FROM (deployed_at - created_at)) / 3600) as avg_lead_time_hours
          FROM deployments
          WHERE organization_id = $1
@@ -201,7 +201,7 @@ export class WeeklySummaryRepository {
       const leadTime = avgLeadTimeHours > 0 ? `${avgLeadTimeHours.toFixed(1)} hours` : 'N/A';
 
       // Get change failure rate
-      const failureResult = await this.pool.query(
+      const failureResult = await (client ?? this.pool).query(
         `SELECT
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE status = 'failed') as failed

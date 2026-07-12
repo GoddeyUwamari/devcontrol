@@ -156,13 +156,16 @@
     </div>
     {{/if}}
 
+    {{#if hasDora}}
     <div class="section dora">
       <div class="section-title">
         <span class="section-icon">&#128200;</span> DORA METRICS
       </div>
       <p class="section-content">{{doraSummary}}</p>
     </div>
+    {{/if}}
 
+    {{#if hasRecommendation}}
     <div class="section recommendation">
       <div class="section-title">
         <span class="section-icon">&#127919;</span> AI RECOMMENDATION
@@ -172,6 +175,7 @@
       <div class="savings">&#128176; Save ${{estimatedSavings}}/month</div>
       {{/if}}
     </div>
+    {{/if}}
 
     <div class="cta-container">
       <a href="{{dashboardUrl}}" class="button">View Full Dashboard &rarr;</a>

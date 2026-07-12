@@ -11,10 +11,14 @@ import Handlebars from 'handlebars';
 import { Resend } from 'resend';
 import { AIInsightsService, WeeklySummaryData } from '../services/ai-insights.service';
 import { WeeklySummaryRepository } from '../repositories/weekly-summary.repository';
+import { RiskTrackingService } from '../services/risk-tracking.service';
+import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 
 export class WeeklyAISummaryJob {
   private aiService: AIInsightsService;
   private repository: WeeklySummaryRepository;
+  private riskTrackingService: RiskTrackingService;
+  private costRecommendationsRepository: CostRecommendationsRepository;
   private task: ReturnType<typeof cron.schedule> | null = null;
   private emailTemplate: HandlebarsTemplateDelegate | null = null;
   private resend: Resend | null = null;
@@ -22,6 +26,8 @@ export class WeeklyAISummaryJob {
   constructor(private pool: Pool) {
     this.aiService = new AIInsightsService(pool);
     this.repository = new WeeklySummaryRepository(pool);
+    this.riskTrackingService = new RiskTrackingService(pool);
+    this.costRecommendationsRepository = new CostRecommendationsRepository();
     this.loadEmailTemplate();
     this.setupResendClient();
   }
@@ -134,11 +140,6 @@ export class WeeklyAISummaryJob {
    * Send summary for a single organization
    */
   private async sendSummaryForOrganization(organizationId: string): Promise<void> {
-    await this.pool.query(
-      "SELECT set_config('app.current_organization_id', $1, true)",
-      [organizationId]
-    );
-
     if (!this.resend) {
       throw new Error('Resend email client not configured');
     }
@@ -147,117 +148,215 @@ export class WeeklyAISummaryJob {
       throw new Error('Email template not loaded');
     }
 
-    // Calculate date range (last 7 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
-
-    const query = { organizationId, startDate, endDate };
-
-    // Gather weekly data in parallel
-    const [costData, previousCost, alertsData, userInfo, doraMetrics] = await Promise.all([
-      this.repository.getWeeklyCostData(query),
-      this.repository.getPreviousWeekCostData(query),
-      this.repository.getWeeklyAlerts(query),
-      this.repository.getUserInfo(organizationId),
-      this.repository.getWeeklyDORAMetrics(query)
-    ]);
-
-    if (!userInfo?.email) {
-      console.log(`[Weekly AI Summary] No email found for org ${organizationId}`);
-      return;
-    }
-
-    // Calculate current cost total
-    const currentCost = costData.reduce((sum, item) => sum + parseFloat(item.total_cost || '0'), 0);
-    const changePercent = previousCost > 0 ? ((currentCost - previousCost) / previousCost) * 100 : 0;
-
-    // Build weekly summary data
-    const weeklyData: WeeklySummaryData = {
-      costs: {
-        previous: previousCost,
-        current: currentCost,
-        changePercent: Math.round(changePercent * 100) / 100,
-        topChanges: costData.slice(0, 3).map(item => ({
-          service: item.resource_type,
-          change: 0 // Would need historical data to calculate change
-        }))
-      },
-      alerts: {
-        total: alertsData.total,
-        critical: alertsData.critical,
-        topAlert: alertsData.topAlert ?? undefined
-      },
-      dora: doraMetrics
-    };
-
-    // Generate AI summary
-    const aiSummary = await this.aiService.generateWeeklySummary(weeklyData);
-
-    // Render email HTML
-    const userName = userInfo.fullName?.split(' ')[0] || userInfo.email.split('@')[0];
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
-
-    // Get user ID for unsubscribe token
-    const userResult = await this.pool.query(
-      'SELECT id FROM users WHERE email = $1',
-      [userInfo.email]
-    );
-    const userId = userResult.rows[0]?.id;
-
-    // Create unsubscribe token (base64 encoded user ID)
-    const unsubscribeToken = userId ? Buffer.from(userId).toString('base64') : '';
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
-
-    const html = this.emailTemplate({
-      userName,
-      costSummary: aiSummary.costs.summary,
-      hasAlerts: aiSummary.alerts.total > 0,
-      totalAlerts: aiSummary.alerts.total,
-      alertSummary: aiSummary.alerts.summary,
-      doraSummary: aiSummary.dora.summary,
-      recommendation: aiSummary.recommendation.text,
-      estimatedSavings: aiSummary.recommendation.estimatedSavings,
-      dashboardUrl: `${frontendUrl}/dashboard`,
-      unsubscribeUrl: `${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}`,
-      preferencesUrl: `${frontendUrl}/settings/notifications`,
-      privacyUrl: `${frontendUrl}/privacy`,
-      year: new Date().getFullYear()
-    });
-
-    // Generate plain text version for better deliverability
-    const textContent = this.generateTextVersion({
-      userName,
-      costSummary: aiSummary.costs.summary,
-      hasAlerts: aiSummary.alerts.total > 0,
-      totalAlerts: aiSummary.alerts.total,
-      alertSummary: aiSummary.alerts.summary,
-      doraSummary: aiSummary.dora.summary,
-      recommendation: aiSummary.recommendation.text,
-      estimatedSavings: aiSummary.recommendation.estimatedSavings,
-      dashboardUrl: `${frontendUrl}/dashboard`,
-      unsubscribeUrl: `${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}`,
-      preferencesUrl: `${frontendUrl}/settings/notifications`,
-    });
-
-    // Send email via Resend with anti-spam headers
+    // Single held client for the whole run: org context below is session-scoped
+    // (is_local = false) and threaded through every query on this connection, same
+    // pattern as RiskTrackingService.storeAllOrganizationSnapshots() /
+    // AnomalyDetectionJob.runDetection() (see a1f894b). pool.query() per-call would
+    // silently drop the context on a different pooled connection.
+    const client = await this.pool.connect();
     try {
-      const result = await this.resend.emails.send({
-        from: process.env.EMAIL_FROM || 'DevControl <noreply@devcontrol.app>',
-        to: userInfo.email,
-        subject: 'Your DevControl Weekly Summary (AI-Powered)',
-        html,
-        text: textContent,
-        headers: {
-          'List-Unsubscribe': `<${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}>`,
-          'X-Entity-Ref-ID': `weekly-summary-${Date.now()}`,
-        },
-      });
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [organizationId]
+      );
 
-      console.log(`[Weekly AI Summary] ✅ Sent to ${userInfo.email} via Resend (ID: ${result.data?.id})`);
+      // Calculate date range (last 7 days)
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 7);
+
+      const query = { organizationId, startDate, endDate };
+
+      // Gather weekly data in parallel
+      const [costData, previousCost, alertsData, userInfo, doraMetrics] = await Promise.all([
+        this.repository.getWeeklyCostData(query, client),
+        this.repository.getPreviousWeekCostData(query, client),
+        this.repository.getWeeklyAlerts(query, client),
+        this.repository.getUserInfo(organizationId, client),
+        this.repository.getWeeklyDORAMetrics(query, client)
+      ]);
+
+      if (!userInfo?.email) {
+        console.log(`[Weekly AI Summary] No email found for org ${organizationId}`);
+        return;
+      }
+
+      // Calculate current cost total
+      const currentCost = costData.reduce((sum, item) => sum + parseFloat(item.total_cost || '0'), 0);
+
+      // Only a real prior week's spend supports a meaningful percentage — a $0 (or
+      // missing) prior week makes "% change" undefined, not 0%.
+      const hasComparableCosts = previousCost > 0 && currentCost > 0;
+      const changePercent = hasComparableCosts
+        ? ((currentCost - previousCost) / previousCost) * 100
+        : 0;
+
+      let costSummaryText: string;
+      if (hasComparableCosts) {
+        const direction = changePercent >= 0 ? 'increased' : 'decreased';
+        costSummaryText = `Costs ${direction} ${Math.abs(changePercent).toFixed(1)}% this week ($${previousCost.toFixed(0)} → $${currentCost.toFixed(0)}).`;
+      } else if (currentCost > 0) {
+        costSummaryText = `New spend detected: $${currentCost.toFixed(0)} this week.`;
+      } else {
+        costSummaryText = 'No cloud spend recorded this week.';
+      }
+
+      // DORA section is only meaningful once there's real pipeline activity —
+      // deploymentFrequency parses to a number even in its "0.0 per day" empty state,
+      // so pair it with leadTime still being 'N/A' to detect "nothing has happened yet".
+      const deploymentFreqValue = parseFloat(doraMetrics.deploymentFrequency);
+      const hasDora = !((isNaN(deploymentFreqValue) || deploymentFreqValue === 0) && doraMetrics.leadTime === 'N/A');
+
+      // Build weekly summary data
+      const weeklyData: WeeklySummaryData = {
+        costs: {
+          previous: previousCost,
+          current: currentCost,
+          changePercent: Math.round(changePercent * 100) / 100,
+          topChanges: costData.slice(0, 3).map(item => ({
+            service: item.resource_type,
+            change: 0 // Would need historical data to calculate change
+          }))
+        },
+        alerts: {
+          total: alertsData.total,
+          critical: alertsData.critical,
+          topAlert: alertsData.topAlert ?? undefined
+        },
+        dora: doraMetrics
+      };
+
+      // Generate AI summary for alerts/dora narrative — cost summary is overwritten
+      // below with deterministic text since arithmetic shouldn't be left to AI/fallback.
+      const aiSummary = await this.aiService.generateWeeklySummary(weeklyData);
+      aiSummary.costs.summary = costSummaryText;
+
+      // Real AI recommendation grounded in this org's actual data — omitted entirely
+      // (not a generic fallback string) if generation fails or there's nothing real to say.
+      const recommendation = await this.generateAIRecommendation(organizationId, currentCost);
+
+      // Render email HTML
+      const userName = userInfo.fullName?.split(' ')[0] || userInfo.email.split('@')[0];
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
+
+      // Get user ID for unsubscribe token
+      const userResult = await client.query(
+        'SELECT id FROM users WHERE email = $1',
+        [userInfo.email]
+      );
+      const userId = userResult.rows[0]?.id;
+
+      // Create unsubscribe token (base64 encoded user ID)
+      const unsubscribeToken = userId ? Buffer.from(userId).toString('base64') : '';
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
+
+      const templateData = {
+        userName,
+        costSummary: aiSummary.costs.summary,
+        hasAlerts: aiSummary.alerts.total > 0,
+        totalAlerts: aiSummary.alerts.total,
+        alertSummary: aiSummary.alerts.summary,
+        hasDora,
+        doraSummary: aiSummary.dora.summary,
+        hasRecommendation: recommendation !== null,
+        recommendation: recommendation?.text,
+        estimatedSavings: recommendation?.estimatedSavings,
+        dashboardUrl: `${frontendUrl}/dashboard`,
+        unsubscribeUrl: `${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}`,
+        preferencesUrl: `${frontendUrl}/settings/notifications`,
+        privacyUrl: `${frontendUrl}/privacy`,
+        year: new Date().getFullYear()
+      };
+
+      const html = this.emailTemplate(templateData);
+
+      // Generate plain text version for better deliverability
+      const textContent = this.generateTextVersion(templateData);
+
+      // Send email via Resend with anti-spam headers
+      try {
+        const result = await this.resend.emails.send({
+          from: process.env.EMAIL_FROM || 'DevControl <noreply@devcontrol.app>',
+          to: userInfo.email,
+          subject: 'Your DevControl Weekly Summary (AI-Powered)',
+          html,
+          text: textContent,
+          headers: {
+            'List-Unsubscribe': `<${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}>`,
+            'X-Entity-Ref-ID': `weekly-summary-${Date.now()}`,
+          },
+        });
+
+        console.log(`[Weekly AI Summary] ✅ Sent to ${userInfo.email} via Resend (ID: ${result.data?.id})`);
+      } catch (error: any) {
+        console.error(`[Weekly AI Summary] ❌ Failed to send to ${userInfo.email}:`, error.message);
+        throw error;
+      }
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Build a fact-only prompt from this org's real security/cost data and ask Claude
+   * for a short recommendation — same fact-gathering shape as AISummaryService, but
+   * for the weekly email context. Returns null (never a generic placeholder) if AI
+   * generation fails or there's nothing real to recommend on.
+   */
+  private async generateAIRecommendation(
+    organizationId: string,
+    monthlySpend: number
+  ): Promise<{ text: string; estimatedSavings: number | null } | null> {
+    try {
+      const [riskScore, costStats] = await Promise.all([
+        this.riskTrackingService.getCurrentRiskScore(organizationId),
+        this.costRecommendationsRepository.getStats(organizationId)
+      ]);
+
+      const facts: string[] = [];
+
+      if (!riskScore.isPreliminary) {
+        const c = riskScore.complianceIssueCounts;
+        const totalFindings = c.critical + c.high + c.medium + c.low;
+        facts.push(
+          `Security posture score: ${riskScore.score}/100, driven by ${totalFindings} active ` +
+          `finding${totalFindings !== 1 ? 's' : ''} (${c.critical} critical, ${c.high} high, ${c.medium} medium, ${c.low} low).`
+        );
+      }
+
+      if (costStats.active_recommendations > 0) {
+        facts.push(
+          `${costStats.active_recommendations} active cost optimization` +
+          `${costStats.active_recommendations !== 1 ? 's' : ''} could save approximately ` +
+          `$${Math.round(costStats.total_potential_savings).toLocaleString()}/month.`
+        );
+      }
+
+      if (monthlySpend > 0) {
+        facts.push(`Current monthly cloud spend is $${Math.round(monthlySpend).toLocaleString()}.`);
+      }
+
+      if (facts.length === 0) return null;
+
+      const prompt =
+        `You are writing a single, specific, actionable recommendation for a weekly ` +
+        `cloud infrastructure email, aimed at an engineering lead.\n\n` +
+        `Use ONLY the facts below. Do not invent, estimate, or assume anything not explicitly ` +
+        `stated. Do not add generic advice like "review your dashboard".\n\n` +
+        `Facts:\n${facts.map((f) => `- ${f}`).join('\n')}\n\n` +
+        `Write the recommendation now (1-2 sentences, no preamble, no markdown):`;
+
+      const text = await this.aiService.generateDashboardSummary(prompt);
+      if (!text) return null;
+
+      const estimatedSavings = costStats.active_recommendations > 0
+        ? Math.round(costStats.total_potential_savings)
+        : null;
+
+      return { text, estimatedSavings };
     } catch (error: any) {
-      console.error(`[Weekly AI Summary] ❌ Failed to send to ${userInfo.email}:`, error.message);
-      throw error;
+      console.error('[Weekly AI Summary] AI recommendation generation failed:', error.message);
+      return null;
     }
   }
 
@@ -270,8 +369,10 @@ export class WeeklyAISummaryJob {
     hasAlerts: boolean;
     totalAlerts: number;
     alertSummary: string;
+    hasDora: boolean;
     doraSummary: string;
-    recommendation: string;
+    hasRecommendation: boolean;
+    recommendation?: string;
     estimatedSavings?: number | null;
     dashboardUrl: string;
     unsubscribeUrl: string;
@@ -296,15 +397,21 @@ ${data.alertSummary}
 `;
     }
 
-    text += `
+    if (data.hasDora) {
+      text += `
 DORA METRICS
 ${data.doraSummary}
+`;
+    }
 
+    if (data.hasRecommendation) {
+      text += `
 AI RECOMMENDATION
 ${data.recommendation}`;
 
-    if (data.estimatedSavings) {
-      text += `\nEstimated Savings: $${data.estimatedSavings}/month`;
+      if (data.estimatedSavings) {
+        text += `\nEstimated Savings: $${data.estimatedSavings}/month`;
+      }
     }
 
     text += `
