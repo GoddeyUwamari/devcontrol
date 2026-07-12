@@ -439,7 +439,7 @@ export default function ServicesPage() {
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700 m-0">Monthly Cost</p>
             <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide">Partial</span>
           </div>
-          <div className="text-3xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : '$11,444'}</div>
+          <div className="text-3xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalMonthlyCost > 0 ? costDisplay : '—'}</div>
           <p className="text-slate-500 text-xs font-medium m-0">Aggregate · breakdown in progress</p>
         </div>
       </div>

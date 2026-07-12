@@ -176,7 +176,7 @@ router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req
          COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production') AS environment,
          COALESCE(r.tags->>'region', r.metadata->>'region')  AS region,
          r.status                                            AS raw_status,
-         CAST(r.metadata->>'monthly_cost' AS numeric)        AS monthly_cost,
+         r.estimated_monthly_cost                            AS monthly_cost,
          r.tags->>'owner'                                    AS owner,
          r.tags->>'team'                                     AS team,
          r.metadata->>'last_deployed'                        AS last_deployed,
