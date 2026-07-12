@@ -351,8 +351,11 @@ export default function EfficiencyPage() {
           region:     r.awsRegion || '—',
           cost:       r.costPerMonth ?? 0,
           efficiency: deriveEfficiencyScore(r),
-          issue:      r.status !== 'running' ? 'Resource not running' : 'Low efficiency score',
-          savings:    Math.round((r.costPerMonth ?? 0) * 0.4),
+          issue:      r.status !== 'running' ? 'Resource not running' : 'Pending efficiency analysis',
+          // No per-resource cost_recommendations data is fetched on this page (only
+          // aggregate stats via costRecommendationsService.getStats() below) — null
+          // rather than a fabricated 40%-of-cost heuristic.
+          savings:    null as number | null,
         }))
 
   // ── Service efficiency ──
@@ -607,7 +610,9 @@ export default function EfficiencyPage() {
                     )}
                   </td>
                   <td style={{ padding: '12px', fontSize: '12px', color: '#f59e0b' }}>{r.issue}</td>
-                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 700, color: '#16a34a', textAlign: 'right' }}>-${r.savings.toLocaleString()}/mo</td>
+                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 700, color: r.savings != null ? '#16a34a' : '#9ca3af', textAlign: 'right' }}>
+                    {r.savings != null ? `-$${r.savings.toLocaleString()}/mo` : '—'}
+                  </td>
                   <td style={{ padding: '12px' }}>
                     <Link href="/cost-optimization" style={{ fontSize: '11px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', background: '#7C3AED22', padding: '4px 10px', borderRadius: '6px' }}>Fix →</Link>
                   </td>
@@ -628,7 +633,9 @@ export default function EfficiencyPage() {
               <p style={{ fontSize: '11px', color: '#f59e0b', marginBottom: '8px' }}>{r.issue}</p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '12px', color: '#374151' }}>${r.cost.toFixed(0)}/mo</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#16a34a' }}>Save ${r.savings}/mo</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: r.savings != null ? '#16a34a' : '#9ca3af' }}>
+                  {r.savings != null ? `Save $${r.savings}/mo` : 'Savings —'}
+                </span>
                 <Link href="/cost-optimization" style={{ fontSize: '11px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>Fix →</Link>
               </div>
             </div>
