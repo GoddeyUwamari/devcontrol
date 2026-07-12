@@ -13,7 +13,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { LastSynced } from '@/components/ui/last-synced'
 import { SyncStatusBanner } from '@/components/ui/sync-status-banner'
-import { DEMO_LAST_SYNCED, DEMO_SYNC_STATUS } from '@/lib/demo/demo-timestamps'
+import { DEMO_LAST_SYNCED } from '@/lib/demo/demo-timestamps'
 import { ROIHero } from '@/components/dashboard/roi-hero'
 import { EngineeringVelocity } from '@/components/dashboard/engineering-velocity'
 import { CostOptimizationWins } from '@/components/dashboard/cost-optimization-wins'
@@ -164,17 +164,16 @@ export default function DashboardPage() {
   const [dismissedInsights, setDismissedInsights] = useState<string[]>([])
   const [costDateRange, setCostDateRange] = useState<'7d' | '30d' | '90d' | '6mo' | '1yr'>('90d')
   const [riskScoreDateRange, setRiskScoreDateRange] = useState<DateRange>('30d')
-  const [lastSynced, setLastSynced] = useState<Date>(demoMode ? DEMO_LAST_SYNCED : new Date())
-  const [syncStatus, setSyncStatus] = useState<'syncing' | 'synced' | 'error'>(DEMO_SYNC_STATUS)
+  const [lastSynced] = useState<Date>(demoMode ? DEMO_LAST_SYNCED : new Date())
   const [insightDismissed, setInsightDismissed] = useState(false)
 
   const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange, !demoMode && !salesDemoMode)
 
-  const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery<PlatformDashboardStats>({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
     queryFn: platformStatsService.getDashboardStats,
     // AWS cost data changes slowly — long staleTime/gcTime avoids re-hitting Cost Explorer
-    // (billed per API call) on every render/tab-switch. Manual refresh still works via refetchStats().
+    // (billed per API call) on every render/tab-switch.
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !demoMode && !salesDemoMode,
@@ -275,14 +274,6 @@ export default function DashboardPage() {
     }
   }, [socket, queryClient])
 
-  const handleRefreshDashboard = async () => {
-    setSyncStatus('syncing')
-    try {
-      await refetchStats()
-      setLastSynced(new Date()); setSyncStatus('synced')
-    } catch { setSyncStatus('error') }
-  }
-
   const insightMessage = demoMode
     ? 'Lambda function costs increased 23% due to higher invocation count — enable reserved concurrency and consider Graviton2 for up to $540/year savings.'
     : (aiInsight?.rootCause || aiInsight?.recommendation || null)
@@ -372,7 +363,7 @@ export default function DashboardPage() {
     },
     // Cost Explorer is billed per API call and this data doesn't change minute-to-minute —
     // cache aggressively per range so switching 7d/30d/90d/6mo/1yr tabs reuses prior fetches
-    // instead of re-hitting AWS each time. Manual refresh still works via handleRefreshDashboard.
+    // instead of re-hitting AWS each time.
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && hasBillingData,
