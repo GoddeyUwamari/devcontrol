@@ -46,8 +46,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
-import { deploymentsService } from '@/lib/services/deployments.service'
-import type { PlatformDashboardStats, Deployment, DeploymentStatus } from '@/lib/types'
+import type { PlatformDashboardStats } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
@@ -195,14 +194,6 @@ export default function DashboardPage() {
     onError: (error) => console.error('[Dashboard] AI Insights error:', error),
   })
 
-  const { data: deployments = [], isLoading: deploymentsLoading, error: deploymentsError, refetch: refetchDeployments } = useQuery<Deployment[]>({
-    queryKey: ['recent-deployments'],
-    queryFn: async () => { const all = await deploymentsService.getAll(); return all.slice(0, 5) },
-    staleTime: 60_000, refetchInterval: 300_000,
-    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !demoMode && !salesDemoMode,
-  })
-
   const { data: systemHealth } = useQuery({
     queryKey: ['system-health'],
     queryFn: () => monitoringService.getSystemHealth(),
@@ -258,7 +249,6 @@ export default function DashboardPage() {
       toast.info(`Deployment started: ${data.serviceName}`, { description: `Environment: ${data.environment} | By: ${data.deployedBy}` })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
-      queryClient.invalidateQueries({ queryKey: ['recent-deployments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     })
@@ -268,7 +258,6 @@ export default function DashboardPage() {
       toast[isSuccess ? 'success' : 'error'](`Deployment ${isSuccess ? 'succeeded' : 'failed'}: ${data.serviceName}`, { description: isSuccess ? `Duration: ${data.duration}` : 'Check logs for details' })
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
-      queryClient.invalidateQueries({ queryKey: ['recent-deployments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     })
@@ -289,7 +278,7 @@ export default function DashboardPage() {
   const handleRefreshDashboard = async () => {
     setSyncStatus('syncing')
     try {
-      await Promise.all([refetchStats(), refetchDeployments()])
+      await refetchStats()
       setLastSynced(new Date()); setSyncStatus('synced')
     } catch { setSyncStatus('error') }
   }
