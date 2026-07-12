@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import nodemailer from 'nodemailer';
 import {
   ScheduledReportsRepository,
@@ -55,79 +55,90 @@ export class ScheduledReportsService {
     const startTime = Date.now();
     console.log(`[ScheduledReports] Executing report: ${report.name} (${report.id})`);
 
+    // Single held client for the whole run: org context below is session-scoped
+    // (is_local = false) and threaded through every query on this connection, same
+    // pattern as RiskTrackingService.storeAllOrganizationSnapshots() / AnomalyDetectionJob
+    // .runDetection() / WeeklyAISummaryJob.sendSummaryForOrganization() (a1f894b, 3687608,
+    // 7b699fc). pool.query() per-call would silently drop the context on a different
+    // pooled connection.
+    const client = await this.pool.connect();
     try {
-      await this.pool.query(
-        "SELECT set_config('app.current_organization_id', $1, true)",
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
         [report.organization_id]
       );
 
-      // Verify organization still has Enterprise tier
-      const tierCheck = await this.pool.query(
-        'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
-        [report.organization_id]
-      );
+      try {
+        // Verify organization still has Enterprise tier
+        const tierCheck = await client.query(
+          'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
+          [report.organization_id]
+        );
 
-      if (tierCheck.rows.length === 0 || tierCheck.rows[0].subscription_tier !== 'enterprise') {
-        console.log(`[ScheduledReports] Organization ${report.organization_id} is not Enterprise tier, skipping`);
-        // Disable the schedule
-        await this.repository.update(report.id, report.organization_id, { enabled: false });
-        return;
+        if (tierCheck.rows.length === 0 || tierCheck.rows[0].subscription_tier !== 'enterprise') {
+          console.log(`[ScheduledReports] Organization ${report.organization_id} is not Enterprise tier, skipping`);
+          // Disable the schedule
+          await this.repository.update(report.id, report.organization_id, { enabled: false }, client);
+          return;
+        }
+
+        // Generate report
+        const reportData = await this.generateReport(report, client);
+
+        // Deliver report
+        const deliveryResults = await this.deliverReport(report, reportData, client);
+
+        // Calculate next run time
+        const nextRunAt = this.calculateNextRun(report);
+
+        // Determine execution status
+        const status = this.determineExecutionStatus(deliveryResults);
+
+        // Log execution
+        const executionTime = Date.now() - startTime;
+        await this.repository.logExecution({
+          scheduled_report_id: report.id,
+          status,
+          records_processed: reportData.recordsProcessed,
+          file_size_bytes: reportData.fileSizeBytes,
+          execution_time_ms: executionTime,
+          email_sent: deliveryResults.emailSuccess,
+          email_recipients: report.delivery_email ? report.email_recipients : [],
+          slack_sent: deliveryResults.slackSuccess,
+          slack_channels: report.delivery_slack ? report.slack_channels : [],
+          error_message: deliveryResults.error || undefined,
+        }, client);
+
+        // Update schedule status
+        await this.repository.updateRunStatus(report.id, status, nextRunAt, deliveryResults.error, client);
+
+        console.log(
+          `[ScheduledReports] Report ${report.id} completed with status: ${status} (${executionTime}ms). Next run: ${nextRunAt?.toISOString()}`
+        );
+      } catch (error: any) {
+        console.error(`[ScheduledReports] Report ${report.id} failed:`, error);
+
+        // Log failed execution
+        await this.repository.logExecution({
+          scheduled_report_id: report.id,
+          status: 'failed',
+          error_message: error.message,
+          error_stack: error.stack,
+        }, client);
+
+        // Update schedule with error
+        const nextRunAt = this.calculateNextRun(report);
+        await this.repository.updateRunStatus(report.id, 'failed', nextRunAt, error.message, client);
       }
-
-      // Generate report
-      const reportData = await this.generateReport(report);
-
-      // Deliver report
-      const deliveryResults = await this.deliverReport(report, reportData);
-
-      // Calculate next run time
-      const nextRunAt = this.calculateNextRun(report);
-
-      // Determine execution status
-      const status = this.determineExecutionStatus(deliveryResults);
-
-      // Log execution
-      const executionTime = Date.now() - startTime;
-      await this.repository.logExecution({
-        scheduled_report_id: report.id,
-        status,
-        records_processed: reportData.recordsProcessed,
-        file_size_bytes: reportData.fileSizeBytes,
-        execution_time_ms: executionTime,
-        email_sent: deliveryResults.emailSuccess,
-        email_recipients: report.delivery_email ? report.email_recipients : [],
-        slack_sent: deliveryResults.slackSuccess,
-        slack_channels: report.delivery_slack ? report.slack_channels : [],
-        error_message: deliveryResults.error || undefined,
-      });
-
-      // Update schedule status
-      await this.repository.updateRunStatus(report.id, status, nextRunAt, deliveryResults.error);
-
-      console.log(
-        `[ScheduledReports] Report ${report.id} completed with status: ${status} (${executionTime}ms). Next run: ${nextRunAt?.toISOString()}`
-      );
-    } catch (error: any) {
-      console.error(`[ScheduledReports] Report ${report.id} failed:`, error);
-
-      // Log failed execution
-      await this.repository.logExecution({
-        scheduled_report_id: report.id,
-        status: 'failed',
-        error_message: error.message,
-        error_stack: error.stack,
-      });
-
-      // Update schedule with error
-      const nextRunAt = this.calculateNextRun(report);
-      await this.repository.updateRunStatus(report.id, 'failed', nextRunAt, error.message);
+    } finally {
+      client.release();
     }
   }
 
   /**
    * Generate report based on type
    */
-  private async generateReport(report: ScheduledReport): Promise<{
+  private async generateReport(report: ScheduledReport, executor?: PoolClient): Promise<{
     pdf?: Buffer;
     csv?: Buffer;
     recordsProcessed: number;
@@ -176,7 +187,7 @@ export class ScheduledReportsService {
     if (result.csv) fileSizeBytes += result.csv.length;
 
     // Get resource count from database
-    const countQuery = await this.pool.query(
+    const countQuery = await (executor ?? this.pool).query(
       'SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1',
       [report.organization_id]
     );
@@ -194,7 +205,8 @@ export class ScheduledReportsService {
    */
   private async deliverReport(
     report: ScheduledReport,
-    reportData: { pdf?: Buffer; csv?: Buffer }
+    reportData: { pdf?: Buffer; csv?: Buffer },
+    executor?: PoolClient
   ): Promise<{ emailSuccess: boolean; slackSuccess: boolean; error?: string }> {
     const results = { emailSuccess: false, slackSuccess: false, error: undefined as string | undefined };
 
@@ -212,7 +224,7 @@ export class ScheduledReportsService {
     // Slack delivery
     if (report.delivery_slack && report.slack_channels.length > 0) {
       try {
-        await this.deliverViaSlack(report, reportData);
+        await this.deliverViaSlack(report, reportData, executor);
         results.slackSuccess = true;
       } catch (error: any) {
         console.error('[ScheduledReports] Slack delivery failed:', error.message);
@@ -288,10 +300,11 @@ export class ScheduledReportsService {
    */
   private async deliverViaSlack(
     report: ScheduledReport,
-    reportData: { pdf?: Buffer; csv?: Buffer }
+    reportData: { pdf?: Buffer; csv?: Buffer },
+    executor?: PoolClient
   ): Promise<void> {
     // Fetch organization's Slack webhook URL from alert_config
-    const webhookQuery = await this.pool.query(
+    const webhookQuery = await (executor ?? this.pool).query(
       "SELECT settings FROM organizations WHERE id = $1 AND settings->>'slack_webhook_url' IS NOT NULL",
       [report.organization_id]
     );

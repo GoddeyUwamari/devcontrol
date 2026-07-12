@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 export interface ScheduledReport {
   id: string;
@@ -116,7 +116,8 @@ export class ScheduledReportsRepository {
    */
   async findAll(
     organizationId: string,
-    filters: ScheduledReportsFilters = {}
+    filters: ScheduledReportsFilters = {},
+    executor?: PoolClient
   ): Promise<{ reports: ScheduledReport[]; total: number }> {
     const conditions: string[] = ['organization_id = $1'];
     const values: any[] = [organizationId];
@@ -135,7 +136,7 @@ export class ScheduledReportsRepository {
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
     // Get total count
-    const countResult = await this.pool.query(
+    const countResult = await (executor ?? this.pool).query(
       `SELECT COUNT(*) as total FROM scheduled_reports ${whereClause}`,
       values
     );
@@ -153,7 +154,7 @@ export class ScheduledReportsRepository {
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
 
-    const result = await this.pool.query(query, [...values, limit, offset]);
+    const result = await (executor ?? this.pool).query(query, [...values, limit, offset]);
 
     return {
       reports: result.rows,
@@ -164,13 +165,13 @@ export class ScheduledReportsRepository {
   /**
    * Find a single scheduled report by ID (with organization isolation)
    */
-  async findById(id: string, organizationId: string): Promise<ScheduledReport | null> {
+  async findById(id: string, organizationId: string, executor?: PoolClient): Promise<ScheduledReport | null> {
     const query = `
       SELECT * FROM scheduled_reports
       WHERE id = $1 AND organization_id = $2
     `;
 
-    const result = await this.pool.query(query, [id, organizationId]);
+    const result = await (executor ?? this.pool).query(query, [id, organizationId]);
     return result.rows[0] || null;
   }
 
@@ -194,7 +195,7 @@ export class ScheduledReportsRepository {
   /**
    * Create a new scheduled report
    */
-  async create(data: CreateScheduledReportData): Promise<ScheduledReport> {
+  async create(data: CreateScheduledReportData, executor?: PoolClient): Promise<ScheduledReport> {
     const query = `
       INSERT INTO scheduled_reports (
         organization_id,
@@ -240,7 +241,7 @@ export class ScheduledReportsRepository {
       data.created_by || null,
     ];
 
-    const result = await this.pool.query(query, values);
+    const result = await (executor ?? this.pool).query(query, values);
     return result.rows[0];
   }
 
@@ -250,7 +251,8 @@ export class ScheduledReportsRepository {
   async update(
     id: string,
     organizationId: string,
-    data: UpdateScheduledReportData
+    data: UpdateScheduledReportData,
+    executor?: PoolClient
   ): Promise<ScheduledReport | null> {
     const updates: string[] = [];
     const values: any[] = [];
@@ -343,7 +345,7 @@ export class ScheduledReportsRepository {
 
     if (updates.length === 0) {
       // No updates provided
-      return this.findById(id, organizationId);
+      return this.findById(id, organizationId, executor);
     }
 
     const query = `
@@ -355,21 +357,21 @@ export class ScheduledReportsRepository {
 
     values.push(id, organizationId);
 
-    const result = await this.pool.query(query, values);
+    const result = await (executor ?? this.pool).query(query, values);
     return result.rows[0] || null;
   }
 
   /**
    * Delete a scheduled report (with organization isolation)
    */
-  async delete(id: string, organizationId: string): Promise<boolean> {
+  async delete(id: string, organizationId: string, executor?: PoolClient): Promise<boolean> {
     const query = `
       DELETE FROM scheduled_reports
       WHERE id = $1 AND organization_id = $2
       RETURNING id
     `;
 
-    const result = await this.pool.query(query, [id, organizationId]);
+    const result = await (executor ?? this.pool).query(query, [id, organizationId]);
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -380,7 +382,8 @@ export class ScheduledReportsRepository {
     id: string,
     status: 'success' | 'failed' | 'partial',
     nextRunAt: Date | null,
-    errorMessage?: string
+    errorMessage?: string,
+    executor?: PoolClient
   ): Promise<void> {
     const query = `
       UPDATE scheduled_reports
@@ -392,13 +395,13 @@ export class ScheduledReportsRepository {
       WHERE id = $4
     `;
 
-    await this.pool.query(query, [status, errorMessage || null, nextRunAt, id]);
+    await (executor ?? this.pool).query(query, [status, errorMessage || null, nextRunAt, id]);
   }
 
   /**
    * Log a report execution
    */
-  async logExecution(data: LogExecutionData): Promise<ReportExecution> {
+  async logExecution(data: LogExecutionData, executor?: PoolClient): Promise<ReportExecution> {
     const query = `
       INSERT INTO scheduled_report_executions (
         scheduled_report_id,
@@ -430,7 +433,7 @@ export class ScheduledReportsRepository {
       data.error_stack || null,
     ];
 
-    const result = await this.pool.query(query, values);
+    const result = await (executor ?? this.pool).query(query, values);
     return result.rows[0];
   }
 
@@ -439,7 +442,8 @@ export class ScheduledReportsRepository {
    */
   async getExecutions(
     scheduledReportId: string,
-    limit: number = 50
+    limit: number = 50,
+    executor?: PoolClient
   ): Promise<ReportExecution[]> {
     const query = `
       SELECT * FROM scheduled_report_executions
@@ -448,14 +452,14 @@ export class ScheduledReportsRepository {
       LIMIT $2
     `;
 
-    const result = await this.pool.query(query, [scheduledReportId, limit]);
+    const result = await (executor ?? this.pool).query(query, [scheduledReportId, limit]);
     return result.rows;
   }
 
   /**
    * Get execution statistics for a scheduled report
    */
-  async getExecutionStats(scheduledReportId: string): Promise<{
+  async getExecutionStats(scheduledReportId: string, executor?: PoolClient): Promise<{
     total_executions: number;
     success_count: number;
     failed_count: number;
@@ -475,7 +479,7 @@ export class ScheduledReportsRepository {
       WHERE scheduled_report_id = $1
     `;
 
-    const result = await this.pool.query(query, [scheduledReportId]);
+    const result = await (executor ?? this.pool).query(query, [scheduledReportId]);
     const stats = result.rows[0];
 
     return {
