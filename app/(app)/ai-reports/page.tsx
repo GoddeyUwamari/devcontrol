@@ -52,14 +52,6 @@ const extractInsight = (report: any): string | null => {
 const formatGeneratedAt = (dateVal: string | Date): string =>
   new Date(dateVal).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-const outcomeChip = (type: NormalizedType): { label: string; color: string } | null => {
-  if (type === 'cost_analysis')  return { label: '$1,697 savings found', color: '#059669' }
-  if (type === 'security')       return { label: '2 risks detected',      color: '#DC2626' }
-  if (type === 'infrastructure') return { label: '99.9% uptime',          color: '#2563EB' }
-  if (type === 'executive')      return { label: '12x ROI',               color: '#7C3AED' }
-  return null
-}
-
 const relativeTime = (dateVal: string | Date): string => {
   const diff = Date.now() - new Date(dateVal).getTime()
   const mins = Math.floor(diff / 60000), hours = Math.floor(diff / 3600000), days = Math.floor(diff / 86400000)
@@ -243,8 +235,7 @@ export default function AIReportsPage() {
                 <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0"><Shield size={14} className="text-red-600" /></div>
                 <p className="text-sm font-bold text-slate-900">Security Risk Report</p>
               </div>
-              <p className="text-sm text-slate-600 leading-relaxed mb-2.5">{reportsThisMonth === 0 ? 'No reports generated yet — start here' : 'Active anomalies detected — security scan recommended'}</p>
-              <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3 text-xs text-red-600 font-semibold">2 active critical anomalies detected — security scan recommended now</div>
+              <p className="text-sm text-slate-600 leading-relaxed mb-3">{reportsThisMonth === 0 ? 'No reports generated yet — start here' : 'Run a security scan to check for active risks'}</p>
               <button onClick={() => handleGenerateReport('security')} disabled={generatingType !== null}
                 className={`bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${generatingType !== null ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                 Generate security report →
@@ -391,11 +382,16 @@ export default function AIReportsPage() {
                         <span className="text-sm font-semibold text-slate-900">{reportTitle}</span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: type.bg, color: type.color }}>{type.label}</span>
                         <span className="flex items-center gap-1 text-[10px] font-semibold text-green-600 shrink-0"><CheckCircle2 size={10} /> Ready</span>
-                        {normalizedType === 'cost_analysis' ? (
-                          <a href="/cost-optimization" className="text-[10px] font-semibold text-green-600 no-underline" onClick={e => e.stopPropagation()}>· $1,697 savings — Apply now →</a>
-                        ) : normalizedType === 'security' ? (
-                          <a href="/anomalies" className="text-[10px] font-semibold text-red-600 no-underline" onClick={e => e.stopPropagation()}>· 2 risks detected — Fix now →</a>
-                        ) : (() => { const chip = outcomeChip(normalizedType); return chip ? <span className="text-[10px] font-semibold shrink-0" style={{ color: chip.color }}>· {chip.label}</span> : null })()}
+                        {(() => {
+                          if (normalizedType !== 'security') return null
+                          const riskCount = report.report_data?.security_findings?.length
+                          if (!riskCount) return null
+                          return (
+                            <a href="/anomalies" className="text-[10px] font-semibold text-red-600 no-underline" onClick={e => e.stopPropagation()}>
+                              · {riskCount} risk{riskCount !== 1 ? 's' : ''} detected — Fix now →
+                            </a>
+                          )
+                        })()}
                       </div>
                       <p className="text-xs text-slate-400 mb-1">Generated {dateVal ? relativeTime(dateVal) : '—'}</p>
                       {insight && <p className="text-xs text-slate-600 leading-relaxed">{insight}</p>}
