@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { UserDropdown } from '@/components/ui/user-dropdown';
 import { cn } from '@/lib/utils';
+import { anomalyService } from '@/lib/services/anomaly.service';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { quickActions } from '@/lib/navigation-config';
 import { useState, useEffect } from 'react';
@@ -190,10 +191,7 @@ export function TopNav() {
   useEffect(() => {
     const checkAlerts = async () => {
       try {
-        const res = await fetch('/api/anomalies');
-        if (!res.ok) return;
-        const data = await res.json();
-        const anomalies = Array.isArray(data) ? data : (data.anomalies ?? []);
+        const { anomalies } = await anomalyService.getAnomalies('active');
         setHasCriticalAlerts(
           anomalies.some((a: { severity?: string }) =>
             a.severity === 'critical' || a.severity === 'high'

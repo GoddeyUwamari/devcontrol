@@ -12,7 +12,7 @@ class AnomalyService {
     };
 
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
