@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
@@ -15,6 +16,7 @@ import { useCurrentRiskScore, useRiskScoreTrend } from '@/lib/hooks/useRiskScore
 import { useComplianceFrameworks } from '@/lib/hooks/useComplianceFrameworks'
 import { useAccountSecurityFindings } from '@/lib/hooks/useAccountSecurityFindings'
 import { anomalyService } from '@/lib/services/anomaly.service'
+import awsServicesService from '@/lib/services/aws-services.service'
 import { demoModeService } from '@/lib/services/demo-mode.service'
 import type { AnomalyDetection } from '@/types/anomaly.types'
 
@@ -63,7 +65,9 @@ const findingSeverityBadgeBg = (s: FindingDisplay['severity']) => s === 'critica
 
 export default function SecurityPage() {
   const [acknowledging, setAcknowledging] = useState<string | null>(null)
+  const [isScanning, setIsScanning] = useState(false)
   const demoMode = demoModeService.isEnabled()
+  const queryClient = useQueryClient()
 
   const { data: riskScore, isLoading: riskLoading } = useCurrentRiskScore(!demoMode)
   const { data: riskTrend, isLoading: trendLoading } = useRiskScoreTrend('30d', !demoMode)
@@ -157,6 +161,39 @@ export default function SecurityPage() {
     finally { setAcknowledging(null) }
   }
 
+  // "Run Scan" used to only hit the fast anomaly-only endpoint (Postgres reads over
+  // already-synced data, ~10ms) while account_security_findings — the data this page
+  // actually shows — is only ever written by the discovery pipeline (POST /api/services/discover,
+  // the same one Infrastructure's "Sync AWS" calls). Route this button through that real
+  // pipeline so findings on this page can't go silently stale after a "scan."
+  const handleRunScan = async () => {
+    if (demoMode) {
+      setIsScanning(true)
+      await new Promise((r) => setTimeout(r, 1500))
+      setIsScanning(false)
+      toast.success('Scan complete')
+      return
+    }
+    try {
+      setIsScanning(true)
+      const result = await awsServicesService.discoverServices()
+      await anomalyService.triggerScan().catch(() => {})
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['account-security-findings'] }),
+        queryClient.invalidateQueries({ queryKey: ['account-security-findings-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['anomalies', 'active'] }),
+        queryClient.invalidateQueries({ queryKey: ['anomaly-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['risk-score-current'] }),
+        queryClient.invalidateQueries({ queryKey: ['risk-score-trend'] }),
+      ])
+      toast.success(`Scan complete — ${result.discovered} resources discovered`)
+    } catch {
+      toast.error('Scan failed — check your AWS connection')
+    } finally {
+      setIsScanning(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
 
@@ -171,9 +208,10 @@ export default function SecurityPage() {
           <p className="text-sm text-slate-500 leading-relaxed">Security posture, anomaly detection, compliance frameworks, and audit trail</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={async () => { try { await anomalyService.triggerScan(); await refetchAnomalies() } catch (e) { console.error('Scan failed:', e) } }}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer transition-colors whitespace-nowrap">
-            <RefreshCw size={14} /> Run Scan
+          <button onClick={handleRunScan} disabled={isScanning}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer transition-colors whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed">
+            {isScanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {isScanning ? 'Scanning…' : 'Run Scan'}
           </button>
           <a href="/anomalies" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors whitespace-nowrap">
             <Shield size={14} /> View All Threats

@@ -308,6 +308,11 @@ function InfrastructureContent() {
         // up to staleTime (5 min).
         queryClient.invalidateQueries({ queryKey: ['risk-score-trend'] }),
         queryClient.invalidateQueries({ queryKey: ['risk-score-current'] }),
+        // Discovery is the only place account_security_findings gets written
+        // (security groups + IAM scan) — without this the Security page stays
+        // stale until its own 5-minute refetchInterval fires.
+        queryClient.invalidateQueries({ queryKey: ['account-security-findings'] }),
+        queryClient.invalidateQueries({ queryKey: ['account-security-findings-stats'] }),
       ])
       toast.success(`Sync complete — ${result.discovered} resources discovered`)
       setSyncComplete(true); setTimeout(() => setSyncComplete(false), 3000)
