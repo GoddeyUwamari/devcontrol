@@ -125,7 +125,7 @@ export default function ComplianceFrameworksPage() {
 
             {/* Primary risk */}
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{isDemoActive ? 'Primary Risk' : 'Expected Exposure'}</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{isDemoActive ? 'Primary Risk' : 'Compliance Posture'}</p>
               <div className="flex flex-col gap-0.5">
                 {isDemoActive ? (
                   <>
@@ -134,11 +134,7 @@ export default function ComplianceFrameworksPage() {
                     <p className="text-xs text-green-600 font-medium">● CIS (87%) and NIST (91%) passing</p>
                   </>
                 ) : (
-                  <>
-                    <p className="text-xs text-red-600 font-semibold">● Based on 847 similar AWS environments: 3–7 critical misconfigurations</p>
-                    <p className="text-xs text-amber-500 font-medium">● Common gaps: IAM · public storage · network access</p>
-                    <p className="text-xs text-slate-400 font-medium">● Compliance posture currently unknown</p>
-                  </>
+                  <p className="text-xs text-slate-400 font-medium">Run a baseline scan to see your compliance posture</p>
                 )}
               </div>
             </div>
@@ -158,25 +154,22 @@ export default function ComplianceFrameworksPage() {
         </div>
       </div>
 
-      {/* Decision Intelligence */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 mb-4 flex items-start gap-3.5">
-        <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Shield size={12} className="text-white" /></div>
-        <div className="flex-1">
-          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
-          <p className="text-sm text-slate-700 leading-relaxed">
-            {isDemoActive
-              ? <><strong className="text-red-600">PCI-DSS is failing at 68%</strong> — payment card data security standards not met. Audit risk is active. SOC 2 at 74% with 7 critical violations open. CIS AWS (87%) and NIST CSF (91%) are passing.<span className="block mt-1 text-xs text-slate-400">Recommended: resolve PCI-DSS critical controls before next audit cycle · address SOC 2 availability gaps.</span></>
-              : <>Unscanned environments typically surface <strong className="text-red-600">3–7 critical misconfigurations</strong> within the first scan — most commonly public storage buckets, excessive IAM permissions, and unencrypted data at rest.<span className="block mt-1 text-xs text-slate-400">Most common first findings: public S3 access · IAM over-permissioning · missing encryption · open security groups.</span></>
-            }
-          </p>
-        </div>
-        {isDemoActive && (
+      {/* Decision Intelligence (demo mode only — no real data source for these claims outside demo) */}
+      {isDemoActive && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 mb-4 flex items-start gap-3.5">
+          <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Shield size={12} className="text-white" /></div>
+          <div className="flex-1">
+            <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
+            <p className="text-sm text-slate-700 leading-relaxed">
+              <strong className="text-red-600">PCI-DSS is failing at 68%</strong> — payment card data security standards not met. Audit risk is active. SOC 2 at 74% with 7 critical violations open. CIS AWS (87%) and NIST CSF (91%) are passing.<span className="block mt-1 text-xs text-slate-400">Recommended: resolve PCI-DSS critical controls before next audit cycle · address SOC 2 availability gaps.</span>
+            </p>
+          </div>
           <button onClick={() => handleRunScan(displayFrameworks.find((f: any) => f.status === 'failing')?.id ?? displayFrameworks[0]?.id)}
             className="text-[11px] font-bold text-red-600 bg-transparent border-none cursor-pointer shrink-0 flex items-center gap-1 whitespace-nowrap p-0">
             Resolve now <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4">
@@ -263,24 +256,7 @@ export default function ComplianceFrameworksPage() {
           <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-12 text-center">
             <p className="text-base font-medium text-slate-900 mb-2.5">Your AWS environment is not currently being evaluated</p>
             <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-lg mx-auto">Add a compliance framework to detect misconfigurations, policy violations, and audit risks before they become incidents.</p>
-            <div className="max-w-lg mx-auto text-left mb-6">
-              {[
-                { label: 'Critical — observed in 68%+ of similar environments', color: '#DC2626', items: ['Public S3 buckets · found in 71% of first scans', 'Open security groups · found in 64% of first scans'] },
-                { label: 'High — common initial scan findings', color: '#D97706', items: ['Unencrypted storage · found in 58% of first scans', 'IAM misconfigurations · found in 82% of first scans'] },
-                { label: 'Moderate — frequently misconfigured', color: '#94A3B8', items: ['Unused admin roles · found in 53% of first scans', 'MFA not enforced · found in 47% of first scans'] },
-              ].map(({ label, color, items }) => (
-                <div key={label} className="mb-4">
-                  <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color }}>{label}</p>
-                  <div className="flex flex-col gap-1">
-                    {items.map(item => (
-                      <div key={item} className="flex items-center gap-2 text-xs text-slate-500">
-                        <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />{item}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs text-slate-400 mb-6">Run a baseline scan to see your compliance posture.</p>
             <div className="flex flex-col items-center gap-2">
               <button onClick={handleCreateFramework} className="bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg px-6 py-2.5 text-sm font-medium cursor-pointer transition-colors">Start Compliance Scan</button>
               <p className="text-[11px] text-slate-400">~2–5 minutes · read-only · no infrastructure changes required</p>
