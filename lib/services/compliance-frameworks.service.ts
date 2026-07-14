@@ -86,7 +86,9 @@ export interface CreateRuleRequest {
 }
 
 class ComplianceFrameworksService {
-  private baseUrl = '/api/compliance-frameworks';
+  private baseUrl = process.env.NEXT_PUBLIC_API_URL
+    ? `${process.env.NEXT_PUBLIC_API_URL}/api/compliance-frameworks`
+    : 'http://localhost:8080/api/compliance-frameworks';
 
   async getFrameworks(): Promise<ComplianceFramework[]> {
     const response = await fetch(this.baseUrl, {
