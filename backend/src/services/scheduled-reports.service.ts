@@ -156,7 +156,7 @@ export class ScheduledReportsService {
           format: report.format,
           filters,
           columns: columns as any,
-        });
+        }, executor);
         break;
 
       case 'security_audit':
@@ -165,7 +165,7 @@ export class ScheduledReportsService {
           format: report.format,
           filters,
           columns: columns as any,
-        });
+        }, executor);
         break;
 
       case 'compliance_status':
@@ -174,7 +174,7 @@ export class ScheduledReportsService {
           format: report.format,
           filters,
           columns: columns as any,
-        });
+        }, executor);
         break;
 
       default:

@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { AWSResourcesExportService } from './awsResourcesExport.service';
@@ -52,11 +52,11 @@ export class ReportGeneratorService {
   /**
    * Generate Cost Summary Report
    */
-  async generateCostSummaryReport(data: ReportData): Promise<{ pdf?: Buffer; csv?: Buffer }> {
+  async generateCostSummaryReport(data: ReportData, executor?: PoolClient): Promise<{ pdf?: Buffer; csv?: Buffer }> {
     const startTime = Date.now();
 
     // Fetch cost summary data
-    const summaryData = await this.fetchCostSummaryData(data.organizationId, data.filters);
+    const summaryData = await this.fetchCostSummaryData(data.organizationId, data.filters, executor);
 
     const result: { pdf?: Buffer; csv?: Buffer } = {};
 
@@ -74,7 +74,7 @@ export class ReportGeneratorService {
         'environment',
         'cost',
       ];
-      result.csv = await this.exportService.generateCSV(data.organizationId, data.filters || {}, columns);
+      result.csv = await this.exportService.generateCSV(data.organizationId, data.filters || {}, columns, executor);
     }
 
     console.log(`[ReportGenerator] Cost Summary generated in ${Date.now() - startTime}ms`);
@@ -84,11 +84,11 @@ export class ReportGeneratorService {
   /**
    * Generate Security Audit Report
    */
-  async generateSecurityAuditReport(data: ReportData): Promise<{ pdf?: Buffer; csv?: Buffer }> {
+  async generateSecurityAuditReport(data: ReportData, executor?: PoolClient): Promise<{ pdf?: Buffer; csv?: Buffer }> {
     const startTime = Date.now();
 
     // Fetch security audit data
-    const securityData = await this.fetchSecurityAuditData(data.organizationId, data.filters);
+    const securityData = await this.fetchSecurityAuditData(data.organizationId, data.filters, executor);
 
     const result: { pdf?: Buffer; csv?: Buffer } = {};
 
@@ -106,7 +106,7 @@ export class ReportGeneratorService {
         'compliance',
         'environment',
       ];
-      result.csv = await this.exportService.generateCSV(data.organizationId, data.filters || {}, columns);
+      result.csv = await this.exportService.generateCSV(data.organizationId, data.filters || {}, columns, executor);
     }
 
     console.log(`[ReportGenerator] Security Audit generated in ${Date.now() - startTime}ms`);
@@ -116,11 +116,11 @@ export class ReportGeneratorService {
   /**
    * Generate Compliance Status Report
    */
-  async generateComplianceStatusReport(data: ReportData): Promise<{ pdf?: Buffer; csv?: Buffer }> {
+  async generateComplianceStatusReport(data: ReportData, executor?: PoolClient): Promise<{ pdf?: Buffer; csv?: Buffer }> {
     const startTime = Date.now();
 
     // Fetch compliance data
-    const complianceData = await this.fetchComplianceStatusData(data.organizationId, data.filters);
+    const complianceData = await this.fetchComplianceStatusData(data.organizationId, data.filters, executor);
 
     const result: { pdf?: Buffer; csv?: Buffer } = {};
 
@@ -139,7 +139,7 @@ export class ReportGeneratorService {
         'team',
         'service',
       ];
-      result.csv = await this.exportService.generateCSV(data.organizationId, data.filters || {}, columns);
+      result.csv = await this.exportService.generateCSV(data.organizationId, data.filters || {}, columns, executor);
     }
 
     console.log(`[ReportGenerator] Compliance Status generated in ${Date.now() - startTime}ms`);
@@ -151,7 +151,8 @@ export class ReportGeneratorService {
    */
   private async fetchCostSummaryData(
     organizationId: string,
-    filters?: ResourceFilters
+    filters?: ResourceFilters,
+    executor?: PoolClient
   ): Promise<CostSummaryData> {
     const conditions: string[] = ['r.organization_id = $1'];
     const values: any[] = [organizationId];
@@ -241,15 +242,16 @@ export class ReportGeneratorService {
       ORDER BY cost DESC
     `;
 
-    const [totalResult, topSpendersResult, byTeamResult, byServiceResult, byEnvResult, byTypeResult] =
-      await Promise.all([
-        this.pool.query(totalQuery, values),
-        this.pool.query(topSpendersQuery, values),
-        this.pool.query(byTeamQuery, values),
-        this.pool.query(byServiceQuery, values),
-        this.pool.query(byEnvQuery, values),
-        this.pool.query(byTypeQuery, values),
-      ]);
+    // Sequential, not Promise.all: these all run on a single shared, RLS-tagged
+    // client, and interleaving concurrent queries on one connection risks them
+    // executing out of order relative to the SET of app.current_organization_id.
+    const client = executor ?? this.pool;
+    const totalResult = await client.query(totalQuery, values);
+    const topSpendersResult = await client.query(topSpendersQuery, values);
+    const byTeamResult = await client.query(byTeamQuery, values);
+    const byServiceResult = await client.query(byServiceQuery, values);
+    const byEnvResult = await client.query(byEnvQuery, values);
+    const byTypeResult = await client.query(byTypeQuery, values);
 
     return {
       totalCost: parseFloat(totalResult.rows[0]?.total_cost || 0),
@@ -270,7 +272,8 @@ export class ReportGeneratorService {
    */
   private async fetchSecurityAuditData(
     organizationId: string,
-    filters?: ResourceFilters
+    filters?: ResourceFilters,
+    executor?: PoolClient
   ): Promise<SecurityAuditData> {
     const conditions: string[] = ['r.organization_id = $1'];
     const values: any[] = [organizationId];
@@ -311,10 +314,10 @@ export class ReportGeneratorService {
       LIMIT 20
     `;
 
-    const [statsResult, publicResult] = await Promise.all([
-      this.pool.query(securityStatsQuery, values),
-      this.pool.query(publicResourcesQuery, values),
-    ]);
+    // Sequential, not Promise.all: single shared, RLS-tagged client (see note above).
+    const client = executor ?? this.pool;
+    const statsResult = await client.query(securityStatsQuery, values);
+    const publicResult = await client.query(publicResourcesQuery, values);
 
     const stats = statsResult.rows[0];
     const totalResources = parseInt(stats.total_resources) || 0;
@@ -342,7 +345,8 @@ export class ReportGeneratorService {
    */
   private async fetchComplianceStatusData(
     organizationId: string,
-    filters?: ResourceFilters
+    filters?: ResourceFilters,
+    executor?: PoolClient
   ): Promise<ComplianceStatusData> {
     const conditions: string[] = ['r.organization_id = $1'];
     const values: any[] = [organizationId];
@@ -398,12 +402,12 @@ export class ReportGeneratorService {
       LIMIT 10
     `;
 
-    const [statsResult, severityResult, categoryResult, topNonCompliantResult] = await Promise.all([
-      this.pool.query(complianceStatsQuery, values),
-      this.pool.query(severityQuery, values).catch(() => ({ rows: [] })),
-      this.pool.query(categoryQuery, values).catch(() => ({ rows: [] })),
-      this.pool.query(topNonCompliantQuery, values),
-    ]);
+    // Sequential, not Promise.all: single shared, RLS-tagged client (see note above).
+    const client = executor ?? this.pool;
+    const statsResult = await client.query(complianceStatsQuery, values);
+    const severityResult = await client.query(severityQuery, values).catch(() => ({ rows: [] }));
+    const categoryResult = await client.query(categoryQuery, values).catch(() => ({ rows: [] }));
+    const topNonCompliantResult = await client.query(topNonCompliantQuery, values);
 
     const totalResources = parseInt(statsResult.rows[0]?.total_resources || 0);
     const resourcesWithIssues = parseInt(statsResult.rows[0]?.resources_with_issues || 0);

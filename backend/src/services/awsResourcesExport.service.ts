@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ExportColumn, ColumnMapping } from '../types/export.types';
@@ -105,9 +105,10 @@ export class AWSResourcesExportService {
   async generateCSV(
     organizationId: string,
     filters: ResourceFilters,
-    columns: ExportColumn[]
+    columns: ExportColumn[],
+    executor?: PoolClient
   ): Promise<Buffer> {
-    const resources = await this.fetchResourcesForExport(organizationId, filters);
+    const resources = await this.fetchResourcesForExport(organizationId, filters, executor);
 
     if (resources.length === 0) {
       // Return empty CSV with headers
@@ -138,9 +139,10 @@ export class AWSResourcesExportService {
   async generatePDF(
     organizationId: string,
     filters: ResourceFilters,
-    columns: ExportColumn[]
+    columns: ExportColumn[],
+    executor?: PoolClient
   ): Promise<Buffer> {
-    const resources = await this.fetchResourcesForExport(organizationId, filters);
+    const resources = await this.fetchResourcesForExport(organizationId, filters, executor);
 
     // Initialize PDF with landscape orientation for wide tables
     const doc = new jsPDF({
@@ -256,7 +258,8 @@ export class AWSResourcesExportService {
    */
   private async fetchResourcesForExport(
     organizationId: string,
-    filters: ResourceFilters
+    filters: ResourceFilters,
+    executor?: PoolClient
   ): Promise<any[]> {
     const conditions: string[] = ['r.organization_id = $1'];
     const values: any[] = [organizationId];
@@ -305,8 +308,10 @@ export class AWSResourcesExportService {
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
+    const client = executor ?? this.pool;
+
     // Count total to check limit
-    const countResult = await this.pool.query(
+    const countResult = await client.query(
       `SELECT COUNT(*) as total FROM aws_resources r ${whereClause}`,
       values
     );
@@ -333,7 +338,7 @@ export class AWSResourcesExportService {
       LIMIT ${AWSResourcesExportService.MAX_EXPORT_LIMIT}
     `;
 
-    const result = await this.pool.query(query, values);
+    const result = await client.query(query, values);
     return result.rows;
   }
 
