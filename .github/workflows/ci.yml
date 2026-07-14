@@ -82,7 +82,7 @@ jobs:
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy devcontrol-api ${{ github.sha }}" \
-            --parameters '{"commands":["set -e","aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz /tmp/dist.tar.gz","rm -rf /home/ubuntu/devcontrol/backend/dist","mkdir -p /home/ubuntu/devcontrol/backend/dist","tar xzf /tmp/dist.tar.gz -C /home/ubuntu/devcontrol/backend/dist","cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production","pm2 restart devcontrol-api --update-env","pm2 save","echo ✅ Backend deployed successfully"]}' \
+            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz /tmp/dist.tar.gz","rm -rf /home/ubuntu/devcontrol/backend/dist","mkdir -p /home/ubuntu/devcontrol/backend/dist","tar xzf /tmp/dist.tar.gz -C /home/ubuntu/devcontrol/backend/dist","cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production","pm2 restart devcontrol-api --update-env","pm2 save","echo ✅ Backend deployed successfully"]}' \
             --query "Command.CommandId" --output text)
           echo "SSM command ID: $COMMAND_ID"
 
