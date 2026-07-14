@@ -294,8 +294,11 @@ export function ActivityFeed({
   );
 }
 
-// Demo data generator
-export function generateDemoActivities(): ActivityItem[] {
+// Demo data generator — gated behind isDemoActive so demo entries (e.g. the
+// $0.00 cost update) never render for real accounts.
+export function generateDemoActivities(isDemoActive: boolean): ActivityItem[] {
+  if (!isDemoActive) return [];
+
   const now = new Date();
   return [
     {

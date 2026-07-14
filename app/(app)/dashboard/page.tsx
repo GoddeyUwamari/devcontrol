@@ -229,7 +229,9 @@ export default function DashboardPage() {
     }
     socket.on('metrics:costs', (data) => {
       if (!shouldUpdate('metrics:costs')) return
-      toast.info('AWS costs updated', { description: `New total: $${data.totalCost.toFixed(2)}` })
+      if (data.totalCost > 0) {
+        toast.info('AWS costs updated', { description: `New total: $${data.totalCost.toFixed(2)}` })
+      }
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
