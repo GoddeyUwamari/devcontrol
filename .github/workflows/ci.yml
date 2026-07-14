@@ -41,6 +41,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-and-build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,29 +59,96 @@ jobs:
 
       - name: Build backend
         run: cd backend && npm run build
+
       - name: Copy static assets to dist
         run: cp -r backend/src/templates backend/dist/
-      - name: Copy dist to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "backend/dist/"
-          target: "/home/ubuntu/devcontrol/backend/"
-          strip_components: 1
 
-      - name: Restart PM2
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Package dist
+        run: tar czf dist.tar.gz -C backend/dist .
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /home/ubuntu/devcontrol
-            git pull origin main
-            cd backend
-            npm install --legacy-peer-deps --production
-            pm2 restart devcontrol-api --update-env
-            pm2 save
-            echo "✅ Backend deployed successfully"
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Upload dist to S3
+        run: aws s3 cp dist.tar.gz s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz
+
+      - name: Deploy via SSM and restart PM2
+        run: |
+          set -e
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "i-0c3e55c290844ec59" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy devcontrol-api ${{ github.sha }}" \
+            --parameters '{"commands":["set -e","aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz /tmp/dist.tar.gz","rm -rf /home/ubuntu/devcontrol/backend/dist","mkdir -p /home/ubuntu/devcontrol/backend/dist","tar xzf /tmp/dist.tar.gz -C /home/ubuntu/devcontrol/backend/dist","cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production","pm2 restart devcontrol-api --update-env","pm2 save","echo ✅ Backend deployed successfully"]}' \
+            --query "Command.CommandId" --output text)
+          echo "SSM command ID: $COMMAND_ID"
+
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" || true
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
+            --query "Status" --output text)
+
+          echo "--- stdout ---"
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
+            --query "StandardOutputContent" --output text
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "--- stderr ---"
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
+              --query "StandardErrorContent" --output text
+            echo "SSM deploy command finished with status: $STATUS"
+            exit 1
+          fi
+
+  # --- OLD SSH/SCP DEPLOY (kept for rollback until SSM path is proven; port 22 is closed, this cannot run) ---
+  # deploy-backend-ssh-legacy:
+  #   runs-on: ubuntu-latest
+  #   needs: lint-and-build
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'npm'
+  #
+  #     - name: Install backend dependencies
+  #       run: cd backend && npm install --legacy-peer-deps
+  #
+  #     - name: Build backend
+  #       run: cd backend && npm run build
+  #     - name: Copy static assets to dist
+  #       run: cp -r backend/src/templates backend/dist/
+  #     - name: Copy dist to EC2
+  #       uses: appleboy/scp-action@v0.1.7
+  #       with:
+  #         host: ${{ secrets.EC2_HOST }}
+  #         username: ${{ secrets.EC2_USER }}
+  #         key: ${{ secrets.EC2_SSH_KEY }}
+  #         source: "backend/dist/"
+  #         target: "/home/ubuntu/devcontrol/backend/"
+  #         strip_components: 1
+  #
+  #     - name: Restart PM2
+  #       uses: appleboy/ssh-action@v1.0.3
+  #       with:
+  #         host: ${{ secrets.EC2_HOST }}
+  #         username: ${{ secrets.EC2_USER }}
+  #         key: ${{ secrets.EC2_SSH_KEY }}
+  #         script: |
+  #           cd /home/ubuntu/devcontrol
+  #           git pull origin main
+  #           cd backend
+  #           npm install --legacy-peer-deps --production
+  #           pm2 restart devcontrol-api --update-env
+  #           pm2 save
+  #           echo "✅ Backend deployed successfully"
