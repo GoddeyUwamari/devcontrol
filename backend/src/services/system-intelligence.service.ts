@@ -281,8 +281,25 @@ export class SystemIntelligenceService {
           [organizationId]
         )
 
+      // Get critical account security findings — without this, criticalIssues
+      // only reflected anomaly_detections, so "No critical issues" could show
+      // in the detail string even while real critical findings existed and
+      // were already dragging riskScore.score down.
+      const criticalFindingsResult =
+        await client.query(
+          `SELECT COUNT(*) as count
+           FROM account_security_findings
+           WHERE organization_id = $1
+             AND severity = 'critical'
+             AND status = 'active'`,
+          [organizationId]
+        )
+
       const criticalIssues = parseInt(
         anomalyResult.rows[0]
+          ?.count ?? '0'
+      ) + parseInt(
+        criticalFindingsResult.rows[0]
           ?.count ?? '0'
       )
 
