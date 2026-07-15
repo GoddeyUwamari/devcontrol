@@ -429,15 +429,18 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-500 leading-relaxed">Activity will appear here once resources sync, findings are detected, or scores update</p>
             </div>
           ) : (
-            activityFeedData.map((event, i) => (
-              <div key={`${event.type}-${event.timestamp}-${i}`} className="flex items-center justify-between py-2.5 border-b border-gray-50">
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: activityDotColor(event.type) }} />
-                  <div className="text-[13px] font-medium text-gray-900 leading-snug">{event.message}</div>
+            activityFeedData.map((event, i) => {
+              const isRoutine = event.type === 'sync' || event.type === 'score'
+              return (
+                <div key={`${event.type}-${event.timestamp}-${i}`} className="group flex items-center justify-between py-2.5 border-b border-gray-50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: activityDotColor(event.type) }} />
+                    <div className={isRoutine ? 'text-xs text-gray-400 leading-snug' : 'text-sm font-medium text-gray-900 leading-snug group-hover:text-[#7c3aed] transition-colors'}>{event.message}</div>
+                  </div>
+                  <div className="text-[11px] text-gray-400 whitespace-nowrap shrink-0 ml-3">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</div>
                 </div>
-                <div className="text-[11px] text-gray-400 whitespace-nowrap shrink-0 ml-3">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>
@@ -1214,12 +1217,19 @@ export default function DashboardPage() {
                 </div>
                 <a href="/app/dora-metrics" className="text-[11px] font-semibold text-violet-700 no-underline flex items-center gap-1">Full report <ArrowRight size={12} /></a>
               </div>
-              {doraRows.filter(r => ['Lead Time for Changes', 'Change Failure Rate', 'Mean Time to Recovery'].includes(r.label)).map(({ label, value }) => (
-                <div key={label} className="flex items-center justify-between py-2.5 border-b border-gray-50">
-                  <span className="text-[13px] text-gray-700 font-medium">{label}</span>
-                  <span className="text-[13px] font-semibold" style={{ color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827' }}>{value}</span>
+              {isDemoActive ? (
+                doraRows.filter(r => ['Lead Time for Changes', 'Change Failure Rate', 'Mean Time to Recovery'].includes(r.label)).map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between py-2.5 border-b border-gray-50">
+                    <span className="text-[13px] text-gray-700 font-medium">{label}</span>
+                    <span className="text-[13px] font-semibold" style={{ color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827' }}>{value}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="py-2">
+                  <p className="text-xs text-gray-500 mb-3 leading-relaxed">Connect CI/CD pipeline to see DORA metrics</p>
+                  <a href="/deployments" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">Connect CI/CD <ArrowRight size={12} /></a>
                 </div>
-              ))}
+              )}
             </div>
 
             {/* What You Can Do Now */}
@@ -1266,17 +1276,21 @@ export default function DashboardPage() {
                 <a href="/app/dora-metrics" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">Full report <ArrowRight size={12} /></a>
               </div>
               <p className="text-xs text-gray-500 mb-3 leading-relaxed">{isDemoActive ? 'Elite performance across all 4 DORA metrics' : 'Connect CI/CD pipeline to see DORA metrics'}</p>
-              {doraRows.map(({ label, value, tier, showTier }) => (
-                <div key={label} className="flex items-center justify-between py-2.5 border-b border-gray-50">
-                  <span className="text-[13px] text-gray-500">{label}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold" style={{ color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827' }}>{value}</span>
-                    {(showTier === undefined || showTier) && (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: tier === 'Elite' ? '#059669' : '#D97706', background: tier === 'Elite' ? '#ECFDF5' : '#FFFBEB' }}>{tier}</span>
-                    )}
+              {isDemoActive ? (
+                doraRows.map(({ label, value, tier, showTier }) => (
+                  <div key={label} className="flex items-center justify-between py-2.5 border-b border-gray-50">
+                    <span className="text-[13px] text-gray-500">{label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold" style={{ color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827' }}>{value}</span>
+                      {(showTier === undefined || showTier) && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: tier === 'Elite' ? '#059669' : '#D97706', background: tier === 'Elite' ? '#ECFDF5' : '#FFFBEB' }}>{tier}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <a href="/deployments" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">Connect CI/CD <ArrowRight size={12} /></a>
+              )}
             </div>
 
             {/* AI Advisor Feed */}

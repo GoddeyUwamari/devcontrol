@@ -24,6 +24,11 @@ export interface ActivityEvent {
 const FEED_LIMIT = 15;
 const PER_SOURCE_LIMIT = 15;
 
+// Routine, high-frequency event types that are safe to collapse when they repeat.
+// Distinct/meaningful types (security, optimization, anomaly) are never collapsed.
+const COLLAPSIBLE_TYPES: ActivityEventType[] = ['sync', 'score'];
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 export class ActivityFeedService {
   private async withOrgClient<T>(
     organizationId: string,
@@ -68,10 +73,65 @@ export class ActivityFeedService {
         this.runSource('anomaly_detections', () => this.getAnomalyEvents(client, organizationId)),
       ]);
 
-      return [...syncs, ...optimizations, ...securityFindings, ...scores, ...anomalies]
+      const collapsed = this.collapseRepeatedEvents([
+        ...syncs,
+        ...optimizations,
+        ...securityFindings,
+        ...scores,
+        ...anomalies,
+      ]);
+
+      return collapsed
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
         .slice(0, FEED_LIMIT);
     });
+  }
+
+  /**
+   * Collapses repeated routine events (sync, score) into a single "N times in the
+   * last X days" entry per type, keeping the most recent message/timestamp.
+   * Distinct/meaningful events (security, optimization, anomaly) are always
+   * returned individually.
+   */
+  private collapseRepeatedEvents(events: ActivityEvent[]): ActivityEvent[] {
+    const passthrough: ActivityEvent[] = [];
+    const byType = new Map<ActivityEventType, ActivityEvent[]>();
+
+    for (const event of events) {
+      if (!COLLAPSIBLE_TYPES.includes(event.type)) {
+        passthrough.push(event);
+        continue;
+      }
+      const group = byType.get(event.type);
+      if (group) {
+        group.push(event);
+      } else {
+        byType.set(event.type, [event]);
+      }
+    }
+
+    const collapsed: ActivityEvent[] = [];
+    for (const group of byType.values()) {
+      if (group.length === 1) {
+        collapsed.push(group[0]);
+        continue;
+      }
+      const sorted = [...group].sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      const mostRecent = sorted[0];
+      const oldest = sorted[sorted.length - 1];
+      const daySpan = Math.max(
+        1,
+        Math.ceil((new Date(mostRecent.timestamp).getTime() - new Date(oldest.timestamp).getTime()) / MS_PER_DAY)
+      );
+      collapsed.push({
+        ...mostRecent,
+        message: `${mostRecent.message} (${group.length} times in the last ${daySpan} day${daySpan !== 1 ? 's' : ''})`,
+      });
+    }
+
+    return [...passthrough, ...collapsed];
   }
 
   private async getSyncEvents(client: PoolClient, organizationId: string): Promise<ActivityEvent[]> {
