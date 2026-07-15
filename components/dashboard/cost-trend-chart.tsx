@@ -161,12 +161,12 @@ export function CostTrendChart({
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
-        <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <CardTitle>AWS Cost Trends</CardTitle>
             <CardDescription>Daily cost breakdown by service category over time</CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             {/* Date Range Selector */}
             {onDateRangeChange && (
               <div
