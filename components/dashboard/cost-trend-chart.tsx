@@ -169,14 +169,17 @@ export function CostTrendChart({
           <div className="flex items-center gap-2">
             {/* Date Range Selector */}
             {onDateRangeChange && (
-              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <div
+                className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto [&::-webkit-scrollbar]:hidden"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              >
                 {dateRangeOptions.map((option) => (
                   <Button
                     key={option.value}
                     variant="ghost"
                     size="sm"
                     onClick={() => onDateRangeChange(option.value as any)}
-                    className={`h-7 px-3 text-xs ${
+                    className={`h-7 px-3 text-xs shrink-0 ${
                       dateRange === option.value
                         ? 'bg-white text-gray-900 shadow-sm hover:bg-white'
                         : 'text-gray-500 hover:bg-white/50'
