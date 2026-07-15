@@ -426,20 +426,24 @@ export class SystemIntelligenceService {
     }
 
     if (security.ready && security.status !== 'good') {
+      const securitySeverity =
+        security.score < 50
+          ? 'critical'
+          : security.score < 70
+            ? 'high'
+            : 'medium'
+      const securityConsequence =
+        securitySeverity === 'critical'
+          ? 'Critical security gaps expose infrastructure to breach risk'
+          : securitySeverity === 'high'
+            ? 'Security gaps may expose infrastructure to risk'
+            : 'Security posture needs attention'
       drivers.push({
         id: 'security-posture',
         type: 'security',
-        severity:
-          security.score < 50
-            ? 'critical'
-            : security.score < 70
-              ? 'high'
-              : 'medium',
+        severity: securitySeverity,
         message: security.detail,
-        consequence:
-          security.score < 70
-            ? 'Critical security gaps expose infrastructure to breach risk'
-            : 'Security gaps may leave infrastructure partially exposed',
+        consequence: securityConsequence,
         impact_score: Math.round(
           (100 - security.score) * 0.40
         ),
