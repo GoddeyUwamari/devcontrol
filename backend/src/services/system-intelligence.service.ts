@@ -303,15 +303,14 @@ export class SystemIntelligenceService {
           ?.count ?? '0'
       )
 
-      // Penalize for active critical
-      // anomalies
-      const penalized = Math.max(
-        0,
-        riskScore.score -
-        criticalIssues * 5
-      )
+      // No separate penalty here: criticalIssues (anomalies + account_security_findings)
+      // is now detail-string-only. Account findings already penalize riskScore.score
+      // upstream via RiskTrackingService.calculateCurrentRiskScore -> combineSeverityCounts,
+      // so subtracting criticalIssues * 5 here would double-weight them. The old anomaly-only
+      // penalty is gone too, since criticalIssues no longer isolates anomalies as a signal
+      // that isn't already in the score.
       const score =
-        Math.round(penalized)
+        Math.round(riskScore.score)
 
       return {
         score,
