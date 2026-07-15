@@ -433,9 +433,9 @@ export default function DashboardPage() {
               const isRoutine = event.type === 'sync' || event.type === 'score'
               return (
                 <div key={`${event.type}-${event.timestamp}-${i}`} className="group flex items-center justify-between py-2.5 border-b border-gray-50">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className="w-2 h-2 rounded-full shrink-0" style={{ background: activityDotColor(event.type) }} />
-                    <div className={isRoutine ? 'text-xs text-gray-400 leading-snug' : 'text-sm font-medium text-gray-900 leading-snug group-hover:text-[#7c3aed] transition-colors'}>{event.message}</div>
+                    <div className={`truncate ${isRoutine ? 'text-xs text-gray-400 leading-snug' : 'text-sm font-medium text-gray-900 leading-snug group-hover:text-[#7c3aed] transition-colors'}`} title={event.message}>{event.message}</div>
                   </div>
                   <div className="text-[11px] text-gray-400 whitespace-nowrap shrink-0 ml-3">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</div>
                 </div>
@@ -662,7 +662,7 @@ export default function DashboardPage() {
             </div>
 
             {/* KPI placeholder row */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
               {/* Total Cloud Spend */}
               <div className="bg-white rounded-xl p-4 border border-gray-100">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Total Cloud Spend</p>
@@ -750,7 +750,7 @@ export default function DashboardPage() {
             {/* KPI grid — gated on data state */}
             {(isDemoActive || hasBillingData) ? (
               <>
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                   {/* Total Cloud Spend */}
                   <div className="bg-white rounded-xl p-4 border border-gray-100">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Total Cloud Spend</p>
@@ -841,7 +841,7 @@ export default function DashboardPage() {
                         <Skeleton className="h-3.5 w-2/3" />
                       </div>
                     ) : (
-                      <p className="text-sm text-gray-800 leading-relaxed">{aiSummaryData?.summary}</p>
+                      <p className="text-sm text-gray-800 leading-relaxed break-words">{aiSummaryData?.summary}</p>
                     )}
                   </div>
                 )}
@@ -853,7 +853,7 @@ export default function DashboardPage() {
                 </div>
               </>
             ) : isAwsConnected && (isBillingSyncing || hasServicesOnly) ? (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-white rounded-2xl p-8 border border-slate-100 border-l-[3px] border-l-violet-700">
                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Total Cloud Spend</p>
                   <div className="text-lg font-semibold text-slate-400 leading-snug mb-2">Calculating...</div>
@@ -896,14 +896,14 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl border border-slate-200 px-6 py-5 mb-6">
           {displayIntelligence.top_action && (
             <div
-              className="flex items-center justify-between gap-4 px-4 py-3.5 rounded-xl border-l-4 mb-4"
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-4 py-3.5 rounded-xl border-l-4 mb-4"
               style={{
                 background: displayIntelligence.top_action.severity === 'critical' ? '#FEF2F2' : '#FFFBEB',
                 border: `1px solid ${displayIntelligence.top_action.severity === 'critical' ? '#FECACA' : '#FDE68A'}`,
                 borderLeft: `4px solid ${displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706'}`,
               }}
             >
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706' }}>Highest Priority Action</p>
                 <p className="text-sm font-semibold text-slate-900 mb-0.5">{displayIntelligence.top_drivers?.[0]?.action?.label ?? displayIntelligence.top_action.message}</p>
                 <p className="text-xs font-medium" style={{ color: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706' }}>{displayIntelligence.top_action.consequence}</p>
@@ -921,7 +921,7 @@ export default function DashboardPage() {
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">System Score Drivers</p>
               <div className="flex flex-col gap-2">
                 {displayIntelligence.top_drivers.map((driver: any, i: number) => (
-                  <div key={driver.id} className="flex items-center gap-3.5 px-3.5 py-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                  <div key={driver.id} className="flex flex-col sm:flex-row sm:items-center gap-3.5 px-3.5 py-2.5 bg-slate-50 rounded-lg border border-slate-100">
                     <span className="text-[11px] font-bold text-slate-400 w-4 shrink-0">#{i + 1}</span>
                     <div className="w-2 h-2 rounded-full shrink-0" style={{ background: driver.severity === 'critical' ? '#DC2626' : driver.severity === 'high' ? '#D97706' : '#F59E0B' }} />
                     <div className="flex-1">
