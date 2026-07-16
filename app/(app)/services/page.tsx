@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle, SearchX } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -64,6 +64,7 @@ export default function ServicesPage() {
   const [envFilter,      setEnvFilter]      = useState<string>('all')
   const [templateFilter, setTemplateFilter] = useState<string>('all')
   const [search,         setSearch]         = useState<string>('')
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('')
   const [showAll,        setShowAll]        = useState(false)
   const INITIAL_VISIBLE = 4
   const [isDiscovering,     setIsDiscovering]     = useState(false)
@@ -76,7 +77,6 @@ export default function ServicesPage() {
   const [noAwsAccount,      setNoAwsAccount]      = useState(true)
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
-  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const demoMode      = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive  = demoMode || salesDemoMode
@@ -97,6 +97,19 @@ export default function ServicesPage() {
 
   useEffect(() => { checkAwsConnection() }, [checkAwsConnection])
 
+  // Debounce the raw input into a separate committed value, rather than
+  // scheduling a delayed fetchServices() call directly — a setTimeout that
+  // calls fetchServices() captures whatever `search` was in scope at the
+  // moment it was scheduled. If the user then changes the input again before
+  // that timer fires, the stale closure still fires ~400ms later with the
+  // OLD search term and silently overwrites the correct, fresher results.
+  // Debouncing the state instead means fetchServices always reads the latest
+  // committed value, and there's no closure to go stale.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400)
+    return () => clearTimeout(t)
+  }, [search])
+
   const fetchServices = useCallback(async () => {
     if (isDemoActive) return
     setIsLoading(true)
@@ -104,9 +117,9 @@ export default function ServicesPage() {
     try {
       const [svcs, st] = await Promise.all([
         awsServicesService.getServices({
-          type:   templateFilter !== 'all' ? templateFilter : undefined,
-          env:    envFilter      !== 'all' ? envFilter      : undefined,
-          search: search.trim()  || undefined,
+          type:   templateFilter !== 'all' ? templateFilter  : undefined,
+          env:    envFilter      !== 'all' ? envFilter       : undefined,
+          search: debouncedSearch.trim()   || undefined,
         }),
         awsServicesService.getStats(),
       ])
@@ -125,14 +138,12 @@ export default function ServicesPage() {
         else { setNoAwsAccount(false); setError(err.message || 'Failed to load services') }
       } catch { setNoAwsAccount(true); setError(null) }
     } finally { setIsLoading(false) }
-  }, [isDemoActive, templateFilter, envFilter, search])
+  }, [isDemoActive, templateFilter, envFilter, debouncedSearch])
 
   useEffect(() => { fetchServices() }, [fetchServices])
 
   const handleSearchChange = (val: string) => {
     setSearch(val)
-    if (searchTimeout.current) clearTimeout(searchTimeout.current)
-    searchTimeout.current = setTimeout(() => fetchServices(), 400)
   }
 
   const handleAutoDiscover = async () => {
