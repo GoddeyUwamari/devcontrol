@@ -52,7 +52,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
-      <main id="main-content" role="main" tabIndex={-1}>
+      <main id="main-content" role="main" tabIndex={-1} className="pb-16">
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
 
