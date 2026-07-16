@@ -32,6 +32,8 @@ interface OrganizationMembership {
   role: string;
   organization_slug: string;
   organization_name: string;
+  organization_display_name: string | null;
+  organization_subscription_tier: string;
 }
 
 interface JWTPayload {
@@ -305,7 +307,8 @@ export class AuthService {
 
     // Get user's organizations
     const orgsResult = await pool.query<OrganizationMembership>(
-      `SELECT om.organization_id, om.role, o.slug as organization_slug, o.name as organization_name
+      `SELECT om.organization_id, om.role, o.slug as organization_slug, o.name as organization_name,
+              o.display_name as organization_display_name, o.subscription_tier as organization_subscription_tier
        FROM organization_memberships om
        JOIN organizations o ON om.organization_id = o.id
        WHERE om.user_id = $1 AND om.is_active = true AND o.is_active = true AND o.deleted_at IS NULL
@@ -369,6 +372,8 @@ export class AuthService {
         id: primaryOrg.organization_id,
         slug: primaryOrg.organization_slug,
         name: primaryOrg.organization_name,
+        displayName: primaryOrg.organization_display_name,
+        subscriptionTier: primaryOrg.organization_subscription_tier,
         role: primaryOrg.role,
       },
     };
@@ -726,7 +731,7 @@ export class AuthService {
 
     // Get organizations
     const orgsResult = await pool.query(
-      `SELECT o.id, o.name, o.slug, o.display_name, om.role
+      `SELECT o.id, o.name, o.slug, o.display_name, o.subscription_tier, om.role
        FROM organization_memberships om
        JOIN organizations o ON om.organization_id = o.id
        WHERE om.user_id = $1 AND om.is_active = true AND o.is_active = true AND o.deleted_at IS NULL
@@ -742,7 +747,14 @@ export class AuthService {
       isEmailVerified: user.is_email_verified,
       createdAt: user.created_at,
       lastLoginAt: user.last_login_at,
-      organizations: orgsResult.rows,
+      organizations: orgsResult.rows.map((org) => ({
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        displayName: org.display_name,
+        subscriptionTier: org.subscription_tier,
+        role: org.role,
+      })),
     };
   }
 }
