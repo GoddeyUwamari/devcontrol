@@ -202,19 +202,19 @@ export function CostTrendChart({
       </CardHeader>
       <CardContent>
         {/* Legend with Toggle */}
-        <div className="flex items-center justify-center gap-4 mb-4 flex-wrap">
+        <div className="flex items-center justify-center gap-1 sm:gap-4 mb-4 flex-wrap">
           {series.map((s) => (
             <button
               key={s.key}
               onClick={() => toggleSeries(s.key)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
                 hiddenSeries.has(s.key)
                   ? 'opacity-40 hover:opacity-60'
                   : 'hover:bg-gray-100'
               }`}
             >
               <div
-                className="w-3 h-3 rounded-sm"
+                className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm"
                 style={{ backgroundColor: s.color }}
               />
               <span>{s.name}</span>
