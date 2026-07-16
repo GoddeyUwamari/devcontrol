@@ -432,12 +432,12 @@ export default function DashboardPage() {
             activityFeedData.map((event, i) => {
               const isRoutine = event.type === 'sync' || event.type === 'score'
               return (
-                <div key={`${event.type}-${event.timestamp}-${i}`} className="group flex items-center justify-between py-2.5 border-b border-gray-50">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: activityDotColor(event.type) }} />
-                    <div className={`truncate ${isRoutine ? 'text-xs text-gray-400 leading-snug' : 'text-sm font-medium text-gray-900 leading-snug group-hover:text-[#7c3aed] transition-colors'}`} title={event.message}>{event.message}</div>
+                <div key={`${event.type}-${event.timestamp}-${i}`} className="group flex items-start justify-between gap-3 py-2.5 border-b border-gray-50">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: activityDotColor(event.type) }} />
+                    <div className={`line-clamp-2 ${isRoutine ? 'text-xs text-gray-400 leading-snug' : 'text-sm font-medium text-gray-900 leading-snug group-hover:text-[#7c3aed] transition-colors'}`} title={event.message}>{event.message}</div>
                   </div>
-                  <div className="text-[11px] text-gray-400 whitespace-nowrap shrink-0 ml-3">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</div>
+                  <div className="text-[11px] text-gray-400 whitespace-nowrap shrink-0">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</div>
                 </div>
               )
             })
