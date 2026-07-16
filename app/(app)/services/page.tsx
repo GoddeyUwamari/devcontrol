@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle } from 'lucide-react'
+import { Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle, SearchX } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import awsServicesService, { AWSService, AWSServicesStats } from '@/lib/services/aws-services.service'
@@ -82,6 +82,21 @@ export default function ServicesPage() {
   const isDemoActive  = demoMode || salesDemoMode
   const { tier }      = usePlan()
 
+  // Determines whether an AWS account is connected at all — independent of the
+  // current type/env/search filter, since a filtered-to-zero result set must
+  // never be mistaken for "nothing connected."
+  const checkAwsConnection = useCallback(async () => {
+    if (isDemoActive) return
+    try {
+      const accounts = await awsAccountsService.getAccounts()
+      setNoAwsAccount(accounts.length === 0)
+    } catch {
+      // Leave noAwsAccount as-is; fetchServices' error path covers this too.
+    }
+  }, [isDemoActive])
+
+  useEffect(() => { checkAwsConnection() }, [checkAwsConnection])
+
   const fetchServices = useCallback(async () => {
     if (isDemoActive) return
     setIsLoading(true)
@@ -97,6 +112,11 @@ export default function ServicesPage() {
       ])
       setServices(svcs)
       setStats(st)
+      // Do NOT infer connection status from a successful-but-empty result here —
+      // an empty aws_resources table returns success for both a never-connected
+      // org and a connected-but-zero-matches filter. noAwsAccount is decided
+      // solely by checkAwsConnection() (an explicit aws_accounts lookup) and by
+      // totalServices > 0 (see isAwsConnected below), never by this fetch alone.
     } catch (err: any) {
       if (err.response?.status === 402) { setShowUpgradePrompt(true); return }
       try {
@@ -163,6 +183,22 @@ export default function ServicesPage() {
   const visibleServices   = showAll ? filteredServices : filteredServices.slice(0, INITIAL_VISIBLE)
   const totalMonthlyCost  = allServices.reduce((sum: number, s: any) => sum + (s.monthly_cost || 0), 0)
   const costDisplay       = '$' + totalMonthlyCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+
+  // Connection status — deliberately independent of the current type/env/search
+  // filter, so filtering to zero matches can never be mistaken for "AWS not
+  // connected." True when there's a connected account OR any resources have
+  // ever synced (totalServices comes from the unfiltered /services/stats call).
+  const isAwsConnected    = isDemoActive || !noAwsAccount || totalServices > 0
+  const activeFilterLabel = templateFilter !== 'all' ? TYPE_DISPLAY[templateFilter] : null
+  const noMatchTitle      = activeFilterLabel
+    ? `No ${activeFilterLabel} resources found`
+    : search.trim()
+      ? `No services match "${search.trim()}"`
+      : envFilter !== 'all'
+        ? `No ${envFilter} services found`
+        : 'No services match these filters'
+  const hasActiveFilter   = templateFilter !== 'all' || envFilter !== 'all' || !!search.trim()
+  const clearFilters = () => { setTemplateFilter('all'); setEnvFilter('all'); setSearch('') }
 
   useEffect(() => { setShowAll(false) }, [envFilter, templateFilter, search])
 
@@ -611,7 +647,7 @@ export default function ServicesPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">All Services</p>
-              <p className="text-xs text-slate-400 m-0">{filteredServices.length} of {totalServices} services</p>
+              <p className="text-xs text-slate-400 m-0">Showing {filteredServices.length} of {totalServices} services</p>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
@@ -660,42 +696,64 @@ export default function ServicesPage() {
             <p className="text-sm text-slate-500 m-0">Loading services...</p>
           </div>
         ) : filteredServices.length === 0 ? (
-          <div className="px-5 sm:px-12 py-12 text-center">
-            <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
-              <Layers size={22} className="text-slate-400" />
-            </div>
-            <p className="text-base font-semibold text-slate-900 mb-1.5">Connect AWS to See What's Costing You Money</p>
-            <p className="text-sm text-slate-500 mb-7 leading-relaxed max-w-md mx-auto">Secure read-only access — no changes made to your infrastructure.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto mb-7 text-left">
-              {[
-                { step: '1', title: 'Connect AWS',       desc: 'Secure read-only access — no changes made to your infrastructure', color: '#7C3AED' },
-                { step: '2', title: 'Discover Services', desc: 'Automatically map your infrastructure, costs, and dependencies',    color: '#059669' },
-                { step: '3', title: 'Monitor & Act',     desc: 'Uncover cost waste, security gaps, and performance risks instantly', color: '#0EA5E9' },
-              ].map(({ step, title, desc, color }) => (
-                <div key={step} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center mb-2.5" style={{ background: color }}>
-                    <span className="text-[11px] font-bold text-white">{step}</span>
+          !isAwsConnected ? (
+            // ── STATE A — no AWS account connected at all ──
+            <div className="px-5 sm:px-12 py-12 text-center">
+              <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
+                <Layers size={22} className="text-slate-400" />
+              </div>
+              <p className="text-base font-semibold text-slate-900 mb-1.5">Connect AWS to See What's Costing You Money</p>
+              <p className="text-sm text-slate-500 mb-7 leading-relaxed max-w-md mx-auto">Secure read-only access — no changes made to your infrastructure.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto mb-7 text-left">
+                {[
+                  { step: '1', title: 'Connect AWS',       desc: 'Secure read-only access — no changes made to your infrastructure', color: '#7C3AED' },
+                  { step: '2', title: 'Discover Services', desc: 'Automatically map your infrastructure, costs, and dependencies',    color: '#059669' },
+                  { step: '3', title: 'Monitor & Act',     desc: 'Uncover cost waste, security gaps, and performance risks instantly', color: '#0EA5E9' },
+                ].map(({ step, title, desc, color }) => (
+                  <div key={step} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center mb-2.5" style={{ background: color }}>
+                      <span className="text-[11px] font-bold text-white">{step}</span>
+                    </div>
+                    <p className="text-xs font-semibold text-slate-900 mb-1">{title}</p>
+                    <p className="text-xs text-slate-500 m-0 leading-relaxed">{desc}</p>
                   </div>
-                  <p className="text-xs font-semibold text-slate-900 mb-1">{title}</p>
-                  <p className="text-xs text-slate-500 m-0 leading-relaxed">{desc}</p>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3 justify-center flex-wrap">
-              {noAwsAccount ? (
-                <a href="/connect-aws" className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline inline-flex items-center gap-2 transition-colors">
-                  Connect AWS Account →
+                ))}
+              </div>
+              <div className="flex gap-3 justify-center flex-wrap">
+                {noAwsAccount ? (
+                  <a href="/connect-aws" className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline inline-flex items-center gap-2 transition-colors">
+                    Connect AWS Account →
+                  </a>
+                ) : (
+                  <button onClick={handleAutoDiscover} className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer inline-flex items-center gap-2 transition-colors">
+                    <Scan size={14} /> Auto Discover
+                  </button>
+                )}
+                <a href="/services/new" className="bg-white hover:bg-slate-50 text-slate-600 px-6 py-2.5 rounded-lg text-sm font-medium border border-slate-200 no-underline inline-flex items-center gap-2 transition-colors">
+                  + Add Manually
                 </a>
-              ) : (
-                <button onClick={handleAutoDiscover} className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer inline-flex items-center gap-2 transition-colors">
-                  <Scan size={14} /> Auto Discover
+              </div>
+            </div>
+          ) : (
+            // ── STATE B — AWS connected, current filter matches zero services ──
+            <div className="px-5 py-8 text-center">
+              <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-3">
+                <SearchX size={18} className="text-slate-400" />
+              </div>
+              <p className="text-sm font-semibold text-slate-900 mb-1">{noMatchTitle}</p>
+              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                Try a different resource type, or clear filters to see all {totalServices} service{totalServices !== 1 ? 's' : ''}.
+              </p>
+              {hasActiveFilter && (
+                <button
+                  onClick={clearFilters}
+                  className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold border-none cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+                >
+                  Clear filter
                 </button>
               )}
-              <a href="/services/new" className="bg-white hover:bg-slate-50 text-slate-600 px-6 py-2.5 rounded-lg text-sm font-medium border border-slate-200 no-underline inline-flex items-center gap-2 transition-colors">
-                + Add Manually
-              </a>
             </div>
-          </div>
+          )
         ) : (
           visibleServices.map((svc: any, idx: number) => {
             const isAtRisk    = svc.status === 'warning' || svc.status === 'critical'
