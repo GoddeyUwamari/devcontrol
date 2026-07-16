@@ -921,15 +921,19 @@ export default function DashboardPage() {
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">System Score Drivers</p>
               <div className="flex flex-col gap-2">
                 {displayIntelligence.top_drivers.map((driver: any, i: number) => (
-                  <div key={driver.id} className="flex flex-col sm:flex-row sm:items-center gap-3.5 px-3.5 py-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                    <span className="text-[11px] font-bold text-slate-400 w-4 shrink-0">#{i + 1}</span>
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: driver.severity === 'critical' ? '#DC2626' : driver.severity === 'high' ? '#D97706' : '#F59E0B' }} />
-                    <div className="flex-1">
-                      <p className="text-[13px] font-semibold text-slate-900 mb-0.5">{driver.message}</p>
-                      <p className="text-[11px] text-slate-500">{driver.consequence}</p>
+                  <div key={driver.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3.5 px-3.5 py-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="flex items-start gap-3.5 sm:contents">
+                      <span className="text-[11px] font-bold text-slate-400 w-4 shrink-0 mt-0.5 sm:mt-0">#{i + 1}</span>
+                      <div className="w-2 h-2 rounded-full shrink-0 mt-1.5 sm:mt-0" style={{ background: driver.severity === 'critical' ? '#DC2626' : driver.severity === 'high' ? '#D97706' : '#F59E0B' }} />
+                      <div className="flex-1">
+                        <p className="text-[13px] font-semibold text-slate-900 mb-0.5">{driver.message}</p>
+                        <p className="text-[11px] text-slate-500">{driver.consequence}</p>
+                      </div>
                     </div>
-                    <span className="text-[11px] font-bold text-emerald-600 whitespace-nowrap shrink-0">+{driver.impact_score}pts</span>
-                    <a href={driver.action.path} className="text-[11px] font-semibold text-violet-700 no-underline whitespace-nowrap shrink-0">{driver.action.label} →</a>
+                    <div className="flex items-center gap-3 pl-[26px] sm:pl-0 sm:contents">
+                      <span className="text-[11px] font-bold text-emerald-600 whitespace-nowrap shrink-0">+{driver.impact_score}pts</span>
+                      <a href={driver.action.path} className="text-[11px] font-semibold text-violet-700 no-underline whitespace-nowrap shrink-0">{driver.action.label} →</a>
+                    </div>
                   </div>
                 ))}
               </div>
