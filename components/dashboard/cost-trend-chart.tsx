@@ -160,17 +160,17 @@ export function CostTrendChart({
 
   return (
     <Card className="transition-shadow hover:shadow-md">
-      <CardHeader>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <CardHeader className="min-w-0">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
           <div>
             <CardTitle>AWS Cost Trends</CardTitle>
             <CardDescription>Daily cost breakdown by service category over time</CardDescription>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
             {/* Date Range Selector */}
             {onDateRangeChange && (
               <div
-                className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto [&::-webkit-scrollbar]:hidden"
+                className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto min-w-0 flex-1 [&::-webkit-scrollbar]:hidden"
                 style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
               >
                 {dateRangeOptions.map((option) => (
@@ -192,7 +192,7 @@ export function CostTrendChart({
             )}
             {/* Export Button */}
             {onExport && (
-              <Button variant="outline" size="sm" onClick={onExport}>
+              <Button variant="outline" size="sm" onClick={onExport} className="shrink-0">
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
