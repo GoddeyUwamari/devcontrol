@@ -1,48 +1,53 @@
 import { Pool } from 'pg';
 import {
   EC2Client,
-  DescribeInstancesCommand,
+  paginateDescribeInstances,
   Instance,
   DescribeVolumesCommand,
   DescribeAddressesCommand,
 } from '@aws-sdk/client-ec2';
 import {
   RDSClient,
-  DescribeDBInstancesCommand,
-  DescribeDBClustersCommand,
+  paginateDescribeDBInstances,
+  paginateDescribeDBClusters,
   DBInstance,
+  DBCluster,
 } from '@aws-sdk/client-rds';
 import {
   EKSClient,
-  ListClustersCommand as EKSListClustersCommand,
+  paginateListClusters as paginateEKSListClusters,
   DescribeClusterCommand as EKSDescribeClusterCommand,
 } from '@aws-sdk/client-eks';
 import {
   DynamoDBClient,
-  ListTablesCommand,
+  paginateListTables,
   DescribeTableCommand,
 } from '@aws-sdk/client-dynamodb';
 import {
   CloudFrontClient,
-  ListDistributionsCommand,
+  paginateListDistributions,
+  DistributionSummary,
 } from '@aws-sdk/client-cloudfront';
 import {
   APIGatewayClient,
-  GetRestApisCommand,
+  paginateGetRestApis,
+  RestApi,
 } from '@aws-sdk/client-api-gateway';
 import {
   ElastiCacheClient,
-  DescribeCacheClustersCommand,
+  paginateDescribeCacheClusters,
+  CacheCluster,
 } from '@aws-sdk/client-elasticache';
 import {
   SQSClient,
-  ListQueuesCommand,
+  paginateListQueues,
   GetQueueAttributesCommand,
 } from '@aws-sdk/client-sqs';
 import {
   SNSClient,
-  ListTopicsCommand,
+  paginateListTopics,
   GetTopicAttributesCommand,
+  Topic,
 } from '@aws-sdk/client-sns';
 import {
   S3Client,
@@ -50,25 +55,30 @@ import {
   GetBucketLocationCommand,
   GetBucketEncryptionCommand,
   GetBucketAclCommand,
+  Bucket,
 } from '@aws-sdk/client-s3';
 import {
   LambdaClient,
-  ListFunctionsCommand,
+  paginateListFunctions,
   ListTagsCommand,
+  FunctionConfiguration,
 } from '@aws-sdk/client-lambda';
 import {
   ECSClient,
-  ListClustersCommand,
-  ListServicesCommand,
+  paginateListClusters as paginateECSListClusters,
+  paginateListServices,
   DescribeServicesCommand,
+  Service,
 } from '@aws-sdk/client-ecs';
 import {
   ElasticLoadBalancingV2Client,
-  DescribeLoadBalancersCommand,
+  paginateDescribeLoadBalancers,
   DescribeTagsCommand as DescribeELBTagsCommand,
+  LoadBalancer,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import {
-  DescribeVpcsCommand,
+  paginateDescribeVpcs,
+  Vpc,
 } from '@aws-sdk/client-ec2';
 import { AWSClientFactory } from './aws-client-factory.service';
 import {
@@ -698,13 +708,15 @@ export class AWSResourceDiscoveryService {
     ec2Client: EC2Client,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const command = new DescribeInstancesCommand({});
-    const response = await ec2Client.send(command);
-
     const instances: Instance[] = [];
-    for (const reservation of response.Reservations || []) {
-      instances.push(...(reservation.Instances || []));
+    let pageCount = 0;
+    for await (const page of paginateDescribeInstances({ client: ec2Client }, {})) {
+      pageCount++;
+      for (const reservation of page.Reservations || []) {
+        instances.push(...(reservation.Instances || []));
+      }
     }
+    this.logIfPaginated('EC2 instances', pageCount, instances.length);
 
     const volumeEncryptionMap = await this.getVolumeEncryptionMap(ec2Client, instances);
 
@@ -755,12 +767,17 @@ export class AWSResourceDiscoveryService {
     rdsClient: RDSClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
-    const command = new DescribeDBInstancesCommand({});
-    const response = await rdsClient.send(command);
+    const dbInstances: DBInstance[] = [];
+    let pageCount = 0;
+    for await (const page of paginateDescribeDBInstances({ client: rdsClient }, {})) {
+      pageCount++;
+      dbInstances.push(...(page.DBInstances || []));
+    }
+    this.logIfPaginated('RDS instances', pageCount, dbInstances.length);
 
     const resources: CreateAWSResourceInput[] = [];
 
-    for (const dbInstance of response.DBInstances || []) {
+    for (const dbInstance of dbInstances) {
       if (!dbInstance.DBInstanceIdentifier) continue;
 
       const tags = this.extractTags(dbInstance.TagList);
@@ -804,12 +821,24 @@ export class AWSResourceDiscoveryService {
     s3Client: S3Client,
     defaultRegion: string
   ): Promise<CreateAWSResourceInput[]> {
-    const command = new ListBucketsCommand({});
-    const response = await s3Client.send(command);
+    // No generated paginator for ListBuckets in this SDK version — manual
+    // ContinuationToken loop (added along with S3's 2023 quota increase to
+    // 10,000 buckets/account; older accounts never see a token and this loop
+    // runs exactly once, identical to the prior single call).
+    const buckets: Bucket[] = [];
+    let continuationToken: string | undefined;
+    let pageCount = 0;
+    do {
+      const response = await s3Client.send(new ListBucketsCommand({ ContinuationToken: continuationToken }));
+      pageCount++;
+      buckets.push(...(response.Buckets || []));
+      continuationToken = response.ContinuationToken;
+    } while (continuationToken);
+    this.logIfPaginated('S3 buckets', pageCount, buckets.length);
 
     const resources: CreateAWSResourceInput[] = [];
 
-    for (const bucket of response.Buckets || []) {
+    for (const bucket of buckets) {
       if (!bucket.Name) continue;
 
       let region = defaultRegion;
@@ -872,6 +901,17 @@ export class AWSResourceDiscoveryService {
     }
 
     return resources;
+  }
+
+  /**
+   * Logs only when a paginated list call actually followed more than one page —
+   * lets a multi-page run be confirmed from logs alone, without noise on the
+   * single-page case every real org hits today.
+   */
+  private logIfPaginated(label: string, pageCount: number, itemCount: number): void {
+    if (pageCount > 1) {
+      console.log(`📄 [Discovery] ${label}: followed ${pageCount} pages (${itemCount} total items)`);
+    }
   }
 
   /**
@@ -1077,9 +1117,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { Functions } = await lambdaClient.send(new ListFunctionsCommand({}));
+      const functions: FunctionConfiguration[] = [];
+      let pageCount = 0;
+      for await (const page of paginateListFunctions({ client: lambdaClient }, {})) {
+        pageCount++;
+        functions.push(...(page.Functions || []));
+      }
+      this.logIfPaginated('Lambda functions', pageCount, functions.length);
 
-      for (const func of Functions || []) {
+      for (const func of functions) {
         if (!func.FunctionArn || !func.FunctionName) continue;
 
         let tags: Record<string, string> = {};
@@ -1151,25 +1197,39 @@ export class AWSResourceDiscoveryService {
 
     try {
       // List all clusters
-      const { clusterArns } = await ecsClient.send(new ListClustersCommand({}));
+      const clusterArns: string[] = [];
+      let clusterPageCount = 0;
+      for await (const page of paginateECSListClusters({ client: ecsClient }, {})) {
+        clusterPageCount++;
+        clusterArns.push(...(page.clusterArns || []));
+      }
+      this.logIfPaginated('ECS clusters', clusterPageCount, clusterArns.length);
 
-      for (const clusterArn of clusterArns || []) {
-        // List services in cluster
-        const { serviceArns } = await ecsClient.send(
-          new ListServicesCommand({ cluster: clusterArn })
-        );
+      for (const clusterArn of clusterArns) {
+        // List services in cluster (default page size is only 10 — must paginate)
+        const serviceArns: string[] = [];
+        let servicePageCount = 0;
+        for await (const page of paginateListServices({ client: ecsClient }, { cluster: clusterArn })) {
+          servicePageCount++;
+          serviceArns.push(...(page.serviceArns || []));
+        }
+        this.logIfPaginated(`ECS services in cluster ${clusterArn}`, servicePageCount, serviceArns.length);
 
-        if (!serviceArns || serviceArns.length === 0) continue;
+        if (serviceArns.length === 0) continue;
 
-        // Describe services
-        const { services } = await ecsClient.send(
-          new DescribeServicesCommand({
-            cluster: clusterArn,
-            services: serviceArns,
-          })
-        );
+        // DescribeServices accepts at most 10 service ARNs per call — chunk
+        // accordingly (same pattern as getVolumeEncryptionMap's 200-id chunking below)
+        const services: Service[] = [];
+        const chunkSize = 10;
+        for (let i = 0; i < serviceArns.length; i += chunkSize) {
+          const chunk = serviceArns.slice(i, i + chunkSize);
+          const { services: chunkServices } = await ecsClient.send(
+            new DescribeServicesCommand({ cluster: clusterArn, services: chunk })
+          );
+          services.push(...(chunkServices || []));
+        }
 
-        for (const service of services || []) {
+        for (const service of services) {
           if (!service.serviceArn || !service.serviceName) continue;
 
           const tags = (service.tags || []).reduce((acc, tag) => {
@@ -1236,9 +1296,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { LoadBalancers } = await elbClient.send(new DescribeLoadBalancersCommand({}));
+      const loadBalancers: LoadBalancer[] = [];
+      let pageCount = 0;
+      for await (const page of paginateDescribeLoadBalancers({ client: elbClient }, {})) {
+        pageCount++;
+        loadBalancers.push(...(page.LoadBalancers || []));
+      }
+      this.logIfPaginated('Load Balancers', pageCount, loadBalancers.length);
 
-      for (const lb of LoadBalancers || []) {
+      for (const lb of loadBalancers) {
         if (!lb.LoadBalancerArn || !lb.LoadBalancerName) continue;
 
         let tags: Record<string, string> = {};
@@ -1311,9 +1377,15 @@ export class AWSResourceDiscoveryService {
 
     try {
       // Discover VPCs
-      const { Vpcs } = await ec2Client.send(new DescribeVpcsCommand({}));
+      const vpcs: Vpc[] = [];
+      let pageCount = 0;
+      for await (const page of paginateDescribeVpcs({ client: ec2Client }, {})) {
+        pageCount++;
+        vpcs.push(...(page.Vpcs || []));
+      }
+      this.logIfPaginated('VPCs', pageCount, vpcs.length);
 
-      for (const vpc of Vpcs || []) {
+      for (const vpc of vpcs) {
         if (!vpc.VpcId) continue;
 
         const tags = this.extractTags(vpc.Tags);
@@ -1357,9 +1429,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { clusters: clusterNames } = await eksClient.send(new EKSListClustersCommand({}));
+      const clusterNames: string[] = [];
+      let pageCount = 0;
+      for await (const page of paginateEKSListClusters({ client: eksClient }, {})) {
+        pageCount++;
+        clusterNames.push(...(page.clusters || []));
+      }
+      this.logIfPaginated('EKS clusters', pageCount, clusterNames.length);
 
-      if (!clusterNames || clusterNames.length === 0) return resources;
+      if (clusterNames.length === 0) return resources;
 
       for (const clusterName of clusterNames) {
         try {
@@ -1419,9 +1497,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { TableNames } = await dynamoClient.send(new ListTablesCommand({}));
+      const tableNames: string[] = [];
+      let pageCount = 0;
+      for await (const page of paginateListTables({ client: dynamoClient }, {})) {
+        pageCount++;
+        tableNames.push(...(page.TableNames || []));
+      }
+      this.logIfPaginated('DynamoDB tables', pageCount, tableNames.length);
 
-      for (const tableName of TableNames || []) {
+      for (const tableName of tableNames) {
         try {
           const { Table } = await dynamoClient.send(
             new DescribeTableCommand({ TableName: tableName })
@@ -1482,9 +1566,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { DistributionList } = await cfClient.send(new ListDistributionsCommand({}));
+      const distributions: DistributionSummary[] = [];
+      let pageCount = 0;
+      for await (const page of paginateListDistributions({ client: cfClient }, {})) {
+        pageCount++;
+        distributions.push(...(page.DistributionList?.Items || []));
+      }
+      this.logIfPaginated('CloudFront distributions', pageCount, distributions.length);
 
-      for (const dist of DistributionList?.Items || []) {
+      for (const dist of distributions) {
         if (!dist.ARN || !dist.Id) continue;
 
         const origins = (dist.Origins?.Items || []).map((o: any) => o.DomainName);
@@ -1537,9 +1627,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { items } = await agClient.send(new GetRestApisCommand({}));
+      const apis: RestApi[] = [];
+      let pageCount = 0;
+      for await (const page of paginateGetRestApis({ client: agClient }, {})) {
+        pageCount++;
+        apis.push(...(page.items || []));
+      }
+      this.logIfPaginated('API Gateway REST APIs', pageCount, apis.length);
 
-      for (const api of items || []) {
+      for (const api of apis) {
         if (!api.id || !api.name) continue;
 
         const arn = `arn:aws:apigateway:${region}::/restapis/${api.id}`;
@@ -1589,11 +1685,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { CacheClusters } = await ecClient.send(
-        new DescribeCacheClustersCommand({ ShowCacheNodeInfo: true })
-      );
+      const cacheClusters: CacheCluster[] = [];
+      let pageCount = 0;
+      for await (const page of paginateDescribeCacheClusters({ client: ecClient }, { ShowCacheNodeInfo: true })) {
+        pageCount++;
+        cacheClusters.push(...(page.CacheClusters || []));
+      }
+      this.logIfPaginated('ElastiCache clusters', pageCount, cacheClusters.length);
 
-      for (const cluster of CacheClusters || []) {
+      for (const cluster of cacheClusters) {
         if (!cluster.CacheClusterId) continue;
 
         const arn = cluster.ARN || `arn:aws:elasticache:${region}:*:cluster:${cluster.CacheClusterId}`;
@@ -1651,11 +1751,17 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { DBClusters } = await rdsClient.send(new DescribeDBClustersCommand({}));
+      const dbClusters: DBCluster[] = [];
+      let pageCount = 0;
+      for await (const page of paginateDescribeDBClusters({ client: rdsClient }, {})) {
+        pageCount++;
+        dbClusters.push(...(page.DBClusters || []));
+      }
+      this.logIfPaginated('Aurora/RDS clusters', pageCount, dbClusters.length);
 
       const auroraEngines = new Set(['aurora', 'aurora-mysql', 'aurora-postgresql']);
 
-      for (const cluster of DBClusters || []) {
+      for (const cluster of dbClusters) {
         if (!cluster.DBClusterIdentifier || !cluster.Engine) continue;
         if (!auroraEngines.has(cluster.Engine)) continue;
 
@@ -1716,9 +1822,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { QueueUrls } = await sqsClient.send(new ListQueuesCommand({}));
+      const queueUrls: string[] = [];
+      let pageCount = 0;
+      for await (const page of paginateListQueues({ client: sqsClient }, {})) {
+        pageCount++;
+        queueUrls.push(...(page.QueueUrls || []));
+      }
+      this.logIfPaginated('SQS queues', pageCount, queueUrls.length);
 
-      for (const queueUrl of QueueUrls || []) {
+      for (const queueUrl of queueUrls) {
         try {
           const { Attributes } = await sqsClient.send(
             new GetQueueAttributesCommand({
@@ -1784,9 +1896,15 @@ export class AWSResourceDiscoveryService {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const { Topics } = await snsClient.send(new ListTopicsCommand({}));
+      const topics: Topic[] = [];
+      let pageCount = 0;
+      for await (const page of paginateListTopics({ client: snsClient }, {})) {
+        pageCount++;
+        topics.push(...(page.Topics || []));
+      }
+      this.logIfPaginated('SNS topics', pageCount, topics.length);
 
-      for (const topic of Topics || []) {
+      for (const topic of topics) {
         if (!topic.TopicArn) continue;
 
         try {
