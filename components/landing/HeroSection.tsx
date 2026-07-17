@@ -20,11 +20,11 @@ export function HeroSection() {
 
       <div className="relative z-10 mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
         <h1 className="text-center text-3xl font-bold leading-tight text-violet-600 sm:text-4xl lg:text-5xl">
-          Know Exactly Where Your AWS Money Is Going
+         Cloud Infrastructure Intelligence for Modern Engineering Teams
         </h1>
 
         <p className="mx-auto mb-4 mt-5 max-w-[680px] text-center text-lg leading-relaxed text-slate-700 sm:text-xl">
-          Real-time cost visibility, infrastructure health, and risk detection for multi-tenant SaaS teams — without changing a single line of code.
+          Gain real-time visibility into AWS costs, infrastructure health, security risks, and multi-tenant environments — all from one AI-powered platform.
         </p>
 
         <p className="mb-9 text-center text-sm text-slate-700 sm:text-base">
