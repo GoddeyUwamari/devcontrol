@@ -20,7 +20,7 @@ export function HeroSection() {
 
       <div className="relative z-10 mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
         <h1 className="text-center text-3xl font-bold leading-tight text-violet-600 sm:text-4xl lg:text-5xl">
-         Cloud Infrastructure Intelligence for Modern Engineering Teams
+         Cloud Infrastructure Intelligence for<br/> Modern Engineering Teams
         </h1>
 
         <p className="mx-auto mb-4 mt-5 max-w-[680px] text-center text-lg leading-relaxed text-slate-700 sm:text-xl">
