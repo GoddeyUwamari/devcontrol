@@ -487,7 +487,7 @@ export class ScheduledReportsRepository {
       success_count: parseInt(stats.success_count) || 0,
       failed_count: parseInt(stats.failed_count) || 0,
       partial_count: parseInt(stats.partial_count) || 0,
-      avg_execution_time_ms: stats.avg_execution_time_ms ? parseFloat(stats.avg_execution_time_ms) : null,
+      avg_execution_time_ms: stats.avg_execution_time_ms !== null && stats.avg_execution_time_ms !== undefined ? parseFloat(stats.avg_execution_time_ms) : null,
       last_success_at: stats.last_success_at || null,
     };
   }

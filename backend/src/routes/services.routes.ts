@@ -191,7 +191,7 @@ router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req
         uptime:       null,
         owner:        row.owner  ?? null,
         team:         row.team   ?? null,
-        monthly_cost: row.monthly_cost ? parseFloat(row.monthly_cost) : null,
+        monthly_cost: row.monthly_cost !== null && row.monthly_cost !== undefined ? parseFloat(row.monthly_cost) : null,
         last_deployed: row.last_deployed ?? row.last_synced_at ?? null,
         metadata:     row.metadata ?? {},
       };

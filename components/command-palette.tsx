@@ -188,7 +188,7 @@ export function CommandPalette() {
                     row.severity ?? Object.values(row)[1] ?? ''
                   )
                   const sub2 = String(
-                    row.monthly_cost
+                    row.monthly_cost !== null && row.monthly_cost !== undefined
                       ? '$' + Number(row.monthly_cost).toLocaleString() + '/mo'
                       : row.region ?? row.status ?? row.environment ??
                         Object.values(row)[2] ?? ''

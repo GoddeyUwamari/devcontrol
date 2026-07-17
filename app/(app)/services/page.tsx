@@ -809,7 +809,7 @@ export default function ServicesPage() {
                       {svc.environment}
                     </span>
                     <span className="text-xs text-slate-500">{svc.uptime != null ? `${svc.uptime}% uptime` : '— uptime'}</span>
-                    {svc.monthly_cost && <span className="text-xs text-slate-500">${svc.monthly_cost.toLocaleString()}/mo</span>}
+                    {svc.monthly_cost !== null && svc.monthly_cost !== undefined && <span className="text-xs text-slate-500">${svc.monthly_cost.toLocaleString()}/mo</span>}
                     <a
                       href={isAtRisk ? `/anomalies?service=${svc.name}` : `/services/${svc.id}`}
                       className="ml-auto text-xs font-semibold text-violet-600 no-underline flex items-center gap-1"
@@ -845,8 +845,8 @@ export default function ServicesPage() {
                       {isAtRisk ? (svc.status === 'critical' ? 'Critical' : 'At Risk') : 'Healthy'}
                     </span>
                   </div>
-                  <span className="text-sm font-semibold text-slate-900">{svc.uptime ? `${svc.uptime}%` : '—'}</span>
-                  <span className="text-sm text-slate-400 italic">{svc.monthly_cost ? `$${svc.monthly_cost.toLocaleString()}` : '—'}</span>
+                  <span className="text-sm font-semibold text-slate-900">{svc.uptime !== null && svc.uptime !== undefined ? `${svc.uptime}%` : '—'}</span>
+                  <span className="text-sm text-slate-400 italic">{svc.monthly_cost !== null && svc.monthly_cost !== undefined ? `$${svc.monthly_cost.toLocaleString()}` : '—'}</span>
                   <a
                     href={isAtRisk ? `/anomalies?service=${svc.name}` : `/services/${svc.id}`}
                     className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1"

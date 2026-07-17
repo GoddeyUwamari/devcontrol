@@ -114,10 +114,10 @@ export default function MonitoringPage() {
     const cw = cwData ?? cloudWatchMetrics
     if (cw && !demoMode) {
       const data = cw
-      setUptime(data.uptime ? `${data.uptime}%` : '99.9%')
+      setUptime(data.uptime !== null && data.uptime !== undefined ? `${data.uptime}%` : '99.9%')
       setResponseTime(data.avgResponseTimeMs ?? 45); setResponseTimeString(`${data.avgResponseTimeMs ?? 45}ms`)
       setRequestsPerMinute(data.requestsPerMinute ?? 0)
-      setMonthlyCost(data.monthlyCost ? `$${Math.round(data.monthlyCost).toLocaleString()}` : '--')
+      setMonthlyCost(data.monthlyCost !== null && data.monthlyCost !== undefined ? `$${Math.round(data.monthlyCost).toLocaleString()}` : '--')
       setTrendPercent(0)
       setResponseTimeData(Array.from({ length: 12 }, (_, i) => ({ timestamp: Date.now() - (11 - i) * 5 * 60 * 1000, value: Math.round((data.avgResponseTimeMs ?? 45) * (0.85 + Math.random() * 0.3)) })))
       setServices([
@@ -159,7 +159,15 @@ export default function MonitoringPage() {
         { name: 'Node Exporter', description: 'System metrics collector', status: serviceHealthData[2]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[2]?.result?.[0]?.value?.[1] === '1' ? '100%' : '0%', responseTime: '--', errorRate: 0.0, critical: false, recentIncidents: 0, uptimeHistory: [100,100,99.9,100,100,100,100,100] },
       ]
       setServices(updatedServices); setLastSynced(new Date())
-      saveSnapshot({ uptime: parseFloat(uptime) || null, responseTimeMs: responseTime || null, requestsPerMinute: requestsPerMinute || null, monthlyCost: parseFloat(monthlyCost.replace(/[$,]/g, '')) || null, services: updatedServices, slos, systemStatus })
+      const parsedUptime = parseFloat(uptime)
+      const parsedMonthlyCost = parseFloat(monthlyCost.replace(/[$,]/g, ''))
+      saveSnapshot({
+        uptime: Number.isNaN(parsedUptime) ? null : parsedUptime,
+        responseTimeMs: Number.isFinite(responseTime) ? responseTime : null,
+        requestsPerMinute: Number.isFinite(requestsPerMinute) ? requestsPerMinute : null,
+        monthlyCost: Number.isNaN(parsedMonthlyCost) ? null : parsedMonthlyCost,
+        services: updatedServices, slos, systemStatus,
+      })
       setLoading(false); toast.success('Metrics updated')
     } catch (err: any) {
       console.error('Error fetching metrics:', err)

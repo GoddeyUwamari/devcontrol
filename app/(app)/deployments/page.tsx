@@ -383,7 +383,7 @@ function DeploymentsContent() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>{d.environment}</span>
                     <span className="text-xs text-slate-400 font-mono">{d.awsRegion}</span>
-                    {d.costEstimate ? <span className="text-xs font-semibold text-slate-700 ml-auto">${d.costEstimate.toFixed(2)}</span> : null}
+                    {d.costEstimate !== null && d.costEstimate !== undefined && <span className="text-xs font-semibold text-slate-700 ml-auto">${d.costEstimate.toFixed(2)}</span>}
                   </div>
                   {d.status === 'failed' && (
                     <div className="mt-2.5 px-3 py-2 bg-red-50 rounded-lg border border-red-100 flex items-center justify-between gap-2">
@@ -414,7 +414,7 @@ function DeploymentsContent() {
                   <span className="text-xs text-slate-500 font-mono">{d.awsRegion || '—'}</span>
                   <span className="text-xs text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap">{d.deployedBy?.split('@')[0] || '—'}</span>
                   <span className="text-xs font-bold px-2.5 py-1 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
-                  <span className="text-sm font-semibold text-slate-900">{d.costEstimate ? `$${d.costEstimate.toFixed(2)}` : '—'}</span>
+                  <span className="text-sm font-semibold text-slate-900">{d.costEstimate !== null && d.costEstimate !== undefined ? `$${d.costEstimate.toFixed(2)}` : '—'}</span>
                 </div>
 
                 {/* Failed banner — desktop only (mobile handled inline above) */}
