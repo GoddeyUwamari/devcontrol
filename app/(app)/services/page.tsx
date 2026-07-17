@@ -2,24 +2,31 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle, SearchX } from 'lucide-react'
+import { Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import awsServicesService, { AWSService, AWSServicesStats } from '@/lib/services/aws-services.service'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SeverityBadge } from '@/components/ui/severity-badge'
 
 const _now = Date.now()
 
 const DEMO_SERVICES: AWSService[] = [
-  { id: '1', name: 'api-gateway',         environment: 'production', region: 'us-east-1', status: 'healthy', type: 'ecs',    uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 45).toISOString(),         owner: 'sarah.chen',   team: 'Platform Team',  monthly_cost: null, metadata: {} } as any,
-  { id: '2', name: 'auth-service',         environment: 'production', region: 'us-east-1', status: 'healthy', type: 'ecs',    uptime: 99.7, lastDeployed: new Date(_now - 1000 * 60 * 120).toISOString(),        owner: 'mike.johnson', team: 'Auth Team',      monthly_cost: null, metadata: {} } as any,
-  { id: '3', name: 'payment-processor',    environment: 'staging',    region: 'us-west-2', status: 'warning', type: 'lambda', uptime: 98.2, lastDeployed: new Date(_now - 1000 * 60 * 5).toISOString(),           owner: 'alex.wong',    team: 'Payments Team',  monthly_cost: null, metadata: {} } as any,
-  { id: '4', name: 'notification-service', environment: 'production', region: 'us-east-1', status: 'healthy', type: 'lambda', uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 60 * 6).toISOString(),      owner: 'emma.davis',   team: 'Platform Team',  monthly_cost: null, metadata: {} } as any,
-  { id: '5', name: 'analytics-worker',     environment: 'production', region: 'eu-west-1', status: 'healthy', type: 'ec2',    uptime: 99.5, lastDeployed: new Date(_now - 1000 * 60 * 60 * 24).toISOString(),     owner: 'david.kim',    team: 'Data Team',      monthly_cost: null, metadata: {} } as any,
+  { id: '1', name: 'api-gateway',         environment: 'production', region: 'us-east-1', status: 'healthy', type: 'ecs',    uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 45).toISOString(),         owner: 'sarah.chen',   team: 'Platform Team',  monthly_cost: null, metadata: {}, priority_severity: null,   needs_attention: false, reason: null } as any,
+  { id: '2', name: 'auth-service',         environment: 'production', region: 'us-east-1', status: 'healthy', type: 'ecs',    uptime: 99.7, lastDeployed: new Date(_now - 1000 * 60 * 120).toISOString(),        owner: 'mike.johnson', team: 'Auth Team',      monthly_cost: null, metadata: {}, priority_severity: null,   needs_attention: false, reason: null } as any,
+  { id: '3', name: 'payment-processor',    environment: 'staging',    region: 'us-west-2', status: 'warning', type: 'lambda', uptime: 98.2, lastDeployed: new Date(_now - 1000 * 60 * 5).toISOString(),           owner: 'alex.wong',    team: 'Payments Team',  monthly_cost: null, metadata: {}, priority_severity: 'high',   needs_attention: true,  reason: 'Lambda invocation spike detected (+178%) · retry loop suspected' } as any,
+  { id: '4', name: 'notification-service', environment: 'production', region: 'us-east-1', status: 'healthy', type: 'lambda', uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 60 * 6).toISOString(),      owner: 'emma.davis',   team: 'Platform Team',  monthly_cost: null, metadata: {}, priority_severity: null,   needs_attention: false, reason: null } as any,
+  { id: '5', name: 'analytics-worker',     environment: 'production', region: 'eu-west-1', status: 'healthy', type: 'ec2',    uptime: 99.5, lastDeployed: new Date(_now - 1000 * 60 * 60 * 24).toISOString(),     owner: 'david.kim',    team: 'Data Team',      monthly_cost: 623.4, metadata: {}, priority_severity: 'medium', needs_attention: true,  reason: 'Cost inefficiency detected — over-provisioned' } as any,
 ]
 
-const DEMO_STATS: AWSServicesStats = { total: 5, healthy: 4, needs_attention: 1, avg_uptime: 99.4 }
+const DEMO_STATS: AWSServicesStats = { total: 5, healthy: 3, needs_attention: 2, avg_uptime: 99.4 }
+
+// Sort rank for the merged severity scale — critical first. Any resource
+// without a priority_severity is healthy and sorts after all of these.
+const SEVERITY_SORT_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+const SEVERITY_LABEL: Record<string, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
 
 const RESOURCE_TYPE_CHIPS = [
   'all',
@@ -59,14 +66,62 @@ function typeStyle(t: string) {
   return TYPE_COLORS[t] ?? { bg: '#F8FAFC', color: '#64748B' }
 }
 
+// Shared row used by both the Needs Attention list and the expanded Healthy
+// group — same shape either way: severity badge (when flagged), name +
+// reason/last-synced, type badge, environment badge, cost, view link.
+function ServiceRow({ svc }: { svc: any }) {
+  const tc         = typeStyle(svc.type)
+  const svcName    = svc.name.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+  const envColor   = svc.environment === 'production' ? '#059669' : svc.environment === 'staging' ? '#D97706' : '#64748B'
+  const envBg      = svc.environment === 'production' ? '#F0FDF4' : svc.environment === 'staging' ? '#FFFBEB' : '#F8FAFC'
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-50 last:border-b-0 transition-colors hover:bg-slate-50">
+      {svc.priority_severity && (
+        <div className="shrink-0">
+          <SeverityBadge severity={svc.priority_severity} label={SEVERITY_LABEL[svc.priority_severity]} />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-slate-900 mb-0.5 truncate">{svcName}</p>
+        {svc.reason ? (
+          <p className="text-xs font-medium m-0 truncate text-slate-500">{svc.reason}</p>
+        ) : svc.last_deployed ? (
+          <p className="text-xs text-slate-400 m-0 truncate">
+            Last synced {new Date(svc.last_deployed).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md" style={{ background: tc.bg, color: tc.color }}>
+          {TYPE_DISPLAY[svc.type] ?? svc.type?.toUpperCase() ?? '—'}
+        </span>
+        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>
+          {svc.environment}
+        </span>
+        <span className="text-xs text-slate-500 w-16 text-right tabular-nums">
+          {svc.monthly_cost !== null && svc.monthly_cost !== undefined ? `$${svc.monthly_cost.toLocaleString()}` : '—'}
+        </span>
+        <a
+          href={svc.needs_attention ? `/anomalies?service=${svc.name}` : `/services/${svc.id}`}
+          className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap"
+        >
+          View <ArrowRight size={11} />
+        </a>
+      </div>
+    </div>
+  )
+}
+
 export default function ServicesPage() {
   const queryClient = useQueryClient()
   const [envFilter,      setEnvFilter]      = useState<string>('all')
   const [templateFilter, setTemplateFilter] = useState<string>('all')
   const [search,         setSearch]         = useState<string>('')
   const [debouncedSearch, setDebouncedSearch] = useState<string>('')
-  const [showAll,        setShowAll]        = useState(false)
-  const INITIAL_VISIBLE = 4
+  const [onlyNeedsAttention, setOnlyNeedsAttention] = useState(false)
+  const [healthyExpanded,    setHealthyExpanded]    = useState(false)
+  const [costSort,           setCostSort]           = useState<'asc' | 'desc' | null>(null)
   const [isDiscovering,     setIsDiscovering]     = useState(false)
   const [discoveryComplete, setDiscoveryComplete] = useState(false)
   const [discoveryMsg,      setDiscoveryMsg]      = useState<string | null>(null)
@@ -191,9 +246,34 @@ export default function ServicesPage() {
       ? parseFloat((servicesWithUptime.reduce((sum: number, s: any) => sum + s.uptime, 0) / servicesWithUptime.length).toFixed(1))
       : null)
   const avgUptimeDisplay  = avgUptime != null ? `${avgUptime}%` : '—'
-  const visibleServices   = showAll ? filteredServices : filteredServices.slice(0, INITIAL_VISIBLE)
   const totalMonthlyCost  = allServices.reduce((sum: number, s: any) => sum + (s.monthly_cost || 0), 0)
   const costDisplay       = '$' + totalMonthlyCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+
+  // "Needs attention" quick-filter chip narrows the already type/env/search-
+  // filtered set further — a separate dimension, not folded into fetchServices.
+  const visibleFilteredServices = onlyNeedsAttention
+    ? filteredServices.filter((s: any) => s.needs_attention)
+    : filteredServices
+
+  // Priority-sorted: critical first, then cost descending as tiebreaker —
+  // fixed order, not user-sortable (unlike the healthy group below).
+  const needsAttentionSorted = visibleFilteredServices
+    .filter((s: any) => s.needs_attention)
+    .sort((a: any, b: any) => {
+      const ra = SEVERITY_SORT_RANK[a.priority_severity as string] ?? 4
+      const rb = SEVERITY_SORT_RANK[b.priority_severity as string] ?? 4
+      if (ra !== rb) return ra - rb
+      return (b.monthly_cost ?? 0) - (a.monthly_cost ?? 0)
+    })
+
+  const healthyFiltered = visibleFilteredServices.filter((s: any) => !s.needs_attention)
+  const healthySorted   = costSort
+    ? [...healthyFiltered].sort((a: any, b: any) =>
+        costSort === 'asc' ? (a.monthly_cost ?? 0) - (b.monthly_cost ?? 0) : (b.monthly_cost ?? 0) - (a.monthly_cost ?? 0)
+      )
+    : [...healthyFiltered].sort((a: any, b: any) => a.name.localeCompare(b.name))
+
+  const toggleCostSort = () => setCostSort(prev => prev === 'desc' ? 'asc' : prev === 'asc' ? null : 'desc')
 
   // Connection status — deliberately independent of the current type/env/search
   // filter, so filtering to zero matches can never be mistaken for "AWS not
@@ -201,17 +281,23 @@ export default function ServicesPage() {
   // ever synced (totalServices comes from the unfiltered /services/stats call).
   const isAwsConnected    = isDemoActive || !noAwsAccount || totalServices > 0
   const activeFilterLabel = templateFilter !== 'all' ? TYPE_DISPLAY[templateFilter] : null
-  const noMatchTitle      = activeFilterLabel
-    ? `No ${activeFilterLabel} resources found`
-    : search.trim()
-      ? `No services match "${search.trim()}"`
-      : envFilter !== 'all'
-        ? `No ${envFilter} services found`
-        : 'No services match these filters'
-  const hasActiveFilter   = templateFilter !== 'all' || envFilter !== 'all' || !!search.trim()
-  const clearFilters = () => { setTemplateFilter('all'); setEnvFilter('all'); setSearch('') }
+  // A "needs attention" filter turning up zero results is good news, not a
+  // dead end — keep it visually and textually distinct from a real no-match.
+  const isPositiveEmptyState = onlyNeedsAttention && !activeFilterLabel && !search.trim() && envFilter === 'all'
+    && visibleFilteredServices.length === 0 && isAwsConnected
+  const noMatchTitle      = onlyNeedsAttention && !isPositiveEmptyState
+    ? 'No at-risk services match these filters'
+    : activeFilterLabel
+      ? `No ${activeFilterLabel} resources found`
+      : search.trim()
+        ? `No services match "${search.trim()}"`
+        : envFilter !== 'all'
+          ? `No ${envFilter} services found`
+          : 'No services match these filters'
+  const hasActiveFilter   = templateFilter !== 'all' || envFilter !== 'all' || !!search.trim() || onlyNeedsAttention
+  const clearFilters = () => { setTemplateFilter('all'); setEnvFilter('all'); setSearch(''); setOnlyNeedsAttention(false) }
 
-  useEffect(() => { setShowAll(false) }, [envFilter, templateFilter, search])
+  useEffect(() => { setHealthyExpanded(false) }, [envFilter, templateFilter, search, onlyNeedsAttention])
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto font-sans">
@@ -421,26 +507,6 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* ── IMMEDIATE ACTION BANNER ── */}
-      {warningCount > 0 && (
-        <div className="bg-red-50 border-2 border-red-600 rounded-2xl p-4 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-          <div>
-            <p className="text-red-600 text-[10px] font-bold tracking-widest uppercase mb-1">Immediate Action Required</p>
-            <p className="text-red-900 text-base font-semibold mb-2">
-              {warningCount} production service{warningCount !== 1 ? 's' : ''} at risk — potential downtime &amp; revenue impact
-            </p>
-            <div className="flex gap-1.5 flex-wrap">
-              {['Revenue disruption risk', 'SLA breach risk', 'Fix in < 5 min'].map(pill => (
-                <span key={pill} className="bg-white border border-red-200 rounded-full px-3 py-0.5 text-[11px] text-red-800">{pill}</span>
-              ))}
-            </div>
-          </div>
-          <a href="/anomalies" className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 text-sm font-semibold no-underline whitespace-nowrap shrink-0 transition-colors">
-            Resolve All Critical Issues
-          </a>
-        </div>
-      )}
-
       {/* ── EXECUTIVE SUMMARY STRIP ── */}
       <div className="bg-white border border-gray-100 rounded-xl px-4 sm:px-5 py-3 mb-4">
         {/* Mobile: 2x2 grid */}
@@ -541,93 +607,6 @@ export default function ServicesPage() {
         )}
       </div>
 
-      {/* ── PRIORITY ACTIONS ── */}
-      {(isDemoActive || warningCount > 0) && (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 mb-5">
-          <div className="flex items-start justify-between mb-4 gap-3">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">Priority Actions</p>
-              <p className="text-sm text-slate-500 m-0">Ranked by impact · {isDemoActive ? '2 services at risk in production' : `${warningCount} service${warningCount !== 1 ? 's' : ''} at risk`}</p>
-            </div>
-            <span className="inline-flex bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-3 py-1 text-[11px] font-semibold shrink-0">Action required</span>
-          </div>
-          <div className="flex flex-col gap-2.5">
-            {isDemoActive ? (
-              <>
-                {/* Demo Priority 1 */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-5 bg-red-50 rounded-xl border-2 border-red-200 gap-3">
-                  <div className="flex items-start gap-3.5">
-                    <div className="text-center min-w-[40px]">
-                      <p className="text-[10px] font-bold text-red-600 uppercase mb-0.5">Priority</p>
-                      <p className="text-2xl font-bold text-red-600 m-0">1</p>
-                    </div>
-                    <div className="w-px h-10 bg-red-200 shrink-0 hidden sm:block" />
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 mb-1">
-                        Payment Processor (Lambda) — <span className="text-red-600">invocation spike +178%</span>
-                      </p>
-                      <p className="text-xs text-slate-600 font-medium mb-1">Staging · us-west-2 · retry loop suspected · $864 cost increase · user-facing transaction risk</p>
-                      <p className="text-red-800 text-[11px] font-medium m-0">Potential impact: Revenue disruption · SLA breach risk</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                    <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase bg-red-600 text-white">High</span>
-                    <span className="px-2 py-0.5 rounded text-[9.5px] font-bold uppercase bg-red-100 text-red-800">Reliability</span>
-                    <a href="/anomalies" className="bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline transition-colors">Resolve Issue →</a>
-                  </div>
-                </div>
-                {/* Demo Priority 2 */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3.5 sm:p-4 bg-amber-50 rounded-xl border border-amber-200 gap-3">
-                  <div className="flex items-start gap-3.5">
-                    <div className="text-center min-w-[40px]">
-                      <p className="text-[10px] font-bold text-amber-600 uppercase mb-0.5">Priority</p>
-                      <p className="text-lg font-bold text-amber-600 m-0">2</p>
-                    </div>
-                    <div className="w-px h-8 bg-amber-200 shrink-0 hidden sm:block" />
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 mb-1">
-                        Analytics Worker (EC2) — <span className="text-amber-600">cost inefficiency detected</span>
-                      </p>
-                      <p className="text-xs text-slate-500 m-0">Production · eu-west-1 · over-provisioned · non-critical · recoverable savings available</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                    <span className="px-2 py-0.5 rounded text-[9.5px] font-bold uppercase bg-amber-100 text-amber-800">Medium</span>
-                    <span className="px-2 py-0.5 rounded text-[9.5px] font-bold uppercase bg-amber-100 text-amber-800">Cost Waste</span>
-                    <a href="/cost-optimization" className="bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold no-underline transition-colors">Review Impact →</a>
-                  </div>
-                </div>
-              </>
-            ) : (
-              allServices
-                .filter((s: any) => s.status !== 'healthy')
-                .map((svc: any, i: number) => (
-                  <div key={svc.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-5 bg-red-50 rounded-xl border-2 border-red-200 gap-3">
-                    <div className="flex items-start gap-3.5">
-                      <div className="text-center min-w-[40px]">
-                        <p className="text-[10px] font-bold text-red-600 uppercase mb-0.5">Priority</p>
-                        <p className="text-2xl font-bold text-red-600 m-0">{i + 1}</p>
-                      </div>
-                      <div className="w-px h-10 bg-red-200 shrink-0 hidden sm:block" />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 mb-1">
-                          {svc.name} ({(svc.type as string)?.toUpperCase()}) — <span className="text-red-600">at risk</span>
-                        </p>
-                        <p className="text-xs text-slate-600 font-medium mb-1">{svc.environment} · {svc.region || 'us-east-1'} · uptime {svc.uptime != null ? `${svc.uptime}%` : '—'}</p>
-                        <p className="text-red-800 text-[11px] font-medium m-0">Potential impact: Revenue disruption · SLA breach risk</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                      <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase bg-red-600 text-white">High</span>
-                      <a href={`/anomalies?service=${svc.name}`} className="bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline transition-colors">Resolve Issue →</a>
-                    </div>
-                  </div>
-                ))
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── QUICK NAV ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-8">
         {[
@@ -650,54 +629,61 @@ export default function ServicesPage() {
         ))}
       </div>
 
-      {/* ── SERVICES TABLE / CARDS ── */}
+      {/* ── SERVICES LIST ── */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
 
-        {/* Table header */}
+        {/* Search — primary navigation method */}
         <div className="px-5 sm:px-7 py-5 border-b border-slate-100">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">All Services</p>
-              <p className="text-xs text-slate-400 m-0">Showing {filteredServices.length} of {totalServices} services</p>
-            </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <input
-                type="text"
-                placeholder="Search services…"
-                value={search}
-                onChange={e => handleSearchChange(e.target.value)}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-900 bg-slate-50 outline-none w-full sm:w-44"
-              />
-              <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5">
-                {['all', 'production', 'staging'].map(f => (
-                  <button key={f} onClick={() => setEnvFilter(f)}
-                    className={`px-3 py-1 rounded-md text-xs font-semibold border-none cursor-pointer capitalize transition-all ${
-                      envFilter === f ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'
-                    }`}>
-                    {f === 'all' ? 'All Envs' : f}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="relative mb-3.5">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder={`Search ${totalServices} service${totalServices !== 1 ? 's' : ''}…`}
+              value={search}
+              onChange={e => handleSearchChange(e.target.value)}
+              className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 bg-slate-50 outline-none focus:border-violet-300 focus:bg-white transition-colors"
+            />
           </div>
-          {/* Type chips */}
-          <div className="flex gap-1.5 flex-wrap">
-            {RESOURCE_TYPE_CHIPS.map(t => (
-              <button key={t} onClick={() => setTemplateFilter(t)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold border-none cursor-pointer transition-all ${
-                  templateFilter === t ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                }`}>
-                {TYPE_DISPLAY[t] ?? t}
-              </button>
-            ))}
-          </div>
-        </div>
 
-        {/* Desktop column headers */}
-        <div className="hidden sm:grid sm:grid-cols-[2fr_110px_130px_110px_100px_110px_80px] px-7 py-2.5 bg-slate-50 border-b border-slate-100">
-          {['Service', 'Type', 'Environment', 'Status', 'Uptime', 'Monthly Cost', ''].map(col => (
-            <span key={col} className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">{col}</span>
-          ))}
+          {/* Two compact dropdowns + 2 quick-filter chips — deliberately few elements */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2.5">
+            <div className="flex gap-2 shrink-0">
+              <Select value={templateFilter} onValueChange={setTemplateFilter}>
+                <SelectTrigger className="h-8 text-xs w-[128px]"><SelectValue placeholder="Type" /></SelectTrigger>
+                <SelectContent>
+                  {RESOURCE_TYPE_CHIPS.map(t => (
+                    <SelectItem key={t} value={t} className="text-xs">{TYPE_DISPLAY[t]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={envFilter} onValueChange={setEnvFilter}>
+                <SelectTrigger className="h-8 text-xs w-[128px]"><SelectValue placeholder="Environment" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">All Envs</SelectItem>
+                  <SelectItem value="production" className="text-xs">Production</SelectItem>
+                  <SelectItem value="staging" className="text-xs">Staging</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              <button
+                onClick={() => setOnlyNeedsAttention(v => !v)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border cursor-pointer transition-all ${
+                  onlyNeedsAttention ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                Needs attention{warningCount > 0 ? ` (${warningCount})` : ''}
+              </button>
+              <button
+                onClick={() => setEnvFilter(prev => prev === 'production' ? 'all' : 'production')}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border cursor-pointer transition-all ${
+                  envFilter === 'production' ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                Production
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Content */}
@@ -706,7 +692,7 @@ export default function ServicesPage() {
             <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" style={{ animation: 'spin 1s linear infinite' }} />
             <p className="text-sm text-slate-500 m-0">Loading services...</p>
           </div>
-        ) : filteredServices.length === 0 ? (
+        ) : visibleFilteredServices.length === 0 ? (
           !isAwsConnected ? (
             // ── STATE A — no AWS account connected at all ──
             <div className="px-5 sm:px-12 py-12 text-center">
@@ -745,6 +731,23 @@ export default function ServicesPage() {
                 </a>
               </div>
             </div>
+          ) : isPositiveEmptyState ? (
+            // ── STATE C — "needs attention" filter, nothing flagged (good news, not an error) ──
+            <div className="px-5 py-10 text-center">
+              <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center mx-auto mb-3">
+                <CheckCircle2 size={18} className="text-green-600" />
+              </div>
+              <p className="text-sm font-semibold text-slate-900 mb-1">Nothing needs attention right now</p>
+              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                All {totalServices} service{totalServices !== 1 ? 's' : ''} are healthy.
+              </p>
+              <button
+                onClick={clearFilters}
+                className="bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+              >
+                Show all services
+              </button>
+            </div>
           ) : (
             // ── STATE B — AWS connected, current filter matches zero services ──
             <div className="px-5 py-8 text-center">
@@ -766,109 +769,51 @@ export default function ServicesPage() {
             </div>
           )
         ) : (
-          visibleServices.map((svc: any, idx: number) => {
-            const isAtRisk    = svc.status === 'warning' || svc.status === 'critical'
-            const isHealthy   = svc.status === 'healthy'
-            const isWarning   = svc.status === 'warning'
-            const statusColor = isHealthy ? '#059669' : isWarning ? '#D97706' : '#DC2626'
-            const envColor    = svc.environment === 'production' ? '#059669' : svc.environment === 'staging' ? '#D97706' : '#64748B'
-            const envBg       = svc.environment === 'production' ? '#F0FDF4' : svc.environment === 'staging' ? '#FFFBEB' : '#F8FAFC'
-            const tc          = typeStyle(svc.type)
-            const svcName     = svc.name.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-
-            return (
-              <div key={svc.id} className={`border-b border-slate-50 last:border-b-0 transition-colors ${isAtRisk ? 'bg-amber-50 hover:bg-amber-100/70' : 'bg-white hover:bg-slate-50'}`}>
-
-                {/* Mobile card layout */}
-                <div className="sm:hidden px-5 py-4">
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 mb-0.5 truncate">{svcName} ({(svc.type as string)?.toUpperCase()})</p>
-                      {isAtRisk ? (
-                        <p className="text-xs font-semibold m-0" style={{ color: svc.status === 'critical' ? '#DC2626' : '#D97706' }}>
-                          {isDemoActive ? 'Lambda invocation spike detected (+178%)' : `${svc.name} at risk · check anomalies`}
-                        </p>
-                      ) : svc.last_deployed ? (
-                        <p className="text-xs text-slate-400 m-0">
-                          Last synced {new Date(svc.last_deployed).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <div className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor }} />
-                      <span className="text-xs font-semibold" style={{ color: isAtRisk ? statusColor : '#059669' }}>
-                        {isAtRisk ? (svc.status === 'critical' ? 'Critical' : 'At Risk') : 'Healthy'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
-                      {TYPE_DISPLAY[svc.type] ?? svc.type?.toUpperCase() ?? '—'}
-                    </span>
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>
-                      {svc.environment}
-                    </span>
-                    <span className="text-xs text-slate-500">{svc.uptime != null ? `${svc.uptime}% uptime` : '— uptime'}</span>
-                    {svc.monthly_cost !== null && svc.monthly_cost !== undefined && <span className="text-xs text-slate-500">${svc.monthly_cost.toLocaleString()}/mo</span>}
-                    <a
-                      href={isAtRisk ? `/anomalies?service=${svc.name}` : `/services/${svc.id}`}
-                      className="ml-auto text-xs font-semibold text-violet-600 no-underline flex items-center gap-1"
-                    >
-                      {isAtRisk ? 'Investigate' : 'View'} <ArrowRight size={11} />
-                    </a>
-                  </div>
+          <>
+            {/* Needs attention — expanded by default, restrained styling, fixed severity+cost sort */}
+            {needsAttentionSorted.length > 0 && (
+              <div>
+                <div className="px-5 sm:px-7 py-2.5 bg-slate-50/70 border-b border-slate-100">
+                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest m-0">
+                    Needs Attention · {needsAttentionSorted.length}
+                  </p>
                 </div>
-
-                {/* Desktop row layout */}
-                <div className="hidden sm:grid sm:grid-cols-[2fr_110px_130px_110px_100px_110px_80px] items-center px-7 py-4">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 mb-0.5">{svcName} ({(svc.type as string)?.toUpperCase()})</p>
-                    {isAtRisk ? (
-                      <p className="text-xs font-semibold m-0" style={{ color: svc.status === 'critical' ? '#DC2626' : '#D97706' }}>
-                        {isDemoActive ? 'Lambda invocation spike detected (+178%) · retry loop suspected' : `${svc.name} at risk · check recent deployments and anomalies`}
-                      </p>
-                    ) : svc.last_deployed ? (
-                      <p className="text-xs text-slate-400 m-0">
-                        Last synced {new Date(svc.last_deployed).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    ) : null}
-                  </div>
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md w-fit" style={{ background: tc.bg, color: tc.color }}>
-                    {TYPE_DISPLAY[svc.type] ?? svc.type?.toUpperCase() ?? '—'}
-                  </span>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full w-fit" style={{ background: envBg, color: envColor }}>
-                    {svc.environment}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: statusColor }} />
-                    <span className="text-sm font-semibold" style={{ color: isAtRisk ? statusColor : '#059669' }}>
-                      {isAtRisk ? (svc.status === 'critical' ? 'Critical' : 'At Risk') : 'Healthy'}
-                    </span>
-                  </div>
-                  <span className="text-sm font-semibold text-slate-900">{svc.uptime !== null && svc.uptime !== undefined ? `${svc.uptime}%` : '—'}</span>
-                  <span className="text-sm text-slate-400 italic">{svc.monthly_cost !== null && svc.monthly_cost !== undefined ? `$${svc.monthly_cost.toLocaleString()}` : '—'}</span>
-                  <a
-                    href={isAtRisk ? `/anomalies?service=${svc.name}` : `/services/${svc.id}`}
-                    className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1"
-                  >
-                    {isAtRisk ? 'Investigate' : 'View'} <ArrowRight size={12} />
-                  </a>
-                </div>
+                {needsAttentionSorted.map((svc: any) => <ServiceRow key={svc.id} svc={svc} />)}
               </div>
-            )
-          })
-        )}
+            )}
 
-        {/* Show more/less */}
-        {filteredServices.length > INITIAL_VISIBLE && (
-          <div className="text-center py-3.5 border-t border-slate-100">
-            <button
-              onClick={() => setShowAll(prev => !prev)}
-              className="text-sm text-violet-700 bg-transparent border-none cursor-pointer inline-flex items-center gap-1.5 font-medium hover:text-violet-900 transition-colors"
-            >
-              {showAll ? `Show less ↑` : `See all ${filteredServices.length} services ↓`}
-            </button>
-          </div>
+            {/* Collapsed healthy group — expands into the same row format, sortable by cost */}
+            {healthySorted.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setHealthyExpanded(v => !v)}
+                  className="w-full flex items-center justify-between gap-3 px-5 sm:px-7 py-3.5 bg-green-50/40 hover:bg-green-50 border-b border-slate-100 cursor-pointer text-left transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-green-600 shrink-0" />
+                    <span className="text-sm font-semibold text-slate-700">
+                      {healthySorted.length} service{healthySorted.length !== 1 ? 's' : ''} healthy
+                    </span>
+                  </span>
+                  {healthyExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                </button>
+                {healthyExpanded && (
+                  <>
+                    <div className="hidden sm:flex items-center justify-end px-7 py-2 bg-slate-50 border-b border-slate-100">
+                      <button
+                        onClick={toggleCostSort}
+                        className="flex items-center gap-1 text-[11px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer bg-transparent border-none hover:text-slate-700"
+                      >
+                        Monthly Cost
+                        {costSort === 'asc' ? <ChevronUp size={12} /> : costSort === 'desc' ? <ChevronDown size={12} /> : null}
+                      </button>
+                    </div>
+                    {healthySorted.map((svc: any) => <ServiceRow key={svc.id} svc={svc} />)}
+                  </>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

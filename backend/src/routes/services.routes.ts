@@ -52,6 +52,78 @@ function mapStatus(resourceType: string, rawStatus: string | null): 'healthy' | 
   }
 }
 
+// ─── Severity taxonomy merge ────────────────────────────────────────────────
+// Three incompatible severity schemes exist in this codebase: resource
+// operational status (healthy/warning/critical, derived above from raw AWS
+// state), ComplianceSeverity (critical/high/medium/low, from
+// aws_resources.compliance_issues / account_security_findings), and
+// RecommendationSeverity (LOW/MEDIUM/HIGH, no critical, from
+// cost_recommendations' dollar thresholds). This merges all three into one
+// `priority_severity` per resource so sorting/grouping logic for the
+// services list lives here, not scattered across frontend components.
+//
+// Product decision: compliance is authoritative over cost when a resource has
+// both — a security gap is categorically more urgent than a spend
+// inefficiency, so cost severity is only consulted when there's no
+// compliance issue for that resource. Operational status is folded in as an
+// independent signal (a stopped/terminated resource is worth surfacing even
+// with zero compliance/cost findings): critical status -> critical severity,
+// warning status -> medium severity (worth a look, not security-grade
+// urgent), healthy status -> no contribution. The final priority_severity is
+// the worse of (compliance-or-cost) and (status-derived) severity.
+
+type PrioritySeverity = 'critical' | 'high' | 'medium' | 'low';
+type SeverityFinding = { severity: PrioritySeverity; reason: string };
+
+const SEVERITY_RANK: Record<PrioritySeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+const COST_SEVERITY_MAP: Record<string, PrioritySeverity> = { HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
+
+function worseSeverity(a: SeverityFinding | null, b: SeverityFinding | null): SeverityFinding | null {
+  if (!a) return b;
+  if (!b) return a;
+  return SEVERITY_RANK[a.severity] <= SEVERITY_RANK[b.severity] ? a : b;
+}
+
+function worstComplianceIssue(issues: any[] | null): SeverityFinding | null {
+  if (!issues || issues.length === 0) return null;
+  let worst = issues[0];
+  for (const issue of issues) {
+    if (SEVERITY_RANK[issue.severity as PrioritySeverity] < SEVERITY_RANK[worst.severity as PrioritySeverity]) worst = issue;
+  }
+  return { severity: worst.severity, reason: worst.issue };
+}
+
+function worstCostRecommendation(recs: any[] | null): SeverityFinding | null {
+  if (!recs || recs.length === 0) return null;
+  const rank: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  let worst = recs[0];
+  for (const r of recs) {
+    if (
+      rank[r.severity] < rank[worst.severity] ||
+      (rank[r.severity] === rank[worst.severity] && Number(r.potential_savings) > Number(worst.potential_savings))
+    ) {
+      worst = r;
+    }
+  }
+  return { severity: COST_SEVERITY_MAP[worst.severity], reason: worst.issue };
+}
+
+function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFinding | null {
+  if (status === 'critical') return { severity: 'critical', reason: 'Resource in a failed or terminated state' };
+  if (status === 'warning')  return { severity: 'medium',   reason: 'Resource is stopped or degraded' };
+  return null;
+}
+
+function derivePrioritySeverity(
+  status: 'healthy' | 'warning' | 'critical',
+  complianceIssues: any[] | null,
+  costRecommendations: any[] | null
+): { priority_severity: PrioritySeverity | null; reason: string | null } {
+  const flagged = worstComplianceIssue(complianceIssues) ?? worstCostRecommendation(costRecommendations);
+  const combined = worseSeverity(flagged, statusSeverity(status));
+  return { priority_severity: combined?.severity ?? null, reason: combined?.reason ?? null };
+}
+
 // ─── GET /api/services/stats ─────────────────────────────────────────────────
 // Must be registered before /:id or Express treats "stats" as an id param
 
@@ -170,7 +242,15 @@ router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req
          r.tags->>'team'                                     AS team,
          r.metadata->>'last_deployed'                        AS last_deployed,
          r.last_synced_at,
-         r.metadata
+         r.metadata,
+         r.compliance_issues,
+         (SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
+          FROM cost_recommendations cr
+          WHERE cr.organization_id = r.organization_id
+            AND cr.resource_id = r.resource_id
+            AND LOWER(cr.resource_type) = r.resource_type
+            AND cr.status = 'ACTIVE'
+         ) AS cost_recommendations
        FROM aws_resources r
        WHERE ${where}
        ORDER BY r.resource_name ASC NULLS LAST, r.resource_id ASC
@@ -180,6 +260,7 @@ router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req
 
     const services = rows.map((row) => {
       const status = mapStatus(row.type, row.raw_status);
+      const { priority_severity, reason } = derivePrioritySeverity(status, row.compliance_issues, row.cost_recommendations);
       return {
         id:           row.id,
         name:         row.name,
@@ -194,6 +275,9 @@ router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req
         monthly_cost: row.monthly_cost !== null && row.monthly_cost !== undefined ? parseFloat(row.monthly_cost) : null,
         last_deployed: row.last_deployed ?? row.last_synced_at ?? null,
         metadata:     row.metadata ?? {},
+        priority_severity,
+        needs_attention: priority_severity !== null,
+        reason,
       };
     });
 

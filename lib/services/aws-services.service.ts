@@ -13,6 +13,11 @@ export interface AWSService {
   monthly_cost: number | null
   last_deployed: string | null
   metadata: Record<string, any>
+  // Unified severity — merges resource status, compliance findings, and cost
+  // recommendations server-side (see services.routes.ts). null = no findings.
+  priority_severity: 'critical' | 'high' | 'medium' | 'low' | null
+  needs_attention: boolean
+  reason: string | null
 }
 
 export interface AWSServicesStats {
