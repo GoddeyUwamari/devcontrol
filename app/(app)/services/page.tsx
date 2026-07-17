@@ -77,14 +77,14 @@ function ServiceRow({ svc }: { svc: any }) {
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-50 last:border-b-0 transition-colors hover:bg-slate-50">
-      {svc.priority_severity && (
+      {svc.needs_attention && svc.priority_severity && (
         <div className="shrink-0">
           <SeverityBadge severity={svc.priority_severity} label={SEVERITY_LABEL[svc.priority_severity]} />
         </div>
       )}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-slate-900 mb-0.5 truncate">{svcName}</p>
-        {svc.reason ? (
+        {svc.needs_attention && svc.reason ? (
           <p className="text-xs font-medium m-0 truncate text-slate-500">{svc.reason}</p>
         ) : svc.last_deployed ? (
           <p className="text-xs text-slate-400 m-0 truncate">

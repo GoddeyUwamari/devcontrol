@@ -114,14 +114,137 @@ function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFin
   return null;
 }
 
+// Below this rank, a compliance/cost finding is real but not urgent enough to
+// pull a resource out of the collapsed "healthy" group in the services list —
+// priority_severity still reflects it (for a future resource-detail view),
+// it just doesn't set needs_attention. Confirmed floor: high/critical only.
+// 'medium' was considered and rejected — this scanner's actual output makes
+// it too broad to use as the floor: the generic "not encrypted" fallback
+// (hits VPCs and any resource type without a specific rule) and the SOC2
+// change-management tagging checklist are both 'medium' and apply to most
+// resources regardless of real risk, which would defeat the point of
+// collapsing the boring majority.
+//
+// This floor applies to compliance/cost findings only, not to operational
+// status — a stopped/terminated resource keeps surfacing at its existing
+// critical/medium mapping unchanged, since "this resource isn't running" is
+// an operational fact, not a compliance-finding severity level, and wasn't
+// part of what this floor was scoped to address.
+const NEEDS_ATTENTION_FLOOR: PrioritySeverity = 'high';
+
 function derivePrioritySeverity(
   status: 'healthy' | 'warning' | 'critical',
   complianceIssues: any[] | null,
   costRecommendations: any[] | null
-): { priority_severity: PrioritySeverity | null; reason: string | null } {
+): { priority_severity: PrioritySeverity | null; reason: string | null; needs_attention: boolean } {
   const flagged = worstComplianceIssue(complianceIssues) ?? worstCostRecommendation(costRecommendations);
-  const combined = worseSeverity(flagged, statusSeverity(status));
-  return { priority_severity: combined?.severity ?? null, reason: combined?.reason ?? null };
+  const statusFinding = statusSeverity(status);
+  const combined = worseSeverity(flagged, statusFinding);
+
+  const flaggedMeetsFloor = !!flagged && SEVERITY_RANK[flagged.severity] <= SEVERITY_RANK[NEEDS_ATTENTION_FLOOR];
+  const needsAttention = flaggedMeetsFloor || !!statusFinding;
+
+  return {
+    priority_severity: combined?.severity ?? null,
+    reason: combined?.reason ?? null,
+    needs_attention: needsAttention,
+  };
+}
+
+// ─── Shared row fetch — single source of truth for both /stats and / ────────
+// Both endpoints need the same joins and the same priority_severity/
+// needs_attention computation; duplicating either here would let them drift
+// (exactly what happened before — /stats used a separate, cruder
+// status-only query and disagreed with the list once compliance/cost data
+// existed). /stats calls this with no filters and no limit for a true
+// org-wide count; / passes the request's type/env/search and a row cap.
+
+type ServiceListFilters = { type?: string; env?: string; search?: string };
+
+async function fetchServices(orgId: string, filters: ServiceListFilters, limit?: number) {
+  const conditions: string[] = ['r.organization_id = $1'];
+  const values: any[] = [orgId];
+  let p = 2;
+
+  if (filters.type && filters.type !== 'all') {
+    const typeMap: Record<string, string[]> = {
+      'load balancer': ['load-balancer', 'elb'],
+      'api gateway':   ['api-gateway'],
+    };
+    const normalized = filters.type.toLowerCase();
+    const dbTypes = typeMap[normalized] ?? [normalized];
+    conditions.push(`r.resource_type = ANY($${p++}::text[])`);
+    values.push(dbTypes);
+  }
+
+  if (filters.env && filters.env !== 'all') {
+    conditions.push(
+      `(LOWER(COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production')) = LOWER($${p++}))`
+    );
+    values.push(filters.env);
+  }
+
+  if (filters.search) {
+    conditions.push(`(r.resource_name ILIKE $${p} OR r.resource_id ILIKE $${p})`);
+    values.push(`%${filters.search}%`);
+    p++;
+  }
+
+  const where = conditions.join(' AND ');
+  const limitClause = limit ? `LIMIT ${Number(limit)}` : '';
+
+  const { rows } = await pool.query(
+    `SELECT
+       r.id,
+       COALESCE(r.resource_name, r.resource_id)           AS name,
+       r.resource_id,
+       r.resource_type                                     AS type,
+       COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production') AS environment,
+       COALESCE(r.tags->>'region', r.metadata->>'region')  AS region,
+       r.status                                            AS raw_status,
+       r.estimated_monthly_cost                            AS monthly_cost,
+       r.tags->>'owner'                                    AS owner,
+       r.tags->>'team'                                     AS team,
+       r.metadata->>'last_deployed'                        AS last_deployed,
+       r.last_synced_at,
+       r.metadata,
+       r.compliance_issues,
+       (SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
+        FROM cost_recommendations cr
+        WHERE cr.organization_id = r.organization_id
+          AND cr.resource_id = r.resource_id
+          AND LOWER(cr.resource_type) = r.resource_type
+          AND cr.status = 'ACTIVE'
+       ) AS cost_recommendations
+     FROM aws_resources r
+     WHERE ${where}
+     ORDER BY r.resource_name ASC NULLS LAST, r.resource_id ASC
+     ${limitClause}`,
+    values
+  );
+
+  return rows.map((row) => {
+    const status = mapStatus(row.type, row.raw_status);
+    const { priority_severity, reason, needs_attention } = derivePrioritySeverity(status, row.compliance_issues, row.cost_recommendations);
+    return {
+      id:           row.id,
+      name:         row.name,
+      type:         row.type,
+      environment:  row.environment,
+      region:       row.region,
+      status,
+      // No real monitoring data source exists yet — null rather than a fabricated figure.
+      uptime:       null,
+      owner:        row.owner  ?? null,
+      team:         row.team   ?? null,
+      monthly_cost: row.monthly_cost !== null && row.monthly_cost !== undefined ? parseFloat(row.monthly_cost) : null,
+      last_deployed: row.last_deployed ?? row.last_synced_at ?? null,
+      metadata:     row.metadata ?? {},
+      priority_severity,
+      needs_attention,
+      reason,
+    };
+  });
 }
 
 // ─── GET /api/services/stats ─────────────────────────────────────────────────
@@ -132,21 +255,13 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     const orgId = req.organizationId;
     if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
 
-    const result = await pool.query(
-      `SELECT
-         COUNT(*) AS total,
-         COUNT(*) FILTER (WHERE LOWER(status) IN ('running','active','available','enabled')) AS healthy,
-         COUNT(*) FILTER (WHERE status IS NOT NULL
-                            AND LOWER(status) NOT IN ('running','active','available','enabled')) AS needs_attention
-       FROM aws_resources
-       WHERE organization_id = $1`,
-      [orgId]
-    );
-
-    const row = result.rows[0];
-    const total          = parseInt(row.total) || 0;
-    const healthy        = parseInt(row.healthy) || 0;
-    const needsAttention = parseInt(row.needs_attention) || 0;
+    // No filters, no limit — a true org-wide count, computed via the exact
+    // same priority_severity logic as the list below so the two can never
+    // disagree on what "needs attention" means.
+    const services = await fetchServices(orgId, {});
+    const total          = services.length;
+    const needsAttention = services.filter((s) => s.needs_attention).length;
+    const healthy        = total - needsAttention;
 
     // No real monitoring data source exists yet — avg_uptime is intentionally null
     // rather than a fabricated figure.
@@ -197,89 +312,7 @@ router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req
 
   try {
     const { type, env, search } = req.query as Record<string, string>;
-
-    const conditions: string[] = ['r.organization_id = $1'];
-    const values: any[] = [orgId];
-    let p = 2;
-
-    if (type && type !== 'all') {
-      const typeMap: Record<string, string[]> = {
-        'load balancer': ['load-balancer', 'elb'],
-        'api gateway':   ['api-gateway'],
-      };
-      const normalized = type.toLowerCase();
-      const dbTypes = typeMap[normalized] ?? [normalized];
-      conditions.push(`r.resource_type = ANY($${p++}::text[])`);
-      values.push(dbTypes);
-    }
-
-    if (env && env !== 'all') {
-      conditions.push(
-        `(LOWER(COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production')) = LOWER($${p++}))`
-      );
-      values.push(env);
-    }
-
-    if (search) {
-      conditions.push(`(r.resource_name ILIKE $${p} OR r.resource_id ILIKE $${p})`);
-      values.push(`%${search}%`);
-      p++;
-    }
-
-    const where = conditions.join(' AND ');
-
-    const { rows } = await pool.query(
-      `SELECT
-         r.id,
-         COALESCE(r.resource_name, r.resource_id)           AS name,
-         r.resource_id,
-         r.resource_type                                     AS type,
-         COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production') AS environment,
-         COALESCE(r.tags->>'region', r.metadata->>'region')  AS region,
-         r.status                                            AS raw_status,
-         r.estimated_monthly_cost                            AS monthly_cost,
-         r.tags->>'owner'                                    AS owner,
-         r.tags->>'team'                                     AS team,
-         r.metadata->>'last_deployed'                        AS last_deployed,
-         r.last_synced_at,
-         r.metadata,
-         r.compliance_issues,
-         (SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
-          FROM cost_recommendations cr
-          WHERE cr.organization_id = r.organization_id
-            AND cr.resource_id = r.resource_id
-            AND LOWER(cr.resource_type) = r.resource_type
-            AND cr.status = 'ACTIVE'
-         ) AS cost_recommendations
-       FROM aws_resources r
-       WHERE ${where}
-       ORDER BY r.resource_name ASC NULLS LAST, r.resource_id ASC
-       LIMIT 500`,
-      values
-    );
-
-    const services = rows.map((row) => {
-      const status = mapStatus(row.type, row.raw_status);
-      const { priority_severity, reason } = derivePrioritySeverity(status, row.compliance_issues, row.cost_recommendations);
-      return {
-        id:           row.id,
-        name:         row.name,
-        type:         row.type,
-        environment:  row.environment,
-        region:       row.region,
-        status,
-        // No real monitoring data source exists yet — null rather than a fabricated figure.
-        uptime:       null,
-        owner:        row.owner  ?? null,
-        team:         row.team   ?? null,
-        monthly_cost: row.monthly_cost !== null && row.monthly_cost !== undefined ? parseFloat(row.monthly_cost) : null,
-        last_deployed: row.last_deployed ?? row.last_synced_at ?? null,
-        metadata:     row.metadata ?? {},
-        priority_severity,
-        needs_attention: priority_severity !== null,
-        reason,
-      };
-    });
+    const services = await fetchServices(orgId, { type, env, search }, 500);
 
     res.json({ success: true, services, total: services.length });
   } catch (err: any) {
