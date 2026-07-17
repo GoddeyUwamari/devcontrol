@@ -27,13 +27,13 @@ export function HeroSection() {
           Gain real-time visibility into AWS costs, infrastructure health, security risks, and multi-tenant environments — all from one AI-powered platform.
         </p>
 
-        <p className="mb-9 text-center text-sm text-slate-700 sm:text-base">
+        {/* <p className="mb-9 text-center text-sm text-slate-700 sm:text-base">
           Find hidden AWS waste in <strong className="text-emerald-600">15 minutes</strong>
           {' · '}
           <strong className="text-emerald-600">$800–$8,000+/month</strong> potential savings
           {' · '}
           Read-only access
-        </p>
+        </p> */}
 
         <div className="mb-6 flex flex-col justify-center gap-4 sm:flex-row">
           <a
