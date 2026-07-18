@@ -195,17 +195,17 @@ export default function TenantsPage() {
             <RefreshCw size={15} /> Refresh
           </button>
           <button
-            onClick={() => !isDemoActive && setIsAddModalOpen(true)}
-            disabled={isDemoActive}
-            title={isDemoActive ? 'Not available in demo mode' : undefined}
+            onClick={() => !isDemoActive && !isAuthError && setIsAddModalOpen(true)}
+            disabled={isDemoActive || isAuthError}
+            title={isDemoActive ? 'Not available in demo mode' : isAuthError ? 'Session expired — sign in again to manage tenants' : undefined}
             style={{
               display: 'flex', alignItems: 'center', gap: '8px',
-              background: isDemoActive ? '#EDE9FE' : '#7C3AED',
-              color: isDemoActive ? '#A78BFA' : '#fff',
+              background: isDemoActive || isAuthError ? '#EDE9FE' : '#7C3AED',
+              color: isDemoActive || isAuthError ? '#A78BFA' : '#fff',
               padding: '10px 20px', borderRadius: '8px',
               fontSize: '0.875rem', fontWeight: 600, whiteSpace: 'nowrap',
-              border: 'none', cursor: isDemoActive ? 'not-allowed' : 'pointer',
-              opacity: isDemoActive ? 0.7 : 1,
+              border: 'none', cursor: isDemoActive || isAuthError ? 'not-allowed' : 'pointer',
+              opacity: isDemoActive || isAuthError ? 0.7 : 1,
             }}>
             <Plus size={15} /> {displayTenants.length === 0 ? 'Add Your First Tenant' : 'Add Tenant'}
           </button>
@@ -461,13 +461,18 @@ export default function TenantsPage() {
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
               <button
-                onClick={() => !isDemoActive && setIsAddModalOpen(true)}
-                disabled={isDemoActive}
-                style={{ background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '15px', fontWeight: 500, cursor: isDemoActive ? 'not-allowed' : 'pointer', opacity: isDemoActive ? 0.7 : 1 }}
+                onClick={() => !isDemoActive && !isAuthError && setIsAddModalOpen(true)}
+                disabled={isDemoActive || isAuthError}
+                title={isAuthError ? 'Session expired — sign in again to manage tenants' : undefined}
+                style={{ background: '#534AB7', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '15px', fontWeight: 500, cursor: isDemoActive || isAuthError ? 'not-allowed' : 'pointer', opacity: isDemoActive || isAuthError ? 0.7 : 1 }}
               >
                 + Add Your First Tenant
               </button>
-              <button style={{ background: 'none', border: '0.5px solid #E2E8F0', borderRadius: '8px', padding: '8px 16px', fontSize: '15px', color: '#475569', cursor: 'pointer' }}>
+              <button
+                disabled={isAuthError}
+                title={isAuthError ? 'Session expired — sign in again to manage tenants' : undefined}
+                style={{ background: 'none', border: '0.5px solid #E2E8F0', borderRadius: '8px', padding: '8px 16px', fontSize: '15px', color: '#475569', cursor: isAuthError ? 'not-allowed' : 'pointer', opacity: isAuthError ? 0.7 : 1 }}
+              >
                 Import tenants
               </button>
             </div>
