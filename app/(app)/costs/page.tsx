@@ -40,12 +40,6 @@ const DATE_RANGES = [
 const stripMarkdown = (text: string) =>
   text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
 
-const FALLBACK_SAVINGS = [
-  { savings: 890 },
-  { savings: 445 },
-  { savings: 362 },
-]
-
 const DEMO_SPEND_DATA: { date: string; actual?: number; forecast?: number }[] = [
   { date: 'Apr 1',  actual: 218 }, { date: 'Apr 2',  actual: 215 },
   { date: 'Apr 3',  actual: 220 }, { date: 'Apr 4',  actual: 217 },
@@ -152,7 +146,7 @@ export default function CostsPage() {
   const forecast90    = forecast?.predicted90Day ?? 0
   const totalSavings  = optimization?.summary?.totalMonthlySavings ?? 0
   const annualSavings = optimization?.summary?.totalAnnualSavings ?? 0
-  const displaySavings = totalSavings > 0 ? totalSavings : FALLBACK_SAVINGS.reduce((sum, r) => sum + r.savings, 0)
+  const displaySavings = totalSavings
   const displayAnnual  = annualSavings > 0 ? annualSavings : displaySavings * 12
   const growthRate     = forecast?.growthRate ?? 0
   const topRecs: OptimizationRecommendation[] = optimization?.recommendations?.slice(0, 3) ?? []
@@ -573,32 +567,35 @@ export default function CostsPage() {
             </a>
           </div>
           <div className="flex flex-col gap-4">
-            {serviceBreakdown.map(({ name, amount, pct, trend, up }) => {
+            {(() => {
               const totalServiceSpend = serviceBreakdown.reduce((sum, s) => sum + s.amount, 0)
-              const pctOfTotal = totalServiceSpend > 0 ? Math.round((amount / totalServiceSpend) * 100) : pct
-              const isCompute = name.startsWith('Compute')
-              const isDatabase = name.startsWith('Database')
-              const savingsFlag = amount === 0 ? null : isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null
-              return (
-                <div key={name}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
-                      <span className="text-xs text-slate-700 font-medium">{name}</span>
+              const hasSpend = totalServiceSpend > 0
+              return serviceBreakdown.map(({ name, amount, pct, trend, up }) => {
+                const pctOfTotal = hasSpend ? Math.round((amount / totalServiceSpend) * 100) : 0
+                const isCompute = name.startsWith('Compute')
+                const isDatabase = name.startsWith('Database')
+                const savingsFlag = amount === 0 ? null : isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null
+                return (
+                  <div key={name}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
+                        <span className="text-xs text-slate-700 font-medium">{name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {hasSpend && <span className="text-[10px] text-slate-400 font-medium">{pctOfTotal}%</span>}
+                        {hasSpend && <span className={`text-xs font-medium ${up ? 'text-amber-500' : 'text-green-600'}`}>{trend}</span>}
+                        <span className="text-sm font-semibold text-slate-900 min-w-[60px] text-right">${amount.toLocaleString()}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] text-slate-400 font-medium">{pctOfTotal}%</span>
-                      <span className={`text-xs font-medium ${up ? 'text-amber-500' : 'text-green-600'}`}>{trend}</span>
-                      <span className="text-sm font-semibold text-slate-900 min-w-[60px] text-right">${amount.toLocaleString()}</span>
+                    <div className="h-1.5 bg-slate-100 rounded-full">
+                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${hasSpend ? pct : 0}%`, background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
                     </div>
+                    {savingsFlag && <p className="text-[10px] text-amber-500 mt-1 font-medium">{savingsFlag}</p>}
                   </div>
-                  <div className="h-1.5 bg-slate-100 rounded-full">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
-                  </div>
-                  {savingsFlag && <p className="text-[10px] text-amber-500 mt-1 font-medium">{savingsFlag}</p>}
-                </div>
-              )
-            })}
+                )
+              })
+            })()}
           </div>
         </div>
 
@@ -611,18 +608,20 @@ export default function CostsPage() {
             </a>
           </div>
 
-          <div className="flex items-center justify-between mb-3.5">
-            <div>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Optimization Confidence</p>
-              <div className="flex items-center gap-2">
-                <div className="h-1 bg-slate-100 rounded-full w-24">
-                  <div className="h-full bg-green-500 rounded-full" style={{ width: '94%' }} />
+          {(isDemoActive || totalSavings > 0) && (
+            <div className="flex items-center justify-between mb-3.5">
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Optimization Confidence</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-1 bg-slate-100 rounded-full w-24">
+                    <div className="h-full bg-green-500 rounded-full" style={{ width: '94%' }} />
+                  </div>
+                  <span className="text-sm font-bold text-green-600">94%</span>
                 </div>
-                <span className="text-sm font-bold text-green-600">94%</span>
               </div>
+              <span className="text-[10px] text-green-600 font-semibold bg-green-50 px-2.5 py-1 rounded-full border border-green-200">Safe to apply</span>
             </div>
-            <span className="text-[10px] text-green-600 font-semibold bg-green-50 px-2.5 py-1 rounded-full border border-green-200">Safe to apply</span>
-          </div>
+          )}
 
           <div className="bg-green-50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -648,7 +647,7 @@ export default function CostsPage() {
                   {rec.risk === 'safe' ? 'Zero Risk' : rec.risk === 'caution' ? 'Low Risk' : 'Review Required'}
                 </span>
               </div>
-            )) : [
+            )) : isDemoActive ? [
               { title: 'RDS Reserved Instance Pricing', savings: 890, risk: 'safe' as const },
               { title: 'Idle RDS Instances',            savings: 445, risk: 'safe' as const },
               { title: 'Underloaded EC2 Instances',     savings: 362, risk: 'caution' as const },
@@ -662,7 +661,11 @@ export default function CostsPage() {
                   {item.risk === 'safe' ? 'Zero Risk' : 'Low Risk'}
                 </span>
               </div>
-            ))}
+            )) : (
+              <div className="p-6 text-center">
+                <p className="text-xs text-slate-500 m-0">No optimization recommendations yet. Run a cost scan to identify savings opportunities.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
