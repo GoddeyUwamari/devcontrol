@@ -92,7 +92,7 @@ export default function InvoicesPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1">
-            {hasData ? 'Billing Intelligence' : 'Connect AWS to Unlock Billing Intelligence'}
+            {isConnected || isDemoActive ? 'Billing Intelligence' : 'Connect AWS to Unlock Billing Intelligence'}
           </h1>
           <p className="text-sm text-slate-500 leading-relaxed">
             {hasData
@@ -221,34 +221,30 @@ export default function InvoicesPage() {
         </>
 
       ) : isConnected && displayError && displayInvoices.length === 0 ? (
-        <>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5 flex items-start gap-3">
-            <span className="text-base shrink-0 mt-0.5">⚠️</span>
-            <div className="flex-1">
-              <p className="text-xs font-semibold text-amber-900 mb-1">Having trouble fetching billing data</p>
-              <p className="text-xs text-amber-700 leading-relaxed mb-3">This is usually temporary. Check your AWS connection or try again.</p>
-              <div className="flex gap-2">
-                <button onClick={() => refetch()} className="bg-transparent border border-amber-300 text-amber-900 text-xs font-medium rounded-lg px-3.5 py-1.5 cursor-pointer hover:bg-amber-100 transition-colors">↺ Retry</button>
-                <button className="bg-transparent border border-amber-300 text-amber-900 text-xs font-medium rounded-lg px-3.5 py-1.5 cursor-pointer hover:bg-amber-100 transition-colors">Reconnect AWS</button>
-              </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5 flex items-start gap-3">
+          <span className="text-base shrink-0 mt-0.5">⚠️</span>
+          <div className="flex-1">
+            <p className="text-xs font-semibold text-amber-900 mb-1">Having trouble fetching billing data</p>
+            <p className="text-xs text-amber-700 leading-relaxed mb-3">This is usually temporary. Check your AWS connection or try again.</p>
+            <div className="flex gap-2">
+              <button onClick={() => refetch()} className="bg-transparent border border-amber-300 text-amber-900 text-xs font-medium rounded-lg px-3.5 py-1.5 cursor-pointer hover:bg-amber-100 transition-colors">↺ Retry</button>
             </div>
-          </div>
-          <WhatYoullSee />
-        </>
-
-      ) : isConnected && !displayError && displayInvoices.length === 0 ? (
-        <>
-          <div className="bg-white border border-slate-100 rounded-2xl p-8 sm:p-16 text-center">
-            <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-5">
-              <FileText size={22} className="text-slate-400" />
-            </div>
-            <p className="text-base font-medium text-slate-900 mb-2.5">No invoices yet</p>
-            <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
-              Your AWS account is connected. Invoices will appear here after your first billing cycle completes — typically within 24–48 hours.
+            <p className="text-xs text-amber-700 leading-relaxed mt-3">
+              This usually means billing permissions are missing from your IAM role. Add ce:GetCostAndUsage to your DevControl IAM policy and retry.
             </p>
           </div>
-          <WhatYoullSee />
-        </>
+        </div>
+
+      ) : isConnected && !displayError && displayInvoices.length === 0 ? (
+        <div className="bg-white border border-slate-100 rounded-2xl p-8 sm:p-16 text-center">
+          <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-5">
+            <FileText size={22} className="text-slate-400" />
+          </div>
+          <p className="text-base font-medium text-slate-900 mb-2.5">No invoices yet</p>
+          <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
+            Your AWS account is connected. Invoices will appear here after your first billing cycle completes — typically within 24–48 hours.
+          </p>
+        </div>
 
       ) : (
         <>
