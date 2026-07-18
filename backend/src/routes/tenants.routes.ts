@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../config/database';
+import { authenticate } from '../middleware/auth.middleware';
 
 const router = Router();
+
+// All tenant routes require authentication
+router.use(authenticate);
 
 // Resolve org ID: use authenticated user's org or fall back to demo org
 function getOrgId(req: Request): string | null {
