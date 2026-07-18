@@ -396,7 +396,7 @@ export default function EfficiencyPage() {
           .map(([name, { cost, scores }]) => ({
             name,
             score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
-            cost:  Math.round(cost * 30),
+            cost:  Math.round(cost),
             type:  '',
           }))
           .sort((a, b) => b.score - a.score)
