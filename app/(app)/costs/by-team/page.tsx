@@ -11,6 +11,7 @@ import { usePlan } from '@/lib/hooks/use-plan'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
 import Link from 'next/link'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
@@ -71,8 +72,15 @@ export default function CostsByTeamPage() {
     enabled: !isDemoActive,
   })
 
+  const { data: awsAccounts } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccounts,
+    enabled: !isDemoActive,
+  })
+
   const data = isDemoActive ? DEMO_DATA : costsData?.data ?? null
   const totalCost = data?.total_monthly_cost ?? 0
+  const isAwsConnected = isDemoActive || (awsAccounts?.length ?? 0) > 0
 
   // ── Free gate ──
   if (isFree && !isDemoActive) {
@@ -151,7 +159,7 @@ export default function CostsByTeamPage() {
           { label: 'Total Monthly Spend', value: `$${(totalCost).toLocaleString()}`,    icon: DollarSign, color: '#7C3AED' },
           { label: 'Annual Projection',   value: `$${(totalCost * 12).toLocaleString()}`, icon: TrendingUp, color: '#4f8ef7' },
           { label: 'Teams Tracked',       value: String(data?.by_team?.length ?? 0),     icon: Users,      color: '#38c9a0' },
-          { label: 'Top Spender',         value: topItem ? topItem.name.split(' ')[0] : '—', icon: DollarSign, color: '#e05d2e' },
+          { label: 'Top Spender',         value: topItem ? topItem.name.split(' ')[0] : 'N/A', icon: DollarSign, color: '#e05d2e' },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-white border border-gray-100 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -192,7 +200,11 @@ export default function CostsByTeamPage() {
             <div className="h-64 flex flex-col items-center justify-center">
               <Users size={32} className="text-slate-300 mb-3" />
               <p className="text-slate-500 text-sm">No cost data available yet.</p>
-              <p className="text-slate-400 text-xs mt-1">Connect your AWS account and sync to see cost attribution.</p>
+              <p className="text-slate-400 text-xs mt-1">
+                {isAwsConnected
+                  ? 'No cost allocation tags found in your AWS account. To enable cost attribution, add resource tags (e.g. Team=Backend) in the AWS Console and run a sync.'
+                  : 'Connect your AWS account and sync to see cost attribution.'}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
