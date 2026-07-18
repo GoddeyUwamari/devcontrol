@@ -373,7 +373,7 @@ export default function DashboardPage() {
 
   const monthOverMonthCostChange = isDemoActive ? null : computeMonthOverMonthCostChange(costTrend)
   const mtdCostDeltaColor = monthOverMonthCostChange !== null
-    ? (monthOverMonthCostChange > 0 ? '#DC2626' : monthOverMonthCostChange < 0 ? '#059669' : '#D97706')
+    ? (monthOverMonthCostChange > 0 ? (currentSpend >= 100 ? '#DC2626' : '#D97706') : monthOverMonthCostChange < 0 ? '#059669' : '#D97706')
     : '#D97706'
   const MtdCostDeltaIcon = monthOverMonthCostChange !== null
     ? (monthOverMonthCostChange > 0 ? TrendingUp : monthOverMonthCostChange < 0 ? TrendingDown : Minus)
