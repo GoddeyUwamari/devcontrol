@@ -343,7 +343,7 @@ export default function EfficiencyPage() {
   const scatterData = isDemoActive
     ? DEMO_SCATTER_DATA
     : resources.map(r => {
-        const cost = (r.costPerMonth ?? 0) * 30
+        const cost = r.costPerMonth ?? 0
         const eff  = deriveEfficiencyScore(r)
         return {
           x:    Math.round(cost),
@@ -352,6 +352,9 @@ export default function EfficiencyPage() {
           q:    deriveQuadrant(cost, eff),
         }
       })
+
+  // Decides whether the X-axis ticks render as "$XK" or plain dollars (see formatAxisDollar).
+  const maxScatterX = scatterData.reduce((max, d) => Math.max(max, d.x), 0)
 
   const filteredScatter = scatterFilter === 'all' ? scatterData : scatterData.filter(d => d.q === scatterFilter)
   const scatterByQ = ['strategic', 'efficient', 'at-risk', 'low-roi'].map(q => ({
@@ -552,7 +555,7 @@ export default function EfficiencyPage() {
           <ResponsiveContainer width="100%" height={240}>
             <ScatterChart margin={{ top: 4, right: 4, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-              <XAxis type="number" dataKey="x" name="cost" domain={[-1000, 40000]} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'} label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, fill: '#6b7280', fontSize: 11 }} />
+              <XAxis type="number" dataKey="x" name="cost" domain={[0, 'auto']} padding={{ left: 20 }} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} tickFormatter={v => formatAxisDollar(v, maxScatterX)} label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, fill: '#6b7280', fontSize: 11 }} />
               <YAxis type="number" dataKey="y" name="efficiency" domain={[0, 100]} tick={isDemoActive ? { fill: '#6b7280', fontSize: 10 } : false} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={isDemoActive ? { value: 'Efficiency', angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 11 } : undefined} />
               <ZAxis range={[60, 60]} />
               <Tooltip cursor={{ strokeDasharray: '3 3', stroke: '#e5e7eb' }} content={<CustomScatterTooltip isDemoActive={isDemoActive} />} />
