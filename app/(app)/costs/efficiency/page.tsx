@@ -159,6 +159,26 @@ function efficiencyColor(score: number): string {
   return '#ef4444'
 }
 
+// Axis tick formatter: dividing by 1000 for the "$XK" suffix turns small
+// real-account spend (e.g. $8.50) into a meaningless "$0K". Below the K
+// threshold, render plain dollars instead — decided by the dataset's max
+// so every tick on a given axis uses the same format.
+function formatAxisDollar(value: number, maxValue: number): string {
+  if (maxValue < 1000) {
+    return '$' + (Number.isInteger(value) ? value : value.toFixed(1))
+  }
+  return '$' + (value / 1000).toFixed(0) + 'K'
+}
+
+// Same fix for the per-service cost label, decided independently per value
+// since list rows can span very different cost scales.
+function formatServiceCost(cost: number): string {
+  if (cost < 1000) {
+    return '$' + (Number.isInteger(cost) ? cost : cost.toFixed(2)) + '/mo'
+  }
+  return '$' + (cost / 1000).toFixed(1) + 'K/mo'
+}
+
 // deriveEfficiencyScore() is a cost-tier heuristic, not a real utilization metric —
 // shown to real accounts only via quadrant placement (see deriveQuadrant), never as
 // a displayed percentage. This is the explanation surfaced in its place.
@@ -394,6 +414,13 @@ export default function EfficiencyPage() {
         Other:    Math.round(p.other),
       }))
 
+  // Max stacked total across months — decides whether the Y-axis ticks
+  // render as "$XK" or plain dollars (see formatAxisDollar).
+  const maxBarStack = barData.reduce((max, d) => {
+    const total = Object.entries(d).reduce((sum, [key, val]) => key === 'month' ? sum : sum + (Number(val) || 0), 0)
+    return Math.max(max, total)
+  }, 0)
+
   // ── Anomalies ──
   const anomalies = isDemoActive
     ? DEMO_ANOMALIES
@@ -485,7 +512,7 @@ export default function EfficiencyPage() {
                 <BarChart data={barData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                   <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
-                  <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'} />
+                  <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => formatAxisDollar(v, maxBarStack)} />
                   <Tooltip content={<CustomBarTooltip />} />
                   {Object.entries(barColors).map(([name, color]) => (
                     <Bar key={name} dataKey={name} stackId="a" fill={color} radius={name === 'Other' ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
@@ -525,7 +552,7 @@ export default function EfficiencyPage() {
           <ResponsiveContainer width="100%" height={240}>
             <ScatterChart margin={{ top: 4, right: 4, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-              <XAxis type="number" dataKey="x" name="cost" domain={[0, 40000]} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'} label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, fill: '#6b7280', fontSize: 11 }} />
+              <XAxis type="number" dataKey="x" name="cost" domain={[-1000, 40000]} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'K'} label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, fill: '#6b7280', fontSize: 11 }} />
               <YAxis type="number" dataKey="y" name="efficiency" domain={[0, 100]} tick={isDemoActive ? { fill: '#6b7280', fontSize: 10 } : false} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={isDemoActive ? { value: 'Efficiency', angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 11 } : undefined} />
               <ZAxis range={[60, 60]} />
               <Tooltip cursor={{ strokeDasharray: '3 3', stroke: '#e5e7eb' }} content={<CustomScatterTooltip isDemoActive={isDemoActive} />} />
@@ -711,7 +738,7 @@ export default function EfficiencyPage() {
                 )}
               </div>
               <span style={{ fontSize: '12px', fontWeight: 700, color: isDemoActive ? efficiencyColor(s.score) : '#9ca3af', width: '36px', textAlign: 'right', flexShrink: 0 }}>{isDemoActive ? `${s.score}%` : '—'}</span>
-              <span style={{ fontSize: '11px', color: '#6b7280', width: '70px', textAlign: 'right', flexShrink: 0 }}>${(s.cost / 1000).toFixed(1)}K/mo</span>
+              <span style={{ fontSize: '11px', color: '#6b7280', width: '70px', textAlign: 'right', flexShrink: 0 }}>{formatServiceCost(s.cost)}</span>
             </div>
           ))}
         </div>
