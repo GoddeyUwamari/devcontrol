@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import {
-  Search, Download, TrendingUp, TrendingDown,
+  Search, Download, TrendingUp, TrendingDown, Minus,
   Sparkles, ArrowRight, Loader2, X, ChevronRight,
   Zap, Lock,
 } from 'lucide-react'
@@ -187,7 +187,9 @@ export default function CostsPage() {
     {
       key: 'savings', label: 'Identified Savings',
       value: optimizationLoading ? '—' : `$${displaySavings.toLocaleString()}/mo`,
-      sub: `$${displayAnnual.toLocaleString()} annually · ${mtdSpend > 0 ? Math.round((displaySavings / mtdSpend) * 100) : 290}% of current spend`,
+      sub: mtdSpend > 0
+        ? `$${displayAnnual.toLocaleString()} annually · ${Math.round((displaySavings / mtdSpend) * 100)}% of current spend`
+        : `$${displayAnnual.toLocaleString()} annually`,
       subColor: 'text-green-600', TrendIcon: TrendingDown, trendColor: 'text-green-600',
       href: '/cost-optimization', borderTop: 'border-t-[3px] border-t-green-500', valueColor: 'text-green-600',
     },
@@ -203,8 +205,12 @@ export default function CostsPage() {
     {
       key: 'nextmonth', label: 'Next Month Forecast',
       value: forecastLoading && !isDemoActive ? '—' : `$${nextMonthForecast.toLocaleString()}`,
-      sub: `+9% projected · $${nextMonthBaseline.toLocaleString()} baseline`,
-      subColor: 'text-amber-500', TrendIcon: TrendingUp, trendColor: 'text-amber-500',
+      sub: nextMonthBaseline > 0
+        ? `+9% projected · $${nextMonthBaseline.toLocaleString()} baseline`
+        : `$${nextMonthBaseline.toLocaleString()} baseline`,
+      subColor: nextMonthBaseline > 0 ? 'text-amber-500' : 'text-slate-500',
+      TrendIcon: nextMonthBaseline > 0 ? TrendingUp : Minus,
+      trendColor: nextMonthBaseline > 0 ? 'text-amber-500' : 'text-slate-400',
       href: '/forecast', borderTop: '', valueColor: 'text-slate-900',
     },
     {
@@ -572,7 +578,7 @@ export default function CostsPage() {
               const pctOfTotal = totalServiceSpend > 0 ? Math.round((amount / totalServiceSpend) * 100) : pct
               const isCompute = name.startsWith('Compute')
               const isDatabase = name.startsWith('Database')
-              const savingsFlag = isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null
+              const savingsFlag = amount === 0 ? null : isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null
               return (
                 <div key={name}>
                   <div className="flex items-center justify-between mb-1.5">
