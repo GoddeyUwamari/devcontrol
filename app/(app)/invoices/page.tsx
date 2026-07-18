@@ -230,7 +230,8 @@ export default function InvoicesPage() {
               <button onClick={() => refetch()} className="bg-transparent border border-amber-300 text-amber-900 text-xs font-medium rounded-lg px-3.5 py-1.5 cursor-pointer hover:bg-amber-100 transition-colors">↺ Retry</button>
             </div>
             <p className="text-xs text-amber-700 leading-relaxed mt-3">
-              This usually means billing permissions are missing from your IAM role. Add ce:GetCostAndUsage to your DevControl IAM policy and retry.
+              <strong className="font-semibold text-amber-900">Missing billing permissions?</strong>{' '}
+              DevControl needs <code className="bg-amber-100 px-1 rounded font-mono text-xs">ce:GetCostAndUsage</code> access to fetch your AWS invoices. Add this permission to your DevControl IAM role in the AWS Console, then click Retry.
             </p>
           </div>
         </div>
