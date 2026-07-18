@@ -533,10 +533,10 @@ export default function ServicesPage() {
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700 m-0">Monthly Cost</p>
-            <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide">Partial</span>
+            <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide">Estimated</span>
           </div>
           <div className="text-3xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalMonthlyCost > 0 ? costDisplay : '—'}</div>
-          <p className="text-slate-500 text-xs font-medium m-0">Aggregate · breakdown in progress</p>
+          <p className="text-slate-500 text-xs font-medium m-0">Based on instance type pricing · not live billing data</p>
         </div>
       </div>
 
