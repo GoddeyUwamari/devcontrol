@@ -507,40 +507,6 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* ── EXECUTIVE SUMMARY STRIP ── */}
-      <div className="bg-white border border-gray-100 rounded-xl px-4 sm:px-5 py-3 mb-4">
-        {/* Mobile: 2x2 grid */}
-        <div className="grid grid-cols-2 gap-2 sm:hidden text-sm">
-          <div><span className="text-slate-500 font-medium">Cost: </span>
-            {totalMonthlyCost > 0
-              ? <span className="font-bold text-slate-900">{costDisplay}</span>
-              : <span className="text-slate-400">Syncing...</span>}
-          </div>
-          <div><span className="text-slate-500 font-medium">At risk: </span><span className="font-bold text-red-600">{warningCount}</span></div>
-          <div><span className="text-slate-500 font-medium">Health: </span><span className="font-medium text-slate-900">{warningCount > 0 ? 'Degraded' : 'Stable'}</span></div>
-          <div><span className="text-slate-500 font-medium">Monitored: </span><span className="font-medium text-slate-900">{totalServices}</span></div>
-        </div>
-        {/* Desktop: inline */}
-        <div className="hidden sm:flex items-center justify-between">
-          <div className="flex items-center">
-            <span className="text-sm font-medium text-slate-500">
-              Total cost: {totalMonthlyCost > 0
-                ? <span className="text-slate-900 font-bold">{costDisplay}</span>
-                : <span className="text-slate-400 font-medium">Syncing...</span>}
-            </span>
-            <span className="w-px h-3.5 bg-slate-200 mx-4 inline-block" />
-            <span className="text-sm font-medium text-slate-500">Services at risk: <span className="text-red-600 font-bold">{warningCount}</span></span>
-            <span className="w-px h-3.5 bg-slate-200 mx-4 inline-block" />
-            <span className="text-sm font-medium text-slate-500">System health: <span className="text-slate-900 font-medium">{warningCount > 0 ? 'Degraded' : 'Stable'}</span></span>
-            <span className="w-px h-3.5 bg-slate-200 mx-4 inline-block" />
-            <span className="text-sm font-medium text-slate-500">{totalServices} services monitored</span>
-          </div>
-          {warningCount > 0 && (
-            <span className="text-red-600 text-xs font-semibold">Recommended: Resolve {warningCount} critical service{warningCount !== 1 ? 's' : ''} now</span>
-          )}
-        </div>
-      </div>
-
       {/* ── 4 KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mb-8">
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
