@@ -496,7 +496,11 @@ function InfrastructureContent() {
             <a href="/cost-optimization" className="flex items-center gap-1.5 bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold no-underline">
               <Check size={13} /> Apply Recommended Fixes
             </a>
-            <p className="text-[10px] text-slate-500 text-right">Applies 3 zero-risk optimizations · No downtime · Est. savings: $1,060/mo</p>
+            {(isDemoActive || (realSavingsTotal && realSavingsTotal > 0)) && (
+              <p className="text-[10px] text-slate-500 text-right">
+                Applies {zeroRiskCount} zero-risk optimization{zeroRiskCount !== 1 ? 's' : ''} · No downtime · Est. savings: ${Math.round(totalRecoverable).toLocaleString()}/mo
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -594,7 +598,10 @@ function InfrastructureContent() {
             <span className="text-xs text-gray-400">Last 30 days</span>
           </div>
           <p className="text-[13px] text-slate-500 mb-3.5">
-            Top concentration: <strong className="text-slate-900">Analytics (20%)</strong> and <strong className="text-slate-900">PostgreSQL (16%)</strong> — primary rightsizing candidates driving $1,060/mo in recoverable waste.
+            Top concentration: <strong className="text-slate-900">{costByService[0].name} ({costByService[0].pct}%)</strong>
+            {costByService[1] && <> and <strong className="text-slate-900">{costByService[1].name} ({costByService[1].pct}%)</strong></>}
+            {' '}— primary rightsizing candidate{costByService[1] ? 's' : ''}
+            {totalRecoverable > 0 && <> driving <strong className="text-slate-900">${Math.round(totalRecoverable).toLocaleString()}/mo</strong> in recoverable waste</>}.
           </p>
           <div className="flex flex-col gap-2.5">
             {costByService.map((row) => (
