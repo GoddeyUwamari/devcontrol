@@ -116,7 +116,7 @@ export default function AlertHistoryPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
             <div className="flex items-center gap-4">
               <div className={`w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center shrink-0 ${scoreBg(displayReadiness.readiness_score)}`}>
-                <span className="text-xl font-bold leading-none" style={{ color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.readiness_score}</span>
+                <span className="text-sm font-bold leading-none" style={{ color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.readiness_score}</span>
                 <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-widest">/100</span>
               </div>
               <div>
@@ -237,7 +237,7 @@ export default function AlertHistoryPage() {
           {isLoading && !isDemoActive ? (
             <div className="p-12 text-center"><RefreshCw size={18} className="text-slate-300 mx-auto mb-3" /><p className="text-sm text-slate-400">Loading alert history...</p></div>
           ) : filteredAlerts.length === 0 ? (
-            <EmptyHistory />
+            <EmptyHistory alertCoverageScore={displayReadiness?.components.alert_coverage.score} />
           ) : filteredAlerts.map((alert: Alert, idx: number) => {
             const sevCls = alert.severity === 'critical' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
             const cost = (alert as any).costImpact
@@ -260,7 +260,7 @@ export default function AlertHistoryPage() {
 
         {/* Mobile cards */}
         <div className="sm:hidden flex flex-col divide-y divide-slate-50">
-          {filteredAlerts.length === 0 ? <EmptyHistory /> : filteredAlerts.map((alert: Alert) => {
+          {filteredAlerts.length === 0 ? <EmptyHistory alertCoverageScore={displayReadiness?.components.alert_coverage.score} /> : filteredAlerts.map((alert: Alert) => {
             const sevCls = alert.severity === 'critical' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
             const cost = (alert as any).costImpact
             return (
@@ -286,14 +286,17 @@ export default function AlertHistoryPage() {
   )
 }
 
-function EmptyHistory() {
+function EmptyHistory({ alertCoverageScore }: { alertCoverageScore?: number }) {
+  const isFullCoverage = alertCoverageScore === 100
   return (
     <div className="p-10 sm:p-16 text-center">
       <div className="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-4"><Shield size={20} className="text-violet-600" /></div>
       <p className="text-base font-semibold text-slate-900 mb-2">No incidents recorded yet</p>
       <p className="text-sm text-slate-400 leading-relaxed mb-1 max-w-sm mx-auto">When alerts are triggered, this timeline will show what happened, which service was affected, how long it lasted, and how quickly it was resolved.</p>
       <p className="text-xs text-slate-300 mb-6">Use this to audit reliability and improve engineering response times.</p>
-      <a href="/observability/alerts" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-xs font-semibold no-underline transition-colors">Configure Alerts →</a>
+      <a href={isFullCoverage ? '/monitoring' : '/observability/alerts'} className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-xs font-semibold no-underline transition-colors">
+        {isFullCoverage ? 'Fix Monitoring Coverage →' : 'Configure Alerts →'}
+      </a>
     </div>
   )
 }
