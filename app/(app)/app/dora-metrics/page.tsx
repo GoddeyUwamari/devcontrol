@@ -48,7 +48,7 @@ interface CustomBenchmark { metric_name: string; target_value: number; target_un
 
 const METRIC_CONFIGS = [
   { metricKey: 'deployment_frequency', label: 'Deployment Frequency',   unit: 'per day',    unitLabel: 'deployments/day', higherBetter: true,  industryElite: 1,  placeholder: 'e.g. 2',  hint: 'Teams performing above this threshold are classified Elite.' },
-  { metricKey: 'lead_time',            label: 'Lead Time for Changes',  unit: 'hours',      unitLabel: 'hours',           higherBetter: false, industryElite: 24, placeholder: 'e.g. 4',  hint: 'Teams recovering faster than this threshold are classified Elite.' },
+  { metricKey: 'lead_time',            label: 'Lead Time for Changes',  unit: 'hours',      unitLabel: 'hours',           higherBetter: false, industryElite: 24, placeholder: 'e.g. 4',  hint: 'Teams deploying changes faster than this threshold are classified Elite.' },
   { metricKey: 'change_failure_rate',  label: 'Change Failure Rate',    unit: 'percentage', unitLabel: '%',               higherBetter: false, industryElite: 15, placeholder: 'e.g. 5',  hint: 'Teams with a failure rate below this threshold are classified Elite.' },
   { metricKey: 'recovery_time',        label: 'Mean Time to Recovery',  unit: 'minutes',    unitLabel: 'minutes',         higherBetter: false, industryElite: 60, placeholder: 'e.g. 30', hint: 'Teams recovering faster than this threshold are classified Elite.' },
 ] as const;
@@ -124,10 +124,10 @@ export default function DORAMetricsPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => metrics && exportToCSV(metrics, dateRange)} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
+          <button disabled={dataState === 'inactive' && !isDemoActive} onClick={() => metrics && exportToCSV(metrics, dateRange)} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
             <FileText size={13} /> Export CSV
           </button>
-          <button onClick={exportToPDF} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
+          <button disabled={dataState === 'inactive' && !isDemoActive} onClick={exportToPDF} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
             <Download size={13} /> Download PDF
           </button>
         </div>
@@ -223,7 +223,10 @@ export default function DORAMetricsPage() {
               </div>
             </div>
           )}
-          <a href="/ai-reports" className="text-[11px] font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
+          {dataState === 'inactive' && !isDemoActive
+            ? <a href="/connect-aws" className="text-[11px] font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Connect CI/CD <ArrowRight size={10} /></a>
+            : <a href="/ai-reports" className="text-[11px] font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
+          }
         </div>
       </div>
 
@@ -316,7 +319,8 @@ export default function DORAMetricsPage() {
             { label: 'Change Failure Rate',   metric: metrics.changeFailureRate,  icon: AlertTriangle, formatVal: (v: number) => `${v.toFixed(1)}%`,  change: isDemoActive ? '−0.3% · test coverage improving' : null },
             { label: 'Mean Time to Recovery', metric: metrics.mttr,               icon: Timer,       formatVal: (v: number) => `${Math.round(v)} min`, change: isDemoActive ? '−22 min · incident response process maturing' : null },
           ].map(({ label, metric, icon: Icon, formatVal, change }) => {
-            const ts = tierStyle(metric.benchmark)
+            const isInactiveState = dataState === 'inactive' && !isDemoActive
+            const ts = isInactiveState ? { color: '#94A3B8', bg: '#F1F5F9' } : tierStyle(metric.benchmark)
             const trendData = generateTrendData(metric.value)
             return (
               <Card key={label} style={{ borderTop: `3px solid ${ts.color}`, overflow: 'hidden' }}>
@@ -324,7 +328,7 @@ export default function DORAMetricsPage() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</CardTitle>
                     <div className="flex flex-col items-end gap-1">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.color}30` }}>{metric.benchmark.charAt(0).toUpperCase() + metric.benchmark.slice(1)}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.color}30` }}>{isInactiveState ? 'N/A' : metric.benchmark.charAt(0).toUpperCase() + metric.benchmark.slice(1)}</span>
                       {(metric as DORAMetric).isCustomBenchmark && <span className="text-[9px] font-semibold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5 whitespace-nowrap">Custom benchmark</span>}
                     </div>
                   </div>
