@@ -153,7 +153,7 @@ export default function EnterprisePage() {
                     <div key={f} className="text-xs text-slate-500 flex items-center gap-1.5"><span className="text-green-600">✓</span> {f}</div>
                   ))}
                 </div>
-                {!(isPro && !isEnterprise) && <button className="w-full bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg py-2 text-xs font-medium cursor-pointer transition-colors">Upgrade to Pro →</button>}
+                {!(isPro || isEnterprise) && <button className="w-full bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg py-2 text-xs font-medium cursor-pointer transition-colors">Upgrade to Pro →</button>}
               </div>
               <div className="border border-slate-200 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-1">
@@ -275,8 +275,14 @@ export default function EnterprisePage() {
         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Invoices &amp; Billing</p>
         {displayInvoices.length === 0 ? (
           <div>
-            <p className="text-sm text-slate-900 mb-1">Your next invoice: <strong>$0</strong> · Free plan</p>
-            <p className="text-xs text-slate-500 mb-3">Upgrade to Pro to unlock billing history and downloadable invoices.</p>
+            {isEnterprise || isPro ? (
+              <p className="text-sm text-slate-900 mb-3">Your plan: <strong>{tier.charAt(0).toUpperCase() + tier.slice(1)}</strong></p>
+            ) : (
+              <>
+                <p className="text-sm text-slate-900 mb-1">Your next invoice: <strong>$0</strong> · Free plan</p>
+                <p className="text-xs text-slate-500 mb-3">Upgrade to Pro to unlock billing history and downloadable invoices.</p>
+              </>
+            )}
             <button onClick={() => router.push('/billing')} className="text-xs text-violet-700 bg-transparent border-none cursor-pointer p-0 hover:text-violet-900 transition-colors">View billing details →</button>
           </div>
         ) : (
