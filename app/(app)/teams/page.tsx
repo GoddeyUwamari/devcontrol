@@ -61,12 +61,14 @@ export default function TeamsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Teams &amp; Ownership</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Assign responsibility across services, costs, and infrastructure across your organization.</p>
+          <p className="text-sm text-slate-500 leading-relaxed">Assign responsibility for services, costs, and infrastructure across your organization.</p>
         </div>
-        <button onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold border-none cursor-pointer shadow-sm shadow-violet-200 transition-colors whitespace-nowrap self-start">
-          <Plus size={14} />{displayTeams.length === 0 ? 'Create Your First Team' : 'Create Team'}
-        </button>
+        {displayTeams.length > 0 && (
+          <button onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold border-none cursor-pointer shadow-sm shadow-violet-200 transition-colors whitespace-nowrap self-start">
+            <Plus size={14} /> Create Team
+          </button>
+        )}
       </div>
 
       {/* Loading */}
@@ -89,7 +91,7 @@ export default function TeamsPage() {
           <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-14 text-center max-w-lg mx-auto">
             <div className="w-14 h-14 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto mb-5"><Users size={24} className="text-violet-700" /></div>
             <h2 className="text-lg font-bold text-slate-900 mb-2.5">No teams yet</h2>
-            <p className="text-sm text-slate-500 leading-relaxed mb-7">Create your first team to start attributing services, costs, and alerts to the right groups.</p>
+            <p className="text-sm text-slate-500 leading-relaxed mb-7">Get started by setting up your engineering, operations, or product groups.</p>
             <div className="text-left mb-7 flex flex-col gap-2.5">
               {['Map cloud services and infrastructure to owning teams', 'Track monthly cost per team with automatic attribution', 'Route alerts and incidents to the right on-call group', 'Measure team-level compliance posture and risk score'].map(item => (
                 <div key={item} className="flex items-start gap-2.5">
