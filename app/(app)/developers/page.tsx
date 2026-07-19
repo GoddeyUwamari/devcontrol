@@ -196,9 +196,11 @@ export default function DevelopersPage() {
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">API Keys</p>
             <p className="text-xs text-slate-400">{apiKeys.length} active key{apiKeys.length !== 1 ? 's' : ''}</p>
           </div>
-          <button onClick={() => setShowNewKey(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors whitespace-nowrap self-start sm:self-auto">
-            <Plus size={13} /> Generate Key
-          </button>
+          {apiKeys.length > 0 && (
+            <button onClick={() => setShowNewKey(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors whitespace-nowrap self-start sm:self-auto">
+              <Plus size={13} /> Generate Key
+            </button>
+          )}
         </div>
 
         {apiKeys.length === 0 ? (
@@ -269,24 +271,26 @@ export default function DevelopersPage() {
               {atWebhookLimit && <span className="ml-2 text-amber-600 font-semibold">Limit reached</span>}
             </p>
           </div>
-          <button
-            onClick={() => !atWebhookLimit && setShowNewWebhook(true)}
-            disabled={atWebhookLimit}
-            title={atWebhookLimit ? 'Upgrade to Enterprise for unlimited webhooks' : 'Add webhook endpoint'}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold border-none transition-colors whitespace-nowrap self-start sm:self-auto ${
-              atWebhookLimit
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-violet-600 hover:bg-violet-700 text-white cursor-pointer'
-            }`}>
-            <Plus size={13} /> Add Endpoint
-          </button>
+          {webhooks.length > 0 && (
+            <button
+              onClick={() => !atWebhookLimit && setShowNewWebhook(true)}
+              disabled={atWebhookLimit}
+              title={atWebhookLimit ? 'Upgrade to Enterprise for unlimited webhooks' : 'Add webhook endpoint'}
+              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold border-none transition-colors whitespace-nowrap self-start sm:self-auto ${
+                atWebhookLimit
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : 'bg-violet-600 hover:bg-violet-700 text-white cursor-pointer'
+              }`}>
+              <Plus size={13} /> Add Endpoint
+            </button>
+          )}
         </div>
 
         {webhooks.length === 0 ? (
           <div className="text-center py-6">
             <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center mx-auto mb-3 text-lg">⚡</div>
             <p className="text-sm font-medium text-slate-900 mb-1.5">No webhooks configured</p>
-            <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-xs mx-auto">Add a webhook endpoint to stream real-time events — alerts, cost changes, deployments — directly to your systems.</p>
+            <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-sm mx-auto">Add a webhook endpoint to stream real-time events — alerts, cost changes, deployments — directly to your systems.</p>
             <button onClick={() => setShowNewWebhook(true)} className="bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg px-4 py-2 text-xs font-medium cursor-pointer transition-colors">+ Add Endpoint</button>
           </div>
         ) : (
