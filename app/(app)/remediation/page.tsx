@@ -477,7 +477,7 @@ export default function RemediationPage() {
           <p style={{ fontSize: '0.875rem', color: '#9CA3AF', margin: 0 }}>
             Create remediation workflows from the Cost Optimization page.
           </p>
-          <a href="/costs/cost-optimization" className="inline-flex items-center gap-2 bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg text-sm font-semibold no-underline transition-colors mt-4">
+          <a href="/cost-optimization" className="inline-flex items-center gap-2 bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg text-sm font-semibold no-underline transition-colors mt-4">
             Go to Cost Optimization →
           </a>
         </div>
