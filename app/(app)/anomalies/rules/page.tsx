@@ -79,7 +79,7 @@ const SEVERITY_CONFIG = {
 
 const DEFAULT_RULE: CreateRulePayload = {
   name: '', description: '', metric: 'total_cost',
-  condition: 'greater_than', threshold: 0,
+  condition: 'greater_than', threshold: 100,
   timeWindow: '24h', severity: 'warning',
 }
 
@@ -385,7 +385,7 @@ export default function AnomalyRulesPage() {
         <div className="bg-white border border-gray-100 rounded-xl p-12 text-center">
           <p className="text-slate-400 text-sm">Loading rules...</p>
         </div>
-      ) : rules.length === 0 ? (
+      ) : rules.length === 0 && !showForm ? (
         <div className="bg-white border border-gray-100 rounded-xl p-12 text-center">
           <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center mx-auto mb-4">
             <SlidersHorizontal className="w-5 h-5 text-violet-600" />
