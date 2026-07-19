@@ -142,7 +142,7 @@ export default function AlertHistoryPage() {
             {Object.values(displayReadiness.components).map((comp: any) => {
               const isRisk = comp.status === 'risk', isWarn = comp.status === 'warning'
               return (
-                <div key={comp.label} className={`rounded-xl p-3.5 border ${isRisk ? 'bg-red-50 border-l-[3px] border-red-600 border-t-red-100 border-r-red-100 border-b-red-100' : isWarn ? 'bg-amber-50 border-l-[3px] border-amber-500 border-t-amber-100 border-r-amber-100 border-b-amber-100' : 'bg-slate-50 border-slate-100'}`}>
+                <div key={comp.label} className={`rounded-xl p-3.5 border ${isRisk ? 'bg-red-50 border-l-2 border-red-600 border-t-red-100 border-r-red-100 border-b-red-100' : isWarn ? 'bg-amber-50 border-l-2 border-amber-500 border-t-amber-100 border-r-amber-100 border-b-amber-100' : 'bg-slate-50 border-slate-100'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{comp.label}</p>
                     {comp.status === 'good' ? <CheckCircle2 size={12} className="text-green-600 shrink-0" /> : comp.status === 'warning' ? <AlertTriangle size={12} className="text-amber-500 shrink-0" /> : <XCircle size={12} className="text-red-600 shrink-0" />}
@@ -192,7 +192,7 @@ export default function AlertHistoryPage() {
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Coverage Gaps</p>
           <div className="flex flex-col gap-2.5">
             {[...displayReadiness.top_gaps].sort((a: any, b: any) => ({ high: 0, medium: 1, low: 2 }[a.severity as string] ?? 2) - ({ high: 0, medium: 1, low: 2 }[b.severity as string] ?? 2)).map((gap: any, i: number) => (
-              <div key={i} className={`flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-4 py-3 rounded-xl border ${gap.severity === 'high' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-200'}`}>
+              <div key={i} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-4 py-3 rounded-xl border bg-white border-slate-200">
                 <div className="flex items-start gap-2.5">
                   <AlertTriangle size={13} className={`shrink-0 mt-0.5 ${gap.severity === 'high' ? 'text-red-600' : 'text-amber-500'}`} />
                   <p className="text-xs text-slate-600 leading-relaxed">{gap.message}</p>
