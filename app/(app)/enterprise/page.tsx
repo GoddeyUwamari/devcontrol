@@ -211,16 +211,16 @@ export default function EnterprisePage() {
           {displayMembers.map(m => {
             const rs = roleStyle(m.role)
             const meta = DEMO_MEMBER_META[m.id]
-            const initials = (m.user ? (m.user.fullName ?? m.user.email ?? '?') : '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+            const initials = (m.user?.fullName || m.fullName || m.user?.email || m.email || '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
             const lastActive = demoMode && meta ? meta.lastActive : '—'
             const memberStatus = demoMode && meta ? meta.status : null
             return (
               <div key={m.id} className="grid py-3 border-b border-slate-50 last:border-0 items-center min-w-[560px]" style={{ gridTemplateColumns: '2fr 2fr 120px 80px 90px', gap: '12px' }}>
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 bg-violet-50 rounded-lg flex items-center justify-center text-[10px] font-bold text-violet-700 shrink-0">{initials}</div>
-                  <span className="text-sm font-semibold text-slate-900 truncate">{m.user?.fullName || m.user?.email || '—'}</span>
+                  <span className="text-sm font-semibold text-slate-900 truncate">{m.user?.fullName || m.fullName || m.user?.email || m.email || '—'}</span>
                 </div>
-                <span className="text-xs text-slate-500 truncate">{m.user?.email ?? '—'}</span>
+                <span className="text-xs text-slate-500 truncate">{m.user?.email || m.email || '—'}</span>
                 <span className="text-xs text-slate-400">{lastActive}</span>
                 <div>
                   {memberStatus ? (
@@ -240,19 +240,19 @@ export default function EnterprisePage() {
           {displayMembers.map(m => {
             const rs = roleStyle(m.role)
             const meta = DEMO_MEMBER_META[m.id]
-            const initials = (m.user ? (m.user.fullName ?? m.user.email ?? '?') : '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+            const initials = (m.user?.fullName || m.fullName || m.user?.email || m.email || '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
             const memberStatus = demoMode && meta ? meta.status : null
             return (
               <div key={m.id} className="py-3">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-7 h-7 bg-violet-50 rounded-lg flex items-center justify-center text-[10px] font-bold text-violet-700 shrink-0">{initials}</div>
-                    <span className="text-sm font-semibold text-slate-900 truncate">{m.user?.fullName || m.user?.email || '—'}</span>
+                    <span className="text-sm font-semibold text-slate-900 truncate">{m.user?.fullName || m.fullName || m.user?.email || m.email || '—'}</span>
                   </div>
                   <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full capitalize shrink-0 ${rs.bg}`}>{m.role}</span>
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400 pl-9">
-                  <span>{m.user?.email ?? '—'}</span>
+                  <span>{m.user?.email || m.email || '—'}</span>
                   {memberStatus && <span className={memberStatus === 'active' ? 'text-green-600' : 'text-slate-300'}>{memberStatus}</span>}
                 </div>
               </div>

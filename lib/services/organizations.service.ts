@@ -33,11 +33,13 @@ export interface OrganizationMember {
   organizationId: string;
   role: "owner" | "admin" | "member" | "viewer";
   joinedAt: string;
-  user: {
+  user?: {
     id: string;
     email: string;
     fullName: string;
   };
+  fullName?: string;
+  email?: string;
 }
 
 export interface InviteMemberRequest {
