@@ -148,7 +148,7 @@ function AlertsContent() {
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Avg Resolution</p>
-          <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{displayStats.avgResolutionTime ? `${displayStats.avgResolutionTime}m` : '—'}</div>
+          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${displayStats.avgResolutionTime ? 'text-slate-900' : 'text-slate-300'}`}>{displayStats.avgResolutionTime ? `${displayStats.avgResolutionTime}m` : '—'}</div>
           <p className="text-xs text-slate-400">{displayStats.avgResolutionTime ? 'Mean time to resolve' : 'No alerts resolved yet'}</p>
         </div>
       </div>
