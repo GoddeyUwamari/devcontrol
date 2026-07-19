@@ -363,6 +363,7 @@ export default function RemediationPage() {
   const pending   = workflows.filter((w) => w.status === 'pending_approval').length;
   const approved  = workflows.filter((w) => w.status === 'approved').length;
   const completed = workflows.filter((w) => w.status === 'completed').length;
+  const failedCount = workflows.filter((w) => w.status === 'failed').length;
   const savings   = workflows
     .filter((w) => w.status === 'completed')
     .reduce((s, w) => s + Number(w.estimated_savings), 0);
@@ -421,12 +422,13 @@ export default function RemediationPage() {
       </div>
 
       {/* KPI row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, marginBottom: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 20, marginBottom: 28 }}>
         {[
           { label: 'Pending Approval', value: pending,   color: '#D97706', icon: <Clock style={{ width: 18, height: 18, color: '#D97706' }} /> },
           { label: 'Approved',         value: approved,  color: '#16A34A', icon: <CheckCircle2 style={{ width: 18, height: 18, color: '#16A34A' }} /> },
           { label: 'Completed',        value: completed, color: '#111827', icon: <Shield style={{ width: 18, height: 18, color: '#7C3AED' }} /> },
-          { label: 'Savings Recovered', value: `$${savings.toFixed(0)}/mo`, color: '#16A34A', icon: null },
+          { label: 'Failed',           value: failedCount, color: failedCount > 0 ? '#991B1B' : '#6B7280', icon: <XCircle style={{ width: 18, height: 18, color: failedCount > 0 ? '#991B1B' : '#9CA3AF' }} /> },
+          { label: 'Savings Recovered', value: `$${savings.toFixed(0)}/mo`, color: savings > 0 ? '#16A34A' : '#374151', icon: null },
         ].map(({ label, value, color, icon }) => (
           <div key={label} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '24px 28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
@@ -475,6 +477,9 @@ export default function RemediationPage() {
           <p style={{ fontSize: '0.875rem', color: '#9CA3AF', margin: 0 }}>
             Create remediation workflows from the Cost Optimization page.
           </p>
+          <a href="/costs/cost-optimization" className="inline-flex items-center gap-2 bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg text-sm font-semibold no-underline transition-colors mt-4">
+            Go to Cost Optimization →
+          </a>
         </div>
       ) : (
         <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden' }}>
