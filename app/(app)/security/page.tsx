@@ -150,7 +150,7 @@ export default function SecurityPage() {
 
   const navCards = [
     { icon: AlertTriangle, label: 'All Anomalies', desc: criticalAnomalies > 0 ? `${criticalAnomalies} critical — investigate now` : 'Investigate and resolve threats', href: '/anomalies', color: criticalAnomalies > 0 ? '#DC2626' : '#D97706', bg: criticalAnomalies > 0 ? '#FEF2F2' : '#FFFBEB' },
-    { icon: CheckSquare,   label: 'Compliance',    desc: failingFrameworks > 0 ? `${failingFrameworks} framework${failingFrameworks > 1 ? 's' : ''} failing — remediate now` : 'CIS, NIST, SOC 2, PCI-DSS', href: '/compliance/frameworks', color: failingFrameworks > 0 ? '#DC2626' : '#059669', bg: failingFrameworks > 0 ? '#FEF2F2' : '#F0FDF4' },
+    { icon: CheckSquare,   label: 'Compliance',    desc: failingFrameworks > 0 ? `${failingFrameworks} framework${failingFrameworks > 1 ? 's' : ''} failing — remediate now` : 'CIS, NIST, SOC 2, PCI-DSS', href: '/compliance/frameworks', color: failingFrameworks > 0 ? '#DC2626' : '#059669', bg: '#F5F3FF' },
     { icon: ClipboardList, label: 'Audit Logs',    desc: 'Full activity trail', href: '/audit-logs', color: '#7C3AED', bg: '#F5F3FF' },
   ]
 
@@ -494,11 +494,14 @@ export default function SecurityPage() {
                 {findings.map((finding) => (
                   <div key={finding.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3.5">
                     <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex items-start gap-2.5">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
                         <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: findingSeverityColor(finding.severity) }} />
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-slate-900 mb-0.5 leading-snug">{finding.title}</p>
-                          <span className="text-[10px] text-slate-400">{finding.category === 'iam' ? 'IAM' : 'Security Group'} · {finding.resourceIdentifier}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-400 shrink-0">{finding.category === 'iam' ? 'IAM' : 'Security Group'} ·</span>
+                            <span className="truncate block text-[10px] text-slate-400 max-w-full">{finding.resourceIdentifier}</span>
+                          </div>
                         </div>
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 capitalize" style={{ background: findingSeverityBadgeBg(finding.severity), color: findingSeverityColor(finding.severity) }}>{finding.severity}</span>
