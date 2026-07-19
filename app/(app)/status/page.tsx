@@ -99,7 +99,7 @@ export default function StatusPage() {
           <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
           <p className="text-sm text-slate-700 leading-relaxed">
             {overallStatus === 'operational'
-              ? <><strong className="text-green-600">All systems operating within SLA.</strong> Uptime stable at 99.98% — Elite tier (last 30 days). 3 minor incidents resolved · avg resolution 18 minutes. No performance degradation across regions · no cost anomalies linked to incidents.<span className="block mt-1 text-xs text-green-600 font-semibold">No action required — system is healthy.</span></>
+              ? <><strong className="text-green-600">All systems operating within SLA.</strong> Uptime stable at 99.98% — Elite tier (last 30 days). 3 minor incidents resolved · avg resolution 18 minutes. Minor performance degradation on Jul 14 was successfully mitigated · no cost anomalies linked to incidents.<span className="block mt-1 text-xs text-green-600 font-semibold">No action required — system is healthy.</span></>
               : overallStatus === 'degraded'
                 ? <><strong className="text-amber-500">Partial service degradation detected.</strong> Review highlighted services and check recent deployments for root cause.<span className="block mt-1 text-xs text-amber-500 font-semibold">Action required — investigate degraded services.</span></>
                 : <><strong className="text-red-600">Service disruption detected.</strong> Escalate immediately and review incident timeline for impact scope.<span className="block mt-1 text-xs text-red-600 font-semibold">Critical — escalate now.</span></>}
