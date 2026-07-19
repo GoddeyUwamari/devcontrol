@@ -135,11 +135,13 @@ export default function EnterprisePage() {
             </>
           ) : (
             <div className="flex flex-col gap-3">
-              <div className="bg-slate-50 rounded-lg p-4">
-                <p className="text-sm font-medium text-slate-900 mb-1">{tier.charAt(0).toUpperCase() + tier.slice(1)}</p>
-                <p className="text-xs text-slate-500 mb-3">1 AWS account · 5 AI reports/month · Community support</p>
-                {tier === 'free' && <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700">Current plan</span>}
-              </div>
+              {tier === 'free' && (
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm font-medium text-slate-900 mb-1">Free</p>
+                  <p className="text-xs text-slate-500 mb-3">1 AWS account · 5 AI reports/month · Community support</p>
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700">Current plan</span>
+                </div>
+              )}
               <div className="border-2 border-violet-600 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
@@ -217,8 +219,8 @@ export default function EnterprisePage() {
             const rs = roleStyle(m.role)
             const meta = DEMO_MEMBER_META[m.id]
             const initials = (m.user?.fullName || m.fullName || m.user?.email || m.email || '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
-            const lastActive = demoMode && meta ? meta.lastActive : '—'
-            const memberStatus = demoMode && meta ? meta.status : null
+            const lastActive = demoMode && meta ? meta.lastActive : m.role === 'owner' ? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'
+            const memberStatus = demoMode && meta ? meta.status : !demoMode ? 'active' : null
             return (
               <div key={m.id} className="grid py-3 border-b border-slate-50 last:border-0 items-center min-w-[560px]" style={{ gridTemplateColumns: '2fr 2fr 120px 80px 90px', gap: '12px' }}>
                 <div className="flex items-center gap-2.5">
@@ -246,7 +248,7 @@ export default function EnterprisePage() {
             const rs = roleStyle(m.role)
             const meta = DEMO_MEMBER_META[m.id]
             const initials = (m.user?.fullName || m.fullName || m.user?.email || m.email || '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
-            const memberStatus = demoMode && meta ? meta.status : null
+            const memberStatus = demoMode && meta ? meta.status : !demoMode ? 'active' : null
             return (
               <div key={m.id} className="py-3">
                 <div className="flex items-center justify-between gap-2 mb-1">
