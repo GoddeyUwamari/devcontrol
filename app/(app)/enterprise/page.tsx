@@ -102,7 +102,7 @@ export default function EnterprisePage() {
 
         {/* Plan card */}
         <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Current Plan</p>
+          {(subscription || !isEnterprise) && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Current Plan</p>}
           {subscription ? (
             <>
               <div className="flex items-center gap-3 mb-5">
@@ -148,7 +148,7 @@ export default function EnterprisePage() {
                     <p className="text-sm font-medium text-slate-900 mb-0.5">Pro</p>
                     <p className="text-xs text-slate-500">Ideal for scaling teams with advanced compliance features</p>
                   </div>
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">{isPro && !isEnterprise ? 'Current plan' : 'Most popular'}</span>
+                  {!isEnterprise && <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">{isPro ? 'Current plan' : 'Most popular'}</span>}
                 </div>
                 <div className="flex flex-col gap-1 my-3">
                   {['Unlimited AWS accounts', 'SOC 2 & automated audits', 'Unlimited AI reports', 'Priority support'].map(f => (
@@ -157,6 +157,7 @@ export default function EnterprisePage() {
                 </div>
                 {!(isPro || isEnterprise) && <button className="w-full bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg py-2 text-xs font-medium cursor-pointer transition-colors">Upgrade to Pro →</button>}
               </div>
+              {!subscription && isEnterprise && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Current Plan</p>}
               <div className="border border-slate-200 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-1">
                   <p className="text-sm font-medium text-slate-900">Enterprise</p>
