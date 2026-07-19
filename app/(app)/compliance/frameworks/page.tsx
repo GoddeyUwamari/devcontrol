@@ -94,10 +94,16 @@ export default function ComplianceFrameworksPage() {
           <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs font-semibold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
             <Plus size={12} /> New Framework
           </button>
-          <button onClick={() => displayFrameworks.length > 0 ? handleRunScan(displayFrameworks[0].id) : handleCreateFramework()}
-            className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-4 py-2.5 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap">
-            <RefreshCw size={12} /> Run Baseline Scan
-          </button>
+          {displayFrameworks.length === 0 && !isDemoActive ? (
+            <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-4 py-2.5 text-xs font-bold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
+              <Plus size={12} /> Add Framework
+            </button>
+          ) : (
+            <button onClick={() => handleRunScan(displayFrameworks[0].id)}
+              className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-4 py-2.5 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap">
+              <RefreshCw size={12} /> Run Baseline Scan
+            </button>
+          )}
         </div>
       </div>
 
@@ -172,20 +178,22 @@ export default function ComplianceFrameworksPage() {
       )}
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4">
-        {[
-          { label: 'Compliance Score',     value: complianceScore === '—' ? 'Unknown' : complianceScore,   sub: complianceScore === '—' ? 'Unknown — audit readiness cannot be assessed' : 'Weighted across all frameworks', color: complianceScore === '—' ? '#9CA3AF' : '#059669' },
-          { label: 'Critical Violations',  value: criticalViolations === '—' ? 'Unknown' : criticalViolations, sub: criticalViolations === '—' ? 'Unknown — potential critical exposure not evaluated' : 'Immediate action required', color: criticalViolations === '—' ? '#9CA3AF' : '#DC2626' },
-          { label: 'High-Risk Violations', value: highRiskViolations === '—' ? 'Unknown' : highRiskViolations, sub: highRiskViolations === '—' ? 'Unknown — high-risk exposure not evaluated' : 'Public S3, open ports, IAM', color: highRiskViolations === '—' ? '#9CA3AF' : '#D97706' },
-          { label: 'Last Scan',            value: lastScanLabel === '—' ? 'Never' : lastScanLabel,          sub: lastScanLabel === '—' ? 'Never — no historical security baseline established' : 'Scan history available', color: lastScanLabel === '—' ? '#9CA3AF' : '#0F172A' },
-        ].map(({ label, value, sub, color }) => (
-          <div key={label} className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
-            <div className="text-xl sm:text-2xl font-bold tracking-tight leading-none mb-1.5" style={{ color }}>{value}</div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">{sub}</p>
-          </div>
-        ))}
-      </div>
+      {(hasScans || isDemoActive) && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4">
+          {[
+            { label: 'Compliance Score',     value: complianceScore === '—' ? 'Unknown' : complianceScore,   sub: complianceScore === '—' ? 'Unknown — audit readiness cannot be assessed' : 'Weighted across all frameworks', color: complianceScore === '—' ? '#9CA3AF' : '#059669' },
+            { label: 'Critical Violations',  value: criticalViolations === '—' ? 'Unknown' : criticalViolations, sub: criticalViolations === '—' ? 'Unknown — potential critical exposure not evaluated' : 'Immediate action required', color: criticalViolations === '—' ? '#9CA3AF' : '#DC2626' },
+            { label: 'High-Risk Violations', value: highRiskViolations === '—' ? 'Unknown' : highRiskViolations, sub: highRiskViolations === '—' ? 'Unknown — high-risk exposure not evaluated' : 'Public S3, open ports, IAM', color: highRiskViolations === '—' ? '#9CA3AF' : '#D97706' },
+            { label: 'Last Scan',            value: lastScanLabel === '—' ? 'Never' : lastScanLabel,          sub: lastScanLabel === '—' ? 'Never — no historical security baseline established' : 'Scan history available', color: lastScanLabel === '—' ? '#9CA3AF' : '#0F172A' },
+          ].map(({ label, value, sub, color }) => (
+            <div key={label} className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
+              <div className="text-xl sm:text-2xl font-bold tracking-tight leading-none mb-1.5" style={{ color }}>{value}</div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">{sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {displayError && <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-6"><p className="text-sm text-red-600">{displayError}</p></div>}
 
@@ -258,7 +266,7 @@ export default function ComplianceFrameworksPage() {
             <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-lg mx-auto">Add a compliance framework to detect misconfigurations, policy violations, and audit risks before they become incidents.</p>
             <p className="text-xs text-slate-400 mb-6">Run a baseline scan to see your compliance posture.</p>
             <div className="flex flex-col items-center gap-2">
-              <button onClick={handleCreateFramework} className="bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg px-6 py-2.5 text-sm font-medium cursor-pointer transition-colors">Start Compliance Scan</button>
+              <button onClick={handleCreateFramework} className="bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg px-6 py-2.5 text-sm font-medium cursor-pointer transition-colors">Start Baseline Scan (CIS AWS)</button>
               <p className="text-[11px] text-slate-400">~2–5 minutes · read-only · no infrastructure changes required</p>
             </div>
           </div>
