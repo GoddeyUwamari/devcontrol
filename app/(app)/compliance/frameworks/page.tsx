@@ -91,9 +91,6 @@ export default function ComplianceFrameworksPage() {
           <p className="text-sm text-slate-500 leading-relaxed">Detect compliance gaps and misconfigurations across your AWS environment — before they become audit failures.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs font-semibold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
-            <Plus size={12} /> New Framework
-          </button>
           {displayFrameworks.length === 0 && !isDemoActive ? (
             <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-4 py-2.5 text-xs font-bold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
               <Plus size={12} /> Add Framework
