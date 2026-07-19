@@ -344,7 +344,7 @@ export default function DORAMetricsPage() {
                     </ResponsiveContainer>
                   </div>
                   <div className="text-[11px] text-slate-300 mt-2.5 pt-2.5 border-t border-slate-50">
-                    {metric.benchmark === 'elite' ? 'Exceeds Elite benchmark — no immediate action required' : metric.benchmark === 'high' ? 'Above industry median — monitor for regression' : metric.benchmark === 'medium' ? 'Below Elite threshold — review pipeline constraints' : dataState === 'inactive' ? 'Pipeline inactive — no activity detected in this period' : dataState === 'insufficient' ? 'Insufficient data — fewer than 5 deployments' : metric.description}
+                    {isInactiveState ? 'Pipeline inactive — no activity detected in this period' : metric.benchmark === 'elite' ? 'Exceeds Elite benchmark — no immediate action required' : metric.benchmark === 'high' ? 'Above industry median — monitor for regression' : metric.benchmark === 'medium' ? 'Below Elite threshold — review pipeline constraints' : dataState === 'insufficient' ? 'Insufficient data — fewer than 5 deployments' : metric.description}
                   </div>
                 </CardContent>
               </Card>
