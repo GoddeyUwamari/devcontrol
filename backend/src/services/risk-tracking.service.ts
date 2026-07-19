@@ -198,10 +198,7 @@ export class RiskTrackingService {
       const firstScore = history[history.length - 1].overall_score;
       const lastScore = history[0].overall_score;
 
-      // Avoid division by zero
-      if (firstScore > 0) {
-        trendPercentage = ((lastScore - firstScore) / firstScore) * 100;
-      }
+      trendPercentage = Math.round(lastScore - firstScore); // point difference, not %
 
       if (Math.abs(trendPercentage) < 5) {
         trend = 'stable';
