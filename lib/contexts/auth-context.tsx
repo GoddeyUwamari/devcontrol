@@ -314,7 +314,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (userOrgs && Array.isArray(userOrgs)) {
         setOrganizations(userOrgs);
         if (userOrgs.length > 0) {
-          setOrganization((prev) => prev ?? userOrgs[0]);
+          setOrganization(userOrgs[0]);
         }
       }
     };
