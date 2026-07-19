@@ -189,7 +189,7 @@ export default function EnterprisePage() {
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 mb-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Organisation Members</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Organization Members</p>
             <p className="text-xs text-slate-400">{displayMembers.length} member{displayMembers.length !== 1 ? 's' : ''}</p>
           </div>
           <button onClick={() => setShowInvite(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors whitespace-nowrap self-start sm:self-auto">
