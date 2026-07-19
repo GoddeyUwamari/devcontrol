@@ -80,9 +80,12 @@ export default function SLODashboardPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <a href="/monitoring" className="bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs font-semibold no-underline hover:bg-slate-50 transition-colors whitespace-nowrap">Monitoring Overview</a>
-          <a href="/observability/alert-history" className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2.5 text-xs font-bold no-underline transition-colors whitespace-nowrap">
-            <AlertTriangle size={11} /> Resolve Breached SLOs
-          </a>
+          {displayStats.breached > 0
+            ? <a href="/observability/alert-history" className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2.5 text-xs font-bold no-underline transition-colors whitespace-nowrap">
+                <AlertTriangle size={11} /> Resolve Breached SLOs
+              </a>
+            : <a href="/monitoring" className="bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs font-semibold no-underline hover:bg-slate-50 transition-colors whitespace-nowrap">+ Custom SLO</a>
+          }
         </div>
       </div>
 
@@ -182,7 +185,7 @@ export default function SLODashboardPage() {
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Avg Compliance</p>
           {displayStats.total > 0
             ? <div className="text-2xl font-bold text-green-600 tracking-tight leading-none mb-1.5">{displayStats.avgCompliance.toFixed(2)}%</div>
-            : <div className="text-xs text-slate-300 mb-2">Calculated after SLO data is collected</div>}
+            : <div className="text-xs text-slate-400 mb-2">No data yet</div>}
           <p className="text-[11px] text-slate-400">Across all SLOs</p>
         </div>
       </div>
@@ -218,16 +221,16 @@ export default function SLODashboardPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {[
-              { label: 'Define an uptime SLO', sub: 'Track availability across your API endpoints', href: '/monitoring' },
-              { label: 'Define a latency SLO', sub: 'Measure p95 response time against a target threshold', href: '/monitoring' },
-              { label: 'Define an error rate SLO', sub: 'Detect service degradation before users feel it', href: '/monitoring' },
+              { label: 'Define an uptime SLO', sub: 'Track availability across your API endpoints', href: '/monitoring', ctaLabel: 'Add Uptime SLO →' },
+              { label: 'Define a latency SLO', sub: 'Measure p95 response time against a target threshold', href: '/monitoring', ctaLabel: 'Add Latency SLO →' },
+              { label: 'Define an error rate SLO', sub: 'Detect service degradation before users feel it', href: '/monitoring', ctaLabel: 'Add Error Rate SLO →' },
             ].map(item => (
               <div key={item.label} className="flex items-center justify-between bg-slate-50 rounded-xl border border-slate-100 px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">{item.label}</p>
                   <p className="text-xs text-slate-400">{item.sub}</p>
                 </div>
-                <a href={item.href} className="bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-1.5 text-[11px] font-bold no-underline transition-colors whitespace-nowrap">Add SLO →</a>
+                <a href={item.href} className="bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-1.5 text-[11px] font-bold no-underline transition-colors whitespace-nowrap">{item.ctaLabel}</a>
               </div>
             ))}
           </div>
