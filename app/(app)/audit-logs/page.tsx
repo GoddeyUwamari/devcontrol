@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Download } from 'lucide-react';
 import { auditLogsService, AuditLogFilters } from '@/lib/services/audit-logs.service';
 import { demoModeService } from '@/lib/services/demo-mode.service';
+import awsAccountsService from '@/lib/services/aws-accounts.service';
 
 type DemoLog = { id: string; timestamp: Date; user: string; action: string; resource: string; resourceType: string; status: 'success' | 'warning' | 'error'; duration: number; ipAddress: string };
 
@@ -29,12 +30,15 @@ export default function AuditLogsPage() {
   const { data: actionsData } = useQuery({ queryKey: ['audit-log-actions'], queryFn: () => auditLogsService.getActions() });
   const { data: resourceTypesData } = useQuery({ queryKey: ['audit-log-resource-types'], queryFn: () => auditLogsService.getResourceTypes() });
 
+  const demoMode = demoModeService.isEnabled();
+  const { data: awsAccounts } = useQuery({ queryKey: ['aws-accounts'], queryFn: awsAccountsService.getAccounts, enabled: !demoMode });
+  const isAwsConnected = demoMode || (awsAccounts?.length ?? 0) > 0;
+
   const logs = data?.data || [], total = data?.total || 0;
   const actions = actionsData || [], resourceTypesList = resourceTypesData || [];
   const updateFilter = (key: keyof AuditLogFilters, value: unknown) => setFilters({ ...filters, [key]: value, page: 1 });
   const clearFilters = () => setFilters({ page: 1, limit: 50 });
 
-  const demoMode = demoModeService.isEnabled();
   const rawLogs: any[] = demoMode ? DEMO_LOGS : logs;
 
   const displayLogs: any[] = searchQuery.trim()
@@ -71,7 +75,7 @@ export default function AuditLogsPage() {
           <p className="text-sm text-slate-500 leading-relaxed">Monitor activity, detect anomalies, and investigate security events across your AWS environment</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handleExport} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
+          <button onClick={handleExport} disabled={!hasLogs && !demoMode} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
             <Download size={14} /> Export CSV
           </button>
           <button onClick={() => refetch()} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white border-none px-4 py-2.5 rounded-lg text-sm font-semibold cursor-pointer transition-colors whitespace-nowrap">
@@ -110,8 +114,8 @@ export default function AuditLogsPage() {
 
       {/* Search bar */}
       <div className="relative mb-3">
-        <input type="text" placeholder="Search by user, action, or resource..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-          className="w-full border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-sm bg-white text-slate-900 outline-none focus:border-violet-500 transition-colors" />
+        <input type="text" placeholder="Search by user, action, or resource..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} disabled={!hasLogs && !demoMode}
+          className="w-full border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-sm bg-white text-slate-900 outline-none focus:border-violet-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" />
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">⌕</span>
       </div>
 
@@ -159,7 +163,11 @@ export default function AuditLogsPage() {
         ) : displayLogs.length === 0 ? (
           <div className="p-8 sm:p-12 text-center">
             <p className="text-base font-medium text-slate-900 mb-2.5">No audit activity detected yet</p>
-            <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-lg mx-auto">Once connected, DevControl will track all infrastructure actions, API calls, and user activity across your AWS environment.</p>
+            <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-lg mx-auto">
+              {isAwsConnected
+                ? 'No audit activity recorded yet. DevControl captures infrastructure actions, API calls, and user activity as they happen. Activity will appear here automatically.'
+                : 'Once connected, DevControl will track all infrastructure actions, API calls, and user activity across your AWS environment.'}
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-w-sm mx-auto text-left">
               {['Trace who made changes', 'Detect unusual access patterns', 'Investigate incidents in seconds', 'Track IAM and policy changes'].map(item => (
                 <div key={item} className="flex items-center gap-2 text-xs text-slate-500">
