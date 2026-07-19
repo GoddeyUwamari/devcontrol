@@ -304,8 +304,8 @@ export default function MonitoringPage() {
             {[
               { label: 'System Uptime', value: uptime, sub: 'Last 30 days', color: uptime === '--' ? 'text-slate-300' : parseFloat(uptime) >= 99.9 ? 'text-green-600' : 'text-amber-500' },
               { label: 'Avg Response Time', value: responseTimeString, sub: `${trendPercent > 0 ? '+' : ''}${trendPercent.toFixed(1)}% vs last period`, color: responseTime < 200 ? 'text-green-600' : responseTime < 500 ? 'text-amber-500' : 'text-red-600' },
-              { label: 'Requests / Min', value: requestsPerMinute.toLocaleString(), sub: 'Current throughput', color: 'text-slate-900' },
-              { label: 'Monthly Cost', value: monthlyCost, sub: monthlyCost === '--' ? 'Syncing — available in 24–48h' : 'Current monthly spend', color: monthlyCost === '--' ? 'text-slate-300' : 'text-slate-900' },
+              { label: 'Requests / Min', value: requestsPerMinute.toLocaleString(), sub: requestsPerMinute === 0 && !isDemoActive ? 'No active throughput' : 'Current throughput', color: 'text-slate-900' },
+              { label: 'Monthly Cost', value: monthlyCost === '--' ? 'Syncing...' : monthlyCost, sub: monthlyCost === '--' ? 'Syncing — available in 24–48h' : 'Current monthly spend', color: monthlyCost === '--' ? 'text-amber-500' : 'text-slate-900' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
@@ -355,11 +355,18 @@ export default function MonitoringPage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
               <div>
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Service Level Objectives</p>
-                <p className="text-sm text-slate-900">{slos.filter(s => s.current >= s.target).length}/{slos.length} SLOs meeting target</p>
+                <p className="text-sm text-slate-900">{slos.length === 0 ? 'No active SLOs' : `${slos.filter(s => s.current >= s.target).length}/${slos.length} SLOs meeting target`}</p>
               </div>
               <a href="/monitoring/slos" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">Full SLO report <ArrowRight size={11} /></a>
             </div>
-            <SLODashboard slos={slos} />
+            {slos.length === 0 && !isDemoActive ? (
+              <div className="text-center py-10">
+                <p className="text-sm text-slate-500 leading-relaxed mb-3">No SLOs configured yet. Set up target thresholds for latency or error rate budgets.</p>
+                <a href="/monitoring/slos" className="text-xs font-semibold text-violet-600 no-underline inline-flex items-center gap-1">Set up SLOs <ArrowRight size={11} /></a>
+              </div>
+            ) : (
+              <SLODashboard slos={slos} />
+            )}
           </div>
         </>
       )}
