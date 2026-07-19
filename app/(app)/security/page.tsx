@@ -109,7 +109,7 @@ export default function SecurityPage() {
   const trendPct = riskTrend?.trendPercentage ?? 5
   const TrendIcon = trendDirection === 'declining' ? TrendingDown : TrendingUp
   const trendColor = trendDirection === 'declining' ? '#DC2626' : '#059669'
-  const trendLabel = trendDirection === 'declining' ? `-${trendPct} pts this month` : `+${trendPct} pts this month`
+  const trendLabel = trendDirection === 'declining' ? `-${Math.abs(trendPct)} pts this month` : `+${Math.abs(trendPct)} pts this month`
 
   const chartData = riskTrend?.history?.map((point) => ({
     date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -486,7 +486,7 @@ export default function SecurityPage() {
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Account Security Findings</h2>
           </div>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto">
             {findingsLoading && !demoMode ? (
               <div className="py-8 flex items-center justify-center"><Loader2 size={18} className="text-slate-300 animate-spin" /></div>
             ) : (
