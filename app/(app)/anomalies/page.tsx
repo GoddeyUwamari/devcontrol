@@ -249,7 +249,17 @@ export default function AnomaliesPage() {
             <RefreshCw size={22} className="text-slate-300 mx-auto mb-3" />
             <p className="text-sm text-slate-400">Loading anomalies...</p>
           </div>
-        ) : anomalies.length === 0 ? (
+        ) : !lastScanLoading && !lastScanTime ? (
+          <div className="bg-white rounded-2xl border border-slate-100 p-6 sm:p-12">
+            <div className="flex flex-col sm:flex-row items-start gap-5">
+              <div className="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center shrink-0"><RefreshCw size={20} className="text-violet-600 animate-spin" /></div>
+              <div className="flex-1">
+                <p className="text-base font-bold text-slate-900 mb-1.5">Analyzing your infrastructure...</p>
+                <p className="text-sm text-slate-500 leading-relaxed">Initial scan in progress. Results will appear here once the first scan completes.</p>
+              </div>
+            </div>
+          </div>
+        ) : lastScanTime !== null && anomalies.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 p-6 sm:p-12">
             <div className="flex flex-col sm:flex-row items-start gap-5">
               <div className="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center shrink-0"><CheckCircle2 size={20} className="text-green-600" /></div>
@@ -265,9 +275,6 @@ export default function AnomaliesPage() {
                 </ul>
                 <div className="flex flex-wrap items-center gap-4">
                   <p className="text-xs text-slate-400">Last scan: <span className="font-semibold text-slate-600">{lastScanLoading ? 'Checking…' : lastScanTime ? lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pending first scan'}</span></p>
-                  <button onClick={triggerScan} disabled={isScanning} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold border-none transition-colors ${isScanning ? 'bg-violet-400 cursor-not-allowed text-white' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer text-white'}`}>
-                    <RefreshCw size={11} className={isScanning ? 'animate-spin' : ''} /> {isScanning ? 'Scanning…' : 'Run Scan Now'}
-                  </button>
                 </div>
               </div>
             </div>
@@ -455,7 +462,7 @@ export default function AnomaliesPage() {
           </div>
         )}
 
-        {rules.length === 0 ? (
+        {rules.length === 0 && !showCreateRule ? (
           <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl px-5 py-6 text-center">
             <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center mx-auto mb-2.5"><Settings size={15} className="text-violet-600" /></div>
             <p className="text-sm font-semibold text-slate-900 mb-1.5">No custom rules yet</p>
