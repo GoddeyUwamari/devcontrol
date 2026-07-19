@@ -124,10 +124,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const orgs = await organizationsService.getAll();
       setOrganizations(orgs);
 
-      // Set first organization as active if none selected — use functional update
-      // to avoid capturing `organization` in deps (which would cause identity churn)
       if (orgs.length > 0) {
-        setOrganization((prev) => prev ?? orgs[0]);
+        setOrganization(orgs[0]);
       }
     } catch (error) {
       console.error("Failed to fetch organizations:", error);

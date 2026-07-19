@@ -10,6 +10,7 @@ import type { OrganizationMember, InviteMemberRequest } from '@/lib/services/org
 import { subscriptionsService } from '@/lib/services/subscriptions.service'
 import { invoicesService } from '@/lib/services/invoices.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
+import { usePlan } from '@/lib/hooks/use-plan'
 
 const DEMO_SUBSCRIPTION = { id: 'sub-demo-1', plan: 'Enterprise', status: 'active' as const, billingCycle: 'yearly' as const, currentPrice: 1498800, currency: 'USD', currentPeriodStart: '2024-01-01T00:00:00Z', currentPeriodEnd: '2025-01-01T00:00:00Z', nextBillingDate: '2025-01-01T00:00:00Z', autoRenew: true, isTrial: false }
 
@@ -58,6 +59,7 @@ export default function EnterprisePage() {
   const router = useRouter()
   const demoMode = useDemoMode()
   const { organization } = useAuth()
+  const { tier, isEnterprise, isPro } = usePlan()
   const orgId = organization?.id
   const queryClient = useQueryClient()
   const [showInvite, setShowInvite] = useState(false)
@@ -134,9 +136,9 @@ export default function EnterprisePage() {
           ) : (
             <div className="flex flex-col gap-3">
               <div className="bg-slate-50 rounded-lg p-4">
-                <p className="text-sm font-medium text-slate-900 mb-1">Free</p>
+                <p className="text-sm font-medium text-slate-900 mb-1">{tier.charAt(0).toUpperCase() + tier.slice(1)}</p>
                 <p className="text-xs text-slate-500 mb-3">1 AWS account · 5 AI reports/month · Community support</p>
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700">Current plan</span>
+                {tier === 'free' && <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700">Current plan</span>}
               </div>
               <div className="border-2 border-violet-600 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
@@ -144,19 +146,22 @@ export default function EnterprisePage() {
                     <p className="text-sm font-medium text-slate-900 mb-0.5">Pro</p>
                     <p className="text-xs text-slate-500">Ideal for scaling teams with advanced compliance features</p>
                   </div>
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">Most popular</span>
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">{isPro && !isEnterprise ? 'Current plan' : 'Most popular'}</span>
                 </div>
                 <div className="flex flex-col gap-1 my-3">
                   {['Unlimited AWS accounts', 'SOC 2 & automated audits', 'Unlimited AI reports', 'Priority support'].map(f => (
                     <div key={f} className="text-xs text-slate-500 flex items-center gap-1.5"><span className="text-green-600">✓</span> {f}</div>
                   ))}
                 </div>
-                <button className="w-full bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg py-2 text-xs font-medium cursor-pointer transition-colors">Upgrade to Pro →</button>
+                {!(isPro && !isEnterprise) && <button className="w-full bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg py-2 text-xs font-medium cursor-pointer transition-colors">Upgrade to Pro →</button>}
               </div>
               <div className="border border-slate-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-slate-900 mb-1">Enterprise</p>
+                <div className="flex items-start justify-between mb-1">
+                  <p className="text-sm font-medium text-slate-900">Enterprise</p>
+                  {isEnterprise && <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">Current plan</span>}
+                </div>
                 <p className="text-xs text-slate-500 mb-3">SSO, priority support, tailored security, and custom contracts</p>
-                <button className="w-full bg-transparent border border-slate-200 rounded-lg py-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors">Contact Sales →</button>
+                {!isEnterprise && <button className="w-full bg-transparent border border-slate-200 rounded-lg py-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors">Contact Sales →</button>}
               </div>
             </div>
           )}
