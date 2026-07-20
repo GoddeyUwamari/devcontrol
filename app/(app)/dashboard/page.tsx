@@ -644,6 +644,14 @@ export default function DashboardPage() {
           </a>
         </div>
       )}
+      {isAwsConnected && topRecs.length === 0 && !isDemoActive && (
+        <div className="bg-violet-50/50 border-2 border-violet-700 rounded-2xl px-5 py-4 mb-3">
+          <div className="text-[10px] font-bold text-violet-700 tracking-widest uppercase mb-1">Recommended Action</div>
+          <div className="text-base font-semibold text-gray-500">
+            No optimization opportunities identified · Your infrastructure is running efficiently
+          </div>
+        </div>
+      )}
 
       {/* ── MAIN CONTENT ── */}
       {statsLoading ? null : isAwsConnected ? (
