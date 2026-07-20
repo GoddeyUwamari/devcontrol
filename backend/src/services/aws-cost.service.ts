@@ -51,6 +51,11 @@ interface MonthlyCostCacheEntry {
   timestamp: number
 }
 
+interface CostTrendCacheEntry {
+  data: CostTrendPoint[]
+  timestamp: number
+}
+
 export type CostTrendRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
 
 export interface CostTrendPoint {
@@ -121,6 +126,11 @@ class AWSCostService {
   // TTL matches the 4h staleTime already used for cost data on the frontend (dashboard/page.tsx).
   private monthlyCostCache: Map<string, MonthlyCostCacheEntry> = new Map()
   private static readonly MONTHLY_COST_CACHE_TTL = 4 * 60 * 60 * 1000
+
+  // Per-org+range cache for fetchCostTrend — same rationale as monthlyCostCache above:
+  // Cost Explorer is billed per API call, and this was being called uncached on every
+  // dashboard load and time-range tab switch. TTL matches MONTHLY_COST_CACHE_TTL.
+  private costTrendCache: Map<string, CostTrendCacheEntry> = new Map()
 
   constructor(private dbPool?: Pool) {
     this.enabled = this.checkAWSCredentials()
@@ -302,8 +312,16 @@ class AWSCostService {
    */
   async fetchCostTrend(organizationId: string | undefined, range: CostTrendRange): Promise<CostTrendPoint[]> {
     if (organizationId) {
+      const cacheKey = `${organizationId}:${range}`
+      const cached = this.costTrendCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
+        return cached.data
+      }
+
       const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
-      return orgService.fetchCostTrend(undefined, range)
+      const result = await orgService.fetchCostTrend(undefined, range)
+      this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
+      return result
     }
 
     if (!this.enabled) {
