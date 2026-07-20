@@ -1173,12 +1173,14 @@ export default function DashboardPage() {
                     <span className="text-emerald-600">${(wasteAmount * 12).toLocaleString()}</span> annualised
                   </>
                 ) : (
-                  <>No cost-saving opportunities identified yet for {organization?.displayName || organization?.name || 'your organization'}</>
+                  <>Your infrastructure is currently optimized — no cost-saving opportunities detected for {organization?.displayName || organization?.name || 'your organization'}</>
                 )}
               </p>
             </div>
             <div className="flex gap-2.5 shrink-0">
-              <a href="/cost-optimization" className="bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap">Approve Savings</a>
+              {(isDemoActive || wasteAmount > 0) && (
+                <a href="/cost-optimization" className="bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap">Approve Savings</a>
+              )}
               <a href="/costs" className="bg-transparent text-slate-500 px-4 py-2.5 rounded-lg text-sm font-medium no-underline border border-slate-200 whitespace-nowrap">View Full Report</a>
             </div>
           </div>
