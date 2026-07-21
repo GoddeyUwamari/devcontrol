@@ -118,16 +118,18 @@ router.get('/preview-weekly-summary', async (req, res) => {
     const query = { organizationId, startDate, endDate };
 
     // Gather weekly data
-    const [costData, previousCost, alertsData, userInfo, doraMetrics] = await Promise.all([
+    const [costData, costComparison, alertsData, userInfo, doraMetrics] = await Promise.all([
       repository.getWeeklyCostData(query),
-      repository.getPreviousWeekCostData(query),
+      repository.getWeeklyCostComparison(query),
       repository.getWeeklyAlerts(query),
       repository.getUserInfo(organizationId),
       repository.getWeeklyDORAMetrics(query)
     ]);
 
-    const currentCost = costData.reduce((sum, item) => sum + parseFloat(item.total_cost || '0'), 0);
-    const changePercent = previousCost > 0 ? ((currentCost - previousCost) / previousCost) * 100 : 0;
+    const { currentCost, previousCost, hasComparableCosts, costSource } = costComparison;
+    const changePercent = hasComparableCosts && previousCost
+      ? ((currentCost - previousCost) / previousCost) * 100
+      : 0;
 
     res.json({
       success: true,
@@ -138,6 +140,8 @@ router.get('/preview-weekly-summary', async (req, res) => {
           previous: previousCost,
           current: currentCost,
           changePercent: Math.round(changePercent * 100) / 100,
+          costSource,
+          hasComparableCosts,
           topSpenders: costData.slice(0, 5)
         },
         alerts: alertsData,

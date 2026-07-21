@@ -168,9 +168,9 @@ export class WeeklyAISummaryJob {
       const query = { organizationId, startDate, endDate };
 
       // Gather weekly data in parallel
-      const [costData, previousCost, alertsData, userInfo, doraMetrics] = await Promise.all([
+      const [costData, costComparison, alertsData, userInfo, doraMetrics] = await Promise.all([
         this.repository.getWeeklyCostData(query, client),
-        this.repository.getPreviousWeekCostData(query, client),
+        this.repository.getWeeklyCostComparison(query, client),
         this.repository.getWeeklyAlerts(query, client),
         this.repository.getUserInfo(organizationId, client),
         this.repository.getWeeklyDORAMetrics(query, client)
@@ -181,22 +181,19 @@ export class WeeklyAISummaryJob {
         return;
       }
 
-      // Calculate current cost total
-      const currentCost = costData.reduce((sum, item) => sum + parseFloat(item.total_cost || '0'), 0);
-
-      // Only a real prior week's spend supports a meaningful percentage — a $0 (or
-      // missing) prior week makes "% change" undefined, not 0%.
-      const hasComparableCosts = previousCost > 0 && currentCost > 0;
-      const changePercent = hasComparableCosts
+      const { currentCost, previousCost, hasComparableCosts, costSource } = costComparison;
+      const changePercent = hasComparableCosts && previousCost
         ? ((currentCost - previousCost) / previousCost) * 100
         : 0;
 
       let costSummaryText: string;
-      if (hasComparableCosts) {
+      if (hasComparableCosts && previousCost) {
         const direction = changePercent >= 0 ? 'increased' : 'decreased';
         costSummaryText = `Costs ${direction} ${Math.abs(changePercent).toFixed(1)}% this week ($${previousCost.toFixed(0)} → $${currentCost.toFixed(0)}).`;
       } else if (currentCost > 0) {
-        costSummaryText = `New spend detected: $${currentCost.toFixed(0)} this week.`;
+        costSummaryText = costSource === 'estimated'
+          ? `Estimated cloud spend: $${currentCost.toFixed(0)} (connect an AWS account for week-over-week trends).`
+          : `New spend detected: $${currentCost.toFixed(0)} this week.`;
       } else {
         costSummaryText = 'No cloud spend recorded this week.';
       }
@@ -210,7 +207,7 @@ export class WeeklyAISummaryJob {
       // Build weekly summary data
       const weeklyData: WeeklySummaryData = {
         costs: {
-          previous: previousCost,
+          previous: previousCost ?? 0,
           current: currentCost,
           changePercent: Math.round(changePercent * 100) / 100,
           topChanges: costData.slice(0, 3).map(item => ({

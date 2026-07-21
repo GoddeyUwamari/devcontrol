@@ -4,6 +4,7 @@
  */
 
 import { Pool, PoolClient } from 'pg';
+import awsCostService from '../services/aws-cost.service';
 
 export interface WeeklyDataQuery {
   organizationId: string;
@@ -16,11 +17,22 @@ export interface UserInfo {
   fullName: string | null;
 }
 
+export interface WeeklyCostComparison {
+  currentCost: number;
+  previousCost: number | null;
+  hasComparableCosts: boolean;
+  costSource: 'actual' | 'estimated';
+}
+
 export class WeeklySummaryRepository {
   constructor(private pool: Pool) {}
 
   /**
-   * Get cost data for the week
+   * Get current cost breakdown by resource type/region, for the "top cost drivers" list.
+   * This reflects the current aws_resources snapshot, not a week-filtered range — those
+   * rows are overwritten in place on every discovery sync (see upsertResource), so there
+   * is no historical breakdown to filter by date. For the actual week-over-week total,
+   * see getWeeklyCostComparison.
    */
   async getWeeklyCostData(query: WeeklyDataQuery, client?: PoolClient) {
     try {
@@ -45,9 +57,40 @@ export class WeeklySummaryRepository {
   }
 
   /**
-   * Get previous week cost data for comparison
+   * Get this-week vs previous-week cost totals for real week-over-week comparison.
+   *
+   * Sourced from AWS Cost Explorer via awsCostService.fetchCostTrend — the same live
+   * data source the dashboard KPI uses (see stats.controller.ts getDashboardStats) —
+   * so the weekly email and the dashboard never disagree. Cost Explorer returns real
+   * daily granularity, unlike aws_resources (a current-state table whose rows are
+   * overwritten on every discovery sync, so it holds no history to compare against).
+   *
+   * Falls back to the static estimated_monthly_cost snapshot when the org has no AWS
+   * connection or Cost Explorer doesn't return enough history yet. That fallback has
+   * no prior-week value to compare against, so it's reported honestly as 'estimated'
+   * with hasComparableCosts: false rather than faking a 0% change.
    */
-  async getPreviousWeekCostData(query: WeeklyDataQuery, client?: PoolClient): Promise<number> {
+  async getWeeklyCostComparison(query: WeeklyDataQuery, client?: PoolClient): Promise<WeeklyCostComparison> {
+    try {
+      const trend = await awsCostService.fetchCostTrend(query.organizationId, '30d');
+
+      if (trend.length >= 14) {
+        const currentWeek = trend.slice(-7);
+        const previousWeek = trend.slice(-14, -7);
+        const currentCost = currentWeek.reduce((sum, point) => sum + point.total, 0);
+        const previousCost = previousWeek.reduce((sum, point) => sum + point.total, 0);
+
+        return {
+          currentCost,
+          previousCost,
+          hasComparableCosts: previousCost > 0 && currentCost > 0,
+          costSource: 'actual'
+        };
+      }
+    } catch (error) {
+      console.warn('[Weekly Summary] Cost Explorer trend query failed, falling back to estimate:', error);
+    }
+
     try {
       const result = await (client ?? this.pool).query(
         `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total_cost
@@ -56,10 +99,15 @@ export class WeeklySummaryRepository {
         [query.organizationId]
       );
 
-      return parseFloat(result.rows[0]?.total_cost || '0');
+      return {
+        currentCost: parseFloat(result.rows[0]?.total_cost || '0'),
+        previousCost: null,
+        hasComparableCosts: false,
+        costSource: 'estimated'
+      };
     } catch (error) {
-      console.warn('[Weekly Summary] Previous cost query failed, returning 0:', error);
-      return 0;
+      console.warn('[Weekly Summary] Estimated cost fallback query failed, returning 0:', error);
+      return { currentCost: 0, previousCost: null, hasComparableCosts: false, costSource: 'estimated' };
     }
   }
 
