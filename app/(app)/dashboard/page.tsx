@@ -2,12 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  TrendingUp, TrendingDown, Users, Layers, Rocket, DollarSign,
-  AlertCircle, Server, Shield, Activity, Database, Plus, Zap,
-  Building2, Wifi, WifiOff, Minus, X, ChevronRight, GitBranch,
-  MoreHorizontal, ArrowRight, CheckCircle, Sparkles,
-} from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { OnboardingProgress } from '@/components/onboarding/progress-indicator'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -201,7 +196,7 @@ export default function DashboardPage() {
     enabled: !demoMode && !salesDemoMode,
   })
 
-  const { data: costRecsRaw = [] } = useQuery<Array<{ id: string; issue: string; potential_savings?: number; status?: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH' }>>({
+  const { data: costRecsRaw = [] } = useQuery<Array<{ id: string; issue: string; potential_savings?: number; status?: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH'; resource_type?: string }>>({
     queryKey: ['cost-recommendations'],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -410,39 +405,68 @@ export default function DashboardPage() {
   // Hidden in demo mode; used at both Recent Activity render sites in this file.
   const RecentActivityCard = () => {
     if (isDemoActive) return null
+    const severityBadge = (severity?: string) => {
+      const s = severity?.toLowerCase()
+      if (s === 'high') return { color: 'var(--text-danger)', bg: 'var(--bg-danger)', label: 'High' }
+      if (s === 'medium') return { color: 'var(--text-warning)', bg: 'var(--bg-warning)', label: 'Medium' }
+      if (s === 'low') return { color: 'var(--text-secondary)', bg: 'var(--surface-1)', label: 'Low' }
+      return null
+    }
     return (
-      <div className="bg-white border border-gray-100 rounded-xl p-4">
+      <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700">Recent Activity</p>
+          <p className="text-[13px] font-medium text-[var(--text-secondary)]">Recent activity</p>
         </div>
-        <div className="flex flex-col">
-          {activityFeedLoading ? (
-            <div className="flex flex-col gap-3 py-2">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-5/6" />
-              <Skeleton className="h-4 w-2/3" />
-            </div>
-          ) : activityFeedError || !activityFeedData || activityFeedData.length === 0 ? (
-            <div className="text-center py-10 flex flex-col items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center mb-1"><Activity size={18} className="text-gray-400" /></div>
-              <p className="text-sm font-semibold text-gray-900">No activity yet</p>
-              <p className="text-xs text-gray-500 leading-relaxed">Activity will appear here once resources sync, findings are detected, or scores update</p>
-            </div>
-          ) : (
-            activityFeedData.map((event, i) => {
-              const isRoutine = event.type === 'sync' || event.type === 'score'
-              return (
-                <div key={`${event.type}-${event.timestamp}-${i}`} className="group flex items-start justify-between gap-3 py-2.5 border-b border-gray-50">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: activityDotColor(event.type) }} />
-                    <div className={`line-clamp-2 ${isRoutine ? 'text-xs text-gray-400 leading-snug' : 'text-sm font-medium text-gray-900 leading-snug group-hover:text-[#7c3aed] transition-colors'}`} title={event.message}>{event.message}</div>
-                  </div>
-                  <div className="text-[11px] text-gray-400 whitespace-nowrap shrink-0">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</div>
-                </div>
-              )
-            })
-          )}
-        </div>
+        {activityFeedLoading ? (
+          <div className="flex flex-col gap-3 py-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        ) : activityFeedError || !activityFeedData || activityFeedData.length === 0 ? (
+          <div className="text-center py-10 flex flex-col items-center gap-2">
+            <div className="w-10 h-10 rounded-xl bg-[var(--surface-1)] flex items-center justify-center mb-1"><i className="ti ti-activity text-[18px] text-[var(--text-secondary)]" /></div>
+            <p className="text-sm font-semibold text-foreground">No activity yet</p>
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">Activity will appear here once resources sync, findings are detected, or scores update</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Category</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Finding</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Severity</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)] text-right">Time</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {activityFeedData.map((event, i) => {
+                const badge = severityBadge(event.severity)
+                return (
+                  <TableRow key={`${event.type}-${event.timestamp}-${i}`}>
+                    <TableCell className="whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: activityDotColor(event.type) }} />
+                        <span className="text-xs font-medium text-[var(--text-secondary)] capitalize">{event.type}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-0 w-full">
+                      <div className="line-clamp-2 text-sm text-foreground leading-snug" title={event.message}>{event.message}</div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {badge ? (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
+                      ) : (
+                        <span className="text-[10px] text-[var(--text-secondary)]">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-[11px] text-[var(--text-secondary)] whitespace-nowrap text-right">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        )}
       </div>
     )
   }
@@ -465,10 +489,10 @@ export default function DashboardPage() {
   const systemUptimeAvg     = isDemoActive ? '99.4%' : (systemHealth?.healthPercentage != null ? `${systemHealth.healthPercentage}%` : '—')
 
   const systemStatusConfig = {
-    healthy:  { color: '#059669', bg: '#F0FDF4', border: '#BBF7D0', dot: '#059669', label: 'All systems operational' },
-    degraded: { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', dot: '#D97706', label: 'Degraded performance detected' },
-    down:     { color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', dot: '#DC2626', label: 'System outage detected' },
-    unknown:  { color: '#94A3B8', bg: '#F8FAFC', border: '#E2E8F0', dot: '#94A3B8', label: 'Status pending' },
+    healthy:  { color: 'var(--text-success)', bg: 'var(--bg-success)', border: 'var(--border-success)', dot: 'var(--fill-success)', label: 'All systems operational' },
+    degraded: { color: 'var(--text-warning)', bg: 'var(--bg-warning)', border: 'var(--border-warning)', dot: 'var(--fill-warning)', label: 'Degraded performance detected' },
+    down:     { color: 'var(--text-danger)', bg: 'var(--bg-danger)', border: 'var(--border-danger)', dot: 'var(--fill-danger)', label: 'System outage detected' },
+    unknown:  { color: 'var(--text-secondary)', bg: 'var(--surface-1)', border: 'var(--border)', dot: 'var(--text-secondary)', label: 'Status pending' },
   }
   const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.unknown
 
@@ -490,6 +514,14 @@ export default function DashboardPage() {
   // fields, no new data source.
   const savingsROI = wasteAmount > 50 || topRecs[0]?.severity === 'HIGH' ? 'High' : 'Medium'
   const criticalAlerts = demoMode ? DEMO_DASHBOARD_STATS.criticalAlerts : 0
+
+  // Cost-saving opportunity counts, grouped by resource type from the already-fetched
+  // cost recommendations — no new fetch. The real /api/cost-recommendations data only
+  // ever tags resource_type as EC2/RDS/EIP today; EBS detection isn't wired to this
+  // endpoint yet, so that bucket is honestly 0 for real orgs until it is.
+  const idleEC2Count = isDemoActive ? 3 : costRecsRaw.filter(r => r.resource_type === 'EC2').length
+  const unattachedEBSCount = isDemoActive ? 2 : costRecsRaw.filter(r => r.resource_type === 'EBS').length
+  const overprovisionedRDSCount = isDemoActive ? 1 : costRecsRaw.filter(r => r.resource_type === 'RDS').length
 
   const doraRows: { label: string; value: string; tier: 'Elite' | 'High'; showTier?: boolean }[] = [
     { label: 'Deployment Frequency',  value: demoMode ? '4.2/day' : '—', tier: 'Elite', showTier: demoMode },
@@ -518,22 +550,22 @@ export default function DashboardPage() {
 
   // Reusable inline component for intelligence score bars
   const IntelScoreBars = ({ intel }: { intel: typeof DEMO_INTELLIGENCE | null }) => (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       {intel
         ? Object.values(intel.components).map((comp: any) => (
             <div key={comp.label} className="flex items-center gap-1.5 mb-0.5">
-              <div className="flex-1 h-1 bg-slate-100 rounded-full">
-                <div className="h-full rounded-full transition-all" style={{ width: `${comp.score}%`, background: comp.score >= 80 ? '#059669' : comp.score >= 60 ? '#D97706' : '#DC2626' }} />
+              <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-1)]">
+                <div className="h-full rounded-full transition-all" style={{ width: `${comp.score}%`, background: comp.score >= 80 ? 'var(--fill-success)' : comp.score >= 60 ? 'var(--fill-warning)' : 'var(--fill-danger)' }} />
               </div>
-              <span className="text-xs text-gray-700 w-20 text-right whitespace-nowrap shrink-0 font-medium">{comp.label.split(' ')[0]} {comp.score}</span>
+              <span className="text-xs text-[var(--text-secondary)] w-24 text-right whitespace-nowrap shrink-0 font-medium">{comp.label.split(' ')[0]} {comp.score}</span>
             </div>
           ))
-        : [{ label: 'Cost', score: costScore }, { label: 'Security', score: securityScore_health }, { label: 'Reliability', score: reliabilityScore }].map(({ label, score }) => (
+        : [{ label: 'Cost', score: costScore }, { label: 'Security', score: securityScore_health }, { label: 'Observability', score: reliabilityScore }].map(({ label, score }) => (
             <div key={label} className="flex items-center gap-1.5 mb-0.5">
-              <div className="flex-1 h-1 bg-slate-100 rounded-full">
-                <div className="h-full rounded-full" style={{ width: `${score ?? 0}%`, background: (score ?? 0) >= 80 ? '#059669' : (score ?? 0) >= 60 ? '#D97706' : '#DC2626' }} />
+              <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-1)]">
+                <div className="h-full rounded-full" style={{ width: `${score ?? 0}%`, background: (score ?? 0) >= 80 ? 'var(--fill-success)' : (score ?? 0) >= 60 ? 'var(--fill-warning)' : 'var(--fill-danger)' }} />
               </div>
-              <span className="text-xs text-gray-700 w-20 text-right shrink-0 font-medium">{label} {score ?? '—'}</span>
+              <span className="text-xs text-[var(--text-secondary)] w-24 text-right shrink-0 font-medium">{label} {score ?? '—'}</span>
             </div>
           ))
       }
@@ -544,32 +576,33 @@ export default function DashboardPage() {
   const IntelKPICard = ({ hero = false }: { hero?: boolean } = {}) => {
     const notReady = !isDemoActive && (displayIntelligence == null || displayIntelligence.system_score == null)
     const intelLabelClass = hero
-      ? 'text-lg font-extrabold uppercase tracking-wide text-gray-900 mb-3'
-      : 'text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3'
+      ? 'text-base font-semibold text-foreground mb-3'
+      : 'text-[13px] font-medium text-[var(--text-secondary)] mb-3'
     if (notReady) {
       return (
         <>
-          <p className={intelLabelClass}>System Intelligence</p>
-          <div className="text-base font-semibold text-gray-900 leading-none mb-2">Calculating...</div>
+          <p className={intelLabelClass}>System intelligence</p>
+          <div className="text-base font-medium text-foreground leading-none mb-2">Calculating...</div>
         </>
       )
     }
     const score = displayIntelligence?.system_score ?? cloudHealthScore ?? 0
     const chipLabel = score < 50 ? 'Poor — needs optimization' : score >= 85 ? 'Elite tier' : 'Needs optimization'
-    const chipStyle = score < 50 || (score < 85 && score > 0) ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+    const chipTextVar = score < 50 || (score < 85 && score > 0) ? 'var(--text-warning)' : 'var(--text-success)'
+    const chipBgVar = score < 50 || (score < 85 && score > 0) ? 'var(--bg-warning)' : 'var(--bg-success)'
     return (
       <>
-        <p className={intelLabelClass}>System Intelligence</p>
-        <div className="text-4xl font-semibold leading-none mb-2" style={{ color: score < 50 ? '#DC2626' : '#111827' }}>
-          {score || '—'}<span className="text-base text-gray-400 font-normal">/100</span>
+        <p className={intelLabelClass}>System intelligence</p>
+        <div className="text-3xl font-semibold leading-none mb-2" style={{ color: score < 50 ? 'var(--text-danger)' : 'var(--foreground)' }}>
+          {score || '—'}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
         </div>
-        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded inline-block mt-1.5 ${chipStyle}`}>{chipLabel}</span>
+        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded inline-block mt-1.5" style={{ color: chipTextVar, background: chipBgVar }}>{chipLabel}</span>
         <div className="my-2">
-          <span className="text-sm font-semibold" style={{ color: (displayIntelligence?.system_score ?? 0) >= 85 ? '#059669' : '#92400e' }}>
+          <span className="text-sm font-semibold" style={{ color: (displayIntelligence?.system_score ?? 0) >= 85 ? 'var(--text-success)' : 'var(--text-warning)' }}>
             {displayIntelligence?.status ?? 'Computing...'}
           </span>
           {displayIntelligence?.system_score && displayIntelligence.system_score < 85 && (
-            <p className="text-xs text-gray-500 mt-0.5 leading-snug">Top teams: 85+ · Improve to unlock full efficiency</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-snug">Top teams: 85+ · Improve to unlock full efficiency</p>
           )}
         </div>
         <IntelScoreBars intel={displayIntelligence} />
@@ -578,55 +611,56 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen bg-gray-50">
+    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen bg-[var(--surface-1)]">
 
-      {/* ── COMMAND HEADER ── */}
+      {/* ── HEADER ROW ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-10">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-snug mb-1">
-            AWS Cost, Security & Infrastructure Intelligence
+          <h1 className="text-2xl sm:text-3xl font-semibold text-foreground tracking-tight leading-snug mb-1">
+            AWS cost, security and infrastructure intelligence
           </h1>
-          <p className="text-[13px] text-slate-700 leading-relaxed mb-1">
+          <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed mb-1">
             Real-time visibility into cost waste, security posture, and infrastructure efficiency — across your entire AWS environment.
           </p>
-          <p className="text-[13px] text-gray-500 leading-relaxed">
+          <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed">
             {isAwsConnected
               ? `${isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'Your organization')} · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}`
               : 'Connect your AWS account to get started · Setup takes 2 minutes'}
           </p>
         </div>
         {isAwsConnected && (
-          <a href="/cost-optimization" className="inline-flex items-center gap-1.5 bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap shrink-0">
+          <a href="/cost-optimization" className="inline-flex items-center gap-1.5 bg-[var(--text-accent)] text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap shrink-0">
             {isBillingSyncing ? `Approve actions (${topRecs.length}) →` : `Review & Approve Savings (${topRecs.length}) →`}
           </a>
         )}
       </div>
+
       {/* ── RISK ALERT BANNER ── */}
       {(demoMode || salesDemoMode || criticalAlerts > 0) && (
-        <div className="flex items-center gap-3.5 bg-orange-50 border border-orange-200 rounded-xl px-5 py-3.5 mb-7">
-          <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-            <AlertCircle size={16} className="text-amber-600" />
+        <div className="flex items-center gap-3.5 bg-[var(--bg-warning)] border border-[var(--border-warning)] rounded-xl px-5 py-3.5 mb-7">
+          <div className="w-8 h-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center shrink-0">
+            <i className="ti ti-alert-circle text-[16px]" style={{ color: 'var(--text-warning)' }} />
           </div>
           <div className="flex-1">
-            <span className="text-sm font-semibold text-amber-900">
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-warning)' }}>
               {criticalAlerts} critical alert{criticalAlerts !== 1 ? 's' : ''} require your attention
             </span>
-            <span className="text-[13px] text-amber-700 ml-2">
+            <span className="text-[13px] ml-2" style={{ color: 'var(--text-warning)' }}>
               · Lambda invocation spike on payment-processor (+178%), CPU overload on production-worker
             </span>
           </div>
-          <a href="/observability/alerts" className="text-xs font-semibold text-amber-600 no-underline flex items-center gap-1 shrink-0">
-            View alerts <ArrowRight size={12} />
+          <a href="/observability/alerts" className="text-xs font-semibold no-underline flex items-center gap-1 shrink-0" style={{ color: 'var(--text-warning)' }}>
+            View alerts <i className="ti ti-arrow-right text-[12px]" />
           </a>
         </div>
       )}
 
       {/* ── RECOMMENDED ACTION BANNER ── */}
       {isAwsConnected && topRecs.length > 0 && (
-        <div className="bg-violet-50 border-2 border-violet-700 rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
+        <div className="bg-[var(--bg-accent)] border-2 border-[var(--border-accent)] rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
           <div>
-            <div className="text-[10px] font-bold text-violet-700 tracking-widest uppercase mb-1">Recommended Action</div>
-            <div className="text-base font-semibold text-indigo-950 mb-2">
+            <div className="text-[10px] font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
+            <div className="text-base font-semibold text-foreground mb-2">
               {isDemoActive
                 ? 'Save $800–$2,400/month by approving 3 optimizations'
                 : `Save $${wasteAmount.toLocaleString()}/month by approving ${topRecs.length} optimization${topRecs.length !== 1 ? 's' : ''}`}
@@ -634,20 +668,20 @@ export default function DashboardPage() {
             {isDemoActive && (
               <div className="flex gap-1.5 flex-wrap">
                 {['Zero downtime', 'Fully reversible', 'Takes < 5 min'].map((pill) => (
-                  <span key={pill} className="bg-white border border-gray-200 rounded-full px-2.5 py-0.5 text-[11px] text-gray-700">{pill}</span>
+                  <span key={pill} className="bg-[var(--surface-2)] border border-border rounded-full px-2.5 py-0.5 text-[11px] text-[var(--text-secondary)]">{pill}</span>
                 ))}
               </div>
             )}
           </div>
-          <a href="/cost-optimization" className="bg-violet-700 text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap shrink-0">
+          <a href="/cost-optimization" className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap shrink-0">
             Approve all changes
           </a>
         </div>
       )}
       {isAwsConnected && topRecs.length === 0 && !isDemoActive && (
-        <div className="bg-violet-50/50 border-2 border-violet-700 rounded-2xl px-5 py-4 mb-3">
-          <div className="text-[10px] font-bold text-violet-700 tracking-widest uppercase mb-1">Recommended Action</div>
-          <div className="text-base font-semibold text-gray-500">
+        <div className="bg-[var(--bg-accent)] border-2 border-[var(--border-accent)] rounded-2xl px-5 py-4 mb-3">
+          <div className="text-[10px] font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
+          <div className="text-base font-semibold text-[var(--text-secondary)]">
             No optimization opportunities identified · Your infrastructure is running efficiently
           </div>
         </div>
@@ -658,59 +692,59 @@ export default function DashboardPage() {
         isBillingSyncing ? (
           <>
             {/* Billing sync strip */}
-            <div className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 flex items-center justify-between mb-3">
+            <div className="bg-[var(--surface-2)] border border-border rounded-xl px-4 py-2.5 flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                <span className="text-[13px] text-gray-700 font-medium">
+                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--fill-warning)' }} />
+                <span className="text-[13px] text-foreground font-medium">
                   Billing sync in progress (24–48h) · Preliminary savings already identified:
                 </span>
-                <span className="text-emerald-600 font-semibold text-[13px]">{wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}/month` : 'calculating...'}</span>
+                <span className="font-semibold text-[13px]" style={{ color: 'var(--text-success)' }}>{wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}/month` : 'calculating...'}</span>
               </div>
-              <span className="text-gray-700 text-[11px] font-medium">Infrastructure + Security ready</span>
+              <span className="text-[var(--text-secondary)] text-[11px] font-medium">Infrastructure + security ready</span>
             </div>
 
             {/* KPI placeholder row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
-              {/* Total Cloud Spend */}
-              <div className="bg-white rounded-xl p-4 border border-gray-100">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Total Cloud Spend</p>
-                <div className="text-base font-semibold text-gray-900 leading-none mb-1">Syncing...</div>
-                <div className="text-xs text-gray-500 font-medium mb-2">Full data in 24–48h</div>
+              {/* Monthly spend */}
+              <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+                <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Monthly spend</p>
+                <div className="text-base font-medium text-foreground leading-none mb-1">Syncing...</div>
+                <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">Full data in 24–48h</div>
                 {wasteAmount > 0 && (
-                  <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                  <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
                 )}
               </div>
-              {/* Savings Actions */}
-              <div className="bg-white rounded-xl p-4 border border-gray-100">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Savings Actions</p>
-                <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">{topRecs.length}</div>
+              {/* Urgent actions */}
+              <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+                <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Urgent actions</p>
+                <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>{topRecs.length}</div>
                 {topRecs.length > 0 && (
-                  <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                  <span className="text-[10px] font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
                 )}
               </div>
-              {/* Security Posture */}
-              <div className="bg-white rounded-xl p-4 border border-gray-100">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Security Posture</p>
+              {/* Security health */}
+              <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+                <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Security health</p>
                 {(securityScore === null || securityScore === 0) && !isDemoActive ? (
                   <>
-                    <div className="text-base font-semibold text-gray-900 leading-none mb-2">Scanning...</div>
+                    <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
                   </>
                 ) : (
                   <>
-                    <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
-                      {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-gray-400 font-normal">/100</span>
+                    <div className="text-2xl font-medium text-foreground leading-none mb-2">
+                      {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
                     </div>
                     {securityShowEliteBadge && (
-                      <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                      <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
                     )}
                     {securityScore !== null && securityIsPreliminary && (
-                      <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
+                      <span className="text-[10px] font-semibold bg-[var(--bg-warning)] text-[var(--text-warning)] px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
                     )}
                   </>
                 )}
               </div>
               {/* System Intelligence */}
-              <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
                 <IntelKPICard />
               </div>
             </div>
@@ -719,16 +753,14 @@ export default function DashboardPage() {
           <>
             {hasServicesOnly && (
               <>
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 mb-5 flex items-center gap-3">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                  </svg>
-                  <span className="text-[13px] text-amber-800">
+                <div className="bg-[var(--bg-warning)] border border-[var(--border-warning)] rounded-xl px-5 py-3 mb-5 flex items-center gap-3">
+                  <i className="ti ti-alert-circle text-[16px]" style={{ color: 'var(--text-warning)' }} />
+                  <span className="text-[13px]" style={{ color: 'var(--text-warning)' }}>
                     Historical billing data is still syncing. Infrastructure scanning and security analysis are fully operational — cost totals will be available within 24–48 hours.
                   </span>
                 </div>
-                <div className="bg-white border border-slate-100 rounded-2xl p-8 mb-8">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-5">Data Status</p>
+                <div className="bg-[var(--surface-2)] border border-border rounded-2xl p-8 mb-8">
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] uppercase tracking-widest mb-5">Data status</p>
                   <div className="flex flex-col gap-3.5">
                     {[
                       { label: 'AWS account connected',               done: true  },
@@ -739,15 +771,15 @@ export default function DashboardPage() {
                       { label: 'Cost insights and forecasts',          done: false },
                     ].map(({ label, done }) => (
                       <div key={label} className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${done ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50 border border-slate-200'}`}>
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: done ? 'var(--bg-success)' : 'var(--surface-1)', border: `1px solid ${done ? 'var(--border-success)' : 'var(--border)'}` }}>
                           {done ? (
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            <i className="ti ti-check text-[10px]" style={{ color: 'var(--text-success)' }} />
                           ) : (
-                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--fill-warning)' }} />
                           )}
                         </div>
-                        <span className={`text-sm ${done ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>{label}</span>
-                        {!done && <span className="ml-auto text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Syncing</span>}
+                        <span className={`text-sm ${done ? 'text-foreground font-medium' : 'text-[var(--text-secondary)]'}`}>{label}</span>
+                        {!done && <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--text-warning)', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)' }}>Syncing</span>}
                       </div>
                     ))}
                   </div>
@@ -759,89 +791,89 @@ export default function DashboardPage() {
             {(isDemoActive || hasBillingData) ? (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                  {/* Total Cloud Spend */}
-                  <div className="bg-white rounded-xl p-4 border border-gray-100">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Total Cloud Spend</p>
+                  {/* Monthly spend */}
+                  <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Monthly spend</p>
                     {(statsLoading && !demoMode) || (currentSpend === 0 && !demoMode) ? (
                       <>
-                        <div className="text-base font-semibold text-gray-900 leading-none mb-1">Syncing...</div>
-                        <div className="text-xs text-gray-500 font-medium mb-2">Full data in 24–48h</div>
+                        <div className="text-base font-medium text-foreground leading-none mb-1">Syncing...</div>
+                        <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">Full data in 24–48h</div>
                       </>
                     ) : (
-                      <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">${currentSpend.toLocaleString()}</div>
+                      <div className="text-2xl font-medium text-foreground leading-none mb-2">${currentSpend.toLocaleString()}</div>
                     )}
                     {wasteAmount > 0 && (
-                      <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                      <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
                     )}
                     {isDemoActive && (
                       <div className="flex items-center gap-1.5 mt-2">
-                        <CostDeltaIcon size={14} style={{ color: costDeltaColor }} />
+                        <i className={`ti ti-${CostDeltaIcon === TrendingUp ? 'trending-up' : CostDeltaIcon === TrendingDown ? 'trending-down' : 'minus'} text-[14px]`} style={{ color: costDeltaColor }} />
                         <span className="text-[13px] font-semibold" style={{ color: costDeltaColor }}>{costChange > 0 ? '+' : ''}{Math.abs(costChange)}%</span>
-                        <span className="text-[13px] text-gray-500">vs last month</span>
+                        <span className="text-[13px] text-[var(--text-secondary)]">vs last month</span>
                       </div>
                     )}
                     {!isDemoActive && monthOverMonthCostChange !== null && (
                       <div className="flex items-center gap-1.5 mt-2">
-                        <MtdCostDeltaIcon size={14} style={{ color: mtdCostDeltaColor }} />
+                        <i className={`ti ti-${MtdCostDeltaIcon === TrendingUp ? 'trending-up' : MtdCostDeltaIcon === TrendingDown ? 'trending-down' : 'minus'} text-[14px]`} style={{ color: mtdCostDeltaColor }} />
                         <span className="text-[13px] font-semibold" style={{ color: mtdCostDeltaColor }}>{monthOverMonthCostChange > 0 ? '+' : ''}{monthOverMonthCostChange}%</span>
-                        <span className="text-[13px] text-gray-500">vs last month</span>
+                        <span className="text-[13px] text-[var(--text-secondary)]">vs last month</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Security Posture */}
-                  <div className="bg-white rounded-xl p-4 border border-gray-100">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Security Posture</p>
+                  {/* Security health */}
+                  <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Security health</p>
                     {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                      <div className="text-base font-semibold text-gray-900 leading-none mb-2">Scanning...</div>
+                      <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
                     ) : (
-                      <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
-                        {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-gray-400 font-normal">/100</span>
+                      <div className="text-2xl font-medium text-foreground leading-none mb-2">
+                        {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
                       </div>
                     )}
                     {securityShowEliteBadge && (
-                      <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                      <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
                     )}
                     <div className="flex items-center gap-1.5 mt-2">
-                      <SecurityDeltaIcon size={12} style={{ color: securityTierColor }} />
+                      <i className={`ti ti-${SecurityDeltaIcon === TrendingUp ? 'trending-up' : SecurityDeltaIcon === TrendingDown ? 'trending-down' : 'minus'} text-[12px]`} style={{ color: securityTierColor }} />
                       <span className="text-xs font-semibold" style={{ color: securityTierColor }}>
                         {securityTierLabel}
                       </span>
                     </div>
                     {securityBreakdown && (
-                      <p className="text-[11px] text-slate-500 mt-1">{securityBreakdown}</p>
+                      <p className="text-[11px] text-[var(--text-secondary)] mt-1">{securityBreakdown}</p>
                     )}
                   </div>
 
-                  {/* Savings Actions */}
-                  <div className="bg-white rounded-xl p-4 border border-gray-100">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">Savings Actions</p>
-                    <div className="text-3xl font-semibold text-emerald-600 leading-none mb-2">
+                  {/* Urgent actions */}
+                  <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Urgent actions</p>
+                    <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>
                       {topRecs.length > 0 ? `${topRecs.length} Opportunit${topRecs.length !== 1 ? 'ies' : 'y'}` : '—'}
                     </div>
                     {wasteAmount <= 0 && (
-                      <div className="text-xs text-gray-500 font-medium mb-2">No opportunities identified yet</div>
+                      <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">No opportunities identified yet</div>
                     )}
                     {topRecs.length > 0 && (
                       <>
-                        <span className="text-[10px] font-semibold bg-red-100 text-red-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
-                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5 ml-1.5">ROI: {savingsROI}</span>
+                        <span className="text-[10px] font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                        <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5 ml-1.5">ROI: {savingsROI}</span>
                       </>
                     )}
                     <div className="flex items-center gap-1.5 mt-2">
-                      <TrendingUp size={14} className="text-emerald-600" />
-                      <span className="text-[13px] font-semibold text-emerald-600">Potential savings: ${wasteAmount.toLocaleString()}/month</span>
+                      <i className="ti ti-trending-up text-[14px]" style={{ color: 'var(--text-success)' }} />
+                      <span className="text-[13px] font-semibold" style={{ color: 'var(--text-success)' }}>Potential savings: ${wasteAmount.toLocaleString()}/month</span>
                     </div>
                   </div>
                 </div>
 
-                {/* AI Summary — plain-English narrative synthesizing the real numbers
+                {/* System summary — plain-English narrative synthesizing the real numbers
                     above. Skeleton while generating; renders nothing on error or when
                     there's no real data to summarize (never a fabricated placeholder
                     or an error state). */}
                 {!aiSummaryError && (aiSummaryLoading || aiSummaryData?.summary) && (
-                  <div className="bg-white rounded-xl p-6 border border-gray-100 mb-4">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-3">AI Summary</p>
+                  <div className="bg-[var(--surface-1)] rounded-xl p-6 border border-border mb-4">
+                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">System summary</p>
                     {aiSummaryLoading ? (
                       <div className="flex flex-col gap-2">
                         <Skeleton className="h-3.5 w-full" />
@@ -849,48 +881,42 @@ export default function DashboardPage() {
                         <Skeleton className="h-3.5 w-2/3" />
                       </div>
                     ) : (
-                      <p className="text-sm text-gray-800 leading-relaxed break-words">{aiSummaryData?.summary}</p>
+                      <p className="text-sm text-foreground leading-relaxed break-words">{aiSummaryData?.summary}</p>
                     )}
                   </div>
                 )}
-
-                {/* System Intelligence — composite score anchor, positioned as the
-                    bridge into the Highest Priority Action section below. */}
-                <div className="bg-white rounded-xl p-6 border border-gray-100 mb-4">
-                  <IntelKPICard hero />
-                </div>
               </>
             ) : isAwsConnected && (isBillingSyncing || hasServicesOnly) ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div className="bg-white rounded-2xl p-8 border border-slate-100 border-l-[3px] border-l-violet-700">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Total Cloud Spend</p>
-                  <div className="text-lg font-semibold text-slate-400 leading-snug mb-2">Calculating...</div>
-                  <p className="text-xs text-slate-400">Available once billing syncs</p>
+                <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border border-l-[3px]" style={{ borderLeftColor: 'var(--border-accent)' }}>
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Monthly spend</p>
+                  <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Calculating...</div>
+                  <p className="text-xs text-[var(--text-secondary)]">Available once billing syncs</p>
                 </div>
-                <div className="bg-white rounded-2xl p-8 border border-slate-100">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Savings Opportunity</p>
-                  <div className="text-lg font-semibold text-slate-400 leading-snug mb-2">Analyzing...</div>
-                  <p className="text-xs text-slate-400">Infrastructure scan in progress</p>
+                <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Savings opportunity</p>
+                  <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Analyzing...</div>
+                  <p className="text-xs text-[var(--text-secondary)]">Infrastructure scan in progress</p>
                 </div>
-                <div className="bg-white rounded-xl p-4 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-3">Security Posture</p>
+                <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Security health</p>
                   {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                    <div className="text-base font-semibold text-gray-900 leading-none mb-2">Scanning...</div>
+                    <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
                   ) : (
                     <>
-                      <div className="text-4xl font-semibold text-gray-900 leading-none mb-2">
-                        {securityScore ?? '—'}<span className="text-base text-gray-400 font-normal">/100</span>
+                      <div className="text-2xl font-medium text-foreground leading-none mb-2">
+                        {securityScore ?? '—'}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
                       </div>
                       {securityShowEliteBadge && (
-                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                        <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
                       )}
                       {securityScore !== null && securityIsPreliminary && (
-                        <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
+                        <span className="text-[10px] font-semibold bg-[var(--bg-warning)] text-[var(--text-warning)] px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
                       )}
                     </>
                   )}
                 </div>
-                <div className="bg-white rounded-xl p-4 border border-gray-100">
+                <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
                   <IntelKPICard />
                 </div>
               </div>
@@ -899,52 +925,35 @@ export default function DashboardPage() {
         )
       ) : null}
 
-      {/* ── SYSTEM INTELLIGENCE BLOCK ── */}
+      {/* ── SYSTEM INTELLIGENCE + HIGHEST PRIORITY ACTION ── */}
       {displayIntelligence && isAwsConnected && !isBillingSyncing && !hasServicesOnly && (
-        <div className="bg-white rounded-2xl border border-slate-200 px-6 py-5 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* System Intelligence */}
+          <div className="bg-[var(--surface-2)] rounded-xl p-6 border border-border">
+            <IntelKPICard hero />
+          </div>
+
+          {/* Highest Priority Action */}
           {displayIntelligence.top_action && (
             <div
-              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-4 py-3.5 rounded-xl border-l-4 mb-4"
+              className="flex flex-col gap-4 px-5 py-5 rounded-xl border-l-4"
               style={{
-                background: displayIntelligence.top_action.severity === 'critical' ? '#FEF2F2' : '#FFFBEB',
-                border: `1px solid ${displayIntelligence.top_action.severity === 'critical' ? '#FECACA' : '#FDE68A'}`,
-                borderLeft: `4px solid ${displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706'}`,
+                background: displayIntelligence.top_action.severity === 'critical' ? 'var(--bg-danger)' : 'var(--bg-warning)',
+                border: `1px solid ${displayIntelligence.top_action.severity === 'critical' ? 'var(--border-danger)' : 'var(--border-warning)'}`,
+                borderLeft: `4px solid ${displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)'}`,
               }}
             >
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706' }}>Highest Priority Action</p>
-                <p className="text-sm font-semibold text-slate-900 mb-0.5">{displayIntelligence.top_drivers?.[0]?.action?.label ?? displayIntelligence.top_action.message}</p>
-                <p className="text-xs font-medium" style={{ color: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#D97706' }}>{displayIntelligence.top_action.consequence}</p>
-                <p className="text-[11px] font-semibold text-slate-500 mt-1">
-                  Business Risk: {displayIntelligence.top_action.severity === 'critical' || displayIntelligence.top_action.severity === 'high' ? 'High' : displayIntelligence.top_action.severity === 'medium' ? 'Medium' : 'Low'}
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)' }}>Highest priority action</p>
+                <p className="text-sm font-semibold text-foreground mb-0.5">{displayIntelligence.top_drivers?.[0]?.action?.label ?? displayIntelligence.top_action.message}</p>
+                <p className="text-xs font-medium" style={{ color: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)' }}>{displayIntelligence.top_action.consequence}</p>
+                <p className="text-[11px] font-semibold text-[var(--text-secondary)] mt-1">
+                  Business risk: {displayIntelligence.top_action.severity === 'critical' || displayIntelligence.top_action.severity === 'high' ? 'High' : displayIntelligence.top_action.severity === 'medium' ? 'Medium' : 'Low'}
                 </p>
               </div>
-              <a href={displayIntelligence.top_action.path} className="text-white px-4 py-2 rounded-lg text-xs font-bold no-underline whitespace-nowrap shrink-0" style={{ background: displayIntelligence.top_action.severity === 'critical' ? '#DC2626' : '#7C3AED' }}>
+              <a href={displayIntelligence.top_action.path} className="text-white px-4 py-2 rounded-lg text-xs font-bold no-underline whitespace-nowrap shrink-0 self-start" style={{ background: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-accent)' }}>
                 Review →
               </a>
-            </div>
-          )}
-          {displayIntelligence.top_drivers?.length > 0 && (
-            <div>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">System Score Drivers</p>
-              <div className="flex flex-col gap-2">
-                {displayIntelligence.top_drivers.map((driver: any, i: number) => (
-                  <div key={driver.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3.5 px-3.5 py-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                    <div className="flex items-start gap-3.5 sm:contents">
-                      <span className="text-[11px] font-bold text-slate-400 w-4 shrink-0 mt-0.5 sm:mt-0">#{i + 1}</span>
-                      <div className="w-2 h-2 rounded-full shrink-0 mt-1.5 sm:mt-0" style={{ background: driver.severity === 'critical' ? '#DC2626' : driver.severity === 'high' ? '#D97706' : '#F59E0B' }} />
-                      <div className="flex-1">
-                        <p className="text-[13px] font-semibold text-slate-900 mb-0.5">{driver.message}</p>
-                        <p className="text-[11px] text-slate-500">{driver.consequence}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 pl-[26px] sm:pl-0 sm:contents">
-                      <span className="text-[11px] font-bold text-emerald-600 whitespace-nowrap shrink-0">+{driver.impact_score}pts</span>
-                      <a href={driver.action.path} className="text-[11px] font-semibold text-violet-700 no-underline whitespace-nowrap shrink-0">{driver.action.label} →</a>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>
@@ -952,61 +961,61 @@ export default function DashboardPage() {
 
       {/* ── EXECUTIVE INSIGHTS ── */}
       {!insightDismissed && isAwsConnected && !isBillingSyncing && !hasServicesOnly && (demoMode || insightMessage) && (
-        <div className="bg-slate-50 border border-slate-200 border-l-2 border-l-violet-700 rounded-lg px-4 py-3.5 mb-8 relative">
+        <div className="bg-[var(--surface-1)] border border-border border-l-2 rounded-lg px-4 py-3.5 mb-8 relative" style={{ borderLeftColor: 'var(--border-accent)' }}>
           <div className="flex items-start gap-4">
-            <div className="w-7 h-7 rounded-lg bg-violet-100 shrink-0 flex items-center justify-center">
-              <Sparkles size={13} className="text-violet-700" />
+            <div className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center" style={{ background: 'var(--bg-accent)' }}>
+              <i className="ti ti-sparkles text-[13px]" style={{ color: 'var(--text-accent)' }} />
             </div>
             <div className="flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-700 mb-2">Executive Insights</p>
-              <p className="text-sm text-slate-800 leading-relaxed">
+              <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-accent)' }}>Executive insights</p>
+              <p className="text-sm text-foreground leading-relaxed">
                 {demoMode
-                  ? <>Compute costs are driving spend ($5,200, +12%).{' '}<a href="/cost-optimization" className="text-violet-700 font-semibold no-underline">Review optimization opportunities →</a></>
+                  ? <>Compute costs are driving spend ($5,200, +12%).{' '}<a href="/cost-optimization" className="font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>Review optimization opportunities →</a></>
                   : (insightMessage || `Your infrastructure is being actively analyzed. ${displayIntelligence?.top_drivers?.[0]?.message ? displayIntelligence.top_drivers[0].message + ' — ' + displayIntelligence.top_drivers[0].consequence : topRecs.length > 0 ? `${topRecs.length} optimization opportunit${topRecs.length !== 1 ? 'ies' : 'y'} identified.` : 'No insights available yet.'}`)}
               </p>
             </div>
-            <button onClick={() => setInsightDismissed(true)} className="bg-transparent border-none cursor-pointer text-slate-400 p-1 shrink-0 leading-none">
-              <X size={16} />
+            <button onClick={() => setInsightDismissed(true)} className="bg-transparent border-none cursor-pointer text-[var(--text-secondary)] p-1 shrink-0 leading-none">
+              <i className="ti ti-x text-[16px]" />
             </button>
           </div>
         </div>
       )}
 
-      {/* ── SPEND TREND + SECURITY POSTURE ── */}
+      {/* ── AWS COST TRENDS + SECURITY SCORE DRIVERS ── */}
       {isAwsConnected && (
         isBillingSyncing ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
             {/* AI Advisor */}
-            {topRecs.length > 0 ? <div className="bg-white rounded-2xl p-8 border border-slate-100">
+            {topRecs.length > 0 ? <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
               <div className="flex items-start justify-between mb-1">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-2">AI Advisor</p>
-                  <p className="text-base font-bold text-gray-900">Actions ready for approval</p>
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">AI advisor</p>
+                  <p className="text-base font-semibold text-foreground">Actions ready for approval</p>
                 </div>
-                <a href="/cost-optimization" className="text-xs font-semibold text-violet-700 no-underline whitespace-nowrap">All →</a>
+                <a href="/cost-optimization" className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>All →</a>
               </div>
               {topRecs.length > 0 && (
-                <p className="text-xs text-gray-700 mb-4 leading-relaxed">
+                <p className="text-xs text-foreground mb-4 leading-relaxed">
                   {isDemoActive
                     ? <>These {topRecs.length} changes reduce AWS waste immediately · zero downtime · fully reversible · takes &lt; 15 min</>
                     : <>These {topRecs.length} changes may reduce AWS waste — review each before approving</>}
                 </p>
               )}
               {topRecs.map((rec, i) => (
-                <div key={i} className="flex items-start gap-3 py-3 border-b border-slate-100">
-                  <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-violet-700" /></div>
+                <div key={i} className="flex items-start gap-3 py-3 border-b border-border">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--bg-accent)' }}><i className="ti ti-sparkles text-[13px]" style={{ color: 'var(--text-accent)' }} /></div>
                   <div className="flex-1">
-                    <div className="text-sm font-semibold text-gray-900 mb-1">{rec.label}</div>
-                    <div className="text-xs text-gray-700 font-medium mb-1">Cost impact pending billing sync</div>
+                    <div className="text-sm font-semibold text-foreground mb-1">{rec.label}</div>
+                    <div className="text-xs text-[var(--text-secondary)] font-medium mb-1">Cost impact pending billing sync</div>
                     <div className="flex gap-1.5 flex-wrap">
                       {isDemoActive ? (
                         <>
                           {i < 2 ? (
-                            <><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">No downtime</span></>
+                            <><span className="text-[10px] font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-1.5 py-0.5 rounded">No downtime</span></>
                           ) : (
-                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Low risk</span>
+                            <span className="text-[10px] font-semibold text-[var(--text-warning)] bg-[var(--bg-warning)] border border-[var(--border-warning)] px-1.5 py-0.5 rounded">Low risk</span>
                           )}
-                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">{rec.time}</span>
+                          <span className="text-[10px] font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">{rec.time}</span>
                         </>
                       ) : (
                         <RiskBadge severity={rec.severity} />
@@ -1015,78 +1024,78 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
-              <div className="mt-4 p-3.5 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between">
+              <div className="mt-4 p-3.5 bg-[var(--surface-1)] rounded-lg border border-border flex items-center justify-between">
                 <div>
-                  <div className="text-[13px] font-semibold text-gray-900 mb-0.5">Estimated impact</div>
-                  <div className="text-xs text-gray-700 font-medium">Savings estimate available once billing sync completes</div>
+                  <div className="text-[13px] font-semibold text-foreground mb-0.5">Estimated impact</div>
+                  <div className="text-xs text-[var(--text-secondary)] font-medium">Savings estimate available once billing sync completes</div>
                 </div>
-                <a href="/cost-optimization" className="bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline whitespace-nowrap ml-4">Approve actions ({topRecs.length}) →</a>
+                <a href="/cost-optimization" className="text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline whitespace-nowrap ml-4" style={{ background: 'var(--text-accent)' }}>Approve actions ({topRecs.length}) →</a>
               </div>
-            </div> : <div className="bg-white rounded-2xl p-8 border border-slate-100">
+            </div> : <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-2">AI Advisor</p>
-                  <p className="text-base font-bold text-gray-900">Infrastructure analysis in progress</p>
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">AI advisor</p>
+                  <p className="text-base font-semibold text-foreground">Infrastructure analysis in progress</p>
                 </div>
-                <a href="/cost-optimization" className="text-xs font-semibold text-violet-700 no-underline whitespace-nowrap">All →</a>
+                <a href="/cost-optimization" className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>All →</a>
               </div>
               <div className="flex flex-col items-center justify-center py-8 gap-3">
-                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-                  <Sparkles size={18} className="text-violet-400" />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--bg-accent)' }}>
+                  <i className="ti ti-sparkles text-[18px]" style={{ color: 'var(--text-accent)' }} />
                 </div>
-                <p className="text-sm font-semibold text-gray-900 text-center">Scanning your AWS environment</p>
-                <p className="text-xs text-gray-500 text-center leading-relaxed max-w-[220px]">Cost optimization opportunities will appear here once billing sync completes in 24–48h</p>
-                <a href="/infrastructure" className="mt-1 text-[13px] font-semibold text-violet-700 no-underline">View infrastructure →</a>
+                <p className="text-sm font-semibold text-foreground text-center">Scanning your AWS environment</p>
+                <p className="text-xs text-[var(--text-secondary)] text-center leading-relaxed max-w-[220px]">Cost optimization opportunities will appear here once billing sync completes in 24–48h</p>
+                <a href="/infrastructure" className="mt-1 text-[13px] font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>View infrastructure →</a>
               </div>
             </div>}
 
-            {/* Security Posture */}
-            <div className="bg-white rounded-2xl p-8 border border-slate-100">
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Security Posture</p>
-              <div className="text-center py-3 border-b border-slate-100 mb-3.5">
+            {/* Security Score Drivers */}
+            <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
+              <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Security score drivers</p>
+              <div className="text-center py-3 border-b border-border mb-3.5">
                 {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                  <div className="text-base font-semibold text-slate-900 leading-none">Scanning...</div>
+                  <div className="text-base font-semibold text-foreground leading-none">Scanning...</div>
                 ) : (
-                  <div className="text-5xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}<span className="text-base text-slate-400 font-normal">/100</span></div>
+                  <div className="text-4xl font-semibold text-foreground tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span></div>
                 )}
                 {securityScore !== null && (
                   <div className="text-xs font-semibold mt-1" style={{ color: securityTierColor }}>{securityTierLabel}</div>
                 )}
               </div>
               {securityRows.map(({ label, value, status }) => (
-                <div key={label} className="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span className="text-[12px] text-slate-400">{label}</span>
-                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? '#059669' : status === 'neutral' ? '#94A3B8' : '#D97706' }}>{value}</span>
+                <div key={label} className="flex items-center justify-between py-2 border-b border-border">
+                  <span className="text-[12px] text-[var(--text-secondary)]">{label}</span>
+                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? 'var(--text-success)' : status === 'neutral' ? 'var(--text-secondary)' : 'var(--text-warning)' }}>{value}</span>
                 </div>
               ))}
-              <div className="py-2 border-b border-slate-100">
+              <div className="py-2 border-b border-border">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12px] text-slate-400">Compliance Status</span>
+                  <span className="text-[12px] text-[var(--text-secondary)]">Compliance status</span>
                   {isDemoActive
-                    ? <span className="text-xs font-bold text-emerald-600">3 / 3 passing</span>
-                    : <span className="text-xs font-medium text-slate-400">Run compliance scan</span>}
+                    ? <span className="text-xs font-bold" style={{ color: 'var(--text-success)' }}>3 / 3 passing</span>
+                    : <span className="text-xs font-medium text-[var(--text-secondary)]">Run compliance scan</span>}
                 </div>
                 {isDemoActive && (
                   <div className="flex gap-1.5">
                     {['SOC2', 'CIS AWS', 'GDPR'].map((f) => (
-                      <span key={f} className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">{f}</span>
+                      <span key={f} className="text-[11px] font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{f}</span>
                     ))}
                   </div>
                 )}
               </div>
-              <a href="/security" className="flex items-center justify-center gap-1.5 mt-3.5 text-[13px] font-semibold text-violet-700 no-underline">View Security Report →</a>
+              <a href="/security" className="flex items-center justify-center gap-1.5 mt-3.5 text-[13px] font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>View security report →</a>
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-            {/* Spend Trend — 3fr */}
-            <div className="lg:col-span-3 bg-white rounded-xl p-4 border border-gray-100">
+            {/* AWS Cost Trends — 3fr */}
+            <div className="lg:col-span-3 bg-[var(--surface-2)] rounded-xl p-4 border border-border">
               <div className="flex items-start justify-between mb-6">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1">Spend Trend</p>
-                  <p className="text-sm font-semibold text-gray-900">Infrastructure cost over time</p>
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">AWS cost trends</p>
+                  <p className="text-sm font-semibold text-foreground">Infrastructure cost over time</p>
                 </div>
-                <a href="/costs" className="text-slate-400"><MoreHorizontal size={16} /></a>
+                <a href="/costs" className="text-[var(--text-secondary)]"><i className="ti ti-dots text-[16px]" /></a>
               </div>
               {isDemoActive ? (
                 <CostBreakdownBarList
@@ -1107,24 +1116,42 @@ export default function DashboardPage() {
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
-                    <DollarSign size={18} className="text-slate-300" />
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[var(--surface-1)]">
+                    <i className="ti ti-currency-dollar text-[18px] text-[var(--text-secondary)]" />
                   </div>
-                  <p className="text-sm font-semibold text-gray-900">Cost data syncing</p>
-                  <p className="text-xs text-gray-500 text-center leading-relaxed max-w-[220px]">Billing data available within 24–48h of connecting your AWS account</p>
+                  <p className="text-sm font-semibold text-foreground">Cost data syncing</p>
+                  <p className="text-xs text-[var(--text-secondary)] text-center leading-relaxed max-w-[220px]">Billing data available within 24–48h of connecting your AWS account</p>
                 </div>
               )}
             </div>
 
-            {/* Security Posture — 2fr */}
-            <div className="lg:col-span-2 bg-white rounded-xl p-4 border border-gray-100">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-4">Security Posture</p>
-              <div className="text-center py-5 border-b border-slate-100 mb-5">
+            {/* Security Score Drivers — 2fr */}
+            <div className="lg:col-span-2 bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+              <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Security score drivers</p>
+              {displayIntelligence?.top_drivers?.length > 0 && (
+                <div className="flex flex-col gap-2 mb-4">
+                  {displayIntelligence.top_drivers.map((driver: any, i: number) => (
+                    <div key={driver.id} className="flex items-start gap-2.5 px-3 py-2.5 bg-[var(--surface-1)] rounded-lg border border-border">
+                      <span className="text-[11px] font-bold text-[var(--text-secondary)] w-4 shrink-0 mt-0.5">#{i + 1}</span>
+                      <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: driver.severity === 'critical' ? 'var(--text-danger)' : driver.severity === 'high' ? 'var(--text-warning)' : 'var(--fill-warning)' }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-foreground mb-0.5">{driver.message}</p>
+                        <p className="text-[11px] text-[var(--text-secondary)]">{driver.consequence}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: 'var(--text-success)' }}>+{driver.impact_score}pts</span>
+                          <a href={driver.action.path} className="text-[11px] font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>{driver.action.label} →</a>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="text-center py-5 border-y border-border mb-5">
                 {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                  <div className="text-base font-semibold text-slate-900 leading-none">Scanning...</div>
+                  <div className="text-base font-semibold text-foreground leading-none">Scanning...</div>
                 ) : (
                   <>
-                    <div className="text-6xl font-bold text-slate-900 tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}</div>
+                    <div className="text-4xl font-semibold text-foreground tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}</div>
                     <div className="text-sm font-semibold mt-2" style={{ color: securityTierColor }}>
                       {securityTierLabel}
                     </div>
@@ -1132,45 +1159,72 @@ export default function DashboardPage() {
                 )}
               </div>
               {securityRows.map(({ label, value, status }) => (
-                <div key={label} className="flex items-center justify-between py-2.5 border-b border-slate-100">
-                  <span className="text-[12px] text-slate-400">{label}</span>
-                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? '#059669' : status === 'neutral' ? '#94A3B8' : '#D97706' }}>{value}</span>
+                <div key={label} className="flex items-center justify-between py-2.5 border-b border-border">
+                  <span className="text-[12px] text-[var(--text-secondary)]">{label}</span>
+                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? 'var(--text-success)' : status === 'neutral' ? 'var(--text-secondary)' : 'var(--text-warning)' }}>{value}</span>
                 </div>
               ))}
-              <div className="py-3 border-b border-slate-100">
+              <div className="py-3 border-b border-border">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12px] text-slate-400">Compliance Status</span>
+                  <span className="text-[12px] text-[var(--text-secondary)]">Compliance status</span>
                   {isDemoActive
-                    ? <span className="text-xs font-bold text-emerald-600">3 / 3 passing</span>
-                    : <span className="text-xs font-medium text-slate-400">Run compliance scan</span>}
+                    ? <span className="text-xs font-bold" style={{ color: 'var(--text-success)' }}>3 / 3 passing</span>
+                    : <span className="text-xs font-medium text-[var(--text-secondary)]">Run compliance scan</span>}
                 </div>
                 {isDemoActive && (
                   <div className="flex gap-1.5 flex-wrap">
                     {['SOC2', 'CIS AWS', 'GDPR'].map((framework) => (
-                      <span key={framework} className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">{framework}</span>
+                      <span key={framework} className="text-[11px] font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{framework}</span>
                     ))}
                   </div>
                 )}
               </div>
-              <a href="/security" className="flex items-center justify-center gap-1.5 mt-5 text-[13px] font-semibold text-violet-700 no-underline">
-                View Security Report <ArrowRight size={13} />
+              <a href="/security" className="flex items-center justify-center gap-1.5 mt-5 text-[13px] font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>
+                View security report <i className="ti ti-arrow-right text-[13px]" />
               </a>
             </div>
           </div>
         )
       )}
 
+      {/* ── COST-SAVING OPPORTUNITIES ── */}
+      {isAwsConnected && !isBillingSyncing && !hasServicesOnly && (isDemoActive || hasBillingData) && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+          {[
+            { title: 'Idle EC2', description: 'Instances with sustained low utilization', count: idleEC2Count },
+            { title: 'Unattached EBS', description: 'Volumes not attached to any instance', count: unattachedEBSCount },
+            { title: 'Overprovisioned RDS', description: 'Database instances sized above actual load', count: overprovisionedRDSCount },
+          ].map(({ title, description, count }) => (
+            <div key={title} className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+              <div className="flex items-start justify-between mb-3">
+                <p className="text-[13px] font-medium text-[var(--text-secondary)]">{title}</p>
+                <span
+                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
+                  style={{
+                    color: count === 0 ? 'var(--text-success)' : 'var(--text-warning)',
+                    background: count === 0 ? 'var(--bg-success)' : 'var(--bg-warning)',
+                  }}
+                >
+                  {count} detected
+                </span>
+              </div>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{description}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ── EXECUTIVE ROI SUMMARY ── */}
       {isAwsConnected && !isBillingSyncing && !hasServicesOnly && (
-        <div className="bg-white rounded-xl p-4 border border-gray-100 mb-8">
+        <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border mb-8">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1">Executive ROI Summary</p>
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">Executive ROI summary</p>
+              <p className="text-lg font-semibold text-foreground">
                 {isDemoActive || wasteAmount > 0 ? (
                   <>
                     DEVCONTROL has saved {isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')}{' '}
-                    <span className="text-emerald-600">${(wasteAmount * 12).toLocaleString()}</span> annualised
+                    <span style={{ color: 'var(--text-success)' }}>${(wasteAmount * 12).toLocaleString()}</span> annualised
                   </>
                 ) : (
                   <>Your infrastructure is currently optimized — no cost-saving opportunities detected for {organization?.displayName || organization?.name || 'your organization'}</>
@@ -1179,22 +1233,22 @@ export default function DashboardPage() {
             </div>
             <div className="flex gap-2.5 shrink-0">
               {(isDemoActive || wasteAmount > 0) && (
-                <a href="/cost-optimization" className="bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap">Approve Savings</a>
+                <a href="/cost-optimization" className="text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap" style={{ background: 'var(--text-accent)' }}>Approve savings</a>
               )}
-              <a href="/costs" className="bg-transparent text-slate-500 px-4 py-2.5 rounded-lg text-sm font-medium no-underline border border-slate-200 whitespace-nowrap">View Full Report</a>
+              <a href="/costs" className="bg-transparent text-[var(--text-secondary)] px-4 py-2.5 rounded-lg text-sm font-medium no-underline border border-border whitespace-nowrap">View full report</a>
             </div>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
             {[
-              { label: 'Monthly Savings',         value: wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}` : '—',            sub: wasteAmount > 0 ? 'AI-identified waste' : 'No opportunities identified yet',    color: wasteAmount > 0 ? '#059669' : '#94A3B8' },
-              { label: 'Annual Projection',        value: wasteAmount > 0 ? `$${(wasteAmount * 12).toLocaleString()}` : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? '#059669' : '#94A3B8' },
-              { label: 'Avg. ROI Payback',         value: isDemoActive ? '< 15 min' : '—',                                      sub: isDemoActive ? 'Zero-risk changes only' : 'Not yet available',                  color: isDemoActive ? '#7C3AED' : '#94A3B8' },
-              { label: 'Can reduce monthly AWS spend',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: '#D97706' },
+              { label: 'Monthly savings',         value: wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}` : '—',            sub: wasteAmount > 0 ? 'AI-identified waste' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
+              { label: 'Annual projection',        value: wasteAmount > 0 ? `$${(wasteAmount * 12).toLocaleString()}` : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
+              { label: 'Avg. ROI payback',         value: isDemoActive ? '< 15 min' : '—',                                      sub: isDemoActive ? 'Zero-risk changes only' : 'Not yet available',                  color: isDemoActive ? 'var(--text-accent)' : 'var(--text-secondary)' },
+              { label: 'Can reduce monthly spend',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: 'var(--text-warning)' },
             ].map(({ label, value, sub, color }) => (
-              <div key={label} className="px-4 py-4 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">{label}</p>
-                <div className="text-2xl font-bold tracking-tight leading-none mb-1" style={{ color }}>{value}</div>
-                <div className="text-[11px] text-gray-400">{sub}</div>
+              <div key={label} className="px-4 py-4 bg-[var(--surface-1)] rounded-xl border border-border">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2">{label}</p>
+                <div className="text-2xl font-semibold tracking-tight leading-none mb-1" style={{ color }}>{value}</div>
+                <div className="text-[11px] text-[var(--text-secondary)]">{sub}</div>
               </div>
             ))}
           </div>
@@ -1203,107 +1257,108 @@ export default function DashboardPage() {
 
       {/* ── SYSTEM STATUS BAR ── */}
       {isAwsConnected && (
-        <div className="bg-white border border-gray-100 rounded-xl px-4 py-3.5 flex items-center justify-between mb-5">
+        <div
+          className="rounded-xl px-4 py-3.5 flex items-center justify-between mb-5 border"
+          style={{ background: statusConf.bg, borderColor: statusConf.border }}
+        >
           <div className="flex items-center gap-2.5 flex-wrap">
-            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: systemAlertCount > 0 ? '#f59e0b' : statusConf.dot }} />
-            <span className="text-[13px] font-semibold text-gray-900">{systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : statusConf.label}</span>
-            <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
-            <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemUptimeAvg !== '—' && systemUptimeAvg !== '0%' ? `${systemUptimeAvg} uptime this month` : systemUptimeAvg === '0%' ? 'Pending data' : isDemoActive ? '99.9% uptime this month' : 'Uptime data pending'}</span>
-            <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
-            {isDemoActive && systemStatusLabel !== 'down' && <span className="hidden sm:block text-xs text-gray-700 font-medium">No incidents in 30 days</span>}
-            <div className="hidden sm:block w-px h-3.5 bg-gray-200" />
-            <span className="hidden sm:block text-xs text-gray-700 font-medium">{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : isDemoActive ? '3 services monitored' : (systemHealth?.totalServices ? `${systemHealth.totalServices} services monitored` : 'Monitoring pending')}</span>
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: systemAlertCount > 0 ? 'var(--fill-warning)' : statusConf.dot }} />
+            <span className="text-[13px] font-semibold" style={{ color: statusConf.color }}>{systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : statusConf.label}</span>
+            <div className="hidden sm:block w-px h-3.5 bg-border" />
+            <span className="hidden sm:block text-xs font-medium" style={{ color: statusConf.color }}>{systemUptimeAvg !== '—' && systemUptimeAvg !== '0%' ? `${systemUptimeAvg} uptime this month` : systemUptimeAvg === '0%' ? 'Pending data' : isDemoActive ? '99.9% uptime this month' : 'Uptime data pending'}</span>
+            <div className="hidden sm:block w-px h-3.5 bg-border" />
+            {isDemoActive && systemStatusLabel !== 'down' && <span className="hidden sm:block text-xs font-medium" style={{ color: statusConf.color }}>No incidents in 30 days</span>}
+            <div className="hidden sm:block w-px h-3.5 bg-border" />
+            <span className="hidden sm:block text-xs font-medium" style={{ color: statusConf.color }}>{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : isDemoActive ? '3 services monitored' : (systemHealth?.totalServices ? `${systemHealth.totalServices} services monitored` : 'Monitoring pending')}</span>
           </div>
-          <a href="/monitoring" className="text-emerald-600 font-semibold text-xs no-underline">View observability →</a>
+          <a href="/monitoring" className="font-semibold text-xs no-underline" style={{ color: statusConf.color }}>View observability →</a>
         </div>
       )}
 
-      {/* ── ENGINEERING VELOCITY + AI ADVISOR + RECENT ACTIVITY ── */}
+      {/* ── ENGINEERING HEALTH + AI ADVISOR ── */}
       {isAwsConnected && (
         isBillingSyncing ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Engineering Health */}
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
+            <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1.5">Engineering Health</p>
-                  <span className="text-xl font-bold text-gray-900">{isDemoActive ? 'Elite' : '—'}</span>
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">Engineering health</p>
+                  <span className="text-xl font-semibold text-foreground">{isDemoActive ? 'Elite' : '—'}</span>
                 </div>
-                <a href="/app/dora-metrics" className="text-[11px] font-semibold text-violet-700 no-underline flex items-center gap-1">Full report <ArrowRight size={12} /></a>
+                <a href="/app/dora-metrics" className="text-[11px] font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Full report <i className="ti ti-arrow-right text-[12px]" /></a>
               </div>
               {isDemoActive ? (
                 doraRows.filter(r => ['Lead Time for Changes', 'Change Failure Rate', 'Mean Time to Recovery'].includes(r.label)).map(({ label, value }) => (
-                  <div key={label} className="flex items-center justify-between py-2.5 border-b border-gray-50">
-                    <span className="text-[13px] text-gray-700 font-medium">{label}</span>
-                    <span className="text-[13px] font-semibold" style={{ color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827' }}>{value}</span>
+                  <div key={label} className="flex items-center justify-between py-2.5 border-b border-border">
+                    <span className="text-[13px] text-[var(--text-secondary)] font-medium">{label}</span>
+                    <span className="text-[13px] font-semibold" style={{ color: label === 'Change Failure Rate' ? 'var(--text-warning)' : 'var(--foreground)' }}>{value}</span>
                   </div>
                 ))
               ) : (
                 <div className="py-2">
-                  <p className="text-xs text-gray-500 mb-3 leading-relaxed">Connect CI/CD pipeline to see DORA metrics</p>
-                  <a href="/deployments" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">Connect CI/CD <ArrowRight size={12} /></a>
+                  <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">Connect CI/CD pipeline to see DORA metrics</p>
+                  <a href="/deployments" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Connect CI/CD <i className="ti ti-arrow-right text-[12px]" /></a>
                 </div>
               )}
             </div>
 
             {/* What You Can Do Now */}
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-4">What You Can Do Now</p>
-              <a href="/cost-optimization" className="flex items-center gap-3 px-4 py-3.5 bg-violet-700 border border-violet-800 rounded-xl mb-2 no-underline">
-                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0"><CheckCircle size={14} className="text-white" /></div>
+            <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
+              <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">What you can do now</p>
+              <a href="/cost-optimization" className="flex items-center gap-3 px-4 py-3.5 border rounded-xl mb-2 no-underline" style={{ background: 'var(--text-accent)', borderColor: 'var(--border-accent)' }}>
+                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0"><i className="ti ti-circle-check text-[14px] text-white" /></div>
                 <div>
                   <div className="text-sm font-bold text-white mb-0.5">Approve actions ({topRecs.length})</div>
-                  <div className="text-[11px] text-violet-200 font-medium">Zero downtime · fully reversible · &lt; 5 min</div>
+                  <div className="text-[11px] text-white/80 font-medium">Zero downtime · fully reversible · &lt; 5 min</div>
                 </div>
                 <span className="ml-auto text-sm text-white font-bold">→</span>
               </a>
               {[
-                { href: '/security',    iconBg: '#F0FDF4', iconColor: '#059669', title: 'Explore security report',   sub: securityScore !== null ? `${securityScore} score` : 'Run security scan'          },
-                { href: '/deployments', iconBg: '#F8FAFC', iconColor: '#475569', title: 'Connect CI/CD pipeline',     sub: 'Track deployments · velocity'   },
-                { href: '/costs',       iconBg: '#FFFBEB', iconColor: '#D97706', title: 'Monitor billing sync',       sub: 'Cost data within 24–48h'         },
-              ].map(({ href, iconBg, iconColor, title, sub }) => (
-                <a key={href} href={href} className="flex items-center gap-3 border border-gray-100 rounded-xl px-3 py-2.5 mb-1.5 no-underline">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: iconBg }}><ArrowRight size={13} style={{ color: iconColor }} /></div>
+                { href: '/security',    tokenBg: 'var(--bg-success)', tokenColor: 'var(--text-success)', title: 'Explore security report',   sub: securityScore !== null ? `${securityScore} score` : 'Run security scan'          },
+                { href: '/deployments', tokenBg: 'var(--surface-1)', tokenColor: 'var(--text-secondary)', title: 'Connect CI/CD pipeline',     sub: 'Track deployments · velocity'   },
+                { href: '/costs',       tokenBg: 'var(--bg-warning)', tokenColor: 'var(--text-warning)', title: 'Monitor billing sync',       sub: 'Cost data within 24–48h'         },
+              ].map(({ href, tokenBg, tokenColor, title, sub }) => (
+                <a key={href} href={href} className="flex items-center gap-3 border border-border rounded-xl px-3 py-2.5 mb-1.5 no-underline">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: tokenBg }}><i className="ti ti-arrow-right text-[13px]" style={{ color: tokenColor }} /></div>
                   <div>
-                    <div className="text-[13px] font-semibold text-gray-900 mb-0.5">{title}</div>
-                    <div className="text-xs text-gray-500">{sub}</div>
+                    <div className="text-[13px] font-semibold text-foreground mb-0.5">{title}</div>
+                    <div className="text-xs text-[var(--text-secondary)]">{sub}</div>
                   </div>
-                  <span className="ml-auto text-sm text-violet-700 font-semibold">→</span>
+                  <span className="ml-auto text-sm font-semibold" style={{ color: 'var(--text-accent)' }}>→</span>
                 </a>
               ))}
             </div>
-
-            <RecentActivityCard />
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Engineering Velocity */}
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* Engineering Health */}
+            <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1.5">Engineering Health</p>
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">Engineering health</p>
                   <div className="flex items-center gap-2">
-                    <span className="text-xl font-semibold text-gray-900">{isDemoActive ? 'Elite' : '—'}</span>
-                    {isDemoActive && <span className="text-[11px] font-bold bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full">Top 10%</span>}
+                    <span className="text-xl font-semibold text-foreground">{isDemoActive ? 'Elite' : '—'}</span>
+                    {isDemoActive && <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full" style={{ background: 'var(--bg-success)', color: 'var(--text-success)' }}>Top 10%</span>}
                   </div>
                 </div>
-                <a href="/app/dora-metrics" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">Full report <ArrowRight size={12} /></a>
+                <a href="/app/dora-metrics" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Full report <i className="ti ti-arrow-right text-[12px]" /></a>
               </div>
-              <p className="text-xs text-gray-500 mb-3 leading-relaxed">{isDemoActive ? 'Elite performance across all 4 DORA metrics' : 'Connect CI/CD pipeline to see DORA metrics'}</p>
+              <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">{isDemoActive ? 'Elite performance across all 4 DORA metrics' : 'Connect CI/CD pipeline to see DORA metrics'}</p>
               {isDemoActive ? (
                 doraRows.map(({ label, value, tier, showTier }) => (
-                  <div key={label} className="flex items-center justify-between py-2.5 border-b border-gray-50">
-                    <span className="text-[13px] text-gray-500">{label}</span>
+                  <div key={label} className="flex items-center justify-between py-2.5 border-b border-border">
+                    <span className="text-[13px] text-[var(--text-secondary)]">{label}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold" style={{ color: label === 'Change Failure Rate' ? '#f59e0b' : '#111827' }}>{value}</span>
+                      <span className="text-sm font-semibold" style={{ color: label === 'Change Failure Rate' ? 'var(--text-warning)' : 'var(--foreground)' }}>{value}</span>
                       {(showTier === undefined || showTier) && (
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: tier === 'Elite' ? '#059669' : '#D97706', background: tier === 'Elite' ? '#ECFDF5' : '#FFFBEB' }}>{tier}</span>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: tier === 'Elite' ? 'var(--text-success)' : 'var(--text-warning)', background: tier === 'Elite' ? 'var(--bg-success)' : 'var(--bg-warning)' }}>{tier}</span>
                       )}
                     </div>
                   </div>
                 ))
               ) : (
-                <a href="/deployments" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">Connect CI/CD <ArrowRight size={12} /></a>
+                <a href="/deployments" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Connect CI/CD <i className="ti ti-arrow-right text-[12px]" /></a>
               )}
             </div>
 
@@ -1311,36 +1366,36 @@ export default function DashboardPage() {
             {(() => {
               const showSavingsDollars = isDemoActive || hasBillingData
               return (
-                <div className="bg-white border border-gray-100 rounded-xl p-4">
+                <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-1.5">What You Can Do Now</p>
-                      <p className="text-base font-semibold text-gray-900">Top recommendations</p>
+                      <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">What you can do now</p>
+                      <p className="text-base font-semibold text-foreground">Top recommendations</p>
                     </div>
-                    <a href="/cost-optimization" className="text-xs font-semibold text-violet-700 no-underline flex items-center gap-1">All <ArrowRight size={12} /></a>
+                    <a href="/cost-optimization" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>All <i className="ti ti-arrow-right text-[12px]" /></a>
                   </div>
-                  <p className="text-xs text-gray-700 mb-3 leading-relaxed px-3 py-2.5 bg-emerald-50 rounded-lg border border-gray-100">
+                  <p className="text-xs text-foreground mb-3 leading-relaxed px-3 py-2.5 rounded-lg border border-border" style={{ background: 'var(--bg-success)' }}>
                     {isDemoActive
                       ? <>These {topRecs.length} changes reduce AWS waste immediately — zero downtime · fully reversible</>
                       : <>These {topRecs.length} changes may reduce AWS waste — review each before approving</>}
                   </p>
                   {topRecs.map((rec, i) => (
-                    <div key={i} className="flex items-start gap-3 border border-gray-100 rounded-xl px-3 py-2.5 mb-1.5">
-                      <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-violet-700" /></div>
+                    <div key={i} className="flex items-start gap-3 border border-border rounded-xl px-3 py-2.5 mb-1.5">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--bg-accent)' }}><i className="ti ti-sparkles text-[13px]" style={{ color: 'var(--text-accent)' }} /></div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-gray-900 leading-snug mb-0.5">{rec.label}</div>
+                        <div className="text-[13px] font-medium text-foreground leading-snug mb-0.5">{rec.label}</div>
                         <div className="flex items-center gap-1.5 flex-wrap mt-1">
                           {showSavingsDollars
-                            ? <span className="text-[11px] font-bold text-emerald-600">{rec.savings}</span>
-                            : <span className="text-[11px] text-gray-400 italic">Cost impact pending billing sync</span>}
+                            ? <span className="text-[11px] font-bold" style={{ color: 'var(--text-success)' }}>{rec.savings}</span>
+                            : <span className="text-[11px] text-[var(--text-secondary)] italic">Cost impact pending billing sync</span>}
                           {isDemoActive ? (
                             <>
                               {i < 2 ? (
-                                <><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">No downtime</span><span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">High confidence</span></>
+                                <><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-success)', background: 'var(--bg-success)', border: '1px solid var(--border-success)' }}>Low risk</span><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-success)', background: 'var(--bg-success)', border: '1px solid var(--border-success)' }}>No downtime</span><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-accent)', background: 'var(--bg-accent)', border: '1px solid var(--border-accent)' }}>High confidence</span></>
                               ) : (
-                                <><span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">Effort: Medium</span></>
+                                <><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-warning)', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)' }}>Low risk</span><span className="text-[10px] font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">Effort: Medium</span></>
                               )}
-                              <span className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">{rec.time}</span>
+                              <span className="text-[10px] font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">{rec.time}</span>
                             </>
                           ) : (
                             <RiskBadge severity={rec.severity} />
@@ -1349,21 +1404,30 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))}
-                  <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                    <div className="text-[11px] font-semibold text-slate-500 mb-0.5">Total potential</div>
+                  <div className="mt-4 p-3 bg-[var(--surface-1)] rounded-lg border border-border">
+                    <div className="text-[11px] font-semibold text-[var(--text-secondary)] mb-0.5">Total potential</div>
                     {showSavingsDollars
                       ? (wasteAmount > 0
-                          ? <div className="text-lg font-bold text-emerald-600 tracking-tight">${wasteAmount.toLocaleString()}/mo</div>
-                          : <div className="text-[13px] text-gray-400 italic">{isDemoActive ? 'Calculating...' : 'No savings opportunities identified yet'}</div>)
-                      : <div className="text-[13px] text-gray-400 italic">Calculated once billing syncs</div>}
+                          ? <div className="text-lg font-bold tracking-tight" style={{ color: 'var(--text-success)' }}>${wasteAmount.toLocaleString()}/mo</div>
+                          : <div className="text-[13px] text-[var(--text-secondary)] italic">{isDemoActive ? 'Calculating...' : 'No savings opportunities identified yet'}</div>)
+                      : <div className="text-[13px] text-[var(--text-secondary)] italic">Calculated once billing syncs</div>}
                   </div>
                 </div>
               )
             })()}
-
-            <RecentActivityCard />
           </div>
         )
+      )}
+
+      {/* ── RECENT ACTIVITY ── */}
+      {isAwsConnected && <RecentActivityCard />}
+
+      {/* ── FOOTER CONNECTION STATUS ── */}
+      {isAwsConnected && (
+        <div className="flex items-center gap-2 mt-6 mb-2">
+          <div className="h-2 w-2 rounded-full" style={{ background: isConnected ? 'var(--fill-success)' : 'var(--fill-danger)' }} />
+          <span className="text-xs text-[var(--text-secondary)]">{isConnected ? 'Connected' : 'Reconnecting...'}</span>
+        </div>
       )}
 
       <style>{`

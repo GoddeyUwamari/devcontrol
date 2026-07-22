@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 
 html {
   scroll-behavior: smooth;
@@ -128,6 +129,57 @@ html {
   --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.551 0.027 264.364);
+}
+
+/* Semantic surface/status tokens — dashboard redesign */
+:root {
+  --surface-1: #F9FAFB;
+  --surface-2: #FFFFFF;
+  --text-secondary: #6B7280;
+
+  --text-success: #059669;
+  --bg-success: #D1FAE5;
+  --border-success: #BBF7D0;
+  --fill-success: #059669;
+
+  --text-warning: #D97706;
+  --bg-warning: #FEF3C7;
+  --border-warning: #FDE68A;
+  --fill-warning: #D97706;
+
+  --text-danger: #DC2626;
+  --bg-danger: #FEF2F2;
+  --border-danger: #FECACA;
+  --fill-danger: #DC2626;
+
+  --text-accent: #7C3AED;
+  --bg-accent: #F5F3FF;
+  --border-accent: #7C3AED;
+}
+
+.dark {
+  --surface-1: #111827;
+  --surface-2: #1F2937;
+  --text-secondary: #94A3B8;
+
+  --text-success: #34D399;
+  --bg-success: #05966926;
+  --border-success: #065F46;
+  --fill-success: #10B981;
+
+  --text-warning: #FBBF24;
+  --bg-warning: #F59E0B26;
+  --border-warning: #92400E;
+  --fill-warning: #F59E0B;
+
+  --text-danger: #F87171;
+  --bg-danger: #DC262626;
+  --border-danger: #991B1B;
+  --fill-danger: #EF4444;
+
+  --text-accent: #A78BFA;
+  --bg-accent: #7C3AED26;
+  --border-accent: #5B21B6;
 }
 
 @layer base {
