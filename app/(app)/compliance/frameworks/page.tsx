@@ -86,9 +86,9 @@ export default function ComplianceFrameworksPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1.5">Security</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Compliance Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Detect compliance gaps and misconfigurations across your AWS environment — before they become audit failures.</p>
+          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Security</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Compliance Intelligence</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Detect compliance gaps and misconfigurations across your AWS environment — before they become audit failures.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {displayFrameworks.length === 0 && !isDemoActive ? (
@@ -115,12 +115,12 @@ export default function ComplianceFrameworksPage() {
                   <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
                   <circle cx="27" cy="27" r="23" fill="none" stroke={isDemoActive ? '#D97706' : '#94A3B8'} strokeWidth="5" strokeDasharray="144.5" strokeDashoffset={isDemoActive ? 43 : 144.5} strokeLinecap="round" transform="rotate(-90 27 27)"/>
                 </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold" style={{ color: isDemoActive ? '#D97706' : '#94A3B8' }}>{isDemoActive ? '80%' : 'N/A'}</span>
+                <span className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color: isDemoActive ? '#D97706' : '#94A3B8' }}>{isDemoActive ? '80%' : 'N/A'}</span>
               </div>
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Compliance Score</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Compliance Score</p>
                 <p className="text-sm font-bold text-slate-900 mb-0.5">{isDemoActive ? 'Partially Compliant' : 'Risk Visibility: Not Established'}</p>
-                <p className="text-[10px] text-slate-400">{isDemoActive ? '4 frameworks active · 1 failing · last scan 30 min ago' : 'Run a baseline scan to establish compliance posture'}</p>
+                <p className="text-xs text-slate-500">{isDemoActive ? '4 frameworks active · 1 failing · last scan 30 min ago' : 'Run a baseline scan to establish compliance posture'}</p>
               </div>
             </div>
 
@@ -128,7 +128,7 @@ export default function ComplianceFrameworksPage() {
 
             {/* Primary risk */}
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{isDemoActive ? 'Primary Risk' : 'Compliance Posture'}</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">{isDemoActive ? 'Primary Risk' : 'Compliance Posture'}</p>
               <div className="flex flex-col gap-0.5">
                 {isDemoActive ? (
                   <>
@@ -137,7 +137,7 @@ export default function ComplianceFrameworksPage() {
                     <p className="text-xs text-green-600 font-medium">● CIS (87%) and NIST (91%) passing</p>
                   </>
                 ) : (
-                  <p className="text-xs text-slate-400 font-medium">Run a baseline scan to see your compliance posture</p>
+                  <p className="text-xs text-slate-500 font-medium">Run a baseline scan to see your compliance posture</p>
                 )}
               </div>
             </div>
@@ -146,9 +146,9 @@ export default function ComplianceFrameworksPage() {
 
             {/* Recommended action */}
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Recommended Action</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Recommended Action</p>
               <p className="text-sm font-semibold text-slate-900 mb-0.5">{isDemoActive ? 'Resolve PCI-DSS critical controls' : 'Run CIS AWS baseline scan'}</p>
-              <p className="text-[10px] text-slate-400">{isDemoActive ? '7 critical violations · immediate remediation required' : 'Establish baseline: 2–5 min · read-only · no infrastructure changes'}</p>
+              <p className="text-xs text-slate-500">{isDemoActive ? '7 critical violations · immediate remediation required' : 'Establish baseline: 2–5 min · read-only · no infrastructure changes'}</p>
             </div>
           </div>
           <a href="/security" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
@@ -162,13 +162,13 @@ export default function ComplianceFrameworksPage() {
         <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 mb-4 flex items-start gap-3.5">
           <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Shield size={12} className="text-white" /></div>
           <div className="flex-1">
-            <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
+            <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
             <p className="text-sm text-slate-700 leading-relaxed">
-              <strong className="text-red-600">PCI-DSS is failing at 68%</strong> — payment card data security standards not met. Audit risk is active. SOC 2 at 74% with 7 critical violations open. CIS AWS (87%) and NIST CSF (91%) are passing.<span className="block mt-1 text-xs text-slate-400">Recommended: resolve PCI-DSS critical controls before next audit cycle · address SOC 2 availability gaps.</span>
+              <strong className="text-red-600">PCI-DSS is failing at 68%</strong> — payment card data security standards not met. Audit risk is active. SOC 2 at 74% with 7 critical violations open. CIS AWS (87%) and NIST CSF (91%) are passing.<span className="block mt-1 text-xs text-slate-500">Recommended: resolve PCI-DSS critical controls before next audit cycle · address SOC 2 availability gaps.</span>
             </p>
           </div>
           <button onClick={() => handleRunScan(displayFrameworks.find((f: any) => f.status === 'failing')?.id ?? displayFrameworks[0]?.id)}
-            className="text-[11px] font-bold text-red-600 bg-transparent border-none cursor-pointer shrink-0 flex items-center gap-1 whitespace-nowrap p-0">
+            className="text-xs font-bold text-red-600 bg-transparent border-none cursor-pointer shrink-0 flex items-center gap-1 whitespace-nowrap p-0">
             Resolve now <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </button>
         </div>
@@ -184,9 +184,9 @@ export default function ComplianceFrameworksPage() {
             { label: 'Last Scan',            value: lastScanLabel === '—' ? 'Never' : lastScanLabel,          sub: lastScanLabel === '—' ? 'Never — no historical security baseline established' : 'Scan history available', color: lastScanLabel === '—' ? '#9CA3AF' : '#0F172A' },
           ].map(({ label, value, sub, color }) => (
             <div key={label} className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">{label}</p>
               <div className="text-xl sm:text-2xl font-bold tracking-tight leading-none mb-1.5" style={{ color }}>{value}</div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">{sub}</p>
+              <p className="text-xs text-slate-500 leading-relaxed">{sub}</p>
             </div>
           ))}
         </div>
@@ -199,10 +199,10 @@ export default function ComplianceFrameworksPage() {
         <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Priority Actions</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Priority Actions</p>
               <p className="text-xs text-slate-500">Ranked by audit risk · resolve before next compliance cycle</p>
             </div>
-            <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-600 text-white w-fit">Act Now</span>
+            <span className="inline-flex px-2 py-0.5 rounded text-xs font-bold uppercase bg-red-600 text-white w-fit">Act Now</span>
           </div>
           <div className="flex flex-col gap-2.5">
             {[
@@ -213,19 +213,19 @@ export default function ComplianceFrameworksPage() {
               <div key={priority} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between ${bg} rounded-xl border ${border} px-4 py-3 gap-3`}>
                 <div className="flex items-start gap-3.5">
                   <div className="text-center min-w-[36px] shrink-0">
-                    <p className={`text-[9px] font-bold uppercase mb-0.5 ${titleColor}`}>Priority</p>
+                    <p className={`text-xs font-bold uppercase mb-0.5 ${titleColor}`}>Priority</p>
                     <p className={`text-base font-bold ${titleColor}`}>{priority}</p>
                   </div>
                   <div className={`w-px h-8 self-center ${border} border-l shrink-0`} />
                   <div>
                     <p className="text-sm font-semibold text-slate-900 mb-0.5">{title} — <span className={titleColor}>{titleSub}</span></p>
-                    <p className="text-[11px] text-slate-400">{desc}</p>
+                    <p className="text-xs text-slate-500">{desc}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
-                  <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase ${badgeCls}`}>{badge}</span>
+                  <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold uppercase ${badgeCls}`}>{badge}</span>
                   <button onClick={() => handleViewDetails(displayFrameworks.find((f: any) => fw ? f.name?.includes(fw) : true)?.id ?? '')}
-                    className={`border rounded-lg px-3 py-1.5 text-[11px] font-bold cursor-pointer transition-colors ${btnCls}`}>{btnText}</button>
+                    className={`border rounded-lg px-3 py-1.5 text-xs font-bold cursor-pointer transition-colors ${btnCls}`}>{btnText}</button>
                 </div>
               </div>
             ))}
@@ -237,7 +237,7 @@ export default function ComplianceFrameworksPage() {
       {loading && !isDemoActive ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-100">
           <RefreshCw size={22} className="text-slate-300 mx-auto mb-3 animate-spin" />
-          <p className="text-sm text-slate-400">Loading frameworks...</p>
+          <p className="text-sm text-slate-500">Loading frameworks...</p>
         </div>
       ) : displayFrameworks.length === 0 ? (
         <div>
@@ -247,11 +247,11 @@ export default function ComplianceFrameworksPage() {
               <div key={fw.name} className={`bg-white rounded-xl border p-4 cursor-pointer hover:border-slate-300 transition-colors ${fw.recommended ? 'border-violet-200' : 'border-slate-200'}`}>
                 <div className="mb-2 flex items-center gap-2">
                   <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: fw.badgeBg, color: fw.badgeColor }}>{fw.badge}</span>
-                  {fw.recommended && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-600 text-white uppercase">Recommended</span>}
+                  {fw.recommended && <span className="text-xs font-bold px-2 py-0.5 rounded bg-violet-600 text-white uppercase">Recommended</span>}
                 </div>
-                <p className="text-sm font-medium text-slate-900 mb-1">{fw.name}</p>
+                <p className="text-sm font-semibold text-slate-900 mb-1">{fw.name}</p>
                 <p className="text-xs text-slate-500 leading-relaxed mb-2">{fw.desc}</p>
-                <p className="text-[10px] text-slate-400 mb-3">{fw.checks}</p>
+                <p className="text-xs text-slate-500 mb-3">{fw.checks}</p>
                 <button onClick={() => handleStartScan(fw.name)} className="w-full text-xs text-violet-700 bg-transparent border border-violet-600 rounded-lg py-1.5 cursor-pointer hover:bg-violet-50 transition-colors font-medium">
                   {fw.recommended ? 'Scan with CIS →' : 'Start scan →'}
                 </button>
@@ -259,12 +259,12 @@ export default function ComplianceFrameworksPage() {
             ))}
           </div>
           <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-12 text-center">
-            <p className="text-base font-medium text-slate-900 mb-2.5">Your AWS environment is not currently being evaluated</p>
+            <p className="text-sm font-semibold text-slate-900 mb-2.5">Your AWS environment is not currently being evaluated</p>
             <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-lg mx-auto">Add a compliance framework to detect misconfigurations, policy violations, and audit risks before they become incidents.</p>
-            <p className="text-xs text-slate-400 mb-6">Run a baseline scan to see your compliance posture.</p>
+            <p className="text-xs text-slate-500 mb-6">Run a baseline scan to see your compliance posture.</p>
             <div className="flex flex-col items-center gap-2">
               <button onClick={handleCreateFramework} className="bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg px-6 py-2.5 text-sm font-medium cursor-pointer transition-colors">Start Baseline Scan (CIS AWS)</button>
-              <p className="text-[11px] text-slate-400">~2–5 minutes · read-only · no infrastructure changes required</p>
+              <p className="text-xs text-slate-500">~2–5 minutes · read-only · no infrastructure changes required</p>
             </div>
           </div>
         </div>
@@ -279,10 +279,10 @@ export default function ComplianceFrameworksPage() {
               <div key={f.id} className={`bg-white rounded-xl border p-5 sm:p-7 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-center hover:border-slate-300 transition-colors ${failing ? 'bg-red-50/30 border-red-100' : 'border-slate-100'}`}>
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-3">
-                    <span className="text-base font-semibold text-slate-900">{f.name}</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: passing ? '#F0FDF4' : failing ? '#FEF2F2' : '#FFFBEB', color: statusColor }}>{statusLabel}</span>
-                    {f.isCustom && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Custom</span>}
-                    {f.is_default && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Default</span>}
+                    <span className="text-sm font-semibold text-slate-900">{f.name}</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: passing ? '#F0FDF4' : failing ? '#FEF2F2' : '#FFFBEB', color: statusColor }}>{statusLabel}</span>
+                    {f.isCustom && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Custom</span>}
+                    {f.is_default && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Default</span>}
                   </div>
                   <div className="flex items-center gap-3 mb-2">
                     <div className="flex-1 h-1.5 bg-slate-100 rounded-full">
@@ -290,7 +290,7 @@ export default function ComplianceFrameworksPage() {
                     </div>
                     <span className="text-sm font-bold min-w-[40px] text-right" style={{ color: statusColor }}>{pct}%</span>
                   </div>
-                  <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                  <div className="flex flex-wrap gap-3 text-xs text-slate-500">
                     {f.rulesCount != null && <span>{f.rulesCount} rules</span>}
                     {f.lastScanAt && <span>Last scan {new Date(f.lastScanAt).toLocaleString()}</span>}
                   </div>
