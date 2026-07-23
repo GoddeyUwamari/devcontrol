@@ -108,7 +108,7 @@ export default function AnomaliesPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-10">
         <div className="text-center max-w-sm">
           <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto mb-5"><Lock size={24} className="text-violet-600" /></div>
-          <h2 className="text-lg font-bold text-slate-900 mb-2.5">Pro Plan Required</h2>
+          <h2 className="text-sm font-semibold text-slate-900 mb-2.5">Pro Plan Required</h2>
           <p className="text-sm text-slate-500 leading-relaxed mb-6">This feature is available on the Pro plan and above.</p>
           <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors">Upgrade to Pro</a>
         </div>
@@ -131,8 +131,8 @@ export default function AnomaliesPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Detect Cost, Security, and Infrastructure Anomalies in Real Time</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">AI continuously analyzes your AWS activity · scans run every 15 minutes</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Detect Cost, Security, and Infrastructure Anomalies in Real Time</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">AI continuously analyzes your AWS activity · scans run every 15 minutes</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {lastScanResult && <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">{lastScanResult}</span>}
@@ -170,7 +170,7 @@ export default function AnomaliesPage() {
             {isScanning ? 'Scan in progress…' : lastScanTime ? <>Last scan: <strong className="text-slate-700">{lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong></> : 'Initial scan in progress'} · next scan <strong className="text-slate-700">~15 min</strong>
           </span>
         </div>
-        <span className="text-xs text-slate-400">EC2, S3, RDS, IAM, Lambda</span>
+        <span className="text-xs text-slate-500">EC2, S3, RDS, IAM, Lambda</span>
       </div>
 
       {/* 4 KPI cards */}
@@ -181,16 +181,16 @@ export default function AnomaliesPage() {
           { label: 'Systems Impacted', value: systemsImpacted, dot: '#94A3B8', sub: 'Active resources affected' },
         ].map(({ label, value, dot, sub }) => (
           <div key={label} className="bg-white rounded-xl border border-slate-200 p-5">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">{label}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2.5">{label}</p>
             <div className="flex items-end gap-2 mb-1.5">
               <span className="text-3xl font-bold text-slate-900 tracking-tight leading-none">{value}</span>
               <span className="w-2 h-2 rounded-full mb-1 shrink-0" style={{ background: dot }} />
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">{sub}</p>
+            <p className="text-xs text-slate-500 leading-relaxed">{sub}</p>
           </div>
         ))}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Estimated Impact</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2.5">Estimated Impact</p>
           <div className={`text-xl font-bold tracking-tight leading-none mb-1.5 ${activeCount === 0 ? 'text-green-600' : criticalCount > 0 ? 'text-red-600' : 'text-amber-500'}`}>
             {activeCount === 0 ? 'None' : criticalCount > 0 ? `${criticalCount} service${criticalCount > 1 ? 's' : ''} degraded` : 'Monitoring'}
           </div>
@@ -209,7 +209,7 @@ export default function AnomaliesPage() {
           ))}
         </div>
         <span className="text-slate-200 hidden sm:block">|</span>
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:block">Filters:</span>
+        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest hidden sm:block">Filters:</span>
         <div className="flex flex-wrap gap-2">
           {[
             { label: 'Severity', options: ['All', 'Critical', 'Warning', 'Info'] },
@@ -222,7 +222,7 @@ export default function AnomaliesPage() {
             </select>
           ))}
         </div>
-        <span className="text-xs text-slate-400 ml-auto whitespace-nowrap hidden sm:block">{anomalies.length} {filter === 'active' ? 'active' : 'total'} anomalies</span>
+        <span className="text-xs text-slate-500 ml-auto whitespace-nowrap hidden sm:block">{anomalies.length} {filter === 'active' ? 'active' : 'total'} anomalies</span>
       </div>
 
       {/* Bulk actions */}
@@ -247,14 +247,14 @@ export default function AnomaliesPage() {
         {isLoading ? (
           <div className="bg-white rounded-2xl p-12 text-center border border-slate-100">
             <RefreshCw size={22} className="text-slate-300 mx-auto mb-3" />
-            <p className="text-sm text-slate-400">Loading anomalies...</p>
+            <p className="text-sm text-slate-500">Loading anomalies...</p>
           </div>
         ) : !lastScanLoading && !lastScanTime ? (
           <div className="bg-white rounded-2xl border border-slate-100 p-6 sm:p-12">
             <div className="flex flex-col sm:flex-row items-start gap-5">
               <div className="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center shrink-0"><RefreshCw size={20} className="text-violet-600 animate-spin" /></div>
               <div className="flex-1">
-                <p className="text-base font-bold text-slate-900 mb-1.5">Analyzing your infrastructure...</p>
+                <p className="text-sm font-semibold text-slate-900 mb-1.5">Analyzing your infrastructure...</p>
                 <p className="text-sm text-slate-500 leading-relaxed">Initial scan in progress. Results will appear here once the first scan completes.</p>
               </div>
             </div>
@@ -264,7 +264,7 @@ export default function AnomaliesPage() {
             <div className="flex flex-col sm:flex-row items-start gap-5">
               <div className="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center shrink-0"><CheckCircle2 size={20} className="text-green-600" /></div>
               <div className="flex-1">
-                <p className="text-base font-bold text-slate-900 mb-1.5">No anomalies detected — your infrastructure looks healthy</p>
+                <p className="text-sm font-semibold text-slate-900 mb-1.5">No anomalies detected — your infrastructure looks healthy</p>
                 <p className="text-sm text-slate-500 mb-4 leading-relaxed">We continuously monitor for:</p>
                 <ul className="list-none p-0 m-0 flex flex-col gap-1.5 mb-5">
                   {['Unusual cost spikes and budget overruns', 'Suspicious access patterns and IAM changes', 'Security misconfigurations and open ports', 'Infrastructure performance anomalies'].map(item => (
@@ -274,7 +274,7 @@ export default function AnomaliesPage() {
                   ))}
                 </ul>
                 <div className="flex flex-wrap items-center gap-4">
-                  <p className="text-xs text-slate-400">Last scan: <span className="font-semibold text-slate-600">{lastScanLoading ? 'Checking…' : lastScanTime ? lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pending first scan'}</span></p>
+                  <p className="text-xs text-slate-500">Last scan: <span className="font-semibold text-slate-600">{lastScanLoading ? 'Checking…' : lastScanTime ? lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pending first scan'}</span></p>
                 </div>
               </div>
             </div>
@@ -297,8 +297,8 @@ export default function AnomaliesPage() {
             <div key={anomaly.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               {/* Priority strip */}
               <div className="px-5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center gap-2.5">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-widest ${isFirst ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{isFirst ? 'ACT NOW' : `#${index + 1} Priority`}</span>
-                <span className="text-xs text-slate-400">{isFirst ? `#1 of ${anomalies.length} — act on this first` : 'Secondary issue'}</span>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase tracking-widest ${isFirst ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{isFirst ? 'ACT NOW' : `#${index + 1} Priority`}</span>
+                <span className="text-xs text-slate-500">{isFirst ? `#1 of ${anomalies.length} — act on this first` : 'Secondary issue'}</span>
               </div>
 
               {/* Card body */}
@@ -309,16 +309,16 @@ export default function AnomaliesPage() {
 
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                    <p className="text-sm font-bold text-slate-900 leading-snug">{riskTitle}</p>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded shrink-0" style={{ background: sev.bg, color: sev.color }}>{sev.label}</span>
-                    <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded flex items-center gap-1"><AlertCircle size={9} className="text-amber-500" />Unassigned</span>
-                    {anomaly.status === 'acknowledged' && <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-sky-50 text-sky-600">Acknowledged</span>}
-                    {anomaly.status === 'resolved' && <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-green-50 text-green-600">Resolved</span>}
-                    {anomaly.status === 'false_positive' && <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-500">False Positive</span>}
-                    <span className="ml-auto text-[10px] text-slate-400 font-medium whitespace-nowrap">{timeDisplay}</span>
+                    <p className="text-sm font-semibold text-slate-900 leading-snug">{riskTitle}</p>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded shrink-0" style={{ background: sev.bg, color: sev.color }}>{sev.label}</span>
+                    <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded flex items-center gap-1"><AlertCircle size={9} className="text-amber-500" />Unassigned</span>
+                    {anomaly.status === 'acknowledged' && <span className="text-xs font-semibold px-2 py-0.5 rounded bg-sky-50 text-sky-600">Acknowledged</span>}
+                    {anomaly.status === 'resolved' && <span className="text-xs font-semibold px-2 py-0.5 rounded bg-green-50 text-green-600">Resolved</span>}
+                    {anomaly.status === 'false_positive' && <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-500">False Positive</span>}
+                    <span className="ml-auto text-xs text-slate-500 font-medium whitespace-nowrap">{timeDisplay}</span>
                   </div>
                   <p className="text-xs font-medium text-slate-600 mb-2 leading-relaxed">{decisionSummary}</p>
-                  <div className="flex flex-wrap gap-2 text-xs text-slate-400 mb-3">
+                  <div className="flex flex-wrap gap-2 text-xs text-slate-500 mb-3">
                     {anomaly.resourceType && <span>{anomaly.resourceType}</span>}
                     {anomaly.resourceName && <><span>·</span><span>{anomaly.resourceName}</span></>}
                     {anomaly.region && <><span>·</span><span>{anomaly.region}</span></>}
@@ -330,7 +330,7 @@ export default function AnomaliesPage() {
                   <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 mb-3">
                     <div className="flex items-center gap-1.5 mb-2">
                       <Brain size={11} className="text-violet-600 shrink-0" />
-                      <strong className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Root Cause</strong>
+                      <strong className="text-xs font-bold text-slate-500 uppercase tracking-widest">Root Cause</strong>
                     </div>
                     {causeText.map((bullet, i) => (
                       <div key={i} className="flex items-start gap-2 mb-1 last:mb-0">
@@ -392,16 +392,16 @@ export default function AnomaliesPage() {
                       { label: 'Metric', value: anomaly.metric.replace(/_/g, ' ') },
                     ].map(({ label, value }) => (
                       <div key={label} className="bg-slate-50 border border-slate-100 rounded-lg px-3.5 py-3">
-                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
                         <p className="text-sm font-semibold text-slate-900">{value}</p>
                       </div>
                     ))}
                   </div>
                   <div className="flex flex-col gap-3">
-                    {anomaly.description && <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Description</p><p className="text-sm text-slate-600 leading-relaxed">{anomaly.description}</p></div>}
-                    {anomaly.aiExplanation && <div className="bg-violet-50 border border-violet-100 rounded-xl p-4"><p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1.5">AI Analysis</p><p className="text-sm text-violet-800 leading-relaxed">{anomaly.aiExplanation}</p></div>}
-                    {anomaly.impact && <div className="bg-amber-50 border border-amber-200 rounded-xl p-4"><p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-1.5">Impact</p><p className="text-sm text-amber-900 leading-relaxed">{anomaly.impact}</p></div>}
-                    {anomaly.recommendation && <div className="bg-green-50 border border-green-200 rounded-xl p-4"><p className="text-[10px] font-bold text-green-600 uppercase tracking-widest mb-1.5">Recommended Action</p><p className="text-sm text-green-900 leading-relaxed whitespace-pre-line">{anomaly.recommendation}</p></div>}
+                    {anomaly.description && <div><p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">Description</p><p className="text-sm text-slate-600 leading-relaxed">{anomaly.description}</p></div>}
+                    {anomaly.aiExplanation && <div className="bg-violet-50 border border-violet-100 rounded-xl p-4"><p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">AI Analysis</p><p className="text-sm text-violet-800 leading-relaxed">{anomaly.aiExplanation}</p></div>}
+                    {anomaly.impact && <div className="bg-amber-50 border border-amber-200 rounded-xl p-4"><p className="text-xs font-bold text-amber-600 uppercase tracking-widest mb-1.5">Impact</p><p className="text-sm text-amber-900 leading-relaxed">{anomaly.impact}</p></div>}
+                    {anomaly.recommendation && <div className="bg-green-50 border border-green-200 rounded-xl p-4"><p className="text-xs font-bold text-green-600 uppercase tracking-widest mb-1.5">Recommended Action</p><p className="text-sm text-green-900 leading-relaxed whitespace-pre-line">{anomaly.recommendation}</p></div>}
                   </div>
                 </div>
               )}
@@ -414,24 +414,24 @@ export default function AnomaliesPage() {
       <div className="mt-8">
         <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-white border border-slate-200 rounded-t-xl border-b-0">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="text-xs font-medium text-slate-500">Custom Detection Rules</h2>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 uppercase tracking-widest">Enterprise</span>
-            <span className="text-xs text-slate-400">{rules.length} rules active</span>
+            <h2 className="text-sm font-semibold text-slate-500">Custom Detection Rules</h2>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 uppercase tracking-widest">Enterprise</span>
+            <span className="text-xs text-slate-500">{rules.length} rules active</span>
           </div>
-          <button onClick={() => setShowCreateRule(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold border-none cursor-pointer transition-colors">
+          <button onClick={() => setShowCreateRule(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors">
             <Plus size={11} /> New Rule
           </button>
         </div>
 
         {showCreateRule && (
           <div className="bg-white border border-violet-200 rounded-xl p-5 sm:p-6 mb-4 mt-1">
-            <h3 className="text-base font-bold text-slate-900 mb-5">Create Detection Rule</h3>
+            <h3 className="text-sm font-semibold text-slate-900 mb-5">Create Detection Rule</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               {[
                 { label: 'Rule Name *', type: 'text', value: newRule.name, onChange: (v: string) => setNewRule(r => ({ ...r, name: v })), placeholder: 'e.g. High EC2 Cost Alert' },
               ].map(({ label, type, value, onChange, placeholder }) => (
                 <div key={label}>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">{label}</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1.5">{label}</label>
                   <input type={type} value={value as string} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 outline-none focus:border-violet-500 transition-colors box-border" />
                 </div>
               ))}
@@ -442,14 +442,14 @@ export default function AnomaliesPage() {
                 { label: 'Severity', value: newRule.severity, onChange: (v: string) => setNewRule(r => ({ ...r, severity: v as CustomAnomalyRule['severity'] })), options: [['info', 'Info'], ['warning', 'Warning'], ['critical', 'Critical']] },
               ].map(({ label, value, onChange, options }) => (
                 <div key={label}>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">{label}</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1.5">{label}</label>
                   <select value={value} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 bg-white outline-none focus:border-violet-500 transition-colors box-border">
                     {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
                 </div>
               ))}
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Threshold *</label>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Threshold *</label>
                 <input type="number" value={newRule.threshold} onChange={e => setNewRule(r => ({ ...r, threshold: parseFloat(e.target.value) || 0 }))} placeholder="e.g. 500" className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 outline-none focus:border-violet-500 transition-colors box-border" />
               </div>
             </div>
@@ -466,10 +466,10 @@ export default function AnomaliesPage() {
           <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl px-5 py-6 text-center">
             <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center mx-auto mb-2.5"><Settings size={15} className="text-violet-600" /></div>
             <p className="text-sm font-semibold text-slate-900 mb-1.5">No custom rules yet</p>
-            <p className="text-xs text-slate-400 leading-relaxed mb-4 max-w-sm mx-auto">No custom rules active — only default AI detection running. Add rules to detect issues specific to your infrastructure thresholds.</p>
+            <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-sm mx-auto">No custom rules active — only default AI detection running. Add rules to detect issues specific to your infrastructure thresholds.</p>
             <div className="flex flex-wrap gap-2 mb-4 justify-center">
               {['Detect unusual cost spikes', 'Flag security misconfigurations', 'Monitor abnormal traffic patterns'].map(example => (
-                <span key={example} className="text-[10px] text-slate-400 bg-slate-50 border border-dashed border-slate-200 rounded-lg px-2.5 py-1">{example}</span>
+                <span key={example} className="text-xs text-slate-500 bg-slate-50 border border-dashed border-slate-200 rounded-lg px-2.5 py-1">{example}</span>
               ))}
             </div>
             <button onClick={() => setShowCreateRule(true)} className="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors">
@@ -486,16 +486,16 @@ export default function AnomaliesPage() {
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="text-sm font-semibold text-slate-900">{rule.name}</span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest" style={{ background: sb, color: sc }}>{rule.severity}</span>
-                      {!rule.enabled && <span className="text-[10px] font-semibold text-slate-400">Disabled</span>}
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full uppercase tracking-widest" style={{ background: sb, color: sc }}>{rule.severity}</span>
+                      {!rule.enabled && <span className="text-xs font-semibold text-slate-500">Disabled</span>}
                     </div>
-                    <p className="text-xs text-slate-400">{rule.metric} {rule.condition.replace(/_/g, ' ')} {rule.threshold} · {rule.timeWindow} window</p>
+                    <p className="text-xs text-slate-500">{rule.metric} {rule.condition.replace(/_/g, ' ')} {rule.threshold} · {rule.timeWindow} window</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button onClick={() => handleToggleRule(rule.id, !rule.enabled)} className="bg-transparent border-none cursor-pointer p-1" style={{ color: rule.enabled ? '#7C3AED' : '#94A3B8' }}>
                       {rule.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                     </button>
-                    <button onClick={() => handleDeleteRule(rule.id)} className="flex items-center gap-1 border border-red-200 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-red-600 bg-transparent cursor-pointer hover:bg-red-50 transition-colors">
+                    <button onClick={() => handleDeleteRule(rule.id)} className="flex items-center gap-1 border border-red-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 bg-transparent cursor-pointer hover:bg-red-50 transition-colors">
                       <Trash2 size={10} /> Delete
                     </button>
                   </div>

@@ -186,15 +186,15 @@ export default function AnomalyRulesPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Custom Anomaly Rules</h1>
-          <p className="text-gray-500 text-sm mt-1.5">Define custom detection thresholds and conditions for your infrastructure.</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
+          <h1 className="text-2xl font-bold text-gray-900">Custom Anomaly Rules</h1>
+          <p className="text-xs text-gray-500 font-medium mt-1.5">Define custom detection thresholds and conditions for your infrastructure.</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
             Custom anomaly rules are available on the Enterprise plan. Define your own thresholds, conditions, and alert logic.
           </p>
@@ -212,9 +212,9 @@ export default function AnomalyRulesPage() {
       {/* ── HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Custom Anomaly Rules</h1>
-          <p className="text-gray-500 text-sm mt-1.5">
+          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
+          <h1 className="text-2xl font-bold text-gray-900">Custom Anomaly Rules</h1>
+          <p className="text-xs text-gray-500 font-medium mt-1.5">
             Define custom detection thresholds and alert conditions for your AWS infrastructure.
           </p>
         </div>
@@ -240,7 +240,7 @@ export default function AnomalyRulesPage() {
           { label: 'Warning Rules',  value: rules.filter(r => r.severity === 'warning').length,  color: '#D97706' },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white border border-gray-100 rounded-xl p-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{label}</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">{label}</p>
             <p className="text-3xl font-bold" style={{ color }}>{value}</p>
           </div>
         ))}
@@ -250,7 +250,7 @@ export default function AnomalyRulesPage() {
       {showForm && (
         <div className="bg-white border border-violet-200 rounded-xl p-6 mb-6 shadow-sm">
           <div className="flex items-center justify-between mb-5">
-            <h2 className="text-base font-semibold text-slate-900">Create New Rule</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Create New Rule</h2>
             <button onClick={() => { setShowForm(false); setNewRule(DEFAULT_RULE) }} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
           </div>
 
@@ -383,14 +383,14 @@ export default function AnomalyRulesPage() {
       {/* ── RULES LIST ── */}
       {isLoading ? (
         <div className="bg-white border border-gray-100 rounded-xl p-12 text-center">
-          <p className="text-slate-400 text-sm">Loading rules...</p>
+          <p className="text-slate-500 text-sm">Loading rules...</p>
         </div>
       ) : rules.length === 0 && !showForm ? (
         <div className="bg-white border border-gray-100 rounded-xl p-12 text-center">
           <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center mx-auto mb-4">
             <SlidersHorizontal className="w-5 h-5 text-violet-600" />
           </div>
-          <h3 className="text-base font-semibold text-slate-900 mb-2">No custom rules yet</h3>
+          <h3 className="text-sm font-semibold text-slate-900 mb-2">No custom rules yet</h3>
           <p className="text-sm text-slate-500 mb-5">Create your first rule to get alerted on custom thresholds.</p>
           <button
             onClick={() => setShowForm(true)}
@@ -410,19 +410,19 @@ export default function AnomalyRulesPage() {
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-semibold text-slate-900">{rule.name}</span>
                     <span
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      className="text-xs font-bold px-2 py-0.5 rounded-full"
                       style={{ color: sev.color, background: sev.bg, border: `1px solid ${sev.border}` }}
                     >
                       {sev.label}
                     </span>
                     {!rule.enabled && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">Disabled</span>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Disabled</span>
                     )}
                   </div>
                   {rule.description && (
                     <p className="text-xs text-slate-500 mb-1">{rule.description}</p>
                   )}
-                  <p className="text-xs text-slate-400">{conditionLabel(rule)}</p>
+                  <p className="text-xs text-slate-500">{conditionLabel(rule)}</p>
                 </div>
 
                 {/* Actions */}

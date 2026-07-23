@@ -201,11 +201,11 @@ export default function SecurityPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Security Command Center</h1>
-            {demoMode && <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Demo Mode</span>}
-            {isPreliminary && <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Preliminary — full scan pending</span>}
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Security Command Center</h1>
+            {demoMode && <span className="text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Demo Mode</span>}
+            {isPreliminary && <span className="text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Preliminary — full scan pending</span>}
           </div>
-          <p className="text-sm text-slate-500 leading-relaxed">Security posture, anomaly detection, compliance frameworks, and audit trail</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Security posture, anomaly detection, compliance frameworks, and audit trail</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={handleRunScan} disabled={isScanning}
@@ -246,16 +246,16 @@ export default function SecurityPage() {
           <div className="bg-white border border-red-100 rounded-xl p-5 sm:p-7 mb-7">
             <div className="flex flex-wrap items-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-red-600 shrink-0" />
-              <span className="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">ACT NOW</span>
-              <span className="text-xs text-slate-400">Highest priority risk</span>
-              <span className="ml-auto text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded flex items-center gap-1">⚠ Unassigned</span>
+              <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">ACT NOW</span>
+              <span className="text-xs text-slate-500">Highest priority risk</span>
+              <span className="ml-auto text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded flex items-center gap-1">⚠ Unassigned</span>
             </div>
             <div className="flex flex-col sm:flex-row items-start gap-5">
               <div className="flex-1">
-                <p className="text-lg font-bold text-slate-900 mb-1.5">
+                <p className="text-sm font-semibold text-slate-900 mb-1.5">
                   {rt.toLowerCase().includes('ec2') ? `${rt} latency risk — CPU saturation (${Math.round(topRisk.currentValue ?? 88)}%)` : rt.toLowerCase().includes('lambda') ? `${rt} throttling risk — concurrency saturation (+${d}%)` : `${rt} anomaly — +${d}% deviation`}
                 </p>
-                <div className="flex flex-wrap gap-2 text-[10px] text-slate-400 mb-3">
+                <div className="flex flex-wrap gap-2 text-xs text-slate-500 mb-3">
                   <span>{topRisk.resourceType ?? '—'}</span><span>·</span><span>{topRisk.resourceName ?? '—'}</span><span>·</span><span>us-east-1</span>
                 </div>
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 flex items-center gap-2 text-xs text-amber-800">
@@ -263,7 +263,7 @@ export default function SecurityPage() {
                   <span><strong>Impact:</strong> {rt.toLowerCase().includes('ec2') ? `+${d > 50 ? Math.round(d * 0.3) : 35}% latency → user-facing degradation` : `+${d}% above normal — service impact likely`}</span>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 mb-3">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Root Cause</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">Root Cause</p>
                   {[rt.toLowerCase().includes('ec2') ? 'Traffic spike or under-provisioned EC2' : 'Invocation surge exceeding concurrency limits', rt.toLowerCase().includes('ec2') ? 'CPU sustained >80% → throttling risk' : `+${d}% above normal → cost + latency impact`].map((bullet, i) => (
                     <div key={i} className="flex items-start gap-2 mb-1 last:mb-0">
                       <span className="w-1.5 h-1.5 rounded-full bg-violet-600 shrink-0 mt-1.5" />
@@ -291,7 +291,7 @@ export default function SecurityPage() {
       {/* ── 3 KPI CARDS ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-7">
         <div className="bg-white rounded-xl p-5 border border-slate-100 border-t-[3px] border-t-violet-600">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Security Score</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Security Score</p>
           {riskLoading ? <Loader2 size={18} className="text-slate-300" /> : (
             <>
               <div className="flex items-end gap-1 mb-2">
@@ -306,7 +306,7 @@ export default function SecurityPage() {
           )}
         </div>
         <div className={`bg-white rounded-xl p-5 border ${criticalAnomalies > 0 ? 'border-red-100' : 'border-slate-100'}`}>
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Active Anomalies</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Active Anomalies</p>
           {anomalyLoading ? <Loader2 size={18} className="text-slate-300" /> : (
             <>
               <div className="flex items-end gap-2 mb-2">
@@ -322,7 +322,7 @@ export default function SecurityPage() {
           )}
         </div>
         <div className="bg-white rounded-xl p-5 border border-slate-100">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Compliance Status</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Compliance Status</p>
           {frameworksLoading ? <Loader2 size={18} className="text-slate-300" /> : (
             <>
               <div className="flex items-end gap-1 mb-2">
@@ -345,7 +345,7 @@ export default function SecurityPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
             <div>
               <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Security Score Trend</h2>
-              <p className="text-xs text-slate-400 leading-relaxed">30-day posture history</p>
+              <p className="text-xs text-slate-500 leading-relaxed">30-day posture history</p>
             </div>
             <div className="flex items-center gap-1.5">
               <TrendIcon size={13} style={{ color: trendColor }} />
@@ -357,7 +357,7 @@ export default function SecurityPage() {
           ) : (chartData.length === 0 || chartData.every(d => d.score === chartData[0].score)) ? (
             <div className="h-44 flex flex-col items-center justify-center gap-2 bg-slate-50 rounded-xl">
               <p className="text-sm font-medium text-slate-500">Security posture stable</p>
-              <p className="text-xs text-slate-400">No significant changes · Score: {score}/100</p>
+              <p className="text-xs text-slate-500">No significant changes · Score: {score}/100</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={180}>
@@ -385,7 +385,7 @@ export default function SecurityPage() {
               <div key={label}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs text-amber-500 font-semibold">{actionMap[label]?.statement ?? label}</span>
-                  <a href={actionMap[label]?.link ?? '/security'} className="text-[10px] font-semibold text-violet-600 no-underline">Review →</a>
+                  <a href={actionMap[label]?.link ?? '/security'} className="text-xs font-semibold text-violet-600 no-underline">Review →</a>
                 </div>
                 <div className="h-1 bg-slate-100 rounded-full">
                   <div className="h-full rounded-full bg-amber-500 transition-all duration-500" style={{ width: `${s}%` }} />
@@ -427,15 +427,15 @@ export default function SecurityPage() {
                       <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: severityColor(anomaly.severity) }} />
                       <div>
                         <p className="text-sm font-semibold text-slate-900 mb-0.5 leading-snug">{riskTitle}</p>
-                        <span className="text-[10px] text-slate-400">{anomaly.resourceType ?? '—'}{anomaly.resourceName ? ` · ${anomaly.resourceName}` : ''} · us-east-1</span>
+                        <span className="text-xs text-slate-500">{anomaly.resourceType ?? '—'}{anomaly.resourceName ? ` · ${anomaly.resourceName}` : ''} · us-east-1</span>
                       </div>
                     </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 capitalize" style={{ background: severityBadgeBg(anomaly.severity), color: severityColor(anomaly.severity) }}>{anomaly.severity}</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0 capitalize" style={{ background: severityBadgeBg(anomaly.severity), color: severityColor(anomaly.severity) }}>{anomaly.severity}</span>
                   </div>
                   <p className="text-xs text-amber-500 font-medium mb-2.5 pl-4">{miniImpact}</p>
                   <div className="flex gap-2">
-                    <a href="/anomalies" className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-3 py-1.5 text-[10px] font-semibold no-underline transition-colors">Apply fix →</a>
-                    <a href="/anomalies" className="bg-white text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-medium no-underline hover:bg-slate-50 transition-colors">Investigate</a>
+                    <a href="/anomalies" className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold no-underline transition-colors">Apply fix →</a>
+                    <a href="/anomalies" className="bg-white text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium no-underline hover:bg-slate-50 transition-colors">Investigate</a>
                   </div>
                 </div>
               )
@@ -443,7 +443,7 @@ export default function SecurityPage() {
             {topAnomalies.length === 0 && (
               <div className="text-center py-8">
                 <Check size={22} className="text-green-500 mx-auto mb-2" />
-                <p className="text-sm text-slate-400">No active anomalies · System is secure</p>
+                <p className="text-sm text-slate-500">No active anomalies · System is secure</p>
               </div>
             )}
           </div>
@@ -468,10 +468,10 @@ export default function SecurityPage() {
                     <span className="text-sm font-semibold text-slate-900">{f.name}</span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold" style={{ color: statusColor }}>{pct}%</span>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                     </div>
                   </div>
-                  {failing && <p className="text-[10px] text-red-600 font-medium mb-2">Blocking compliance readiness</p>}
+                  {failing && <p className="text-xs text-red-600 font-medium mb-2">Blocking compliance readiness</p>}
                   <div className="h-1 bg-slate-200 rounded-full">
                     <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: statusColor }} />
                   </div>
@@ -499,12 +499,12 @@ export default function SecurityPage() {
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-slate-900 mb-0.5 leading-snug">{finding.title}</p>
                           <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-400 shrink-0">{finding.category === 'iam' ? 'IAM' : 'Security Group'} ·</span>
-                            <span className="truncate block text-[10px] text-slate-400 max-w-full">{finding.resourceIdentifier}</span>
+                            <span className="text-xs text-slate-500 shrink-0">{finding.category === 'iam' ? 'IAM' : 'Security Group'} ·</span>
+                            <span className="truncate block text-xs text-slate-500 max-w-full">{finding.resourceIdentifier}</span>
                           </div>
                         </div>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 capitalize" style={{ background: findingSeverityBadgeBg(finding.severity), color: findingSeverityColor(finding.severity) }}>{finding.severity}</span>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0 capitalize" style={{ background: findingSeverityBadgeBg(finding.severity), color: findingSeverityColor(finding.severity) }}>{finding.severity}</span>
                     </div>
                     <p className="text-xs text-slate-500 pl-4">{finding.recommendation}</p>
                   </div>
@@ -512,7 +512,7 @@ export default function SecurityPage() {
                 {findings.length === 0 && (
                   <div className="text-center py-8">
                     <Check size={22} className="text-green-500 mx-auto mb-2" />
-                    <p className="text-sm text-slate-400">No active findings · Security groups and IAM users look clean</p>
+                    <p className="text-sm text-slate-500">No active findings · Security groups and IAM users look clean</p>
                   </div>
                 )}
               </>
