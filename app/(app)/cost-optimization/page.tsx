@@ -77,8 +77,8 @@ export default function CostOptimizationPage() {
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1100px] mx-auto">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-2">Cost Optimization</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Real savings opportunities identified from your connected AWS account.</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-2">Cost Optimization</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real savings opportunities identified from your connected AWS account.</p>
         </div>
         <button
           onClick={handleScan}
@@ -91,7 +91,7 @@ export default function CostOptimizationPage() {
 
       {isDemoActive ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
-          <p className="text-base font-medium text-slate-900 mb-2">Cost recommendations aren&apos;t shown in demo mode</p>
+          <p className="text-sm font-semibold text-slate-900 mb-2">Cost recommendations aren&apos;t shown in demo mode</p>
           <p className="text-sm text-slate-500">Turn off demo mode to see real optimization opportunities for your connected AWS account.</p>
         </div>
       ) : isLoading ? (
@@ -100,7 +100,7 @@ export default function CostOptimizationPage() {
         </div>
       ) : error ? (
         <div className="bg-white border border-red-100 rounded-2xl p-12 text-center">
-          <p className="text-base font-medium text-slate-900 mb-2">Couldn&apos;t load recommendations</p>
+          <p className="text-sm font-semibold text-slate-900 mb-2">Couldn&apos;t load recommendations</p>
           <p className="text-sm text-slate-500 mb-4">{(error as Error).message || 'Something went wrong.'}</p>
           <button onClick={() => refetch()} className="bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold px-5 py-2.5 rounded-lg border-none cursor-pointer transition-colors">
             Try again
@@ -108,7 +108,7 @@ export default function CostOptimizationPage() {
         </div>
       ) : recommendations.length === 0 ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
-          <p className="text-base font-medium text-slate-900 mb-2">🎉 No optimization opportunities detected</p>
+          <p className="text-sm font-semibold text-slate-900 mb-2">🎉 No optimization opportunities detected</p>
           <p className="text-sm text-slate-500">Your infrastructure is running efficiently. Run a scan to check for new savings opportunities.</p>
         </div>
       ) : (
@@ -116,18 +116,18 @@ export default function CostOptimizationPage() {
           <div className="bg-white rounded-xl p-6 border border-slate-200 mb-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Monthly Savings</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Monthly Savings</p>
                 <p className="text-2xl font-bold text-green-600">{formatSavings(totalSavings)}</p>
                 {totalSavings > 0 && (
-                  <p className="text-xs text-slate-400 mt-1">≈ ${Math.round(totalSavings * 12).toLocaleString()}/year</p>
+                  <p className="text-xs text-slate-500 mt-1">≈ ${Math.round(totalSavings * 12).toLocaleString()}/year</p>
                 )}
               </div>
               <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Annual Savings</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Annual Savings</p>
                 <p className="text-2xl font-bold text-green-600">{totalSavings > 0 ? `$${Math.round(totalSavings * 12).toLocaleString()}/yr` : '—'}</p>
               </div>
               <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Opportunities</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Opportunities</p>
                 <p className="text-2xl font-bold text-slate-900">{recommendations.length}</p>
               </div>
             </div>
@@ -140,17 +140,17 @@ export default function CostOptimizationPage() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2 mb-2">
                       <span className="text-sm font-semibold text-slate-900">{rec.issue || '—'}</span>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${rec.severity ? severityStyles[rec.severity] : severityStyles.LOW}`}>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${rec.severity ? severityStyles[rec.severity] : severityStyles.LOW}`}>
                         {rec.severity || '—'}
                       </span>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{rec.status || '—'}</span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{rec.status || '—'}</span>
                     </div>
                     {rec.description && <p className="text-xs text-slate-500 leading-relaxed mb-2.5">{rec.description}</p>}
                     <div className="flex flex-wrap gap-1.5">
-                      <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">{rec.resourceId || '—'}</span>
-                      {rec.resourceName && <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">{rec.resourceName}</span>}
-                      {rec.resourceType && <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">{rec.resourceType}</span>}
-                      {rec.awsRegion && <span className="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">{rec.awsRegion}</span>}
+                      <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{rec.resourceId || '—'}</span>
+                      {rec.resourceName && <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{rec.resourceName}</span>}
+                      {rec.resourceType && <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{rec.resourceType}</span>}
+                      {rec.awsRegion && <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{rec.awsRegion}</span>}
                     </div>
                   </div>
                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3">
