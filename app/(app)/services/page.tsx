@@ -87,13 +87,13 @@ function ServiceRow({ svc }: { svc: any }) {
         {svc.needs_attention && svc.reason ? (
           <p className="text-xs font-medium m-0 truncate text-slate-500">{svc.reason}</p>
         ) : svc.last_deployed ? (
-          <p className="text-xs text-slate-400 m-0 truncate">
+          <p className="text-xs text-slate-500 font-medium m-0 truncate">
             Last synced {new Date(svc.last_deployed).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </p>
         ) : null}
       </div>
       <div className="flex items-center gap-2 shrink-0 flex-wrap">
-        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md" style={{ background: tc.bg, color: tc.color }}>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-md" style={{ background: tc.bg, color: tc.color }}>
           {TYPE_DISPLAY[svc.type] ?? svc.type?.toUpperCase() ?? '—'}
         </span>
         <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>
@@ -306,9 +306,9 @@ export default function ServicesPage() {
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-[0.65rem] font-bold uppercase tracking-widest text-violet-600 mb-1">Services</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1">Services Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Performance, cost, and risk across all services — real time.</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-violet-600 mb-1">Services</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Services Intelligence</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Performance, cost, and risk across all services — real time.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -359,7 +359,7 @@ export default function ServicesPage() {
               </div>
             )}
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">
                 {isDemoActive ? 'Service Health Score' : 'Service Status'}
               </p>
               <p className="text-base font-bold text-slate-900 leading-tight">
@@ -375,12 +375,12 @@ export default function ServicesPage() {
           {/* Stats row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">At Risk</p>
-              <p className="text-2xl font-bold text-red-600">{warningCount} <span className="text-sm text-slate-400 font-normal">of {totalServices}</span></p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">At Risk</p>
+              <p className="text-2xl font-bold text-red-600">{warningCount} <span className="text-sm text-slate-500 font-normal">of {totalServices}</span></p>
               <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : warningCount > 0 ? 'Require review' : 'All healthy'}</p>
             </div>
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">Business Impact</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">Business Impact</p>
               <p className="text-sm font-bold text-slate-900 leading-tight">
                 {isDemoActive ? 'Transaction flow at risk' : warningCount > 0 ? `${warningCount} at risk` : 'No impact detected'}
               </p>
@@ -415,7 +415,7 @@ export default function ServicesPage() {
                 </div>
               )}
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">
                   {isDemoActive ? 'Service Health Score' : 'Service Status'}
                 </p>
                 <p className="text-base font-bold text-slate-900">
@@ -433,7 +433,7 @@ export default function ServicesPage() {
 
             {/* Drivers */}
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1.5">Driven by</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1.5">Driven by</p>
               <div className="flex flex-col gap-0.5">
                 {isDemoActive ? (
                   <>
@@ -459,7 +459,7 @@ export default function ServicesPage() {
 
             {/* Business impact */}
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-700 mb-1">Business Impact</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">Business Impact</p>
               <p className="text-sm font-bold text-slate-900 mb-0.5">
                 {isDemoActive ? 'Transaction flow at risk · $864 cost increase' : warningCount > 0 ? `${warningCount} service${warningCount !== 1 ? 's' : ''} at risk` : 'No active business impact detected'}
               </p>
@@ -472,14 +472,14 @@ export default function ServicesPage() {
 
             {/* At risk */}
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-red-600 mb-1">At Risk</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-red-600 mb-1">At Risk</p>
               <p className="text-2xl font-bold text-red-600 mb-0.5">{warningCount} of {totalServices}</p>
               <p className="text-xs font-medium text-slate-500 m-0">
                 {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Require immediate review' : 'All services healthy'}
               </p>
             </div>
           </div>
-          <a href="/ai-reports" className="text-[11px] font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
+          <a href="/ai-reports" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
             Full report <ArrowRight size={11} />
           </a>
         </div>
@@ -510,19 +510,19 @@ export default function ServicesPage() {
       {/* ── 4 KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mb-8">
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700 mb-3">Total Services</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">Total Services</p>
           <div className="text-4xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalServices}</div>
           <p className="text-slate-500 text-xs font-medium m-0">Registered across all environments</p>
         </div>
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700 mb-3">Healthy</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">Healthy</p>
           <div className="text-4xl font-bold text-green-600 leading-none mb-1">{isLoading && !isDemoActive ? '…' : healthyCount}</div>
           <p className="text-slate-500 text-xs font-medium m-0">Operating within thresholds</p>
         </div>
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700 mb-3">At Risk</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">At Risk</p>
           <div className="text-4xl font-bold text-red-600 leading-none mb-1">{isLoading && !isDemoActive ? '…' : warningCount}</div>
           <p className="text-slate-500 text-xs font-medium m-0">
             {isDemoActive ? '1 reliability · 1 cost inefficiency · both in production' : warningCount > 0 ? `${warningCount} at risk — affecting production services` : 'No services at risk'}
@@ -532,8 +532,8 @@ export default function ServicesPage() {
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700 m-0">Monthly Cost</p>
-            <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide">Estimated</span>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-700 m-0">Monthly Cost</p>
+            <span className="text-xs font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide">Estimated</span>
           </div>
           <div className="text-3xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalMonthlyCost > 0 ? costDisplay : '—'}</div>
           <p className="text-slate-500 text-xs font-medium m-0">Based on instance type pricing · not live billing data</p>
@@ -546,7 +546,7 @@ export default function ServicesPage() {
           <Sparkles size={12} className="text-white" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-violet-600 text-[10px] font-bold tracking-widest uppercase mb-1">AI Insight</p>
+          <p className="text-violet-600 text-xs font-bold tracking-widest uppercase mb-1">AI Insight</p>
           <p className="text-sm text-slate-900 font-semibold leading-relaxed mb-1">
             {isDemoActive
               ? <><strong className="text-red-600">Payment Processor</strong> showing Lambda invocation spike (+178%) — likely retry loop driving <strong className="text-red-600">$864 cost increase</strong> this month.</>
@@ -665,7 +665,7 @@ export default function ServicesPage() {
               <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
                 <Layers size={22} className="text-slate-400" />
               </div>
-              <p className="text-base font-semibold text-slate-900 mb-1.5">Connect AWS to See What's Costing You Money</p>
+              <p className="text-sm font-semibold text-slate-900 mb-1.5">Connect AWS to See What's Costing You Money</p>
               <p className="text-sm text-slate-500 mb-7 leading-relaxed max-w-md mx-auto">Secure read-only access — no changes made to your infrastructure.</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto mb-7 text-left">
                 {[
@@ -675,7 +675,7 @@ export default function ServicesPage() {
                 ].map(({ step, title, desc, color }) => (
                   <div key={step} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                     <div className="w-6 h-6 rounded-full flex items-center justify-center mb-2.5" style={{ background: color }}>
-                      <span className="text-[11px] font-bold text-white">{step}</span>
+                      <span className="text-xs font-bold text-white">{step}</span>
                     </div>
                     <p className="text-xs font-semibold text-slate-900 mb-1">{title}</p>
                     <p className="text-xs text-slate-500 m-0 leading-relaxed">{desc}</p>
@@ -740,7 +740,7 @@ export default function ServicesPage() {
             {needsAttentionSorted.length > 0 && (
               <div>
                 <div className="px-5 sm:px-7 py-2.5 bg-slate-50/70 border-b border-slate-100">
-                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest m-0">
+                  <p className="text-xs font-bold text-slate-600 uppercase tracking-widest m-0">
                     Needs Attention · {needsAttentionSorted.length}
                   </p>
                 </div>
@@ -768,7 +768,7 @@ export default function ServicesPage() {
                     <div className="hidden sm:flex items-center justify-end px-7 py-2 bg-slate-50 border-b border-slate-100">
                       <button
                         onClick={toggleCostSort}
-                        className="flex items-center gap-1 text-[11px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer bg-transparent border-none hover:text-slate-700"
+                        className="flex items-center gap-1 text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer bg-transparent border-none hover:text-slate-700"
                       >
                         Monthly Cost
                         {costSort === 'asc' ? <ChevronUp size={12} /> : costSort === 'desc' ? <ChevronDown size={12} /> : null}
