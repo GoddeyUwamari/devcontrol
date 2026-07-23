@@ -64,9 +64,9 @@ export default function StatusPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1.5">Observability</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Status Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Real-time health, uptime, and performance across your monitored services and regions</p>
+          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Observability</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Status Intelligence</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real-time health, uptime, and performance across your monitored services and regions</p>
         </div>
         <a href="/monitoring" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors whitespace-nowrap self-start">
           <Activity size={14} /> Monitoring Overview
@@ -96,7 +96,7 @@ export default function StatusPage() {
       <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-5 py-4 mb-6 flex items-start gap-3.5">
         <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={12} className="text-white" /></div>
         <div className="flex-1">
-          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
+          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
           <p className="text-sm text-slate-700 leading-relaxed">
             {overallStatus === 'operational'
               ? <><strong className="text-green-600">All systems operating within SLA.</strong> Uptime stable at 99.98% — Elite tier (last 30 days). 3 minor incidents resolved · avg resolution 18 minutes. Minor performance degradation on Jul 14 was successfully mitigated · no cost anomalies linked to incidents.<span className="block mt-1 text-xs text-green-600 font-semibold">No action required — system is healthy.</span></>
@@ -105,7 +105,7 @@ export default function StatusPage() {
                 : <><strong className="text-red-600">Service disruption detected.</strong> Escalate immediately and review incident timeline for impact scope.<span className="block mt-1 text-xs text-red-600 font-semibold">Critical — escalate now.</span></>}
           </p>
         </div>
-        <a href="/monitoring/slos" className="text-[11px] font-bold text-violet-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">View SLOs <ArrowRight size={10} /></a>
+        <a href="/monitoring/slos" className="text-xs font-bold text-violet-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">View SLOs <ArrowRight size={10} /></a>
       </div>
 
       {/* KPI cards */}
@@ -117,9 +117,9 @@ export default function StatusPage() {
           { label: 'Global Regions',    value: '4',      sub: 'All regions operational', color: 'text-slate-900', hero: false },
         ].map(({ label, value, sub, color, hero }) => (
           <div key={label} className={`bg-white rounded-xl p-4 sm:p-8 border border-slate-200 ${hero ? 'border-l-[2px] border-l-violet-600' : ''}`}>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">{label}</p>
             <div className={`text-2xl sm:text-3xl font-bold tracking-tight leading-none mb-2 ${color}`}>{value}</div>
-            <p className="text-xs text-slate-400 leading-relaxed">{sub}</p>
+            <p className="text-xs text-slate-500 leading-relaxed">{sub}</p>
           </div>
         ))}
       </div>
@@ -127,8 +127,8 @@ export default function StatusPage() {
       {/* Service status */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden mb-6">
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Service Status</p>
-          <p className="text-xs text-slate-300">{services.filter(s => s.status === 'operational').length}/{services.length} services operational</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">Service Status</p>
+          <p className="text-xs text-slate-500">{services.filter(s => s.status === 'operational').length}/{services.length} services operational</p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" style={{ gap: '1px', background: '#F1F5F9' }}>
           {services.map((service) => {
@@ -140,19 +140,19 @@ export default function StatusPage() {
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0"><Icon size={14} className="text-slate-400" /></div>
                     <div>
-                      <p className="text-sm font-bold text-slate-900">{service.name}</p>
-                      <p className="text-[10px] text-slate-400">{service.description}</p>
+                      <p className="text-sm font-semibold text-slate-900">{service.name}</p>
+                      <p className="text-xs text-slate-500">{service.description}</p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border shrink-0 ml-2" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>{cfg.label}</span>
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full border shrink-0 ml-2" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>{cfg.label}</span>
                 </div>
                 <div className="flex gap-6">
                   <div>
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Uptime</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Uptime</p>
                     <p className="text-sm font-bold text-green-600">{service.uptime}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Response</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Response</p>
                     <p className="text-sm font-bold text-slate-900">{service.responseTime}</p>
                   </div>
                 </div>
@@ -164,13 +164,13 @@ export default function StatusPage() {
 
       {/* 7-day uptime history */}
       <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100 mb-6">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">7-Day Uptime History</p>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">7-Day Uptime History</p>
         <p className="text-sm font-semibold text-slate-900 mb-6">No downtime in the last 7 days · 100% availability across all monitored services</p>
         <div className="grid grid-cols-7 gap-2">
           {uptimeHistory.map(({ day, value }) => (
             <div key={day} className="text-center">
               <div className="h-10 sm:h-12 rounded-md mb-2" style={{ background: value === 100 ? '#059669' : value >= 99.9 ? '#34D399' : value >= 99 ? '#FDE68A' : '#FCA5A5', opacity: 0.85 }} />
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">{day}</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">{day}</p>
               <p className={`text-xs font-bold ${value >= 99.9 ? 'text-green-600' : 'text-amber-500'}`}>{value === 100 ? '100%' : `${value}%`}</p>
             </div>
           ))}
@@ -182,7 +182,7 @@ export default function StatusPage() {
         <div className="flex items-center gap-2.5 mb-5">
           <Globe size={15} className="text-slate-400" />
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Regional Status</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">Regional Status</p>
             <p className="text-sm font-semibold text-slate-900">All regions operational · No latency anomalies detected</p>
           </div>
         </div>
@@ -195,10 +195,10 @@ export default function StatusPage() {
                   <CheckCircle2 size={15} className="text-green-600 shrink-0" />
                   <div>
                     <p className="text-sm font-semibold text-slate-900">{region.name}</p>
-                    <p className="text-[10px] text-slate-400">Latency: {region.latency}</p>
+                    <p className="text-xs text-slate-500">Latency: {region.latency}</p>
                   </div>
                 </div>
-                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>{cfg.label}</span>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full border" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>{cfg.label}</span>
               </div>
             )
           })}
@@ -208,8 +208,8 @@ export default function StatusPage() {
       {/* Incident history */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Incident History</p>
-          <p className="text-xs text-slate-300">{incidents.filter(i => i.status === 'resolved').length} incidents in the last 30 days — all minor, no customer impact</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">Incident History</p>
+          <p className="text-xs text-slate-500">{incidents.filter(i => i.status === 'resolved').length} incidents in the last 30 days — all minor, no customer impact</p>
         </div>
         {incidents.map((incident, idx) => {
           const isExpanded = expandedIncidents.includes(incident.id)
@@ -221,14 +221,14 @@ export default function StatusPage() {
                 className="px-5 sm:px-7 py-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                    <p className="text-sm font-bold text-slate-900">{incident.title}</p>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ background: severityBg, color: severityColor }}>{incident.severity}</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-600">resolved</span>
+                    <p className="text-sm font-semibold text-slate-900">{incident.title}</p>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full capitalize" style={{ background: severityBg, color: severityColor }}>{incident.severity}</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-600">resolved</span>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={10} /> {incident.date}</span>
-                    <span className="text-xs text-slate-400 flex items-center gap-1"><TrendingUp size={10} /> {incident.duration}</span>
-                    <span className="text-xs text-slate-400">Affected: {incident.affected.join(', ')}</span>
+                    <span className="text-xs text-slate-500 flex items-center gap-1"><Clock size={10} /> {incident.date}</span>
+                    <span className="text-xs text-slate-500 flex items-center gap-1"><TrendingUp size={10} /> {incident.duration}</span>
+                    <span className="text-xs text-slate-500">Affected: {incident.affected.join(', ')}</span>
                   </div>
                 </div>
                 {isExpanded ? <ChevronUp size={15} className="text-slate-300 shrink-0 ml-3" /> : <ChevronDown size={15} className="text-slate-300 shrink-0 ml-3" />}
@@ -243,7 +243,7 @@ export default function StatusPage() {
                           {i < incident.updates.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
                         </div>
                         <div className={i < incident.updates.length - 1 ? 'pb-3' : ''}>
-                          <p className="text-xs font-semibold text-slate-400 mb-1">{update.time}</p>
+                          <p className="text-xs font-semibold text-slate-500 mb-1">{update.time}</p>
                           <p className="text-sm text-slate-700 leading-relaxed">{update.message}</p>
                         </div>
                       </div>
