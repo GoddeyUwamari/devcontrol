@@ -849,7 +849,7 @@ export default function DashboardPage() {
                   <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
                     <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Urgent actions</p>
                     <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>
-                      {topRecs.length > 0 ? `${topRecs.length} Opportunit${topRecs.length !== 1 ? 'ies' : 'y'}` : '—'}
+                      {topRecs.length > 0 ? `${topRecs.length} Opportunit${topRecs.length !== 1 ? 'ies' : 'y'}` : '0'}
                     </div>
                     {wasteAmount <= 0 && (
                       <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">No opportunities identified yet</div>
