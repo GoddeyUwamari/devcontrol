@@ -98,8 +98,8 @@ export default function NewServicePage() {
     <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Create New Service</h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className="text-2xl font-bold tracking-tight">Create New Service</h1>
+          <p className="text-xs text-muted-foreground font-medium mt-2">
             Define a new service to track deployments and infrastructure
           </p>
         </div>
@@ -116,8 +116,8 @@ export default function NewServicePage() {
               <Layers className="h-5 w-5 text-[#635BFF]" />
             </div>
             <div>
-              <CardTitle>Service Details</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-sm">Service Details</CardTitle>
+              <CardDescription className="text-xs font-medium">
                 Fill in the information below to create your service
               </CardDescription>
             </div>

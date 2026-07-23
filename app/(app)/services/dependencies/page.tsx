@@ -77,10 +77,10 @@ export default function ServiceDependenciesPage() {
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
             Service Dependency Map
           </h1>
-          <p style={{ fontSize: '0.875rem', color: '#475569', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: '0.75rem', fontWeight: 500, color: '#475569', margin: 0, lineHeight: 1.6 }}>
             Visualize and analyze service relationships, critical paths, and failure blast radius
           </p>
         </div>
@@ -102,11 +102,11 @@ export default function ServiceDependenciesPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '28px' }}>
         {kpiCards.map(({ label, value, sub, valueColor, badge }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '14px', padding: '28px', border: '1px solid #E2E8F0' }}>
-            <p style={{ fontSize: '0.68rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px' }}>{label}</p>
+            <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px' }}>{label}</p>
             <div style={{ fontSize: '2.5rem', fontWeight: 700, color: valueColor, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: '6px' }}>{value}</div>
-            <p style={{ fontSize: '0.75rem', color: '#94A3B8', margin: '0 0 6px', lineHeight: 1.5 }}>{sub}</p>
+            <p style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748B', margin: '0 0 6px', lineHeight: 1.5 }}>{sub}</p>
             {badge && (
-              <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 8px', borderRadius: '100px', background: badge.bg, color: badge.color }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: '100px', background: badge.bg, color: badge.color }}>
                 {badge.text}
               </span>
             )}
