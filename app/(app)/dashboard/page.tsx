@@ -415,7 +415,7 @@ export default function DashboardPage() {
     return (
       <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
-          <p className="text-[13px] font-medium text-[var(--text-secondary)]">Recent activity</p>
+          <p className="text-xs text-[var(--text-secondary)] font-medium">Recent activity</p>
         </div>
         {activityFeedLoading ? (
           <div className="flex flex-col gap-3 py-2">
@@ -433,10 +433,10 @@ export default function DashboardPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Category</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Finding</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Severity</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)] text-right">Time</TableHead>
+                <TableHead className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Category</TableHead>
+                <TableHead className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Finding</TableHead>
+                <TableHead className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Severity</TableHead>
+                <TableHead className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider text-right">Time</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -455,12 +455,12 @@ export default function DashboardPage() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       {badge ? (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
+                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
                       ) : (
-                        <span className="text-[10px] text-[var(--text-secondary)]">—</span>
+                        <span className="text-xs text-[var(--text-secondary)]">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-[11px] text-[var(--text-secondary)] whitespace-nowrap text-right">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</TableCell>
+                    <TableCell className="text-xs text-[var(--text-secondary)] whitespace-nowrap text-right">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</TableCell>
                   </TableRow>
                 )
               })}
@@ -545,7 +545,7 @@ export default function DashboardPage() {
       HIGH:   'text-red-700 bg-red-50 border-red-200',
     }
     const labels = { LOW: 'Low risk', MEDIUM: 'Medium risk', HIGH: 'High risk' }
-    return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${styles[severity]}`}>{labels[severity]}</span>
+    return <span className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${styles[severity]}`}>{labels[severity]}</span>
   }
 
   // Reusable inline component for intelligence score bars
@@ -576,8 +576,8 @@ export default function DashboardPage() {
   const IntelKPICard = ({ hero = false }: { hero?: boolean } = {}) => {
     const notReady = !isDemoActive && (displayIntelligence == null || displayIntelligence.system_score == null)
     const intelLabelClass = hero
-      ? 'text-base font-semibold text-foreground mb-3'
-      : 'text-[13px] font-medium text-[var(--text-secondary)] mb-3'
+      ? 'text-sm font-semibold text-foreground mb-3'
+      : 'text-xs text-[var(--text-secondary)] font-medium mb-3'
     if (notReady) {
       return (
         <>
@@ -596,7 +596,7 @@ export default function DashboardPage() {
         <div className="text-3xl font-semibold leading-none mb-2" style={{ color: score < 50 ? 'var(--text-danger)' : 'var(--foreground)' }}>
           {score || '—'}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
         </div>
-        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded inline-block mt-1.5" style={{ color: chipTextVar, background: chipBgVar }}>{chipLabel}</span>
+        <span className="text-xs font-semibold px-1.5 py-0.5 rounded inline-block mt-1.5" style={{ color: chipTextVar, background: chipBgVar }}>{chipLabel}</span>
         <div className="my-2">
           <span className="text-sm font-semibold" style={{ color: (displayIntelligence?.system_score ?? 0) >= 85 ? 'var(--text-success)' : 'var(--text-warning)' }}>
             {displayIntelligence?.status ?? 'Computing...'}
@@ -616,13 +616,13 @@ export default function DashboardPage() {
       {/* ── HEADER ROW ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-10">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-foreground tracking-tight leading-snug mb-1">
+          <h1 className="text-2xl font-bold text-foreground tracking-tight leading-snug mb-1">
             AWS cost, security and infrastructure intelligence
           </h1>
-          <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed mb-1">
+          <p className="text-xs text-[var(--text-secondary)] font-medium leading-relaxed mb-1">
             Real-time visibility into cost waste, security posture, and infrastructure efficiency — across your entire AWS environment.
           </p>
-          <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed">
+          <p className="text-xs text-[var(--text-secondary)] font-medium leading-relaxed">
             {isAwsConnected
               ? `${isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'Your organization')} · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}`
               : 'Connect your AWS account to get started · Setup takes 2 minutes'}
@@ -659,7 +659,7 @@ export default function DashboardPage() {
       {isAwsConnected && topRecs.length > 0 && (
         <div className="bg-[var(--bg-accent)] border-2 border-[var(--border-accent)] rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
           <div>
-            <div className="text-[10px] font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
+            <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
             <div className="text-base font-semibold text-foreground mb-2">
               {isDemoActive
                 ? 'Save $800–$2,400/month by approving 3 optimizations'
@@ -668,7 +668,7 @@ export default function DashboardPage() {
             {isDemoActive && (
               <div className="flex gap-1.5 flex-wrap">
                 {['Zero downtime', 'Fully reversible', 'Takes < 5 min'].map((pill) => (
-                  <span key={pill} className="bg-[var(--surface-2)] border border-border rounded-full px-2.5 py-0.5 text-[11px] text-[var(--text-secondary)]">{pill}</span>
+                  <span key={pill} className="bg-[var(--surface-2)] border border-border rounded-full px-2.5 py-0.5 text-xs text-[var(--text-secondary)]">{pill}</span>
                 ))}
               </div>
             )}
@@ -680,7 +680,7 @@ export default function DashboardPage() {
       )}
       {isAwsConnected && topRecs.length === 0 && !isDemoActive && (
         <div className="bg-[var(--bg-accent)] border-2 border-[var(--border-accent)] rounded-2xl px-5 py-4 mb-3">
-          <div className="text-[10px] font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
+          <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
           <div className="text-base font-semibold text-[var(--text-secondary)]">
             No optimization opportunities identified · Your infrastructure is running efficiently
           </div>
@@ -700,31 +700,31 @@ export default function DashboardPage() {
                 </span>
                 <span className="font-semibold text-[13px]" style={{ color: 'var(--text-success)' }}>{wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}/month` : 'calculating...'}</span>
               </div>
-              <span className="text-[var(--text-secondary)] text-[11px] font-medium">Infrastructure + security ready</span>
+              <span className="text-xs text-[var(--text-secondary)] font-medium">Infrastructure + security ready</span>
             </div>
 
             {/* KPI placeholder row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
               {/* Monthly spend */}
               <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Monthly spend</p>
+                <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Monthly spend</p>
                 <div className="text-base font-medium text-foreground leading-none mb-1">Syncing...</div>
                 <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">Full data in 24–48h</div>
                 {wasteAmount > 0 && (
-                  <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                  <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
                 )}
               </div>
               {/* Urgent actions */}
               <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Urgent actions</p>
+                <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Urgent actions</p>
                 <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>{topRecs.length}</div>
                 {topRecs.length > 0 && (
-                  <span className="text-[10px] font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                  <span className="text-xs font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
                 )}
               </div>
               {/* Security health */}
               <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Security health</p>
+                <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Security health</p>
                 {(securityScore === null || securityScore === 0) && !isDemoActive ? (
                   <>
                     <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
@@ -735,10 +735,10 @@ export default function DashboardPage() {
                       {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
                     </div>
                     {securityShowEliteBadge && (
-                      <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                      <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
                     )}
                     {securityScore !== null && securityIsPreliminary && (
-                      <span className="text-[10px] font-semibold bg-[var(--bg-warning)] text-[var(--text-warning)] px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
+                      <span className="text-xs font-semibold bg-[var(--bg-warning)] text-[var(--text-warning)] px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
                     )}
                   </>
                 )}
@@ -760,7 +760,7 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <div className="bg-[var(--surface-2)] border border-border rounded-2xl p-8 mb-8">
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] uppercase tracking-widest mb-5">Data status</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium uppercase tracking-widest mb-5">Data status</p>
                   <div className="flex flex-col gap-3.5">
                     {[
                       { label: 'AWS account connected',               done: true  },
@@ -773,13 +773,13 @@ export default function DashboardPage() {
                       <div key={label} className="flex items-center gap-3">
                         <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: done ? 'var(--bg-success)' : 'var(--surface-1)', border: `1px solid ${done ? 'var(--border-success)' : 'var(--border)'}` }}>
                           {done ? (
-                            <i className="ti ti-check text-[10px]" style={{ color: 'var(--text-success)' }} />
+                            <i className="ti ti-check text-xs" style={{ color: 'var(--text-success)' }} />
                           ) : (
                             <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--fill-warning)' }} />
                           )}
                         </div>
                         <span className={`text-sm ${done ? 'text-foreground font-medium' : 'text-[var(--text-secondary)]'}`}>{label}</span>
-                        {!done && <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--text-warning)', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)' }}>Syncing</span>}
+                        {!done && <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--text-warning)', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)' }}>Syncing</span>}
                       </div>
                     ))}
                   </div>
@@ -793,7 +793,7 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                   {/* Monthly spend */}
                   <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Monthly spend</p>
+                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Monthly spend</p>
                     {(statsLoading && !demoMode) || (currentSpend === 0 && !demoMode) ? (
                       <>
                         <div className="text-base font-medium text-foreground leading-none mb-1">Syncing...</div>
@@ -803,7 +803,7 @@ export default function DashboardPage() {
                       <div className="text-2xl font-medium text-foreground leading-none mb-2">${currentSpend.toLocaleString()}</div>
                     )}
                     {wasteAmount > 0 && (
-                      <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
+                      <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
                     )}
                     {isDemoActive && (
                       <div className="flex items-center gap-1.5 mt-2">
@@ -823,7 +823,7 @@ export default function DashboardPage() {
 
                   {/* Security health */}
                   <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Security health</p>
+                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Security health</p>
                     {(securityScore === null || securityScore === 0) && !isDemoActive ? (
                       <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
                     ) : (
@@ -832,7 +832,7 @@ export default function DashboardPage() {
                       </div>
                     )}
                     {securityShowEliteBadge && (
-                      <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                      <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
                     )}
                     <div className="flex items-center gap-1.5 mt-2">
                       <i className={`ti ti-${SecurityDeltaIcon === TrendingUp ? 'trending-up' : SecurityDeltaIcon === TrendingDown ? 'trending-down' : 'minus'} text-[12px]`} style={{ color: securityTierColor }} />
@@ -841,13 +841,13 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     {securityBreakdown && (
-                      <p className="text-[11px] text-[var(--text-secondary)] mt-1">{securityBreakdown}</p>
+                      <p className="text-xs text-[var(--text-secondary)] mt-1">{securityBreakdown}</p>
                     )}
                   </div>
 
                   {/* Urgent actions */}
                   <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Urgent actions</p>
+                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Urgent actions</p>
                     <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>
                       {topRecs.length > 0 ? `${topRecs.length} Opportunit${topRecs.length !== 1 ? 'ies' : 'y'}` : '0'}
                     </div>
@@ -856,8 +856,8 @@ export default function DashboardPage() {
                     )}
                     {topRecs.length > 0 && (
                       <>
-                        <span className="text-[10px] font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
-                        <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5 ml-1.5">ROI: {savingsROI}</span>
+                        <span className="text-xs font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                        <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5 ml-1.5">ROI: {savingsROI}</span>
                       </>
                     )}
                     <div className="flex items-center gap-1.5 mt-2">
@@ -873,7 +873,7 @@ export default function DashboardPage() {
                     or an error state). */}
                 {!aiSummaryError && (aiSummaryLoading || aiSummaryData?.summary) && (
                   <div className="bg-[var(--surface-1)] rounded-xl p-6 border border-border mb-4">
-                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">System summary</p>
+                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">System summary</p>
                     {aiSummaryLoading ? (
                       <div className="flex flex-col gap-2">
                         <Skeleton className="h-3.5 w-full" />
@@ -889,17 +889,17 @@ export default function DashboardPage() {
             ) : isAwsConnected && (isBillingSyncing || hasServicesOnly) ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border border-l-[3px]" style={{ borderLeftColor: 'var(--border-accent)' }}>
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Monthly spend</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Monthly spend</p>
                   <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Calculating...</div>
                   <p className="text-xs text-[var(--text-secondary)]">Available once billing syncs</p>
                 </div>
                 <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Savings opportunity</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Savings opportunity</p>
                   <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Analyzing...</div>
                   <p className="text-xs text-[var(--text-secondary)]">Infrastructure scan in progress</p>
                 </div>
                 <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-3">Security health</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Security health</p>
                   {(securityScore === null || securityScore === 0) && !isDemoActive ? (
                     <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
                   ) : (
@@ -908,10 +908,10 @@ export default function DashboardPage() {
                         {securityScore ?? '—'}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
                       </div>
                       {securityShowEliteBadge && (
-                        <span className="text-[10px] font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
+                        <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
                       )}
                       {securityScore !== null && securityIsPreliminary && (
-                        <span className="text-[10px] font-semibold bg-[var(--bg-warning)] text-[var(--text-warning)] px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
+                        <span className="text-xs font-semibold bg-[var(--bg-warning)] text-[var(--text-warning)] px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
                       )}
                     </>
                   )}
@@ -944,10 +944,10 @@ export default function DashboardPage() {
               }}
             >
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)' }}>Highest priority action</p>
+                <p className="text-xs font-bold uppercase tracking-wider mb-0.5" style={{ color: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)' }}>Highest priority action</p>
                 <p className="text-sm font-semibold text-foreground mb-0.5">{displayIntelligence.top_drivers?.[0]?.action?.label ?? displayIntelligence.top_action.message}</p>
                 <p className="text-xs font-medium" style={{ color: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)' }}>{displayIntelligence.top_action.consequence}</p>
-                <p className="text-[11px] font-semibold text-[var(--text-secondary)] mt-1">
+                <p className="text-xs font-semibold text-[var(--text-secondary)] mt-1">
                   Business risk: {displayIntelligence.top_action.severity === 'critical' || displayIntelligence.top_action.severity === 'high' ? 'High' : displayIntelligence.top_action.severity === 'medium' ? 'Medium' : 'Low'}
                 </p>
               </div>
@@ -967,7 +967,7 @@ export default function DashboardPage() {
               <i className="ti ti-sparkles text-[13px]" style={{ color: 'var(--text-accent)' }} />
             </div>
             <div className="flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-accent)' }}>Executive insights</p>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-accent)' }}>Executive insights</p>
               <p className="text-sm text-foreground leading-relaxed">
                 {demoMode
                   ? <>Compute costs are driving spend ($5,200, +12%).{' '}<a href="/cost-optimization" className="font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>Review optimization opportunities →</a></>
@@ -989,8 +989,8 @@ export default function DashboardPage() {
             {topRecs.length > 0 ? <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
               <div className="flex items-start justify-between mb-1">
                 <div>
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">AI advisor</p>
-                  <p className="text-base font-semibold text-foreground">Actions ready for approval</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">AI advisor</p>
+                  <p className="text-sm font-semibold text-foreground">Actions ready for approval</p>
                 </div>
                 <a href="/cost-optimization" className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>All →</a>
               </div>
@@ -1011,11 +1011,11 @@ export default function DashboardPage() {
                       {isDemoActive ? (
                         <>
                           {i < 2 ? (
-                            <><span className="text-[10px] font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-1.5 py-0.5 rounded">Low risk</span><span className="text-[10px] font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-1.5 py-0.5 rounded">No downtime</span></>
+                            <><span className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-1.5 py-0.5 rounded">Low risk</span><span className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-1.5 py-0.5 rounded">No downtime</span></>
                           ) : (
-                            <span className="text-[10px] font-semibold text-[var(--text-warning)] bg-[var(--bg-warning)] border border-[var(--border-warning)] px-1.5 py-0.5 rounded">Low risk</span>
+                            <span className="text-xs font-semibold text-[var(--text-warning)] bg-[var(--bg-warning)] border border-[var(--border-warning)] px-1.5 py-0.5 rounded">Low risk</span>
                           )}
-                          <span className="text-[10px] font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">{rec.time}</span>
+                          <span className="text-xs font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">{rec.time}</span>
                         </>
                       ) : (
                         <RiskBadge severity={rec.severity} />
@@ -1034,8 +1034,8 @@ export default function DashboardPage() {
             </div> : <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">AI advisor</p>
-                  <p className="text-base font-semibold text-foreground">Infrastructure analysis in progress</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">AI advisor</p>
+                  <p className="text-sm font-semibold text-foreground">Infrastructure analysis in progress</p>
                 </div>
                 <a href="/cost-optimization" className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>All →</a>
               </div>
@@ -1051,7 +1051,7 @@ export default function DashboardPage() {
 
             {/* Security Score Drivers */}
             <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
-              <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Security score drivers</p>
+              <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Security score drivers</p>
               <div className="text-center py-3 border-b border-border mb-3.5">
                 {(securityScore === null || securityScore === 0) && !isDemoActive ? (
                   <div className="text-base font-semibold text-foreground leading-none">Scanning...</div>
@@ -1078,7 +1078,7 @@ export default function DashboardPage() {
                 {isDemoActive && (
                   <div className="flex gap-1.5">
                     {['SOC2', 'CIS AWS', 'GDPR'].map((f) => (
-                      <span key={f} className="text-[11px] font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{f}</span>
+                      <span key={f} className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{f}</span>
                     ))}
                   </div>
                 )}
@@ -1092,7 +1092,7 @@ export default function DashboardPage() {
             <div className="lg:col-span-3 bg-[var(--surface-2)] rounded-xl p-4 border border-border">
               <div className="flex items-start justify-between mb-6">
                 <div>
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">AWS cost trends</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-1">AWS cost trends</p>
                   <p className="text-sm font-semibold text-foreground">Infrastructure cost over time</p>
                 </div>
                 <a href="/costs" className="text-[var(--text-secondary)]"><i className="ti ti-dots text-[16px]" /></a>
@@ -1127,19 +1127,19 @@ export default function DashboardPage() {
 
             {/* Security Score Drivers — 2fr */}
             <div className="lg:col-span-2 bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-              <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Security score drivers</p>
+              <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Security score drivers</p>
               {displayIntelligence?.top_drivers?.length > 0 && (
                 <div className="flex flex-col gap-2 mb-4">
                   {displayIntelligence.top_drivers.map((driver: any, i: number) => (
                     <div key={driver.id} className="flex items-start gap-2.5 px-3 py-2.5 bg-[var(--surface-1)] rounded-lg border border-border">
-                      <span className="text-[11px] font-bold text-[var(--text-secondary)] w-4 shrink-0 mt-0.5">#{i + 1}</span>
+                      <span className="text-xs font-bold text-[var(--text-secondary)] w-4 shrink-0 mt-0.5">#{i + 1}</span>
                       <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: driver.severity === 'critical' ? 'var(--text-danger)' : driver.severity === 'high' ? 'var(--text-warning)' : 'var(--fill-warning)' }} />
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-semibold text-foreground mb-0.5">{driver.message}</p>
-                        <p className="text-[11px] text-[var(--text-secondary)]">{driver.consequence}</p>
+                        <p className="text-xs text-[var(--text-secondary)]">{driver.consequence}</p>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: 'var(--text-success)' }}>+{driver.impact_score}pts</span>
-                          <a href={driver.action.path} className="text-[11px] font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>{driver.action.label} →</a>
+                          <span className="text-xs font-bold whitespace-nowrap" style={{ color: 'var(--text-success)' }}>+{driver.impact_score}pts</span>
+                          <a href={driver.action.path} className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>{driver.action.label} →</a>
                         </div>
                       </div>
                     </div>
@@ -1174,7 +1174,7 @@ export default function DashboardPage() {
                 {isDemoActive && (
                   <div className="flex gap-1.5 flex-wrap">
                     {['SOC2', 'CIS AWS', 'GDPR'].map((framework) => (
-                      <span key={framework} className="text-[11px] font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{framework}</span>
+                      <span key={framework} className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{framework}</span>
                     ))}
                   </div>
                 )}
@@ -1190,7 +1190,7 @@ export default function DashboardPage() {
       {/* ── COST-SAVING OPPORTUNITIES ── */}
       {isAwsConnected && !isBillingSyncing && !hasServicesOnly && (isDemoActive || hasBillingData) && (
         <div className="mb-8">
-          <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Cost-saving opportunities</p>
+          <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Cost-saving opportunities</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
               { title: 'Idle EC2', description: 'Instances with sustained low utilization', count: idleEC2Count },
@@ -1199,9 +1199,9 @@ export default function DashboardPage() {
             ].map(({ title, description, count }) => (
               <div key={title} className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
                 <div className="flex items-start justify-between mb-3">
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)]">{title}</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium">{title}</p>
                   <span
-                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
+                    className="text-xs font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
                     style={{
                       color: count === 0 ? 'var(--text-success)' : 'var(--text-warning)',
                       background: count === 0 ? 'var(--bg-success)' : 'var(--bg-warning)',
@@ -1222,7 +1222,7 @@ export default function DashboardPage() {
         <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border mb-8">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
             <div>
-              <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">Executive ROI summary</p>
+              <p className="text-xs text-[var(--text-secondary)] font-medium mb-1">Executive ROI summary</p>
               <p className="text-lg font-semibold text-foreground">
                 {isDemoActive || wasteAmount > 0 ? (
                   <>
@@ -1249,9 +1249,9 @@ export default function DashboardPage() {
               { label: 'Can reduce monthly spend',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: 'var(--text-warning)' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="px-4 py-4 bg-[var(--surface-1)] rounded-xl border border-border">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2">{label}</p>
+                <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2">{label}</p>
                 <div className="text-2xl font-semibold tracking-tight leading-none mb-1" style={{ color }}>{value}</div>
-                <div className="text-[11px] text-[var(--text-secondary)]">{sub}</div>
+                <div className="text-xs text-[var(--text-secondary)]">{sub}</div>
               </div>
             ))}
           </div>
@@ -1286,10 +1286,10 @@ export default function DashboardPage() {
             <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">Engineering health</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">Engineering health</p>
                   <span className="text-xl font-semibold text-foreground">{isDemoActive ? 'Elite' : '—'}</span>
                 </div>
-                <a href="/app/dora-metrics" className="text-[11px] font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Full report <i className="ti ti-arrow-right text-[12px]" /></a>
+                <a href="/app/dora-metrics" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Full report <i className="ti ti-arrow-right text-[12px]" /></a>
               </div>
               {isDemoActive ? (
                 doraRows.filter(r => ['Lead Time for Changes', 'Change Failure Rate', 'Mean Time to Recovery'].includes(r.label)).map(({ label, value }) => (
@@ -1308,12 +1308,12 @@ export default function DashboardPage() {
 
             {/* What You Can Do Now */}
             <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
-              <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">What you can do now</p>
+              <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">What you can do now</p>
               <a href="/cost-optimization" className="flex items-center gap-3 px-4 py-3.5 border rounded-xl mb-2 no-underline" style={{ background: 'var(--text-accent)', borderColor: 'var(--border-accent)' }}>
                 <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0"><i className="ti ti-circle-check text-[14px] text-white" /></div>
                 <div>
                   <div className="text-sm font-bold text-white mb-0.5">Approve actions ({topRecs.length})</div>
-                  <div className="text-[11px] text-white/80 font-medium">Zero downtime · fully reversible · &lt; 5 min</div>
+                  <div className="text-xs text-white/80 font-medium">Zero downtime · fully reversible · &lt; 5 min</div>
                 </div>
                 <span className="ml-auto text-sm text-white font-bold">→</span>
               </a>
@@ -1339,10 +1339,10 @@ export default function DashboardPage() {
             <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">Engineering health</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">Engineering health</p>
                   <div className="flex items-center gap-2">
                     <span className="text-xl font-semibold text-foreground">{isDemoActive ? 'Elite' : '—'}</span>
-                    {isDemoActive && <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full" style={{ background: 'var(--bg-success)', color: 'var(--text-success)' }}>Top 10%</span>}
+                    {isDemoActive && <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ background: 'var(--bg-success)', color: 'var(--text-success)' }}>Top 10%</span>}
                   </div>
                 </div>
                 <a href="/app/dora-metrics" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Full report <i className="ti ti-arrow-right text-[12px]" /></a>
@@ -1355,7 +1355,7 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold" style={{ color: label === 'Change Failure Rate' ? 'var(--text-warning)' : 'var(--foreground)' }}>{value}</span>
                       {(showTier === undefined || showTier) && (
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: tier === 'Elite' ? 'var(--text-success)' : 'var(--text-warning)', background: tier === 'Elite' ? 'var(--bg-success)' : 'var(--bg-warning)' }}>{tier}</span>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: tier === 'Elite' ? 'var(--text-success)' : 'var(--text-warning)', background: tier === 'Elite' ? 'var(--bg-success)' : 'var(--bg-warning)' }}>{tier}</span>
                       )}
                     </div>
                   </div>
@@ -1372,8 +1372,8 @@ export default function DashboardPage() {
                 <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">What you can do now</p>
-                      <p className="text-base font-semibold text-foreground">Top recommendations</p>
+                      <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">What you can do now</p>
+                      <p className="text-sm font-semibold text-foreground">Top recommendations</p>
                     </div>
                     <a href="/cost-optimization" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>All <i className="ti ti-arrow-right text-[12px]" /></a>
                   </div>
@@ -1389,16 +1389,16 @@ export default function DashboardPage() {
                         <div className="text-[13px] font-medium text-foreground leading-snug mb-0.5">{rec.label}</div>
                         <div className="flex items-center gap-1.5 flex-wrap mt-1">
                           {showSavingsDollars
-                            ? <span className="text-[11px] font-bold" style={{ color: 'var(--text-success)' }}>{rec.savings}</span>
-                            : <span className="text-[11px] text-[var(--text-secondary)] italic">Cost impact pending billing sync</span>}
+                            ? <span className="text-xs font-bold" style={{ color: 'var(--text-success)' }}>{rec.savings}</span>
+                            : <span className="text-xs text-[var(--text-secondary)] italic">Cost impact pending billing sync</span>}
                           {isDemoActive ? (
                             <>
                               {i < 2 ? (
-                                <><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-success)', background: 'var(--bg-success)', border: '1px solid var(--border-success)' }}>Low risk</span><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-success)', background: 'var(--bg-success)', border: '1px solid var(--border-success)' }}>No downtime</span><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-accent)', background: 'var(--bg-accent)', border: '1px solid var(--border-accent)' }}>High confidence</span></>
+                                <><span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-success)', background: 'var(--bg-success)', border: '1px solid var(--border-success)' }}>Low risk</span><span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-success)', background: 'var(--bg-success)', border: '1px solid var(--border-success)' }}>No downtime</span><span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-accent)', background: 'var(--bg-accent)', border: '1px solid var(--border-accent)' }}>High confidence</span></>
                               ) : (
-                                <><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-warning)', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)' }}>Low risk</span><span className="text-[10px] font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">Effort: Medium</span></>
+                                <><span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-warning)', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)' }}>Low risk</span><span className="text-xs font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">Effort: Medium</span></>
                               )}
-                              <span className="text-[10px] font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">{rec.time}</span>
+                              <span className="text-xs font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">{rec.time}</span>
                             </>
                           ) : (
                             <RiskBadge severity={rec.severity} />
@@ -1408,7 +1408,7 @@ export default function DashboardPage() {
                     </div>
                   ))}
                   <div className="mt-4 p-3 bg-[var(--surface-1)] rounded-lg border border-border">
-                    <div className="text-[11px] font-semibold text-[var(--text-secondary)] mb-0.5">Total potential</div>
+                    <div className="text-xs font-semibold text-[var(--text-secondary)] mb-0.5">Total potential</div>
                     {showSavingsDollars
                       ? (wasteAmount > 0
                           ? <div className="text-lg font-bold tracking-tight" style={{ color: 'var(--text-success)' }}>${wasteAmount.toLocaleString()}/mo</div>
