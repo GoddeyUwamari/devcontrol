@@ -409,15 +409,34 @@ export function MarketingNav() {
             </Link>
           </div>
 
-          {/* Mobile toggle */}
-          <button
-            className="lg:hidden"
-            style={{ padding: '8px', color: '#374151', background: 'none', border: 'none', cursor: 'pointer' }}
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? <X style={{ width: '24px', height: '24px' }} /> : <Menu style={{ width: '24px', height: '24px' }} />}
-          </button>
+          {/* Mobile: visible Sign In + toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Link
+              href="/login"
+              className="flex md:hidden"
+              style={{
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: '1.5px solid #7c3aed',
+                color: '#7c3aed',
+                fontWeight: 600,
+                fontSize: '0.8125rem',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Sign In
+            </Link>
+
+            <button
+              className="lg:hidden"
+              style={{ padding: '8px', color: '#374151', background: 'none', border: 'none', cursor: 'pointer' }}
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? <X style={{ width: '24px', height: '24px' }} /> : <Menu style={{ width: '24px', height: '24px' }} />}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Menu */}
