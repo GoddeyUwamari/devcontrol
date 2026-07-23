@@ -459,9 +459,9 @@ function InfrastructureContent() {
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div className="flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Infrastructure</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">AWS System Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Real-time visibility into cost, health, and risk across your AWS infrastructure.</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Infrastructure</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">AWS System Intelligence</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real-time visibility into cost, health, and risk across your AWS infrastructure.</p>
 
           {/* Mobile-only action buttons */}
           <div className="flex gap-2 mt-4 sm:hidden">
@@ -497,7 +497,7 @@ function InfrastructureContent() {
               <Check size={13} /> Apply Recommended Fixes
             </a>
             {(isDemoActive || (realSavingsTotal && realSavingsTotal > 0)) && (
-              <p className="text-[10px] text-slate-500 text-right">
+              <p className="text-xs text-slate-500 text-right">
                 Applies {zeroRiskCount} zero-risk optimization{zeroRiskCount !== 1 ? 's' : ''} · No downtime · Est. savings: ${Math.round(totalRecoverable).toLocaleString()}/mo
               </p>
             )}
@@ -544,9 +544,9 @@ function InfrastructureContent() {
               <span className="absolute inset-0 flex items-center justify-center text-[13px] font-bold text-slate-900">{intelScore}</span>
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
               <p className="text-base font-bold text-slate-900 mb-0.5">{intelStatus}</p>
-              <p className="text-[11px] text-slate-500">{intelAnalyzed}/{intelTotal} resources analyzed · High confidence</p>
+              <p className="text-xs text-slate-500">{intelAnalyzed}/{intelTotal} resources analyzed · High confidence</p>
             </div>
           </div>
 
@@ -554,7 +554,7 @@ function InfrastructureContent() {
 
           {/* Primary Issue */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Primary Issue</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Primary Issue</p>
             <p className="text-sm font-semibold text-slate-900 mb-0.5">{intelTopAction}</p>
             <p className="text-xs font-bold text-red-600">${Math.round(intelWaste).toLocaleString()}/mo active waste</p>
           </div>
@@ -563,9 +563,9 @@ function InfrastructureContent() {
 
           {/* Score Impact */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Score Impact if Resolved</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Score Impact if Resolved</p>
             <p className="text-base font-bold text-violet-700 mb-0.5">+{intelScoreDelta} pts</p>
-            <p className="text-[11px] text-slate-500">Within 24–48h after fixes applied</p>
+            <p className="text-xs text-slate-500">Within 24–48h after fixes applied</p>
           </div>
 
           <div className="hidden lg:block w-px h-11 bg-slate-200 shrink-0" />
@@ -578,14 +578,14 @@ function InfrastructureContent() {
               { label: 'Observability', score: intelObsScore,  chip: scoreChip(intelObsScore)  },
             ].map(({ label, score, chip }) => (
               <div key={label} className="text-center">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ color: chip.color, background: chip.bg }}>{score}/100</span>
               </div>
             ))}
           </div>
         </div>
 
-        <a href="/ai-reports" className="text-[11px] font-bold text-violet-700 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
+        <a href="/ai-reports" className="text-xs font-bold text-violet-700 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
           Full report <ArrowRight size={11} />
         </a>
       </div>
@@ -594,8 +594,8 @@ function InfrastructureContent() {
       {costByService.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg px-5 py-4 mb-6">
           <div className="flex items-center justify-between mb-3.5">
-            <span className="text-[11px] font-semibold tracking-widest text-gray-500 uppercase">Cost by Service</span>
-            <span className="text-xs text-gray-400">Last 30 days</span>
+            <span className="text-xs font-semibold tracking-widest text-gray-500 uppercase">Cost by Service</span>
+            <span className="text-xs text-gray-500">Last 30 days</span>
           </div>
           <p className="text-[13px] text-slate-500 mb-3.5">
             Top concentration: <strong className="text-slate-900">{costByService[0].name} ({costByService[0].pct}%)</strong>
@@ -623,14 +623,14 @@ function InfrastructureContent() {
 
         {/* Total Resources */}
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-gray-200/50">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-4">Total Resources</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">Total Resources</p>
           <div className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (totalResources ?? '—')}</div>
           <p className="text-[13px] text-slate-500 leading-relaxed">{isDemoActive ? 'Across all regions' : regionCount > 0 ? `Across ${regionCount} region${regionCount !== 1 ? 's' : ''}` : 'Across all regions'}</p>
         </div>
 
         {/* Monthly Cost */}
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-gray-200/50">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-4">Monthly Cost</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">Monthly Cost</p>
           <div className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight leading-none mb-2">
             {isDemoActive ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : totalMonthlyCost > 0 ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : '—'}
           </div>
@@ -644,10 +644,10 @@ function InfrastructureContent() {
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'active' ? null : 'active')}
         >
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-4">Healthy</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">Healthy</p>
           <div className="text-3xl sm:text-4xl font-bold text-emerald-600 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (activeCount ?? '—')}</div>
           <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">Running normally</p>
-          <p className="text-[11px] text-gray-400">Click to filter</p>
+          <p className="text-xs text-gray-500">Click to filter</p>
         </div>
 
         {/* Critical Issues */}
@@ -657,17 +657,17 @@ function InfrastructureContent() {
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'warning' ? null : 'warning')}
         >
-          <p className="text-[11px] font-semibold text-red-600 uppercase tracking-widest mb-4">Critical Issues</p>
+          <p className="text-xs font-semibold text-red-600 uppercase tracking-widest mb-4">Critical Issues</p>
           <div className="text-3xl sm:text-4xl font-bold text-red-600 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
           <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">1 cost inefficiency · 1 reliability risk</p>
-          <p className="text-[11px] text-red-600 font-medium">Resolve now →</p>
+          <p className="text-xs text-red-600 font-medium">Resolve now →</p>
         </div>
 
         {/* Recoverable Savings */}
         <div className="col-span-2 lg:col-span-1 bg-white rounded-xl p-4 sm:p-8 border border-emerald-200">
-          <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-widest mb-4">Recoverable Savings</p>
+          <p className="text-xs font-semibold text-emerald-600 uppercase tracking-widest mb-4">Recoverable Savings</p>
           <div className="text-3xl sm:text-4xl font-bold text-green-600 tracking-tight leading-none mb-2">{potentialSavingsValue}</div>
-          <p className="text-[11px] text-slate-500 mb-1">
+          <p className="text-xs text-slate-500 mb-1">
             {totalMonthlyCost > 0 && (realSavingsTotal ?? 0) > 0
               ? `${Math.round(((realSavingsTotal ?? 0) / totalMonthlyCost) * 100)}% of total spend`
               : isDemoActive ? '18% of total spend' : ''}
@@ -676,7 +676,7 @@ function InfrastructureContent() {
             {realSavingsTotal && realSavingsTotal > 0 ? 'Approve to capture savings' : isDemoActive ? 'Approve to capture savings' : 'Run scan to identify savings'}
           </p>
           {(isDemoActive || (realSavingsTotal && realSavingsTotal > 0)) && (
-            <a href="/cost-optimization" className="text-[11px] font-semibold text-emerald-600 no-underline inline-flex items-center gap-1 mt-1.5">
+            <a href="/cost-optimization" className="text-xs font-semibold text-emerald-600 no-underline inline-flex items-center gap-1 mt-1.5">
               Review opportunities →
             </a>
           )}
@@ -687,12 +687,12 @@ function InfrastructureContent() {
       <div className="bg-white border border-slate-200 rounded-xl px-6 py-5 mb-4">
         <div className="flex items-center justify-between mb-3.5">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Top Actions</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-0.5">Top Actions</p>
             <p className="text-[13px] text-slate-500">
               Ranked by impact · {zeroRiskCount} zero-risk changes ready · <strong className="text-emerald-600">${totalRecoverable.toLocaleString()}/mo recoverable today</strong>
             </p>
           </div>
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wide bg-red-600 text-white">Act Now</span>
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-red-600 text-white">Act Now</span>
         </div>
 
         <div className="flex flex-col gap-2.5">
@@ -703,26 +703,26 @@ function InfrastructureContent() {
               style={{ background: action.urgency === 'now' ? '#FFF8F8' : '#F8FAFC', borderColor: action.urgency === 'now' ? '#FECACA' : '#F1F5F9', borderWidth: action.isTop ? '2px' : '1px' }}
             >
               <div className="flex items-center gap-3.5">
-                <span className="text-[11px] font-bold text-slate-400 min-w-[16px]">{action.rank}</span>
+                <span className="text-xs font-bold text-slate-500 min-w-[16px]">{action.rank}</span>
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">
                     {action.title}
                     {action.savings != null && <span className="text-emerald-600 font-bold"> — save ${action.savings.toLocaleString()}/mo</span>}
                   </p>
-                  <p className="text-[11px] text-slate-500">{action.sub}</p>
+                  <p className="text-xs text-slate-500">{action.sub}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
                 {action.risk === 'zero'
-                  ? <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-emerald-100 text-emerald-800">Zero Risk</span>
-                  : <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-amber-100 text-amber-800">Review Impact</span>}
-                {action.isTop && <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-violet-700 text-white">Highest Impact</span>}
+                  ? <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-emerald-100 text-emerald-800">Zero Risk</span>
+                  : <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-amber-100 text-amber-800">Review Impact</span>}
+                {action.isTop && <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-violet-700 text-white">Highest Impact</span>}
                 {action.urgency === 'now'
-                  ? <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-red-600 text-white">Now</span>
-                  : <span className="inline-flex px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase bg-emerald-100 text-emerald-800">Today</span>}
+                  ? <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-red-600 text-white">Now</span>
+                  : <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-emerald-100 text-emerald-800">Today</span>}
                 {action.risk === 'zero'
-                  ? <a href="/cost-optimization" className="bg-emerald-600 text-white rounded-md px-3 py-1 text-[11px] font-bold no-underline sm:w-auto w-full text-center">Fix →</a>
-                  : <a href="/anomalies" className="bg-transparent text-slate-500 border border-slate-200 rounded-md px-3 py-1 text-[11px] font-semibold no-underline sm:w-auto w-full text-center">Review →</a>}
+                  ? <a href="/cost-optimization" className="bg-emerald-600 text-white rounded-md px-3 py-1 text-xs font-bold no-underline sm:w-auto w-full text-center">Fix →</a>
+                  : <a href="/anomalies" className="bg-transparent text-slate-500 border border-slate-200 rounded-md px-3 py-1 text-xs font-semibold no-underline sm:w-auto w-full text-center">Review →</a>}
               </div>
             </div>
           ))}
@@ -737,20 +737,20 @@ function InfrastructureContent() {
           <div className="flex items-center justify-between mb-3.5">
             <div>
               {isDemoActive
-                ? <p className="text-[13px] text-gray-400">{DEMO_RESOURCES.length} resources (demo data)</p>
+                ? <p className="text-[13px] text-gray-500">{DEMO_RESOURCES.length} resources (demo data)</p>
                 : (totalResources !== null && (totalResources as number) > 0)
-                  ? <p className="text-[13px] text-gray-400">{effectiveResources.length} of {totalResources ?? allResources.length} resources</p>
-                  : <p className="text-[13px] text-gray-400">0 resources</p>}
+                  ? <p className="text-[13px] text-gray-500">{effectiveResources.length} of {totalResources ?? allResources.length} resources</p>
+                  : <p className="text-[13px] text-gray-500">0 resources</p>}
             </div>
           </div>
           <div className="flex gap-2 mb-3">
-            <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} className="text-[11px] font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
+            <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} className="text-xs font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
               <option value="all">View by Issue ▾</option>
               <option value="Cost Waste">Cost Waste</option>
               <option value="Reliability Risk">Reliability Risk</option>
               <option value="Healthy">Healthy</option>
             </select>
-            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="text-[11px] font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
+            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="text-xs font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
               <option value="impact">Sort: Impact ▾</option>
               <option value="cost-high">Sort: Cost (High)</option>
               <option value="status">Sort: Status</option>
@@ -766,7 +766,7 @@ function InfrastructureContent() {
                     onClick={(e) => { e.stopPropagation(); setOpenDropdown(isOpen ? null : pill.key) }}
                     className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${isActive ? 'bg-violet-700 text-white border-transparent' : 'bg-white text-gray-700 border-gray-200'}`}
                   >
-                    {pill.label} <span className="text-[9px] opacity-70">▼</span>
+                    {pill.label} <span className="text-xs opacity-70">▼</span>
                   </button>
                   {isOpen && (
                     <div onMouseDown={(e) => e.stopPropagation()} className="absolute top-[calc(100%+6px)] left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[160px] overflow-hidden">
@@ -793,7 +793,7 @@ function InfrastructureContent() {
         {/* Column headers — desktop only */}
         <div className="hidden sm:grid grid-cols-[2fr_90px_150px_150px_110px_110px_110px] px-7 py-2.5 bg-slate-50 border-b border-slate-100">
           {['Resource', 'Type', 'AWS ID', 'Service', 'Region', 'Monthly Cost', 'Issue'].map(col => (
-            <span key={col} className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{col}</span>
+            <span key={col} className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{col}</span>
           ))}
         </div>
 
@@ -808,7 +808,7 @@ function InfrastructureContent() {
             <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
               <Server size={22} className="text-slate-400" />
             </div>
-            <p className="text-base font-semibold text-slate-900 mb-1.5">No infrastructure data yet</p>
+            <p className="text-sm font-semibold text-slate-900 mb-1.5">No infrastructure data yet</p>
             <p className="text-sm text-slate-500 mb-5 leading-relaxed max-w-md mx-auto">
               Connect your AWS account to uncover cost leaks, security risks, and idle resources — first insights in under 2 minutes.
             </p>
@@ -817,7 +817,7 @@ function InfrastructureContent() {
                 <div key={item} className="text-[13px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">{item}</div>
               ))}
             </div>
-            <p className="text-xs text-gray-400 mb-4">Read-only access · No changes to infrastructure · Cancel anytime</p>
+            <p className="text-xs text-gray-500 mb-4">Read-only access · No changes to infrastructure · Cancel anytime</p>
             <button onClick={handleSyncAWS} className="bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer inline-flex items-center gap-2">
               <RefreshCw size={14} /> Scan My AWS for Cost &amp; Risk
             </button>
@@ -848,16 +848,16 @@ function InfrastructureContent() {
                       <Icon size={14} style={{ color: typeConf.color }} />
                     </div>
                     <p className="flex-1 text-sm font-semibold text-slate-900 overflow-hidden text-ellipsis whitespace-nowrap">{r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}</p>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                   </div>
                   {issueLabel && (
-                    <p className="text-[11px] font-semibold mb-2.5" style={{ color: statusLabel === 'Critical' ? '#DC2626' : '#D97706' }}>
+                    <p className="text-xs font-semibold mb-2.5" style={{ color: statusLabel === 'Critical' ? '#DC2626' : '#D97706' }}>
                       {issueLabel}
                       {statusLabel === 'Critical' && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline" style={{ color: '#DC2626' }}>Investigate →</a>}
                     </p>
                   )}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
                     <span className="text-xs text-slate-500 font-mono">{r.awsRegion || '—'}</span>
                     <span className="ml-auto text-sm font-bold text-slate-900">${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
@@ -875,19 +875,19 @@ function InfrastructureContent() {
                     <div>
                       <p className="text-sm font-semibold text-slate-900 mb-0.5">{r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}</p>
                       {issueLabel
-                        ? <p className="text-[10px] font-bold" style={{ color: statusLabel === 'Critical' ? '#DC2626' : '#D97706' }}>
+                        ? <p className="text-xs font-bold" style={{ color: statusLabel === 'Critical' ? '#DC2626' : '#D97706' }}>
                             {issueLabel}
-                            {statusLabel === 'Critical' && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline text-[10px]" style={{ color: '#DC2626' }}>Investigate →</a>}
+                            {statusLabel === 'Critical' && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline text-xs" style={{ color: '#DC2626' }}>Investigate →</a>}
                           </p>
-                        : <p className="text-[10px] text-slate-400">Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
+                        : <p className="text-xs text-slate-500">Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
                     </div>
                   </div>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded w-fit" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded w-fit" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
                   <span className="text-xs text-slate-500 font-mono overflow-hidden text-ellipsis whitespace-nowrap block">{r.awsId || '—'}</span>
                   <span className="text-[13px] text-slate-500">{r.serviceName || '—'}</span>
                   <span className="text-[13px] text-slate-500 font-mono">{r.awsRegion || '—'}</span>
                   <span className="text-sm font-bold text-slate-900">${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                 </div>
               </div>
             )
