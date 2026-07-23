@@ -224,17 +224,17 @@ export default function CostsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Cost Intelligence</h1>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Cost Intelligence</h1>
             {demoMode && (
-              <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">
+              <span className="text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">
                 Demo Mode
               </span>
             )}
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-slate-500">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-slate-500">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
               Synced 2 min ago
             </span>
-            <span className={`inline-flex items-center gap-1.5 text-[10px] font-medium rounded-full px-2.5 py-1 ${
+            <span className={`inline-flex items-center gap-1.5 text-xs font-medium rounded-full px-2.5 py-1 ${
               costAnomalyDetected && !isDemoActive
                 ? 'bg-red-50 border border-red-200 text-red-600'
                 : 'bg-green-50 border border-green-200 text-green-600'
@@ -243,7 +243,7 @@ export default function CostsPage() {
               {costAnomalyDetected && !isDemoActive ? '1 anomaly detected' : 'All systems clear'}
             </span>
           </div>
-          <p className="text-sm text-slate-500 leading-relaxed">
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">
             Real-time AWS spend tracking, forecasting, and AI-powered savings recommendations
           </p>
         </div>
@@ -267,7 +267,7 @@ export default function CostsPage() {
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
               <p className="text-xs font-bold text-amber-900 m-0">Cost Anomaly Detected</p>
-              <span className="text-[10px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">AI Detected</span>
+              <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">AI Detected</span>
             </div>
             <p className="text-xs text-amber-800 leading-relaxed mb-2.5">
               {isDemoActive
@@ -285,9 +285,9 @@ export default function CostsPage() {
             </div>
           </div>
           <div className="shrink-0 text-right bg-white border border-amber-200 rounded-lg px-3 py-2 hidden sm:block">
-            <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-1">Est. Impact</p>
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-widest mb-1">Est. Impact</p>
             <p className="text-lg font-bold text-amber-500 m-0">+$864<span className="text-xs font-medium">/mo</span></p>
-            <p className="text-[10px] text-amber-700 mt-0.5">if sustained</p>
+            <p className="text-xs text-amber-700 mt-0.5">if sustained</p>
           </div>
         </div>
       )}
@@ -302,7 +302,7 @@ export default function CostsPage() {
               onMouseLeave={() => setHoveredCard(null)}
             >
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">{label}</span>
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">{label}</span>
                 <span className="text-slate-300 text-sm">›</span>
               </div>
               <div className={`text-2xl sm:text-3xl font-bold tracking-tight leading-none mb-2 ${valueColor}`}>{value}</div>
@@ -365,7 +365,7 @@ export default function CostsPage() {
                   key={chip}
                   type="button"
                   onClick={() => { setNlQuery(chip); inputRef.current?.focus() }}
-                  className="text-[11px] text-violet-600 bg-violet-50 rounded-full px-2.5 py-1 cursor-pointer border-none font-medium hover:bg-violet-100 transition-colors"
+                  className="text-xs text-violet-600 bg-violet-50 rounded-full px-2.5 py-1 cursor-pointer border-none font-medium hover:bg-violet-100 transition-colors"
                 >
                   {chip}
                 </button>
@@ -388,7 +388,7 @@ export default function CostsPage() {
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-slate-900 m-0">{nlResult.intent.explanation}</p>
-                      <p className="text-[10px] text-violet-600 m-0">{nlResult.rowCount} results · {nlResult.executionMs}ms · Confidence: {nlResult.intent.confidence}</p>
+                      <p className="text-xs text-violet-600 m-0">{nlResult.rowCount} results · {nlResult.executionMs}ms · Confidence: {nlResult.intent.confidence}</p>
                     </div>
                   </div>
                   <button onClick={() => setNlResult(null)} className="bg-transparent border-none cursor-pointer text-slate-400 hover:text-slate-600">
@@ -402,7 +402,7 @@ export default function CostsPage() {
                   <div className="overflow-x-auto">
                     <div className="grid px-5 py-2.5 bg-slate-50 border-b border-slate-100" style={{ gridTemplateColumns: `repeat(${nlResult.data.columns.length}, 1fr)` }}>
                       {nlResult.data.columns.map(col => (
-                        <span key={col} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{col}</span>
+                        <span key={col} className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{col}</span>
                       ))}
                     </div>
                     {nlResult.data.rows.map((row, idx) => (
@@ -418,7 +418,7 @@ export default function CostsPage() {
                 )}
                 {nlResult.data.rows.length === 0 && (
                   <div className="px-5 py-8 text-center">
-                    <p className="text-sm text-slate-400 m-0">No data matched your query. Try rephrasing or check your AWS connection.</p>
+                    <p className="text-sm text-slate-500 m-0">No data matched your query. Try rephrasing or check your AWS connection.</p>
                   </div>
                 )}
               </div>
@@ -432,7 +432,7 @@ export default function CostsPage() {
       <div className="bg-white rounded-2xl p-4 sm:p-8 border border-slate-100 mb-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
+            <h2 className="text-sm font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
             <p className="text-xs text-slate-500 leading-relaxed m-0">Historical spend and AI forecast · Dashed line indicates prediction</p>
           </div>
           <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
@@ -459,7 +459,7 @@ export default function CostsPage() {
             { label: 'Confidence',       value: `${forecast?.confidence ?? 85}%`,    color: 'text-slate-500' },
           ].map(({ label, value, color }) => (
             <div key={label}>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
               <p className={`text-lg font-bold tracking-tight m-0 ${color}`}>{value}</p>
             </div>
           ))}
@@ -467,7 +467,7 @@ export default function CostsPage() {
 
         {/* Top drivers */}
         <div className="flex flex-wrap gap-3 mb-5 pb-4 border-b border-slate-100">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest m-0 self-center">Top drivers</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest m-0 self-center">Top drivers</p>
           {[
             { name: 'Compute',  amount: isDemoActive ? 5200 : Math.round((mtdSpend || 0) * 0.63), color: '#3B82F6' },
             { name: 'Database', amount: isDemoActive ? 2400 : Math.round((mtdSpend || 0) * 0.10), color: '#8B5CF6' },
@@ -551,7 +551,7 @@ export default function CostsPage() {
               <span className="text-xs text-slate-500 font-medium">{label}</span>
             </div>
           ))}
-          <span className="text-xs text-slate-400 ml-auto hidden sm:block">Values shown as monthly equivalent</span>
+          <span className="text-xs text-slate-500 ml-auto hidden sm:block">Values shown as monthly equivalent</span>
         </div>
       </div>
 
@@ -561,7 +561,7 @@ export default function CostsPage() {
         {/* Cost by Service */}
         <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-base font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
+            <h2 className="text-sm font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
             <a href="/cost-optimization" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">
               Full breakdown <ChevronRight size={12} />
             </a>
@@ -583,7 +583,7 @@ export default function CostsPage() {
                         <span className="text-xs text-slate-700 font-medium">{name}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        {hasSpend && <span className="text-[10px] text-slate-400 font-medium">{pctOfTotal}%</span>}
+                        {hasSpend && <span className="text-xs text-slate-500 font-medium">{pctOfTotal}%</span>}
                         {hasSpend && <span className={`text-xs font-medium ${up ? 'text-amber-500' : 'text-green-600'}`}>{trend}</span>}
                         <span className="text-sm font-semibold text-slate-900 min-w-[60px] text-right">${amount.toLocaleString()}</span>
                       </div>
@@ -591,7 +591,7 @@ export default function CostsPage() {
                     <div className="h-1.5 bg-slate-100 rounded-full">
                       <div className="h-full rounded-full transition-all duration-500" style={{ width: `${hasSpend ? pct : 0}%`, background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
                     </div>
-                    {savingsFlag && <p className="text-[10px] text-amber-500 mt-1 font-medium">{savingsFlag}</p>}
+                    {savingsFlag && <p className="text-xs text-amber-500 mt-1 font-medium">{savingsFlag}</p>}
                   </div>
                 )
               })
@@ -602,7 +602,7 @@ export default function CostsPage() {
         {/* Top Savings */}
         <div className="bg-white rounded-2xl p-5 sm:p-8 border border-green-200 border-t-[3px] border-t-green-500">
           <div className="flex items-center justify-between mb-5">
-            <h2 className="text-base font-bold text-green-600 m-0 tracking-tight">Top Savings</h2>
+            <h2 className="text-sm font-semibold text-green-600 m-0 tracking-tight">Top Savings</h2>
             <a href="/cost-optimization" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">
               View all <ChevronRight size={12} />
             </a>
@@ -611,7 +611,7 @@ export default function CostsPage() {
           {(isDemoActive || totalSavings > 0) && (
             <div className="flex items-center justify-between mb-3.5">
               <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Optimization Confidence</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">Optimization Confidence</p>
                 <div className="flex items-center gap-2">
                   <div className="h-1 bg-slate-100 rounded-full w-24">
                     <div className="h-full bg-green-500 rounded-full" style={{ width: '94%' }} />
@@ -619,20 +619,20 @@ export default function CostsPage() {
                   <span className="text-sm font-bold text-green-600">94%</span>
                 </div>
               </div>
-              <span className="text-[10px] text-green-600 font-semibold bg-green-50 px-2.5 py-1 rounded-full border border-green-200">Safe to apply</span>
+              <span className="text-xs text-green-600 font-semibold bg-green-50 px-2.5 py-1 rounded-full border border-green-200">Safe to apply</span>
             </div>
           )}
 
           <div className="bg-green-50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <p className="text-[10px] font-semibold text-green-600 uppercase tracking-widest mb-1">Total Identified</p>
+              <p className="text-xs font-semibold text-green-600 uppercase tracking-widest mb-1">Total Identified</p>
               <p className="text-2xl font-extrabold text-green-600 m-0">${displaySavings.toLocaleString()}<span className="text-sm font-medium">/mo</span></p>
             </div>
             <div className="text-center sm:text-right">
               <a href="/cost-optimization" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold no-underline inline-block transition-colors whitespace-nowrap">
                 Approve all — safe changes only
               </a>
-              <p className="text-[10px] text-green-600 mt-1 font-medium">No downtime risk · Fully reversible</p>
+              <p className="text-xs text-green-600 mt-1 font-medium">No downtime risk · Fully reversible</p>
             </div>
           </div>
 
@@ -643,7 +643,7 @@ export default function CostsPage() {
                   <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
                   <span className="text-xs font-bold text-green-600 shrink-0">${rec.monthlySavings.toLocaleString()}/mo</span>
                 </div>
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${rec.risk === 'safe' ? 'bg-green-50 text-green-600' : rec.risk === 'caution' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'}`}>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${rec.risk === 'safe' ? 'bg-green-50 text-green-600' : rec.risk === 'caution' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'}`}>
                   {rec.risk === 'safe' ? 'Zero Risk' : rec.risk === 'caution' ? 'Low Risk' : 'Review Required'}
                 </span>
               </div>
@@ -657,7 +657,7 @@ export default function CostsPage() {
                   <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{item.title}</p>
                   <span className="text-xs font-bold text-green-600 shrink-0">${item.savings}/mo</span>
                 </div>
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${item.risk === 'safe' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${item.risk === 'safe' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
                   {item.risk === 'safe' ? 'Zero Risk' : 'Low Risk'}
                 </span>
               </div>
@@ -673,7 +673,7 @@ export default function CostsPage() {
       {/* ── DEVCONTROL VALUE DELIVERED ── */}
       {isDemoActive && (
         <div className="bg-slate-50 rounded-2xl p-5 sm:p-8 border border-slate-100 mb-4">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">DevControl value delivered</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-5">DevControl value delivered</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
               { label: 'Saved this year',       value: '$23,400' },
@@ -684,9 +684,9 @@ export default function CostsPage() {
               { label: 'Policies running',      value: '3' },
             ].map(({ label, value, note }) => (
               <div key={label} className="bg-white rounded-xl p-4 border border-slate-100">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">{label}</p>
                 <p className="text-xl font-bold text-slate-900 m-0 tracking-tight leading-none">{value}</p>
-                {note && <p className="text-[10px] text-green-600 mt-1 font-medium">{note}</p>}
+                {note && <p className="text-xs text-green-600 mt-1 font-medium">{note}</p>}
               </div>
             ))}
           </div>
@@ -701,7 +701,7 @@ export default function CostsPage() {
               <Sparkles size={15} className="text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-2">AI Cost Narrative</p>
+              <p className="text-xs font-semibold text-violet-600 uppercase tracking-widest mb-2">AI Cost Narrative</p>
               <p className="text-sm text-slate-900 leading-relaxed mb-3">
                 {narrativeExpanded ? forecast.aiSummary : forecast.aiSummary.split(/\.\s+/)[0] + '.'}
               </p>
