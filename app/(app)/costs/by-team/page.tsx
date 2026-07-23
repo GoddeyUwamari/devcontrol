@@ -87,15 +87,15 @@ export default function CostsByTeamPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Cost Attribution</h1>
-          <p className="text-gray-500 text-sm mt-1.5">See exactly how much each team, service, and resource type is spending.</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
+          <h1 className="text-2xl font-bold text-gray-900">Cost Attribution</h1>
+          <p className="text-xs text-gray-500 font-medium mt-1.5">See exactly how much each team, service, and resource type is spending.</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-violet-600" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Starter Plan Required</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-2">Starter Plan Required</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
             Cost attribution by team is available on the Starter plan and above. See exactly which teams and services are driving your AWS spend.
           </p>
@@ -142,9 +142,9 @@ export default function CostsByTeamPage() {
       {/* ── HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Cost Attribution</h1>
-          <p className="text-gray-500 text-sm mt-1.5">
+          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
+          <h1 className="text-2xl font-bold text-gray-900">Cost Attribution</h1>
+          <p className="text-xs text-gray-500 font-medium mt-1.5">
             See exactly how much each team, service, and resource type is spending on AWS.
           </p>
         </div>
@@ -166,7 +166,7 @@ export default function CostsByTeamPage() {
               <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: color + '15' }}>
                 <Icon size={14} style={{ color }} />
               </div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</p>
             </div>
             <p className="text-2xl font-bold text-slate-900">{isLoading && !isDemoActive ? '—' : value}</p>
           </div>
@@ -194,13 +194,13 @@ export default function CostsByTeamPage() {
         <div className="p-6">
           {isLoading && !isDemoActive ? (
             <div className="h-64 flex items-center justify-center">
-              <p className="text-slate-400 text-sm">Loading cost data...</p>
+              <p className="text-slate-500 text-sm">Loading cost data...</p>
             </div>
           ) : activeData.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center">
               <Users size={32} className="text-slate-300 mb-3" />
               <p className="text-slate-500 text-sm">No cost data available yet.</p>
-              <p className="text-slate-400 text-xs mt-1">
+              <p className="text-slate-500 text-xs mt-1">
                 {isAwsConnected
                   ? 'No cost allocation tags found in your AWS account. To enable cost attribution, add resource tags (e.g. Team=Backend) in the AWS Console and run a sync.'
                   : 'Connect your AWS account and sync to see cost attribution.'}
@@ -236,7 +236,7 @@ export default function CostsByTeamPage() {
                       <div key={i} className="flex items-center gap-3">
                         <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
                         <span className="text-sm text-slate-700 flex-1 truncate">{item.name}</span>
-                        <span className="text-xs text-slate-400 w-8 text-right shrink-0">{pct}%</span>
+                        <span className="text-xs text-slate-500 w-8 text-right shrink-0">{pct}%</span>
                         <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
                           <div className="h-full rounded-full" style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }} />
                         </div>

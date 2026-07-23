@@ -115,15 +115,15 @@ export default function ForecastPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Forecast</h1>
-          <p className="text-gray-500 text-sm mt-1.5">Predictive budget forecasting powered by AI.</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
+          <h1 className="text-2xl font-bold text-gray-900">Forecast</h1>
+          <p className="text-xs text-gray-500 font-medium mt-1.5">Predictive budget forecasting powered by AI.</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-violet-600" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Pro Plan Required</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-2">Pro Plan Required</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
             AI-powered forecasting is available on the Pro plan and above.
           </p>
@@ -144,7 +144,7 @@ export default function ForecastPage() {
             <Brain className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-purple-600" />
           </div>
           <p className="text-gray-600 mt-4">Generating AI-powered forecast...</p>
-          <p className="text-sm text-gray-400 mt-1">Analyzing 90 days of cost data</p>
+          <p className="text-sm text-gray-500 mt-1">Analyzing 90 days of cost data</p>
         </div>
       </div>
     );
@@ -155,7 +155,7 @@ export default function ForecastPage() {
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <Card className="p-8 text-center">
           <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold mb-2">Unable to Load Forecast</h3>
+          <h3 className="text-sm font-semibold mb-2">Unable to Load Forecast</h3>
           <p className="text-gray-600 mb-4">There was an error loading the forecast data.</p>
           <Button onClick={loadForecast}><RefreshCw className="w-4 h-4 mr-2" />Try Again</Button>
         </Card>
@@ -176,11 +176,11 @@ export default function ForecastPage() {
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1">Cost Forecasting</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">AI-powered predictions and scenario planning for your AWS costs</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Cost Forecasting</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">AI-powered predictions and scenario planning for your AWS costs</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">Updated {new Date(forecast.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+          <span className="text-xs text-slate-500">Updated {new Date(forecast.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
           <button onClick={() => setActiveTab('scenarios')} className="bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:border-slate-300 transition-colors whitespace-nowrap">
             ⚡ What-if scenarios
           </button>
@@ -192,28 +192,28 @@ export default function ForecastPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
         <Card className="hover:shadow-lg transition-shadow border-l-[3px] border-l-violet-600 rounded-l-none">
           <CardContent className="pt-6">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Next 30 Days</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Next 30 Days</p>
             <p className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">${forecast.predicted30Day.toLocaleString()}</p>
             <p className="text-xs text-slate-500">Stable · No growth detected</p>
           </CardContent>
         </Card>
         <Card className="hover:shadow-lg transition-shadow">
           <CardContent className="pt-6">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Next Quarter</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Next Quarter</p>
             <p className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">${forecast.predictedQuarter.toLocaleString()}</p>
             <p className="text-xs text-slate-500">~${Math.round(forecast.predictedQuarter / 3).toLocaleString()}/month avg</p>
           </CardContent>
         </Card>
         <Card className="hover:shadow-lg transition-shadow">
           <CardContent className="pt-6">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Confidence</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Confidence</p>
             <p className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{forecast.confidence}%</p>
             <p className="text-xs text-slate-500">High reliability · 90 days data</p>
           </CardContent>
         </Card>
         <Card className="hover:shadow-lg transition-shadow">
           <CardContent className="pt-6">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Volatility</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Volatility</p>
             <p className={`text-2xl sm:text-3xl font-bold tracking-tight leading-none mb-2 ${getVolatilityColor()}`}>{getVolatilityLabel()}</p>
             <p className="text-xs text-slate-500">Predictable billing ahead</p>
           </CardContent>
@@ -227,9 +227,9 @@ export default function ForecastPage() {
             <Lightbulb className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h3 className="font-semibold text-slate-900 mb-2 flex flex-wrap items-center gap-2 text-base">
+            <h3 className="font-semibold text-slate-900 mb-2 flex flex-wrap items-center gap-2 text-sm">
               AI Forecast Summary
-              <span className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-2.5 py-0.5 rounded-full">{forecast.forecastMethod}</span>
+              <span className="text-xs font-semibold bg-violet-100 text-violet-700 px-2.5 py-0.5 rounded-full">{forecast.forecastMethod}</span>
             </h3>
             <p className="text-sm text-slate-700 leading-relaxed m-0">
               {isDemoMode
@@ -259,8 +259,8 @@ export default function ForecastPage() {
                 <CardHeader>
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                      <CardTitle>Cost Forecast</CardTitle>
-                      <CardDescription>Historical spend with AI predictions</CardDescription>
+                      <CardTitle className="text-sm">Cost Forecast</CardTitle>
+                      <CardDescription className="text-xs font-medium">Historical spend with AI predictions</CardDescription>
                     </div>
                     <div className="flex items-center gap-4 text-xs">
                       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-blue-500" /><span className="text-slate-500">Historical</span></div>
@@ -275,8 +275,8 @@ export default function ForecastPage() {
                         <Brain className="w-6 h-6 text-slate-400" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-slate-600 mb-1">No forecast data yet</p>
-                        <p className="text-xs text-slate-400">Connect your AWS account to generate AI-powered cost predictions</p>
+                        <p className="text-sm font-semibold text-slate-600 mb-1">No forecast data yet</p>
+                        <p className="text-xs text-slate-500">Connect your AWS account to generate AI-powered cost predictions</p>
                       </div>
                     </div>
                   ) : (
@@ -329,7 +329,7 @@ export default function ForecastPage() {
                       <span className="text-xs text-slate-700">{d.name}</span>
                       <div className="text-right">
                         <span className="text-xs font-medium text-slate-900">{d.pct}%</span>
-                        <span className="text-[11px] text-slate-400 ml-1">{d.amount}</span>
+                        <span className="text-xs text-slate-500 ml-1">{d.amount}</span>
                       </div>
                     </div>
                     <div className="h-1 bg-slate-100 rounded-full">
@@ -345,7 +345,7 @@ export default function ForecastPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-orange-600" />Potential Risks</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-sm"><AlertTriangle className="w-5 h-5 text-orange-600" />Potential Risks</CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="list-none p-0 m-0">
@@ -360,7 +360,7 @@ export default function ForecastPage() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Lightbulb className="w-5 h-5 text-blue-600" />Recommendations</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-sm"><Lightbulb className="w-5 h-5 text-blue-600" />Recommendations</CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="flex flex-col gap-3 list-none p-0 m-0">
@@ -384,7 +384,7 @@ export default function ForecastPage() {
               </svg>
               <div>
                 <p className="text-xs font-medium text-violet-900 m-0">Create forecast-based budget alert</p>
-                <p className="text-[11px] text-violet-600 mt-0.5 m-0">Get notified before your spend exceeds the predicted ${isDemoMode ? '195' : Math.round(forecast.predicted30Day).toLocaleString()} threshold</p>
+                <p className="text-xs text-violet-600 mt-0.5 m-0">Get notified before your spend exceeds the predicted ${isDemoMode ? '195' : Math.round(forecast.predicted30Day).toLocaleString()} threshold</p>
               </div>
             </div>
             <button onClick={() => router.push('/observability/alerts')} className="bg-violet-700 hover:bg-violet-800 text-white text-xs font-medium px-3.5 py-2 rounded-lg border-none cursor-pointer shrink-0 transition-colors whitespace-nowrap">
@@ -398,8 +398,8 @@ export default function ForecastPage() {
         <>
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle>What-If Scenarios</CardTitle>
-              <CardDescription>Explore how different scenarios would impact your AWS costs</CardDescription>
+              <CardTitle className="text-sm">What-If Scenarios</CardTitle>
+              <CardDescription className="text-xs font-medium">Explore how different scenarios would impact your AWS costs</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -417,7 +417,7 @@ export default function ForecastPage() {
                     icon: <TrendingDown className="w-5 h-5 text-yellow-600 group-hover:scale-110 transition-transform" />,
                     title: 'Traffic Decrease', desc: 'What if traffic drops 50%?',
                     borderHover: 'hover:border-yellow-400 hover:bg-yellow-50',
-                    input: <span className="text-xs text-gray-400">Simulates reduced usage</span>,
+                    input: <span className="text-xs text-gray-500">Simulates reduced usage</span>,
                   },
                   {
                     type: 'new_service' as ScenarioType, params: () => ({ newServiceCost: customParams.newServiceCost }),
@@ -435,7 +435,7 @@ export default function ForecastPage() {
                   },
                 ].map(({ type, params, icon, title, desc, borderHover, input }) => (
                   <div key={type} onClick={() => generateScenario(type, params())} className={`p-4 border-2 border-dashed border-gray-200 rounded-lg transition-all cursor-pointer group ${borderHover}`}>
-                    <div className="flex items-center gap-2 mb-2">{icon}<span className="font-semibold text-gray-900">{title}</span></div>
+                    <div className="flex items-center gap-2 mb-2">{icon}<span className="font-semibold text-gray-900 text-sm">{title}</span></div>
                     <p className="text-sm text-gray-600 mb-3">{desc}</p>
                     {input}
                   </div>
@@ -449,8 +449,8 @@ export default function ForecastPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="flex items-center gap-2"><Brain className="w-5 h-5 text-purple-600" />{selectedScenario.name}</CardTitle>
-                    <CardDescription>{selectedScenario.description}</CardDescription>
+                    <CardTitle className="flex items-center gap-2 text-sm"><Brain className="w-5 h-5 text-purple-600" />{selectedScenario.name}</CardTitle>
+                    <CardDescription className="text-xs font-medium">{selectedScenario.description}</CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => setSelectedScenario(null)}>Clear</Button>
                 </div>
@@ -502,8 +502,8 @@ export default function ForecastPage() {
           {scenarios.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Generated Scenarios</CardTitle>
-                <CardDescription>Compare different scenarios side by side</CardDescription>
+                <CardTitle className="text-sm">Generated Scenarios</CardTitle>
+                <CardDescription className="text-xs font-medium">Compare different scenarios side by side</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -511,7 +511,7 @@ export default function ForecastPage() {
                     <thead>
                       <tr className="border-b">
                         {['Scenario', 'Baseline', 'Scenario Cost', 'Impact', 'Change'].map((h, i) => (
-                          <th key={h} className={`py-3 px-4 text-xs font-semibold text-slate-500 ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>
+                          <th key={h} className={`py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>
                         ))}
                       </tr>
                     </thead>

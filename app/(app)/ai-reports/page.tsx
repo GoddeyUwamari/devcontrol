@@ -68,7 +68,7 @@ function ConfirmModal({ title, body, confirmLabel, confirmDanger = true, onConfi
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-900/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6" onClick={onCancel}>
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-7 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <h3 className="text-base font-bold text-slate-900 mb-2.5">{title}</h3>
+        <h3 className="text-sm font-semibold text-slate-900 mb-2.5">{title}</h3>
         <p className="text-sm text-slate-500 leading-relaxed mb-6">{body}</p>
         <div className="flex gap-2.5 justify-end">
           <button onClick={onCancel} disabled={loading} className="px-4 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-500 cursor-pointer hover:bg-slate-50 transition-colors">Cancel</button>
@@ -188,7 +188,7 @@ export default function AIReportsPage() {
           <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto mb-5">
             <Lock size={24} className="text-violet-600" />
           </div>
-          <h2 className="text-lg font-bold text-slate-900 mb-2.5">Pro Plan Required</h2>
+          <h2 className="text-sm font-semibold text-slate-900 mb-2.5">Pro Plan Required</h2>
           <p className="text-sm text-slate-500 leading-relaxed mb-6">This feature is available on the Pro plan and above.</p>
           <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors">Upgrade to Pro</a>
         </div>
@@ -211,8 +211,8 @@ export default function AIReportsPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Uncover Cost Savings, Risks, and Insights Across Your AWS — in Minutes</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Generate executive-ready AI reports with actionable recommendations your team can use immediately.</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Uncover Cost Savings, Risks, and Insights Across Your AWS — in Minutes</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Generate executive-ready AI reports with actionable recommendations your team can use immediately.</p>
         </div>
         <button onClick={() => handleGenerateReport()} disabled={generatingType !== null}
           className={`flex items-center gap-2 bg-white text-violet-600 px-4 py-2.5 rounded-lg text-sm font-semibold border border-violet-200 whitespace-nowrap shrink-0 transition-colors ${generatingType !== null ? 'cursor-not-allowed opacity-70' : 'hover:bg-violet-50 cursor-pointer'}`}>
@@ -230,10 +230,10 @@ export default function AIReportsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr] gap-4 mb-4">
             {/* Recommended next */}
             <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Recommended Next</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Recommended Next</p>
               <div className="flex items-center gap-2.5 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0"><Shield size={14} className="text-red-600" /></div>
-                <p className="text-sm font-bold text-slate-900">Security Risk Report</p>
+                <p className="text-sm font-semibold text-slate-900">Security Risk Report</p>
               </div>
               <p className="text-sm text-slate-600 leading-relaxed mb-3">{reportsThisMonth === 0 ? 'No reports generated yet — start here' : 'Run a security scan to check for active risks'}</p>
               <button onClick={() => handleGenerateReport('security')} disabled={generatingType !== null}
@@ -243,32 +243,32 @@ export default function AIReportsPage() {
             </div>
             {/* Last outcome */}
             <div className="bg-white rounded-xl p-5 border border-slate-200">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Last Outcome</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Last Outcome</p>
               {lastInsight && lastTypeConfig ? (
                 <>
                   <div className="flex items-center gap-1.5 mb-2">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: lastTypeConfig.bg, color: lastTypeConfig.color }}>{lastTypeConfig.label}</span>
-                    <span className="text-[10px] text-slate-400">{lastReport?.createdAt ? formatGeneratedAt(lastReport.createdAt) : ''}</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: lastTypeConfig.bg, color: lastTypeConfig.color }}>{lastTypeConfig.label}</span>
+                    <span className="text-xs text-slate-500">{lastReport?.createdAt ? formatGeneratedAt(lastReport.createdAt) : ''}</span>
                   </div>
                   <p className="text-sm text-slate-700 leading-relaxed font-medium">{lastInsight}</p>
                 </>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <p className="text-sm text-slate-400 leading-relaxed">No insights yet — generate your first report to surface key findings</p>
+                  <p className="text-sm text-slate-500 leading-relaxed">No insights yet — generate your first report to surface key findings</p>
                   <button onClick={() => handleGenerateReport()} disabled={generatingType !== null} className="bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-violet-600 cursor-pointer w-fit hover:bg-violet-50 transition-colors">Generate first report →</button>
                 </div>
               )}
             </div>
             {/* Report activity */}
             <div className="bg-white rounded-xl p-5 border border-slate-200">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Report Activity</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Report Activity</p>
               <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{reportsThisMonth}</div>
               <p className="text-sm text-slate-600 mb-2.5">Reports generated this month</p>
               <div className="flex flex-wrap gap-1.5">
                 {(['cost_analysis', 'security', 'infrastructure', 'executive'] as const).map(t => {
                   const count = displayReports.filter((r: any) => normalizeReportType(r.type || r.report_type || '') === t).length
                   const tc = typeConfig[t]
-                  return count > 0 ? <span key={t} className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tc.bg, color: tc.color }}>{tc.label} {count}</span> : null
+                  return count > 0 ? <span key={t} className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: tc.bg, color: tc.color }}>{tc.label} {count}</span> : null
                 })}
               </div>
             </div>
@@ -278,7 +278,7 @@ export default function AIReportsPage() {
 
       {/* Report type cards */}
       <div className="mb-4">
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Available Reports</p>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Available Reports</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             { type: 'cost_analysis',  badge: 'High impact',  badgeColor: '#059669', badgeBg: '#F0FDF4' },
@@ -293,7 +293,7 @@ export default function AIReportsPage() {
                   <div className="flex items-start gap-3">
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc.bg, color: tc.color }}>{tc.icon}</div>
                     <div>
-                      <p className="text-sm font-bold text-slate-900 mb-1">{tc.title}</p>
+                      <p className="text-sm font-semibold text-slate-900 mb-1">{tc.title}</p>
                       <p className="text-xs text-slate-500 leading-relaxed">
                         {type === 'cost_analysis' ? 'Identify unused resources, rightsizing opportunities, and immediate savings.'
                           : type === 'security' ? 'Detect misconfigurations, IAM issues, and compliance gaps.'
@@ -302,7 +302,7 @@ export default function AIReportsPage() {
                       </p>
                     </div>
                   </div>
-                  {badge && <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ background: badgeBg!, color: badgeColor! }}>{badge}</span>}
+                  {badge && <span className="text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ background: badgeBg!, color: badgeColor! }}>{badge}</span>}
                 </div>
                 <button onClick={() => handleGenerateReport(type)} disabled={generatingType !== null}
                   className={`self-start flex items-center gap-1.5 text-white border-none px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${generatingType !== null ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}
@@ -327,12 +327,12 @@ export default function AIReportsPage() {
       {isLoading && !isDemoActive ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-100">
           <RefreshCw size={22} className="text-slate-300 mx-auto mb-3" />
-          <p className="text-sm text-slate-400">Loading reports...</p>
+          <p className="text-sm text-slate-500">Loading reports...</p>
         </div>
       ) : displayReports.length === 0 ? (
         <div className="bg-gradient-to-br from-violet-50 to-violet-100 rounded-2xl p-8 sm:p-14 text-center border border-violet-200">
           <div className="text-3xl mb-4">✨</div>
-          <p className="text-lg font-bold text-slate-900 mb-2">Start uncovering insights in minutes</p>
+          <p className="text-sm font-semibold text-slate-900 mb-2">Start uncovering insights in minutes</p>
           <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-sm mx-auto">Generate your first AI report to discover:</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-sm mx-auto mb-7 text-left">
             {['💰 Immediate cost-saving opportunities', '🔐 Hidden security risks and misconfigs', '⚙️ Infrastructure inefficiencies', '📊 Executive-ready summaries'].map(item => (
@@ -343,7 +343,7 @@ export default function AIReportsPage() {
             className={`text-white px-7 py-3 rounded-xl text-sm font-semibold border-none inline-flex items-center gap-2 transition-colors ${generatingType !== null ? 'bg-violet-400 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}>
             {generatingType !== null ? <><RefreshCw size={13} className="animate-spin" /> Generating...</> : <><Sparkles size={13} /> Generate My First AI Report</>}
           </button>
-          <p className="text-xs text-slate-400 mt-3">Takes ~2 minutes · No setup required · Read-only access</p>
+          <p className="text-xs text-slate-500 mt-3">Takes ~2 minutes · No setup required · Read-only access</p>
         </div>
       ) : (
         <div>
@@ -353,7 +353,7 @@ export default function AIReportsPage() {
               <input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={handleSelectAll} className="w-3.5 h-3.5 cursor-pointer accent-violet-600" />
               {selectedIds.size > 0
                 ? <span className="text-xs text-slate-500 font-medium">{selectedIds.size} report{selectedIds.size !== 1 ? 's' : ''} selected</span>
-                : <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Recent Reports</span>}
+                : <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Recent Reports</span>}
             </div>
             {selectedIds.size > 0 && (
               <button onClick={() => setShowBulkConfirm(true)} className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer hover:bg-red-100 transition-colors">
@@ -380,20 +380,20 @@ export default function AIReportsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1">
                         <span className="text-sm font-semibold text-slate-900">{reportTitle}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: type.bg, color: type.color }}>{type.label}</span>
-                        <span className="flex items-center gap-1 text-[10px] font-semibold text-green-600 shrink-0"><CheckCircle2 size={10} /> Ready</span>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: type.bg, color: type.color }}>{type.label}</span>
+                        <span className="flex items-center gap-1 text-xs font-semibold text-green-600 shrink-0"><CheckCircle2 size={10} /> Ready</span>
                         {(() => {
                           if (normalizedType !== 'security') return null
                           const riskCount = report.report_data?.security_findings?.length
                           if (!riskCount) return null
                           return (
-                            <a href="/anomalies" className="text-[10px] font-semibold text-red-600 no-underline" onClick={e => e.stopPropagation()}>
+                            <a href="/anomalies" className="text-xs font-semibold text-red-600 no-underline" onClick={e => e.stopPropagation()}>
                               · {riskCount} risk{riskCount !== 1 ? 's' : ''} detected — Fix now →
                             </a>
                           )
                         })()}
                       </div>
-                      <p className="text-xs text-slate-400 mb-1">Generated {dateVal ? relativeTime(dateVal) : '—'}</p>
+                      <p className="text-xs text-slate-500 mb-1">Generated {dateVal ? relativeTime(dateVal) : '—'}</p>
                       {insight && <p className="text-xs text-slate-600 leading-relaxed">{insight}</p>}
                     </div>
                     {/* Actions */}
