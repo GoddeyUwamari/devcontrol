@@ -81,8 +81,8 @@ export default function AlertHistoryPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Incident Resolution Insights</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Reliability intelligence · Mean time to resolve · Incident patterns · Last 30d</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Incident Resolution Insights</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Reliability intelligence · Mean time to resolve · Incident patterns · Last 30d</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => refetch()} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
@@ -98,7 +98,7 @@ export default function AlertHistoryPage() {
       <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-6 py-4 mb-6 flex items-start gap-3.5">
         <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-white" /></div>
         <div className="flex-1">
-          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
+          <p className="text-xs font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
           <p className="text-sm text-slate-700 leading-relaxed">
             {isDemoActive
               ? '4 critical alerts resolved in the last 72 hours. RDS Failover and S3 Bucket Policy Change had the fastest resolution times (8m and 3m). Average MTTR is 17 minutes — Elite tier performance.'
@@ -117,12 +117,12 @@ export default function AlertHistoryPage() {
             <div className="flex items-center gap-4">
               <div className={`w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center shrink-0 ${scoreBg(displayReadiness.readiness_score)}`}>
                 <span className="text-sm font-bold leading-none" style={{ color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.readiness_score}</span>
-                <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-widest">/100</span>
+                <span className="text-xs text-slate-500 font-semibold uppercase tracking-widest">/100</span>
               </div>
               <div>
                 <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <p className="text-base font-bold text-slate-900">Incident Readiness</p>
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full" style={{ background: scoreBg(displayReadiness.readiness_score).includes('green') ? '#F0FDF4' : scoreBg(displayReadiness.readiness_score).includes('amber') ? '#FFFBEB' : '#FEF2F2', color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.status}</span>
+                  <p className="text-sm font-semibold text-slate-900">Incident Readiness</p>
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ background: scoreBg(displayReadiness.readiness_score).includes('green') ? '#F0FDF4' : scoreBg(displayReadiness.readiness_score).includes('amber') ? '#FFFBEB' : '#FEF2F2', color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.status}</span>
                 </div>
                 <p className="text-xs text-slate-500">{displayReadiness.top_gaps.length === 0 ? 'All systems ready — full incident detection coverage' : `${displayReadiness.top_gaps.length} gap${displayReadiness.top_gaps.length !== 1 ? 's' : ''} reducing detection capability`}</p>
                 {displayReadiness.readiness_score < 80 && (
@@ -144,11 +144,11 @@ export default function AlertHistoryPage() {
               return (
                 <div key={comp.label} className={`rounded-xl p-3.5 border ${isRisk ? 'bg-red-50 border-l-2 border-red-600 border-t-red-100 border-r-red-100 border-b-red-100' : isWarn ? 'bg-amber-50 border-l-2 border-amber-500 border-t-amber-100 border-r-amber-100 border-b-amber-100' : 'bg-slate-50 border-slate-100'}`}>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{comp.label}</p>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{comp.label}</p>
                     {comp.status === 'good' ? <CheckCircle2 size={12} className="text-green-600 shrink-0" /> : comp.status === 'warning' ? <AlertTriangle size={12} className="text-amber-500 shrink-0" /> : <XCircle size={12} className="text-red-600 shrink-0" />}
                   </div>
                   <div className="text-xl font-bold leading-none mb-1.5" style={{ color: scoreColor(comp.score) }}>{comp.score}%</div>
-                  <p className="text-[10px] text-slate-400 leading-snug">{comp.detail}</p>
+                  <p className="text-xs text-slate-500 leading-snug">{comp.detail}</p>
                 </div>
               )
             })}
@@ -166,9 +166,9 @@ export default function AlertHistoryPage() {
             { label: 'MTTR', value: displayStats.mttr ? `${displayStats.mttr}m` : null, empty: 'Available after first incident', sub: isDemoActive ? 'vs 45m industry avg · Elite' : 'Mean time to recovery', hero: true },
           ].map(({ label, value, empty, sub, hero }) => (
             <div key={label} className={`bg-white rounded-xl p-4 sm:p-8 border border-slate-200 ${hero ? 'border-l-[3px] border-l-violet-600' : ''}`}>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">{label}</p>
               {value !== null ? <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{value}</div> : <div className="text-sm font-medium text-slate-300 mb-2 pt-1.5">{empty}</div>}
-              <p className="text-xs text-slate-400 leading-relaxed">{sub}</p>
+              <p className="text-xs text-slate-500 leading-relaxed">{sub}</p>
             </div>
           ))}
         </div>
@@ -178,7 +178,7 @@ export default function AlertHistoryPage() {
       {displayReadiness && (displayReadiness.components.response_config.score === 0 || displayReadiness.components.monitoring_coverage.score < 50) && (
         <div className="bg-red-50 border border-red-100 border-l-[4px] border-l-red-600 rounded-xl px-4 sm:px-5 py-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest mb-1">Top Priority</p>
+            <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-1">Top Priority</p>
             <p className="text-sm font-semibold text-slate-900 mb-0.5">{displayReadiness.components.response_config.score === 0 ? 'Configure alert destinations' : 'Restore metric reporting for 2 services'}</p>
             <p className="text-xs text-red-600">{displayReadiness.components.response_config.score === 0 ? 'Without this, your team will not be notified when incidents occur' : 'Services are not sending metrics — incidents may go undetected'}</p>
           </div>
@@ -189,7 +189,7 @@ export default function AlertHistoryPage() {
       {/* Coverage gaps */}
       {displayReadiness?.top_gaps?.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 mb-6">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Coverage Gaps</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Coverage Gaps</p>
           <div className="flex flex-col gap-2.5">
             {[...displayReadiness.top_gaps].sort((a: any, b: any) => ({ high: 0, medium: 1, low: 2 }[a.severity as string] ?? 2) - ({ high: 0, medium: 1, low: 2 }[b.severity as string] ?? 2)).map((gap: any, i: number) => (
               <div key={i} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-4 py-3 rounded-xl border bg-white border-slate-200">
@@ -208,8 +208,8 @@ export default function AlertHistoryPage() {
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-4 sm:px-7 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Alert Timeline</p>
-            <p className="text-xs text-slate-400">{filteredAlerts.length} records</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Alert Timeline</p>
+            <p className="text-xs text-slate-500">{filteredAlerts.length} records</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex bg-slate-50 rounded-lg p-0.5 gap-0.5">
@@ -231,11 +231,11 @@ export default function AlertHistoryPage() {
         <div className="hidden sm:block overflow-x-auto">
           <div className="grid px-7 py-2.5 bg-slate-50 border-b border-slate-50 min-w-[780px]" style={{ gridTemplateColumns: '2fr 130px 110px 100px 90px 140px 140px' }}>
             {['Alert', 'Service', 'Severity', 'Cost Impact', 'Duration', 'Started', 'Resolved'].map(col => (
-              <span key={col} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{col}</span>
+              <span key={col} className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{col}</span>
             ))}
           </div>
           {isLoading && !isDemoActive ? (
-            <div className="p-12 text-center"><RefreshCw size={18} className="text-slate-300 mx-auto mb-3" /><p className="text-sm text-slate-400">Loading alert history...</p></div>
+            <div className="p-12 text-center"><RefreshCw size={18} className="text-slate-300 mx-auto mb-3" /><p className="text-sm text-slate-500">Loading alert history...</p></div>
           ) : filteredAlerts.length === 0 ? (
             <EmptyHistory alertCoverageScore={displayReadiness?.components.alert_coverage.score} />
           ) : filteredAlerts.map((alert: Alert, idx: number) => {
@@ -245,13 +245,13 @@ export default function AlertHistoryPage() {
               <div key={alert.id} className={`grid px-7 py-3.5 items-center hover:bg-slate-50 transition-colors min-w-[780px] ${idx < filteredAlerts.length - 1 ? 'border-b border-slate-50' : ''}`} style={{ gridTemplateColumns: '2fr 130px 110px 100px 90px 140px 140px' }}>
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">{alert.alertName}</p>
-                  <p className="text-[11px] text-slate-400 truncate max-w-xs">{alert.description}</p>
+                  <p className="text-xs text-slate-500 truncate max-w-xs">{alert.description}</p>
                 </div>
                 <span className="text-xs text-slate-500 font-mono">{alert.serviceName || '—'}</span>
-                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full w-fit capitalize ${sevCls}`}>{alert.severity}</span>
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full w-fit capitalize ${sevCls}`}>{alert.severity}</span>
                 <span className={`text-xs font-semibold ${isDemoActive && cost && cost !== '$0' ? 'text-red-600' : 'text-slate-300'}`}>{isDemoActive ? (cost ?? '—') : '—'}</span>
-                <span className="text-xs text-slate-400">{alert.durationMinutes ? `${alert.durationMinutes}m` : '—'}</span>
-                <span className="text-xs text-slate-400">{formatTime(alert.startedAt)}</span>
+                <span className="text-xs text-slate-500">{alert.durationMinutes ? `${alert.durationMinutes}m` : '—'}</span>
+                <span className="text-xs text-slate-500">{formatTime(alert.startedAt)}</span>
                 <span className="text-xs text-slate-500 font-medium">{alert.resolvedAt ? formatTime(alert.resolvedAt) : '—'}</span>
               </div>
             )
@@ -267,12 +267,12 @@ export default function AlertHistoryPage() {
               <div key={alert.id} className="px-4 py-4">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <p className="text-sm font-semibold text-slate-900 leading-snug flex-1">{alert.alertName}</p>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize shrink-0 ${sevCls}`}>{alert.severity}</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize shrink-0 ${sevCls}`}>{alert.severity}</span>
                 </div>
-                <p className="text-xs text-slate-400 mb-1.5 line-clamp-2">{alert.description}</p>
+                <p className="text-xs text-slate-500 mb-1.5 line-clamp-2">{alert.description}</p>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-mono">{alert.serviceName}</span>
-                  <div className="flex gap-3 text-[11px] text-slate-400">
+                  <span className="text-xs text-slate-500 font-mono">{alert.serviceName}</span>
+                  <div className="flex gap-3 text-xs text-slate-500">
                     {alert.durationMinutes && <span>{alert.durationMinutes}m</span>}
                     {isDemoActive && cost && cost !== '$0' && <span className="text-red-600 font-semibold">{cost}</span>}
                   </div>
@@ -291,9 +291,9 @@ function EmptyHistory({ alertCoverageScore }: { alertCoverageScore?: number }) {
   return (
     <div className="p-10 sm:p-16 text-center">
       <div className="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-4"><Shield size={20} className="text-violet-600" /></div>
-      <p className="text-base font-semibold text-slate-900 mb-2">No incidents recorded yet</p>
-      <p className="text-sm text-slate-400 leading-relaxed mb-1 max-w-sm mx-auto">When alerts are triggered, this timeline will show what happened, which service was affected, how long it lasted, and how quickly it was resolved.</p>
-      <p className="text-xs text-slate-300 mb-6">Use this to audit reliability and improve engineering response times.</p>
+      <p className="text-sm font-semibold text-slate-900 mb-2">No incidents recorded yet</p>
+      <p className="text-sm text-slate-500 leading-relaxed mb-1 max-w-sm mx-auto">When alerts are triggered, this timeline will show what happened, which service was affected, how long it lasted, and how quickly it was resolved.</p>
+      <p className="text-xs text-slate-500 mb-6">Use this to audit reliability and improve engineering response times.</p>
       <a href={isFullCoverage ? '/monitoring' : '/observability/alerts'} className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-xs font-semibold no-underline transition-colors">
         {isFullCoverage ? 'Fix Monitoring Coverage →' : 'Configure Alerts →'}
       </a>

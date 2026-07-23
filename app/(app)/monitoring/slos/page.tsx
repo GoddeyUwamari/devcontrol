@@ -36,15 +36,15 @@ export default function SLODashboardPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Observability</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">SLO Management</h1>
-          <p className="text-gray-500 text-sm mt-1.5">Define and track Service Level Objectives across your infrastructure.</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Observability</p>
+          <h1 className="text-2xl font-bold text-gray-900">SLO Management</h1>
+          <p className="text-xs text-gray-500 font-medium mt-1.5">Define and track Service Level Objectives across your infrastructure.</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
             Advanced SLO management is available on the Enterprise plan. Define custom SLOs, track breach history, and automate alerts.
           </p>
@@ -74,9 +74,9 @@ export default function SLODashboardPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1.5">Observability</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">SLO Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Reliability targets, error budget tracking, and breach risk across all services.</p>
+          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Observability</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">SLO Intelligence</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Reliability targets, error budget tracking, and breach risk across all services.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <a href="/monitoring" className="bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs font-semibold no-underline hover:bg-slate-50 transition-colors whitespace-nowrap">Monitoring Overview</a>
@@ -93,16 +93,16 @@ export default function SLODashboardPage() {
       <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-5 py-4 mb-4 flex items-start gap-3.5">
         <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={12} className="text-white" /></div>
         <div className="flex-1">
-          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
+          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
           <p className="text-sm text-slate-700 leading-relaxed">
             {isDemoActive
-              ? <>Primary risk is <strong className="text-red-600">data pipeline instability</strong> — error budget <strong className="text-red-600">280% consumed</strong>. If unresolved, reporting latency and downstream systems will degrade within 24h. Error Rate SLO approaching breach at 120% budget. 4 of 6 SLOs healthy.<span className="block mt-1.5 text-xs text-slate-400">Recommended: investigate ingestion delays in last 24h window · define CDN SLO to track latency automatically.</span></>
-              : <>No reliability targets defined — <strong className="text-red-600">system risk is currently unbounded</strong>. Without SLOs, you cannot detect performance degradation before users feel it.<span className="block mt-1.5 text-xs text-slate-400">Define your first SLO to begin measuring reliability against targets.</span></>
+              ? <>Primary risk is <strong className="text-red-600">data pipeline instability</strong> — error budget <strong className="text-red-600">280% consumed</strong>. If unresolved, reporting latency and downstream systems will degrade within 24h. Error Rate SLO approaching breach at 120% budget. 4 of 6 SLOs healthy.<span className="block mt-1.5 text-xs text-slate-500">Recommended: investigate ingestion delays in last 24h window · define CDN SLO to track latency automatically.</span></>
+              : <>No reliability targets defined — <strong className="text-red-600">system risk is currently unbounded</strong>. Without SLOs, you cannot detect performance degradation before users feel it.<span className="block mt-1.5 text-xs text-slate-500">Define your first SLO to begin measuring reliability against targets.</span></>
             }
           </p>
         </div>
         {isDemoActive && displayStats.breached > 0 && (
-          <a href="/observability/alert-history" className="text-[11px] font-bold text-red-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">View alerts <ArrowRight size={10} /></a>
+          <a href="/observability/alert-history" className="text-xs font-bold text-red-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">View alerts <ArrowRight size={10} /></a>
         )}
       </div>
 
@@ -121,37 +121,37 @@ export default function SLODashboardPage() {
                   <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-slate-900">60</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reliability Score</p>
-                  <p className="text-sm font-bold text-slate-900 mb-0.5">At Risk</p>
-                  <p className="text-[10px] text-slate-400">6/6 services measured · High confidence</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Reliability Score</p>
+                  <p className="text-sm font-semibold text-slate-900 mb-0.5">At Risk</p>
+                  <p className="text-xs text-slate-500">6/6 services measured · High confidence</p>
                 </div>
               </div>
               <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
               {/* Score drivers */}
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Driven by</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">Driven by</p>
                 <div className="flex flex-col gap-0.5">
                   <p className="text-xs text-red-600 font-semibold">● Data pipeline breach (280% error budget)</p>
                   <p className="text-xs text-amber-500 font-medium">● Error rate nearing budget limit (120%)</p>
-                  <p className="text-xs text-slate-400 font-medium">● CDN latency anomaly detected</p>
+                  <p className="text-xs text-slate-500 font-medium">● CDN latency anomaly detected</p>
                 </div>
               </div>
               <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
               {/* Business impact */}
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Business Impact</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Business Impact</p>
                 <p className="text-sm font-semibold text-slate-900 mb-0.5">Reporting latency · downstream degradation</p>
-                <p className="text-[10px] font-semibold text-red-600">If unresolved: SLA breach exposure within 24h</p>
+                <p className="text-xs font-semibold text-red-600">If unresolved: SLA breach exposure within 24h</p>
               </div>
               <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
               {/* Services impacted */}
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Services Impacted</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Services Impacted</p>
                 <p className="text-base font-bold text-red-600 mb-0.5">2 of 6</p>
-                <p className="text-[10px] text-slate-400">1 breached · 1 at risk</p>
+                <p className="text-xs text-slate-500">1 breached · 1 at risk</p>
               </div>
             </div>
-            <a href="/ai-reports" className="text-[11px] font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
+            <a href="/ai-reports" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
           </div>
         </div>
       )}
@@ -159,41 +159,41 @@ export default function SLODashboardPage() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4">
         <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">SLOs Meeting Target</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">SLOs Meeting Target</p>
           {displayStats.total > 0
             ? <div className="text-2xl font-bold text-slate-900 tracking-tight leading-none mb-1.5">{displayStats.met}<span className="text-base text-slate-300 font-normal">/{displayStats.total}</span></div>
             : <div className="text-xs text-slate-300 mb-2">No SLOs defined yet</div>}
-          <p className="text-[11px] text-slate-400">Within defined targets</p>
+          <p className="text-xs text-slate-500">Within defined targets</p>
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-          <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-3">At Risk</p>
+          <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">At Risk</p>
           {displayStats.total > 0
             ? <div className="text-2xl font-bold text-amber-500 tracking-tight leading-none mb-1.5">{displayStats.atRisk}</div>
             : <div className="text-xs text-slate-300 mb-2">No data — define SLOs</div>}
-          <p className="text-[11px] text-slate-400 mb-0.5">Error budget &gt;50% used</p>
-          {displayStats.atRisk > 0 && <p className="text-[10px] font-bold text-amber-500">Review now →</p>}
+          <p className="text-xs text-slate-500 mb-0.5">Error budget &gt;50% used</p>
+          {displayStats.atRisk > 0 && <p className="text-xs font-bold text-amber-500">Review now →</p>}
         </div>
         <div className={`rounded-xl p-4 sm:p-5 border ${displayStats.breached > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
-          <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest mb-3">Breached</p>
+          <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3">Breached</p>
           {displayStats.total > 0
             ? <div className="text-2xl font-bold text-red-600 tracking-tight leading-none mb-1.5">{displayStats.breached}</div>
             : <div className="text-xs text-slate-300 mb-2">No breaches detected</div>}
-          <p className="text-[11px] text-slate-400 mb-0.5">Immediate action required</p>
-          {displayStats.breached > 0 && <p className="text-[10px] font-bold text-red-600">Resolve now →</p>}
+          <p className="text-xs text-slate-500 mb-0.5">Immediate action required</p>
+          {displayStats.breached > 0 && <p className="text-xs font-bold text-red-600">Resolve now →</p>}
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Avg Compliance</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Avg Compliance</p>
           {displayStats.total > 0
             ? <div className="text-2xl font-bold text-green-600 tracking-tight leading-none mb-1.5">{displayStats.avgCompliance.toFixed(2)}%</div>
             : <div className="text-xs text-slate-400 mb-2">No data yet</div>}
-          <p className="text-[11px] text-slate-400">Across all SLOs</p>
+          <p className="text-xs text-slate-500">Across all SLOs</p>
         </div>
       </div>
 
       {/* Recommended Actions */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-4">
         <div className="mb-4">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Recommended Actions</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Recommended Actions</p>
           <p className="text-xs text-slate-500">{isDemoActive ? 'Ranked by urgency · derived from active signals in your infrastructure' : 'Define SLOs to begin measuring reliability against targets'}</p>
         </div>
         {isDemoActive ? (
@@ -202,18 +202,18 @@ export default function SLODashboardPage() {
               <div key={action.priority} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between ${action.bg} rounded-xl border ${action.border} px-4 py-3 gap-3`}>
                 <div className="flex items-start gap-3.5">
                   <div className="text-center min-w-[36px] shrink-0">
-                    <p className={`text-[9px] font-bold uppercase mb-0.5 ${action.priorityColor}`}>Priority</p>
+                    <p className={`text-xs font-bold uppercase mb-0.5 ${action.priorityColor}`}>Priority</p>
                     <p className={`text-base font-bold ${action.priorityColor}`}>{action.priority}</p>
                   </div>
                   <div className={`w-px h-8 self-center border-l ${action.border} shrink-0`} />
                   <div>
                     <p className="text-sm font-semibold text-slate-900 mb-0.5">{action.title} — <span className={action.impactColor}>{action.impact}</span></p>
-                    <p className="text-[11px] text-slate-400">{action.sub}</p>
+                    <p className="text-xs text-slate-500">{action.sub}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
-                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${action.badgeCls}`}>{action.badge}</span>
-                  <a href={action.ctaHref} className={`border rounded-lg px-3 py-1.5 text-[11px] font-bold cursor-pointer no-underline transition-colors ${action.ctaCls}`}>{action.ctaLabel}</a>
+                  <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded ${action.badgeCls}`}>{action.badge}</span>
+                  <a href={action.ctaHref} className={`border rounded-lg px-3 py-1.5 text-xs font-bold cursor-pointer no-underline transition-colors ${action.ctaCls}`}>{action.ctaLabel}</a>
                 </div>
               </div>
             ))}
@@ -228,9 +228,9 @@ export default function SLODashboardPage() {
               <div key={item.label} className="flex items-center justify-between bg-slate-50 rounded-xl border border-slate-100 px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">{item.label}</p>
-                  <p className="text-xs text-slate-400">{item.sub}</p>
+                  <p className="text-xs text-slate-500">{item.sub}</p>
                 </div>
-                <a href={item.href} className="bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-1.5 text-[11px] font-bold no-underline transition-colors whitespace-nowrap">{item.ctaLabel}</a>
+                <a href={item.href} className="bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-1.5 text-xs font-bold no-underline transition-colors whitespace-nowrap">{item.ctaLabel}</a>
               </div>
             ))}
           </div>
@@ -241,8 +241,8 @@ export default function SLODashboardPage() {
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Service Level Objectives</p>
-            <p className="text-xs text-slate-300">{filteredSLOs.length} SLOs · 30-day rolling window</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Service Level Objectives</p>
+            <p className="text-xs text-slate-500">{filteredSLOs.length} SLOs · 30-day rolling window</p>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {categories.map(cat => (
@@ -257,8 +257,8 @@ export default function SLODashboardPage() {
         {filteredSLOs.length === 0 ? (
           <div className="p-10 sm:p-16 text-center">
             <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4"><Target size={20} className="text-slate-300" /></div>
-            <p className="text-base font-semibold text-slate-900 mb-2">Reliability visibility: 0%</p>
-            <p className="text-sm text-slate-400 leading-relaxed mb-7 max-w-sm mx-auto">Without SLOs, system risk is unknown — you cannot detect performance degradation before users feel it or quantify reliability exposure.</p>
+            <p className="text-sm font-semibold text-slate-900 mb-2">Reliability visibility: 0%</p>
+            <p className="text-sm text-slate-500 leading-relaxed mb-7 max-w-sm mx-auto">Without SLOs, system risk is unknown — you cannot detect performance degradation before users feel it or quantify reliability exposure.</p>
             <a href="/monitoring" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-lg text-sm font-semibold no-underline transition-colors">
               <Activity size={13} /> Set Up SLO Tracking
             </a>
@@ -278,17 +278,17 @@ export default function SLODashboardPage() {
                     <div className="flex items-center gap-2">
                       {!isBreached && <span className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${isAtRisk ? 'bg-amber-500' : 'bg-green-500'}`} />}
                       <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{slo.category}</p>
-                        <p className="text-sm font-bold text-slate-900">{slo.name}</p>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{slo.category}</p>
+                        <p className="text-sm font-semibold text-slate-900">{slo.name}</p>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 ml-2 ${statusBadgeCls}`}>{statusLabel}</span>
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 ml-2 ${statusBadgeCls}`}>{statusLabel}</span>
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed mb-5">{slo.description}</p>
+                  <p className="text-xs text-slate-500 leading-relaxed mb-5">{slo.description}</p>
                   <div className="flex items-baseline gap-2 mb-2">
                     <span className="text-2xl font-bold tracking-tight" style={{ color: valueColor }}>{slo.current.toFixed(2)}%</span>
-                    <span className="text-xs text-slate-300">target {slo.target}%</span>
-                    <span className={`text-xs font-semibold ml-auto ${slo.trend === 'up' ? 'text-green-600' : slo.trend === 'down' ? 'text-red-600' : 'text-slate-400'}`}>
+                    <span className="text-xs text-slate-500">target {slo.target}%</span>
+                    <span className={`text-xs font-semibold ml-auto ${slo.trend === 'up' ? 'text-green-600' : slo.trend === 'down' ? 'text-red-600' : 'text-slate-500'}`}>
                       {slo.trend === 'up' ? '↑' : slo.trend === 'down' ? '↓' : '→'}{slo.trendValue !== 0 ? ` ${Math.abs(slo.trendValue)}%` : ' stable'}
                     </span>
                   </div>
@@ -297,18 +297,18 @@ export default function SLODashboardPage() {
                   </div>
                   <div className={`rounded-lg px-3.5 py-2.5 ${isBreached ? 'bg-red-100' : 'bg-slate-50'}`}>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Error Budget</span>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Error Budget</span>
                       <span className={`text-xs font-bold ${budgetTextColor}`}>{slo.errorBudgetUsed}% used</span>
                     </div>
                     <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
                       <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(slo.errorBudgetUsed, 100)}%`, background: budgetBarColor }} />
                     </div>
                     {(isAtRisk || isBreached) && (
-                      <p className={`text-[10px] font-bold mt-1.5 ${isBreached ? 'text-red-800' : 'text-amber-800'}`}>
+                      <p className={`text-xs font-bold mt-1.5 ${isBreached ? 'text-red-800' : 'text-amber-800'}`}>
                         {isBreached ? `Immediate investigation required · ${slo.errorBudgetUsed}% consumed` : `Budget exhausted · trending ${slo.trend === 'down' ? 'worse ↓' : 'stable'}`}
                       </p>
                     )}
-                    {slo.status === 'met' && <p className="text-[10px] text-slate-300 mt-1.5">{slo.window} rolling window</p>}
+                    {slo.status === 'met' && <p className="text-xs text-slate-500 mt-1.5">{slo.window} rolling window</p>}
                   </div>
                 </div>
               )

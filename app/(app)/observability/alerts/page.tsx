@@ -35,7 +35,7 @@ const getDemoCostImpact = (a: Alert) => a.status === 'resolved' || a.status === 
 
 export default function AlertsPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-slate-400">Loading...</div>}>
+    <Suspense fallback={<div className="p-12 text-center text-slate-500">Loading...</div>}>
       <AlertsContent />
     </Suspense>
   );
@@ -98,8 +98,8 @@ function AlertsContent() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Active Alerts</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Live alerts and incidents across all services · Real-time monitoring</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Active Alerts</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Live alerts and incidents across all services · Real-time monitoring</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => refetch()} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
@@ -115,7 +115,7 @@ function AlertsContent() {
       <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-6 py-4 mb-6 flex items-start gap-3.5">
         <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-white" /></div>
         <div className="flex-1">
-          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
+          <p className="text-xs font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
           <p className="text-sm text-slate-700 leading-relaxed">
             {isDemoActive
               ? '2 critical alerts firing. API Gateway latency spike detected in us-east-1 — P99 latency at 2,400ms. EC2 CPU spike sustained for 8 minutes. Estimated cost impact if unresolved: $168/month.'
@@ -132,22 +132,22 @@ function AlertsContent() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Total Alerts</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Total Alerts</p>
           <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{displayStats.total}</div>
           <p className="text-xs text-slate-400">{displayStats.total === 0 ? 'Stable — last 7 days clean' : `${displayStats.total} recorded`}</p>
         </div>
         <div className={`rounded-xl p-4 sm:p-8 border ${displayStats.active === 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Active Now</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Active Now</p>
           <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${displayStats.active === 0 ? 'text-green-600' : 'text-red-700'}`}>{displayStats.active}</div>
           <p className="text-xs text-slate-400">{displayStats.active === 0 ? 'All services healthy' : 'Requires immediate attention'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Critical</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Critical</p>
           <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${displayStats.critical === 0 ? 'text-green-600' : 'text-red-700'}`}>{displayStats.critical}</div>
           <p className="text-xs text-slate-400">{displayStats.critical === 0 ? 'No critical issues' : 'Immediate action required'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Avg Resolution</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Avg Resolution</p>
           <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${displayStats.avgResolutionTime ? 'text-slate-900' : 'text-slate-300'}`}>{displayStats.avgResolutionTime ? `${displayStats.avgResolutionTime}m` : '—'}</div>
           <p className="text-xs text-slate-400">{displayStats.avgResolutionTime ? 'Mean time to resolve' : 'No alerts resolved yet'}</p>
         </div>
@@ -156,7 +156,7 @@ function AlertsContent() {
       {/* Demo summary strip */}
       {isDemoActive && (
         <div className="bg-slate-50 rounded-lg px-4 py-2.5 flex flex-wrap items-center gap-2 mb-4">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mr-2">Last 30 days:</span>
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest mr-2">Last 30 days:</span>
           {[{ label: 'alerts triggered', value: '12' }, { label: 'critical', value: '3' }, { label: 'avg resolution', value: '18 min' }, { label: 'Most common: CPU spikes', value: null }].map((item, i, arr) => (
             <span key={i} className="text-xs text-slate-500">{item.value && <span className="font-medium text-slate-900">{item.value} </span>}{item.label}{i < arr.length - 1 && <span className="mx-2 text-slate-300">·</span>}</span>
           ))}
@@ -167,7 +167,7 @@ function AlertsContent() {
       {!isDemoActive && displayAlerts.length === 0 && (
         <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-5">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-sm font-medium text-slate-900">Recommended safeguards</span>
+            <span className="text-sm font-semibold text-slate-900">Recommended safeguards</span>
             <button className="bg-violet-700 text-white text-xs font-medium px-3.5 py-1.5 rounded-lg border-none cursor-pointer hover:bg-violet-800 transition-colors">Apply all</button>
           </div>
           <div className="flex flex-col gap-2">
@@ -181,10 +181,10 @@ function AlertsContent() {
                   <span className="text-green-600 font-bold text-sm mt-0.5">→</span>
                   <div>
                     <p className="text-xs font-medium text-slate-900 mb-0.5">{item.title}</p>
-                    <p className="text-[11px] text-slate-400">{item.sub}</p>
+                    <p className="text-xs text-slate-500">{item.sub}</p>
                   </div>
                 </div>
-                <button onClick={() => router.push(item.href)} className="text-[11px] text-violet-700 bg-violet-50 border-none rounded px-2.5 py-1 cursor-pointer shrink-0 hover:bg-violet-100 transition-colors">{item.btn}</button>
+                <button onClick={() => router.push(item.href)} className="text-xs text-violet-700 bg-violet-50 border-none rounded px-2.5 py-1 cursor-pointer shrink-0 hover:bg-violet-100 transition-colors">{item.btn}</button>
               </div>
             ))}
           </div>
@@ -219,7 +219,7 @@ function AlertsContent() {
         <div className="hidden sm:block overflow-x-auto">
           <div className="grid px-7 py-2.5 bg-slate-50 border-b border-slate-50 min-w-[780px]" style={{ gridTemplateColumns: '2fr 130px 110px 120px 90px 150px 150px' }}>
             {['Alert', 'Service', 'Severity', 'Status', 'Duration', 'Cost Impact', 'Actions'].map(col => (
-              <span key={col} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{col}</span>
+              <span key={col} className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{col}</span>
             ))}
           </div>
           {filteredAlerts.length === 0 ? (
@@ -234,19 +234,19 @@ function AlertsContent() {
               <div key={alert.id} className={`grid px-7 py-3.5 items-center hover:bg-slate-50 transition-colors min-w-[780px] ${idx < filteredAlerts.length - 1 ? 'border-b border-slate-50' : ''}`} style={{ gridTemplateColumns: '2fr 130px 110px 120px 90px 150px 150px' }}>
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">{alert.alertName}</p>
-                  <p className="text-[11px] text-slate-400 truncate max-w-xs">{alert.description}</p>
+                  <p className="text-xs text-slate-500 truncate max-w-xs">{alert.description}</p>
                 </div>
                 <span className="text-xs text-slate-500 font-mono truncate">{alert.serviceName || '—'}</span>
-                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full w-fit capitalize ${sevCls}`}>{alert.severity}</span>
-                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full w-fit ${statusCls}`}>{statusLabel}</span>
-                <span className="text-xs text-slate-400">{alert.durationMinutes ? `${alert.durationMinutes}m` : '—'}</span>
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full w-fit capitalize ${sevCls}`}>{alert.severity}</span>
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full w-fit ${statusCls}`}>{statusLabel}</span>
+                <span className="text-xs text-slate-500">{alert.durationMinutes ? `${alert.durationMinutes}m` : '—'}</span>
                 <span className={`text-xs ${costIsPositive ? 'text-red-700 font-medium' : 'text-slate-400'}`}>{costIsPositive ? `↑ ${costImpact}` : costImpact}</span>
                 <div className="flex gap-1.5">
                   {alert.status === 'firing' && (
-                    <button onClick={() => !isDemoActive && acknowledgeMutation.mutate(alert.id)} className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">Acknowledge</button>
+                    <button onClick={() => !isDemoActive && acknowledgeMutation.mutate(alert.id)} className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">Acknowledge</button>
                   )}
                   {alert.status !== 'resolved' && (
-                    <button onClick={() => !isDemoActive && resolveMutation.mutate(alert.id)} className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-2.5 py-1 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">Resolve</button>
+                    <button onClick={() => !isDemoActive && resolveMutation.mutate(alert.id)} className="text-xs font-bold text-green-600 bg-green-50 border border-green-200 px-2.5 py-1 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">Resolve</button>
                   )}
                 </div>
               </div>
@@ -267,16 +267,16 @@ function AlertsContent() {
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <p className="text-sm font-semibold text-slate-900 leading-snug flex-1">{alert.alertName}</p>
                   <div className="flex gap-1.5 shrink-0">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${sevCls}`}>{alert.severity}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusCls}`}>{statusLabel}</span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${sevCls}`}>{alert.severity}</span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${statusCls}`}>{statusLabel}</span>
                   </div>
                 </div>
-                <p className="text-xs text-slate-400 mb-1.5 line-clamp-2">{alert.description}</p>
+                <p className="text-xs text-slate-500 mb-1.5 line-clamp-2">{alert.description}</p>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-mono">{alert.serviceName}</span>
+                  <span className="text-xs text-slate-500 font-mono">{alert.serviceName}</span>
                   <div className="flex gap-1.5">
-                    {alert.status === 'firing' && <button onClick={() => !isDemoActive && acknowledgeMutation.mutate(alert.id)} className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg cursor-pointer">Acknowledge</button>}
-                    {alert.status !== 'resolved' && <button onClick={() => !isDemoActive && resolveMutation.mutate(alert.id)} className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-2.5 py-1 rounded-lg cursor-pointer">Resolve</button>}
+                    {alert.status === 'firing' && <button onClick={() => !isDemoActive && acknowledgeMutation.mutate(alert.id)} className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg cursor-pointer">Acknowledge</button>}
+                    {alert.status !== 'resolved' && <button onClick={() => !isDemoActive && resolveMutation.mutate(alert.id)} className="text-xs font-bold text-green-600 bg-green-50 border border-green-200 px-2.5 py-1 rounded-lg cursor-pointer">Resolve</button>}
                   </div>
                 </div>
               </div>
@@ -287,7 +287,7 @@ function AlertsContent() {
 
       {/* Integrations panel */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mt-6">
-        <p className="text-sm font-medium text-slate-900 mb-4">Get notified where your team works</p>
+        <p className="text-sm font-semibold text-slate-900 mb-4">Get notified where your team works</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { icon: <span className="text-white text-sm font-bold">#</span>, iconBg: 'bg-[#4A154B]', name: 'Slack', sub: 'Not connected', btn: 'Connect Slack' },
@@ -296,9 +296,9 @@ function AlertsContent() {
           ].map(({ icon, iconBg, name, sub, btn }) => (
             <div key={name} className="bg-slate-50 rounded-xl p-4">
               <div className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center mb-2`}>{icon}</div>
-              <p className="text-sm font-medium text-slate-900 mb-1">{name}</p>
-              <p className="text-[11px] text-slate-400 mb-2.5">{sub}</p>
-              <button onClick={() => router.push('/settings')} className="text-[11px] text-violet-700 bg-violet-50 border-none rounded px-2.5 py-1 cursor-pointer hover:bg-violet-100 transition-colors block">{btn}</button>
+              <p className="text-sm font-semibold text-slate-900 mb-1">{name}</p>
+              <p className="text-xs text-slate-500 mb-2.5">{sub}</p>
+              <button onClick={() => router.push('/settings')} className="text-xs text-violet-700 bg-violet-50 border-none rounded px-2.5 py-1 cursor-pointer hover:bg-violet-100 transition-colors block">{btn}</button>
             </div>
           ))}
         </div>
@@ -314,8 +314,8 @@ function EmptyState({ searchQuery, selectedSeverity, selectedStatus }: { searchQ
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4 ${hasFilters ? 'bg-slate-50' : 'bg-green-50'}`}>
         {hasFilters ? <AlertCircle size={20} className="text-slate-300" /> : <CheckCircle2 size={20} className="text-green-600" />}
       </div>
-      <p className="text-base font-semibold text-slate-900 mb-1.5">{hasFilters ? 'No alerts match your filters' : 'All systems healthy'}</p>
-      <p className="text-sm text-slate-400 leading-relaxed max-w-sm mx-auto">
+      <p className="text-sm font-semibold text-slate-900 mb-1.5">{hasFilters ? 'No alerts match your filters' : 'All systems healthy'}</p>
+      <p className="text-sm text-slate-500 leading-relaxed max-w-sm mx-auto">
         {hasFilters ? 'Try adjusting your search or filter criteria.' : 'No active alerts in the last 24 hours. Actively monitoring cost spikes, security risks, traffic thresholds, and latency degradation.'}
       </p>
     </div>
