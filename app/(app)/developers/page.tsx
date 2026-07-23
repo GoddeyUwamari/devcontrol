@@ -150,19 +150,19 @@ export default function DevelopersPage() {
 
       {/* Page header */}
       <div className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Integrations &amp; API</h1>
-        <p className="text-sm text-slate-500 leading-relaxed">Connect your stack, ingest real-time data, and power insights across your infrastructure.</p>
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Integrations &amp; API</h1>
+        <p className="text-xs text-slate-500 font-medium leading-relaxed">Connect your stack, ingest real-time data, and power insights across your infrastructure.</p>
       </div>
 
       {/* Get started */}
       <div className="mb-7">
-        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest mb-3">Get DevControl fully connected</p>
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-3">Get DevControl fully connected</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {setupSteps.map(step => (
             <div key={step.number} className={`bg-white border rounded-xl p-4 ${step.status === 'connected' ? 'border-green-500' : 'border-slate-200'}`}>
               <div className="flex items-center gap-2 mb-2">
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium text-white shrink-0 ${step.status === 'connected' ? 'bg-green-600' : 'bg-violet-700'}`}>{step.status === 'connected' ? '✓' : step.number}</div>
-                <p className="text-sm font-medium text-slate-900">{step.title}</p>
+                <p className="text-sm font-semibold text-slate-900">{step.title}</p>
               </div>
               <p className="text-xs text-slate-500 mb-3 leading-relaxed">{step.description}</p>
               <button onClick={step.onClick} disabled={step.status === 'connected'}
@@ -177,11 +177,11 @@ export default function DevelopersPage() {
       {/* API Usage bar */}
       {demoMode && (
         <div className="bg-white border border-slate-200 rounded-2xl px-5 sm:px-7 py-4 mb-5 flex flex-col sm:flex-row sm:items-center gap-3">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">API Usage</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">API Usage</p>
           <div className="flex-1">
             <div className="flex justify-between mb-1.5">
               <span className="text-sm font-semibold text-slate-900">14,847 requests this month</span>
-              <span className="text-xs text-slate-400">of 20,000 included</span>
+              <span className="text-xs text-slate-500">of 20,000 included</span>
             </div>
             <div className="h-1.5 bg-slate-100 rounded-full"><div className="w-[74%] h-full bg-violet-600 rounded-full" /></div>
           </div>
@@ -193,8 +193,8 @@ export default function DevelopersPage() {
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 mb-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">API Keys</p>
-            <p className="text-xs text-slate-400">{apiKeys.length} active key{apiKeys.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">API Keys</p>
+            <p className="text-xs text-slate-500">{apiKeys.length} active key{apiKeys.length !== 1 ? 's' : ''}</p>
           </div>
           {apiKeys.length > 0 && (
             <button onClick={() => setShowNewKey(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors whitespace-nowrap self-start sm:self-auto">
@@ -206,7 +206,7 @@ export default function DevelopersPage() {
         {apiKeys.length === 0 ? (
           <div className="text-center py-6">
             <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center mx-auto mb-3 text-lg">🔑</div>
-            <p className="text-sm font-medium text-slate-900 mb-1.5">No API keys yet</p>
+            <p className="text-sm font-semibold text-slate-900 mb-1.5">No API keys yet</p>
             <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-xs mx-auto">Generate an API key to integrate DevControl into your CI/CD pipelines and internal tools.</p>
             <button onClick={() => setShowNewKey(true)} className="bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg px-4 py-2 text-xs font-medium cursor-pointer transition-colors">+ Generate API Key</button>
           </div>
@@ -214,16 +214,16 @@ export default function DevelopersPage() {
           <>
             {/* Desktop table */}
             <div className="hidden sm:block overflow-x-auto">
-              <div className="grid pb-2.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[580px]" style={{ gridTemplateColumns: '2fr 1.5fr 2fr 1fr 70px', gap: '12px' }}>
+              <div className="grid pb-2.5 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[580px]" style={{ gridTemplateColumns: '2fr 1.5fr 2fr 1fr 70px', gap: '12px' }}>
                 <span>Name</span><span>Key prefix</span><span>Scopes</span><span>Last used</span><span />
               </div>
               {apiKeys.map(key => (
                 <div key={key.id} className="grid py-3 border-b border-slate-50 last:border-0 items-center min-w-[580px]" style={{ gridTemplateColumns: '2fr 1.5fr 2fr 1fr 70px', gap: '12px' }}>
                   <span className="text-sm font-semibold text-slate-900">{key.name}</span>
                   <code className="text-xs font-mono text-slate-600 bg-slate-50 px-2 py-0.5 rounded">{key.prefix}••••••••</code>
-                  <div className="flex gap-1 flex-wrap">{key.scopes.map(s => <span key={s} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">{s}</span>)}</div>
-                  <span className="text-xs text-slate-400">{key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'Never'}</span>
-                  <button onClick={() => handleRevokeKey(key.id)} className="flex items-center gap-1 bg-transparent border border-red-200 rounded-lg px-2 py-1 text-[10px] font-semibold text-red-600 cursor-pointer hover:bg-red-50 transition-colors">
+                  <div className="flex gap-1 flex-wrap">{key.scopes.map(s => <span key={s} className="text-xs font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">{s}</span>)}</div>
+                  <span className="text-xs text-slate-500">{key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'Never'}</span>
+                  <button onClick={() => handleRevokeKey(key.id)} className="flex items-center gap-1 bg-transparent border border-red-200 rounded-lg px-2 py-1 text-xs font-semibold text-red-600 cursor-pointer hover:bg-red-50 transition-colors">
                     <Trash2 size={10} /> Revoke
                   </button>
                 </div>
@@ -235,10 +235,10 @@ export default function DevelopersPage() {
                 <div key={key.id} className="py-3">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-sm font-semibold text-slate-900">{key.name}</span>
-                    <button onClick={() => handleRevokeKey(key.id)} className="flex items-center gap-1 bg-transparent border border-red-200 rounded px-2 py-0.5 text-[10px] font-semibold text-red-600 cursor-pointer"><Trash2 size={9} /> Revoke</button>
+                    <button onClick={() => handleRevokeKey(key.id)} className="flex items-center gap-1 bg-transparent border border-red-200 rounded px-2 py-0.5 text-xs font-semibold text-red-600 cursor-pointer"><Trash2 size={9} /> Revoke</button>
                   </div>
-                  <code className="text-[11px] font-mono text-slate-500 block mb-1.5">{key.prefix}••••••••</code>
-                  <div className="flex flex-wrap gap-1">{key.scopes.map(s => <span key={s} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">{s}</span>)}</div>
+                  <code className="text-xs font-mono text-slate-500 block mb-1.5">{key.prefix}••••••••</code>
+                  <div className="flex flex-wrap gap-1">{key.scopes.map(s => <span key={s} className="text-xs font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">{s}</span>)}</div>
                 </div>
               ))}
             </div>
@@ -265,8 +265,8 @@ export default function DevelopersPage() {
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 mb-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Webhooks</p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Webhooks</p>
+            <p className="text-xs text-slate-500">
               {webhooks.length}{isPro && !isEnterprise ? '/5' : ''} endpoint{webhooks.length !== 1 ? 's' : ''}
               {atWebhookLimit && <span className="ml-2 text-amber-600 font-semibold">Limit reached</span>}
             </p>
@@ -289,7 +289,7 @@ export default function DevelopersPage() {
         {webhooks.length === 0 ? (
           <div className="text-center py-6">
             <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center mx-auto mb-3 text-lg">⚡</div>
-            <p className="text-sm font-medium text-slate-900 mb-1.5">No webhooks configured</p>
+            <p className="text-sm font-semibold text-slate-900 mb-1.5">No webhooks configured</p>
             <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-sm mx-auto">Add a webhook endpoint to stream real-time events — alerts, cost changes, deployments — directly to your systems.</p>
             <button onClick={() => setShowNewWebhook(true)} className="bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg px-4 py-2 text-xs font-medium cursor-pointer transition-colors">+ Add Endpoint</button>
           </div>
@@ -297,17 +297,17 @@ export default function DevelopersPage() {
           <>
             {/* Desktop table */}
             <div className="hidden sm:block overflow-x-auto">
-              <div className="grid pb-2.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[560px]" style={{ gridTemplateColumns: '3fr 2fr 80px 90px', gap: '12px' }}>
+              <div className="grid pb-2.5 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[560px]" style={{ gridTemplateColumns: '3fr 2fr 80px 90px', gap: '12px' }}>
                 <span>Endpoint URL</span><span>Events</span><span>Last fired</span><span className="text-center">Status</span>
               </div>
               {webhooks.map(wh => (
                 <div key={wh.id} className="grid py-3 border-b border-slate-50 last:border-0 items-center min-w-[560px]" style={{ gridTemplateColumns: '3fr 2fr 80px 90px', gap: '12px' }}>
                   <code className="text-xs font-mono text-slate-600 truncate">{wh.url}</code>
-                  <div className="flex flex-wrap gap-1">{wh.events.map(e => <span key={e} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-50 text-slate-500">{e}</span>)}</div>
-                  <span className="text-xs text-slate-400">{wh.lastTriggeredAt ? timeAgo(wh.lastTriggeredAt) : 'Never'}</span>
+                  <div className="flex flex-wrap gap-1">{wh.events.map(e => <span key={e} className="text-xs font-semibold px-1.5 py-0.5 rounded bg-slate-50 text-slate-500">{e}</span>)}</div>
+                  <span className="text-xs text-slate-500">{wh.lastTriggeredAt ? timeAgo(wh.lastTriggeredAt) : 'Never'}</span>
                   <div className="flex flex-col items-center gap-1.5">
-                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full capitalize ${wh.status === 'active' ? 'bg-green-50 text-green-600' : wh.status === 'failing' ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-400'}`}>{wh.status}</span>
-                    <button onClick={() => handleDeleteWebhook(wh.id)} className="flex items-center gap-1 bg-transparent border border-red-200 rounded px-2 py-0.5 text-[10px] font-semibold text-red-600 cursor-pointer hover:bg-red-50 transition-colors"><Trash2 size={9} /> Delete</button>
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize ${wh.status === 'active' ? 'bg-green-50 text-green-600' : wh.status === 'failing' ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'}`}>{wh.status}</span>
+                    <button onClick={() => handleDeleteWebhook(wh.id)} className="flex items-center gap-1 bg-transparent border border-red-200 rounded px-2 py-0.5 text-xs font-semibold text-red-600 cursor-pointer hover:bg-red-50 transition-colors"><Trash2 size={9} /> Delete</button>
                   </div>
                 </div>
               ))}
@@ -317,11 +317,11 @@ export default function DevelopersPage() {
               {webhooks.map(wh => (
                 <div key={wh.id} className="py-3">
                   <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <code className="text-[11px] font-mono text-slate-500 truncate flex-1">{wh.url}</code>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize shrink-0 ${wh.status === 'active' ? 'bg-green-50 text-green-600' : wh.status === 'failing' ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-400'}`}>{wh.status}</span>
+                    <code className="text-xs font-mono text-slate-500 truncate flex-1">{wh.url}</code>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize shrink-0 ${wh.status === 'active' ? 'bg-green-50 text-green-600' : wh.status === 'failing' ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'}`}>{wh.status}</span>
                   </div>
-                  <div className="flex flex-wrap gap-1 mb-2">{wh.events.map(e => <span key={e} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-50 text-slate-400">{e}</span>)}</div>
-                  <button onClick={() => handleDeleteWebhook(wh.id)} className="flex items-center gap-1 bg-transparent border border-red-200 rounded px-2 py-1 text-[10px] font-semibold text-red-600 cursor-pointer"><Trash2 size={9} /> Delete</button>
+                  <div className="flex flex-wrap gap-1 mb-2">{wh.events.map(e => <span key={e} className="text-xs px-1.5 py-0.5 rounded bg-slate-50 text-slate-500">{e}</span>)}</div>
+                  <button onClick={() => handleDeleteWebhook(wh.id)} className="flex items-center gap-1 bg-transparent border border-red-200 rounded px-2 py-1 text-xs font-semibold text-red-600 cursor-pointer"><Trash2 size={9} /> Delete</button>
                 </div>
               ))}
             </div>
@@ -331,11 +331,11 @@ export default function DevelopersPage() {
 
       {/* Integrations */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Integrations</p>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Integrations</p>
         <div className="flex flex-col gap-7">
           {integrationGroups.map(group => (
             <div key={group.label}>
-              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest mb-3">{group.label}</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-3">{group.label}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {group.items.map(id => {
                   const intg = integrations.find(i => i.id === id)
@@ -347,14 +347,14 @@ export default function DevelopersPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isConnected ? 'bg-green-50 text-green-600' : 'bg-slate-50 text-slate-400'}`}>{intg.icon}</div>
-                          <p className="text-sm font-medium text-slate-900">{intg.name}</p>
+                          <p className="text-sm font-semibold text-slate-900">{intg.name}</p>
                         </div>
-                        {meta?.recommended && !isConnected && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 shrink-0 whitespace-nowrap">Recommended</span>}
-                        {isConnected && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-50 text-green-700 shrink-0">Connected</span>}
+                        {meta?.recommended && !isConnected && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 shrink-0 whitespace-nowrap">Recommended</span>}
+                        {isConnected && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-green-50 text-green-700 shrink-0">Connected</span>}
                       </div>
-                      <p className="text-[11px] text-slate-400 leading-relaxed flex-1">{meta?.desc ?? intg.description}</p>
+                      <p className="text-xs text-slate-500 leading-relaxed flex-1">{meta?.desc ?? intg.description}</p>
                       <button onClick={() => { if (id === 'aws' && !isConnected) { router.push('/connect-aws'); return }; handleToggleIntegration(id) }}
-                        className={`text-[11px] rounded px-3 py-1.5 cursor-pointer self-start transition-colors border ${isConnected ? 'text-green-600 border-green-500 bg-transparent hover:bg-green-50' : 'text-violet-700 bg-violet-50 border-transparent hover:bg-violet-100'}`}>
+                        className={`text-xs rounded px-3 py-1.5 cursor-pointer self-start transition-colors border ${isConnected ? 'text-green-600 border-green-500 bg-transparent hover:bg-green-50' : 'text-violet-700 bg-violet-50 border-transparent hover:bg-violet-100'}`}>
                         {isConnected ? 'Manage →' : 'Connect →'}
                       </button>
                     </div>
@@ -371,14 +371,14 @@ export default function DevelopersPage() {
         <div className="fixed inset-0 bg-slate-900/50 flex sm:items-center items-end justify-center z-50 px-4 pb-4 sm:pb-0">
           <div className="bg-white rounded-2xl p-5 sm:p-8 w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-base font-bold text-slate-900">Generate API Key</h2>
+              <h2 className="text-sm font-semibold text-slate-900">Generate API Key</h2>
               <button onClick={closeKeyModal} className="bg-transparent border-none cursor-pointer text-slate-300 hover:text-slate-600 p-1 transition-colors"><X size={16} /></button>
             </div>
             <div className="mb-5">
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">Key name <span className="text-red-600">*</span></label>
               <input type="text" value={newKeyName} onChange={e => { setNewKeyName(e.target.value); setNewKeyError('') }} placeholder="e.g. Production CI/CD"
                 className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-xs text-slate-900 bg-slate-50 outline-none focus:border-violet-600 focus:bg-white transition-colors box-border" />
-              {newKeyError && <p className="text-[11px] text-red-600 mt-1.5">{newKeyError}</p>}
+              {newKeyError && <p className="text-xs text-red-600 mt-1.5">{newKeyError}</p>}
             </div>
             <div className="flex gap-2.5">
               <button onClick={closeKeyModal} className="flex-1 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-500 cursor-pointer hover:bg-slate-100 transition-colors">Cancel</button>
@@ -393,15 +393,15 @@ export default function DevelopersPage() {
         <div className="fixed inset-0 bg-slate-900/50 flex sm:items-center items-end justify-center z-50 px-4 pb-4 sm:pb-0">
           <div className="bg-white rounded-2xl p-5 sm:p-8 w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-base font-bold text-slate-900">Add Webhook Endpoint</h2>
+              <h2 className="text-sm font-semibold text-slate-900">Add Webhook Endpoint</h2>
               <button onClick={closeWebhookModal} className="bg-transparent border-none cursor-pointer text-slate-300 hover:text-slate-600 p-1 transition-colors"><X size={16} /></button>
             </div>
             <div className="mb-5">
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">Endpoint URL <span className="text-red-600">*</span></label>
               <input type="url" value={webhookUrl} onChange={e => { setWebhookUrl(e.target.value); setWebhookError('') }} placeholder="https://your-server.com/webhook"
                 className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-xs text-slate-900 bg-slate-50 outline-none focus:border-violet-600 focus:bg-white transition-colors box-border" />
-              {webhookError && <p className="text-[11px] text-red-600 mt-1.5">{webhookError}</p>}
-              <p className="text-[11px] text-slate-400 mt-1.5">Must be a valid HTTPS URL. DevControl will POST JSON payloads to this endpoint.</p>
+              {webhookError && <p className="text-xs text-red-600 mt-1.5">{webhookError}</p>}
+              <p className="text-xs text-slate-500 mt-1.5">Must be a valid HTTPS URL. DevControl will POST JSON payloads to this endpoint.</p>
             </div>
             <div className="flex gap-2.5">
               <button onClick={closeWebhookModal} className="flex-1 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-500 cursor-pointer hover:bg-slate-100 transition-colors">Cancel</button>

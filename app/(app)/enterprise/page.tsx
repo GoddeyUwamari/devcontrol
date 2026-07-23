@@ -93,8 +93,8 @@ export default function EnterprisePage() {
 
       {/* Page header */}
       <div className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Enterprise Governance &amp; Control</h1>
-        <p className="text-sm text-slate-500 leading-relaxed">Secure your platform, manage access, and maintain full visibility across teams, cost, and infrastructure.</p>
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Enterprise Governance &amp; Control</h1>
+        <p className="text-xs text-slate-500 font-medium leading-relaxed">Secure your platform, manage access, and maintain full visibility across teams, cost, and infrastructure.</p>
       </div>
 
       {/* Plan + Compliance */}
@@ -102,7 +102,7 @@ export default function EnterprisePage() {
 
         {/* Plan card */}
         <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7">
-          {(subscription || !isEnterprise) && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Current Plan</p>}
+          {(subscription || !isEnterprise) && <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-5">Current Plan</p>}
           {subscription ? (
             <>
               <div className="flex items-center gap-3 mb-5">
@@ -123,7 +123,7 @@ export default function EnterprisePage() {
                   { label: 'Period end',   value: formatDate(subscription.currentPeriodEnd) },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-slate-50 rounded-lg px-3.5 py-3">
-                    <div className="text-[11px] text-slate-400 mb-1">{label}</div>
+                    <div className="text-xs text-slate-500 mb-1">{label}</div>
                     <div className="text-xs font-semibold text-slate-900">{value}</div>
                   </div>
                 ))}
@@ -137,18 +137,18 @@ export default function EnterprisePage() {
             <div className="flex flex-col gap-3">
               {tier === 'free' && (
                 <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm font-medium text-slate-900 mb-1">Free</p>
+                  <p className="text-sm font-semibold text-slate-900 mb-1">Free</p>
                   <p className="text-xs text-slate-500 mb-3">1 AWS account · 5 AI reports/month · Community support</p>
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700">Current plan</span>
+                  <span className="text-xs font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700">Current plan</span>
                 </div>
               )}
               <div className="border-2 border-violet-600 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <p className="text-sm font-medium text-slate-900 mb-0.5">Pro</p>
+                    <p className="text-sm font-semibold text-slate-900 mb-0.5">Pro</p>
                     <p className="text-xs text-slate-500">Ideal for scaling teams with advanced compliance features</p>
                   </div>
-                  {!isEnterprise && <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">{isPro ? 'Current plan' : 'Most popular'}</span>}
+                  {!isEnterprise && <span className="text-xs font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">{isPro ? 'Current plan' : 'Most popular'}</span>}
                 </div>
                 <div className="flex flex-col gap-1 my-3">
                   {['Unlimited AWS accounts', 'SOC 2 & automated audits', 'Unlimited AI reports', 'Priority support'].map(f => (
@@ -157,11 +157,11 @@ export default function EnterprisePage() {
                 </div>
                 {!(isPro || isEnterprise) && <button className="w-full bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg py-2 text-xs font-medium cursor-pointer transition-colors">Upgrade to Pro →</button>}
               </div>
-              {!subscription && isEnterprise && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Current Plan</p>}
+              {!subscription && isEnterprise && <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Current Plan</p>}
               <div className="border border-slate-200 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-1">
-                  <p className="text-sm font-medium text-slate-900">Enterprise</p>
-                  {isEnterprise && <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">Current plan</span>}
+                  <p className="text-sm font-semibold text-slate-900">Enterprise</p>
+                  {isEnterprise && <span className="text-xs font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">Current plan</span>}
                 </div>
                 <p className="text-xs text-slate-500 mb-3">SSO, priority support, tailored security, and custom contracts</p>
                 {!isEnterprise && <button className="w-full bg-transparent border border-slate-200 rounded-lg py-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors">Contact Sales →</button>}
@@ -172,14 +172,14 @@ export default function EnterprisePage() {
 
         {/* Compliance card */}
         <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Security &amp; Compliance</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-5">Security &amp; Compliance</p>
           <div className="flex flex-col">
             {securityControls.map(({ name, status, detail }) => (
               <div key={name} className="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
                 <span className={`text-base shrink-0 leading-none ${status === 'active' ? 'text-green-600' : 'text-amber-500'}`}>{status === 'active' ? '✓' : '⚠'}</span>
                 <div className="flex-1 min-w-0">
                   <span className="text-xs font-semibold text-slate-900">{name}</span>
-                  <span className={`text-xs ml-2 ${status === 'active' ? 'text-slate-400' : 'text-amber-500'}`}>{detail}</span>
+                  <span className={`text-xs ml-2 ${status === 'active' ? 'text-slate-500' : 'text-amber-500'}`}>{detail}</span>
                 </div>
                 <button className="text-xs font-semibold text-violet-600 bg-transparent border-none cursor-pointer shrink-0 hover:text-violet-800 transition-colors">Docs →</button>
               </div>
@@ -197,8 +197,8 @@ export default function EnterprisePage() {
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 mb-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Organization Members</p>
-            <p className="text-xs text-slate-400">{displayMembers.length} member{displayMembers.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Organization Members</p>
+            <p className="text-xs text-slate-500">{displayMembers.length} member{displayMembers.length !== 1 ? 's' : ''}</p>
           </div>
           <button onClick={() => setShowInvite(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors whitespace-nowrap self-start sm:self-auto">
             <Plus size={13} /> Invite Member
@@ -213,7 +213,7 @@ export default function EnterprisePage() {
 
         {/* Desktop table */}
         <div className="hidden sm:block overflow-x-auto">
-          <div className="grid pb-2.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[560px]" style={{ gridTemplateColumns: '2fr 2fr 120px 80px 90px', gap: '12px' }}>
+          <div className="grid pb-2.5 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[560px]" style={{ gridTemplateColumns: '2fr 2fr 120px 80px 90px', gap: '12px' }}>
             <span>Member</span><span>Email</span><span>Last Active</span><span>Status</span><span className="text-center">Role</span>
           </div>
           {displayMembers.map(m => {
@@ -229,14 +229,14 @@ export default function EnterprisePage() {
                   <span className="text-sm font-semibold text-slate-900 truncate">{m.user?.fullName || m.fullName || m.user?.email || m.email || '—'}</span>
                 </div>
                 <span className="text-xs text-slate-500 truncate">{m.user?.email || m.email || '—'}</span>
-                <span className="text-xs text-slate-400">{lastActive}</span>
+                <span className="text-xs text-slate-500">{lastActive}</span>
                 <div>
                   {memberStatus ? (
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${memberStatus === 'active' ? 'bg-green-50 text-green-600' : 'bg-slate-50 text-slate-400'}`}>{memberStatus}</span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${memberStatus === 'active' ? 'bg-green-50 text-green-600' : 'bg-slate-50 text-slate-500'}`}>{memberStatus}</span>
                   ) : <span className="text-xs text-slate-300">—</span>}
                 </div>
                 <div className="text-center">
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full capitalize ${rs.bg}`}>{m.role}</span>
+                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize ${rs.bg}`}>{m.role}</span>
                 </div>
               </div>
             )
@@ -257,11 +257,11 @@ export default function EnterprisePage() {
                     <div className="w-7 h-7 bg-violet-50 rounded-lg flex items-center justify-center text-[10px] font-bold text-violet-700 shrink-0">{initials}</div>
                     <span className="text-sm font-semibold text-slate-900 truncate">{m.user?.fullName || m.fullName || m.user?.email || m.email || '—'}</span>
                   </div>
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full capitalize shrink-0 ${rs.bg}`}>{m.role}</span>
+                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize shrink-0 ${rs.bg}`}>{m.role}</span>
                 </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400 pl-9">
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500 pl-9">
                   <span>{m.user?.email || m.email || '—'}</span>
-                  {memberStatus && <span className={memberStatus === 'active' ? 'text-green-600' : 'text-slate-300'}>{memberStatus}</span>}
+                  {memberStatus && <span className={memberStatus === 'active' ? 'text-green-600' : 'text-slate-500'}>{memberStatus}</span>}
                 </div>
               </div>
             )
@@ -275,7 +275,7 @@ export default function EnterprisePage() {
 
       {/* Invoices */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Invoices &amp; Billing</p>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-5">Invoices &amp; Billing</p>
         {displayInvoices.length === 0 ? (
           <div>
             {isEnterprise || isPro ? (
@@ -292,7 +292,7 @@ export default function EnterprisePage() {
           <>
             {/* Desktop */}
             <div className="hidden sm:block overflow-x-auto">
-              <div className="grid pb-2.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[400px]" style={{ gridTemplateColumns: '1fr 1fr 110px 70px', gap: '12px' }}>
+              <div className="grid pb-2.5 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[400px]" style={{ gridTemplateColumns: '1fr 1fr 110px 70px', gap: '12px' }}>
                 <span>Invoice</span><span>Date</span><span>Amount</span><span>Status</span>
               </div>
               {displayInvoices.map((inv: any) => (
@@ -300,7 +300,7 @@ export default function EnterprisePage() {
                   <span className="text-sm font-semibold text-slate-900">{inv.number ?? inv.id}</span>
                   <span className="text-xs text-slate-500">{formatDate(inv.createdAt)}</span>
                   <span className="text-sm font-semibold text-slate-900">{formatCurrency(inv.amount, inv.currency)}</span>
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full capitalize w-fit ${inv.status === 'paid' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>{inv.status}</span>
+                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize w-fit ${inv.status === 'paid' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>{inv.status}</span>
                 </div>
               ))}
             </div>
@@ -310,9 +310,9 @@ export default function EnterprisePage() {
                 <div key={inv.id} className="py-3">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-semibold text-slate-900">{inv.number ?? inv.id}</span>
-                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full capitalize ${inv.status === 'paid' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>{inv.status}</span>
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize ${inv.status === 'paid' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>{inv.status}</span>
                   </div>
-                  <div className="flex gap-3 text-xs text-slate-400">
+                  <div className="flex gap-3 text-xs text-slate-500">
                     <span>{formatDate(inv.createdAt)}</span>
                     <span className="font-semibold text-slate-700">{formatCurrency(inv.amount, inv.currency)}</span>
                   </div>
@@ -328,7 +328,7 @@ export default function EnterprisePage() {
         <div className="fixed inset-0 bg-slate-900/50 flex sm:items-center items-end justify-center z-50 px-4 pb-4 sm:pb-0">
           <div className="bg-white rounded-2xl p-5 sm:p-8 w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-base font-bold text-slate-900">Invite Member</h2>
+              <h2 className="text-sm font-semibold text-slate-900">Invite Member</h2>
               <button onClick={() => { setShowInvite(false); setInviteError('') }} className="bg-transparent border-none cursor-pointer text-slate-300 hover:text-slate-600 p-1 transition-colors"><X size={16} /></button>
             </div>
             <div className="mb-4">
@@ -344,7 +344,7 @@ export default function EnterprisePage() {
                   const sel = inviteForm.role === r
                   return (
                     <button key={r} onClick={() => setInviteForm(f => ({ ...f, role: r }))}
-                      className={`flex-1 py-2 rounded-lg text-xs font-semibold cursor-pointer capitalize transition-all border-2 ${sel ? `${rs.bg} ${rs.border}` : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                      className={`flex-1 py-2 rounded-lg text-xs font-semibold cursor-pointer capitalize transition-all border-2 ${sel ? `${rs.bg} ${rs.border}` : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
                       {r}
                     </button>
                   )

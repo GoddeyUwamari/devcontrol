@@ -60,8 +60,8 @@ export default function TeamsPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Teams &amp; Ownership</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Assign responsibility for services, costs, and infrastructure across your organization.</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Teams &amp; Ownership</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Assign responsibility for services, costs, and infrastructure across your organization.</p>
         </div>
         {displayTeams.length > 0 && (
           <button onClick={() => setShowCreate(true)}
@@ -90,7 +90,7 @@ export default function TeamsPage() {
           </div>
           <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-14 text-center max-w-lg mx-auto">
             <div className="w-14 h-14 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto mb-5"><Users size={24} className="text-violet-700" /></div>
-            <h2 className="text-lg font-bold text-slate-900 mb-2.5">No teams yet</h2>
+            <h2 className="text-sm font-semibold text-slate-900 mb-2.5">No teams yet</h2>
             <p className="text-sm text-slate-500 leading-relaxed mb-7">Get started by setting up your engineering, operations, or product groups.</p>
             <div className="text-left mb-7 flex flex-col gap-2.5">
               {['Map cloud services and infrastructure to owning teams', 'Track monthly cost per team with automatic attribution', 'Route alerts and incidents to the right on-call group', 'Measure team-level compliance posture and risk score'].map(item => (
@@ -112,7 +112,7 @@ export default function TeamsPage() {
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           {/* Desktop table */}
           <div className="hidden sm:block overflow-x-auto">
-            <div className="grid px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-[10px] font-semibold text-slate-400 uppercase tracking-widest min-w-[700px]"
+            <div className="grid px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[700px]"
               style={{ gridTemplateColumns: '2fr 80px 80px 120px 110px 140px 80px', gap: '16px' }}>
               {['Team', 'Members', 'Services', 'Monthly Cost', 'Active Alerts', 'Owner', 'Actions'].map(col => <div key={col}>{col}</div>)}
             </div>
@@ -131,7 +131,7 @@ export default function TeamsPage() {
                     <div className="w-9 h-9 bg-violet-50 rounded-xl flex items-center justify-center text-xs font-bold text-violet-700 shrink-0">{initials}</div>
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-slate-900 truncate">{team.name}</div>
-                      {team.description && <div className="text-[11px] text-slate-400 truncate mt-0.5">{team.description}</div>}
+                      {team.description && <div className="text-xs text-slate-500 truncate mt-0.5">{team.description}</div>}
                     </div>
                   </div>
                   <div className={`text-sm font-medium ${memberCount === 0 ? 'text-slate-300' : 'text-slate-900'}`}>{memberCount === 0 ? '—' : memberCount}</div>
@@ -169,12 +169,12 @@ export default function TeamsPage() {
                       <div className="w-8 h-8 bg-violet-50 rounded-xl flex items-center justify-center text-xs font-bold text-violet-700 shrink-0">{initials}</div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-slate-900 truncate">{team.name}</div>
-                        {team.description && <div className="text-[11px] text-slate-400 truncate">{team.description}</div>}
+                        {team.description && <div className="text-xs text-slate-500 truncate">{team.description}</div>}
                       </div>
                     </div>
                     <button onClick={() => router.push('/teams')} className="bg-transparent border-none text-xs font-semibold text-violet-600 cursor-pointer shrink-0">View →</button>
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 pl-11">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 pl-11">
                     <span>{memberCount} members</span>
                     {cost && <span className="font-semibold text-slate-600">{cost}</span>}
                     {alerts !== null && alerts > 0 && <span style={{ color: alerts >= 3 ? '#DC2626' : '#D97706' }} className="font-semibold flex items-center gap-1"><AlertTriangle size={10} />{alerts} alert{alerts !== 1 ? 's' : ''}</span>}
@@ -188,9 +188,9 @@ export default function TeamsPage() {
           {/* Footer */}
           <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
             {displayTeams.some(t => t.slackChannel) && (
-              <div className="flex items-center gap-1.5 text-xs text-slate-400"><Slack size={11} /> Slack channels linked</div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500"><Slack size={11} /> Slack channels linked</div>
             )}
-            <span className="text-xs text-slate-400 ml-auto">{displayTeams.length} team{displayTeams.length !== 1 ? 's' : ''}</span>
+            <span className="text-xs text-slate-500 ml-auto">{displayTeams.length} team{displayTeams.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
       )}
@@ -200,7 +200,7 @@ export default function TeamsPage() {
         <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 px-4 sm:items-center items-end">
           <div className="bg-white rounded-2xl p-5 sm:p-8 w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-base font-bold text-slate-900">Create Team</h2>
+              <h2 className="text-sm font-semibold text-slate-900">Create Team</h2>
               <button onClick={closeModal} className="bg-transparent border-none cursor-pointer text-slate-300 hover:text-slate-600 p-1 transition-colors"><X size={17} /></button>
             </div>
             {([

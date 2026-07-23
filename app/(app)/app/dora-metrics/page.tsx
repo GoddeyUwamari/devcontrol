@@ -115,9 +115,9 @@ export default function DORAMetricsPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1.5">DevOps</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5 leading-tight">Engineering Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed mb-2 max-w-lg">DORA metrics benchmarked against industry standards · updated automatically from your deployment pipeline.</p>
+          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">DevOps</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5 leading-tight">Engineering Intelligence</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed mb-2 max-w-lg">DORA metrics benchmarked against industry standards · updated automatically from your deployment pipeline.</p>
           <div className="flex items-center gap-1.5 text-xs" style={{ color: dataStateColor }}>
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dataStateColor }} />
             {dataStateLabel} · Last updated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -178,38 +178,38 @@ export default function DORAMetricsPage() {
                     <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
                     <circle cx="27" cy="27" r="23" fill="none" stroke={isDemoActive ? '#059669' : '#D97706'} strokeWidth="5" strokeDasharray="144.5" strokeDashoffset={isDemoActive ? 12 : 58} strokeLinecap="round" transform="rotate(-90 27 27)"/>
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold" style={{ color: isDemoActive ? '#059669' : '#D97706' }}>{isDemoActive ? '92nd' : 'N/A'}</span>
+                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color: isDemoActive ? '#059669' : '#D97706' }}>{isDemoActive ? '92nd' : 'N/A'}</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Engineering Score</p>
-                  <p className="text-sm font-bold text-slate-900 mb-0.5">{isDemoActive ? 'Elite Tier — Top 8%' : 'Calculating...'}</p>
-                  <p className="text-[10px] text-slate-400">{isDemoActive ? '92nd percentile vs SaaS teams · 33,000+ data points' : `${totalDeployments} deployments · ${dateRange} window`}</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Engineering Score</p>
+                  <p className="text-sm font-semibold text-slate-900 mb-0.5">{isDemoActive ? 'Elite Tier — Top 8%' : 'Calculating...'}</p>
+                  <p className="text-xs text-slate-500">{isDemoActive ? '92nd percentile vs SaaS teams · 33,000+ data points' : `${totalDeployments} deployments · ${dateRange} window`}</p>
                 </div>
               </div>
               <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Performance Drivers</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">Performance Drivers</p>
                 <div className="flex flex-col gap-0.5">
                   {isDemoActive ? (<>
                     <p className="text-xs text-green-600 font-semibold">● Change Failure Rate 1.2% — top 5% globally</p>
                     <p className="text-xs text-green-600 font-medium">● Lead time improved 18% this quarter</p>
                     <p className="text-xs text-amber-500 font-medium">● Payment Processor constraining deploy frequency</p>
                   </>) : (<>
-                    <p className="text-xs text-slate-400 font-medium">● Benchmarking active for this period</p>
+                    <p className="text-xs text-slate-500 font-medium">● Benchmarking active for this period</p>
                   </>)}
                 </div>
               </div>
               <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Business Impact</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Business Impact</p>
                 <p className="text-xs font-semibold text-slate-900 mb-0.5">{isDemoActive ? 'Delivery velocity at Elite — feature release cadence strong' : 'Impact analysis requires more deployment data'}</p>
-                <p className="text-[10px] font-semibold text-green-600">{isDemoActive ? `Operational risk: LOW · high confidence, based on 847 deployments` : 'Connect deployment pipeline to enable impact analysis'}</p>
+                <p className="text-xs font-semibold text-green-600">{isDemoActive ? `Operational risk: LOW · high confidence, based on 847 deployments` : 'Connect deployment pipeline to enable impact analysis'}</p>
               </div>
               <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">To Stay Elite</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">To Stay Elite</p>
                 <p className="text-xs font-semibold text-amber-500 mb-0.5">{isDemoActive ? '1 service lagging' : 'Insufficient baseline'}</p>
-                <p className="text-[10px] text-slate-400">{isDemoActive ? 'Maintain ≥3.5 deploys/day · <5% failure rate' : '+1.6 deploys/day required to reach top 10%'}</p>
+                <p className="text-xs text-slate-500">{isDemoActive ? 'Maintain ≥3.5 deploys/day · <5% failure rate' : '+1.6 deploys/day required to reach top 10%'}</p>
               </div>
             </div>
           ) : (
@@ -219,13 +219,13 @@ export default function DORAMetricsPage() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-900 mb-0.5">{dataState === 'inactive' ? 'Pipeline Inactive' : 'Insufficient Data for Benchmarking'}</p>
-                <p className="text-xs text-slate-400">{dataState === 'inactive' ? 'No deployment activity detected. Connect your CI/CD pipeline to begin tracking.' : `Only ${totalDeployments} deployment${totalDeployments !== 1 ? 's' : ''} detected — minimum 5 required.`}</p>
+                <p className="text-xs text-slate-500">{dataState === 'inactive' ? 'No deployment activity detected. Connect your CI/CD pipeline to begin tracking.' : `Only ${totalDeployments} deployment${totalDeployments !== 1 ? 's' : ''} detected — minimum 5 required.`}</p>
               </div>
             </div>
           )}
           {dataState === 'inactive' && !isDemoActive
-            ? <a href="/connect-aws" className="text-[11px] font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Connect CI/CD <ArrowRight size={10} /></a>
-            : <a href="/ai-reports" className="text-[11px] font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
+            ? <a href="/connect-aws" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Connect CI/CD <ArrowRight size={10} /></a>
+            : <a href="/ai-reports" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
           }
         </div>
       </div>
@@ -235,12 +235,12 @@ export default function DORAMetricsPage() {
         <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-5 py-4 flex items-start gap-3.5">
           <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={12} className="text-white" /></div>
           <div className="flex-1">
-            <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
+            <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
             <p className="text-sm text-slate-700 leading-relaxed">
-              {isDemoActive ? (<>Team performing at <strong className="text-green-600">Elite tier</strong> across 3 of 4 DORA metrics — 92nd percentile vs SaaS teams. Primary constraint: <strong className="text-red-600">Payment Processor</strong> — 0.8 deploys/day vs team average 3.8/day.<span className="block mt-1 text-xs text-slate-400">Contributing factors: low deployment throughput · high lead time (6.2h) · likely CI queue time or manual approval gating.</span><span className="block mt-1 text-xs text-slate-500 font-semibold">Recommended: investigate CI queue time and remove manual approval gates in Payment Processor pipeline.</span></>) : (<>{totalDeployments} deployments analyzed in the selected period. Connect more services to your deployment pipeline to enable full cross-metric synthesis and gap analysis.<span className="block mt-1 text-xs text-slate-400">Cross-metric synthesis and causal analysis available with more deployment data.</span></>)}
+              {isDemoActive ? (<>Team performing at <strong className="text-green-600">Elite tier</strong> across 3 of 4 DORA metrics — 92nd percentile vs SaaS teams. Primary constraint: <strong className="text-red-600">Payment Processor</strong> — 0.8 deploys/day vs team average 3.8/day.<span className="block mt-1 text-xs text-slate-500">Contributing factors: low deployment throughput · high lead time (6.2h) · likely CI queue time or manual approval gating.</span><span className="block mt-1 text-xs text-slate-500 font-semibold">Recommended: investigate CI queue time and remove manual approval gates in Payment Processor pipeline.</span></>) : (<>{totalDeployments} deployments analyzed in the selected period. Connect more services to your deployment pipeline to enable full cross-metric synthesis and gap analysis.<span className="block mt-1 text-xs text-slate-500">Cross-metric synthesis and causal analysis available with more deployment data.</span></>)}
             </p>
           </div>
-          {isDemoActive && <a href="/deployments" className="text-[11px] font-bold text-red-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">Resolve bottleneck <ArrowRight size={10} /></a>}
+          {isDemoActive && <a href="/deployments" className="text-xs font-bold text-red-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">Resolve bottleneck <ArrowRight size={10} /></a>}
         </div>
       )}
 
@@ -249,20 +249,20 @@ export default function DORAMetricsPage() {
         <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Performance Positioning</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Performance Positioning</p>
               <p className="text-xs text-slate-500">Where you stand vs. industry · 2024 DORA State of DevOps Report · 33,000+ professionals</p>
             </div>
             {isDemoActive && (
               <div className="text-right shrink-0">
                 <span className="text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1 rounded-full">92nd Percentile</span>
-                <p className="text-[10px] text-slate-400 mt-1">8 pts below top decile · +1.6 deploys/day to reach top 10%</p>
+                <p className="text-xs text-slate-500 mt-1">8 pts below top decile · +1.6 deploys/day to reach top 10%</p>
               </div>
             )}
           </div>
           {isDemoActive && (
             <div className="mb-5">
               <div className="flex justify-between mb-1.5">
-                {['Low', 'Medium', 'High', 'Elite'].map((l, i) => <span key={l} className={`text-[11px] ${i === 0 ? 'text-red-600' : i === 1 ? 'text-amber-500' : i === 2 ? 'text-blue-600' : 'text-green-600'}`}>{l}</span>)}
+                {['Low', 'Medium', 'High', 'Elite'].map((l, i) => <span key={l} className={`text-xs ${i === 0 ? 'text-red-600' : i === 1 ? 'text-amber-500' : i === 2 ? 'text-blue-600' : 'text-green-600'}`}>{l}</span>)}
               </div>
               <div className="h-2 bg-slate-100 rounded-full relative">
                 <div className="absolute left-0 top-0 w-[15%] h-full bg-red-100 rounded-l-full" />
@@ -271,14 +271,14 @@ export default function DORAMetricsPage() {
                 <div className="absolute left-[70%] top-0 w-[30%] h-full bg-green-100 rounded-r-full" />
                 <div className="absolute w-4 h-4 bg-green-600 border-[3px] border-white rounded-full shadow-md" style={{ left: '91%', top: '50%', transform: 'translate(-50%,-50%)' }} />
               </div>
-              <p className="text-[11px] font-bold text-green-600 mt-2 text-right pr-[4%]">← You are here (92nd percentile)</p>
+              <p className="text-xs font-bold text-green-600 mt-2 text-right pr-[4%]">← You are here (92nd percentile)</p>
             </div>
           )}
           {/* Benchmark table */}
           <div className="border border-slate-100 rounded-xl overflow-hidden">
             <div className="grid bg-slate-50" style={{ gridTemplateColumns: '110px 1fr 1fr 1fr 1fr' }}>
               {['Tier', 'Deploy Freq', 'Lead Time', 'Failure Rate', 'MTTR'].map(h => (
-                <div key={h} className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{h}</div>
+                <div key={h} className="px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</div>
               ))}
             </div>
             {[
@@ -290,7 +290,7 @@ export default function DORAMetricsPage() {
               <div key={row.tier} className={`grid border-t border-slate-100 ${row.isYou ? 'bg-green-50' : 'bg-white'}`} style={{ gridTemplateColumns: '110px 1fr 1fr 1fr 1fr' }}>
                 <div className="px-3 py-2.5 flex items-center gap-1.5">
                   {row.isYou && <span className="w-1.5 h-1.5 rounded-full bg-violet-600 shrink-0" />}
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: row.ts.bg, color: row.ts.color }}>{row.tier}{row.isYou ? ' ← You' : ''}</span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: row.ts.bg, color: row.ts.color }}>{row.tier}{row.isYou ? ' ← You' : ''}</span>
                 </div>
                 {[row.df, row.lt, row.cfr, row.mttr].map((val, i) => (
                   <div key={i} className="px-3 py-2.5 text-xs" style={{ fontWeight: row.isYou ? 700 : 400, color: row.isYou ? row.ts.color : '#475569' }}>{val}</div>
@@ -326,10 +326,10 @@ export default function DORAMetricsPage() {
               <Card key={label} style={{ borderTop: `3px solid ${ts.color}`, overflow: 'hidden' }}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</CardTitle>
+                    <CardTitle className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</CardTitle>
                     <div className="flex flex-col items-end gap-1">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.color}30` }}>{isInactiveState ? 'N/A' : metric.benchmark.charAt(0).toUpperCase() + metric.benchmark.slice(1)}</span>
-                      {(metric as DORAMetric).isCustomBenchmark && <span className="text-[9px] font-semibold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5 whitespace-nowrap">Custom benchmark</span>}
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.color}30` }}>{isInactiveState ? 'N/A' : metric.benchmark.charAt(0).toUpperCase() + metric.benchmark.slice(1)}</span>
+                      {(metric as DORAMetric).isCustomBenchmark && <span className="text-xs font-semibold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5 whitespace-nowrap">Custom benchmark</span>}
                     </div>
                   </div>
                 </CardHeader>
@@ -343,7 +343,7 @@ export default function DORAMetricsPage() {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="text-[11px] text-slate-300 mt-2.5 pt-2.5 border-t border-slate-50">
+                  <div className="text-xs text-slate-500 mt-2.5 pt-2.5 border-t border-slate-50">
                     {isInactiveState ? 'Pipeline inactive — no activity detected in this period' : metric.benchmark === 'elite' ? 'Exceeds Elite benchmark — no immediate action required' : metric.benchmark === 'high' ? 'Above industry median — monitor for regression' : metric.benchmark === 'medium' ? 'Below Elite threshold — review pipeline constraints' : dataState === 'insufficient' ? 'Insufficient data — fewer than 5 deployments' : metric.description}
                   </div>
                 </CardContent>
@@ -357,14 +357,14 @@ export default function DORAMetricsPage() {
       {isDemoActive && (
         <Card>
           <CardHeader>
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Breakdown</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Service Breakdown</div>
             <CardTitle className="text-sm flex flex-wrap items-center gap-2">
               Performance by service · last 90 days
-              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">1 service needs attention</span>
+              <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">1 service needs attention</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="hidden sm:grid pb-2 border-b border-slate-100 text-[10px] font-bold text-slate-300 uppercase tracking-widest" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: '12px' }}>
+            <div className="hidden sm:grid pb-2 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: '12px' }}>
               <span>Service</span><span className="text-right">Deploy Freq</span><span className="text-right">Lead Time</span><span className="text-right">Failure Rate</span><span className="text-right">MTTR</span><span className="text-center">Tier</span>
             </div>
             {DEMO_SERVICE_BREAKDOWN.map(svc => {
@@ -375,24 +375,24 @@ export default function DORAMetricsPage() {
                   <div className="hidden sm:grid items-center" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: '12px' }}>
                     <div>
                       <span className="text-sm font-semibold text-slate-700">{svc.name}</span>
-                      <span className="text-[11px] text-slate-300 ml-1.5">{svc.env}</span>
-                      {svc.attention && <span className="text-[10px] font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded ml-1.5">⚠ Pipeline bottleneck</span>}
-                      {svc.attention && <div className="mt-1 text-[11px] text-amber-600 font-semibold">Primary bottleneck · affects ~22% of deployments · upstream dependency for 3 critical services</div>}
+                      <span className="text-xs text-slate-500 ml-1.5">{svc.env}</span>
+                      {svc.attention && <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded ml-1.5">⚠ Pipeline bottleneck</span>}
+                      {svc.attention && <div className="mt-1 text-xs text-amber-600 font-semibold">Primary bottleneck · affects ~22% of deployments · upstream dependency for 3 critical services</div>}
                     </div>
                     {[svc.deployFreq, svc.leadTime, svc.cfr, svc.mttr].map((val, i) => (
                       <div key={i} className="text-right text-sm font-semibold" style={{ color: svc.attention ? '#D97706' : '#0F172A' }}>{val}</div>
                     ))}
-                    <div className="text-center"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color }}>{svc.tier.charAt(0).toUpperCase() + svc.tier.slice(1)}</span></div>
+                    <div className="text-center"><span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color }}>{svc.tier.charAt(0).toUpperCase() + svc.tier.slice(1)}</span></div>
                   </div>
                   {/* Mobile card */}
                   <div className="sm:hidden">
                     <div className="flex items-start justify-between mb-1.5">
                       <div>
                         <span className="text-sm font-semibold text-slate-700">{svc.name}</span>
-                        <span className="text-[11px] text-slate-300 ml-1.5">{svc.env}</span>
-                        {svc.attention && <span className="text-[10px] font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded ml-1.5">⚠ Bottleneck</span>}
+                        <span className="text-xs text-slate-500 ml-1.5">{svc.env}</span>
+                        {svc.attention && <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded ml-1.5">⚠ Bottleneck</span>}
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: ts.bg, color: ts.color }}>{svc.tier.charAt(0).toUpperCase() + svc.tier.slice(1)}</span>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: ts.bg, color: ts.color }}>{svc.tier.charAt(0).toUpperCase() + svc.tier.slice(1)}</span>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                       <span>{svc.deployFreq}</span><span>{svc.leadTime}</span><span>{svc.cfr}</span><span>{svc.mttr}</span>
@@ -409,11 +409,11 @@ export default function DORAMetricsPage() {
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
         <div className="px-5 sm:px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Enterprise · Custom Benchmarks</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Enterprise · Custom Benchmarks</div>
             <p className="text-sm font-semibold text-slate-900 mb-1">Benchmark Settings</p>
             <p className="text-xs text-slate-500">Override industry-standard DORA thresholds with targets specific to your organization.</p>
           </div>
-          {isEnterprise && <span className="text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap self-start">Enterprise Active</span>}
+          {isEnterprise && <span className="text-xs font-semibold text-green-600 bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap self-start">Enterprise Active</span>}
         </div>
         {!isEnterprise ? (
           <div className="p-10 sm:p-16 text-center bg-slate-50">
@@ -433,31 +433,31 @@ export default function DORAMetricsPage() {
                 <div key={cfg.metricKey} className="px-5 py-4 border-b border-slate-50 flex flex-wrap items-center gap-4">
                   <div className="flex-1 min-w-36">
                     <div className="text-sm font-semibold text-slate-900 mb-0.5">{cfg.label}</div>
-                    <div className="text-[11px] text-slate-400">Unit: {cfg.unitLabel}</div>
+                    <div className="text-xs text-slate-500">Unit: {cfg.unitLabel}</div>
                   </div>
                   <div className="flex-1 min-w-48">
                     {hasCustom ? (
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-slate-900">{custom.target_value} {cfg.unitLabel}</span>
-                        <span className="text-[10px] font-bold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5">Custom</span>
-                        <span className="text-[11px] text-slate-400">label: "{custom.performance_label}"</span>
+                        <span className="text-xs font-bold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5">Custom</span>
+                        <span className="text-xs text-slate-500">label: "{custom.performance_label}"</span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400">Industry default: {cfg.industryElite} {cfg.unitLabel}</span>
-                        <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 rounded px-1.5 py-0.5">Standard</span>
+                        <span className="text-xs text-slate-500">Industry default: {cfg.industryElite} {cfg.unitLabel}</span>
+                        <span className="text-xs font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">Standard</span>
                       </div>
                     )}
-                    {!isEditing && <div className="text-[11px] text-slate-400 mt-0.5">{cfg.hint}</div>}
+                    {!isEditing && <div className="text-xs text-slate-500 mt-0.5">{cfg.hint}</div>}
                   </div>
                   {isEditing ? (
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="flex items-center gap-1.5">
                         <input type="number" min="0" step="any" value={editValue} onChange={e => setEditValue(e.target.value)} placeholder={cfg.placeholder} className="w-20 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-900 outline-none focus:border-violet-500 transition-colors" />
-                        <span className="text-xs text-slate-400">{cfg.unitLabel}</span>
+                        <span className="text-xs text-slate-500">{cfg.unitLabel}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-slate-400">Top label:</span>
+                        <span className="text-xs text-slate-500">Top label:</span>
                         <input type="text" value={editLabel} onChange={e => setEditLabel(e.target.value)} placeholder="Elite" maxLength={30} className="w-20 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-900 outline-none focus:border-violet-500 transition-colors" />
                       </div>
                       <button onClick={() => saveBenchmark(cfg.metricKey, editValue, editLabel)} className="px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg text-xs font-semibold cursor-pointer transition-colors">Save</button>

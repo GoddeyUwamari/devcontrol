@@ -45,7 +45,7 @@ function fmt(iso: string | null) {
 function StatusBadge({ status }: { status: WorkflowStatus }) {
   const s = STATUS_STYLES[status] || { label: status, bg: '#F3F4F6', color: '#374151' };
   return (
-    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: s.bg, color: s.color, letterSpacing: '0.03em' }}>
+    <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: s.bg, color: s.color, letterSpacing: '0.03em' }}>
       {s.label}
     </span>
   );
@@ -97,10 +97,10 @@ function WorkflowDetailPanel({
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 4 }}>
+            <p style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6B7280', marginBottom: 4 }}>
               Remediation Workflow
             </p>
-            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#111827', margin: 0 }}>
+            <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', margin: 0 }}>
               {ACTION_LABELS[workflow.action_type] || workflow.action_type}
             </h2>
           </div>
@@ -112,11 +112,11 @@ function WorkflowDetailPanel({
         {/* Status + Risk */}
         <div style={{ display: 'flex', gap: 8 }}>
           <StatusBadge status={workflow.status} />
-          <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: risk.bg, color: risk.color }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: risk.bg, color: risk.color }}>
             {workflow.risk_level.charAt(0).toUpperCase() + workflow.risk_level.slice(1)} Risk
           </span>
           {workflow.rollback_available && (
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: '#EDE9FE', color: '#5B21B6' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: '#EDE9FE', color: '#5B21B6' }}>
               Rollback Available
             </span>
           )}
@@ -149,7 +149,7 @@ function WorkflowDetailPanel({
             ['Completed', fmt(workflow.completed_at)],
           ].map(([label, value]) => (
             <div key={String(label)} style={{ display: 'flex', gap: 16, marginBottom: 12, alignItems: 'flex-start' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', width: 120, flexShrink: 0, paddingTop: 2 }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.06em', width: 120, flexShrink: 0, paddingTop: 2 }}>
                 {label}
               </span>
               <span style={{ fontSize: '0.875rem', color: '#374151' }}>{value}</span>
@@ -160,7 +160,7 @@ function WorkflowDetailPanel({
         {/* Execution log */}
         {workflow.execution_log && (
           <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 8 }}>
+            <p style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6B7280', marginBottom: 8 }}>
               Execution Log
             </p>
             <pre style={{ fontSize: '0.75rem', background: '#111827', color: '#D1D5DB', borderRadius: 8, padding: '16px', overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.7, margin: 0 }}>
@@ -172,7 +172,7 @@ function WorkflowDetailPanel({
         {/* Audit trail */}
         {workflow.auditLog && workflow.auditLog.length > 0 && (
           <div>
-            <p style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 12 }}>
+            <p style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6B7280', marginBottom: 12 }}>
               Audit Trail
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -188,7 +188,7 @@ function WorkflowDetailPanel({
                     <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', margin: '0 0 2px' }}>
                       {entry.note || `Status → ${entry.new_status}`}
                     </p>
-                    <p style={{ fontSize: '0.72rem', color: '#9CA3AF', margin: 0 }}>
+                    <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: 0 }}>
                       {fmt(entry.changed_at)}{entry.changed_by_email ? ` · ${entry.changed_by_email}` : ''}
                     </p>
                   </div>
@@ -381,14 +381,14 @@ export default function RemediationPage() {
     return (
       <div style={{ maxWidth: 1320, margin: '0 auto', padding: '40px 56px 64px', background: '#F9FAFB', minHeight: '100vh' }}>
         <div style={{ marginBottom: 32 }}>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7C3AED', marginBottom: 6 }}>DevOps</p>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#111827', margin: 0 }}>Auto-Remediation Workflows</h1>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7C3AED', marginBottom: 6 }}>DevOps</p>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827', margin: 0 }}>Auto-Remediation Workflows</h1>
         </div>
         <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '80px 40px', textAlign: 'center' }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <Lock style={{ width: 24, height: 24, color: '#9CA3AF' }} />
           </div>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#111827', marginBottom: 10 }}>Enterprise Feature</h2>
+          <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: 10 }}>Enterprise Feature</h2>
           <p style={{ color: '#6B7280', fontSize: '0.9rem', maxWidth: 460, margin: '0 auto 28px', lineHeight: 1.7 }}>
             Auto-Remediation Workflows let your team create, review, approve, and execute infrastructure fixes — with full audit trails and rollback support.
           </p>
@@ -406,9 +406,9 @@ export default function RemediationPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
         <div>
-          <p style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7C3AED', marginBottom: 6 }}>DevOps · Enterprise</p>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#111827', margin: '0 0 6px' }}>Auto-Remediation Workflows</h1>
-          <p style={{ fontSize: '0.875rem', color: '#6B7280', margin: 0 }}>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7C3AED', marginBottom: 6 }}>DevOps · Enterprise</p>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827', margin: '0 0 6px' }}>Auto-Remediation Workflows</h1>
+          <p style={{ fontSize: '0.75rem', fontWeight: 500, color: '#6B7280', margin: 0 }}>
             Approval-based infrastructure remediation. Every AWS action requires explicit human approval.
           </p>
         </div>
@@ -433,7 +433,7 @@ export default function RemediationPage() {
           <div key={label} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '24px 28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               {icon}
-              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
             </div>
             <div style={{ fontSize: '2rem', fontWeight: 700, color, letterSpacing: '-0.03em' }}>{value}</div>
           </div>
@@ -459,7 +459,7 @@ export default function RemediationPage() {
             </button>
           ))}
         </div>
-        <p style={{ fontSize: '0.78rem', color: '#9CA3AF', margin: 0 }}>
+        <p style={{ fontSize: '0.78rem', color: '#6B7280', margin: 0 }}>
           {workflows.length} workflow{workflows.length !== 1 ? 's' : ''}
         </p>
       </div>
@@ -473,8 +473,8 @@ export default function RemediationPage() {
       ) : workflows.length === 0 ? (
         <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '64px 40px', textAlign: 'center' }}>
           <Shield style={{ width: 40, height: 40, color: '#E5E7EB', margin: '0 auto 16px' }} />
-          <p style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', margin: '0 0 8px' }}>No workflows yet</p>
-          <p style={{ fontSize: '0.875rem', color: '#9CA3AF', margin: 0 }}>
+          <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#374151', margin: '0 0 8px' }}>No workflows yet</p>
+          <p style={{ fontSize: '0.875rem', color: '#6B7280', margin: 0 }}>
             Create remediation workflows from the Cost Optimization page.
           </p>
           <a href="/cost-optimization" className="inline-flex items-center gap-2 bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg text-sm font-semibold no-underline transition-colors mt-4">
@@ -486,7 +486,7 @@ export default function RemediationPage() {
           {/* Table header */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 90px 110px 130px 120px 40px', gap: 16, padding: '12px 24px', borderBottom: '1px solid #F3F4F6', background: '#F9FAFB' }}>
             {['Resource', 'Action', 'Risk', 'Est. Savings', 'Status', 'Requested', ''].map((h) => (
-              <span key={h} style={{ fontSize: '0.72rem', fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</span>
+              <span key={h} style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.025em' }}>{h}</span>
             ))}
           </div>
 
@@ -509,10 +509,10 @@ export default function RemediationPage() {
               >
                 <div>
                   <code style={{ fontSize: '0.8rem', color: '#374151', fontFamily: 'monospace' }}>{wf.resource_id}</code>
-                  <p style={{ fontSize: '0.72rem', color: '#9CA3AF', margin: '2px 0 0', textTransform: 'uppercase' }}>{wf.resource_type}</p>
+                  <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: '2px 0 0', textTransform: 'uppercase' }}>{wf.resource_type}</p>
                 </div>
                 <span style={{ fontSize: '0.82rem', color: '#374151' }}>{ACTION_LABELS[wf.action_type] || wf.action_type}</span>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: 100, background: risk.bg, color: risk.color, textAlign: 'center' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 8px', borderRadius: 100, background: risk.bg, color: risk.color, textAlign: 'center' }}>
                   {wf.risk_level.charAt(0).toUpperCase() + wf.risk_level.slice(1)}
                 </span>
                 <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#16A34A' }}>
@@ -522,7 +522,7 @@ export default function RemediationPage() {
                   {isExecuting && <Loader2 style={{ width: 12, height: 12, color: '#7C3AED', animation: 'spin 1s linear infinite' }} />}
                   <StatusBadge status={wf.status} />
                 </div>
-                <span style={{ fontSize: '0.78rem', color: '#9CA3AF' }}>{fmt(wf.created_at)}</span>
+                <span style={{ fontSize: '0.78rem', color: '#6B7280' }}>{fmt(wf.created_at)}</span>
                 <ChevronRight style={{ width: 16, height: 16, color: '#D1D5DB' }} />
               </div>
             );
