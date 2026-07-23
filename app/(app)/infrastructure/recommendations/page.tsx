@@ -165,7 +165,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
     <div className="flex flex-col items-center justify-center p-12 space-y-4 border rounded-lg bg-red-50">
       <AlertCircle className="h-8 w-8 text-red-600" />
       <div className="text-center">
-        <h3 className="text-lg font-semibold text-red-900">Error Loading Recommendations</h3>
+        <h3 className="text-sm font-semibold text-red-900">Error Loading Recommendations</h3>
         <p className="text-sm text-red-700 mt-1">{message}</p>
       </div>
       <Button onClick={onRetry} variant="outline">
@@ -180,7 +180,7 @@ function EmptyState({ onAnalyze, isAnalyzing }: { onAnalyze: () => void; isAnaly
     <div className="flex flex-col items-center justify-center p-12 space-y-4 border rounded-lg">
       <TrendingDown className="h-12 w-12 text-muted-foreground" />
       <div className="text-center">
-        <h3 className="text-lg font-semibold">No Cost Recommendations</h3>
+        <h3 className="text-sm font-semibold">No Cost Recommendations</h3>
         <p className="text-sm text-muted-foreground mt-1">
           Run an analysis to find cost optimization opportunities
         </p>
@@ -347,8 +347,8 @@ export default function RecommendationsPage() {
     <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Cost Optimization</h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className="text-2xl font-bold tracking-tight">Cost Optimization</h1>
+          <p className="text-xs text-muted-foreground font-medium mt-2">
             AI-powered recommendations to reduce your AWS costs
           </p>
         </div>
@@ -370,7 +370,7 @@ export default function RecommendationsPage() {
         <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Savings</CardTitle>
+              <CardTitle className="text-sm font-semibold">Total Savings</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -383,7 +383,7 @@ export default function RecommendationsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Issues</CardTitle>
+              <CardTitle className="text-sm font-semibold">Active Issues</CardTitle>
               <Server className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -396,7 +396,7 @@ export default function RecommendationsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Critical</CardTitle>
+              <CardTitle className="text-sm font-semibold">Critical</CardTitle>
               <AlertCircle className="h-4 w-4 text-red-600" />
             </CardHeader>
             <CardContent>
@@ -409,7 +409,7 @@ export default function RecommendationsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Warnings</CardTitle>
+              <CardTitle className="text-sm font-semibold">Warnings</CardTitle>
               <AlertTriangle className="h-4 w-4 text-yellow-600" />
             </CardHeader>
             <CardContent>
@@ -470,7 +470,7 @@ export default function RecommendationsPage() {
                         <span className="text-xs text-muted-foreground">{rec.awsRegion}</span>
                       )}
                     </div>
-                    <h3 className="text-lg font-semibold">
+                    <h3 className="text-sm font-semibold">
                       {rec.issue}
                       {rec.resourceName && (
                         <span className="text-sm font-normal text-muted-foreground ml-2">
