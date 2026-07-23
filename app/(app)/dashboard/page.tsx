@@ -1189,28 +1189,31 @@ export default function DashboardPage() {
 
       {/* ── COST-SAVING OPPORTUNITIES ── */}
       {isAwsConnected && !isBillingSyncing && !hasServicesOnly && (isDemoActive || hasBillingData) && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-          {[
-            { title: 'Idle EC2', description: 'Instances with sustained low utilization', count: idleEC2Count },
-            { title: 'Unattached EBS', description: 'Volumes not attached to any instance', count: unattachedEBSCount },
-            { title: 'Overprovisioned RDS', description: 'Database instances sized above actual load', count: overprovisionedRDSCount },
-          ].map(({ title, description, count }) => (
-            <div key={title} className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-              <div className="flex items-start justify-between mb-3">
-                <p className="text-[13px] font-medium text-[var(--text-secondary)]">{title}</p>
-                <span
-                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
-                  style={{
-                    color: count === 0 ? 'var(--text-success)' : 'var(--text-warning)',
-                    background: count === 0 ? 'var(--bg-success)' : 'var(--bg-warning)',
-                  }}
-                >
-                  {count} detected
-                </span>
+        <div className="mb-8">
+          <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-4">Cost-saving opportunities</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {[
+              { title: 'Idle EC2', description: 'Instances with sustained low utilization', count: idleEC2Count },
+              { title: 'Unattached EBS', description: 'Volumes not attached to any instance', count: unattachedEBSCount },
+              { title: 'Overprovisioned RDS', description: 'Database instances sized above actual load', count: overprovisionedRDSCount },
+            ].map(({ title, description, count }) => (
+              <div key={title} className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
+                <div className="flex items-start justify-between mb-3">
+                  <p className="text-[13px] font-medium text-[var(--text-secondary)]">{title}</p>
+                  <span
+                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
+                    style={{
+                      color: count === 0 ? 'var(--text-success)' : 'var(--text-warning)',
+                      background: count === 0 ? 'var(--bg-success)' : 'var(--bg-warning)',
+                    }}
+                  >
+                    {count} detected
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{description}</p>
               </div>
-              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{description}</p>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
