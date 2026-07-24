@@ -89,8 +89,24 @@ jobs:
             --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
             --query "StandardOutputContent" --output text | tr -d '[:space:]')
 
-          echo "Last known-good deploy: $PREV_SHA"
-          echo "prev_sha=$PREV_SHA" >> "$GITHUB_OUTPUT"
+          echo "Last known-good deploy marker: '$PREV_SHA'"
+
+          if [ -z "$PREV_SHA" ] || [ "$PREV_SHA" == "NONE" ]; then
+            echo "No previous known-good deploy recorded — treating as first deploy."
+            echo "prev_sha=" >> "$GITHUB_OUTPUT"
+            echo "prev_artifact_exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if aws s3api head-object --bucket devcontrol-deploy-artifacts --key "backend/$PREV_SHA/dist.tar.gz" >/dev/null 2>&1; then
+            echo "Previous artifact backend/$PREV_SHA/dist.tar.gz confirmed present in S3."
+            echo "prev_sha=$PREV_SHA" >> "$GITHUB_OUTPUT"
+            echo "prev_artifact_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Marker points to $PREV_SHA but no matching artifact exists in S3 (backend/$PREV_SHA/dist.tar.gz) — rollback will be skipped if needed."
+            echo "prev_sha=$PREV_SHA" >> "$GITHUB_OUTPUT"
+            echo "prev_artifact_exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload dist to S3
         run: aws s3 cp dist.tar.gz s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz
@@ -127,34 +143,44 @@ jobs:
             exit 1
           fi
 
-      - name: Wait for app to stabilize
-        run: sleep 15
-
       - name: Smoke test new deploy
         id: smoke_test
         continue-on-error: true
         run: |
           set +e
-          RESPONSE=$(curl -sS -f --max-time 10 https://api.getdevcontrol.com/health)
-          CURL_EXIT=$?
-          set -e
+          MAX_ATTEMPTS=5
+          ATTEMPT=1
+          LAST_ERROR=""
 
-          echo "Health response: $RESPONSE"
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Smoke test attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            RESPONSE=$(curl -sS -f --max-time 10 https://api.getdevcontrol.com/health)
+            CURL_EXIT=$?
 
-          if [ $CURL_EXIT -ne 0 ]; then
-            echo "::error::Smoke test failed — health check request failed or timed out (curl exit $CURL_EXIT)"
-            exit 1
-          fi
+            if [ $CURL_EXIT -ne 0 ]; then
+              LAST_ERROR="health check request failed or timed out (curl exit $CURL_EXIT)"
+            else
+              STATUS=$(echo "$RESPONSE" | jq -r '.status // "unknown"' 2>/dev/null)
+              JQ_EXIT=$?
+              if [ $JQ_EXIT -ne 0 ] || [ -z "$STATUS" ]; then
+                LAST_ERROR="health endpoint returned unparseable response: $RESPONSE"
+              elif [ "$STATUS" != "ok" ]; then
+                LAST_ERROR="health endpoint returned status=\"$STATUS\""
+              else
+                echo "Smoke test passed on attempt $ATTEMPT — health endpoint reports status=ok"
+                exit 0
+              fi
+            fi
 
-          STATUS=$(echo "$RESPONSE" | jq -r '.status // "unknown"' 2>/dev/null) || true
-          STATUS=${STATUS:-parse_error}
+            echo "Attempt $ATTEMPT failed: $LAST_ERROR"
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              sleep 5
+            fi
+            ATTEMPT=$((ATTEMPT + 1))
+          done
 
-          if [ "$STATUS" != "ok" ]; then
-            echo "::error::Smoke test failed — health endpoint returned status=\"$STATUS\""
-            exit 1
-          fi
-
-          echo "Smoke test passed — health endpoint reports status=ok"
+          echo "::error::Smoke test failed after $MAX_ATTEMPTS attempts — $LAST_ERROR"
+          exit 1
 
       - name: Record successful deploy
         if: steps.smoke_test.outcome == 'success'
@@ -173,8 +199,7 @@ jobs:
         id: rollback
         if: >
           steps.smoke_test.outcome == 'failure' &&
-          steps.get_prev_sha.outputs.prev_sha != '' &&
-          steps.get_prev_sha.outputs.prev_sha != 'NONE' &&
+          steps.get_prev_sha.outputs.prev_artifact_exists == 'true' &&
           steps.get_prev_sha.outputs.prev_sha != github.sha
         run: |
           set -e
@@ -208,36 +233,45 @@ jobs:
             exit 1
           fi
 
-      - name: Wait after rollback
-        if: steps.rollback.outcome == 'success'
-        run: sleep 15
-
       - name: Verify rollback health
         id: rollback_smoke_test
         if: steps.rollback.outcome == 'success'
         continue-on-error: true
         run: |
           set +e
-          RESPONSE=$(curl -sS -f --max-time 10 https://api.getdevcontrol.com/health)
-          CURL_EXIT=$?
-          set -e
+          MAX_ATTEMPTS=5
+          ATTEMPT=1
+          LAST_ERROR=""
 
-          echo "Rollback health response: $RESPONSE"
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Rollback smoke test attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            RESPONSE=$(curl -sS -f --max-time 10 https://api.getdevcontrol.com/health)
+            CURL_EXIT=$?
 
-          if [ $CURL_EXIT -ne 0 ]; then
-            echo "::error::Rollback smoke test failed — health check request failed or timed out"
-            exit 1
-          fi
+            if [ $CURL_EXIT -ne 0 ]; then
+              LAST_ERROR="health check request failed or timed out (curl exit $CURL_EXIT)"
+            else
+              STATUS=$(echo "$RESPONSE" | jq -r '.status // "unknown"' 2>/dev/null)
+              JQ_EXIT=$?
+              if [ $JQ_EXIT -ne 0 ] || [ -z "$STATUS" ]; then
+                LAST_ERROR="health endpoint returned unparseable response: $RESPONSE"
+              elif [ "$STATUS" != "ok" ]; then
+                LAST_ERROR="health endpoint returned status=\"$STATUS\""
+              else
+                echo "Rollback verified healthy on attempt $ATTEMPT"
+                exit 0
+              fi
+            fi
 
-          STATUS=$(echo "$RESPONSE" | jq -r '.status // "unknown"' 2>/dev/null) || true
-          STATUS=${STATUS:-parse_error}
+            echo "Attempt $ATTEMPT failed: $LAST_ERROR"
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              sleep 5
+            fi
+            ATTEMPT=$((ATTEMPT + 1))
+          done
 
-          if [ "$STATUS" != "ok" ]; then
-            echo "::error::Rollback smoke test failed — health endpoint returned status=\"$STATUS\""
-            exit 1
-          fi
-
-          echo "Rollback verified healthy"
+          echo "::error::Rollback smoke test failed after $MAX_ATTEMPTS attempts — $LAST_ERROR"
+          exit 1
 
       - name: Fail job on broken deploy
         if: steps.smoke_test.outcome == 'failure'
@@ -247,8 +281,8 @@ jobs:
             echo "::error::Automatic rollback to previous deploy (${{ steps.get_prev_sha.outputs.prev_sha }}) succeeded — production is stable again, but ${{ github.sha }} must be fixed before redeploying."
           elif [ "${{ steps.rollback.outcome }}" == "success" ]; then
             echo "::error::Rollback ran but the restored version ALSO failed its smoke test — production may still be down. Investigate immediately."
-          elif [ -z "${{ steps.get_prev_sha.outputs.prev_sha }}" ] || [ "${{ steps.get_prev_sha.outputs.prev_sha }}" == "NONE" ]; then
-            echo "::error::No previous known-good deploy was recorded, so automatic rollback was skipped — production may be down. Investigate immediately."
+          elif [ "${{ steps.get_prev_sha.outputs.prev_artifact_exists }}" != "true" ]; then
+            echo "::error::No usable previous known-good deploy artifact was found (marker: '${{ steps.get_prev_sha.outputs.prev_sha }}'), so automatic rollback was skipped — production may be down. Investigate immediately."
           else
             echo "::error::Automatic rollback did not run or failed to execute — production may still be running the broken deploy. Investigate immediately."
           fi
