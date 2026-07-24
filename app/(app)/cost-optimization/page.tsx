@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, RefreshCw, CheckCircle, CheckCircle2, XCircle } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service';
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
@@ -19,9 +20,19 @@ function formatSavings(value: number | null | undefined): string {
   return value != null ? `$${Math.round(value).toLocaleString()}/mo` : '—';
 }
 
+// The 4 detection categories that actually run in
+// costOptimizationService.analyzeAllResources() on the backend.
+const SCAN_CHECKS = [
+  'Idle EC2 instances',
+  'Oversized RDS instances',
+  'Unused Elastic IPs',
+  'Reserved Instance opportunities',
+];
+
 export default function CostOptimizationPage() {
   const queryClient = useQueryClient();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [lastScanAt, setLastScanAt] = useState<Date | null>(null);
 
   const demoMode = useDemoMode();
   const salesDemoMode = useSalesDemo((state) => state.enabled);
@@ -61,6 +72,7 @@ export default function CostOptimizationPage() {
     try {
       const result = await costRecommendationsService.analyze();
       await refetch();
+      setLastScanAt(result.timestamp ? new Date(result.timestamp) : new Date());
       toast.success(`Scan complete — ${result.recommendationsFound} opportunit${result.recommendationsFound !== 1 ? 'ies' : 'y'} found`);
     } catch (err: any) {
       toast.error(err?.message || 'Scan failed — try again');
@@ -80,13 +92,20 @@ export default function CostOptimizationPage() {
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-2">Cost Optimization</h1>
           <p className="text-xs text-slate-500 font-medium leading-relaxed">Real savings opportunities identified from your connected AWS account.</p>
         </div>
-        <button
-          onClick={handleScan}
-          disabled={isAnalyzing || isDemoActive}
-          className={`inline-flex items-center gap-2 text-white text-sm font-semibold px-5 py-2.5 rounded-lg border-none whitespace-nowrap transition-colors ${isAnalyzing || isDemoActive ? 'bg-violet-400 cursor-not-allowed' : 'bg-violet-700 hover:bg-violet-800 cursor-pointer'}`}
-        >
-          {isAnalyzing ? <><Loader2 size={14} className="animate-spin" /> Scanning...</> : <><RefreshCw size={14} /> Run scan</>}
-        </button>
+        <div className="flex flex-col items-start sm:items-end gap-1.5">
+          <button
+            onClick={handleScan}
+            disabled={isAnalyzing || isDemoActive}
+            className={`inline-flex items-center gap-2 text-white text-sm font-semibold px-5 py-2.5 rounded-lg border-none whitespace-nowrap transition-colors ${isAnalyzing || isDemoActive ? 'bg-violet-400 cursor-not-allowed' : 'bg-violet-700 hover:bg-violet-800 cursor-pointer'}`}
+          >
+            {isAnalyzing ? <><Loader2 size={14} className="animate-spin" /> Scanning...</> : <><RefreshCw size={14} /> Run scan</>}
+          </button>
+          {lastScanAt && (
+            <p className="text-xs text-slate-500 font-medium">
+              Last scan: {formatDistanceToNow(lastScanAt, { addSuffix: true })}
+            </p>
+          )}
+        </div>
       </div>
 
       {isDemoActive ? (
@@ -108,8 +127,16 @@ export default function CostOptimizationPage() {
         </div>
       ) : recommendations.length === 0 ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
-          <p className="text-sm font-semibold text-slate-900 mb-2">🎉 No optimization opportunities detected</p>
-          <p className="text-sm text-slate-500">Your infrastructure is running efficiently. Run a scan to check for new savings opportunities.</p>
+          <CheckCircle2 size={32} className="text-green-600 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-slate-900 mb-2">No optimization opportunities detected</p>
+          <p className="text-sm text-slate-500 mb-6">Your infrastructure is running efficiently. Run a scan to check for new savings opportunities.</p>
+          <div className="flex flex-col items-center gap-1.5 mb-2">
+            {SCAN_CHECKS.map((check) => (
+              <span key={check} className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <CheckCircle2 size={12} className="text-green-600 shrink-0" /> {check}
+              </span>
+            ))}
+          </div>
         </div>
       ) : (
         <>

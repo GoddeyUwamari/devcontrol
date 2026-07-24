@@ -603,6 +603,7 @@ export interface AnalysisResult {
     medium: number;
     low: number;
   };
+  timestamp: string;
 }
 
 // DORA Metrics Types

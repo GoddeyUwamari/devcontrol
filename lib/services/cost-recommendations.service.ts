@@ -96,6 +96,7 @@ export const costRecommendationsService = {
         medium: result.bySeverity?.medium || 0,
         low: result.bySeverity?.low || 0,
       },
+      timestamp: result.timestamp,
     };
   },
 
