@@ -72,17 +72,38 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
 
+      - name: Get last known-good deploy (for rollback)
+        id: get_prev_sha
+        run: |
+          set -e
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "i-0c3e55c290844ec59" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Read last known-good deploy marker" \
+            --parameters '{"commands":["sudo -H -u ubuntu --preserve-env=PATH bash -c \"cat /home/ubuntu/devcontrol/backend/.deployed_sha 2>/dev/null || echo NONE\""]}' \
+            --query "Command.CommandId" --output text)
+
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" || true
+
+          PREV_SHA=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
+            --query "StandardOutputContent" --output text | tr -d '[:space:]')
+
+          echo "Last known-good deploy: $PREV_SHA"
+          echo "prev_sha=$PREV_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Upload dist to S3
         run: aws s3 cp dist.tar.gz s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz
 
       - name: Deploy via SSM and restart PM2
+        id: deploy
         run: |
           set -e
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy devcontrol-api ${{ github.sha }}" \
-            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz /tmp/dist-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH tar xzf /tmp/dist-${{ github.sha }}.tar.gz -C /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production\"","sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env","sudo -H -u ubuntu --preserve-env=PATH pm2 save","echo ✅ Backend deployed successfully"]}' \
+            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz /tmp/dist-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH tar xzf /tmp/dist-${{ github.sha }}.tar.gz -C /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production\"","sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env","sudo -H -u ubuntu --preserve-env=PATH pm2 save","echo ✅ Backend deployed, awaiting smoke test"]}' \
             --query "Command.CommandId" --output text)
           echo "SSM command ID: $COMMAND_ID"
 
@@ -105,3 +126,130 @@ jobs:
             echo "SSM deploy command finished with status: $STATUS"
             exit 1
           fi
+
+      - name: Wait for app to stabilize
+        run: sleep 15
+
+      - name: Smoke test new deploy
+        id: smoke_test
+        continue-on-error: true
+        run: |
+          set +e
+          RESPONSE=$(curl -sS -f --max-time 10 https://api.getdevcontrol.com/health)
+          CURL_EXIT=$?
+          set -e
+
+          echo "Health response: $RESPONSE"
+
+          if [ $CURL_EXIT -ne 0 ]; then
+            echo "::error::Smoke test failed — health check request failed or timed out (curl exit $CURL_EXIT)"
+            exit 1
+          fi
+
+          STATUS=$(echo "$RESPONSE" | jq -r '.status // "unknown"' 2>/dev/null) || true
+          STATUS=${STATUS:-parse_error}
+
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::Smoke test failed — health endpoint returned status=\"$STATUS\""
+            exit 1
+          fi
+
+          echo "Smoke test passed — health endpoint reports status=ok"
+
+      - name: Record successful deploy
+        if: steps.smoke_test.outcome == 'success'
+        run: |
+          set -e
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "i-0c3e55c290844ec59" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Record healthy deploy ${{ github.sha }}" \
+            --parameters '{"commands":["sudo -H -u ubuntu --preserve-env=PATH bash -c \"echo ${{ github.sha }} > /home/ubuntu/devcontrol/backend/.deployed_sha\""]}' \
+            --query "Command.CommandId" --output text)
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" || true
+          echo "✅ Deploy ${{ github.sha }} verified healthy and recorded as last known-good"
+
+      - name: Roll back to previous deploy
+        id: rollback
+        if: >
+          steps.smoke_test.outcome == 'failure' &&
+          steps.get_prev_sha.outputs.prev_sha != '' &&
+          steps.get_prev_sha.outputs.prev_sha != 'NONE' &&
+          steps.get_prev_sha.outputs.prev_sha != github.sha
+        run: |
+          set -e
+          echo "Smoke test failed — rolling back to previous known-good deploy: ${{ steps.get_prev_sha.outputs.prev_sha }}"
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "i-0c3e55c290844ec59" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Rollback devcontrol-api to ${{ steps.get_prev_sha.outputs.prev_sha }}" \
+            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ steps.get_prev_sha.outputs.prev_sha }}/dist.tar.gz /tmp/dist-rollback.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH tar xzf /tmp/dist-rollback.tar.gz -C /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-rollback.tar.gz","sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production\"","sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env","sudo -H -u ubuntu --preserve-env=PATH pm2 save","echo Rolled back to ${{ steps.get_prev_sha.outputs.prev_sha }}"]}' \
+            --query "Command.CommandId" --output text)
+          echo "Rollback SSM command ID: $COMMAND_ID"
+
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" || true
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
+            --query "Status" --output text)
+
+          echo "--- rollback stdout ---"
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
+            --query "StandardOutputContent" --output text
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "--- rollback stderr ---"
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
+              --query "StandardErrorContent" --output text
+            echo "Rollback SSM command finished with status: $STATUS"
+            exit 1
+          fi
+
+      - name: Wait after rollback
+        if: steps.rollback.outcome == 'success'
+        run: sleep 15
+
+      - name: Verify rollback health
+        id: rollback_smoke_test
+        if: steps.rollback.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set +e
+          RESPONSE=$(curl -sS -f --max-time 10 https://api.getdevcontrol.com/health)
+          CURL_EXIT=$?
+          set -e
+
+          echo "Rollback health response: $RESPONSE"
+
+          if [ $CURL_EXIT -ne 0 ]; then
+            echo "::error::Rollback smoke test failed — health check request failed or timed out"
+            exit 1
+          fi
+
+          STATUS=$(echo "$RESPONSE" | jq -r '.status // "unknown"' 2>/dev/null) || true
+          STATUS=${STATUS:-parse_error}
+
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::Rollback smoke test failed — health endpoint returned status=\"$STATUS\""
+            exit 1
+          fi
+
+          echo "Rollback verified healthy"
+
+      - name: Fail job on broken deploy
+        if: steps.smoke_test.outcome == 'failure'
+        run: |
+          echo "::error::Deploy ${{ github.sha }} FAILED its post-deploy smoke test."
+          if [ "${{ steps.rollback.outcome }}" == "success" ] && [ "${{ steps.rollback_smoke_test.outcome }}" == "success" ]; then
+            echo "::error::Automatic rollback to previous deploy (${{ steps.get_prev_sha.outputs.prev_sha }}) succeeded — production is stable again, but ${{ github.sha }} must be fixed before redeploying."
+          elif [ "${{ steps.rollback.outcome }}" == "success" ]; then
+            echo "::error::Rollback ran but the restored version ALSO failed its smoke test — production may still be down. Investigate immediately."
+          elif [ -z "${{ steps.get_prev_sha.outputs.prev_sha }}" ] || [ "${{ steps.get_prev_sha.outputs.prev_sha }}" == "NONE" ]; then
+            echo "::error::No previous known-good deploy was recorded, so automatic rollback was skipped — production may be down. Investigate immediately."
+          else
+            echo "::error::Automatic rollback did not run or failed to execute — production may still be running the broken deploy. Investigate immediately."
+          fi
+          exit 1
