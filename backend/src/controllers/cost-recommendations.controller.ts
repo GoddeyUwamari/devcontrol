@@ -147,6 +147,7 @@ export class CostRecommendationsController {
           recommendationsFound: insertedCount,
           totalPotentialSavings: stats.total_potential_savings,
           bySeverity: stats.by_severity,
+          timestamp: new Date().toISOString(),
         },
         message: `Analysis complete. Found ${insertedCount} optimization opportunities with potential savings of $${stats.total_potential_savings.toFixed(2)}/month.`,
       };
