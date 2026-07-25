@@ -74,9 +74,10 @@ export class DeploymentsRepository {
     const query = `
       INSERT INTO deployments (
         service_id, environment, aws_region, status,
-        cost_estimate, deployed_by, resources
+        cost_estimate, deployed_by, resources, metadata,
+        organization_id, deployed_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, NOW()))
       RETURNING *
     `;
     const result = await pool.query(query, [
@@ -86,9 +87,20 @@ export class DeploymentsRepository {
       deployment.status,
       deployment.cost_estimate || 0.00,
       deployment.deployed_by,
-      JSON.stringify(deployment.resources || {})
+      JSON.stringify(deployment.resources || {}),
+      JSON.stringify(deployment.metadata || {}),
+      deployment.organization_id || null,
+      deployment.deployed_at || null,
     ]);
     return result.rows[0];
+  }
+
+  async findByMetadataField(key: string, value: string): Promise<Deployment | null> {
+    const result = await pool.query(
+      `SELECT * FROM deployments WHERE metadata ->> $1 = $2 LIMIT 1`,
+      [key, value]
+    );
+    return result.rows[0] || null;
   }
 
   async delete(id: string): Promise<boolean> {

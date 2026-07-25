@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import routes from './routes';
 import apiKeysRouter from './routes/api-keys.routes'
 import webhooksRouter from './routes/webhooks.routes'
+import githubWebhookRouter from './routes/github-webhook.routes'
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
 import { corsMiddleware } from './middleware/cors';
@@ -84,29 +85,34 @@ app.use(helmet({
 // CORS middleware
 app.use(corsMiddleware);
 
-// ✅ Stripe webhook endpoint needs RAW body (not parsed JSON)
+// ✅ Stripe and GitHub webhook endpoints need RAW body (for signature verification)
+const RAW_BODY_PATHS = ['/api/stripe/webhook', '/api/webhooks/github'];
 app.use(
   '/api/stripe/webhook',
   express.raw({ type: 'application/json' })
 );
+app.use(
+  '/api/webhooks/github',
+  express.raw({ type: 'application/json' })
+);
 
-// Body parsing middleware - skip webhook route to preserve raw body
+// Body parsing middleware - skip webhook routes to preserve raw body
 app.use((req, res, next) => {
-  if (req.path === '/api/stripe/webhook') {
+  if (RAW_BODY_PATHS.includes(req.path)) {
     return next();
   }
   express.json()(req, res, next);
 });
 app.use((req, res, next) => {
-  if (req.path === '/api/stripe/webhook') {
+  if (RAW_BODY_PATHS.includes(req.path)) {
     return next();
   }
   express.urlencoded({ extended: true })(req, res, next);
 });
 
-// Input sanitization (after body parser, prevents XSS) - skip webhook route
+// Input sanitization (after body parser, prevents XSS) - skip webhook routes
 app.use((req, res, next) => {
-  if (req.path === '/api/stripe/webhook') {
+  if (RAW_BODY_PATHS.includes(req.path)) {
     return next();
   }
   sanitizerMiddleware(req, res, next);
@@ -154,6 +160,9 @@ app.get('/health', async (req, res) => {
 app.use('/api', routes);
 app.use('/api/keys', apiKeysRouter)
 app.use('/api/anomaly-rules', createCustomRulesRoutes(pool))
+// Mounted before the generic /api/webhooks router since Express matches in
+// registration order and /api/webhooks/github is the more specific path.
+app.use('/api/webhooks/github', githubWebhookRouter)
 app.use('/api/webhooks', webhooksRouter)
 
 // Anomaly detection routes (needs to be registered before 404 handler)

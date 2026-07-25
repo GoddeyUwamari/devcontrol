@@ -28,11 +28,12 @@ export interface Deployment {
   service_id: string;
   environment: 'development' | 'staging' | 'production';
   aws_region: string;
-  status: 'running' | 'stopped' | 'deploying' | 'failed';
+  status: 'running' | 'stopped' | 'deploying' | 'failed' | 'success';
   cost_estimate: number;
   deployed_by: string;
   deployed_at: Date;
   resources?: Record<string, any>;
+  metadata?: Record<string, any>;
   created_at: Date;
   updated_at: Date;
 }
@@ -104,10 +105,13 @@ export interface CreateDeploymentRequest {
   service_id: string;
   environment: 'development' | 'staging' | 'production';
   aws_region: string;
-  status: 'running' | 'stopped' | 'deploying' | 'failed';
+  status: 'running' | 'stopped' | 'deploying' | 'failed' | 'success';
   cost_estimate?: number;
   deployed_by: string;
+  deployed_at?: Date;
   resources?: Record<string, any>;
+  metadata?: Record<string, any>;
+  organization_id?: string;
 }
 
 export interface CreateInfrastructureRequest {
