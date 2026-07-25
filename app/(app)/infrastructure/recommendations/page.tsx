@@ -344,7 +344,7 @@ export default function RecommendationsPage() {
   const showError        = !isDemoActive && !!error
 
   return (
-    <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6">
+    <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Cost Optimization</h1>
