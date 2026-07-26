@@ -288,7 +288,7 @@ export default function DashboardPage() {
   const currentSpend    = demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0)
   const costChange      = demoMode ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0)
   const securityScore   = demoMode ? 87 : (riskScoreData?.current.score ?? null)
-  const wasteAmount     = demoMode ? 1922 : Math.round(costRecsRaw.reduce((sum, r) => sum + (r.potential_savings ?? 0), 0))
+  const wasteAmount     = demoMode ? 1922 : Math.round(costRecsRaw.reduce((sum, r) => sum + (Number(r.potential_savings) || 0), 0))
   const efficiencyRatio = demoMode
     ? Math.round(((12847 - wasteAmount) / 12847) * 100)
     : currentSpend > 0 ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100) : null
