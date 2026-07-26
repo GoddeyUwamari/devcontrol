@@ -630,7 +630,7 @@ export default function DashboardPage() {
         </div>
         {isAwsConnected && (
           <a href="/cost-optimization" className="inline-flex items-center gap-1.5 bg-[var(--text-accent)] text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap shrink-0">
-            {isBillingSyncing ? `Approve actions (${topRecs.length}) →` : `Review & Approve Savings (${topRecs.length}) →`}
+            {isBillingSyncing ? `Review Savings (${topRecs.length}) →` : `Review Savings (${topRecs.length}) →`}
           </a>
         )}
       </div>
@@ -662,8 +662,8 @@ export default function DashboardPage() {
             <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
             <div className="text-base font-semibold text-foreground mb-2">
               {isDemoActive
-                ? 'Save $800–$2,400/month by approving 3 optimizations'
-                : `Save $${wasteAmount.toLocaleString()}/month by approving ${topRecs.length} optimization${topRecs.length !== 1 ? 's' : ''}`}
+                ? '$800–$2,400/month in identified savings · 3 optimizations to review'
+                : `$${wasteAmount.toLocaleString()}/month in identified savings · ${topRecs.length} optimization${topRecs.length !== 1 ? 's' : ''} to review`}
             </div>
             {isDemoActive && (
               <div className="flex gap-1.5 flex-wrap">
@@ -674,7 +674,7 @@ export default function DashboardPage() {
             )}
           </div>
           <a href="/cost-optimization" className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap shrink-0">
-            Approve all changes
+            Review all
           </a>
         </div>
       )}
@@ -998,7 +998,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-foreground mb-4 leading-relaxed">
                   {isDemoActive
                     ? <>These {topRecs.length} changes reduce AWS waste immediately · zero downtime · fully reversible · takes &lt; 15 min</>
-                    : <>These {topRecs.length} changes may reduce AWS waste — review each before approving</>}
+                    : <>These {topRecs.length} changes may reduce AWS waste — review each recommendation</>}
                 </p>
               )}
               {topRecs.map((rec, i) => (
@@ -1236,7 +1236,7 @@ export default function DashboardPage() {
             </div>
             <div className="flex gap-2.5 shrink-0">
               {(isDemoActive || wasteAmount > 0) && (
-                <a href="/cost-optimization" className="text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap" style={{ background: 'var(--text-accent)' }}>Approve savings</a>
+                <a href="/cost-optimization" className="text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap" style={{ background: 'var(--text-accent)' }}>Review savings</a>
               )}
               <a href="/costs" className="bg-transparent text-[var(--text-secondary)] px-4 py-2.5 rounded-lg text-sm font-medium no-underline border border-border whitespace-nowrap">View full report</a>
             </div>
@@ -1380,7 +1380,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-foreground mb-3 leading-relaxed px-3 py-2.5 rounded-lg border border-border" style={{ background: 'var(--bg-success)' }}>
                     {isDemoActive
                       ? <>These {topRecs.length} changes reduce AWS waste immediately — zero downtime · fully reversible</>
-                      : <>These {topRecs.length} changes may reduce AWS waste — review each before approving</>}
+                      : <>These {topRecs.length} changes may reduce AWS waste — review each recommendation</>}
                   </p>
                   {topRecs.map((rec, i) => (
                     <div key={i} className="flex items-start gap-3 border border-border rounded-xl px-3 py-2.5 mb-1.5">
