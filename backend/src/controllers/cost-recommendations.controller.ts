@@ -1,9 +1,12 @@
 import { Request, Response } from 'express';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 import costOptimizationService from '../services/cost-optimization.service';
+import { RemediationService } from '../services/remediation.service';
+import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
 
 const repository = new CostRecommendationsRepository();
+const remediationService = new RemediationService(pool);
 
 export class CostRecommendationsController {
   /**
@@ -222,6 +225,120 @@ export class CostRecommendationsController {
         error: 'Failed to resolve recommendation',
       };
       res.status(500).json(response);
+    }
+  }
+
+  /**
+   * POST /api/cost-recommendations/:id/execute-remediation
+   * Idle EC2 recommendations only. Creates, approves, and executes a real
+   * stop_instance remediation workflow via RemediationService, then marks the
+   * recommendation resolved. Route-level middleware restricts this to
+   * enterprise-tier orgs with an admin/owner user — see cost-recommendations.routes.ts.
+   * Deliberately a separate endpoint from PATCH /:id/resolve so execution is
+   * never a side effect of a routine status update; the frontend calls this
+   * only after the user confirms an explicit "this will stop instance X" dialog.
+   */
+  async executeRemediation(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+    let workflowId: string | undefined;
+
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      const userId = (req as any).user?.userId || (req as any).user?.id;
+      if (!organizationId || !userId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const recommendation = await repository.findById(id, organizationId);
+
+      if (!recommendation) {
+        res.status(404).json({ success: false, error: 'Recommendation not found' });
+        return;
+      }
+
+      if (recommendation.resource_type !== 'EC2' || recommendation.issue !== 'Idle Instance') {
+        res.status(400).json({
+          success: false,
+          error: 'Automated execution is only available for Idle EC2 recommendations.',
+        });
+        return;
+      }
+
+      if (recommendation.status !== 'ACTIVE') {
+        res.status(400).json({
+          success: false,
+          error: `Cannot execute — recommendation is already ${recommendation.status}.`,
+        });
+        return;
+      }
+
+      const workflow = await remediationService.createWorkflow(
+        organizationId,
+        {
+          recommendationId: recommendation.id,
+          resourceId: recommendation.resource_id,
+          resourceType: 'EC2',
+          actionType: 'stop_instance',
+          actionParams: {
+            resource_id: recommendation.resource_id,
+            region: recommendation.aws_region,
+          },
+          estimatedSavings: Number(recommendation.potential_savings) || 0,
+          riskLevel: 'low',
+        },
+        userId
+      );
+      workflowId = workflow.id;
+
+      await remediationService.approve(workflow.id, organizationId, userId, req.ip);
+
+      try {
+        const executed = await remediationService.execute(workflow.id, organizationId, userId, req.ip);
+        const resolved = await repository.updateStatus(id, 'RESOLVED', organizationId);
+
+        res.json({
+          success: true,
+          data: { recommendation: resolved, workflow: executed },
+          message: `Instance ${recommendation.resource_id} stopped successfully.`,
+        });
+      } catch (execErr: any) {
+        if (execErr.message?.startsWith('DRY_RUN_MODE')) {
+          // Kill-switch is off — same outcome as the pre-existing status-only
+          // resolve, but the workflow row records that execution was attempted.
+          const resolved = await repository.updateStatus(id, 'RESOLVED', organizationId);
+          res.json({
+            success: true,
+            data: { recommendation: resolved, workflow: null },
+            message: 'Automated remediation is disabled (dry-run mode) — recommendation marked resolved without taking any AWS action.',
+          });
+          return;
+        }
+
+        if (execErr.message?.startsWith('REMEDIATION_BLOCKED')) {
+          // Safety guard tripped — leave the recommendation ACTIVE so the
+          // block is visible, do not silently mark it resolved.
+          console.error(`[Remediation] blocked for recommendation ${id}:`, execErr.message);
+          res.status(403).json({ success: false, error: execErr.message, data: { workflowId: workflow.id } });
+          return;
+        }
+
+        // Real execution failure — leave the recommendation ACTIVE so it can
+        // be retried or investigated via the Remediation page's audit trail.
+        console.error(`[Remediation] execution failed for recommendation ${id}:`, execErr);
+        res.status(500).json({
+          success: false,
+          error: `Execution failed: ${execErr.message}`,
+          data: { workflowId: workflow.id },
+        });
+      }
+    } catch (error: any) {
+      console.error('Error executing remediation for recommendation:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to execute remediation',
+        data: workflowId ? { workflowId } : undefined,
+      });
     }
   }
 

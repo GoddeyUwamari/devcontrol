@@ -73,6 +73,73 @@ interface WorkflowRow {
 export class RemediationService {
   constructor(private pool: Pool) {}
 
+  // ─── Self-protection guard ──────────────────────────────────────────────
+  // DevControl's own operational AWS infrastructure must never be a valid
+  // target for automated execution. Checked unconditionally at the top of
+  // execute(), independent of and in addition to the ENABLE_AUTOMATED_REMEDIATION
+  // kill-switch — a match blocks execution even if the kill-switch is enabled.
+  //
+  // Layer 1 (below, no AWS call): resource_id and organization_id are compared
+  // against env vars rather than hardcoded strings, so the guard survives the
+  // instance being redeployed/recreated as long as the var is kept current.
+  //
+  // Layer 2 (assertNotDevControlInfrastructureByTag, called separately from
+  // execute() after credentials are obtained — see there for why): a live
+  // tag lookup, since
+  // cost_recommendations.metadata does not capture tags and a stale value
+  // would be unsafe to trust for a destructive action.
+  private assertNotDevControlInfrastructureByIdentifiers(
+    organizationId: string,
+    resourceId: string
+  ): void {
+    const reasons: string[] = [];
+
+    const protectedInstanceId = process.env.DEVCONTROL_PROD_INSTANCE_ID;
+    if (protectedInstanceId && resourceId === protectedInstanceId) {
+      reasons.push('resource_id matches DEVCONTROL_PROD_INSTANCE_ID');
+    }
+
+    const protectedOrgId = process.env.DEVCONTROL_OPERATIONAL_ORG_ID;
+    if (protectedOrgId && organizationId === protectedOrgId) {
+      reasons.push('organization_id matches DEVCONTROL_OPERATIONAL_ORG_ID');
+    }
+
+    if (reasons.length > 0) {
+      throw new Error(
+        `REMEDIATION_BLOCKED: Cannot execute automated actions against DevControl operational infrastructure (${reasons.join('; ')})`
+      );
+    }
+  }
+
+  /**
+   * Live tag check — only meaningful for EC2 instance resource IDs. Fails
+   * closed: if the lookup can't be completed, we cannot confirm the resource
+   * is safe, so execution is blocked rather than proceeding blind.
+   */
+  private async assertNotDevControlInfrastructureByTag(
+    ec2: EC2Client,
+    resourceId: string
+  ): Promise<void> {
+    if (!/^i-[0-9a-f]+$/i.test(resourceId)) return; // not an EC2 instance ID — tag check N/A
+
+    let tags: Array<{ Key?: string; Value?: string }> = [];
+    try {
+      const desc = await ec2.send(new DescribeInstancesCommand({ InstanceIds: [resourceId] }));
+      tags = desc.Reservations?.[0]?.Instances?.[0]?.Tags || [];
+    } catch (err: any) {
+      throw new Error(
+        `REMEDIATION_BLOCKED: Unable to verify ${resourceId} is not DevControl operational infrastructure (tag lookup failed: ${err.message})`
+      );
+    }
+
+    const isProtected = tags.some((t) => t.Key === 'App' && t.Value === 'DevControl');
+    if (isProtected) {
+      throw new Error(
+        `REMEDIATION_BLOCKED: Cannot execute automated actions against DevControl operational infrastructure (resource tag App=DevControl present)`
+      );
+    }
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
   private async getWorkflow(id: string): Promise<WorkflowRow> {
@@ -352,6 +419,21 @@ export class RemediationService {
       throw new Error(`Workflow must be approved before executing. Current status: ${workflow.status}`);
     }
 
+    // Self-protection guard, layer 1 — no AWS call, always runs first, blocks
+    // regardless of kill-switch state (see comment on the guard methods above).
+    this.assertNotDevControlInfrastructureByIdentifiers(workflow.organization_id, workflow.resource_id);
+
+    // Global kill-switch — must be checked before any AWS SDK call fires.
+    // Off by default so this feature ships inert until explicitly enabled.
+    if (process.env.ENABLE_AUTOMATED_REMEDIATION !== 'true') {
+      console.log(
+        `[REMEDIATION BLOCKED] Dry-run mode enabled — workflow ${workflowId} ` +
+        `(${workflow.action_type} on ${workflow.resource_id}) not executed. ` +
+        `Set ENABLE_AUTOMATED_REMEDIATION=true to enable real AWS execution.`
+      );
+      throw new Error('DRY_RUN_MODE: Automated remediation is disabled. No AWS action was taken.');
+    }
+
     // Mark as executing
     await this.updateStatus(
       workflowId,
@@ -372,6 +454,12 @@ export class RemediationService {
       const region = params.region || creds.region;
 
       log = this.appendLog(log, `AWS credentials obtained via STS AssumeRole`);
+
+      // Self-protection guard, layer 2 — live tag check. Runs after credentials
+      // are obtained (it needs an EC2 client) but strictly before any mutating
+      // command below, so a tag match still blocks even though the kill-switch
+      // was enabled to get this far.
+      await this.assertNotDevControlInfrastructureByTag(this.makeEC2Client(creds, region), workflow.resource_id);
 
       switch (workflow.action_type) {
         case 'stop_instance':

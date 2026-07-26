@@ -125,6 +125,44 @@ export const costRecommendationsService = {
     };
   },
 
+  // Execute real remediation for an Idle EC2 recommendation (stops the instance
+  // via RemediationService). Only valid for resourceType === 'EC2' && issue ===
+  // 'Idle Instance' recommendations — the backend rejects anything else.
+  executeRemediation: async (
+    id: string
+  ): Promise<{ recommendation: CostRecommendation; workflow: any; message: string }> => {
+    const response = await api.post<ApiResponse<{ recommendation: any; workflow: any }> & { message?: string }>(
+      `/api/cost-recommendations/${id}/execute-remediation`
+    );
+
+    if (!response.data.success) {
+      throw new Error((response.data as any).error || 'Execution failed');
+    }
+
+    const { recommendation: r, workflow } = response.data.data!;
+
+    return {
+      recommendation: {
+        id: r.id,
+        resourceId: r.resource_id,
+        resourceName: r.resource_name,
+        resourceType: r.resource_type,
+        issue: r.issue,
+        description: r.description,
+        potentialSavings: parseFloat(r.potential_savings) || 0,
+        severity: r.severity,
+        status: r.status,
+        awsRegion: r.aws_region,
+        metadata: r.metadata,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        resolvedAt: r.resolved_at,
+      },
+      workflow,
+      message: response.data.message || 'Remediation executed.',
+    };
+  },
+
   // Mark recommendation as dismissed
   dismiss: async (id: string): Promise<CostRecommendation> => {
     const response = await api.patch<ApiResponse<any>>(

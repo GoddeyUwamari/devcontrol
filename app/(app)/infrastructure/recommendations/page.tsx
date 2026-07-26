@@ -25,6 +25,16 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { optimizationService } from '@/lib/services/optimization.service'
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types'
@@ -216,6 +226,9 @@ export default function RecommendationsPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   // ISSUE 1+2: mutable local state for demo recommendations so dismiss/resolve work without API calls
   const [localDemoRecs, setLocalDemoRecs] = useState<RecWithConfidence[]>(DEMO_RECS_NORMALIZED)
+  // Idle EC2 recommendations require an explicit confirmation before real
+  // AWS execution — this holds the recommendation pending that confirmation.
+  const [confirmingRec, setConfirmingRec] = useState<RecWithConfidence | null>(null)
   const queryClient = useQueryClient()
 
   const demoMode = useDemoMode()
@@ -280,14 +293,40 @@ export default function RecommendationsPage() {
     },
   })
 
-  // ISSUE 2: demo mode removes from local state; real mode calls API
-  const handleResolve = (id: string) => {
+  // Execute real remediation (stop instance) for an Idle EC2 recommendation.
+  // Only reached after the user confirms the AlertDialog below.
+  const executeRemediationMutation = useMutation({
+    mutationFn: costRecommendationsService.executeRemediation,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] })
+      queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] })
+      toast.success(result.message)
+      setConfirmingRec(null)
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to execute remediation'
+      toast.error(message)
+      setConfirmingRec(null)
+    },
+  })
+
+  const isIdleEc2Recommendation = (rec: RecWithConfidence) =>
+    rec.resourceType === 'EC2' && rec.issue === 'Idle Instance'
+
+  // Idle EC2 recommendations route through a confirmation dialog and real AWS
+  // execution; every other recommendation type keeps the original status-only
+  // resolve behavior unchanged.
+  const handleResolveClick = (rec: RecWithConfidence) => {
     if (isDemoActive) {
-      setLocalDemoRecs(prev => prev.filter(r => r.id !== id))
+      setLocalDemoRecs(prev => prev.filter(r => r.id !== rec.id))
       toast.success('Recommendation marked as resolved')
       return
     }
-    resolveMutation.mutate(id)
+    if (isIdleEc2Recommendation(rec)) {
+      setConfirmingRec(rec)
+      return
+    }
+    resolveMutation.mutate(rec.id)
   }
 
   const handleDismiss = (id: string) => {
@@ -498,12 +537,12 @@ export default function RecommendationsPage() {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    onClick={() => handleResolve(rec.id)}
-                    disabled={resolveMutation.isPending}
+                    onClick={() => handleResolveClick(rec)}
+                    disabled={resolveMutation.isPending || executeRemediationMutation.isPending}
                     className="gap-2"
                   >
                     <CheckCircle className="h-4 w-4" />
-                    Mark as Resolved
+                    {isIdleEc2Recommendation(rec) ? 'Stop Instance' : 'Mark as Resolved'}
                   </Button>
                   <Button
                     size="sm"
@@ -521,6 +560,38 @@ export default function RecommendationsPage() {
           ))}
         </div>
       )}
+
+      {/* Confirmation required before Idle EC2 recommendations trigger real AWS execution */}
+      <AlertDialog open={!!confirmingRec} onOpenChange={(open) => !open && setConfirmingRec(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Stop instance {confirmingRec?.resourceId}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will stop EC2 instance {confirmingRec?.resourceId}
+              {confirmingRec?.resourceName ? ` (${confirmingRec.resourceName})` : ''}
+              {confirmingRec?.awsRegion ? ` in ${confirmingRec.awsRegion}` : ''}. DevControl
+              takes a snapshot of its root volume first, and the instance can be restarted
+              from the Remediation page afterward — this action is reversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={executeRemediationMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                if (confirmingRec) executeRemediationMutation.mutate(confirmingRec.id)
+              }}
+              disabled={executeRemediationMutation.isPending}
+            >
+              {executeRemediationMutation.isPending ? 'Stopping instance...' : 'Stop instance'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
