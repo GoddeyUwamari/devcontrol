@@ -891,7 +891,7 @@ export default function DashboardPage() {
                   )
                 )) && (
                   <div className="bg-[var(--surface-1)] rounded-xl p-6 border border-border mb-4">
-                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">System summary</p>
+                    <p className="text-xs text-[var(--text-accent)] font-bold mb-3">Executive Intelligence Summary</p>
                     {aiSummaryLoading ? (
                       <div className="flex flex-col gap-2">
                         <Skeleton className="h-3.5 w-full" />
