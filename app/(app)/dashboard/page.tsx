@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { OnboardingProgress } from '@/components/onboarding/progress-indicator'
@@ -113,6 +114,15 @@ function computeMonthOverMonthCostChange(
   if (currentDays < minDays || lastDays < minDays || lastSum <= 0) return null
 
   return Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10
+}
+
+// Bolds dollar amounts, percentages, and X/100 scores embedded in AI summary text
+// for visual scanning, without touching surrounding words. Split on a single
+// capturing group so matches land at odd indices in the result array.
+const KEY_NUMBER_PATTERN = /(\$\d{1,3}(?:,\d{3})*(?:\.\d+)?(?:\/(?:month|mo|year|yr))?|\d+(?:\.\d+)?%|\b\d{1,3}\/100\b)/g
+
+function boldKeyNumbers(text: string): ReactNode {
+  return text.split(KEY_NUMBER_PATTERN).map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part))
 }
 
 const INTELLIGENCE_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
@@ -867,11 +877,19 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* System summary — plain-English narrative synthesizing the real numbers
-                    above. Skeleton while generating; renders nothing on error or when
-                    there's no real data to summarize (never a fabricated placeholder
-                    or an error state). */}
-                {!aiSummaryError && (aiSummaryLoading || aiSummaryData?.summary) && (
+                {/* System summary — 4-part scannable breakdown of the real numbers above,
+                    generated server-side as structured fields (not parsed from prose).
+                    Skeleton while generating; renders nothing on error or when there's no
+                    real data to summarize (never a fabricated placeholder or an error state). */}
+                {!aiSummaryError && (aiSummaryLoading || (
+                  aiSummaryData && (
+                    aiSummaryData.overallHealth?.score != null ||
+                    aiSummaryData.overallHealth?.context ||
+                    aiSummaryData.topRisk ||
+                    aiSummaryData.cloudSpend ||
+                    aiSummaryData.systemStatus
+                  )
+                )) && (
                   <div className="bg-[var(--surface-1)] rounded-xl p-6 border border-border mb-4">
                     <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">System summary</p>
                     {aiSummaryLoading ? (
@@ -881,7 +899,33 @@ export default function DashboardPage() {
                         <Skeleton className="h-3.5 w-2/3" />
                       </div>
                     ) : (
-                      <p className="text-sm text-foreground leading-relaxed break-words">{aiSummaryData?.summary}</p>
+                      <ul className="flex flex-col gap-2 text-sm text-foreground leading-relaxed break-words list-none">
+                        <li>
+                          <strong>Overall Health:</strong>{' '}
+                          {aiSummaryData?.overallHealth?.score != null ? (
+                            <>
+                              <strong>{aiSummaryData.overallHealth.score}/100</strong>
+                              {aiSummaryData.overallHealth.context ? <> — {boldKeyNumbers(aiSummaryData.overallHealth.context)}</> : null}
+                            </>
+                          ) : aiSummaryData?.overallHealth?.context ? (
+                            boldKeyNumbers(aiSummaryData.overallHealth.context)
+                          ) : (
+                            'Not yet available'
+                          )}
+                        </li>
+                        <li>
+                          <strong>Top Risk:</strong>{' '}
+                          {aiSummaryData?.topRisk ? boldKeyNumbers(aiSummaryData.topRisk) : 'No urgent risks identified'}
+                        </li>
+                        <li>
+                          <strong>Cloud Spend:</strong>{' '}
+                          {aiSummaryData?.cloudSpend ? boldKeyNumbers(aiSummaryData.cloudSpend) : 'No spend data available'}
+                        </li>
+                        <li>
+                          <strong>System Status:</strong>{' '}
+                          {aiSummaryData?.systemStatus ? boldKeyNumbers(aiSummaryData.systemStatus) : 'Nominal — 0 active outages'}
+                        </li>
+                      </ul>
                     )}
                   </div>
                 )}

@@ -1,7 +1,10 @@
 import api, { handleApiResponse } from '../api';
 
 export interface AISummaryResult {
-  summary: string | null;
+  overallHealth: { score: number | null; context: string | null };
+  topRisk: string | null;
+  cloudSpend: string | null;
+  systemStatus: string | null;
   generatedAt: string;
 }
 
