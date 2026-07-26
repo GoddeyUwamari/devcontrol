@@ -29,7 +29,16 @@ export class AISummaryController {
       res.json({ success: true, data: result });
     } catch (error: any) {
       console.error('[AI Summary] Controller error:', error.message);
-      res.json({ success: true, data: { summary: null, generatedAt: new Date().toISOString() } });
+      res.json({
+        success: true,
+        data: {
+          overallHealth: { score: null, context: null },
+          topRisk: null,
+          cloudSpend: null,
+          systemStatus: null,
+          generatedAt: new Date().toISOString(),
+        },
+      });
     }
   }
 }

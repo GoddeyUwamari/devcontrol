@@ -79,6 +79,14 @@ export interface WeeklySummary {
   };
 }
 
+// Structured Dashboard Summary Types
+export interface StructuredDashboardSummary {
+  overallHealth: { score: number | null; context: string | null };
+  topRisk: string | null;
+  cloudSpend: string | null;
+  systemStatus: string | null;
+}
+
 export class AIInsightsService {
   private anthropic: Anthropic | null = null;
   private pool: Pool;
@@ -311,6 +319,88 @@ Focus on AWS cost optimization opportunities.`;
       return response.length > 0 ? response : null;
     } catch (error: any) {
       console.error('[AI Insights] Dashboard summary API error:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Same fact-only-prompt contract as generateDashboardSummary above, but returns
+   * the summary as 4 distinct fields (overallHealth, topRisk, cloudSpend, systemStatus)
+   * instead of free-text prose, via a forced tool call — Claude's structured-output
+   * mechanism — so the dashboard can render a scannable bulleted layout without
+   * having to parse a sentence back into categories client-side.
+   */
+  async generateStructuredDashboardSummary(prompt: string): Promise<StructuredDashboardSummary | null> {
+    if (!this.anthropic) {
+      console.log('[AI Insights] No API key - skipping dashboard summary');
+      return null;
+    }
+
+    const tool: Anthropic.Tool = {
+      name: 'render_dashboard_summary',
+      description: 'Render the dashboard summary as 4 distinct fields for a scannable executive view.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          overallHealth: {
+            type: 'object',
+            description: 'Composite health assessment.',
+            properties: {
+              score: {
+                type: ['number', 'null'],
+                description: 'Composite System Intelligence score out of 100, exactly as given in the facts, or null if not available.',
+              },
+              context: {
+                type: ['string', 'null'],
+                description: 'One brief clause of context for the score (e.g. what is driving it), or null if not available.',
+              },
+            },
+            required: ['score', 'context'],
+          },
+          topRisk: {
+            type: ['string', 'null'],
+            description: 'The single most urgent finding, one short sentence, or null if there is none.',
+          },
+          cloudSpend: {
+            type: ['string', 'null'],
+            description: 'Current spend, trend, and optimization potential in one short sentence, or null if no spend data is available.',
+          },
+          systemStatus: {
+            type: ['string', 'null'],
+            description: 'Outage/incident state in one short clause, or null if not available.',
+          },
+        },
+        required: ['overallHealth', 'topRisk', 'cloudSpend', 'systemStatus'],
+      },
+    };
+
+    try {
+      const message = await this.anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 400,
+        temperature: 0.3,
+        tools: [tool],
+        tool_choice: { type: 'tool', name: tool.name },
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const toolUse = message.content.find(
+        (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+      );
+      if (!toolUse) return null;
+
+      const input = toolUse.input as Partial<StructuredDashboardSummary>;
+      return {
+        overallHealth: {
+          score: input.overallHealth?.score ?? null,
+          context: input.overallHealth?.context || null,
+        },
+        topRisk: input.topRisk || null,
+        cloudSpend: input.cloudSpend || null,
+        systemStatus: input.systemStatus || null,
+      };
+    } catch (error: any) {
+      console.error('[AI Insights] Structured dashboard summary API error:', error.message);
       return null;
     }
   }

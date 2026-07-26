@@ -15,20 +15,26 @@
 
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
-import { AIInsightsService } from './ai-insights.service';
+import { AIInsightsService, StructuredDashboardSummary } from './ai-insights.service';
 import { SystemIntelligenceService } from './system-intelligence.service';
 import { RiskTrackingService } from './risk-tracking.service';
 import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 import awsCostService from './aws-cost.service';
 
-export interface AISummaryResult {
-  summary: string | null;
+const EMPTY_FIELDS: StructuredDashboardSummary = {
+  overallHealth: { score: null, context: null },
+  topRisk: null,
+  cloudSpend: null,
+  systemStatus: null,
+};
+
+export interface AISummaryResult extends StructuredDashboardSummary {
   generatedAt: string;
 }
 
 interface CacheEntry {
-  summary: string | null;
+  fields: StructuredDashboardSummary;
   scanCompletedAt: string | null;
   timestamp: number;
 }
@@ -96,16 +102,19 @@ export class AISummaryService {
       cached.scanCompletedAt === scanCompletedAt &&
       Date.now() - cached.timestamp < AISummaryService.CACHE_TTL_CEILING
     ) {
-      return { summary: cached.summary, generatedAt: new Date(cached.timestamp).toISOString() };
+      return { ...cached.fields, generatedAt: new Date(cached.timestamp).toISOString() };
     }
 
-    const summary = await this.generateSummary(organizationId, costDeltaPct);
+    const fields = await this.generateSummary(organizationId, costDeltaPct);
     const timestamp = Date.now();
-    this.cache.set(organizationId, { summary, scanCompletedAt, timestamp });
-    return { summary, generatedAt: new Date(timestamp).toISOString() };
+    this.cache.set(organizationId, { fields, scanCompletedAt, timestamp });
+    return { ...fields, generatedAt: new Date(timestamp).toISOString() };
   }
 
-  private async generateSummary(organizationId: string, costDeltaPct?: number | null): Promise<string | null> {
+  private async generateSummary(
+    organizationId: string,
+    costDeltaPct?: number | null
+  ): Promise<StructuredDashboardSummary> {
     try {
       const [intelligence, riskScore, activeFindings, costStats, criticalAnomalies, monthlyCost] = await Promise.all([
         this.systemIntelligenceService.getSystemIntelligence(organizationId),
@@ -167,21 +176,29 @@ export class AISummaryService {
         );
       }
 
-      if (facts.length === 0) return null;
+      if (facts.length === 0) return EMPTY_FIELDS;
 
       const prompt =
-        `You are writing a 2-3 sentence plain-English summary for a cloud infrastructure ` +
-        `dashboard, aimed at a non-technical executive.\n\n` +
+        `You are populating a scannable, 4-part executive summary for a cloud infrastructure ` +
+        `dashboard: Overall Health, Top Risk, Cloud Spend, and System Status.\n\n` +
         `Use ONLY the facts below. Do not invent, estimate, or assume anything not explicitly ` +
-        `stated. Do not add generic advice or filler. Write naturally, as if briefing an ` +
-        `executive verbally — do not just list the facts.\n\n` +
-        `Facts:\n${facts.map((f) => `- ${f}`).join('\n')}\n\n` +
-        `Write the summary now (2-3 sentences, no preamble, no markdown):`;
+        `stated — reproduce any scores or dollar amounts exactly as given. Do not add generic ` +
+        `advice or filler. Each field should be a short, plain-English clause or sentence, not ` +
+        `a list. If a fact needed for a field is not present below, leave that field null rather ` +
+        `than guessing.\n\n` +
+        `Fields to populate:\n` +
+        `- overallHealth: the composite System Intelligence score (if present) plus a brief ` +
+        `clause of context on what's driving it.\n` +
+        `- topRisk: the single most urgent finding, one short sentence.\n` +
+        `- cloudSpend: current spend, trend, and optimization potential, one short sentence.\n` +
+        `- systemStatus: the outage/incident state, one short clause.\n\n` +
+        `Facts:\n${facts.map((f) => `- ${f}`).join('\n')}`;
 
-      return await this.aiInsightsService.generateDashboardSummary(prompt);
+      const result = await this.aiInsightsService.generateStructuredDashboardSummary(prompt);
+      return result ?? EMPTY_FIELDS;
     } catch (error: any) {
       console.error('[AI Summary] Error generating summary:', error.message);
-      return null;
+      return EMPTY_FIELDS;
     }
   }
 }
