@@ -12,14 +12,13 @@ import {
   Zap, Lock,
 } from 'lucide-react'
 import { usePlan } from '@/lib/hooks/use-plan'
-import { forecastService } from '@/lib/services/forecast.service'
-import { optimizationService } from '@/lib/services/optimization.service'
+import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { nlQueryService, NLQueryResult } from '@/lib/services/nl-query.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
-import { OptimizationRecommendation } from '@/types/optimization.types'
+import type { PlatformDashboardStats, CostRecommendation, RecommendationSeverity } from '@/lib/types'
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -29,16 +28,32 @@ const SERVICE_COLORS: Record<string, string> = {
   'Other Services':             '#94A3B8',
 }
 
-const DATE_RANGES = [
-  { label: '7D',  days: 7   },
-  { label: '30D', days: 30  },
-  { label: '3M',  days: 90  },
-  { label: '6M',  days: 180 },
-  { label: '1Y',  days: 365 },
+const DATE_RANGES: { label: string; days: number; range: '7d' | '30d' | '90d' | '6mo' | '1yr' }[] = [
+  { label: '7D',  days: 7,   range: '7d'  },
+  { label: '30D', days: 30,  range: '30d' },
+  { label: '3M',  days: 90,  range: '90d' },
+  { label: '6M',  days: 180, range: '6mo' },
+  { label: '1Y',  days: 365, range: '1yr' },
 ]
 
-const stripMarkdown = (text: string) =>
-  text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
+const severityStyles: Record<RecommendationSeverity, string> = {
+  HIGH: 'bg-red-50 text-red-700 border-red-200',
+  MEDIUM: 'bg-amber-50 text-amber-700 border-amber-200',
+  LOW: 'bg-slate-100 text-slate-600 border-slate-200',
+}
+
+// Demo-only illustrative figures — not sourced from any backend service.
+// Kept internally consistent with each other (annual = monthly*12, count = list length)
+// rather than reusing the old forecast/optimization services' own demo generators,
+// since both of those are being removed as part of this migration.
+const DEMO_TOP_SAVINGS: { title: string; savings: number; severity: RecommendationSeverity }[] = [
+  { title: 'RDS Reserved Instance Pricing', savings: 890, severity: 'HIGH' as RecommendationSeverity },
+  { title: 'Idle RDS Instances',            savings: 445, severity: 'MEDIUM' as RecommendationSeverity },
+  { title: 'Underloaded EC2 Instances',     savings: 362, severity: 'MEDIUM' as RecommendationSeverity },
+]
+const DEMO_TOTAL_SAVINGS = DEMO_TOP_SAVINGS.reduce((sum, r) => sum + r.savings, 0)
+const DEMO_MTD_SPEND = 22050
+const DEMO_GROWTH_RATE = 8.2
 
 const DEMO_SPEND_DATA: { date: string; actual?: number; forecast?: number }[] = [
   { date: 'Apr 1',  actual: 218 }, { date: 'Apr 2',  actual: 215 },
@@ -76,6 +91,42 @@ const DEMO_CHART_DATA: { date: string; actual: number | null; forecast: number |
   { date: 'Apr 29', actual: null, forecast: 192 }, { date: 'Apr 30', actual: null, forecast: 195 },
 ]
 
+// Month-over-month cost delta, derived from the already-fetched costTrend daily series
+// (no new API call). Compares this month's spend-to-date against the same number of
+// days into last month, calendar-string-parsed to avoid UTC/local timezone day-shift.
+// Only returns a value when both windows have enough real daily coverage to trust the
+// comparison — otherwise null. Mirrors computeMonthOverMonthCostChange in dashboard/page.tsx.
+function computeMonthOverMonthCostChange(
+  costTrend: Array<{ date: string; total: number }>
+): number | null {
+  if (!costTrend || costTrend.length === 0) return null
+
+  const now = new Date()
+  const curYear = now.getFullYear()
+  const curMonth = now.getMonth()
+  const dayOfMonth = now.getDate()
+  const lastMonth = curMonth === 0 ? 11 : curMonth - 1
+  const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear
+
+  let currentSum = 0, currentDays = 0
+  let lastSum = 0, lastDays = 0
+
+  for (const entry of costTrend) {
+    const [y, m, d] = entry.date.split('-').map(Number)
+    const month = m - 1
+    if (y === curYear && month === curMonth && d <= dayOfMonth) {
+      currentSum += entry.total
+      currentDays++
+    } else if (y === lastMonthYear && month === lastMonth && d <= dayOfMonth) {
+      lastSum += entry.total
+      lastDays++
+    }
+  }
+
+  if (currentDays < dayOfMonth * 0.5 || lastDays < dayOfMonth * 0.5 || lastSum === 0) return null
+  return Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10
+}
+
 export default function CostsPage() {
   const { isPro } = usePlan()
   const [selectedRange, setSelectedRange] = useState('30D')
@@ -85,29 +136,58 @@ export default function CostsPage() {
   const [nlError, setNlError] = useState<string | null>(null)
   const [nlUpgradeBanner, setNlUpgradeBanner] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
-  const [narrativeExpanded, setNarrativeExpanded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
 
-  const { data: forecast, isLoading: forecastLoading } = useQuery({
-    queryKey: ['forecast', '90d', isDemoActive],
-    queryFn: () => forecastService.getForecast('90d'),
-    staleTime: 5 * 60 * 1000,
+  const selectedRangeParam = DATE_RANGES.find(r => r.label === selectedRange)?.range ?? '30d'
+
+  // Source A: live AWS Cost Explorer, same call as dashboard/page.tsx.
+  const { data: stats, isLoading: statsLoading } = useQuery<PlatformDashboardStats>({
+    queryKey: ['platform-dashboard-stats'],
+    queryFn: platformStatsService.getDashboardStats,
+    // AWS cost data changes slowly — long staleTime/gcTime avoids re-hitting Cost Explorer
+    // (billed per API call) on every render/tab-switch. Matches dashboard/page.tsx.
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !isDemoActive,
   })
 
-  const { data: optimization, isLoading: optimizationLoading } = useQuery({
-    queryKey: ['optimization', 'summary'],
-    queryFn: () => optimizationService.getRecommendations(),
-    staleTime: 5 * 60 * 1000,
+  // Source A: per-category daily cost trend, same endpoint as dashboard/page.tsx.
+  const { data: costTrend = [], isLoading: costTrendLoading } = useQuery<
+    Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>
+  >({
+    queryKey: ['cost-trend', selectedRangeParam],
+    queryFn: async () => {
+      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=${selectedRangeParam}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
+      })
+      if (!res.ok) return []
+      const json = await res.json()
+      return json.data ?? []
+    },
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !isDemoActive,
   })
 
-  useQuery({
-    queryKey: ['cost-recommendations'],
-    queryFn: () => costRecommendationsService.getAll(),
+  // Source C: cost_recommendations — same service Cost Optimization page uses.
+  const { data: recStats, isLoading: recStatsLoading } = useQuery({
+    queryKey: ['cost-recommendations-stats'],
+    queryFn: costRecommendationsService.getStats,
     staleTime: 5 * 60 * 1000,
+    enabled: !isDemoActive,
+  })
+
+  const { data: activeRecs = [] } = useQuery<CostRecommendation[]>({
+    queryKey: ['cost-recommendations-active'],
+    queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
+    staleTime: 5 * 60 * 1000,
+    enabled: !isDemoActive,
   })
 
   const handleNlQuery = async (e: React.FormEvent) => {
@@ -128,31 +208,31 @@ export default function CostsPage() {
   const selectedDays = DATE_RANGES.find(r => r.label === selectedRange)?.days ?? 30
   const chartData = useMemo(() => {
     if (isDemoActive) return DEMO_CHART_DATA
-    if (!forecast) return []
-    const historical = forecast.historicalData.slice(-selectedDays).map(p => ({
+    return costTrend.slice(-selectedDays).map(p => ({
       date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      actual: Math.round((p.value || 0) * 30),
+      actual: Math.round(p.total),
       forecast: null as number | null,
     }))
-    const predictions = forecast.predictions.slice(0, Math.max(0, selectedDays - forecast.historicalData.length)).map(p => ({
-      date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      actual: null as number | null,
-      forecast: Math.round((p.value || 0) * 30),
-    }))
-    return [...historical, ...predictions]
-  }, [isDemoActive, forecast, selectedDays])
+  }, [isDemoActive, costTrend, selectedDays])
 
-  const mtdSpend      = forecast?.historicalTotal ?? 0
-  const forecast90    = forecast?.predicted90Day ?? 0
-  const totalSavings  = optimization?.summary?.totalMonthlySavings ?? 0
-  const annualSavings = optimization?.summary?.totalAnnualSavings ?? 0
+  const mtdSpend = isDemoActive ? DEMO_MTD_SPEND : (stats?.monthlyAwsCost ?? 0)
+
+  const monthOverMonthChange = isDemoActive ? null : computeMonthOverMonthCostChange(costTrend)
+  const growthRate = isDemoActive ? DEMO_GROWTH_RATE : (monthOverMonthChange ?? 0)
+
+  const totalSavings   = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
   const displaySavings = totalSavings
-  const displayAnnual  = annualSavings > 0 ? annualSavings : displaySavings * 12
-  const growthRate     = forecast?.growthRate ?? 0
-  const topRecs: OptimizationRecommendation[] = optimization?.recommendations?.slice(0, 3) ?? []
+  const displayAnnual  = displaySavings * 12
+  const activeRecsCount = isDemoActive ? DEMO_TOP_SAVINGS.length : (recStats?.activeRecommendations ?? 0)
+
+  const topSavingsRows: { id: string; title: string; savings: number; severity: RecommendationSeverity }[] = isDemoActive
+    ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savings: d.savings, severity: d.severity }))
+    : [...activeRecs]
+        .sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))
+        .slice(0, 3)
+        .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savings: r.potentialSavings || 0, severity: r.severity }))
+
   const costAnomalyDetected = !isDemoActive && growthRate > 20
-  const nextMonthForecast  = isDemoActive ? Math.round(mtdSpend * 1.09) : Math.round((forecast90 / 3) * 1.09)
-  const nextMonthBaseline  = isDemoActive ? mtdSpend : Math.round(forecast90 / 3)
 
   const handleExportCSV = () => {
     const rows = [
@@ -169,18 +249,45 @@ export default function CostsPage() {
     URL.revokeObjectURL(url)
   }
 
-  const serviceBreakdown = [
-    { name: 'Compute (EC2, Lambda, ECS)', amount: Math.round(mtdSpend * 0.63), pct: 63, trend: '+13%', up: true },
-    { name: 'Storage (S3, EBS)',          amount: Math.round(mtdSpend * 0.18), pct: 18, trend: '-5%',  up: false },
-    { name: 'Database (RDS, DynamoDB)',   amount: Math.round(mtdSpend * 0.10), pct: 10, trend: '+8%',  up: true },
-    { name: 'Network (Data Transfer)',    amount: Math.round(mtdSpend * 0.05), pct: 5,  trend: '+2%',  up: true },
-    { name: 'Other Services',            amount: Math.round(mtdSpend * 0.04), pct: 4,  trend: '-1%',  up: false },
-  ]
+  // Real per-category totals for the selected window, from the same costTrend response
+  // already fetched for the chart — no fabricated percentage split of mtdSpend.
+  const categoryTotals = useMemo(() => {
+    if (isDemoActive) return null
+    return costTrend.reduce((acc, p) => {
+      acc.compute  += p.compute  ?? 0
+      acc.storage  += p.storage  ?? 0
+      acc.database += p.database ?? 0
+      acc.network  += p.network  ?? 0
+      acc.other    += p.other    ?? 0
+      return acc
+    }, { compute: 0, storage: 0, database: 0, network: 0, other: 0 })
+  }, [isDemoActive, costTrend])
+
+  const serviceBreakdown: { name: string; amount: number; pct: number; trend?: string; up?: boolean }[] = isDemoActive
+    ? [
+        { name: 'Compute (EC2, Lambda, ECS)', amount: Math.round(mtdSpend * 0.63), pct: 63, trend: '+13%', up: true },
+        { name: 'Storage (S3, EBS)',          amount: Math.round(mtdSpend * 0.18), pct: 18, trend: '-5%',  up: false },
+        { name: 'Database (RDS, DynamoDB)',   amount: Math.round(mtdSpend * 0.10), pct: 10, trend: '+8%',  up: true },
+        { name: 'Network (Data Transfer)',    amount: Math.round(mtdSpend * 0.05), pct: 5,  trend: '+2%',  up: true },
+        { name: 'Other Services',            amount: Math.round(mtdSpend * 0.04), pct: 4,  trend: '-1%',  up: false },
+      ]
+    : (() => {
+        const ct = categoryTotals!
+        const total = ct.compute + ct.storage + ct.database + ct.network + ct.other
+        const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0
+        return [
+          { name: 'Compute (EC2, Lambda, ECS)', amount: Math.round(ct.compute),  pct: pct(ct.compute) },
+          { name: 'Storage (S3, EBS)',          amount: Math.round(ct.storage),  pct: pct(ct.storage) },
+          { name: 'Database (RDS, DynamoDB)',   amount: Math.round(ct.database), pct: pct(ct.database) },
+          { name: 'Network (Data Transfer)',    amount: Math.round(ct.network),  pct: pct(ct.network) },
+          { name: 'Other Services',             amount: Math.round(ct.other),    pct: pct(ct.other) },
+        ]
+      })()
 
   const kpiCards = [
     {
       key: 'savings', label: 'Identified Savings',
-      value: optimizationLoading ? '—' : `$${displaySavings.toLocaleString()}/mo`,
+      value: (!isDemoActive && recStatsLoading) ? '—' : `$${displaySavings.toLocaleString()}/mo`,
       sub: mtdSpend > 0
         ? `$${displayAnnual.toLocaleString()} annually · ${Math.round((displaySavings / mtdSpend) * 100)}% of current spend`
         : `$${displayAnnual.toLocaleString()} annually`,
@@ -189,30 +296,28 @@ export default function CostsPage() {
     },
     {
       key: 'mtd', label: 'Month-to-Date Spend',
-      value: forecastLoading ? '—' : `$${mtdSpend.toLocaleString()}`,
-      sub: `${growthRate > 0 ? '+' : ''}${growthRate}% vs last period`,
+      value: (!isDemoActive && statsLoading) ? '—' : `$${mtdSpend.toLocaleString()}`,
+      sub: isDemoActive || stats?.costSource === 'actual' ? 'Live from AWS Cost Explorer' : 'Estimated · Cost Explorer unavailable',
+      subColor: 'text-slate-500', TrendIcon: Minus, trendColor: 'text-slate-400',
+      href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
+    },
+    {
+      key: 'momchange', label: 'Month-over-Month Change',
+      value: (!isDemoActive && costTrendLoading) ? '—' : `${growthRate > 0 ? '+' : ''}${growthRate}%`,
+      sub: growthRate > 0 ? 'Spend trending up vs last month' : growthRate < 0 ? 'Spend trending down vs last month' : 'Spend flat vs last month',
       subColor: growthRate > 10 ? 'text-red-600' : growthRate > 5 ? 'text-amber-500' : 'text-green-600',
-      TrendIcon: growthRate > 0 ? TrendingUp : TrendingDown,
+      TrendIcon: growthRate > 0 ? TrendingUp : growthRate < 0 ? TrendingDown : Minus,
       trendColor: growthRate > 5 ? 'text-amber-500' : 'text-green-600',
       href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
     },
     {
-      key: 'nextmonth', label: 'Next Month Forecast',
-      value: forecastLoading && !isDemoActive ? '—' : `$${nextMonthForecast.toLocaleString()}`,
-      sub: nextMonthBaseline > 0
-        ? `+9% projected · $${nextMonthBaseline.toLocaleString()} baseline`
-        : `$${nextMonthBaseline.toLocaleString()} baseline`,
-      subColor: nextMonthBaseline > 0 ? 'text-amber-500' : 'text-slate-500',
-      TrendIcon: nextMonthBaseline > 0 ? TrendingUp : Minus,
-      trendColor: nextMonthBaseline > 0 ? 'text-amber-500' : 'text-slate-400',
-      href: '/forecast', borderTop: '', valueColor: 'text-slate-900',
-    },
-    {
-      key: '90day', label: '90-Day Forecast',
-      value: forecastLoading ? '—' : `$${forecast90.toLocaleString()}`,
-      sub: `${forecast?.confidence ?? 85}% confidence`,
-      subColor: 'text-slate-500', TrendIcon: TrendingUp, trendColor: 'text-amber-500',
-      href: '/forecast', borderTop: '', valueColor: 'text-slate-900',
+      key: 'activerecs', label: 'Active Recommendations',
+      value: (!isDemoActive && recStatsLoading) ? '—' : `${activeRecsCount}`,
+      sub: activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations',
+      subColor: activeRecsCount > 0 ? 'text-amber-500' : 'text-slate-500',
+      TrendIcon: activeRecsCount > 0 ? TrendingUp : Minus,
+      trendColor: activeRecsCount > 0 ? 'text-amber-500' : 'text-slate-400',
+      href: '/cost-optimization', borderTop: '', valueColor: 'text-slate-900',
     },
   ]
 
@@ -433,7 +538,9 @@ export default function CostsPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
             <h2 className="text-sm font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
-            <p className="text-xs text-slate-500 leading-relaxed m-0">Historical spend and AI forecast · Dashed line indicates prediction</p>
+            <p className="text-xs text-slate-500 leading-relaxed m-0">
+              {isDemoActive ? 'Historical spend and AI forecast · Dashed line indicates prediction' : 'Historical AWS spend by day, from Cost Explorer'}
+            </p>
           </div>
           <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
             {DATE_RANGES.map(({ label }) => (
@@ -453,10 +560,10 @@ export default function CostsPage() {
         {/* Chart summary */}
         <div className="flex flex-wrap gap-4 sm:gap-8 mb-5 pb-5 border-b border-slate-100">
           {[
-            { label: 'Current Run Rate', value: `$${mtdSpend.toLocaleString()}/mo`, color: 'text-slate-900' },
-            { label: '90-Day Forecast',  value: `$${forecast90.toLocaleString()}`,   color: 'text-violet-600' },
-            { label: 'Growth Rate',      value: `${growthRate > 0 ? '+' : ''}${growthRate}%`, color: growthRate > 5 ? 'text-red-600' : 'text-green-600' },
-            { label: 'Confidence',       value: `${forecast?.confidence ?? 85}%`,    color: 'text-slate-500' },
+            { label: 'Current Run Rate',       value: `$${mtdSpend.toLocaleString()}/mo`, color: 'text-slate-900' },
+            { label: 'Month-over-Month',       value: `${growthRate > 0 ? '+' : ''}${growthRate}%`, color: growthRate > 5 ? 'text-red-600' : 'text-green-600' },
+            { label: 'Active Recommendations', value: `${activeRecsCount}`, color: 'text-slate-500' },
+            { label: 'Identified Savings',     value: `$${displaySavings.toLocaleString()}/mo`, color: 'text-green-600' },
           ].map(({ label, value, color }) => (
             <div key={label}>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
@@ -469,9 +576,9 @@ export default function CostsPage() {
         <div className="flex flex-wrap gap-3 mb-5 pb-4 border-b border-slate-100">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest m-0 self-center">Top drivers</p>
           {[
-            { name: 'Compute',  amount: isDemoActive ? 5200 : Math.round((mtdSpend || 0) * 0.63), color: '#3B82F6' },
-            { name: 'Database', amount: isDemoActive ? 2400 : Math.round((mtdSpend || 0) * 0.10), color: '#8B5CF6' },
-            { name: 'Storage',  amount: isDemoActive ? 3800 : Math.round((mtdSpend || 0) * 0.18), color: '#06B6D4' },
+            { name: 'Compute',  amount: isDemoActive ? 5200 : Math.round(categoryTotals?.compute  ?? 0), color: '#3B82F6' },
+            { name: 'Database', amount: isDemoActive ? 2400 : Math.round(categoryTotals?.database ?? 0), color: '#8B5CF6' },
+            { name: 'Storage',  amount: isDemoActive ? 3800 : Math.round(categoryTotals?.storage  ?? 0), color: '#06B6D4' },
           ].map(({ name, amount, color }) => (
             <div key={name} className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
@@ -508,7 +615,7 @@ export default function CostsPage() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        ) : forecastLoading ? (
+        ) : costTrendLoading ? (
           <div className="h-60 flex items-center justify-center">
             <Loader2 size={20} className="text-slate-400 animate-spin" />
           </div>
@@ -521,17 +628,12 @@ export default function CostsPage() {
                     <stop offset="0%" stopColor="#0F172A" stopOpacity={0.12} />
                     <stop offset="100%" stopColor="#0F172A" stopOpacity={0.01} />
                   </linearGradient>
-                  <linearGradient id="forecastGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7C3AED" stopOpacity={0.10} />
-                    <stop offset="100%" stopColor="#7C3AED" stopOpacity={0.01} />
-                  </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} stroke="#F1F5F9" />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
-                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '0.75rem', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '10px 14px' }} labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }} formatter={(v: any, name: any) => [`$${typeof v === 'number' ? v.toLocaleString() : v}/mo`, name === 'actual' ? 'Actual Spend' : 'AI Forecast']} />
+                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '0.75rem', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '10px 14px' }} labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }} formatter={(v: any) => [`$${typeof v === 'number' ? v.toLocaleString() : v}/mo`, 'Actual Spend']} />
                 <Area type="monotone" dataKey="actual" stroke="#0F172A" strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
-                <Area type="monotone" dataKey="forecast" stroke="#7C3AED" strokeWidth={2} fill="url(#forecastGradient)" dot={false} connectNulls={false} strokeDasharray="6 3" activeDot={{ r: 4, fill: '#7C3AED', strokeWidth: 0 }} />
                 <ReferenceLine y={mtdSpend} stroke="#94A3B8" strokeDasharray="4 3" strokeWidth={1} label={{ value: `$${mtdSpend}/mo baseline`, position: 'insideTopRight', fontSize: 10, fill: '#94A3B8' } as any} />
               </AreaChart>
             </ResponsiveContainer>
@@ -540,10 +642,15 @@ export default function CostsPage() {
 
         {/* Legend */}
         <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-slate-100">
-          {[
-            { color: '#0F172A', dash: false, label: 'Actual spend' },
-            { color: '#7C3AED', dash: true,  label: 'AI forecast'  },
-          ].map(({ color, dash, label }) => (
+          {(isDemoActive
+            ? [
+                { color: '#0F172A', dash: false, label: 'Actual spend' },
+                { color: '#7C3AED', dash: true,  label: 'AI forecast'  },
+              ]
+            : [
+                { color: '#0F172A', dash: false, label: 'Actual spend' },
+              ]
+          ).map(({ color, dash, label }) => (
             <div key={label} className="flex items-center gap-2">
               <svg width="24" height="2" className="shrink-0">
                 <line x1="0" y1="1" x2="24" y2="1" stroke={color} strokeWidth="2" strokeDasharray={dash ? '5 3' : '0'} />
@@ -551,7 +658,9 @@ export default function CostsPage() {
               <span className="text-xs text-slate-500 font-medium">{label}</span>
             </div>
           ))}
-          <span className="text-xs text-slate-500 ml-auto hidden sm:block">Values shown as monthly equivalent</span>
+          <span className="text-xs text-slate-500 ml-auto hidden sm:block">
+            {isDemoActive ? 'Values shown as monthly equivalent' : 'Values shown as daily spend'}
+          </span>
         </div>
       </div>
 
@@ -584,7 +693,7 @@ export default function CostsPage() {
                       </div>
                       <div className="flex items-center gap-3">
                         {hasSpend && <span className="text-xs text-slate-500 font-medium">{pctOfTotal}%</span>}
-                        {hasSpend && <span className={`text-xs font-medium ${up ? 'text-amber-500' : 'text-green-600'}`}>{trend}</span>}
+                        {hasSpend && trend != null && <span className={`text-xs font-medium ${up ? 'text-amber-500' : 'text-green-600'}`}>{trend}</span>}
                         <span className="text-sm font-semibold text-slate-900 min-w-[60px] text-right">${amount.toLocaleString()}</span>
                       </div>
                     </div>
@@ -637,28 +746,14 @@ export default function CostsPage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            {topRecs.length > 0 ? topRecs.map((rec) => (
+            {topSavingsRows.length > 0 ? topSavingsRows.map((rec) => (
               <div key={rec.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
-                  <span className="text-xs font-bold text-green-600 shrink-0">${rec.monthlySavings.toLocaleString()}/mo</span>
+                  <span className="text-xs font-bold text-green-600 shrink-0">${rec.savings.toLocaleString()}/mo</span>
                 </div>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${rec.risk === 'safe' ? 'bg-green-50 text-green-600' : rec.risk === 'caution' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'}`}>
-                  {rec.risk === 'safe' ? 'Zero Risk' : rec.risk === 'caution' ? 'Low Risk' : 'Review Required'}
-                </span>
-              </div>
-            )) : isDemoActive ? [
-              { title: 'RDS Reserved Instance Pricing', savings: 890, risk: 'safe' as const },
-              { title: 'Idle RDS Instances',            savings: 445, risk: 'safe' as const },
-              { title: 'Underloaded EC2 Instances',     savings: 362, risk: 'caution' as const },
-            ].map(item => (
-              <div key={item.title} className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{item.title}</p>
-                  <span className="text-xs font-bold text-green-600 shrink-0">${item.savings}/mo</span>
-                </div>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${item.risk === 'safe' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
-                  {item.risk === 'safe' ? 'Zero Risk' : 'Low Risk'}
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${severityStyles[rec.severity]}`}>
+                  {rec.severity}
                 </span>
               </div>
             )) : (
@@ -689,42 +784,6 @@ export default function CostsPage() {
                 {note && <p className="text-xs text-green-600 mt-1 font-medium">{note}</p>}
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── AI COST NARRATIVE ── */}
-      {forecast?.aiSummary && (
-        <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-200 border-l-[3px] border-l-violet-500">
-          <div className="flex items-start gap-4">
-            <div className="w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center shrink-0">
-              <Sparkles size={15} className="text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-violet-600 uppercase tracking-widest mb-2">AI Cost Narrative</p>
-              <p className="text-sm text-slate-900 leading-relaxed mb-3">
-                {narrativeExpanded ? forecast.aiSummary : forecast.aiSummary.split(/\.\s+/)[0] + '.'}
-              </p>
-              <button
-                onClick={() => setNarrativeExpanded(!narrativeExpanded)}
-                className="bg-transparent border-none text-xs font-semibold text-violet-600 cursor-pointer p-0 hover:text-violet-800"
-              >
-                {narrativeExpanded ? 'Show less ↑' : 'Read full analysis →'}
-              </button>
-              {narrativeExpanded && (forecast.aiRecommendations?.length ?? 0) > 0 && (
-                <div className="flex flex-col gap-2 mt-4">
-                  {forecast.aiRecommendations.slice(0, 3).map((rec, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <span className="text-violet-600 font-bold shrink-0 mt-0.5">→</span>
-                      <span className="text-sm text-slate-500 leading-relaxed">{stripMarkdown(rec)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <a href="/forecast" className="flex items-center gap-1 text-xs font-semibold text-violet-600 no-underline shrink-0 hidden sm:flex">
-              Full forecast <ArrowRight size={12} />
-            </a>
           </div>
         </div>
       )}
