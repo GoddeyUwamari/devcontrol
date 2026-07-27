@@ -232,6 +232,22 @@ export default function CostsPage() {
         .slice(0, 3)
         .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savings: r.potentialSavings || 0, severity: r.severity }))
 
+  // Real per-service savings for the Cost by Service list, from the same activeRecs
+  // (source C) already fetched above — no fabricated per-category dollar figure.
+  const categorySavings = useMemo(() => {
+    if (isDemoActive) return null
+    const byType = (type: string) => activeRecs.filter(r => r.resourceType === type)
+    const summarize = (recs: CostRecommendation[]) => {
+      const total = recs.reduce((sum, r) => sum + (r.potentialSavings || 0), 0)
+      const top = [...recs].sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))[0]
+      return { total, issue: top?.issue ?? null }
+    }
+    return {
+      compute: summarize(byType('EC2')),
+      database: summarize(byType('RDS')),
+    }
+  }, [isDemoActive, activeRecs])
+
   const costAnomalyDetected = !isDemoActive && growthRate > 20
 
   const handleExportCSV = () => {
@@ -683,7 +699,13 @@ export default function CostsPage() {
                 const pctOfTotal = hasSpend ? Math.round((amount / totalServiceSpend) * 100) : 0
                 const isCompute = name.startsWith('Compute')
                 const isDatabase = name.startsWith('Database')
-                const savingsFlag = amount === 0 ? null : isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null
+                const savingsFlag = amount === 0 ? null : isDemoActive
+                  ? (isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null)
+                  : (isCompute && categorySavings!.compute.total > 0
+                      ? `⚠ $${Math.round(categorySavings!.compute.total).toLocaleString()}/mo savings available · ${categorySavings!.compute.issue}`
+                      : isDatabase && categorySavings!.database.total > 0
+                        ? `⚠ $${Math.round(categorySavings!.database.total).toLocaleString()}/mo savings available · ${categorySavings!.database.issue}`
+                        : null)
                 return (
                   <div key={name}>
                     <div className="flex items-center justify-between mb-1.5">
@@ -717,7 +739,7 @@ export default function CostsPage() {
             </a>
           </div>
 
-          {(isDemoActive || totalSavings > 0) && (
+          {isDemoActive && (
             <div className="flex items-center justify-between mb-3.5">
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">Optimization Confidence</p>
@@ -739,9 +761,9 @@ export default function CostsPage() {
             </div>
             <div className="text-center sm:text-right">
               <a href="/cost-optimization" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold no-underline inline-block transition-colors whitespace-nowrap">
-                Approve all — safe changes only
+                Review savings
               </a>
-              <p className="text-xs text-green-600 mt-1 font-medium">No downtime risk · Fully reversible</p>
+              {isDemoActive && <p className="text-xs text-green-600 mt-1 font-medium">No downtime risk · Fully reversible</p>}
             </div>
           </div>
 
