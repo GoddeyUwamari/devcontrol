@@ -394,7 +394,7 @@ export default function CostsPage() {
             <p className="text-xs text-amber-800 leading-relaxed mb-2.5">
               {isDemoActive
                 ? 'EC2 compute spending increased 35% in the last 24 hours. Possible cause: Lambda invocation spike on payment-processor triggering auto-scaling. Estimated impact: $864/month if sustained.'
-                : 'Unusual cost pattern detected in the last 24 hours. Review your recent deployments and scaling events.'
+                : 'Unusual cost pattern detected: spend is trending well above last month. Review your recent deployments and scaling events.'
               }
             </p>
             <div className="flex gap-2 flex-wrap">
@@ -408,8 +408,17 @@ export default function CostsPage() {
           </div>
           <div className="shrink-0 text-right bg-white border border-amber-200 rounded-lg px-3 py-2 hidden sm:block">
             <p className="text-xs font-semibold text-amber-700 uppercase tracking-widest mb-1">Est. Impact</p>
-            <p className="text-lg font-bold text-amber-500 m-0">+$864<span className="text-xs font-medium">/mo</span></p>
-            <p className="text-xs text-amber-700 mt-0.5">if sustained</p>
+            {isDemoActive ? (
+              <>
+                <p className="text-lg font-bold text-amber-500 m-0">+$864<span className="text-xs font-medium">/mo</span></p>
+                <p className="text-xs text-amber-700 mt-0.5">if sustained</p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-bold text-amber-500 m-0">+{growthRate}<span className="text-xs font-medium">%</span></p>
+                <p className="text-xs text-amber-700 mt-0.5">vs last month</p>
+              </>
+            )}
           </div>
         </div>
       )}
