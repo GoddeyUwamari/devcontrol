@@ -12,8 +12,9 @@ import {
 import { toast } from 'sonner'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import { platformStatsService } from '@/lib/services/platform-stats.service'
 import awsServicesService from '@/lib/services/aws-services.service'
-import type { InfrastructureResource, ResourceType } from '@/lib/types'
+import type { InfrastructureResource, ResourceType, PlatformDashboardStats } from '@/lib/types'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
@@ -102,21 +103,6 @@ const DEMO_RESOURCES: InfrastructureResource[] = [
   { id: 'r8', serviceId: 'svc-3', serviceName: 'payment-processor',   resourceType: 'rds',    awsId: 'rds-payments-01',    awsRegion: 'us-west-2', status: 'pending', costPerMonth: 398.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
 ]
 
-async function fetchRealSavings(): Promise<number | null> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-  if (!token) return null
-  try {
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization/results`,
-      { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'include' }
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    const results = data.results ?? []
-    return results.reduce((sum: number, r: any) => sum + (parseFloat(r.monthlySavings ?? r.monthly_savings) || 0), 0)
-  } catch { return null }
-}
-
 async function fetchSystemIntelligence(): Promise<any | null> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   if (!token) return null
@@ -135,21 +121,22 @@ async function fetchTopActions(): Promise<any[] | null> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   if (!token) return null
   try {
-    const [costRes, anomalyRes] = await Promise.all([
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-optimization/results`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }),
+    const [recs, anomalyRes] = await Promise.all([
+      // Source C — cost_recommendations, replacing the dead /api/cost-optimization/results
+      // endpoint (unmounted on the backend; always 404'd, so costActions was always empty
+      // for real accounts before this fix).
+      costRecommendationsService.getAll({ status: 'ACTIVE' }),
       fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/anomalies`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }),
     ])
-    const costData    = costRes.ok    ? await costRes.json()    : { results: [] }
     const anomalyData = anomalyRes.ok ? await anomalyRes.json() : { anomalies: [] }
-    const costActions = (costData.results ?? [])
-      .filter((r: any) => (parseFloat(r.monthlySavings ?? r.monthly_savings) || 0) > 0)
-      .sort((a: any, b: any) => (parseFloat(b.monthlySavings ?? b.monthly_savings) || 0) - (parseFloat(a.monthlySavings ?? a.monthly_savings) || 0))
+    const costActions = [...recs]
+      .sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))
       .slice(0, 3)
-      .map((r: any, i: number) => ({
-        id: r.id ?? `cost-${i}`, title: r.title ?? r.recommendation ?? 'Cost optimization available',
-        savings: Math.round(parseFloat(r.monthlySavings ?? r.monthly_savings) || 0),
+      .map((r, i) => ({
+        id: r.id, title: r.issue || 'Cost optimization available',
+        savings: Math.round(r.potentialSavings || 0),
         risk: 'zero' as const, urgency: i === 0 ? 'now' as const : 'today' as const,
-        subtitle: `${r.resourceName ?? r.resource_name ?? 'Resource'} · ${r.region ?? 'us-east-1'} · cost leakage active`,
+        subtitle: `${r.resourceName ?? 'Resource'} · ${r.awsRegion ?? 'us-east-1'} · cost leakage active`,
         type: 'cost' as const,
       }))
     const reliabilityActions = (anomalyData.anomalies ?? anomalyData ?? [])
@@ -259,9 +246,13 @@ function InfrastructureContent() {
     enabled: !isDemoActive,
   })
 
-  const { data: realSavingsTotal } = useQuery({
-    queryKey: ['infra-real-savings'],
-    queryFn: fetchRealSavings,
+  // Source A — same call Dashboard/costs pages use for live spend. Feeds the Monthly
+  // Cost KPI so it agrees with Dashboard instead of summing infrastructure_resources (B).
+  const { data: platformStats } = useQuery<PlatformDashboardStats>({
+    queryKey: ['platform-dashboard-stats'],
+    queryFn: platformStatsService.getDashboardStats,
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive,
   })
 
@@ -301,7 +292,7 @@ function InfrastructureContent() {
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-count'] }),
         queryClient.invalidateQueries({ queryKey: ['system-intelligence'] }),
         queryClient.invalidateQueries({ queryKey: ['top-actions'] }),
-        queryClient.invalidateQueries({ queryKey: ['infra-real-savings'] }),
+        queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] }),
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
         // A scan can flip compliance_scan_completed, which changes isPreliminary —
         // without this, the security score stays on its pre-scan cached value for
@@ -341,9 +332,10 @@ function InfrastructureContent() {
   const demoMonthlyCost  = DEMO_RESOURCES.reduce((sum, r) => sum + (r.costPerMonth || 0), 0)
   const demoActive       = DEMO_RESOURCES.filter(r => r.status === 'running').length
   const demoWarning      = DEMO_RESOURCES.filter(r => r.status === 'pending' || r.status === 'stopped').length
-  const realMonthlyCost  = allResources.reduce((sum: number, r: InfrastructureResource) => sum + (r.costPerMonth || 0), 0)
   const totalResources   = isDemoActive ? demoTotal      : (statsLoading ? null : (apiStats?.total          ?? 0))
-  const totalMonthlyCost = isDemoActive ? demoMonthlyCost: realMonthlyCost
+  // Source A — live Cost Explorer total, matching Dashboard/costs pages. Replaces the
+  // former sum of infrastructure_resources.cost_per_month (source B).
+  const totalMonthlyCost = isDemoActive ? demoMonthlyCost: (platformStats?.monthlyAwsCost ?? 0)
   const activeCount      = isDemoActive ? demoActive     : (statsLoading ? null : (apiStats?.healthy         ?? 0))
   const warningCount     = isDemoActive ? demoWarning    : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
 
@@ -367,7 +359,7 @@ function InfrastructureContent() {
   const intelSecScore    = intelComponents.security.score
   const intelObsScore    = intelComponents.observability.score
   const intelScoreDelta  = isDemoActive ? 18 : (intel.system_score > 0 ? Math.min(Math.round((100 - intel.system_score) * 0.55), 25) : 0)
-  const intelWaste       = realSavingsTotal ?? (isDemoActive ? 1060 : 0)
+  const intelWaste       = isDemoActive ? 1060 : (recommendationStats?.totalPotentialSavings ?? 0)
   const intelAnalyzed    = isDemoActive ? 19 : allResources.length
   const intelTotal       = isDemoActive ? 20 : ((totalResources as number) || intelAnalyzed)
   const scoreCirc        = 144.5
@@ -395,10 +387,8 @@ function InfrastructureContent() {
   const formatSavings = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
   const potentialSavingsValue = isDemoActive
     ? '$1,697/mo'
-    : realSavingsTotal != null && realSavingsTotal > 0
-      ? `$${Math.round(realSavingsTotal).toLocaleString()}/mo`
-      : savingsLoading ? '—'
-      : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
+    : savingsLoading ? '—'
+    : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
 
   const DEMO_COST_BY_SERVICE = [
     { name: 'analytics-worker',  cost: 312.80, pct: 41, barWidth: 100 },
@@ -496,7 +486,7 @@ function InfrastructureContent() {
             <a href="/cost-optimization" className="flex items-center gap-1.5 bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold no-underline">
               <Check size={13} /> Apply Recommended Fixes
             </a>
-            {(isDemoActive || (realSavingsTotal && realSavingsTotal > 0)) && (
+            {(isDemoActive || totalRecoverable > 0) && (
               <p className="text-xs text-slate-500 text-right">
                 Applies {zeroRiskCount} zero-risk optimization{zeroRiskCount !== 1 ? 's' : ''} · No downtime · Est. savings: ${Math.round(totalRecoverable).toLocaleString()}/mo
               </p>
@@ -668,14 +658,14 @@ function InfrastructureContent() {
           <p className="text-xs font-semibold text-emerald-600 uppercase tracking-widest mb-4">Recoverable Savings</p>
           <div className="text-3xl sm:text-4xl font-bold text-green-600 tracking-tight leading-none mb-2">{potentialSavingsValue}</div>
           <p className="text-xs text-slate-500 mb-1">
-            {totalMonthlyCost > 0 && (realSavingsTotal ?? 0) > 0
-              ? `${Math.round(((realSavingsTotal ?? 0) / totalMonthlyCost) * 100)}% of total spend`
+            {totalMonthlyCost > 0 && (recommendationStats?.totalPotentialSavings ?? 0) > 0
+              ? `${Math.round(((recommendationStats?.totalPotentialSavings ?? 0) / totalMonthlyCost) * 100)}% of total spend`
               : isDemoActive ? '18% of total spend' : ''}
           </p>
           <p className="text-[13px] text-slate-500 leading-relaxed">
-            {realSavingsTotal && realSavingsTotal > 0 ? 'Approve to capture savings' : isDemoActive ? 'Approve to capture savings' : 'Run scan to identify savings'}
+            {(recommendationStats?.totalPotentialSavings ?? 0) > 0 ? 'Approve to capture savings' : isDemoActive ? 'Approve to capture savings' : 'Run scan to identify savings'}
           </p>
-          {(isDemoActive || (realSavingsTotal && realSavingsTotal > 0)) && (
+          {(isDemoActive || (recommendationStats?.totalPotentialSavings ?? 0) > 0) && (
             <a href="/cost-optimization" className="text-xs font-semibold text-emerald-600 no-underline inline-flex items-center gap-1 mt-1.5">
               Review opportunities →
             </a>
