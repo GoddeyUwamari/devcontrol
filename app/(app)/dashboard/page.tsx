@@ -43,6 +43,7 @@ import type { PlatformDashboardStats } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
+import { annualizeMonthly } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { DemoModeBanner } from '@/components/demo/DemoModeBanner'
@@ -285,7 +286,11 @@ export default function DashboardPage() {
   const currentSpend    = demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0)
   const costChange      = demoMode ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0)
   const securityScore   = demoMode ? 87 : (riskScoreData?.current.score ?? null)
-  const wasteAmount     = demoMode ? 1922 : Math.round(costRecsRaw.reduce((sum, r) => sum + (Number(r.potential_savings) || 0), 0))
+  // Raw (unrounded) monthly waste — kept separately so the annual projection can
+  // round once after multiplying, matching costs/page.tsx and cost-optimization/page.tsx,
+  // instead of rounding the monthly figure first and compounding the rounding error.
+  const wasteAmountRaw  = demoMode ? 1922 : costRecsRaw.reduce((sum, r) => sum + (Number(r.potential_savings) || 0), 0)
+  const wasteAmount     = Math.round(wasteAmountRaw)
   const efficiencyRatio = demoMode
     ? Math.round(((12847 - wasteAmount) / 12847) * 100)
     : currentSpend > 0 ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100) : null
@@ -1268,7 +1273,7 @@ export default function DashboardPage() {
                 {isDemoActive || wasteAmount > 0 ? (
                   <>
                     DEVCONTROL has saved {isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')}{' '}
-                    <span style={{ color: 'var(--text-success)' }}>${(wasteAmount * 12).toLocaleString()}</span> annualised
+                    <span style={{ color: 'var(--text-success)' }}>${Math.round(annualizeMonthly(wasteAmountRaw)).toLocaleString()}</span> annualised
                   </>
                 ) : (
                   <>Your infrastructure is currently optimized — no cost-saving opportunities detected for {organization?.displayName || organization?.name || 'your organization'}</>
@@ -1285,7 +1290,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
             {[
               { label: 'Monthly savings',         value: wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}` : '—',            sub: wasteAmount > 0 ? 'AI-identified waste' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
-              { label: 'Annual projection',        value: wasteAmount > 0 ? `$${(wasteAmount * 12).toLocaleString()}` : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
+              { label: 'Annual projection',        value: wasteAmount > 0 ? `$${Math.round(annualizeMonthly(wasteAmountRaw)).toLocaleString()}` : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
               { label: 'Avg. ROI payback',         value: isDemoActive ? '< 15 min' : '—',                                      sub: isDemoActive ? 'Zero-risk changes only' : 'Not yet available',                  color: isDemoActive ? 'var(--text-accent)' : 'var(--text-secondary)' },
               { label: 'Can reduce monthly spend',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: 'var(--text-warning)' },
             ].map(({ label, value, sub, color }) => (

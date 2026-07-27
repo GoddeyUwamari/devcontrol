@@ -134,7 +134,10 @@ async function fetchTopActions(): Promise<any[] | null> {
       .slice(0, 3)
       .map((r, i) => ({
         id: r.id, title: r.issue || 'Cost optimization available',
-        savings: Math.round(r.potentialSavings || 0),
+        // Kept raw (not rounded per-item) so totalRecoverable below sums to the same
+        // figure as the backend-aggregated intelWaste/recommendationStats total — round
+        // only at display time, same rule as Math.round(totalRecoverable) further down.
+        savings: r.potentialSavings || 0,
         risk: 'zero' as const, urgency: i === 0 ? 'now' as const : 'today' as const,
         subtitle: `${r.resourceName ?? 'Resource'} · ${r.awsRegion ?? 'us-east-1'} · cost leakage active`,
         type: 'cost' as const,
@@ -684,7 +687,7 @@ function InfrastructureContent() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-0.5">Top Actions</p>
             <p className="text-[13px] text-slate-500">
-              Ranked by impact · {optimizationCount} recommended changes ready · <strong className="text-emerald-600">${totalRecoverable.toLocaleString()}/mo recoverable today</strong>
+              Ranked by impact · {optimizationCount} recommended changes ready · <strong className="text-emerald-600">${Math.round(totalRecoverable).toLocaleString()}/mo recoverable today</strong>
             </p>
           </div>
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-red-600 text-white">Act Now</span>
@@ -702,7 +705,7 @@ function InfrastructureContent() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">
                     {action.title}
-                    {action.savings != null && <span className="text-emerald-600 font-bold"> — save ${action.savings.toLocaleString()}/mo</span>}
+                    {action.savings != null && <span className="text-emerald-600 font-bold"> — save ${Math.round(action.savings).toLocaleString()}/mo</span>}
                   </p>
                   <p className="text-xs text-slate-500">{action.sub}</p>
                 </div>

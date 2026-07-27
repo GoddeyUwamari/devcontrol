@@ -223,7 +223,7 @@ export default function CostsPage() {
 
   const totalSavings   = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
   const displaySavings = totalSavings
-  const displayAnnual  = annualizeMonthly(displaySavings)
+  const displayAnnual  = Math.round(annualizeMonthly(displaySavings))
   const activeRecsCount = isDemoActive ? DEMO_TOP_SAVINGS.length : (recStats?.activeRecommendations ?? 0)
 
   const topSavingsRows: { id: string; title: string; savings: number; severity: RecommendationSeverity }[] = isDemoActive
