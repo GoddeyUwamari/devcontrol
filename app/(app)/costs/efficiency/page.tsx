@@ -15,9 +15,10 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
+import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { anomalyService } from '@/lib/services/anomaly.service'
-import type { InfrastructureResource } from '@/lib/types'
+import type { InfrastructureResource, PlatformDashboardStats } from '@/lib/types'
 import type { AnomalyDetection } from '@/types/anomaly.types'
 import Link from 'next/link'
 
@@ -291,6 +292,17 @@ export default function EfficiencyPage() {
     enabled: !isDemoActive,
   })
 
+  // Source A — same call costs/page.tsx and dashboard/page.tsx use for live spend.
+  // The Total Spend KPI card was previously summing infrastructure_resources (source B),
+  // disagreeing with the Spend breakdown chart below (already on source A via realCostTrend).
+  const { data: platformStats } = useQuery<PlatformDashboardStats>({
+    queryKey: ['platform-dashboard-stats'],
+    queryFn: platformStatsService.getDashboardStats,
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !isDemoActive,
+  })
+
   // Same endpoint app/(app)/dashboard/page.tsx uses for its cost trend chart —
   // real AWS Cost Explorer data, degrades to [] (not fabricated) when not connected.
   const { data: realCostTrend = [] } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
@@ -323,13 +335,19 @@ export default function EfficiencyPage() {
   })
 
   // ── Derived real data ──
+  // Source B — still used for cost-per-resource (no source-A equivalent exists for
+  // an average across discovered resources) and the scatter/wasteful/efficiency
+  // sections below, none of which this fix is scoped to touch.
   const realTotalSpend = resources.reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
   const realIdleCost   = resources.filter(r => r.status !== 'running').reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
   const realCostPerRes = resources.length > 0 ? realTotalSpend / resources.length : 0
   const realSavings    = savingsStats?.totalPotentialSavings ?? 0
+  // Source A — feeds the Total Spend KPI card so it agrees with the Spend breakdown
+  // chart, which already reads realCostTrend from the same live Cost Explorer endpoint.
+  const realTotalSpendLive = platformStats?.monthlyAwsCost ?? 0
 
   const kpis = isDemoActive ? DEMO_KPIS : {
-    totalSpend:      realTotalSpend,
+    totalSpend:      realTotalSpendLive,
     totalSpendDelta: 0,
     costPerResource: realCostPerRes,
     costPerDelta:    0,
