@@ -383,6 +383,12 @@ function InfrastructureContent() {
 
   const zeroRiskCount    = displayTopActions.filter(a => a.risk === 'zero').length
   const totalRecoverable = displayTopActions.reduce((sum, a) => sum + (a.savings ?? 0), 0)
+  // Count of cost recommendations for the "Apply Recommended Fixes" caption — deliberately
+  // not the "zero-risk" classification above. Only Idle EC2 stop / unattached-volume delete
+  // have a real rollback path (remediation.service.ts); RDS downgrade, EIP delete, and RI
+  // purchase recommendations don't, so labeling the whole batch "zero-risk" is the same
+  // fabrication already fixed on dashboard/costs — this caption drops the risk claim entirely.
+  const optimizationCount = displayTopActions.filter(a => a.savings != null).length
   const displayRecommendationsCount = isDemoActive ? 3 : recommendationsCount
   const formatSavings = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
   const potentialSavingsValue = isDemoActive
@@ -488,7 +494,7 @@ function InfrastructureContent() {
             </a>
             {(isDemoActive || totalRecoverable > 0) && (
               <p className="text-xs text-slate-500 text-right">
-                Applies {zeroRiskCount} zero-risk optimization{zeroRiskCount !== 1 ? 's' : ''} · No downtime · Est. savings: ${Math.round(totalRecoverable).toLocaleString()}/mo
+                Applies {optimizationCount} recommended optimization{optimizationCount !== 1 ? 's' : ''} · Est. savings: ${Math.round(totalRecoverable).toLocaleString()}/mo
               </p>
             )}
           </div>
