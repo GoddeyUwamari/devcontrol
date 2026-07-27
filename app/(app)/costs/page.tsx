@@ -252,10 +252,21 @@ export default function CostsPage() {
   const costAnomalyDetected = !isDemoActive && growthRate > 20
 
   const handleExportCSV = () => {
-    const rows = [
-      ['Date', 'Service', 'Cost'],
-      ...DEMO_SPEND_DATA.map(d => [d.date, 'Total', d.actual ?? d.forecast ?? 0]),
-    ]
+    // Real export uses costTrend (source A, already fetched for the Spend Trend chart
+    // above) — real per-day/per-category numbers, not DEMO_SPEND_DATA's fabricated ones.
+    const rows: (string | number)[][] = [['Date', 'Service', 'Cost']]
+    if (isDemoActive) {
+      rows.push(...DEMO_SPEND_DATA.map(d => [d.date, 'Total', d.actual ?? d.forecast ?? 0]))
+    } else {
+      for (const p of costTrend) {
+        rows.push([p.date, 'Compute (EC2, Lambda, ECS)', Math.round(p.compute)])
+        rows.push([p.date, 'Storage (S3, EBS)',          Math.round(p.storage)])
+        rows.push([p.date, 'Database (RDS, DynamoDB)',   Math.round(p.database)])
+        rows.push([p.date, 'Network (Data Transfer)',    Math.round(p.network)])
+        rows.push([p.date, 'Other Services',              Math.round(p.other)])
+        rows.push([p.date, 'Total',                       Math.round(p.total)])
+      }
+    }
     const csv = rows.map(r => r.join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
