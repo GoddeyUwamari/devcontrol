@@ -20,7 +20,6 @@ import { SystemIntelligenceService } from './system-intelligence.service';
 import { RiskTrackingService } from './risk-tracking.service';
 import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
-import awsCostService from './aws-cost.service';
 
 const EMPTY_FIELDS: StructuredDashboardSummary = {
   overallHealth: { score: null, context: null },
@@ -116,14 +115,18 @@ export class AISummaryService {
     costDeltaPct?: number | null
   ): Promise<StructuredDashboardSummary> {
     try {
-      const [intelligence, riskScore, activeFindings, costStats, criticalAnomalies, monthlyCost] = await Promise.all([
+      const [intelligence, riskScore, activeFindings, costStats, criticalAnomalies] = await Promise.all([
         this.systemIntelligenceService.getSystemIntelligence(organizationId),
         this.riskTrackingService.getCurrentRiskScore(organizationId),
         this.accountFindingsRepository.getActive(organizationId),
         this.costRecommendationsRepository.getStats(organizationId),
         this.getCriticalAnomalyCount(organizationId),
-        awsCostService.fetchMonthlyCosts(organizationId).catch(() => null),
       ]);
+
+      // Reuse the monthly spend system-intelligence already fetched (live Cost
+      // Explorer, falling back to the DB estimate) instead of independently
+      // re-calling Cost Explorer for the same org.
+      const monthlySpend = intelligence.components.cost.monthlySpend;
 
       // Highest-severity active finding — AccountSecurityFindingsRepository.getActive()
       // (unfiltered, no limit) already sorts the full result set by severity in JS, so
@@ -167,12 +170,12 @@ export class AISummaryService {
           : 'No critical outages are currently active.'
       );
 
-      if (monthlyCost != null) {
+      if (monthlySpend != null && monthlySpend > 0) {
         facts.push(
           costDeltaPct != null
-            ? `Current monthly cloud spend is $${Math.round(monthlyCost.total).toLocaleString()}, ` +
+            ? `Current monthly cloud spend is $${Math.round(monthlySpend).toLocaleString()}, ` +
               `${costDeltaPct > 0 ? 'up' : costDeltaPct < 0 ? 'down' : 'unchanged'} ${Math.abs(costDeltaPct)}% vs last month.`
-            : `Current monthly cloud spend is $${Math.round(monthlyCost.total).toLocaleString()}.`
+            : `Current monthly cloud spend is $${Math.round(monthlySpend).toLocaleString()}.`
         );
       }
 

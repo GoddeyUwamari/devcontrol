@@ -25,6 +25,11 @@ export interface ComponentScore {
   // for every error/fallback path so callers can
   // tell "bad score" apart from "no data yet"
   ready: boolean
+  // Raw monthly cloud spend in USD (live Cost Explorer, falling back to the
+  // DB cost estimate — see computeCostScore). Only populated on the cost
+  // component, so other callers (e.g. ai-summary.service.ts) can reuse this
+  // already-fetched figure instead of re-calling Cost Explorer themselves.
+  monthlySpend?: number
 }
 
 export interface SystemDriver {
@@ -221,6 +226,7 @@ export class SystemIntelligenceService {
           : score >= 55 ? 'warning'
           : 'risk',
         ready: costAnalysisRan,
+        monthlySpend,
       }
     } catch (err) {
       console.error(
