@@ -361,11 +361,14 @@ export default function RecommendationsPage() {
   }
 
   const formatCurrency = (amount: number) => {
+    // Defensive coercion — same fix as dashboard's $NaN bug (6d9bc3b), applied here
+    // even though costRecommendationsService already parseFloat()s potential_savings,
+    // so this stays safe if a future call site passes an unparsed value through.
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
-    }).format(amount)
+    }).format(Number(amount) || 0)
   }
 
   // ISSUE 1: use localDemoRecs (mutable state) for demo mode
