@@ -836,7 +836,13 @@ function InfrastructureContent() {
             const issueLabel  = statusLabel === 'Critical'
               ? '⚠ Reliability risk · elevated error rate · potential downtime'
               : statusLabel === 'Cost Waste'
-                ? `↑ Cost waste · $${Math.round((r.costPerMonth ?? 0) * 0.4).toLocaleString()}/mo recoverable · downsize candidate`
+                ? (isDemoActive
+                    ? `↑ Cost waste · $${Math.round((r.costPerMonth ?? 0) * 0.4).toLocaleString()}/mo recoverable · downsize candidate`
+                    // No per-resource cost_recommendations data is fetched on this page (only
+                    // aggregate stats via costRecommendationsService.getStats() above) — honest
+                    // label rather than a fabricated 40%-of-cost heuristic, matching the fix on
+                    // costs/efficiency (662e8ff).
+                    : '↑ Cost waste · downsize candidate')
                 : null
 
             return (
