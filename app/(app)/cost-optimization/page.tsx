@@ -9,6 +9,7 @@ import { costRecommendationsService } from '@/lib/services/cost-recommendations.
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+import { annualizeMonthly } from '@/lib/utils';
 
 const severityStyles: Record<RecommendationSeverity, string> = {
   HIGH: 'bg-red-50 text-red-700 border-red-200',
@@ -146,12 +147,12 @@ export default function CostOptimizationPage() {
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Monthly Savings</p>
                 <p className="text-2xl font-bold text-green-600">{formatSavings(totalSavings)}</p>
                 {totalSavings > 0 && (
-                  <p className="text-xs text-slate-500 mt-1">≈ ${Math.round(totalSavings * 12).toLocaleString()}/year</p>
+                  <p className="text-xs text-slate-500 mt-1">≈ ${Math.round(annualizeMonthly(totalSavings)).toLocaleString()}/year</p>
                 )}
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Annual Savings</p>
-                <p className="text-2xl font-bold text-green-600">{totalSavings > 0 ? `$${Math.round(totalSavings * 12).toLocaleString()}/yr` : '—'}</p>
+                <p className="text-2xl font-bold text-green-600">{totalSavings > 0 ? `$${Math.round(annualizeMonthly(totalSavings)).toLocaleString()}/yr` : '—'}</p>
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Opportunities</p>

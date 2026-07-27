@@ -19,6 +19,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
 import type { PlatformDashboardStats, CostRecommendation, RecommendationSeverity } from '@/lib/types'
+import { annualizeMonthly } from '@/lib/utils'
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -222,7 +223,7 @@ export default function CostsPage() {
 
   const totalSavings   = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
   const displaySavings = totalSavings
-  const displayAnnual  = displaySavings * 12
+  const displayAnnual  = annualizeMonthly(displaySavings)
   const activeRecsCount = isDemoActive ? DEMO_TOP_SAVINGS.length : (recStats?.activeRecommendations ?? 0)
 
   const topSavingsRows: { id: string; title: string; savings: number; severity: RecommendationSeverity }[] = isDemoActive

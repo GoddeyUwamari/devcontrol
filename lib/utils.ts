@@ -34,6 +34,11 @@ export function isDataStale(
   return 'fresh';
 }
 
+// Cost utilities
+export function annualizeMonthly(monthlyValue: number): number {
+  return monthlyValue * 12
+}
+
 export function formatFullTimestamp(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return d.toLocaleString('en-US', {
