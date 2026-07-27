@@ -381,7 +381,6 @@ function InfrastructureContent() {
         isTop: i === 0,
       }))
 
-  const zeroRiskCount    = displayTopActions.filter(a => a.risk === 'zero').length
   const totalRecoverable = displayTopActions.reduce((sum, a) => sum + (a.savings ?? 0), 0)
   // Count of cost recommendations for the "Apply Recommended Fixes" caption — deliberately
   // not the "zero-risk" classification above. Only Idle EC2 stop / unattached-volume delete
@@ -685,7 +684,7 @@ function InfrastructureContent() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-0.5">Top Actions</p>
             <p className="text-[13px] text-slate-500">
-              Ranked by impact · {zeroRiskCount} zero-risk changes ready · <strong className="text-emerald-600">${totalRecoverable.toLocaleString()}/mo recoverable today</strong>
+              Ranked by impact · {optimizationCount} recommended changes ready · <strong className="text-emerald-600">${totalRecoverable.toLocaleString()}/mo recoverable today</strong>
             </p>
           </div>
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-red-600 text-white">Act Now</span>
