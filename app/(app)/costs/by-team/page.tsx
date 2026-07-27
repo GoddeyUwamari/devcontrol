@@ -11,7 +11,9 @@ import { usePlan } from '@/lib/hooks/use-plan'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
+import { platformStatsService } from '@/lib/services/platform-stats.service'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
+import type { PlatformDashboardStats } from '@/lib/types'
 import Link from 'next/link'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
@@ -66,9 +68,23 @@ export default function CostsByTeamPage() {
   const isDemoActive = demoMode || salesDemo
   const [activeTab, setActiveTab] = useState<'team' | 'service' | 'resource'>('team')
 
+  // Source B — still backs the by-team/by-service/by-resource-type breakdowns below,
+  // which have no source-A equivalent (Cost Explorer has no concept of this app's
+  // internal teams/services tables). Kept for the table's own internal totals/percentages
+  // and the Teams Tracked / Top Spender cards, none of which this fix is scoped to touch.
   const { data: costsData, isLoading } = useQuery({
     queryKey: ['infrastructure-costs'],
     queryFn: infrastructureService.getCosts,
+    enabled: !isDemoActive,
+  })
+
+  // Source A — same call Dashboard/costs/efficiency use for live spend. Feeds only the
+  // Total Monthly Spend / Annual Projection KPI cards, so they agree with Dashboard.
+  const { data: platformStats, isLoading: statsLoading } = useQuery<PlatformDashboardStats>({
+    queryKey: ['platform-dashboard-stats'],
+    queryFn: platformStatsService.getDashboardStats,
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive,
   })
 
@@ -80,6 +96,7 @@ export default function CostsByTeamPage() {
 
   const data = isDemoActive ? DEMO_DATA : costsData?.data ?? null
   const totalCost = data?.total_monthly_cost ?? 0
+  const liveTotalCost = isDemoActive ? DEMO_DATA.total_monthly_cost : (platformStats?.monthlyAwsCost ?? 0)
   const isAwsConnected = isDemoActive || (awsAccounts?.length ?? 0) > 0
 
   // ── Free gate ──
@@ -156,11 +173,11 @@ export default function CostsByTeamPage() {
       {/* ── KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Total Monthly Spend', value: `$${(totalCost).toLocaleString()}`,    icon: DollarSign, color: '#7C3AED' },
-          { label: 'Annual Projection',   value: `$${(totalCost * 12).toLocaleString()}`, icon: TrendingUp, color: '#4f8ef7' },
-          { label: 'Teams Tracked',       value: String(data?.by_team?.length ?? 0),     icon: Users,      color: '#38c9a0' },
-          { label: 'Top Spender',         value: topItem ? topItem.name.split(' ')[0] : 'N/A', icon: DollarSign, color: '#e05d2e' },
-        ].map(({ label, value, icon: Icon, color }) => (
+          { label: 'Total Monthly Spend', value: `$${(liveTotalCost).toLocaleString()}`,    icon: DollarSign, color: '#7C3AED', loading: statsLoading },
+          { label: 'Annual Projection',   value: `$${(liveTotalCost * 12).toLocaleString()}`, icon: TrendingUp, color: '#4f8ef7', loading: statsLoading },
+          { label: 'Teams Tracked',       value: String(data?.by_team?.length ?? 0),     icon: Users,      color: '#38c9a0', loading: isLoading },
+          { label: 'Top Spender',         value: topItem ? topItem.name.split(' ')[0] : 'N/A', icon: DollarSign, color: '#e05d2e', loading: isLoading },
+        ].map(({ label, value, icon: Icon, color, loading }) => (
           <div key={label} className="bg-white border border-gray-100 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: color + '15' }}>
@@ -168,7 +185,7 @@ export default function CostsByTeamPage() {
               </div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</p>
             </div>
-            <p className="text-2xl font-bold text-slate-900">{isLoading && !isDemoActive ? '—' : value}</p>
+            <p className="text-2xl font-bold text-slate-900">{loading && !isDemoActive ? '—' : value}</p>
           </div>
         ))}
       </div>
