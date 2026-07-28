@@ -6,6 +6,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { Sparkles, DollarSign, Zap, Target, Clock, Lock } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -68,31 +69,34 @@ export function WelcomeModal() {
     <Dialog open={open} onOpenChange={setOpen}>
        <DialogContent className="w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pt-4">
-  <DialogTitle className="text-lg sm:text-2xl">Let's find your AWS cost waste 👋</DialogTitle>
+  <DialogTitle className="text-lg sm:text-2xl flex items-center gap-2">
+    <Sparkles className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600 shrink-0" />
+    Let's find your AWS cost waste
+  </DialogTitle>
 </DialogHeader>
 
         <div className="space-y-4 py-4">
           <p className="text-gray-600 dark:text-gray-400">
-            Most AWS environments have <strong>$500–$2,000/month in recoverable waste</strong>. DevControl finds it automatically — idle resources, oversized instances, security gaps — and tells you exactly what to fix first.
+            Most AWS environments have <strong>measurable cost-saving opportunities</strong>. DevControl finds them automatically — idle resources, oversized instances, security gaps — and tells you exactly what to fix first.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-4">
             <div className="text-center">
-              <div className="text-3xl mb-2" aria-hidden="true">💸</div>
+              <DollarSign className="h-8 w-8 mx-auto mb-2 text-green-600" aria-hidden="true" />
               <h4 className="font-semibold text-sm mb-1">Find Cost Waste</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 See exactly where AWS money is being wasted — idle resources, oversized instances, unused storage
               </p>
             </div>
             <div className="text-center">
-              <div className="text-3xl mb-2" aria-hidden="true">⚡</div>
+              <Zap className="h-8 w-8 mx-auto mb-2 text-amber-500" aria-hidden="true" />
               <h4 className="font-semibold text-sm mb-1">Detect Risks Early</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 Catch security gaps, cost spikes, and reliability issues before they become incidents
               </p>
             </div>
             <div className="text-center">
-              <div className="text-3xl mb-2" aria-hidden="true">🎯</div>
+              <Target className="h-8 w-8 mx-auto mb-2 text-purple-600" aria-hidden="true" />
               <h4 className="font-semibold text-sm mb-1">Act on Intelligence</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 Ranked recommendations with one-click fixes — not raw data dumps
@@ -107,7 +111,11 @@ export function WelcomeModal() {
               <li><strong>Run a scan</strong> — DevControl finds cost waste and risks automatically</li>
               <li><strong>See your savings</strong> — ranked list of fixes with estimated impact</li>
             </ol>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">⏱ Takes ~5 minutes · 🔒 Read-only · No infrastructure changes</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 flex items-center gap-3">
+              <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden="true" /> Takes ~5 minutes</span>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3" aria-hidden="true" /> Read-only · No infrastructure changes</span>
+            </p>
           </div>
         </div>
 
