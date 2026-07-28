@@ -445,12 +445,13 @@ export class OnboardingService {
   }
 
   private async getAwsCredentialsWithClient(client: PoolClient | typeof pool, organizationId: string): Promise<any> {
+    // Checks the real, currently-used connection record (aws_accounts, populated
+    // by POST /api/aws/accounts) rather than the legacy organizations.aws_credentials_encrypted
+    // column, which the modern multi-account/role-assumption connect flow never writes to —
+    // querying it left hasAwsConnected permanently false for every real-world connected org.
     const result = await client.query(
-      `SELECT aws_credentials_encrypted
-       FROM organizations
-       WHERE id = $1
-         AND aws_credentials_encrypted IS NOT NULL
-         AND aws_credentials_encrypted != ''
+      `SELECT 1 FROM aws_accounts
+       WHERE org_id = $1 AND status = 'active'
        LIMIT 1`,
       [organizationId]
     );
