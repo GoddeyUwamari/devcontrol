@@ -17,12 +17,18 @@ import { useOnboarding } from '@/lib/stores/onboarding-store';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 
 export function WelcomeModal() {
-  const { currentStage, completedStages, completeStep, dismiss } = useOnboarding();
+  const { status, currentStage, completedStages, completeStep, dismiss } = useOnboarding();
   const [open, setOpen] = useState(false);
   const isDemoActive = useDemoMode();
 
   useEffect(() => {
     if (isDemoActive) return;
+    // status is null until fetchStatus() (kicked off in app/(app)/layout.tsx) resolves —
+    // currentStage/completedStages fall back to 'welcome'/[] until then. Without this
+    // guard, the effect below fires on those stale defaults before the real (possibly
+    // already-completed) status arrives, and nothing closes the modal back down once
+    // it does — it can only ever open, never un-open itself on a later state update.
+    if (!status) return;
     // Auto-open on welcome stage only when AWS is not yet connected
     if (currentStage === 'welcome' && !completedStages.includes('connect_aws')) {
       // Small delay for better UX
@@ -37,7 +43,7 @@ export function WelcomeModal() {
 
       return () => clearTimeout(timer);
     }
-  }, [currentStage, completedStages, isDemoActive]);
+  }, [status, currentStage, completedStages, isDemoActive]);
 
   const handleGetStarted = async () => {
     // Track analytics
