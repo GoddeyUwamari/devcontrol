@@ -353,7 +353,9 @@ export class OnboardingService {
       discover_resources: {
         action: 'trigger_aws_discovery',
         cta: 'Discover Resources',
-        route: '/aws-resources',
+        // /aws-resources is the public marketing pitch page (no auth, no data).
+        // /infrastructure is the real authenticated resource inventory view.
+        route: '/infrastructure',
       },
     };
 
