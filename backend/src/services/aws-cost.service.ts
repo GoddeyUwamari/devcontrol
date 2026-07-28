@@ -127,10 +127,22 @@ class AWSCostService {
   private monthlyCostCache: Map<string, MonthlyCostCacheEntry> = new Map()
   private static readonly MONTHLY_COST_CACHE_TTL = 4 * 60 * 60 * 1000
 
+  // In-flight promise per org, keyed the same as monthlyCostCache. Several independent
+  // call sites (stats.controller, infrastructure.controller, aws.routes, system-intelligence)
+  // share this singleton and can all miss the cache within the same window — e.g. on
+  // dashboard mount or right after the 4h TTL expires. Without this, every concurrent miss
+  // fires its own STS AssumeRole + GetCostAndUsageCommand (a cache stampede) even though
+  // they're all asking for the exact same result. Callers that arrive while a fetch is
+  // already in flight await that same promise instead of starting a new one.
+  private monthlyCostInFlight: Map<string, Promise<MonthlyCost>> = new Map()
+
   // Per-org+range cache for fetchCostTrend — same rationale as monthlyCostCache above:
   // Cost Explorer is billed per API call, and this was being called uncached on every
   // dashboard load and time-range tab switch. TTL matches MONTHLY_COST_CACHE_TTL.
   private costTrendCache: Map<string, CostTrendCacheEntry> = new Map()
+
+  // In-flight promise per org+range, same stampede rationale as monthlyCostInFlight.
+  private costTrendInFlight: Map<string, Promise<CostTrendPoint[]>> = new Map()
 
   constructor(private dbPool?: Pool) {
     this.enabled = this.checkAWSCredentials()
@@ -218,10 +230,22 @@ class AWSCostService {
         return cached.data
       }
 
-      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
-      const result = await orgService.fetchMonthlyCosts()
-      this.monthlyCostCache.set(organizationId, { data: result, timestamp: Date.now() })
-      return result
+      const inFlight = this.monthlyCostInFlight.get(organizationId)
+      if (inFlight) {
+        return inFlight
+      }
+
+      const fetchPromise = (async () => {
+        const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
+        const result = await orgService.fetchMonthlyCosts()
+        this.monthlyCostCache.set(organizationId, { data: result, timestamp: Date.now() })
+        return result
+      })().finally(() => {
+        this.monthlyCostInFlight.delete(organizationId)
+      })
+
+      this.monthlyCostInFlight.set(organizationId, fetchPromise)
+      return fetchPromise
     }
 
     if (!this.enabled) {
@@ -318,10 +342,22 @@ class AWSCostService {
         return cached.data
       }
 
-      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
-      const result = await orgService.fetchCostTrend(undefined, range)
-      this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
-      return result
+      const inFlight = this.costTrendInFlight.get(cacheKey)
+      if (inFlight) {
+        return inFlight
+      }
+
+      const fetchPromise = (async () => {
+        const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
+        const result = await orgService.fetchCostTrend(undefined, range)
+        this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
+        return result
+      })().finally(() => {
+        this.costTrendInFlight.delete(cacheKey)
+      })
+
+      this.costTrendInFlight.set(cacheKey, fetchPromise)
+      return fetchPromise
     }
 
     if (!this.enabled) {
