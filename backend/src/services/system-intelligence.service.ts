@@ -154,60 +154,56 @@ export class SystemIntelligenceService {
         monthlySpend = parseFloat(estimateResult.rows[0]?.total ?? '0')
       }
 
-      // Scoring model:
-      // Base: 70 (having scan data
-      //   is a positive signal)
-      // Penalty: unresolved savings
-      //   as % of spend (max -20)
-      // Penalty: cost anomalies
-      //   (max -10)
-      // No penalty for finding waste —
-      //   finding it is the product working
+      // Scoring model — continuous weighted-coverage-ratio, same shape as
+      // Security's riskScoring.ts and Observability's computeReadinessScore:
+      // every term is a real ratio scaled to 0–100, combined with fixed
+      // weights. No base value with bolted-on flat bonuses/penalties.
+      const hasSpendData = monthlySpend > 0
 
-      const wasteVsSpend =
-        monthlySpend > 0
-          ? Math.min(
-              totalSavings / monthlySpend,
-              1
-            )
+      // Cost efficiency ratio: what fraction of the dollars under
+      // consideration (spend + identified waste) are NOT flagged as waste.
+      // Same shape as Security's (1 - bad/total)*100 sub-scores. Unlike the
+      // old wasteVsSpend/20 formula, this is never capped at a ratio of 1 —
+      // waste at 1x spend (ratio=0.5 → 50) and waste at 50x spend
+      // (ratio≈0.02 → 2) land in meaningfully different places instead of
+      // both hitting the same ceiling.
+      const costEfficiencyRatio =
+        hasSpendData
+          ? (monthlySpend / (monthlySpend + totalSavings)) * 100
           : 0
 
-      // Waste penalty: 0–20 pts
-      // e.g. spend $585, waste $2039 →
-      // ratio > 1 → capped at 1 → -20
-      // but $500 waste on $5000 spend →
-      // 0.1 ratio → only -2 pts
-      const wastePenalty =
-        Math.round(wasteVsSpend * 20)
+      // Anomaly score: deduct-from-100 with a floor, same shape as
+      // Security's complianceScore (100 - weighted finding counts). Floors
+      // naturally at 5+ active cost anomalies instead of an arbitrary early
+      // cap like the old min(anomalyCount*5, 10).
+      const anomalyScore =
+        Math.max(0, 100 - anomalyCount * 20)
 
-      // Anomaly penalty: -5 per anomaly
-      // capped at -10
-      const anomalyPenalty =
-        Math.min(anomalyCount * 5, 10)
-
-      // Bonus: having completed scans
-      // shows active monitoring (+5)
-      const scanBonus =
-        costAnalysisRan ? 5 : 0
-
-      const raw =
-        70 -
-        wastePenalty +
-        scanBonus -
-        anomalyPenalty
-
-      const score = Math.round(
-        Math.max(20, Math.min(100, raw))
-      )
+      // No spend data at all means the efficiency ratio above is
+      // meaningless (nothing to divide by) — fall back to a fixed neutral
+      // score so it doesn't read as a false "clean" result. The detail
+      // string below is forced to match this branch so score and text
+      // never contradict each other.
+      const score =
+        hasSpendData
+          ? Math.round(
+              costEfficiencyRatio * 0.75 +
+              anomalyScore * 0.25
+            )
+          : 50
 
       const detail =
-        totalSavings > 0
-          ? `$${Math.round(
-              totalSavings
-            ).toLocaleString()}/mo savings identified · ${totalOpps} opportunities`
-          : costAnalysisRan
-            ? 'Last scan found no savings opportunities'
+        !hasSpendData
+          ? costAnalysisRan
+            ? 'Spend data unavailable — cost efficiency cannot be assessed'
             : 'No cost scan run yet'
+          : totalSavings > 0
+            ? `$${Math.round(
+                totalSavings
+              ).toLocaleString()}/mo savings identified · ${totalOpps} opportunities`
+            : costAnalysisRan
+              ? 'Last scan found no savings opportunities'
+              : 'No cost scan run yet'
 
       const severity =
         score >= 80 ? 'healthy'
