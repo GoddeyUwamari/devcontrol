@@ -344,7 +344,11 @@ export class OnboardingService {
       connect_aws: {
         action: 'navigate_to_aws_settings',
         cta: 'Connect AWS Account',
-        route: '/settings/organization?tab=aws',
+        // Real, working connect flow (Role ARN + trust policy -> aws_accounts) —
+        // /settings/organization?tab=aws is the legacy access-key form that writes
+        // to the dead organizations.aws_credentials_encrypted column and can never
+        // satisfy this stage. Matches developers/page.tsx's own Connect AWS step.
+        route: '/connect-aws',
       },
       discover_resources: {
         action: 'trigger_aws_discovery',
