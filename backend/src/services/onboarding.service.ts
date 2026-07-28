@@ -53,6 +53,7 @@ interface DataStatus {
   hasServices: boolean;
   hasDeployments: boolean;
   hasAwsConnected: boolean;
+  hasResourcesDiscovered: boolean;
   servicesCount: number;
   deploymentsCount: number;
 }
@@ -137,16 +138,18 @@ export class OnboardingService {
    * Compute completion status from real data using a specific client
    */
   private async computeFromDataWithClient(client: PoolClient | typeof pool, organizationId: string): Promise<DataStatus> {
-    const [servicesCount, deploymentsCount, awsCredentials] = await Promise.all([
+    const [servicesCount, deploymentsCount, awsCredentials, resourcesDiscovered] = await Promise.all([
       this.getServicesCountWithClient(client, organizationId),
       this.getDeploymentsCountWithClient(client, organizationId),
       this.getAwsCredentialsWithClient(client, organizationId),
+      this.getResourcesDiscoveredWithClient(client, organizationId),
     ]);
 
     return {
       hasServices: servicesCount > 0,
       hasDeployments: deploymentsCount > 0,
       hasAwsConnected: !!awsCredentials,
+      hasResourcesDiscovered: !!resourcesDiscovered,
       servicesCount,
       deploymentsCount,
     };
@@ -181,6 +184,11 @@ export class OnboardingService {
 
     if (dataStatus.hasAwsConnected && !progress.aws_connected_at) {
       setters.push(`aws_connected_at = $${paramIndex++}`);
+      values.push(new Date());
+    }
+
+    if (dataStatus.hasResourcesDiscovered && !progress.resources_discovered_at) {
+      setters.push(`resources_discovered_at = $${paramIndex++}`);
       values.push(new Date());
     }
 
@@ -229,7 +237,7 @@ export class OnboardingService {
     if (!dataStatus.hasServices) return 'create_service';
     if (!dataStatus.hasDeployments) return 'log_deployment';
     if (!dataStatus.hasAwsConnected) return 'connect_aws';
-    if (!progress.resources_discovered_at) return 'discover_resources';
+    if (!dataStatus.hasResourcesDiscovered) return 'discover_resources';
     return 'completed';
   }
 
@@ -242,7 +250,7 @@ export class OnboardingService {
     if (dataStatus.hasServices) stages.push('create_service');
     if (dataStatus.hasDeployments) stages.push('log_deployment');
     if (dataStatus.hasAwsConnected) stages.push('connect_aws');
-    if (progress.resources_discovered_at) stages.push('discover_resources');
+    if (dataStatus.hasResourcesDiscovered) stages.push('discover_resources');
     return stages;
   }
 
@@ -458,6 +466,21 @@ export class OnboardingService {
     const result = await client.query(
       `SELECT 1 FROM aws_accounts
        WHERE org_id = $1 AND status = 'active'
+       LIMIT 1`,
+      [organizationId]
+    );
+    return result.rows[0];
+  }
+
+  private async getResourcesDiscoveredWithClient(client: PoolClient | typeof pool, organizationId: string): Promise<any> {
+    // Data-driven signal for "discover_resources", same shape as getAwsCredentialsWithClient
+    // above — checks the resource_discovery_jobs row awsResourceDiscovery.ts already writes
+    // at the end of every scan (status set to 'completed' or 'failed'), rather than depending
+    // on an onboarding event that no live code path ever emits (resources_discovered_at was
+    // otherwise only ever set by that dead event listener, so this stage could never complete).
+    const result = await client.query(
+      `SELECT 1 FROM resource_discovery_jobs
+       WHERE organization_id = $1 AND status = 'completed'
        LIMIT 1`,
       [organizationId]
     );
