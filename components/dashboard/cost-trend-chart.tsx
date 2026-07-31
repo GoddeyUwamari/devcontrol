@@ -388,20 +388,25 @@ export function CostTrendChart({
           )}
         </ResponsiveContainer>
 
-        {/* Legend with Toggle — below the chart */}
-        <div className="flex items-center justify-center gap-1 sm:gap-4 mt-4 flex-wrap">
+        {/* Legend with Toggle — below the chart. Wraps to multiple lines below
+            the md breakpoint (narrow/mobile, where 8 entries can't reasonably
+            fit on one line); forced to a single line at md and up, with
+            tighter gaps/padding than the old sm: tier so it actually fits
+            the chart card's real width once the dashboard grid narrows it
+            to 3/5 columns at lg — not just wide open-viewport widths. */}
+        <div className="flex items-center justify-center gap-1 md:gap-2 mt-4 flex-wrap md:flex-nowrap">
           {series.map((s) => (
             <button
               key={s.key}
               onClick={() => toggleSeries(s.key)}
-              className={`flex items-center gap-1.5 sm:gap-2 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
+              className={`flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-all ${
                 hiddenSeries.has(s.key)
                   ? 'opacity-40 hover:opacity-60'
                   : 'hover:bg-gray-100'
               }`}
             >
               <div
-                className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-[2px]"
+                className="w-2.5 h-2.5 rounded-[2px] shrink-0"
                 style={{ backgroundColor: s.color }}
               />
               <span>{s.name}</span>
