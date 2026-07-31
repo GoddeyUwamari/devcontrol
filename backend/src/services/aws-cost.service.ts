@@ -70,9 +70,180 @@ export interface CostTrendPoint {
   // Optional so cached entries written before this field existed, or points from a
   // rolling deploy still running the old shape, degrade gracefully instead of breaking.
   byService?: { service: string; amount: number }[]
+  // Optional: chart-ready view of byService — display names normalized, capped at
+  // the top TOP_SERVICE_COUNT services (by total spend across the whole range) plus
+  // an "Other" bucket, each with a stable color. Same optionality rationale as byService.
+  byServiceDisplay?: { service: string; amount: number; color: string }[]
 }
 
 type CostCategory = 'compute' | 'storage' | 'database' | 'network' | 'other'
+
+// How many individual services the trend chart shows before folding the rest into
+// "Other". 7 named services + 1 gray "Other" bucket = 8 segments, matching the
+// categorical palette's validated 8-hue cap for stacked/adjacent charts (see the
+// dataviz skill's palette.md — worst adjacent CVD ΔE 9.1 light / 8.4 dark for exactly
+// 8 slots; a 9th slot has no safe hue to assign, hence folding to "Other" instead).
+const TOP_SERVICE_COUNT = 7
+
+// Fixed 8-hue categorical order (dataviz skill's validated default palette, light-mode
+// hex). Order is the CVD-safety mechanism, not cosmetic — do not reorder or cycle it.
+const CATEGORICAL_PALETTE = [
+  '#2a78d6', // 1 blue
+  '#eb6834', // 2 orange
+  '#1baf7a', // 3 aqua
+  '#eda100', // 4 yellow
+  '#e87ba4', // 5 magenta
+  '#008300', // 6 green
+  '#4a3aa7', // 7 violet
+  '#e34948', // 8 red
+] as const
+
+// "Other" is a residual bucket, not a service identity, so it gets a neutral gray
+// instead of spending one of the 8 categorical hues — matches the existing
+// 'Other Services' color already used for the category breakdown on the frontend.
+const OTHER_SERVICE_COLOR = '#94A3B8'
+
+/**
+ * AWS Cost Explorer SERVICE dimension values, mapped to short display names for the
+ * per-service chart. Exact-match on the raw Cost Explorer string; anything not listed
+ * falls back to normalizeServiceName's cleanup below rather than failing.
+ */
+const SERVICE_DISPLAY_NAMES: Record<string, string> = {
+  'Amazon Elastic Compute Cloud - Compute': 'EC2',
+  'EC2 - Other': 'EC2 (Other)',
+  'Amazon Simple Storage Service': 'S3',
+  'Amazon Relational Database Service': 'RDS',
+  'Amazon DynamoDB': 'DynamoDB',
+  'AWS Lambda': 'Lambda',
+  'Amazon Virtual Private Cloud': 'VPC',
+  'AWS Data Transfer': 'Data Transfer',
+  'Amazon CloudFront': 'CloudFront',
+  'Amazon Elastic Load Balancing': 'Load Balancer',
+  'Amazon Elastic Block Store': 'EBS',
+  'Amazon Elastic File System': 'EFS',
+  'AWS Cost Explorer': 'Cost Explorer',
+  'Amazon Simple Notification Service': 'SNS',
+  'Amazon Simple Queue Service': 'SQS',
+  'Amazon Elastic Container Service': 'ECS',
+  'Amazon Elastic Container Registry': 'ECR',
+  'Amazon Elastic Kubernetes Service': 'EKS',
+  'Amazon Route 53': 'Route 53',
+  'Amazon ElastiCache': 'ElastiCache',
+  'Amazon Redshift': 'Redshift',
+  'Amazon Neptune': 'Neptune',
+  'Amazon DocumentDB (with MongoDB compatibility)': 'DocumentDB',
+  'AWS Glue': 'Glue',
+  'AWS Key Management Service': 'KMS',
+  'AWS Secrets Manager': 'Secrets Manager',
+  'Amazon CloudWatch': 'CloudWatch',
+  'AWS CloudTrail': 'CloudTrail',
+  'Amazon API Gateway': 'API Gateway',
+  'AWS Backup': 'Backup',
+  'AWS Direct Connect': 'Direct Connect',
+  'AWS Certificate Manager': 'ACM',
+  'AWS Step Functions': 'Step Functions',
+  'Amazon Simple Email Service': 'SES',
+  'Amazon Kinesis': 'Kinesis',
+  'AWS WAF': 'WAF',
+  'Amazon Cognito': 'Cognito',
+  'AWS Elastic Beanstalk': 'Elastic Beanstalk',
+  'Savings Plans for AWS Compute usage': 'Savings Plans',
+}
+
+// Hand-assigned, guaranteed-distinct hues for the 8 services most likely to co-occur
+// in the same account's top spend (EC2 + EC2 (Other) in particular show up together
+// almost always; Data Transfer + VPC are both network-related and commonly co-occur
+// too, hence each gets its own slot rather than sharing one). Keyed by display name
+// so color follows entity identity, never rank. CloudFront deliberately omitted here —
+// with all 8 slots spoken for by this set, it falls through to the deterministic hash
+// below like any other less-common service.
+const SERVICE_COLOR_OVERRIDES: Record<string, string> = {
+  'EC2': CATEGORICAL_PALETTE[0],
+  'EC2 (Other)': CATEGORICAL_PALETTE[1],
+  'S3': CATEGORICAL_PALETTE[2],
+  'Lambda': CATEGORICAL_PALETTE[3],
+  'RDS': CATEGORICAL_PALETTE[4],
+  'VPC': CATEGORICAL_PALETTE[5],
+  'DynamoDB': CATEGORICAL_PALETTE[6],
+  'Data Transfer': CATEGORICAL_PALETTE[7],
+}
+
+/**
+ * Map a raw Cost Explorer SERVICE name to a short display name. Falls back to
+ * stripping the "Amazon "/"AWS " prefix and truncating, so an unmapped service still
+ * renders reasonably instead of showing the full Cost Explorer string.
+ */
+function normalizeServiceName(rawName: string): string {
+  const mapped = SERVICE_DISPLAY_NAMES[rawName]
+  if (mapped) return mapped
+
+  const cleaned = rawName.replace(/^(Amazon|AWS)\s+/, '').trim()
+  if (!cleaned) return 'Unknown'
+  return cleaned.length > 28 ? `${cleaned.slice(0, 27)}…` : cleaned
+}
+
+/**
+ * Deterministic string hash into the categorical palette, for services with no
+ * explicit color override. Same input always yields the same slot — no randomness —
+ * so a service's color never changes between fetches even without a hand-picked hue.
+ */
+function hashToColorSlot(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) | 0
+  }
+  return CATEGORICAL_PALETTE[Math.abs(hash) % CATEGORICAL_PALETTE.length]
+}
+
+function getServiceColor(displayName: string): string {
+  return SERVICE_COLOR_OVERRIDES[displayName] ?? hashToColorSlot(displayName)
+}
+
+/**
+ * Mutates each point in place, adding byServiceDisplay: the top TOP_SERVICE_COUNT
+ * services by total spend across the whole range (so chart segment membership is
+ * stable across dates, not recomputed per-day), normalized to display names with
+ * stable colors, plus an "Other" bucket for everything outside the top set.
+ */
+function attachServiceDisplayBreakdown(points: CostTrendPoint[]): void {
+  const totalsByDisplayName = new Map<string, number>()
+  for (const point of points) {
+    for (const { service, amount } of point.byService || []) {
+      const name = normalizeServiceName(service)
+      totalsByDisplayName.set(name, (totalsByDisplayName.get(name) || 0) + amount)
+    }
+  }
+
+  const topServices = [...totalsByDisplayName.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TOP_SERVICE_COUNT)
+    .map(([name]) => name)
+  const topServiceSet = new Set(topServices)
+  const hasOther = topServiceSet.size < totalsByDisplayName.size
+
+  for (const point of points) {
+    const amountsByDisplayName = new Map<string, number>()
+    for (const { service, amount } of point.byService || []) {
+      const name = normalizeServiceName(service)
+      amountsByDisplayName.set(name, (amountsByDisplayName.get(name) || 0) + amount)
+    }
+
+    const breakdown = topServices.map((name) => ({
+      service: name,
+      amount: Math.max(0, amountsByDisplayName.get(name) || 0),
+      color: getServiceColor(name),
+    }))
+
+    if (hasOther) {
+      const otherAmount = [...amountsByDisplayName.entries()]
+        .filter(([name]) => !topServiceSet.has(name))
+        .reduce((sum, [, amount]) => sum + amount, 0)
+      breakdown.push({ service: 'Other', amount: Math.max(0, otherAmount), color: OTHER_SERVICE_COLOR })
+    }
+
+    point.byServiceDisplay = breakdown
+  }
+}
 
 /**
  * AWS Cost Explorer SERVICE dimension values vary in exact wording across
@@ -335,7 +506,9 @@ class AWSCostService {
   /**
    * Fetch a cost time-series broken down by category (compute/storage/database/network/other)
    * for the given range, from AWS Cost Explorer. Each point also carries the raw
-   * per-service breakdown (byService) that the category buckets were derived from.
+   * per-service breakdown (byService) that the category buckets were derived from, and
+   * a chart-ready byServiceDisplay: the top TOP_SERVICE_COUNT services (by total spend
+   * across the range) with normalized names and stable colors, plus an "Other" bucket.
    * If organizationId is supplied, assumes the org's IAM role via STS before calling
    * Cost Explorer; otherwise falls back to platform-level env-var credentials.
    */
@@ -424,6 +597,8 @@ class AWSCostService {
         byService,
       }
     })
+
+    attachServiceDisplayBreakdown(points)
 
     return points
   }
