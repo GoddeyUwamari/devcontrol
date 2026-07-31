@@ -135,7 +135,7 @@ const SERVICE_DISPLAY_NAMES: Record<string, string> = {
   'AWS Glue': 'Glue',
   'AWS Key Management Service': 'KMS',
   'AWS Secrets Manager': 'Secrets Manager',
-  'Amazon CloudWatch': 'CloudWatch',
+  'AmazonCloudWatch': 'CloudWatch',
   'AWS CloudTrail': 'CloudTrail',
   'Amazon API Gateway': 'API Gateway',
   'AWS Backup': 'Backup',
@@ -170,14 +170,18 @@ const SERVICE_COLOR_OVERRIDES: Record<string, string> = {
 
 /**
  * Map a raw Cost Explorer SERVICE name to a short display name. Falls back to
- * stripping the "Amazon "/"AWS " prefix and truncating, so an unmapped service still
+ * stripping the "Amazon"/"AWS" prefix and truncating, so an unmapped service still
  * renders reasonably instead of showing the full Cost Explorer string.
+ *
+ * Cost Explorer's SERVICE names are inconsistent about the space after the
+ * "Amazon"/"AWS" prefix — e.g. "AmazonCloudWatch" has none, while "AWS Glue" does —
+ * so both the exact-match table above and this fallback have to tolerate either.
  */
 function normalizeServiceName(rawName: string): string {
   const mapped = SERVICE_DISPLAY_NAMES[rawName]
   if (mapped) return mapped
 
-  const cleaned = rawName.replace(/^(Amazon|AWS)\s+/, '').trim()
+  const cleaned = rawName.replace(/^(Amazon|AWS)\s*/, '').trim()
   if (!cleaned) return 'Unknown'
   return cleaned.length > 28 ? `${cleaned.slice(0, 27)}…` : cleaned
 }
@@ -195,8 +199,37 @@ function hashToColorSlot(name: string): string {
   return CATEGORICAL_PALETTE[Math.abs(hash) % CATEGORICAL_PALETTE.length]
 }
 
-function getServiceColor(displayName: string): string {
-  return SERVICE_COLOR_OVERRIDES[displayName] ?? hashToColorSlot(displayName)
+/**
+ * Assign a color to each of the (at most TOP_SERVICE_COUNT) named services in a
+ * single response, guaranteeing no two of them share a hex. A per-name hash alone
+ * can't promise that — two unrelated services can hash to the same slot and, unlike
+ * the wider space of ~40 mapped services, everything here is guaranteed to appear
+ * together in the same chart. So: lock in hand-assigned overrides first, then walk
+ * the fixed palette order and hand each remaining service the first hue not already
+ * taken *within this set* (falling back to the hash only if all 8 hues are somehow
+ * already spoken for, which TOP_SERVICE_COUNT's cap of 7 prevents in practice).
+ */
+function assignServiceColors(orderedDisplayNames: string[]): Map<string, string> {
+  const colorByName = new Map<string, string>()
+  const usedSlots = new Set<string>()
+
+  for (const name of orderedDisplayNames) {
+    const override = SERVICE_COLOR_OVERRIDES[name]
+    if (override) {
+      colorByName.set(name, override)
+      usedSlots.add(override)
+    }
+  }
+
+  for (const name of orderedDisplayNames) {
+    if (colorByName.has(name)) continue
+    const freeSlot = CATEGORICAL_PALETTE.find((hex) => !usedSlots.has(hex))
+    const color = freeSlot ?? hashToColorSlot(name)
+    colorByName.set(name, color)
+    usedSlots.add(color)
+  }
+
+  return colorByName
 }
 
 /**
@@ -220,6 +253,7 @@ function attachServiceDisplayBreakdown(points: CostTrendPoint[]): void {
     .map(([name]) => name)
   const topServiceSet = new Set(topServices)
   const hasOther = topServiceSet.size < totalsByDisplayName.size
+  const colorByName = assignServiceColors(topServices)
 
   for (const point of points) {
     const amountsByDisplayName = new Map<string, number>()
@@ -231,7 +265,7 @@ function attachServiceDisplayBreakdown(points: CostTrendPoint[]): void {
     const breakdown = topServices.map((name) => ({
       service: name,
       amount: Math.max(0, amountsByDisplayName.get(name) || 0),
-      color: getServiceColor(name),
+      color: colorByName.get(name)!,
     }))
 
     if (hasOther) {

@@ -8,6 +8,8 @@ import { Download } from 'lucide-react';
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -18,6 +20,12 @@ import {
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
 
+interface CostServiceAmount {
+  service: string;
+  amount: number;
+  color: string;
+}
+
 interface CostDataPoint {
   date: string;
   compute: number;
@@ -27,6 +35,11 @@ interface CostDataPoint {
   other: number;
   total: number;
   forecast?: boolean;
+  // Top-N-by-spend services + "Other", with normalized names and stable colors
+  // (see backend aws-cost.service.ts attachServiceDisplayBreakdown). Optional so
+  // cached/rolling-deploy responses written before this field existed still render
+  // via the category fallback below instead of breaking.
+  byServiceDisplay?: CostServiceAmount[];
 }
 
 interface CostTrendChartProps {
@@ -142,13 +155,53 @@ export function CostTrendChart({
     { value: '1yr', label: '1 Year' },
   ];
 
-  const series = [
+  const categorySeries = [
     { key: 'compute', name: 'Compute', color: '#3b82f6' },
     { key: 'storage', name: 'Storage', color: '#10b981' },
     { key: 'database', name: 'Database', color: '#8b5cf6' },
     { key: 'network', name: 'Network', color: '#f59e0b' },
     { key: 'other', name: 'Other', color: '#6b7280' },
   ];
+
+  // Per-service breakdown (byServiceDisplay) takes priority when present; falls back
+  // to the fixed 5-category view for cache entries / rolling-deploy responses written
+  // before that field existed.
+  const hasServiceBreakdown = data.some((d) => d.byServiceDisplay && d.byServiceDisplay.length > 0);
+
+  // Stable service order + color, built from first-seen order across all points —
+  // the backend already guarantees a consistent top-N+Other set across the whole
+  // range, so this just preserves that order rather than re-deriving it.
+  const serviceSeries: { key: string; name: string; color: string }[] = [];
+  if (hasServiceBreakdown) {
+    const seen = new Set<string>();
+    for (const point of data) {
+      for (const item of point.byServiceDisplay || []) {
+        if (!seen.has(item.service)) {
+          seen.add(item.service);
+          serviceSeries.push({ key: item.service, name: item.service, color: item.color });
+        }
+      }
+    }
+  }
+
+  const series = hasServiceBreakdown ? serviceSeries : categorySeries;
+
+  // Recharts needs flat { date, [seriesKey]: amount } rows; byServiceDisplay arrives
+  // as a per-point array, so reshape it into that flat form for the stacked bar chart.
+  const chartData = hasServiceBreakdown
+    ? data.map((point) => {
+        const row: Record<string, string | number | boolean | undefined> = {
+          date: point.date,
+          forecast: point.forecast,
+          total: point.total,
+        };
+        for (const s of serviceSeries) row[s.key] = 0;
+        for (const item of point.byServiceDisplay || []) {
+          row[item.service] = item.amount;
+        }
+        return row;
+      })
+    : data;
 
   // A "spike" must be both proportionally large (1.5x the average day) AND a
   // meaningful dollar amount above average — otherwise cent-level noise on a
@@ -164,7 +217,11 @@ export function CostTrendChart({
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
           <div>
             <CardTitle>AWS Cost Trends</CardTitle>
-            <CardDescription>Daily cost breakdown by service category over time</CardDescription>
+            <CardDescription>
+              {hasServiceBreakdown
+                ? 'Daily cost breakdown by service over time'
+                : 'Daily cost breakdown by service category over time'}
+            </CardDescription>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
             {/* Date Range Selector */}
@@ -224,55 +281,97 @@ export function CostTrendChart({
 
         {/* Chart */}
         <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <defs>
-              {series.map((s) => (
-                <linearGradient key={s.key} id={`gradient-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={s.color} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={s.color} stopOpacity={0.05} />
-                </linearGradient>
-              ))}
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis
-              dataKey="date"
-              tickFormatter={formatDate}
-              stroke="#9ca3af"
-              style={{ fontSize: '12px' }}
-            />
-            <YAxis
-              domain={[0, 'auto']}
-              tickFormatter={formatCurrency}
-              stroke="#9ca3af"
-              style={{ fontSize: '12px' }}
-            />
-            <Tooltip content={<CustomTooltip />} />
-
-            {/* Forecast separator line */}
-            {data.some(d => d.forecast) && (
-              <ReferenceLine
-                x={data.find(d => d.forecast)?.date}
+          {hasServiceBreakdown ? (
+            <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDate}
                 stroke="#9ca3af"
-                strokeDasharray="5 5"
-                label={{ value: 'Forecast', position: 'top', fill: '#6b7280', fontSize: 12 }}
+                style={{ fontSize: '12px' }}
               />
-            )}
+              <YAxis
+                domain={[0, 'auto']}
+                tickFormatter={formatCurrency}
+                stroke="#9ca3af"
+                style={{ fontSize: '12px' }}
+              />
+              <Tooltip content={<CustomTooltip />} />
 
-            {series.map((s) => (
-              <Area
-                key={s.key}
-                type="monotone"
-                dataKey={s.key}
-                stackId="1"
-                stroke={s.color}
-                fill={`url(#gradient-${s.key})`}
-                fillOpacity={1}
-                strokeWidth={2}
-                hide={hiddenSeries.has(s.key)}
-                strokeDasharray={data.some(d => d.forecast) ? "5 5" : undefined}
+              {/* Forecast separator line */}
+              {data.some(d => d.forecast) && (
+                <ReferenceLine
+                  x={data.find(d => d.forecast)?.date}
+                  stroke="#9ca3af"
+                  strokeDasharray="5 5"
+                  label={{ value: 'Forecast', position: 'top', fill: '#6b7280', fontSize: 12 }}
+                />
+              )}
+
+              {serviceSeries.map((s) => (
+                <Bar
+                  key={s.key}
+                  dataKey={s.key}
+                  name={s.name}
+                  stackId="services"
+                  fill={s.color}
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                  hide={hiddenSeries.has(s.key)}
+                />
+              ))}
+            </BarChart>
+          ) : (
+            <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              <defs>
+                {series.map((s) => (
+                  <linearGradient key={s.key} id={`gradient-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={s.color} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={s.color} stopOpacity={0.05} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDate}
+                stroke="#9ca3af"
+                style={{ fontSize: '12px' }}
               />
-            ))}
-          </AreaChart>
+              <YAxis
+                domain={[0, 'auto']}
+                tickFormatter={formatCurrency}
+                stroke="#9ca3af"
+                style={{ fontSize: '12px' }}
+              />
+              <Tooltip content={<CustomTooltip />} />
+
+              {/* Forecast separator line */}
+              {data.some(d => d.forecast) && (
+                <ReferenceLine
+                  x={data.find(d => d.forecast)?.date}
+                  stroke="#9ca3af"
+                  strokeDasharray="5 5"
+                  label={{ value: 'Forecast', position: 'top', fill: '#6b7280', fontSize: 12 }}
+                />
+              )}
+
+              {series.map((s) => (
+                <Area
+                  key={s.key}
+                  type="monotone"
+                  dataKey={s.key}
+                  stackId="1"
+                  stroke={s.color}
+                  fill={`url(#gradient-${s.key})`}
+                  fillOpacity={1}
+                  strokeWidth={2}
+                  hide={hiddenSeries.has(s.key)}
+                  strokeDasharray={data.some(d => d.forecast) ? "5 5" : undefined}
+                />
+              ))}
+            </AreaChart>
+          )}
         </ResponsiveContainer>
 
         {/* Anomaly Indicators */}
