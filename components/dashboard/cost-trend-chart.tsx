@@ -112,7 +112,7 @@ export function CostTrendChart({
                 <div key={entry.name} className="flex items-center justify-between gap-4 text-sm">
                   <div className="flex items-center gap-2">
                     <div
-                      className="w-3 h-3 rounded-sm"
+                      className="w-3 h-3 rounded-[2px]"
                       style={{ backgroundColor: entry.color }}
                     />
                     <span className="capitalize text-gray-600">{entry.name}:</span>
@@ -199,9 +199,45 @@ export function CostTrendChart({
         for (const item of point.byServiceDisplay || []) {
           row[item.service] = item.amount;
         }
+        // Topmost visible, non-zero series for this day — the only segment that
+        // gets rounded top corners, so the stack reads as one column with a
+        // rounded cap rather than every segment having its own pill shape.
+        for (let i = serviceSeries.length - 1; i >= 0; i--) {
+          const s = serviceSeries[i];
+          if (!hiddenSeries.has(s.key) && Number(row[s.key]) > 0) {
+            row.__topKey = s.key;
+            break;
+          }
+        }
         return row;
       })
     : data;
+
+  // Custom Bar shape: square on every side except the top-left/top-right corners
+  // of the topmost non-zero segment in each stack, and no stroke — so stacked
+  // segments touch with no gap/seam between them, matching a single rounded column.
+  const StackedBarSegment = (props: any) => {
+    const { x, y, width, height, fill, payload, dataKey } = props;
+    if (!(height > 0) || !(width > 0)) {
+      // Recharts' shape prop requires a ReactElement, not null, even for a
+      // zero-amount day — render nothing visible instead of skipping output.
+      return <rect x={x} y={y} width={0} height={0} fill="none" />;
+    }
+
+    if (payload.__topKey !== dataKey) {
+      return <rect x={x} y={y} width={width} height={height} fill={fill} />;
+    }
+
+    const r = Math.min(3, height, width / 2);
+    const path = `M ${x},${y + r}
+      Q ${x},${y} ${x + r},${y}
+      L ${x + width - r},${y}
+      Q ${x + width},${y} ${x + width},${y + r}
+      L ${x + width},${y + height}
+      L ${x},${y + height}
+      Z`;
+    return <path d={path} fill={fill} />;
+  };
 
   // A "spike" must be both proportionally large (1.5x the average day) AND a
   // meaningful dollar amount above average — otherwise cent-level noise on a
@@ -258,27 +294,6 @@ export function CostTrendChart({
         </div>
       </CardHeader>
       <CardContent>
-        {/* Legend with Toggle */}
-        <div className="flex items-center justify-center gap-1 sm:gap-4 mb-4 flex-wrap">
-          {series.map((s) => (
-            <button
-              key={s.key}
-              onClick={() => toggleSeries(s.key)}
-              className={`flex items-center gap-1.5 sm:gap-2 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
-                hiddenSeries.has(s.key)
-                  ? 'opacity-40 hover:opacity-60'
-                  : 'hover:bg-gray-100'
-              }`}
-            >
-              <div
-                className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm"
-                style={{ backgroundColor: s.color }}
-              />
-              <span>{s.name}</span>
-            </button>
-          ))}
-        </div>
-
         {/* Chart */}
         <ResponsiveContainer width="100%" height={300}>
           {hasServiceBreakdown ? (
@@ -315,8 +330,7 @@ export function CostTrendChart({
                   name={s.name}
                   stackId="services"
                   fill={s.color}
-                  stroke="#ffffff"
-                  strokeWidth={2}
+                  shape={StackedBarSegment}
                   hide={hiddenSeries.has(s.key)}
                 />
               ))}
@@ -373,6 +387,27 @@ export function CostTrendChart({
             </AreaChart>
           )}
         </ResponsiveContainer>
+
+        {/* Legend with Toggle — below the chart */}
+        <div className="flex items-center justify-center gap-1 sm:gap-4 mt-4 flex-wrap">
+          {series.map((s) => (
+            <button
+              key={s.key}
+              onClick={() => toggleSeries(s.key)}
+              className={`flex items-center gap-1.5 sm:gap-2 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
+                hiddenSeries.has(s.key)
+                  ? 'opacity-40 hover:opacity-60'
+                  : 'hover:bg-gray-100'
+              }`}
+            >
+              <div
+                className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-[2px]"
+                style={{ backgroundColor: s.color }}
+              />
+              <span>{s.name}</span>
+            </button>
+          ))}
+        </div>
 
         {/* Anomaly Indicators */}
         {hasSpike && (
