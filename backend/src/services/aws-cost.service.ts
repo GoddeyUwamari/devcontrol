@@ -66,6 +66,10 @@ export interface CostTrendPoint {
   network: number
   other: number
   total: number
+  // Optional: raw per-service breakdown alongside the fixed category buckets above.
+  // Optional so cached entries written before this field existed, or points from a
+  // rolling deploy still running the old shape, degrade gracefully instead of breaking.
+  byService?: { service: string; amount: number }[]
 }
 
 type CostCategory = 'compute' | 'storage' | 'database' | 'network' | 'other'
@@ -330,7 +334,8 @@ class AWSCostService {
 
   /**
    * Fetch a cost time-series broken down by category (compute/storage/database/network/other)
-   * for the given range, from AWS Cost Explorer.
+   * for the given range, from AWS Cost Explorer. Each point also carries the raw
+   * per-service breakdown (byService) that the category buckets were derived from.
    * If organizationId is supplied, assumes the org's IAM role via STS before calling
    * Cost Explorer; otherwise falls back to platform-level env-var credentials.
    */
@@ -388,12 +393,14 @@ class AWSCostService {
         network: 0,
         other: 0,
       }
+      const byService: { service: string; amount: number }[] = []
 
       for (const group of result.Groups || []) {
         const serviceName = group.Keys?.[0] || ''
         const amount = parseFloat(group.Metrics?.UnblendedCost?.Amount || '0')
         const category = categorizeAwsService(serviceName)
         raw[category] += amount
+        byService.push({ service: serviceName || 'Unknown', amount })
       }
 
       // Floor each category at 0 — credits/refunds can make a category net-negative
@@ -414,6 +421,7 @@ class AWSCostService {
         network,
         other,
         total: compute + storage + database + network + other,
+        byService,
       }
     })
 
