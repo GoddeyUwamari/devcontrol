@@ -113,6 +113,16 @@ export class OrganizationController {
 
       const organization = await organizationService.getOrganizationBySlug(slug);
 
+      // Slug -> org isn't known until after the lookup, so ownership can't be
+      // checked via route middleware the way :id routes do — verify here instead.
+      if (!req.user || organization.id !== req.user.organizationId) {
+        res.status(404).json({
+          success: false,
+          error: 'Organization not found',
+        });
+        return;
+      }
+
       res.status(200).json({
         success: true,
         data: organization,
