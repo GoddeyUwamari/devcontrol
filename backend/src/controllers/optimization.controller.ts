@@ -112,6 +112,14 @@ export class OptimizationController {
    */
   updateStatus = async (req: Request, res: Response) => {
     try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        return res.status(401).json({
+          success: false,
+          error: 'Unauthorized',
+        });
+      }
+
       const { id } = req.params;
       const { status } = req.body;
 
@@ -124,7 +132,14 @@ export class OptimizationController {
 
       const appliedAt = status === 'applied' ? new Date() : undefined;
 
-      await this.repository.updateStatus(id, status, appliedAt);
+      const updated = await this.repository.updateStatus(id, organizationId, status, appliedAt);
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          error: 'Recommendation not found',
+        });
+      }
 
       res.json({
         success: true,

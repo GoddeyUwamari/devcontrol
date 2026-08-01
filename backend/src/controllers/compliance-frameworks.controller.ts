@@ -301,10 +301,16 @@ export class ComplianceFrameworksController {
    */
   async updateRule(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { ruleId } = req.params;
       const data = updateRuleSchema.parse(req.body);
 
-      const rule = await this.repository.updateRule(ruleId, data);
+      const rule = await this.repository.updateRule(ruleId, organizationId, data);
 
       if (!rule) {
         res.status(404).json({
@@ -342,9 +348,15 @@ export class ComplianceFrameworksController {
    */
   async deleteRule(req: Request, res: Response): Promise<void> {
     try {
+      const organizationId = req.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { ruleId } = req.params;
 
-      const deleted = await this.repository.deleteRule(ruleId);
+      const deleted = await this.repository.deleteRule(ruleId, organizationId);
 
       if (!deleted) {
         res.status(404).json({

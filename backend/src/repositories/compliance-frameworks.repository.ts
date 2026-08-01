@@ -229,12 +229,15 @@ export class ComplianceFrameworksRepository {
     return result.rows;
   }
 
-  async findRuleById(id: string): Promise<ComplianceFrameworkRule | null> {
+  // compliance_framework_rules has no organization_id of its own — ownership
+  // is only knowable by joining through the framework it belongs to.
+  async findRuleById(id: string, organizationId: string): Promise<ComplianceFrameworkRule | null> {
     const query = `
-      SELECT * FROM compliance_framework_rules
-      WHERE id = $1
+      SELECT r.* FROM compliance_framework_rules r
+      JOIN compliance_frameworks f ON r.framework_id = f.id
+      WHERE r.id = $1 AND f.organization_id = $2
     `;
-    const result = await this.pool.query(query, [id]);
+    const result = await this.pool.query(query, [id, organizationId]);
     return result.rows[0] || null;
   }
 
@@ -268,6 +271,7 @@ export class ComplianceFrameworksRepository {
 
   async updateRule(
     id: string,
+    organizationId: string,
     updates: Partial<CreateRuleData>
   ): Promise<ComplianceFrameworkRule | null> {
     const fields: string[] = [];
@@ -308,28 +312,35 @@ export class ComplianceFrameworksRepository {
     }
 
     if (fields.length === 0) {
-      return this.findRuleById(id);
+      return this.findRuleById(id, organizationId);
     }
 
+    values.push(id);
+    const idParam = paramIndex;
+    paramIndex++;
+    values.push(organizationId);
+    const orgParam = paramIndex;
+
     const query = `
-      UPDATE compliance_framework_rules
+      UPDATE compliance_framework_rules r
       SET ${fields.join(', ')}
-      WHERE id = $${paramIndex}
-      RETURNING *
+      FROM compliance_frameworks f
+      WHERE r.id = $${idParam} AND r.framework_id = f.id AND f.organization_id = $${orgParam}
+      RETURNING r.*
     `;
 
-    values.push(id);
     const result = await this.pool.query(query, values);
     return result.rows[0] || null;
   }
 
-  async deleteRule(id: string): Promise<boolean> {
+  async deleteRule(id: string, organizationId: string): Promise<boolean> {
     const query = `
-      DELETE FROM compliance_framework_rules
-      WHERE id = $1
-      RETURNING id
+      DELETE FROM compliance_framework_rules r
+      USING compliance_frameworks f
+      WHERE r.id = $1 AND r.framework_id = f.id AND f.organization_id = $2
+      RETURNING r.id
     `;
-    const result = await this.pool.query(query, [id]);
+    const result = await this.pool.query(query, [id, organizationId]);
     return (result.rowCount ?? 0) > 0;
   }
 

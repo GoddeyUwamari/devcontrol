@@ -155,15 +155,16 @@ export class OptimizationRepository {
   /**
    * Update recommendation status
    */
-  async updateStatus(id: string, status: string, appliedAt?: Date): Promise<void> {
+  async updateStatus(id: string, organizationId: string, status: string, appliedAt?: Date): Promise<boolean> {
     const query = `
       UPDATE cost_optimizations
       SET status = $1, applied_at = $2, updated_at = NOW()
-      WHERE id = $3
+      WHERE id = $3 AND organization_id = $4
     `;
 
-    await this.pool.query(query, [status, appliedAt, id]);
+    const result = await this.pool.query(query, [status, appliedAt, id, organizationId]);
     console.log(`[Optimization Repo] Updated status for ${id} to ${status}`);
+    return (result.rowCount ?? 0) > 0;
   }
 
   /**
