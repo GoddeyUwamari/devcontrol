@@ -427,7 +427,7 @@ export default function DashboardPage() {
     return (
       <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
-          <p className="text-xs text-[var(--text-secondary)] font-medium">Recent activity</p>
+          <p className="text-sm font-semibold text-foreground">Recent activity</p>
         </div>
         {activityFeedLoading ? (
           <div className="flex flex-col gap-3 py-2">
@@ -1096,7 +1096,7 @@ export default function DashboardPage() {
 
             {/* Security Score Drivers */}
             <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
-              <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Security score drivers</p>
+              <p className="text-sm font-semibold text-foreground mb-4">Security score drivers</p>
               <div className="text-center py-3 border-b border-border mb-3.5">
                 {(securityScore === null || securityScore === 0) && !isDemoActive ? (
                   <div className="text-base font-semibold text-foreground leading-none">Scanning...</div>
@@ -1141,7 +1141,7 @@ export default function DashboardPage() {
               <div className={`flex items-start justify-between ${isDemoActive ? 'mb-6' : 'mb-2 justify-end'}`}>
                 {isDemoActive && (
                   <div>
-                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-1">AWS cost trends</p>
+                    <p className="text-sm font-semibold text-foreground mb-1">AWS cost trends</p>
                     <p className="text-sm font-semibold text-foreground">Infrastructure cost over time</p>
                   </div>
                 )}
@@ -1177,7 +1177,7 @@ export default function DashboardPage() {
 
             {/* Security Score Drivers — 2fr */}
             <div className="lg:col-span-2 bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-              <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Security score drivers</p>
+              <p className="text-sm font-semibold text-foreground mb-4">Security score drivers</p>
               {displayIntelligence?.top_drivers?.length > 0 && (
                 <div className="flex flex-col gap-2 mb-4">
                   {displayIntelligence.top_drivers.map((driver: any, i: number) => (
@@ -1240,7 +1240,7 @@ export default function DashboardPage() {
       {/* ── COST-SAVING OPPORTUNITIES ── */}
       {isAwsConnected && !isBillingSyncing && !hasServicesOnly && (isDemoActive || hasBillingData) && (
         <div className="mb-8">
-          <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Cost-saving opportunities</p>
+          <p className="text-sm font-semibold text-foreground mb-4">Cost-saving opportunities</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
               { title: 'Idle EC2', description: 'Instances with sustained low utilization', count: idleEC2Count },
@@ -1272,7 +1272,7 @@ export default function DashboardPage() {
         <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border mb-8">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
             <div>
-              <p className="text-xs text-[var(--text-secondary)] font-medium mb-1">Executive ROI summary</p>
+              <p className="text-sm font-semibold text-foreground mb-1">Executive ROI summary</p>
               <p className="text-lg font-semibold text-foreground">
                 {isDemoActive || wasteAmount > 0 ? (
                   <>
@@ -1336,7 +1336,7 @@ export default function DashboardPage() {
             <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">Engineering health</p>
+                  <p className="text-sm font-semibold text-foreground mb-1.5">Engineering health</p>
                   <span className="text-xl font-semibold text-foreground">{isDemoActive ? 'Elite' : '—'}</span>
                 </div>
                 <a href="/app/dora-metrics" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Full report <i className="ti ti-arrow-right text-[12px]" /></a>
@@ -1389,7 +1389,7 @@ export default function DashboardPage() {
             <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">Engineering health</p>
+                  <p className="text-sm font-semibold text-foreground mb-1.5">Engineering health</p>
                   <div className="flex items-center gap-2">
                     <span className="text-xl font-semibold text-foreground">{isDemoActive ? 'Elite' : '—'}</span>
                     {isDemoActive && <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ background: 'var(--bg-success)', color: 'var(--text-success)' }}>Top 10%</span>}
