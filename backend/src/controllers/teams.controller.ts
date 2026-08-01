@@ -7,7 +7,8 @@ const repository = new TeamsRepository();
 export class TeamsController {
   async getAll(req: Request, res: Response): Promise<void> {
     try {
-      const teams = await repository.findAll();
+      const organizationId = (req as any).user?.organizationId;
+      const teams = await repository.findAll(organizationId);
 
       const response: ApiResponse = {
         success: true,
@@ -28,7 +29,8 @@ export class TeamsController {
   async getById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const team = await repository.findById(id);
+      const organizationId = (req as any).user?.organizationId;
+      const team = await repository.findById(id, organizationId);
 
       if (!team) {
         const response: ApiResponse = {
@@ -69,7 +71,8 @@ export class TeamsController {
         return;
       }
 
-      const team = await repository.create(teamData);
+      const organizationId = (req as any).user?.organizationId;
+      const team = await repository.create(teamData, organizationId);
 
       const response: ApiResponse = {
         success: true,
@@ -91,9 +94,10 @@ export class TeamsController {
   async getTeamServices(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const organizationId = (req as any).user?.organizationId;
 
-      // First check if team exists
-      const team = await repository.findById(id);
+      // First check if team exists (and belongs to the caller's org)
+      const team = await repository.findById(id, organizationId);
       if (!team) {
         const response: ApiResponse = {
           success: false,
@@ -124,7 +128,8 @@ export class TeamsController {
   async delete(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const deleted = await repository.delete(id);
+      const organizationId = (req as any).user?.organizationId;
+      const deleted = await repository.delete(id, organizationId);
 
       if (!deleted) {
         const response: ApiResponse = {

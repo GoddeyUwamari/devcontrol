@@ -6,6 +6,7 @@ export interface Team {
   name: string;
   owner: string;
   description?: string;
+  organization_id: string;
   created_at: Date;
   updated_at: Date;
 }

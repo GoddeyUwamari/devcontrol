@@ -1,10 +1,16 @@
 import { Router } from 'express'
 import { pool } from '../config/database'
 import crypto from 'crypto'
+import { authenticateToken } from '../middleware/auth.middleware'
 
 const router = Router()
 
+router.use(authenticateToken)
+
 // GET /api/keys — list all active keys (never return the hash)
+// NOTE: api_keys has no organization_id column, so this still returns every
+// org's keys to any authenticated caller. Requires a schema change to fix
+// properly — tracked separately, not addressed by this auth-only pass.
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(

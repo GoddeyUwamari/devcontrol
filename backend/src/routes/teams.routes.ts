@@ -1,8 +1,11 @@
 import { Router } from 'express';
+import { authenticateToken } from '../middleware/auth.middleware';
 import { TeamsController } from '../controllers/teams.controller';
 
 const router = Router();
 const controller = new TeamsController();
+
+router.use(authenticateToken);
 
 router.get('/', (req, res) => controller.getAll(req, res));
 router.get('/:id', (req, res) => controller.getById(req, res));
