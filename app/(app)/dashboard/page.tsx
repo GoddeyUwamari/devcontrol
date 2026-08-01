@@ -719,7 +719,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
               {/* Monthly spend */}
               <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Monthly spend</p>
+                <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Last month's spend</p>
                 <div className="text-base font-medium text-foreground leading-none mb-1">Syncing...</div>
                 <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">Full data in 24–48h</div>
                 {wasteAmount > 0 && (
@@ -805,7 +805,7 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                   {/* Monthly spend */}
                   <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Monthly spend</p>
+                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Last month's spend</p>
                     {(statsLoading && !demoMode) || (currentSpend === 0 && !demoMode) ? (
                       <>
                         <div className="text-base font-medium text-foreground leading-none mb-1">Syncing...</div>
@@ -935,7 +935,7 @@ export default function DashboardPage() {
             ) : isAwsConnected && (isBillingSyncing || hasServicesOnly) ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border border-l-[3px]" style={{ borderLeftColor: 'var(--border-accent)' }}>
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Monthly spend</p>
+                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Last month's spend</p>
                   <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Calculating...</div>
                   <p className="text-xs text-[var(--text-secondary)]">Available once billing syncs</p>
                 </div>

@@ -428,7 +428,10 @@ class AWSCostService {
   }
 
   /**
-   * Fetch monthly costs from AWS Cost Explorer.
+   * Fetch the most recently *completed* calendar month's costs from AWS Cost Explorer
+   * (e.g. on any day in August, this returns all of July). Deliberately not
+   * current-month-to-date — Cost Explorer's usage data lags 24-48h, so early in a new
+   * month a to-date query would read as a false cost drop even though nothing dropped.
    * If organizationId is supplied, assumes the org's IAM role via STS before calling
    * Cost Explorer; otherwise falls back to platform-level env-var credentials.
    */
@@ -470,14 +473,20 @@ class AWSCostService {
     }
 
     try {
+      // Most recently *completed* calendar month, not current-month-to-date: on day 1-2
+      // of a new month, Cost Explorer's current-month bucket is nearly empty (usage data
+      // lags 24-48h) which made this KPI crater to near-zero right when the prior month's
+      // real total was still the meaningful number. TimePeriod.End is exclusive in Cost
+      // Explorer, so start-of-this-month as End correctly includes all of last month's
+      // days — matching how CLI cost queries for "last month" are conventionally scoped.
       const now = new Date()
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
       const command = new GetCostAndUsageCommand({
         TimePeriod: {
-          Start: startOfMonth.toISOString().split('T')[0],
-          End: endOfMonth.toISOString().split('T')[0],
+          Start: startOfLastMonth.toISOString().split('T')[0],
+          End: startOfThisMonth.toISOString().split('T')[0],
         },
         Granularity: Granularity.MONTHLY,
         Metrics: [Metric.UNBLENDED_COST],
@@ -503,8 +512,8 @@ class AWSCostService {
         total,
         byService,
         period: {
-          start: startOfMonth.toISOString().split('T')[0],
-          end: endOfMonth.toISOString().split('T')[0],
+          start: startOfLastMonth.toISOString().split('T')[0],
+          end: startOfThisMonth.toISOString().split('T')[0],
         },
       }
     } catch (error) {

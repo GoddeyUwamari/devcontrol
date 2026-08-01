@@ -323,7 +323,7 @@ export default function CostsPage() {
       href: '/cost-optimization', borderTop: 'border-t-[3px] border-t-green-500', valueColor: 'text-green-600',
     },
     {
-      key: 'mtd', label: 'Month-to-Date Spend',
+      key: 'mtd', label: "Last Month's Spend",
       value: (!isDemoActive && statsLoading) ? '—' : `$${mtdSpend.toLocaleString()}`,
       sub: isDemoActive || stats?.costSource === 'actual' ? 'Live from AWS Cost Explorer' : 'Estimated · Cost Explorer unavailable',
       subColor: 'text-slate-500', TrendIcon: Minus, trendColor: 'text-slate-400',
