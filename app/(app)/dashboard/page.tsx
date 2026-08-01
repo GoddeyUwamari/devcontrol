@@ -1136,11 +1136,16 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
             {/* AWS Cost Trends — 3fr */}
             <div className="lg:col-span-3 bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-              <div className="flex items-start justify-between mb-6">
-                <div>
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-1">AWS cost trends</p>
-                  <p className="text-sm font-semibold text-foreground">Infrastructure cost over time</p>
-                </div>
+              {/* CostBreakdownBarList (demo) has no title of its own, so it still needs
+                  this label; CostTrendChart (live) and the syncing placeholder below
+                  both render their own heading, so the label would just duplicate it. */}
+              <div className={`flex items-start justify-between ${isDemoActive ? 'mb-6' : 'mb-2 justify-end'}`}>
+                {isDemoActive && (
+                  <div>
+                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-1">AWS cost trends</p>
+                    <p className="text-sm font-semibold text-foreground">Infrastructure cost over time</p>
+                  </div>
+                )}
                 <a href="/costs" className="text-[var(--text-secondary)]"><i className="ti ti-dots text-[16px]" /></a>
               </div>
               {isDemoActive ? (
