@@ -1,16 +1,22 @@
 import { Router } from 'express'
 import { pool } from '../config/database'
 import crypto from 'crypto'
+import { authenticateToken } from '../middleware/auth.middleware'
 
 const router = Router()
 
-// GET /api/webhooks — list all webhook endpoints
+router.use(authenticateToken)
+
+// GET /api/webhooks — list the caller's org's webhook endpoints
 router.get('/', async (req, res) => {
+  const organizationId = (req as any).user?.organizationId
   try {
     const result = await pool.query(
       `SELECT id, url, events, status, created_at, last_triggered_at
        FROM webhook_endpoints
-       ORDER BY created_at DESC`
+       WHERE organization_id = $1
+       ORDER BY created_at DESC`,
+      [organizationId]
     )
     return res.json({ success: true, data: result.rows })
   } catch (err: any) {
@@ -19,8 +25,9 @@ router.get('/', async (req, res) => {
   }
 })
 
-// POST /api/webhooks — register a new endpoint
+// POST /api/webhooks — register a new endpoint scoped to the caller's org
 router.post('/', async (req, res) => {
+  const organizationId = (req as any).user?.organizationId
   const { url, events } = req.body
   if (!url?.trim() || !url.startsWith('https://')) {
     return res.status(400).json({ success: false, message: 'A valid HTTPS URL is required' })
@@ -31,10 +38,10 @@ router.post('/', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `INSERT INTO webhook_endpoints (url, events, status, secret)
-       VALUES ($1, $2, 'active', $3)
+      `INSERT INTO webhook_endpoints (url, events, status, secret, organization_id)
+       VALUES ($1, $2, 'active', $3, $4)
        RETURNING id, url, events, status, created_at, last_triggered_at`,
-      [url.trim(), endpointEvents, secret]
+      [url.trim(), endpointEvents, secret, organizationId]
     )
     return res.status(201).json({
       success: true,
@@ -47,13 +54,14 @@ router.post('/', async (req, res) => {
   }
 })
 
-// DELETE /api/webhooks/:id — delete an endpoint
+// DELETE /api/webhooks/:id — delete an endpoint belonging to the caller's org
 router.delete('/:id', async (req, res) => {
   const { id } = req.params
+  const organizationId = (req as any).user?.organizationId
   try {
     const result = await pool.query(
-      `DELETE FROM webhook_endpoints WHERE id = $1 RETURNING id`,
-      [id]
+      `DELETE FROM webhook_endpoints WHERE id = $1 AND organization_id = $2 RETURNING id`,
+      [id, organizationId]
     )
     if (result.rowCount === 0) {
       return res.status(404).json({ success: false, message: 'Webhook endpoint not found' })
