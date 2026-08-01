@@ -7,7 +7,12 @@ import { authenticateToken } from '../middleware/auth.middleware'
 const router = Router()
 const controller = new PrometheusController()
 
-// Prometheus proxy endpoints
+router.use(authenticateToken)
+
+// Prometheus proxy endpoints — one shared Prometheus instance for the whole
+// platform (PROMETHEUS_URL), not per-org, so there's no organization_id to
+// scope these by; authenticateToken just requires a logged-in user, matching
+// /diagnose and /snapshot below.
 router.get('/query', controller.query.bind(controller))
 router.get('/query_range', controller.queryRange.bind(controller))
 router.get('/targets', controller.targets.bind(controller))
@@ -17,7 +22,7 @@ router.get('/config', controller.config.bind(controller))
 // POST /api/prometheus/diagnose
 // Runs a full connectivity diagnostic against the configured Prometheus endpoint
 const diagnosticService = new MonitoringDiagnosticService()
-router.post('/diagnose', authenticateToken, async (req, res) => {
+router.post('/diagnose', async (req, res) => {
   try {
     const result = await diagnosticService.diagnose()
     res.json({ success: true, data: result })
@@ -30,7 +35,7 @@ router.post('/diagnose', authenticateToken, async (req, res) => {
 // GET /api/prometheus/snapshot
 // Returns the most recent cached monitoring snapshot for the org
 const snapshotService = new MonitoringSnapshotService()
-router.get('/snapshot', authenticateToken, async (req, res) => {
+router.get('/snapshot', async (req, res) => {
   try {
     const organizationId = (req as any).user?.organizationId
     if (!organizationId) {
@@ -49,7 +54,7 @@ router.get('/snapshot', authenticateToken, async (req, res) => {
 
 // POST /api/prometheus/snapshot
 // Saves a new monitoring snapshot for the org
-router.post('/snapshot', authenticateToken, async (req, res) => {
+router.post('/snapshot', async (req, res) => {
   try {
     const organizationId = (req as any).user?.organizationId
     if (!organizationId) {

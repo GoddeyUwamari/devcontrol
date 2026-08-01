@@ -744,11 +744,11 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
    * Fetch alert data
    */
   private async fetchAlertData(
-    _organizationId: string,
+    organizationId: string,
     dateRange: { from: string; to: string }
   ) {
     const periodDays = this.calculateDaysBetween(dateRange.from, dateRange.to);
-    const alertFilters = { dateRange: `${periodDays}d` as '7d' | '30d' | '90d' };
+    const alertFilters = { dateRange: `${periodDays}d` as '7d' | '30d' | '90d', organizationId };
 
     const alertStats = await this.alertHistoryRepo.getStats(alertFilters);
 

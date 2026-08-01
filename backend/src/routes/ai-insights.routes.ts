@@ -15,15 +15,7 @@ const router = Router();
 const aiInsightsService = new AIInsightsService(pool);
 const aiInsightsController = new AIInsightsController(aiInsightsService);
 
-// Optional authentication for Phase 1 testing - works with or without token
-// TODO: Re-enable strict authentication before production
-router.use((req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader) {
-    return authenticate(req, res, next);
-  }
-  next();
-});
+router.use(authenticate);
 
 // POST /api/ai-insights/analyze-cost
 // Analyze cost changes and get AI-powered recommendations
@@ -38,20 +30,21 @@ router.get('/cache-stats', aiInsightsController.getCacheStats);
 router.post('/clear-cache', aiInsightsController.clearCache);
 
 // POST /api/ai-insights/trigger-weekly-summary
-// Manually trigger weekly summary email (for testing)
+// Manually trigger weekly summary email for the caller's own org (for testing)
 router.post('/trigger-weekly-summary', async (req, res) => {
   try {
     const { WeeklyAISummaryJob } = await import('../jobs/weekly-ai-summary.job');
-    const { organizationId } = req.body;
+    // Always the caller's own org — never trust a client-supplied id, and
+    // never call triggerManual() with no id (it falls through to sending
+    // every organization's summary).
+    const organizationId = (req as any).user?.organizationId;
 
     const job = new WeeklyAISummaryJob(pool);
     const result = await job.triggerManual(organizationId);
 
     res.json({
       success: true,
-      message: organizationId
-        ? `Weekly summary sent to organization ${organizationId}. Check your email inbox.`
-        : 'Weekly summary triggered successfully. Check your email inbox.',
+      message: `Weekly summary sent to organization ${organizationId}. Check your email inbox.`,
       result
     });
   } catch (error: any) {
@@ -94,23 +87,14 @@ router.get('/test-email-config', async (req, res) => {
 });
 
 // GET /api/ai-insights/preview-weekly-summary
-// Preview weekly summary data without sending email
+// Preview weekly summary data (for the caller's own org) without sending email
 router.get('/preview-weekly-summary', async (req, res) => {
   try {
     const { WeeklySummaryRepository } = await import('../repositories/weekly-summary.repository');
 
     const repository = new WeeklySummaryRepository(pool);
+    const organizationId = (req as any).user?.organizationId;
 
-    // Get first organization for preview
-    const organizations = await repository.getActiveOrganizations();
-    if (organizations.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'No organizations found'
-      });
-    }
-
-    const organizationId = organizations[0];
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 7);

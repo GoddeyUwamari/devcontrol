@@ -14,6 +14,7 @@ export interface Alert {
   acknowledgedBy?: string;
   resolvedAt?: Date;
   durationMinutes?: number;
+  organizationId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,6 +26,7 @@ export interface AlertFilters {
   status?: 'firing' | 'acknowledged' | 'resolved';
   page?: number;
   limit?: number;
+  organizationId: string;
 }
 
 export interface AlertStats {
@@ -41,9 +43,9 @@ export class AlertHistoryRepository {
   constructor(private pool: Pool) {}
 
   async findAll(filters: AlertFilters): Promise<{ alerts: Alert[]; total: number }> {
-    const conditions: string[] = ['1=1'];
-    const params: any[] = [];
-    let paramIndex = 1;
+    const conditions: string[] = ['organization_id = $1'];
+    const params: any[] = [filters.organizationId];
+    let paramIndex = 2;
 
     // Date range filter
     if (filters.dateRange) {
@@ -103,9 +105,9 @@ export class AlertHistoryRepository {
     return { alerts, total };
   }
 
-  async findById(id: string): Promise<Alert | null> {
-    const query = 'SELECT * FROM alert_history WHERE id = $1';
-    const result = await this.pool.query(query, [id]);
+  async findById(id: string, organizationId: string): Promise<Alert | null> {
+    const query = 'SELECT * FROM alert_history WHERE id = $1 AND organization_id = $2';
+    const result = await this.pool.query(query, [id, organizationId]);
 
     if (result.rows.length === 0) {
       return null;
@@ -125,13 +127,49 @@ export class AlertHistoryRepository {
     return this.mapRowToAlert(result.rows[0]);
   }
 
+  // ── Unscoped — Prometheus sync job only ─────────────────────────────────
+  // The sync job (alert-sync.job.ts) polls one shared Prometheus instance with
+  // no per-organization context (see migration 028's note), so it can't supply
+  // an organizationId to filter/verify by. These two methods exist so that
+  // job-internal maintenance keeps working exactly as it did before this fix,
+  // without weakening the org-scoped contract on findAll/resolve used by the
+  // authenticated controller routes below.
+
+  async findAllFiringUnscoped(limit: number): Promise<Alert[]> {
+    const result = await this.pool.query(
+      `SELECT * FROM alert_history WHERE status = 'firing' LIMIT $1`,
+      [limit]
+    );
+    return result.rows.map(this.mapRowToAlert);
+  }
+
+  async resolveUnscoped(id: string): Promise<Alert | null> {
+    const query = `
+      UPDATE alert_history
+      SET status = 'resolved',
+          resolved_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+    const result = await this.pool.query(query, [id]);
+    if (result.rows.length === 0) {
+      return null;
+    }
+    return this.mapRowToAlert(result.rows[0]);
+  }
+
+  // organizationId is optional here (unlike the read/mutate methods below,
+  // which require it) because the only current caller — the Prometheus alert
+  // sync job — has no per-organization context at all (see migration 028).
+  // Rows created without one are simply invisible to the org-scoped reads
+  // until that job is made multi-tenant-aware.
   async create(alert: Partial<Alert>): Promise<Alert> {
     const query = `
       INSERT INTO alert_history (
         alert_name, service_id, severity, status, description,
-        labels, annotations, started_at
+        labels, annotations, started_at, organization_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `;
 
@@ -144,13 +182,14 @@ export class AlertHistoryRepository {
       JSON.stringify(alert.labels || {}),
       JSON.stringify(alert.annotations || {}),
       alert.startedAt,
+      alert.organizationId || null,
     ];
 
     const result = await this.pool.query(query, params);
     return this.mapRowToAlert(result.rows[0]);
   }
 
-  async update(id: string, data: Partial<Alert>): Promise<Alert | null> {
+  async update(id: string, data: Partial<Alert>, organizationId: string): Promise<Alert | null> {
     const updates: string[] = [];
     const params: any[] = [];
     let paramIndex = 1;
@@ -180,16 +219,16 @@ export class AlertHistoryRepository {
     }
 
     if (updates.length === 0) {
-      return this.findById(id);
+      return this.findById(id, organizationId);
     }
 
     const query = `
       UPDATE alert_history
       SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      WHERE id = $${paramIndex} AND organization_id = $${paramIndex + 1}
       RETURNING *
     `;
-    params.push(id);
+    params.push(id, organizationId);
 
     const result = await this.pool.query(query, params);
 
@@ -200,17 +239,17 @@ export class AlertHistoryRepository {
     return this.mapRowToAlert(result.rows[0]);
   }
 
-  async acknowledge(id: string, user: string): Promise<Alert | null> {
+  async acknowledge(id: string, user: string, organizationId: string): Promise<Alert | null> {
     const query = `
       UPDATE alert_history
       SET status = 'acknowledged',
           acknowledged_at = NOW(),
           acknowledged_by = $1
-      WHERE id = $2
+      WHERE id = $2 AND organization_id = $3
       RETURNING *
     `;
 
-    const result = await this.pool.query(query, [user, id]);
+    const result = await this.pool.query(query, [user, id, organizationId]);
 
     if (result.rows.length === 0) {
       return null;
@@ -219,16 +258,16 @@ export class AlertHistoryRepository {
     return this.mapRowToAlert(result.rows[0]);
   }
 
-  async resolve(id: string): Promise<Alert | null> {
+  async resolve(id: string, organizationId: string): Promise<Alert | null> {
     const query = `
       UPDATE alert_history
       SET status = 'resolved',
           resolved_at = NOW()
-      WHERE id = $1
+      WHERE id = $1 AND organization_id = $2
       RETURNING *
     `;
 
-    const result = await this.pool.query(query, [id]);
+    const result = await this.pool.query(query, [id, organizationId]);
 
     if (result.rows.length === 0) {
       return null;
@@ -237,16 +276,16 @@ export class AlertHistoryRepository {
     return this.mapRowToAlert(result.rows[0]);
   }
 
-  async delete(id: string): Promise<boolean> {
-    const query = 'DELETE FROM alert_history WHERE id = $1';
-    const result = await this.pool.query(query, [id]);
+  async delete(id: string, organizationId: string): Promise<boolean> {
+    const query = 'DELETE FROM alert_history WHERE id = $1 AND organization_id = $2';
+    const result = await this.pool.query(query, [id, organizationId]);
     return result.rowCount !== null && result.rowCount > 0;
   }
 
   async getStats(filters: Omit<AlertFilters, 'page' | 'limit'>): Promise<AlertStats> {
-    const conditions: string[] = ['1=1'];
-    const params: any[] = [];
-    let paramIndex = 1;
+    const conditions: string[] = ['organization_id = $1'];
+    const params: any[] = [filters.organizationId];
+    let paramIndex = 2;
 
     // Date range filter
     if (filters.dateRange) {
@@ -305,6 +344,7 @@ export class AlertHistoryRepository {
       acknowledgedBy: row.acknowledged_by,
       resolvedAt: row.resolved_at,
       durationMinutes: row.duration_minutes,
+      organizationId: row.organization_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

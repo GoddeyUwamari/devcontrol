@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import { pool } from '../config/database';
+import { authenticateToken } from '../middleware/auth.middleware';
 import { AlertHistoryController } from '../controllers/alert-history.controller';
 
 const router = Router();
 
 // Initialize controller
 const controller = new AlertHistoryController(pool);
+
+router.use(authenticateToken);
 
 /**
  * GET /api/alerts/history

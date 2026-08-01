@@ -75,7 +75,7 @@ export class AlertHistoryService {
       const existingAlert = await this.repository.findByAlertName(alertName, 'firing');
 
       if (existingAlert) {
-        await this.repository.resolve(existingAlert.id);
+        await this.repository.resolveUnscoped(existingAlert.id);
         console.log(`[Alert Sync] Alert resolved: ${alertName}`);
       }
     }
@@ -83,10 +83,7 @@ export class AlertHistoryService {
 
   private async resolveStaleAlerts(prometheusAlerts: PrometheusAlert[]): Promise<void> {
     // Get all currently firing alerts from database
-    const { alerts: firingAlerts } = await this.repository.findAll({
-      status: 'firing',
-      limit: 1000,
-    });
+    const firingAlerts = await this.repository.findAllFiringUnscoped(1000);
 
     // Get set of alert names that are currently firing in Prometheus
     const firingAlertNames = new Set(
@@ -98,7 +95,7 @@ export class AlertHistoryService {
     // Resolve alerts that are no longer firing in Prometheus
     for (const dbAlert of firingAlerts) {
       if (!firingAlertNames.has(dbAlert.alertName)) {
-        await this.repository.resolve(dbAlert.id);
+        await this.repository.resolveUnscoped(dbAlert.id);
         console.log(`[Alert Sync] Stale alert resolved: ${dbAlert.alertName}`);
       }
     }
@@ -120,12 +117,12 @@ export class AlertHistoryService {
     };
   }
 
-  async getAlert(id: string): Promise<Alert | null> {
-    return this.repository.findById(id);
+  async getAlert(id: string, organizationId: string): Promise<Alert | null> {
+    return this.repository.findById(id, organizationId);
   }
 
-  async acknowledgeAlert(id: string, user: string = 'admin'): Promise<Alert | null> {
-    const alert = await this.repository.findById(id);
+  async acknowledgeAlert(id: string, organizationId: string, user: string = 'admin'): Promise<Alert | null> {
+    const alert = await this.repository.findById(id, organizationId);
 
     if (!alert) {
       throw new Error('Alert not found');
@@ -135,11 +132,11 @@ export class AlertHistoryService {
       throw new Error('Cannot acknowledge a resolved alert');
     }
 
-    return this.repository.acknowledge(id, user);
+    return this.repository.acknowledge(id, user, organizationId);
   }
 
-  async resolveAlert(id: string): Promise<Alert | null> {
-    const alert = await this.repository.findById(id);
+  async resolveAlert(id: string, organizationId: string): Promise<Alert | null> {
+    const alert = await this.repository.findById(id, organizationId);
 
     if (!alert) {
       throw new Error('Alert not found');
@@ -149,11 +146,11 @@ export class AlertHistoryService {
       throw new Error('Alert is already resolved');
     }
 
-    return this.repository.resolve(id);
+    return this.repository.resolve(id, organizationId);
   }
 
-  async deleteAlert(id: string): Promise<boolean> {
-    return this.repository.delete(id);
+  async deleteAlert(id: string, organizationId: string): Promise<boolean> {
+    return this.repository.delete(id, organizationId);
   }
 
   async getAlertStats(filters: Omit<AlertFilters, 'page' | 'limit'>): Promise<AlertStats> {

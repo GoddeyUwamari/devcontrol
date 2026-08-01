@@ -23,6 +23,7 @@ export class AlertHistoryController {
         status: req.query.status as any,
         page: req.query.page ? parseInt(req.query.page as string) : 1,
         limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
+        organizationId: (req as any).user?.organizationId,
       };
 
       const result = await this.service.getAlertHistory(filters);
@@ -55,6 +56,7 @@ export class AlertHistoryController {
       const filters = {
         dateRange: req.query.date_range as any,
         serviceId: req.query.service_id as string,
+        organizationId: (req as any).user?.organizationId,
       };
 
       const stats = await this.service.getAlertStats(filters);
@@ -79,7 +81,8 @@ export class AlertHistoryController {
   async getAlert(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const alert = await this.service.getAlert(id);
+      const organizationId = (req as any).user?.organizationId;
+      const alert = await this.service.getAlert(id, organizationId);
 
       if (!alert) {
         res.status(404).json({
@@ -110,8 +113,9 @@ export class AlertHistoryController {
     try {
       const { id } = req.params;
       const { user } = req.body;
+      const organizationId = (req as any).user?.organizationId;
 
-      const alert = await this.service.acknowledgeAlert(id, user || 'admin');
+      const alert = await this.service.acknowledgeAlert(id, organizationId, user || 'admin');
 
       if (!alert) {
         res.status(404).json({
@@ -159,8 +163,9 @@ export class AlertHistoryController {
   async resolveAlert(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const organizationId = (req as any).user?.organizationId;
 
-      const alert = await this.service.resolveAlert(id);
+      const alert = await this.service.resolveAlert(id, organizationId);
 
       if (!alert) {
         res.status(404).json({
@@ -208,8 +213,9 @@ export class AlertHistoryController {
   async deleteAlert(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const organizationId = (req as any).user?.organizationId;
 
-      const deleted = await this.service.deleteAlert(id);
+      const deleted = await this.service.deleteAlert(id, organizationId);
 
       if (!deleted) {
         res.status(404).json({
