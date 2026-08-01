@@ -982,11 +982,10 @@ export default function DashboardPage() {
           {/* Highest Priority Action */}
           {displayIntelligence.top_action && (
             <div
-              className="flex flex-col gap-4 px-5 py-5 rounded-xl border-l-4"
+              className="flex flex-col gap-4 px-5 py-5 rounded-xl"
               style={{
                 background: displayIntelligence.top_action.severity === 'critical' ? 'var(--bg-danger)' : 'var(--bg-warning)',
                 border: `1px solid ${displayIntelligence.top_action.severity === 'critical' ? 'var(--border-danger)' : 'var(--border-warning)'}`,
-                borderLeft: `4px solid ${displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)'}`,
               }}
             >
               <div className="flex-1 min-w-0">
