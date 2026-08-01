@@ -50,26 +50,26 @@ export class InfrastructureRepository {
     return result.rows;
   }
 
-  async findById(id: string): Promise<InfrastructureResource | null> {
+  async findById(id: string, organizationId: string): Promise<InfrastructureResource | null> {
     const query = `
       SELECT
         i.*,
         s.name as service_name
       FROM infrastructure_resources i
       LEFT JOIN services s ON i.service_id = s.id
-      WHERE i.id = $1
+      WHERE i.id = $1 AND i.organization_id = $2
     `;
-    const result = await pool.query(query, [id]);
+    const result = await pool.query(query, [id, organizationId]);
     return result.rows[0] || null;
   }
 
-  async create(resource: CreateInfrastructureRequest): Promise<InfrastructureResource> {
+  async create(resource: CreateInfrastructureRequest, organizationId: string): Promise<InfrastructureResource> {
     const query = `
       INSERT INTO infrastructure_resources (
         service_id, resource_type, aws_id, aws_region,
-        status, cost_per_month, metadata
+        status, cost_per_month, metadata, organization_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `;
     const result = await pool.query(query, [
@@ -79,50 +79,59 @@ export class InfrastructureRepository {
       resource.aws_region,
       resource.status,
       resource.cost_per_month,
-      JSON.stringify(resource.metadata || {})
+      JSON.stringify(resource.metadata || {}),
+      organizationId,
     ]);
     return result.rows[0];
   }
 
-  async delete(id: string): Promise<boolean> {
-    const result = await pool.query('DELETE FROM infrastructure_resources WHERE id = $1', [id]);
+  async delete(id: string, organizationId: string): Promise<boolean> {
+    const result = await pool.query(
+      'DELETE FROM infrastructure_resources WHERE id = $1 AND organization_id = $2',
+      [id, organizationId]
+    );
     return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  async getCostBreakdown(): Promise<CostBreakdown> {
+  async getCostBreakdown(organizationId: string): Promise<CostBreakdown> {
     // Total monthly cost
     const totalResult = await pool.query(
-      'SELECT COALESCE(SUM(cost_per_month), 0) as total FROM infrastructure_resources WHERE status = $1',
-      ['running']
+      'SELECT COALESCE(SUM(cost_per_month), 0) as total FROM infrastructure_resources WHERE status = $1 AND organization_id = $2',
+      ['running', organizationId]
     );
 
     // Cost by service
-    const byServiceResult = await pool.query(`
-      SELECT s.name as service_name, COALESCE(SUM(ir.cost_per_month), 0) as cost
-      FROM services s
-      LEFT JOIN infrastructure_resources ir ON s.id = ir.service_id AND ir.status = 'running'
-      GROUP BY s.id, s.name
-      ORDER BY cost DESC
-    `);
+    const byServiceResult = await pool.query(
+      `SELECT s.name as service_name, COALESCE(SUM(ir.cost_per_month), 0) as cost
+       FROM services s
+       LEFT JOIN infrastructure_resources ir ON s.id = ir.service_id AND ir.status = 'running' AND ir.organization_id = $1
+       WHERE s.organization_id = $1
+       GROUP BY s.id, s.name
+       ORDER BY cost DESC`,
+      [organizationId]
+    );
 
     // Cost by resource type
-    const byResourceTypeResult = await pool.query(`
-      SELECT resource_type, COALESCE(SUM(cost_per_month), 0) as cost
-      FROM infrastructure_resources
-      WHERE status = 'running'
-      GROUP BY resource_type
-      ORDER BY cost DESC
-    `);
+    const byResourceTypeResult = await pool.query(
+      `SELECT resource_type, COALESCE(SUM(cost_per_month), 0) as cost
+       FROM infrastructure_resources
+       WHERE status = 'running' AND organization_id = $1
+       GROUP BY resource_type
+       ORDER BY cost DESC`,
+      [organizationId]
+    );
 
     // Cost by team
-    const byTeamResult = await pool.query(`
-      SELECT t.name as team_name, COALESCE(SUM(ir.cost_per_month), 0) as cost
-      FROM teams t
-      LEFT JOIN services s ON t.id = s.team_id
-      LEFT JOIN infrastructure_resources ir ON s.id = ir.service_id AND ir.status = 'running'
-      GROUP BY t.id, t.name
-      ORDER BY cost DESC
-    `);
+    const byTeamResult = await pool.query(
+      `SELECT t.name as team_name, COALESCE(SUM(ir.cost_per_month), 0) as cost
+       FROM teams t
+       LEFT JOIN services s ON t.id = s.team_id AND s.organization_id = $1
+       LEFT JOIN infrastructure_resources ir ON s.id = ir.service_id AND ir.status = 'running' AND ir.organization_id = $1
+       WHERE t.organization_id = $1
+       GROUP BY t.id, t.name
+       ORDER BY cost DESC`,
+      [organizationId]
+    );
 
     return {
       total_monthly_cost: parseFloat(totalResult.rows[0].total),

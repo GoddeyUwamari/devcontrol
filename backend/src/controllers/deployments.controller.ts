@@ -17,8 +17,9 @@ export class DeploymentsController {
         limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
         offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
       };
+      const organizationId = (req as any).user?.organizationId;
 
-      const { deployments, total } = await repository.findAll(filters);
+      const { deployments, total } = await repository.findAll(filters, organizationId);
 
       const response: ApiResponse = {
         success: true,
@@ -40,7 +41,8 @@ export class DeploymentsController {
   async getById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const deployment = await repository.findById(id);
+      const organizationId = (req as any).user?.organizationId;
+      const deployment = await repository.findById(id, organizationId);
 
       if (!deployment) {
         const response: ApiResponse = {
@@ -133,7 +135,8 @@ export class DeploymentsController {
   async delete(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const deleted = await repository.delete(id);
+      const organizationId = (req as any).user?.organizationId;
+      const deleted = await repository.delete(id, organizationId);
 
       if (!deleted) {
         const response: ApiResponse = {

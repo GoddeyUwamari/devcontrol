@@ -2,17 +2,17 @@ import { pool } from '../config/database';
 import { Deployment, DeploymentFilters, CreateDeploymentRequest } from '../types';
 
 export class DeploymentsRepository {
-  async findAll(filters?: DeploymentFilters): Promise<{ deployments: Deployment[]; total: number }> {
+  async findAll(filters: DeploymentFilters | undefined, organizationId: string): Promise<{ deployments: Deployment[]; total: number }> {
     let query = `
       SELECT
         d.*,
         s.name as service_name
       FROM deployments d
       LEFT JOIN services s ON d.service_id = s.id
-      WHERE 1=1
+      WHERE d.organization_id = $1
     `;
-    const params: any[] = [];
-    let paramCount = 0;
+    const params: any[] = [organizationId];
+    let paramCount = 1;
 
     if (filters?.service_id) {
       paramCount++;
@@ -48,7 +48,7 @@ export class DeploymentsRepository {
 
     const [deploymentsResult, countResult] = await Promise.all([
       pool.query(query, params),
-      pool.query('SELECT COUNT(*) FROM deployments')
+      pool.query('SELECT COUNT(*) FROM deployments WHERE organization_id = $1', [organizationId])
     ]);
 
     return {
@@ -57,16 +57,16 @@ export class DeploymentsRepository {
     };
   }
 
-  async findById(id: string): Promise<Deployment | null> {
+  async findById(id: string, organizationId: string): Promise<Deployment | null> {
     const query = `
       SELECT
         d.*,
         s.name as service_name
       FROM deployments d
       LEFT JOIN services s ON d.service_id = s.id
-      WHERE d.id = $1
+      WHERE d.id = $1 AND d.organization_id = $2
     `;
-    const result = await pool.query(query, [id]);
+    const result = await pool.query(query, [id, organizationId]);
     return result.rows[0] || null;
   }
 
@@ -103,8 +103,11 @@ export class DeploymentsRepository {
     return result.rows[0] || null;
   }
 
-  async delete(id: string): Promise<boolean> {
-    const result = await pool.query('DELETE FROM deployments WHERE id = $1', [id]);
+  async delete(id: string, organizationId: string): Promise<boolean> {
+    const result = await pool.query(
+      'DELETE FROM deployments WHERE id = $1 AND organization_id = $2',
+      [id, organizationId]
+    );
     return result.rowCount ? result.rowCount > 0 : false;
   }
 

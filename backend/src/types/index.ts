@@ -48,6 +48,7 @@ export interface InfrastructureResource {
   status: 'running' | 'stopped' | 'terminated';
   cost_per_month: number;
   metadata?: Record<string, any>;
+  organization_id?: string;
   created_at: Date;
   updated_at: Date;
 }

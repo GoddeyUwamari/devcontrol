@@ -101,7 +101,8 @@ export class InfrastructureController {
   async getById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const resource = await repository.findById(id);
+      const organizationId = (req as any).user?.organizationId;
+      const resource = await repository.findById(id, organizationId);
 
       if (!resource) {
         const response: ApiResponse = {
@@ -144,7 +145,8 @@ export class InfrastructureController {
         return;
       }
 
-      const resource = await repository.create(resourceData);
+      const organizationId = (req as any).user?.organizationId;
+      const resource = await repository.create(resourceData, organizationId);
 
       const response: ApiResponse = {
         success: true,
@@ -166,7 +168,8 @@ export class InfrastructureController {
   async delete(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const deleted = await repository.delete(id);
+      const organizationId = (req as any).user?.organizationId;
+      const deleted = await repository.delete(id, organizationId);
 
       if (!deleted) {
         const response: ApiResponse = {
@@ -195,7 +198,8 @@ export class InfrastructureController {
 
   async getCosts(req: Request, res: Response): Promise<void> {
     try {
-      const costBreakdown = await repository.getCostBreakdown();
+      const organizationId = (req as any).user?.organizationId;
+      const costBreakdown = await repository.getCostBreakdown(organizationId);
 
       const response: ApiResponse = {
         success: true,
@@ -229,10 +233,11 @@ export class InfrastructureController {
         return;
       }
 
+      const organizationId = (req as any).user?.organizationId;
+
       // Fetch monthly costs from AWS Cost Explorer
       let awsCosts;
       try {
-        const organizationId = (req as any).user?.organizationId;
         awsCosts = await awsCostService.fetchMonthlyCosts(organizationId);
       } catch (error: any) {
         // Check if it's a Cost Explorer not enabled error
@@ -259,10 +264,11 @@ export class InfrastructureController {
       const awsId = 'cost-explorer-total';
       const resourceType = 'AWS_COST_TOTAL';
 
-      // Check if record exists
+      // Check if record exists (scoped to this org — otherwise one org's sync
+      // would overwrite another org's cost total row)
       const existingRecord = await pool.query(
-        'SELECT id FROM infrastructure_resources WHERE aws_id = $1 AND resource_type = $2',
-        [awsId, resourceType]
+        'SELECT id FROM infrastructure_resources WHERE aws_id = $1 AND resource_type = $2 AND organization_id = $3',
+        [awsId, resourceType, organizationId]
       );
 
       const now = new Date();
@@ -273,7 +279,7 @@ export class InfrastructureController {
         await pool.query(
           `UPDATE infrastructure_resources
            SET cost_per_month = $1, status = $2, updated_at = $3, metadata = $4
-           WHERE aws_id = $5 AND resource_type = $6`,
+           WHERE aws_id = $5 AND resource_type = $6 AND organization_id = $7`,
           [
             awsCosts.total,
             'Active',
@@ -285,6 +291,7 @@ export class InfrastructureController {
             }),
             awsId,
             resourceType,
+            organizationId,
           ]
         );
         resourcesSynced = 1;
@@ -292,8 +299,8 @@ export class InfrastructureController {
         // Insert new record
         await pool.query(
           `INSERT INTO infrastructure_resources
-           (service_id, resource_type, aws_id, aws_region, status, cost_per_month, metadata)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+           (service_id, resource_type, aws_id, aws_region, status, cost_per_month, metadata, organization_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             null,
             resourceType,
@@ -306,6 +313,7 @@ export class InfrastructureController {
               period: awsCosts.period,
               by_service: awsCosts.byService,
             }),
+            organizationId,
           ]
         );
         resourcesSynced = 1;
