@@ -41,8 +41,8 @@ export class StatsController {
           "SELECT COUNT(*) as healthy FROM aws_resources WHERE organization_id = $1 AND status IN ('running', 'active', 'available')",
           [organizationId]
         ),
-        deploymentsRepo.countByStatus('running'),
-        deploymentsRepo.findRecentByLimit(5),
+        deploymentsRepo.countByStatus(organizationId, 'running'),
+        deploymentsRepo.findRecentByLimit(organizationId, 5),
       ]);
 
       // Try live Cost Explorer first; fall back to DB estimate on error or no data.

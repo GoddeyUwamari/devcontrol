@@ -111,22 +111,26 @@ export class DeploymentsRepository {
     return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  async findRecentByLimit(limit: number): Promise<Deployment[]> {
+  async findRecentByLimit(organizationId: string, limit: number): Promise<Deployment[]> {
     const query = `
       SELECT
         d.*,
         s.name as service_name
       FROM deployments d
       LEFT JOIN services s ON d.service_id = s.id
+      WHERE d.organization_id = $1
       ORDER BY d.deployed_at DESC
-      LIMIT $1
+      LIMIT $2
     `;
-    const result = await pool.query(query, [limit]);
+    const result = await pool.query(query, [organizationId, limit]);
     return result.rows;
   }
 
-  async countByStatus(status: string): Promise<number> {
-    const result = await pool.query('SELECT COUNT(*) FROM deployments WHERE status = $1', [status]);
+  async countByStatus(organizationId: string, status: string): Promise<number> {
+    const result = await pool.query(
+      'SELECT COUNT(*) FROM deployments WHERE organization_id = $1 AND status = $2',
+      [organizationId, status]
+    );
     return parseInt(result.rows[0].count);
   }
 }
