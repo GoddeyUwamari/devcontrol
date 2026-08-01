@@ -7,17 +7,16 @@ const router = Router()
 
 router.use(authenticateToken)
 
-// GET /api/keys — list all active keys (never return the hash)
-// NOTE: api_keys has no organization_id column, so this still returns every
-// org's keys to any authenticated caller. Requires a schema change to fix
-// properly — tracked separately, not addressed by this auth-only pass.
+// GET /api/keys — list the caller's org's active keys (never return the hash)
 router.get('/', async (req, res) => {
+  const organizationId = (req as any).user?.organizationId
   try {
     const result = await pool.query(
       `SELECT id, name, prefix, scopes, status, created_at, last_used_at
        FROM api_keys
-       WHERE status = 'active'
-       ORDER BY created_at DESC`
+       WHERE status = 'active' AND organization_id = $1
+       ORDER BY created_at DESC`,
+      [organizationId]
     )
     return res.json({ success: true, data: result.rows })
   } catch (err: any) {
@@ -26,8 +25,9 @@ router.get('/', async (req, res) => {
   }
 })
 
-// POST /api/keys — generate a new key
+// POST /api/keys — generate a new key scoped to the caller's org
 router.post('/', async (req, res) => {
+  const organizationId = (req as any).user?.organizationId
   const { name, scopes } = req.body
   if (!name?.trim()) {
     return res.status(400).json({ success: false, message: 'Key name is required' })
@@ -41,10 +41,10 @@ router.post('/', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `INSERT INTO api_keys (name, key_hash, prefix, scopes, status)
-       VALUES ($1, $2, $3, $4, 'active')
+      `INSERT INTO api_keys (name, key_hash, prefix, scopes, status, organization_id)
+       VALUES ($1, $2, $3, $4, 'active', $5)
        RETURNING id, name, prefix, scopes, status, created_at, last_used_at`,
-      [name.trim(), keyHash, prefix, keyScopes]
+      [name.trim(), keyHash, prefix, keyScopes, organizationId]
     )
     // Return the raw key ONCE — it will never be shown again
     return res.status(201).json({
@@ -58,13 +58,16 @@ router.post('/', async (req, res) => {
   }
 })
 
-// DELETE /api/keys/:id — revoke a key
+// DELETE /api/keys/:id — revoke a key belonging to the caller's org
 router.delete('/:id', async (req, res) => {
   const { id } = req.params
+  const organizationId = (req as any).user?.organizationId
   try {
     const result = await pool.query(
-      `UPDATE api_keys SET status = 'revoked' WHERE id = $1 AND status = 'active' RETURNING id`,
-      [id]
+      `UPDATE api_keys SET status = 'revoked'
+       WHERE id = $1 AND organization_id = $2 AND status = 'active'
+       RETURNING id`,
+      [id, organizationId]
     )
     if (result.rowCount === 0) {
       return res.status(404).json({ success: false, message: 'Key not found or already revoked' })
