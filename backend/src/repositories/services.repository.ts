@@ -50,15 +50,18 @@ export class ServicesRepository {
     };
   }
 
-  async findById(id: string): Promise<Service | null> {
-    const result = await pool.query('SELECT * FROM services WHERE id = $1', [id]);
+  async findById(id: string, organizationId: string): Promise<Service | null> {
+    const result = await pool.query(
+      'SELECT * FROM services WHERE id = $1 AND organization_id = $2',
+      [id, organizationId]
+    );
     return result.rows[0] || null;
   }
 
-  async create(service: CreateServiceRequest): Promise<Service> {
+  async create(service: CreateServiceRequest, organizationId: string): Promise<Service> {
     const query = `
-      INSERT INTO services (name, template, owner, team_id, github_url, description, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO services (name, template, owner, team_id, github_url, description, status, organization_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `;
     const result = await pool.query(query, [
@@ -68,12 +71,13 @@ export class ServicesRepository {
       service.team_id,
       service.github_url,
       service.description,
-      'active' // default status
+      'active', // default status
+      organizationId,
     ]);
     return result.rows[0];
   }
 
-  async update(id: string, updates: UpdateServiceRequest): Promise<Service | null> {
+  async update(id: string, updates: UpdateServiceRequest, organizationId: string): Promise<Service | null> {
     const fields: string[] = [];
     const values: any[] = [];
     let paramCount = 0;
@@ -103,17 +107,20 @@ export class ServicesRepository {
     }
 
     if (fields.length === 0) {
-      return this.findById(id);
+      return this.findById(id, organizationId);
     }
 
     paramCount++;
     fields.push(`updated_at = NOW()`);
     values.push(id);
 
+    paramCount++;
+    values.push(organizationId);
+
     const query = `
       UPDATE services
       SET ${fields.join(', ')}
-      WHERE id = $${paramCount}
+      WHERE id = $${paramCount - 1} AND organization_id = $${paramCount}
       RETURNING *
     `;
 
@@ -121,8 +128,11 @@ export class ServicesRepository {
     return result.rows[0] || null;
   }
 
-  async delete(id: string): Promise<boolean> {
-    const result = await pool.query('DELETE FROM services WHERE id = $1', [id]);
+  async delete(id: string, organizationId: string): Promise<boolean> {
+    const result = await pool.query(
+      'DELETE FROM services WHERE id = $1 AND organization_id = $2',
+      [id, organizationId]
+    );
     return result.rowCount ? result.rowCount > 0 : false;
   }
 }

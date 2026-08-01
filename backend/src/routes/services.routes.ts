@@ -353,8 +353,8 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response, next: 
 
 // ─── Legacy controller routes (services table — create/update/delete) ─────────
 
-router.post(   '/',    validateBody(createServiceSchema), (req, res, next) => controller.create(req, res, next));
-router.put(    '/:id', validateParams(uuidParamSchema), validateBody(updateServiceSchema), (req, res, next) => controller.update(req, res, next));
-router.delete( '/:id', validateParams(uuidParamSchema), (req, res, next) => controller.delete(req, res, next));
+router.post(   '/',    authenticateToken, validateBody(createServiceSchema), (req, res, next) => controller.create(req, res, next));
+router.put(    '/:id', authenticateToken, validateParams(uuidParamSchema), validateBody(updateServiceSchema), (req, res, next) => controller.update(req, res, next));
+router.delete( '/:id', authenticateToken, validateParams(uuidParamSchema), (req, res, next) => controller.delete(req, res, next));
 
 export default router;

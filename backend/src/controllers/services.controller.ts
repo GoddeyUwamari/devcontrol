@@ -34,7 +34,8 @@ export class ServicesController {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const service = await repository.findById(id);
+      const organizationId = (req as any).user?.organizationId;
+      const service = await repository.findById(id, organizationId);
 
       if (!service) {
         throw new NotFoundError('Service');
@@ -54,7 +55,8 @@ export class ServicesController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const serviceData: CreateServiceRequest = req.body;
-      const service = await repository.create(serviceData);
+      const organizationId = (req as any).user?.organizationId;
+      const service = await repository.create(serviceData, organizationId);
 
       // Emit onboarding event for service creation
       const user = (req as any).user;
@@ -82,7 +84,8 @@ export class ServicesController {
     try {
       const { id } = req.params;
       const updates: UpdateServiceRequest = req.body;
-      const service = await repository.update(id, updates);
+      const organizationId = (req as any).user?.organizationId;
+      const service = await repository.update(id, updates, organizationId);
 
       if (!service) {
         throw new NotFoundError('Service');
@@ -103,7 +106,8 @@ export class ServicesController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const deleted = await repository.delete(id);
+      const organizationId = (req as any).user?.organizationId;
+      const deleted = await repository.delete(id, organizationId);
 
       if (!deleted) {
         throw new NotFoundError('Service');

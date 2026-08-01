@@ -20,6 +20,7 @@ export interface Service {
   github_url?: string;
   description?: string;
   status: 'active' | 'inactive' | 'archived';
+  organization_id?: string;
   created_at: Date;
   updated_at: Date;
 }
