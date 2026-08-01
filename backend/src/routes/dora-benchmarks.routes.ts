@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
+import { authenticateToken } from '../middleware/auth.middleware';
 
 const VALID_METRICS = [
   'deployment_frequency',
@@ -31,6 +32,8 @@ function getOrgId(req: Request): string {
 
 export function createDoraBenchmarksRoutes(pool: Pool): Router {
   const router = Router();
+
+  router.use(authenticateToken);
 
   /**
    * GET /api/dora/benchmarks

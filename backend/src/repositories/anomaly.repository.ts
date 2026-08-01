@@ -177,49 +177,52 @@ export class AnomalyRepository {
   /**
    * Acknowledge anomaly
    */
-  async acknowledge(id: string, userId: string): Promise<void> {
+  async acknowledge(id: string, organizationId: string, userId: string): Promise<boolean> {
     const query = `
       UPDATE anomaly_detections
       SET status = 'acknowledged',
           acknowledged_at = NOW(),
-          acknowledged_by = $2,
+          acknowledged_by = $3,
           updated_at = NOW()
-      WHERE id = $1
+      WHERE id = $1 AND organization_id = $2
     `;
 
-    await this.pool.query(query, [id, userId]);
+    const result = await this.pool.query(query, [id, organizationId, userId]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   /**
    * Resolve anomaly
    */
-  async resolve(id: string, notes?: string): Promise<void> {
+  async resolve(id: string, organizationId: string, notes?: string): Promise<boolean> {
     const query = `
       UPDATE anomaly_detections
       SET status = 'resolved',
           resolved_at = NOW(),
-          notes = COALESCE($2, notes),
+          notes = COALESCE($3, notes),
           updated_at = NOW()
-      WHERE id = $1
+      WHERE id = $1 AND organization_id = $2
     `;
 
-    await this.pool.query(query, [id, notes]);
+    const result = await this.pool.query(query, [id, organizationId, notes]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   /**
    * Mark as false positive
    */
-  async markFalsePositive(id: string, notes?: string): Promise<void> {
+  async markFalsePositive(id: string, organizationId: string, notes?: string): Promise<boolean> {
     const query = `
       UPDATE anomaly_detections
       SET status = 'false_positive',
           resolved_at = NOW(),
-          notes = COALESCE($2, notes),
+          notes = COALESCE($3, notes),
           updated_at = NOW()
-      WHERE id = $1
+      WHERE id = $1 AND organization_id = $2
     `;
 
-    await this.pool.query(query, [id, notes]);
+    const result = await this.pool.query(query, [id, organizationId, notes]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   /**

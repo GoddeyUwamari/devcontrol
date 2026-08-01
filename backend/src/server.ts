@@ -235,9 +235,12 @@ anomalyRouter.get('/stats', async (req, res) => {
 anomalyRouter.patch('/:id/acknowledge', async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    await anomalyRepository.acknowledge(id, userId);
+    const organizationId = (req as any).user?.organizationId;
+    // JWTPayload's field is `userId`, not `id` — req.user.id doesn't exist.
+    const userId = (req as any).user?.userId;
+    if (!organizationId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+    const updated = await anomalyRepository.acknowledge(id, organizationId, userId);
+    if (!updated) return res.status(404).json({ error: 'Anomaly not found' });
     res.json({ success: true, message: 'Anomaly acknowledged' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -248,7 +251,10 @@ anomalyRouter.patch('/:id/resolve', async (req, res) => {
   try {
     const { id } = req.params;
     const { notes } = req.body;
-    await anomalyRepository.resolve(id, notes);
+    const organizationId = (req as any).user?.organizationId;
+    if (!organizationId) return res.status(401).json({ error: 'Unauthorized' });
+    const updated = await anomalyRepository.resolve(id, organizationId, notes);
+    if (!updated) return res.status(404).json({ error: 'Anomaly not found' });
     res.json({ success: true, message: 'Anomaly resolved' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -259,7 +265,10 @@ anomalyRouter.patch('/:id/false-positive', async (req, res) => {
   try {
     const { id } = req.params;
     const { notes } = req.body;
-    await anomalyRepository.markFalsePositive(id, notes);
+    const organizationId = (req as any).user?.organizationId;
+    if (!organizationId) return res.status(401).json({ error: 'Unauthorized' });
+    const updated = await anomalyRepository.markFalsePositive(id, organizationId, notes);
+    if (!updated) return res.status(404).json({ error: 'Anomaly not found' });
     res.json({ success: true, message: 'Anomaly marked as false positive' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

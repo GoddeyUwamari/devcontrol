@@ -2,8 +2,10 @@ import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
 import { LogStreamingService } from '../services/logStreaming';
 import { WebSocketServer } from '../websocket/server';
+import { DeploymentsRepository } from '../repositories/deployments.repository';
 
 const router = Router();
+const deploymentsRepository = new DeploymentsRepository();
 
 // Extend Request type to include WebSocket server
 interface RequestWithWS extends Request {
@@ -15,6 +17,7 @@ router.post('/logs/stream/:deploymentId', authenticate, async (req: RequestWithW
   try {
     const { deploymentId } = req.params;
     const { logGroupName, logStreamName } = req.body;
+    const organizationId = (req as any).organizationId;
 
     if (!logGroupName || !logStreamName) {
       return res.status(400).json({
@@ -23,12 +26,26 @@ router.post('/logs/stream/:deploymentId', authenticate, async (req: RequestWithW
       });
     }
 
+    // deploymentId is otherwise just a client-supplied label with no DB
+    // lookup, and logGroupName/logStreamName are trusted as-is — without
+    // this, any authenticated user could stream any CloudWatch log
+    // group/stream (including another org's) to themselves by guessing
+    // names, since CloudWatch access here uses platform-level credentials,
+    // not per-org scoping.
+    const deployment = await deploymentsRepository.findById(deploymentId, organizationId);
+    if (!deployment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Deployment not found',
+      });
+    }
+
     const wsServer: WebSocketServer = req.app.get('wsServer');
     const logService = new LogStreamingService(wsServer);
 
     await logService.startLogStream(
       deploymentId,
-      (req as any).organizationId,
+      organizationId,
       logGroupName,
       logStreamName
     );
@@ -51,6 +68,15 @@ router.post('/logs/stream/:deploymentId', authenticate, async (req: RequestWithW
 router.post('/logs/stop/:deploymentId', authenticate, async (req: RequestWithWS, res: Response) => {
   try {
     const { deploymentId } = req.params;
+    const organizationId = (req as any).organizationId;
+
+    const deployment = await deploymentsRepository.findById(deploymentId, organizationId);
+    if (!deployment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Deployment not found',
+      });
+    }
 
     const wsServer: WebSocketServer = req.app.get('wsServer');
     const logService = new LogStreamingService(wsServer);

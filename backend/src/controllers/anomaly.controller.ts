@@ -79,13 +79,18 @@ export class AnomalyController {
   acknowledge = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
+      const organizationId = (req as any).user?.organizationId;
+      // JWTPayload's field is `userId`, not `id` — req.user.id doesn't exist.
+      const userId = (req as any).user?.userId;
 
-      if (!userId) {
+      if (!organizationId || !userId) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      await this.repository.acknowledge(id, userId);
+      const updated = await this.repository.acknowledge(id, organizationId, userId);
+      if (!updated) {
+        return res.status(404).json({ error: 'Anomaly not found' });
+      }
       console.log(`[Anomaly Controller] Anomaly ${id} acknowledged by user ${userId}`);
 
       res.json({ success: true, message: 'Anomaly acknowledged' });
@@ -103,8 +108,16 @@ export class AnomalyController {
     try {
       const { id } = req.params;
       const { notes } = req.body;
+      const organizationId = (req as any).user?.organizationId;
 
-      await this.repository.resolve(id, notes);
+      if (!organizationId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const updated = await this.repository.resolve(id, organizationId, notes);
+      if (!updated) {
+        return res.status(404).json({ error: 'Anomaly not found' });
+      }
       console.log(`[Anomaly Controller] Anomaly ${id} resolved`);
 
       res.json({ success: true, message: 'Anomaly resolved' });
@@ -122,8 +135,16 @@ export class AnomalyController {
     try {
       const { id } = req.params;
       const { notes } = req.body;
+      const organizationId = (req as any).user?.organizationId;
 
-      await this.repository.markFalsePositive(id, notes);
+      if (!organizationId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const updated = await this.repository.markFalsePositive(id, organizationId, notes);
+      if (!updated) {
+        return res.status(404).json({ error: 'Anomaly not found' });
+      }
       console.log(`[Anomaly Controller] Anomaly ${id} marked as false positive`);
 
       res.json({ success: true, message: 'Anomaly marked as false positive' });

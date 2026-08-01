@@ -60,7 +60,8 @@ export class DependenciesController {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const dependency = await repository.findById(id);
+      const organizationId = (req as any).user?.organizationId;
+      const dependency = await repository.findById(id, organizationId);
 
       if (!dependency) {
         throw new NotFoundError('Dependency');
@@ -159,7 +160,8 @@ export class DependenciesController {
         }
       }
 
-      const dependency = await repository.update(id, updates);
+      const organizationId = (req as any).user?.organizationId;
+      const dependency = await repository.update(id, organizationId, updates);
 
       if (!dependency) {
         throw new NotFoundError('Dependency');
@@ -200,7 +202,8 @@ export class DependenciesController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const deleted = await repository.delete(id);
+      const organizationId = (req as any).user?.organizationId;
+      const deleted = await repository.delete(id, organizationId);
 
       if (!deleted) {
         throw new NotFoundError('Dependency');
@@ -273,7 +276,8 @@ export class DependenciesController {
   ): Promise<void> {
     try {
       const { serviceId } = req.params;
-      const analysis = await repository.getImpactAnalysis(serviceId);
+      const organizationId = (req as any).user?.organizationId;
+      const analysis = await repository.getImpactAnalysis(serviceId, organizationId);
 
       const response: ApiResponse = {
         success: true,

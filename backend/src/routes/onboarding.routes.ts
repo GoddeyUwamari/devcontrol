@@ -5,6 +5,7 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/rbac.middleware';
 import { onboardingService } from '../services/onboarding.service';
 
 const router = express.Router();
@@ -149,13 +150,14 @@ router.post('/re-enable', authenticate, async (req: Request, res: Response, next
 // Get overall onboarding metrics (admin only)
 // =====================================================
 
-router.get('/metrics', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+// getMetrics()/getFunnelMetrics() below are platform-wide aggregates (across
+// every organization, not just the caller's) — requireAdmin at least closes
+// "any authenticated member/viewer" access; a true platform-staff-only role
+// doesn't exist yet in this codebase's role model (owner/admin/member/viewer
+// are all per-organization), so any org's own admin/owner can still see
+// aggregate counts about every other org. Flagged, not solved here.
+router.get('/metrics', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // TODO: Add admin role check
-    // if ((req as any).user?.role !== 'admin') {
-    //   return res.status(403).json({ success: false, error: 'Admin access required' });
-    // }
-
     const metrics = await onboardingService.getMetrics();
 
     res.json({
@@ -172,10 +174,8 @@ router.get('/metrics', authenticate, async (req: Request, res: Response, next: N
 // Get funnel conversion rates (admin only)
 // =====================================================
 
-router.get('/funnel', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/funnel', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // TODO: Add admin role check
-
     const funnel = await onboardingService.getFunnelMetrics();
 
     res.json({

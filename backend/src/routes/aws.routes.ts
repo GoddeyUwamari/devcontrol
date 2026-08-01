@@ -56,33 +56,18 @@ router.get('/costs/monthly', async (req: Request, res: Response) => {
   }
 })
 
-// GET /api/aws/resources
-router.get('/resources', async (req: Request, res: Response) => {
-  try {
-    const resources = await awsCostService.fetchAllResources()
-    res.json({ total: resources.length, resources })
-  } catch (error) {
-    console.error('Error fetching AWS resources:', error)
-    res.status(500).json({
-      error: 'Failed to fetch AWS resources',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-})
-
-// POST /api/aws/sync
-router.post('/sync', async (req: Request, res: Response) => {
-  try {
-    await awsCostService.syncResourcesToDatabase()
-    res.json({ success: true, message: 'AWS resources synced to database successfully' })
-  } catch (error) {
-    console.error('Error syncing AWS resources:', error)
-    res.status(500).json({
-      error: 'Failed to sync AWS resources',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-})
+// GET /api/aws/resources and POST /api/aws/sync were removed here: both
+// predated the per-org STS architecture below (POST /accounts,
+// AWSResourceDiscoveryService.discoverAllResources) and used platform-level
+// static credentials with no org scoping at all — GET /resources returned
+// the same platform-wide resource list to any authenticated user regardless
+// of org, and POST /sync's INSERT referenced columns
+// (service/resource_id/resource_name/region/tags) that don't exist on
+// infrastructure_resources (it's service_id/aws_id/aws_region/metadata),
+// so it has never successfully run. No frontend caller referenced either
+// route. Real, per-org-scoped discovery already exists via
+// AWSResourceDiscoveryService (wired through POST /accounts and
+// POST /api/services/discover).
 
 // GET /api/aws/accounts/connect-init
 // Generates and stores a per-org external_id for the connect flow.

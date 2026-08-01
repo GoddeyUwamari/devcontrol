@@ -66,7 +66,7 @@ export class DependenciesRepository {
   /**
    * Get dependency by ID
    */
-  async findById(id: string): Promise<ServiceDependency | null> {
+  async findById(id: string, organizationId: string): Promise<ServiceDependency | null> {
     const query = `
       SELECT
         sd.*,
@@ -77,10 +77,10 @@ export class DependenciesRepository {
       FROM service_dependencies sd
       LEFT JOIN services ss ON sd.source_service_id = ss.id
       LEFT JOIN services ts ON sd.target_service_id = ts.id
-      WHERE sd.id = $1
+      WHERE sd.id = $1 AND sd.organization_id = $2
     `;
 
-    const result = await pool.query(query, [id]);
+    const result = await pool.query(query, [id, organizationId]);
     return result.rows[0] || null;
   }
 
@@ -127,6 +127,7 @@ export class DependenciesRepository {
    */
   async update(
     id: string,
+    organizationId: string,
     updates: UpdateDependencyRequest
   ): Promise<ServiceDependency | null> {
     const fields: string[] = [];
@@ -158,17 +159,21 @@ export class DependenciesRepository {
     }
 
     if (fields.length === 0) {
-      return this.findById(id);
+      return this.findById(id, organizationId);
     }
 
     fields.push(`updated_at = NOW()`);
     paramCount++;
     values.push(id);
+    const idParam = paramCount;
+    paramCount++;
+    values.push(organizationId);
+    const orgParam = paramCount;
 
     const query = `
       UPDATE service_dependencies
       SET ${fields.join(', ')}
-      WHERE id = $${paramCount}
+      WHERE id = $${idParam} AND organization_id = $${orgParam}
       RETURNING *
     `;
 
@@ -179,10 +184,10 @@ export class DependenciesRepository {
   /**
    * Delete dependency
    */
-  async delete(id: string): Promise<boolean> {
+  async delete(id: string, organizationId: string): Promise<boolean> {
     const result = await pool.query(
-      'DELETE FROM service_dependencies WHERE id = $1',
-      [id]
+      'DELETE FROM service_dependencies WHERE id = $1 AND organization_id = $2',
+      [id, organizationId]
     );
     return result.rowCount ? result.rowCount > 0 : false;
   }
@@ -245,11 +250,11 @@ export class DependenciesRepository {
    * Get impact analysis for a service
    * Shows what depends on it (downstream) and what it depends on (upstream)
    */
-  async getImpactAnalysis(serviceId: string): Promise<ImpactAnalysis> {
+  async getImpactAnalysis(serviceId: string, organizationId: string): Promise<ImpactAnalysis> {
     // Get service info
     const serviceResult = await pool.query(
-      'SELECT id, name FROM services WHERE id = $1',
-      [serviceId]
+      'SELECT id, name FROM services WHERE id = $1 AND organization_id = $2',
+      [serviceId, organizationId]
     );
 
     if (serviceResult.rows.length === 0) {
