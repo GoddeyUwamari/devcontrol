@@ -54,10 +54,11 @@ export class DORAMetricsRepository {
         FROM deployments d
         JOIN services s ON d.service_id = s.id
         WHERE d.deployed_at >= $1
+          AND d.organization_id = $2
     `;
 
-    const params: any[] = [startDate];
-    let paramIndex = 2;
+    const params: any[] = [startDate, filters.organizationId];
+    let paramIndex = 3;
 
     if (filters.environment) {
       query += ` AND d.environment = $${paramIndex}`;
@@ -151,10 +152,11 @@ export class DORAMetricsRepository {
         JOIN services s ON d.service_id = s.id
         WHERE d.status = 'success'
           AND d.deployed_at >= $1
+          AND d.organization_id = $2
     `;
 
-    const params: any[] = [startDate];
-    let paramIndex = 2;
+    const params: any[] = [startDate, filters.organizationId];
+    let paramIndex = 3;
 
     if (filters.environment) {
       query += ` AND d.environment = $${paramIndex}`;
@@ -242,10 +244,11 @@ export class DORAMetricsRepository {
         FROM deployments d
         JOIN services s ON d.service_id = s.id
         WHERE d.deployed_at >= $1
+          AND d.organization_id = $2
     `;
 
-    const params: any[] = [startDate];
-    let paramIndex = 2;
+    const params: any[] = [startDate, filters.organizationId];
+    let paramIndex = 3;
 
     if (filters.environment) {
       query += ` AND d.environment = $${paramIndex}`;
@@ -351,10 +354,11 @@ export class DORAMetricsRepository {
         FROM deployments d
         JOIN services s ON d.service_id = s.id
         WHERE d.deployed_at >= $1
+          AND d.organization_id = $2
     `;
 
-    const params: any[] = [startDate];
-    let paramIndex = 2;
+    const params: any[] = [startDate, filters.organizationId];
+    let paramIndex = 3;
 
     if (filters.environment) {
       query += ` AND d.environment = $${paramIndex}`;

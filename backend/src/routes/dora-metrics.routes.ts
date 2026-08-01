@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../config/database';
+import { authenticateToken } from '../middleware/auth.middleware';
 import { DORAMetricsRepository } from '../repositories/dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { DORAMetricsController } from '../controllers/dora-metrics.controller';
@@ -11,6 +12,8 @@ const router = Router();
 const repository = new DORAMetricsRepository(pool);
 const service = new DORAMetricsService(repository, pool);
 const controller = new DORAMetricsController(service);
+
+router.use(authenticateToken);
 
 /**
  * GET /api/metrics/dora

@@ -663,7 +663,7 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
     const failed = deploymentsResult.rows.filter(r => r.status === 'failed').length;
 
     // Get DORA metrics
-    const doraFilters = { dateRange: `${periodDays}d` as '7d' | '30d' | '90d' };
+    const doraFilters = { dateRange: `${periodDays}d` as '7d' | '30d' | '90d', organizationId };
 
     let averageLeadTime = 2.0; // Default fallback
     let deploymentFrequency = total / Math.max(1, periodDays);
