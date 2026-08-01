@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { CostForecast, TimeSeriesPoint, ForecastPeriod } from '../types/forecast.types';
 import { ForecastMLService } from './forecast-ml.service';
+import awsCostService from './aws-cost.service';
 
 export class CostForecastService {
   private mlService: ForecastMLService;
@@ -92,37 +93,28 @@ export class CostForecastService {
   }
 
   /**
-   * Get historical cost data
+   * Get historical daily cost data from AWS Cost Explorer (via AWSCostService.fetchCostTrend),
+   * the same live source that powers the dashboard's real cost trend chart. aws_resources
+   * has no reliable daily-cost time series — created_at is a one-time discovery timestamp,
+   * not a rolling cost date, so grouping by it never produced usable history.
    */
   private async getHistoricalCosts(
     organizationId: string,
     days: number
   ): Promise<TimeSeriesPoint[]> {
-    // In production, this would query a time-series database or aggregated cost data
-    // For now, we'll aggregate from aws_resources with estimated costs
-
-    const query = `
-      SELECT
-        DATE(created_at) as date,
-        SUM((tags->>'estimated_monthly_cost')::numeric / 30) as daily_cost
-      FROM aws_resources
-      WHERE organization_id = $1
-        AND created_at >= NOW() - INTERVAL '${days} days'
-        AND tags->>'estimated_monthly_cost' IS NOT NULL
-      GROUP BY DATE(created_at)
-      ORDER BY date ASC
-    `;
+    const range = days <= 7 ? '7d' : days <= 30 ? '30d' : '90d';
 
     try {
-      const result = await this.pool.query(query, [organizationId]);
+      const trend = await awsCostService.fetchCostTrend(organizationId, range);
 
-      const dataPoints: TimeSeriesPoint[] = result.rows.map(row => ({
-        date: new Date(row.date),
-        value: parseFloat(row.daily_cost || 0),
+      const dataPoints: TimeSeriesPoint[] = trend.map(point => ({
+        date: new Date(point.date),
+        value: point.total,
         actual: true,
       }));
 
-      // If we don't have daily data, fill gaps with interpolation
+      // If Cost Explorer returned fewer days than requested (e.g. account newly connected),
+      // fill gaps with interpolation rather than forecasting off a sparse series.
       if (dataPoints.length < days && dataPoints.length > 0) {
         return this.fillGaps(dataPoints, days);
       }
