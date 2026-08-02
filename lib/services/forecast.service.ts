@@ -17,7 +17,7 @@ class ForecastService {
 
     const response = await fetch(`${this.baseUrl}?period=${period}`, {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
       },
     });
 
@@ -67,7 +67,7 @@ class ForecastService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
       },
       body: JSON.stringify({ type, params }),
     });
