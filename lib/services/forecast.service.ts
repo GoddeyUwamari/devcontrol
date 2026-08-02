@@ -3,7 +3,7 @@ import { demoModeService } from './demo-mode.service';
 
 class ForecastService {
   private baseUrl = process.env.NEXT_PUBLIC_API_URL
-    ? `${process.env.NEXT_PUBLIC_API_URL}/forecast`
+    ? `${process.env.NEXT_PUBLIC_API_URL}/api/forecast`
     : 'http://localhost:8080/api/forecast';
 
   /**
