@@ -247,18 +247,23 @@ export class ForecastMLService {
   }
 
   /**
-   * Calculate growth rate
+   * Calculate growth rate. Uses the same first-half/second-half windowing as
+   * detectTrend() so the two stay consistent instead of diverging (a narrow
+   * first/last-week comparison is noise-sensitive and can contradict the
+   * smoothed trend direction).
    */
   calculateGrowthRate(data: TimeSeriesPoint[]): number {
     if (data.length < 7) return 0;
 
-    const firstWeek = data.slice(0, 7);
-    const lastWeek = data.slice(-7);
+    const firstHalf = data.slice(0, Math.floor(data.length / 2));
+    const secondHalf = data.slice(Math.floor(data.length / 2));
 
-    const firstAvg = firstWeek.reduce((sum, p) => sum + p.value, 0) / 7;
-    const lastAvg = lastWeek.reduce((sum, p) => sum + p.value, 0) / 7;
+    const firstAvg = firstHalf.reduce((sum, p) => sum + p.value, 0) / firstHalf.length;
+    const secondAvg = secondHalf.reduce((sum, p) => sum + p.value, 0) / secondHalf.length;
 
-    return ((lastAvg - firstAvg) / firstAvg) * 100;
+    if (firstAvg === 0) return 0;
+
+    return ((secondAvg - firstAvg) / firstAvg) * 100;
   }
 
   /**

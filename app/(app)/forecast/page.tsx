@@ -101,9 +101,24 @@ export default function ForecastPage() {
 
   const getTrendIcon = () => {
     if (!forecast) return null;
-    if (forecast.trend === 'increasing') return <TrendingUp className="w-5 h-5 text-red-600" />;
-    if (forecast.trend === 'decreasing') return <TrendingDown className="w-5 h-5 text-green-600" />;
-    return <Minus className="w-5 h-5 text-gray-600" />;
+    if (forecast.trend === 'increasing') return <TrendingUp className="w-3.5 h-3.5 text-red-600" />;
+    if (forecast.trend === 'decreasing') return <TrendingDown className="w-3.5 h-3.5 text-green-600" />;
+    return <Minus className="w-3.5 h-3.5 text-gray-600" />;
+  };
+
+  const getTrendLabel = () => {
+    if (!forecast) return '';
+    const rate = Math.abs(forecast.growthRate ?? 0).toFixed(1);
+    if (forecast.trend === 'increasing') return `Increasing · +${rate}% growth`;
+    if (forecast.trend === 'decreasing') return `Decreasing · -${rate}% decline`;
+    return 'Stable · No significant growth';
+  };
+
+  const getTrendColor = () => {
+    if (!forecast) return 'text-slate-500';
+    if (forecast.trend === 'increasing') return 'text-red-600';
+    if (forecast.trend === 'decreasing') return 'text-green-600';
+    return 'text-slate-500';
   };
 
   const getVolatilityLabel = () => { if (!forecast) return 'Unknown'; if (forecast.volatility < 30) return 'Low'; if (forecast.volatility < 60) return 'Medium'; return 'High'; };
@@ -194,7 +209,7 @@ export default function ForecastPage() {
           <CardContent className="pt-6">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Next 30 Days</p>
             <p className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">${forecast.predicted30Day.toLocaleString()}</p>
-            <p className="text-xs text-slate-500">Stable · No growth detected</p>
+            <p className={`text-xs flex items-center gap-1 ${getTrendColor()}`}>{getTrendIcon()}{getTrendLabel()}</p>
           </CardContent>
         </Card>
         <Card className="hover:shadow-lg transition-shadow">
