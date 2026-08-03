@@ -228,6 +228,30 @@ export class ForecastMLService {
   }
 
   /**
+   * Remove statistical outliers via the IQR rule (values outside
+   * Q1 - 1.5*IQR .. Q3 + 1.5*IQR) so a single-day spike or drop doesn't
+   * dominate a half-window average. Falls back to the original values if
+   * filtering would remove everything (e.g. near-constant series).
+   */
+  private filterOutliers(values: number[]): number[] {
+    if (values.length < 4) return values;
+
+    const sorted = [...values].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    const lower = q1 - 1.5 * iqr;
+    const upper = q3 + 1.5 * iqr;
+
+    const filtered = values.filter(v => v >= lower && v <= upper);
+    return filtered.length > 0 ? filtered : values;
+  }
+
+  private average(values: number[]): number {
+    return values.reduce((sum, v) => sum + v, 0) / values.length;
+  }
+
+  /**
    * Detect trend direction
    */
   detectTrend(data: TimeSeriesPoint[]): 'increasing' | 'decreasing' | 'stable' {
@@ -236,8 +260,8 @@ export class ForecastMLService {
     const firstHalf = data.slice(0, Math.floor(data.length / 2));
     const secondHalf = data.slice(Math.floor(data.length / 2));
 
-    const firstAvg = firstHalf.reduce((sum, p) => sum + p.value, 0) / firstHalf.length;
-    const secondAvg = secondHalf.reduce((sum, p) => sum + p.value, 0) / secondHalf.length;
+    const firstAvg = this.average(this.filterOutliers(firstHalf.map(p => p.value)));
+    const secondAvg = this.average(this.filterOutliers(secondHalf.map(p => p.value)));
 
     const change = ((secondAvg - firstAvg) / firstAvg) * 100;
 
@@ -248,9 +272,9 @@ export class ForecastMLService {
 
   /**
    * Calculate growth rate. Uses the same first-half/second-half windowing as
-   * detectTrend() so the two stay consistent instead of diverging (a narrow
-   * first/last-week comparison is noise-sensitive and can contradict the
-   * smoothed trend direction).
+   * detectTrend() so the two stay consistent instead of diverging, and the
+   * same IQR outlier filtering so a one-off spike (e.g. a Cost Explorer
+   * anomaly) doesn't dominate the comparison and overstate the real trend.
    */
   calculateGrowthRate(data: TimeSeriesPoint[]): number {
     if (data.length < 7) return 0;
@@ -258,8 +282,8 @@ export class ForecastMLService {
     const firstHalf = data.slice(0, Math.floor(data.length / 2));
     const secondHalf = data.slice(Math.floor(data.length / 2));
 
-    const firstAvg = firstHalf.reduce((sum, p) => sum + p.value, 0) / firstHalf.length;
-    const secondAvg = secondHalf.reduce((sum, p) => sum + p.value, 0) / secondHalf.length;
+    const firstAvg = this.average(this.filterOutliers(firstHalf.map(p => p.value)));
+    const secondAvg = this.average(this.filterOutliers(secondHalf.map(p => p.value)));
 
     if (firstAvg === 0) return 0;
 
