@@ -247,9 +247,7 @@ export default function ForecastPage() {
               <span className="text-xs font-semibold bg-violet-100 text-violet-700 px-2.5 py-0.5 rounded-full">{forecast.forecastMethod}</span>
             </h3>
             <p className="text-sm text-slate-700 leading-relaxed m-0">
-              {isDemoMode
-                ? 'Your AWS spend is stable due to consistent EC2 and S3 usage patterns over 90 days. Compute accounts for 62% of total cost with no significant scaling events detected. However, minor traffic fluctuations could increase costs by ~8% if sustained — Reserved Instance pricing would eliminate this risk and save $120/month.'
-                : (forecast.aiSummary || 'Your AWS spend is stable due to consistent EC2 and S3 usage patterns over 90 days.')}
+              {forecast.aiSummary || 'Your AWS spend is stable due to consistent EC2 and S3 usage patterns over 90 days.'}
             </p>
           </div>
         </div>
