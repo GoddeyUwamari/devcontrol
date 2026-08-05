@@ -209,19 +209,23 @@ export class RiskTrackingService {
       }
     }
 
-    // Map to response format
-    const trendPoints: RiskScoreTrendPoint[] = history.map((h) => ({
-      date: h.snapshot_date.toISOString().split('T')[0],
-      score: h.overall_score,
-      grade: h.grade as 'A' | 'B' | 'C' | 'D' | 'F',
-      factors: {
-        encryption: h.encryption_score,
-        publicAccess: h.public_access_score,
-        backup: h.backup_score,
-        compliance: h.compliance_score,
-        resourceManagement: h.resource_management_score,
-      },
-    }));
+    // Map to response format. `history` is DESC (newest first, as required by the
+    // trend math above) — reverse to ASC before handing to chart consumers, which
+    // plot this array left-to-right and assume oldest-to-newest order.
+    const trendPoints: RiskScoreTrendPoint[] = [...history]
+      .reverse()
+      .map((h) => ({
+        date: h.snapshot_date.toISOString().split('T')[0],
+        score: h.overall_score,
+        grade: h.grade as 'A' | 'B' | 'C' | 'D' | 'F',
+        factors: {
+          encryption: h.encryption_score,
+          publicAccess: h.public_access_score,
+          backup: h.backup_score,
+          compliance: h.compliance_score,
+          resourceManagement: h.resource_management_score,
+        },
+      }));
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
