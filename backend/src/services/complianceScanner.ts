@@ -308,28 +308,21 @@ export class ComplianceScannerService {
   private checkHIPAACompliance(resource: AWSResource): ComplianceIssue[] {
     const issues: ComplianceIssue[] = [];
 
-    // HIPAA: PHI Data Encryption - Stricter encryption requirements
-    if (['s3', 'rds', 'ebs', 'ec2'].includes(resource.resource_type)) {
-      if (!resource.is_encrypted) {
+    // HIPAA: PHI Data Encryption - Stricter encryption requirements. The "not encrypted
+    // at all" case is intentionally NOT re-flagged here: checkEncryption() already reports
+    // it for every resource type (including these four), so re-reporting it under a HIPAA
+    // label would count the same real problem twice. Only check the HIPAA-specific nuance
+    // (CMK vs AWS-managed key) that applies once a resource is actually encrypted.
+    if (['s3', 'rds', 'ebs', 'ec2'].includes(resource.resource_type) && resource.is_encrypted) {
+      const usesKMSCMK = resource.tags?.['KMSKey'] || resource.tags?.['EncryptionKey'];
+      if (!usesKMSCMK) {
         issues.push({
-          severity: 'critical',
+          severity: 'medium',
           category: 'encryption',
-          issue: `HIPAA: ${resource.resource_type.toUpperCase()} resource storing PHI must be encrypted at rest`,
-          recommendation: 'HIPAA requires encryption of all PHI data at rest. Enable encryption using AWS KMS with customer-managed keys (CMK) for audit trail.',
+          issue: 'HIPAA: Resource should use AWS KMS Customer Managed Keys (CMK) for encryption',
+          recommendation: 'Use AWS KMS CMK instead of AWS-managed keys for better audit capabilities and key rotation control.',
           resource_arn: resource.resource_arn,
         });
-      } else {
-        // Even if encrypted, check if using KMS CMK (recommended for HIPAA)
-        const usesKMSCMK = resource.tags?.['KMSKey'] || resource.tags?.['EncryptionKey'];
-        if (!usesKMSCMK) {
-          issues.push({
-            severity: 'medium',
-            category: 'encryption',
-            issue: 'HIPAA: Resource should use AWS KMS Customer Managed Keys (CMK) for encryption',
-            recommendation: 'Use AWS KMS CMK instead of AWS-managed keys for better audit capabilities and key rotation control.',
-            resource_arn: resource.resource_arn,
-          });
-        }
       }
     }
 
@@ -399,9 +392,12 @@ export class ComplianceScannerService {
       }
     }
 
-    // HIPAA: Backup Requirements - More stringent than generic
+    // HIPAA: Backup Requirements - More stringent than generic. checkBackups() already
+    // covers the "no backup at all" case for rds/ec2, so only flag it here for ebs — the
+    // one type in this list that the generic check doesn't cover — to avoid double-counting
+    // the same missing-backup problem under two labels for rds/ec2.
     if (['rds', 'ec2', 'ebs', 's3'].includes(resource.resource_type)) {
-      if (!resource.has_backup && resource.resource_type !== 's3') {
+      if (!resource.has_backup && ['ebs'].includes(resource.resource_type)) {
         issues.push({
           severity: 'critical',
           category: 'backups',
