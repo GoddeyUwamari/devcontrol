@@ -13,12 +13,14 @@ import { AIInsightsService, WeeklySummaryData } from '../services/ai-insights.se
 import { WeeklySummaryRepository } from '../repositories/weekly-summary.repository';
 import { RiskTrackingService } from '../services/risk-tracking.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 
 export class WeeklyAISummaryJob {
   private aiService: AIInsightsService;
   private repository: WeeklySummaryRepository;
   private riskTrackingService: RiskTrackingService;
   private costRecommendationsRepository: CostRecommendationsRepository;
+  private accountFindingsRepository: AccountSecurityFindingsRepository;
   private task: ReturnType<typeof cron.schedule> | null = null;
   private emailTemplate: HandlebarsTemplateDelegate | null = null;
   private resend: Resend | null = null;
@@ -28,6 +30,7 @@ export class WeeklyAISummaryJob {
     this.repository = new WeeklySummaryRepository(pool);
     this.riskTrackingService = new RiskTrackingService(pool);
     this.costRecommendationsRepository = new CostRecommendationsRepository();
+    this.accountFindingsRepository = new AccountSecurityFindingsRepository();
     this.loadEmailTemplate();
     this.setupResendClient();
   }
@@ -305,19 +308,28 @@ export class WeeklyAISummaryJob {
     monthlySpend: number
   ): Promise<{ text: string; estimatedSavings: number | null } | null> {
     try {
-      const [riskScore, costStats] = await Promise.all([
+      const [riskScore, costStats, activeFindings] = await Promise.all([
         this.riskTrackingService.getCurrentRiskScore(organizationId),
-        this.costRecommendationsRepository.getStats(organizationId)
+        this.costRecommendationsRepository.getStats(organizationId),
+        this.accountFindingsRepository.getActive(organizationId)
       ]);
 
       const facts: string[] = [];
 
       if (!riskScore.isPreliminary) {
+        // Same split as AISummaryService's dashboard summary: complianceIssueCounts
+        // combines account-level findings (security groups, IAM) with per-resource
+        // compliance issues (encryption/backup/tagging/SOC2/HIPAA) from two different
+        // scanners — report them separately instead of one undifferentiated total.
         const c = riskScore.complianceIssueCounts;
-        const totalFindings = c.critical + c.high + c.medium + c.low;
+        const totalCombined = c.critical + c.high + c.medium + c.low;
+        const accountLevelCount = activeFindings.length;
+        const resourceComplianceCount = totalCombined - accountLevelCount;
         facts.push(
-          `Security posture score: ${riskScore.score}/100, driven by ${totalFindings} active ` +
-          `finding${totalFindings !== 1 ? 's' : ''} (${c.critical} critical, ${c.high} high, ${c.medium} medium, ${c.low} low).`
+          `Security posture score: ${riskScore.score}/100 — ${accountLevelCount} account-level ` +
+          `finding${accountLevelCount !== 1 ? 's' : ''} (security groups, IAM) and ` +
+          `${resourceComplianceCount} resource compliance issue${resourceComplianceCount !== 1 ? 's' : ''} ` +
+          `(encryption, backups, tagging, SOC2/HIPAA checks) currently active.`
         );
       }
 

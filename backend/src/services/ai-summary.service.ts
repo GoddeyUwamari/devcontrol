@@ -144,11 +144,25 @@ export class AISummaryService {
       }
 
       if (!riskScore.isPreliminary) {
+        // riskScore.complianceIssueCounts is account-level findings (security groups,
+        // IAM — the account_security_findings table) combined with per-resource
+        // compliance issues (encryption/backup/tagging/SOC2/HIPAA checks stored on
+        // aws_resources) — see RiskTrackingService.combineSeverityCounts(). Reporting
+        // only the combined total as "N active findings" reads as one homogeneous
+        // metric when it's actually two different things from two different scanners;
+        // report them separately instead. activeFindings.length is the real
+        // account-level count; the resource-level count is recovered by subtracting
+        // it from the combined total (combineSeverityCounts is a plain per-field sum,
+        // so this is exact, not an estimate).
         const c = riskScore.complianceIssueCounts;
-        const totalFindings = c.critical + c.high + c.medium + c.low;
+        const totalCombined = c.critical + c.high + c.medium + c.low;
+        const accountLevelCount = activeFindings.length;
+        const resourceComplianceCount = totalCombined - accountLevelCount;
         facts.push(
-          `Security posture score: ${riskScore.score}/100, driven by ${totalFindings} active ` +
-          `finding${totalFindings !== 1 ? 's' : ''} (${c.critical} critical, ${c.high} high, ${c.medium} medium, ${c.low} low).`
+          `Security posture score: ${riskScore.score}/100 — ${accountLevelCount} account-level ` +
+          `finding${accountLevelCount !== 1 ? 's' : ''} (security groups, IAM) and ` +
+          `${resourceComplianceCount} resource compliance issue${resourceComplianceCount !== 1 ? 's' : ''} ` +
+          `(encryption, backups, tagging, SOC2/HIPAA checks) currently active.`
         );
       }
 
