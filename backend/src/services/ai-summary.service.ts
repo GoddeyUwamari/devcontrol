@@ -10,7 +10,10 @@
  * Cached per-org, keyed on the org's latest completed discovery scan (not just a
  * fixed clock TTL) so the summary regenerates when a new scan actually runs rather
  * than on every dashboard poll — with a 4h ceiling as a defensive fallback in case
- * scans stall.
+ * scans stall. Also keyed on rounded monthlySpend/costDeltaPct: those two facts
+ * move on the cost-data cadence (daily Cost Explorer updates), which is decoupled
+ * from resource-discovery scans, so a scan-only cache key can serve a summary with
+ * stale dollar figures baked into its prose for up to the 4h ceiling.
  */
 
 import { PoolClient } from 'pg';
@@ -20,6 +23,7 @@ import { SystemIntelligenceService } from './system-intelligence.service';
 import { RiskTrackingService } from './risk-tracking.service';
 import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import awsCostService from './aws-cost.service';
 
 const EMPTY_FIELDS: StructuredDashboardSummary = {
   overallHealth: { score: null, context: null },
@@ -35,6 +39,8 @@ export interface AISummaryResult extends StructuredDashboardSummary {
 interface CacheEntry {
   fields: StructuredDashboardSummary;
   scanCompletedAt: string | null;
+  monthlySpendRounded: number | null;
+  costDeltaPct: number | null;
   timestamp: number;
 }
 
@@ -89,25 +95,48 @@ export class AISummaryService {
   }
 
   /**
-   * Get the cached summary if it's for the same completed scan and under the TTL
-   * ceiling, otherwise regenerate and cache.
+   * Get the cached summary if it's for the same completed scan, the same rounded
+   * monthly spend, and the same cost delta — all under the TTL ceiling — otherwise
+   * regenerate and cache. monthlySpend/costDeltaPct are rounded to the precision
+   * actually shown in the generated prose ($ whole number, 1 decimal %) so this
+   * doesn't regenerate on noise smaller than what a user could ever see change.
    */
   async getSummary(organizationId: string, costDeltaPct?: number | null): Promise<AISummaryResult> {
     const scanCompletedAt = await this.getLatestScanCompletedAt(organizationId);
+    const monthlySpendRounded = await this.getMonthlySpendRounded(organizationId);
+    const normalizedCostDeltaPct = costDeltaPct ?? null;
     const cached = this.cache.get(organizationId);
 
     if (
       cached &&
       cached.scanCompletedAt === scanCompletedAt &&
+      cached.monthlySpendRounded === monthlySpendRounded &&
+      cached.costDeltaPct === normalizedCostDeltaPct &&
       Date.now() - cached.timestamp < AISummaryService.CACHE_TTL_CEILING
     ) {
       return { ...cached.fields, generatedAt: new Date(cached.timestamp).toISOString() };
     }
 
-    const fields = await this.generateSummary(organizationId, costDeltaPct);
+    const fields = await this.generateSummary(organizationId, normalizedCostDeltaPct);
     const timestamp = Date.now();
-    this.cache.set(organizationId, { fields, scanCompletedAt, timestamp });
+    this.cache.set(organizationId, { fields, scanCompletedAt, monthlySpendRounded, costDeltaPct: normalizedCostDeltaPct, timestamp });
     return { ...fields, generatedAt: new Date(timestamp).toISOString() };
+  }
+
+  /**
+   * Cheap peek at current monthly spend for cache-key purposes — reuses
+   * AWSCostService's own 4h-TTL per-org cache, so this is a real Cost Explorer
+   * call only as often as fetchMonthlyCosts itself would already make one.
+   * Rounded to whole dollars to match what generateSummary's prose actually shows.
+   */
+  private async getMonthlySpendRounded(organizationId: string): Promise<number | null> {
+    try {
+      const { total } = await awsCostService.fetchMonthlyCosts(organizationId);
+      return Math.round(total);
+    } catch (error: any) {
+      console.error('[AI Summary] Error fetching monthly spend for cache key:', error.message);
+      return null;
+    }
   }
 
   private async generateSummary(
