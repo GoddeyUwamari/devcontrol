@@ -628,7 +628,7 @@ function InfrastructureContent() {
 
         {/* Monthly Cost */}
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-gray-200/50">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">Last Month's Cost</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">Monthly Cost</p>
           <div className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight leading-none mb-2">
             {isDemoActive ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : totalMonthlyCost > 0 ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : '—'}
           </div>

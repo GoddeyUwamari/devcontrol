@@ -80,7 +80,7 @@ export default function CostsByTeamPage() {
   })
 
   // Source A — same call Dashboard/costs/efficiency use for live spend. Feeds only the
-  // Total Spend (Last Month) / Annual Projection KPI cards, so they agree with Dashboard.
+  // Total Monthly Spend / Annual Projection KPI cards, so they agree with Dashboard.
   const { data: platformStats, isLoading: statsLoading } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
     queryFn: platformStatsService.getDashboardStats,
@@ -174,7 +174,7 @@ export default function CostsByTeamPage() {
       {/* ── KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Total Spend (Last Month)', value: `$${(liveTotalCost).toLocaleString()}`,    icon: DollarSign, color: '#7C3AED', loading: statsLoading },
+          { label: 'Total Monthly Spend', value: `$${(liveTotalCost).toLocaleString()}`,    icon: DollarSign, color: '#7C3AED', loading: statsLoading },
           { label: 'Annual Projection',   value: `$${annualizeMonthly(liveTotalCost).toLocaleString()}`, icon: TrendingUp, color: '#4f8ef7', loading: statsLoading },
           { label: 'Teams Tracked',       value: String(data?.by_team?.length ?? 0),     icon: Users,      color: '#38c9a0', loading: isLoading },
           { label: 'Top Spender',         value: topItem ? topItem.name.split(' ')[0] : 'N/A', icon: DollarSign, color: '#e05d2e', loading: isLoading },

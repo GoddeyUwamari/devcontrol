@@ -428,10 +428,9 @@ class AWSCostService {
   }
 
   /**
-   * Fetch the most recently *completed* calendar month's costs from AWS Cost Explorer
-   * (e.g. on any day in August, this returns all of July). Deliberately not
-   * current-month-to-date — Cost Explorer's usage data lags 24-48h, so early in a new
-   * month a to-date query would read as a false cost drop even though nothing dropped.
+   * Fetch current-calendar-month-to-date costs from AWS Cost Explorer.
+   * By design, this reads as a low/partial number for the first 1-3 days of a new month
+   * (Cost Explorer's usage data lags 24-48h) — accepted tradeoff, not a bug.
    * If organizationId is supplied, assumes the org's IAM role via STS before calling
    * Cost Explorer; otherwise falls back to platform-level env-var credentials.
    */
@@ -473,20 +472,16 @@ class AWSCostService {
     }
 
     try {
-      // Most recently *completed* calendar month, not current-month-to-date: on day 1-2
-      // of a new month, Cost Explorer's current-month bucket is nearly empty (usage data
-      // lags 24-48h) which made this KPI crater to near-zero right when the prior month's
-      // real total was still the meaningful number. TimePeriod.End is exclusive in Cost
-      // Explorer, so start-of-this-month as End correctly includes all of last month's
-      // days — matching how CLI cost queries for "last month" are conventionally scoped.
       const now = new Date()
-      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      // Cost Explorer's End is exclusive; include today.
+      const endOfToday = new Date(now)
+      endOfToday.setDate(endOfToday.getDate() + 1)
 
       const command = new GetCostAndUsageCommand({
         TimePeriod: {
-          Start: startOfLastMonth.toISOString().split('T')[0],
-          End: startOfThisMonth.toISOString().split('T')[0],
+          Start: startOfMonth.toISOString().split('T')[0],
+          End: endOfToday.toISOString().split('T')[0],
         },
         Granularity: Granularity.MONTHLY,
         Metrics: [Metric.UNBLENDED_COST],
@@ -512,8 +507,8 @@ class AWSCostService {
         total,
         byService,
         period: {
-          start: startOfLastMonth.toISOString().split('T')[0],
-          end: startOfThisMonth.toISOString().split('T')[0],
+          start: startOfMonth.toISOString().split('T')[0],
+          end: endOfToday.toISOString().split('T')[0],
         },
       }
     } catch (error) {

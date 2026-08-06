@@ -498,7 +498,7 @@ export default function EfficiencyPage() {
 
       {/* ── KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KPICard label="Last Month Spend"   value={kpis.totalSpend}                   delta={kpis.totalSpendDelta} prefix="$" accent />
+        <KPICard label="Total Spend"        value={kpis.totalSpend}                   delta={kpis.totalSpendDelta} prefix="$" accent />
         <KPICard label="Cost Per Resource"  value={kpis.costPerResource.toFixed(2)}   delta={kpis.costPerDelta}    prefix="$" />
         <KPICard label="Idle Resource Cost" value={kpis.idleCost}                     delta={kpis.idleDelta}       prefix="$" />
         <KPICard label="Savings Realized"   value={kpis.savingsRealized}              delta={kpis.savingsDelta}    prefix="$" />
