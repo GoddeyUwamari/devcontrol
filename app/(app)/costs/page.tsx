@@ -93,9 +93,10 @@ const DEMO_CHART_DATA: { date: string; actual: number | null; forecast: number |
 ]
 
 // Month-over-month cost delta, derived from the already-fetched costTrend daily series
-// (no new API call). Compares this month's spend-to-date against the same number of
-// days into last month, calendar-string-parsed to avoid UTC/local timezone day-shift.
-// Only returns a value when both windows have enough real daily coverage to trust the
+// (no new API call). Compares the two most recently *completed* calendar months (e.g.
+// full July vs full June) — matching what fetchMonthlyCosts now sources the headline
+// "Last Month's Spend" figure from (see aws-cost.service.ts), not current-month-to-date.
+// Only returns a value when both months have enough real daily coverage to trust the
 // comparison — otherwise null. Mirrors computeMonthOverMonthCostChange in dashboard/page.tsx.
 function computeMonthOverMonthCostChange(
   costTrend: Array<{ date: string; total: number }>
@@ -105,27 +106,41 @@ function computeMonthOverMonthCostChange(
   const now = new Date()
   const curYear = now.getFullYear()
   const curMonth = now.getMonth()
-  const dayOfMonth = now.getDate()
+
+  // "Last month" = the most recently completed calendar month (what the headline figure
+  // shows). Compare it against the full month before that.
   const lastMonth = curMonth === 0 ? 11 : curMonth - 1
   const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear
+  const priorMonth = lastMonth === 0 ? 11 : lastMonth - 1
+  const priorMonthYear = lastMonth === 0 ? lastMonthYear - 1 : lastMonthYear
 
-  let currentSum = 0, currentDays = 0
-  let lastSum = 0, lastDays = 0
+  let lastSum = 0, lastCount = 0
+  let priorSum = 0, priorCount = 0
 
   for (const entry of costTrend) {
-    const [y, m, d] = entry.date.split('-').map(Number)
+    const [y, m] = entry.date.split('-').map(Number)
     const month = m - 1
-    if (y === curYear && month === curMonth && d <= dayOfMonth) {
-      currentSum += entry.total
-      currentDays++
-    } else if (y === lastMonthYear && month === lastMonth && d <= dayOfMonth) {
+    if (y === lastMonthYear && month === lastMonth) {
       lastSum += entry.total
-      lastDays++
+      lastCount++
+    } else if (y === priorMonthYear && month === priorMonth) {
+      priorSum += entry.total
+      priorCount++
     }
   }
 
-  if (currentDays < dayOfMonth * 0.5 || lastDays < dayOfMonth * 0.5 || lastSum === 0) return null
-  return Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10
+  if (lastCount === 0 || priorCount === 0 || priorSum <= 0) return null
+
+  // Daily-granularity ranges (7d/30d/90d) yield one point per day — require near-complete
+  // coverage of both full months before trusting the comparison. Monthly-granularity ranges
+  // (6mo/1yr) yield a single pre-aggregated point per month, which is already a full total.
+  if (lastCount > 1 || priorCount > 1) {
+    const daysInLastMonth = new Date(lastMonthYear, lastMonth + 1, 0).getDate()
+    const daysInPriorMonth = new Date(priorMonthYear, priorMonth + 1, 0).getDate()
+    if (lastCount < daysInLastMonth * 0.9 || priorCount < daysInPriorMonth * 0.9) return null
+  }
+
+  return Math.round(((lastSum - priorSum) / priorSum) * 1000) / 10
 }
 
 export default function CostsPage() {
