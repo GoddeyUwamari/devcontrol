@@ -473,14 +473,19 @@ export class OnboardingService {
   }
 
   private async getResourcesDiscoveredWithClient(client: PoolClient | typeof pool, organizationId: string): Promise<any> {
-    // Data-driven signal for "discover_resources", same shape as getAwsCredentialsWithClient
-    // above — checks the resource_discovery_jobs row awsResourceDiscovery.ts already writes
-    // at the end of every scan (status set to 'completed' or 'failed'), rather than depending
-    // on an onboarding event that no live code path ever emits (resources_discovered_at was
-    // otherwise only ever set by that dead event listener, so this stage could never complete).
+    // Data-driven signal for "discover_resources". Checks aws_resources directly rather
+    // than resource_discovery_jobs.status: discoverAllResources() (awsResourceDiscovery.ts)
+    // writes 'failed' for the whole job if ANY of its post-scan steps errors — compliance
+    // scan, account-level security scan (security groups + IAM), orphaned-resource
+    // detection, cost analysis — even when the actual EC2/RDS/S3/etc. scans upserted real
+    // rows into aws_resources first. An org whose role is missing a peripheral permission
+    // (e.g. iam:ListUsers) would see status='failed' on every run, forever, and this stage
+    // could never complete despite resources genuinely being discovered. aws_resources
+    // existence is the narrower, accurate signal — same precedent as system-intelligence
+    // .service.ts checking cost_analysis_completed instead of trusting overall status.
     const result = await client.query(
-      `SELECT 1 FROM resource_discovery_jobs
-       WHERE organization_id = $1 AND status = 'completed'
+      `SELECT 1 FROM aws_resources
+       WHERE organization_id = $1
        LIMIT 1`,
       [organizationId]
     );
