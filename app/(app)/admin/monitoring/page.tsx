@@ -279,7 +279,9 @@ export default function MonitoringPage() {
               <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
               <p className="text-sm text-slate-700 leading-relaxed">
                 {systemStatus === 'degraded'
-                  ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
+                  ? (isDemoActive
+                      ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
+                      : 'One or more services may need attention. Review Service Health below for details.')
                   : systemStatus === 'healthy'
                     ? `All ${services.length} services healthy. Average response time ${responseTimeString} with ${uptime} uptime. No active alerts detected.`
                     : 'System is down. Immediate investigation required across all services.'}
