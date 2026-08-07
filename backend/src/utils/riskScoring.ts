@@ -19,9 +19,15 @@ export interface RiskScore {
   color: string;
   factors: RiskScoreFactors;
   // Raw counts behind `factors.compliance` — per-resource compliance_issues merged with
-  // account_security_findings (see RiskTrackingService.calculateCurrentRiskScore). Exposed
-  // so the UI can explain the score instead of just showing a bare number.
+  // account_security_findings (see RiskTrackingService.calculateCurrentRiskScore). Used
+  // for the compliance score deduction. Callers that display this to a user should use
+  // accountFindingsCounts/resourceComplianceCounts below instead — this combined total
+  // silently blends two different scanners with different meanings (see bc610ea).
   complianceIssueCounts: ComplianceIssueCounts;
+  // The same total split by source, so UI consumers can label each severity bucket by
+  // where it actually came from instead of rendering one blended number.
+  accountFindingsCounts: ComplianceIssueCounts;
+  resourceComplianceCounts: ComplianceIssueCounts;
   frameworksAtRisk: string[];
   // False until compliance scanning + orphaned-resource detection have actually run —
   // until then, compliance/resourceManagement inputs are stubs and the score/grade
@@ -34,6 +40,8 @@ export function calculateRiskScore(factors: {
   totalResources: number;
   unencryptedResources: number;
   complianceIssues: { critical: number; high: number; medium: number; low: number };
+  accountFindingsCounts: ComplianceIssueCounts;
+  resourceComplianceCounts: ComplianceIssueCounts;
   missingBackups: number;
   orphanedResources: number;
   scanCompleted: boolean;
@@ -88,6 +96,8 @@ export function calculateRiskScore(factors: {
       resourceManagement: Math.round(resourceMgmtScore),
     },
     complianceIssueCounts: factors.complianceIssues,
+    accountFindingsCounts: factors.accountFindingsCounts,
+    resourceComplianceCounts: factors.resourceComplianceCounts,
     // Severity counts alone don't identify which frameworks are impacted; leave honest until compliance_issues carries framework tags.
     frameworksAtRisk: [],
     isPreliminary: !factors.scanCompleted,

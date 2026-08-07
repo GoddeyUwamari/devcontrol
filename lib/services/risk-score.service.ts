@@ -20,7 +20,12 @@ export interface RiskScore {
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   color: string;
   factors: RiskScoreFactors;
+  // Combined total (account-level findings + resource compliance issues) used for the
+  // compliance score deduction. Don't display this directly — it blends two different
+  // scanners with different meanings; use accountFindingsCounts/resourceComplianceCounts.
   complianceIssueCounts: ComplianceIssueCounts;
+  accountFindingsCounts: ComplianceIssueCounts;
+  resourceComplianceCounts: ComplianceIssueCounts;
   frameworksAtRisk: string[];
   // False until a genuine compliance + orphaned-resource scan has run — see backend riskScoring.ts
   isPreliminary: boolean;

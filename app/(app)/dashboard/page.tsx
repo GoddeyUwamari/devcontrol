@@ -326,10 +326,12 @@ export default function DashboardPage() {
     : securityScore >= 60 ? '#D97706'
     : '#DC2626'
   const securityShowEliteBadge = isDemoActive || (!securityIsPreliminary && securityScore !== null && securityScore >= 85)
-  // Compact severity breakdown for the Security Posture card — only renders when the
-  // backend has real counts to show; never fabricates a value when data is absent.
-  const securityBreakdown = (() => {
-    const counts = riskScoreData?.current?.complianceIssueCounts
+  // Compact severity breakdowns for the Security Posture card — only render when the
+  // backend has real counts to show; never fabricate a value when data is absent.
+  // Account-level findings (open security groups, IAM) and per-resource compliance
+  // issues (encryption/backup/tagging/SOC2/HIPAA) come from two different scanners —
+  // reported separately rather than silently summed into one blended severity count.
+  const formatSeverityCounts = (counts?: { critical: number; high: number; medium: number; low: number } | null) => {
     if (!counts) return null
     const parts: string[] = []
     if (counts.critical > 0) parts.push(`${counts.critical} Critical`)
@@ -337,7 +339,9 @@ export default function DashboardPage() {
     if (counts.medium > 0) parts.push(`${counts.medium} Medium`)
     if (counts.low > 0) parts.push(`${counts.low} Low`)
     return parts.length > 0 ? parts.join(' · ') : null
-  })()
+  }
+  const accountFindingsBreakdown = formatSeverityCounts(riskScoreData?.current?.accountFindingsCounts)
+  const resourceComplianceBreakdown = formatSeverityCounts(riskScoreData?.current?.resourceComplianceCounts)
   const isAwsConnected  = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
   const hasBillingData   = !isDemoActive && !!stats && (stats.costSource === 'actual' || stats.monthlyAwsCost > 0)
   const hasServicesOnly  = !isDemoActive && !!stats && stats.totalServices > 0 && !hasBillingData
@@ -852,8 +856,11 @@ export default function DashboardPage() {
                         {securityTierLabel}
                       </span>
                     </div>
-                    {securityBreakdown && (
-                      <p className="text-xs text-[var(--text-secondary)] mt-1">{securityBreakdown}</p>
+                    {accountFindingsBreakdown && (
+                      <p className="text-xs text-[var(--text-secondary)] mt-1">Findings: {accountFindingsBreakdown}</p>
+                    )}
+                    {resourceComplianceBreakdown && (
+                      <p className="text-xs text-[var(--text-secondary)] mt-1">Compliance: {resourceComplianceBreakdown}</p>
                     )}
                   </div>
 

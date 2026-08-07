@@ -97,16 +97,19 @@ export class RiskTrackingService {
   async calculateCurrentRiskScore(organizationId: string, client?: PoolClient): Promise<RiskScore> {
     const stats = await this.resourcesRepository.getStats(organizationId, client);
     const accountFindings = await this.accountFindingsRepository.getStats(organizationId, client);
+    const resourceComplianceCounts = stats.compliance_stats?.by_severity || { critical: 0, high: 0, medium: 0, low: 0 };
 
     const factors = {
       totalResources: stats.total_resources || 0,
       unencryptedResources: stats.unencrypted_count || 0,
       publicResources: stats.public_count || 0,
       missingBackups: stats.missing_backup_count || 0,
-      complianceIssues: this.combineSeverityCounts(
-        stats.compliance_stats?.by_severity || { critical: 0, high: 0, medium: 0, low: 0 },
-        accountFindings.bySeverity
-      ),
+      complianceIssues: this.combineSeverityCounts(resourceComplianceCounts, accountFindings.bySeverity),
+      // Passed through un-combined too, so callers can display each source separately
+      // instead of the blended total above — same conflation bc610ea fixed for the AI
+      // summary text, now also fixed for the dashboard's Security health card.
+      accountFindingsCounts: accountFindings.bySeverity,
+      resourceComplianceCounts,
       orphanedResources: stats.orphaned_count || 0,
       scanCompleted: stats.scan_completed,
     };
