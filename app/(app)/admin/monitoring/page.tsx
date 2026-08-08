@@ -22,7 +22,7 @@ const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
 interface ServiceHealth {
   name: string; description?: string; status: 'healthy' | 'degraded' | 'down' | 'unknown'
   uptime: string; responseTime: string; errorRate: number | null; critical?: boolean
-  recentIncidents?: number; uptimeHistory?: number[]
+  recentIncidents?: number; uptimeHistory?: number[]; monitored?: boolean
 }
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
 interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean }
@@ -168,11 +168,17 @@ export default function MonitoringPage() {
         responseTime: s.responseTimeMs !== null && s.responseTimeMs !== undefined ? `${s.responseTimeMs}ms` : 'N/A',
         errorRate: s.errorRate ?? null,
         critical: s.critical,
+        monitored: s.monitored,
       }))
       setServices(mappedServices)
 
-      const anyDown = mappedServices.some(s => s.status === 'down')
-      const anyDegraded = mappedServices.some(s => s.status === 'degraded')
+      // Only resources CloudWatch is actually confirming (monitored: true) can drive the
+      // system-wide status. A resource whose "down"/"degraded" reading comes solely from
+      // stale inventory data (no live CloudWatch signal) shouldn't be able to flip the
+      // whole system to Down on its own — see live-test finding 2026-08-08.
+      const monitoredServices = mappedServices.filter(s => s.monitored)
+      const anyDown = monitoredServices.some(s => s.status === 'down')
+      const anyDegraded = monitoredServices.some(s => s.status === 'degraded')
       setSystemStatus(anyDown ? 'down' : anyDegraded ? 'degraded' : 'healthy')
       setMetricsAvailable(true); setError(null); setLoading(false); setLastSynced(new Date())
       fetchAlerts()

@@ -13,6 +13,7 @@ interface ServiceHealth {
   critical?: boolean
   recentIncidents?: number
   uptimeHistory?: number[]
+  monitored?: boolean
 }
 
 interface ServiceHealthTableProps {
@@ -76,11 +77,14 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
                   <div
                     className={cn(
                       "w-3 h-3 rounded-full",
-                      service.status === 'healthy' && "bg-green-500",
-                      service.status === 'degraded' && "bg-yellow-500",
-                      service.status === 'down' && "bg-red-500",
-                      service.status === 'unknown' && "bg-gray-300"
+                      service.monitored === false
+                        ? "bg-gray-300"
+                        : service.status === 'healthy' && "bg-green-500",
+                      service.monitored !== false && service.status === 'degraded' && "bg-yellow-500",
+                      service.monitored !== false && service.status === 'down' && "bg-red-500",
+                      service.monitored !== false && service.status === 'unknown' && "bg-gray-300"
                     )}
+                    title={service.monitored === false ? 'No live monitoring data — status from inventory only' : undefined}
                   />
 
                   {/* Service Name + Tags */}
@@ -92,6 +96,11 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
                       {service.critical && (
                         <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">
                           Core Service
+                        </span>
+                      )}
+                      {service.monitored === false && (
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-medium">
+                          Not monitored
                         </span>
                       )}
                     </div>
