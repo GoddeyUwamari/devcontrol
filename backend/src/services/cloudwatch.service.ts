@@ -36,7 +36,7 @@ export interface CloudWatchServiceHealth {
   resourceId: string
   name: string
   description: string
-  resourceType: 'ec2' | 'rds' | 'load-balancer'
+  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda'
   status: 'healthy' | 'degraded' | 'down' | 'unknown'
   // null means CloudWatch genuinely has no data for this metric right now — never
   // fabricate a plausible-looking number in its place.
@@ -69,7 +69,7 @@ export interface CloudWatchMetrics {
 interface InventoryRow {
   resource_id: string
   resource_name: string | null
-  resource_type: 'ec2' | 'rds' | 'load-balancer'
+  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda'
   resource_arn: string
   status: string | null
   metadata: Record<string, any> | null
@@ -251,16 +251,70 @@ const loadBalancerCapability: ResourceCapability<AlbExtra> = {
   },
 }
 
-// Adding a future resource type (e.g. Lambda, DynamoDB) means adding a capability
+const lambdaCapability: ResourceCapability = {
+  resourceType: 'lambda',
+  cloudwatchNamespace: 'AWS/Lambda',
+  dimensionKey: 'FunctionName',
+  // Discovery stores the function name (not the ARN) as resource_id — same value
+  // CloudWatch's FunctionName dimension expects, so no ARN parsing needed here.
+  getDimensionValue: (fn) => fn.resource_id,
+  metrics: [
+    { key: 'invocations', metricName: 'Invocations', statistic: 'Sum' },
+    { key: 'errors', metricName: 'Errors', statistic: 'Sum' },
+    { key: 'duration', metricName: 'Duration', statistic: 'Average' },
+  ],
+  healthRule: (fn, values) => {
+    const invocations = values.invocations
+    const errors = values.errors
+    const duration = values.duration
+
+    const responseTimeMs = duration !== null ? Math.round(duration) : null
+    const errorRate =
+      invocations !== null && invocations > 0 && errors !== null
+        ? Math.round((errors / invocations) * 10000) / 100
+        : invocations !== null
+          ? 0
+          : null
+
+    let status: CloudWatchServiceHealth['status']
+    if (fn.status === 'Failed' || fn.status === 'Inactive') {
+      status = 'down'
+    } else if (errorRate !== null) {
+      status = errorRate < 5 ? 'healthy' : 'degraded'
+    } else {
+      status = 'unknown'
+    }
+
+    return {
+      service: {
+        resourceId: fn.resource_id,
+        name: fn.resource_name || fn.resource_id,
+        description: `Lambda · ${fn.metadata?.runtime ?? 'function'}`,
+        resourceType: 'lambda',
+        status,
+        uptime: null,
+        responseTimeMs,
+        errorRate,
+        critical: false,
+        monitored: invocations !== null,
+      },
+      extra: undefined,
+    }
+  },
+}
+
+// Adding a future resource type (e.g. DynamoDB) means adding a capability
 // definition here — the fetch/dimension plumbing in evaluateResource() is generic.
 const resourceTypeRegistry: {
   ec2: ResourceCapability
   rds: ResourceCapability
   'load-balancer': ResourceCapability<AlbExtra>
+  lambda: ResourceCapability
 } = {
   ec2: ec2Capability,
   rds: rdsCapability,
   'load-balancer': loadBalancerCapability,
+  lambda: lambdaCapability,
 }
 
 export class CloudWatchService {
@@ -281,7 +335,7 @@ export class CloudWatchService {
       `SELECT resource_id, resource_name, resource_type, resource_arn, status, metadata
        FROM aws_resources
        WHERE organization_id = $1
-         AND resource_type IN ('ec2', 'rds', 'load-balancer')
+         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda')
          AND status != 'terminated'
        ORDER BY resource_name ASC NULLS LAST`,
       [organizationId]
@@ -411,6 +465,7 @@ export class CloudWatchService {
     const ec2Instances = resources.filter((r) => r.resource_type === 'ec2').slice(0, 15)
     const rdsInstances = resources.filter((r) => r.resource_type === 'rds').slice(0, 15)
     const albs = resources.filter((r) => r.resource_type === 'load-balancer' && r.metadata?.type === 'application').slice(0, 5)
+    const lambdaFunctions = resources.filter((r) => r.resource_type === 'lambda').slice(0, 15)
 
     const ec2Results = (
       await Promise.all(
@@ -431,6 +486,15 @@ export class CloudWatchService {
       )
     ).filter((r): r is NonNullable<typeof r> => r !== null)
     const rdsServices = rdsResults.map((r) => r.service)
+
+    const lambdaResults = (
+      await Promise.all(
+        lambdaFunctions.map((fn) =>
+          this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.lambda, fn, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
+        )
+      )
+    ).filter((r): r is NonNullable<typeof r> => r !== null)
+    const lambdaServices = lambdaResults.map((r) => r.service)
 
     const albEvaluations = (
       await Promise.all(
@@ -517,7 +581,7 @@ export class CloudWatchService {
       trendPercent,
       responseTimeHistory,
       coverage: { ec2: ec2Instances.length > 0, loadBalancer: albResults.length > 0, rds: rdsInstances.length > 0 },
-      services: [...ec2Services, ...albServices, ...rdsServices],
+      services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices],
       capturedAt: new Date().toISOString(),
     }
   }
