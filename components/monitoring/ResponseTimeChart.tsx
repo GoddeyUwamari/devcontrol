@@ -48,40 +48,49 @@ export function ResponseTimeChart({ data, currentValue, trendPercent = 0 }: Resp
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-          <XAxis
-            dataKey="timestamp"
-            tickFormatter={(ts) => format(new Date(ts), 'HH:mm')}
-            stroke="#9CA3AF"
-            style={{ fontSize: '12px' }}
-          />
-          <YAxis
-            stroke="#9CA3AF"
-            style={{ fontSize: '12px' }}
-            tickFormatter={(val) => `${val}ms`}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: '#1F2937',
-              border: 'none',
-              borderRadius: '8px',
-              color: 'white',
-              fontSize: '12px',
-            }}
-            formatter={(value) => `${value}ms`}
-            labelFormatter={(ts) => format(new Date(ts), 'MMM dd, HH:mm')}
-          />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="#3B82F6"
-            strokeWidth={2}
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+      {data.length === 0 ? (
+        <div className="h-[200px] flex flex-col items-center justify-center text-center border border-dashed border-gray-200 rounded-lg">
+          <p className="text-sm font-medium text-gray-500">No response-time data to chart</p>
+          <p className="text-xs text-gray-400 mt-1 max-w-xs">
+            This account has no Application Load Balancer — response-time metrics only exist for ALB-fronted traffic.
+          </p>
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+            <XAxis
+              dataKey="timestamp"
+              tickFormatter={(ts) => format(new Date(ts), 'HH:mm')}
+              stroke="#9CA3AF"
+              style={{ fontSize: '12px' }}
+            />
+            <YAxis
+              stroke="#9CA3AF"
+              style={{ fontSize: '12px' }}
+              tickFormatter={(val) => `${val}ms`}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#1F2937',
+                border: 'none',
+                borderRadius: '8px',
+                color: 'white',
+                fontSize: '12px',
+              }}
+              formatter={(value) => `${value}ms`}
+              labelFormatter={(ts) => format(new Date(ts), 'MMM dd, HH:mm')}
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="#3B82F6"
+              strokeWidth={2}
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
 
       {hasAnomaly && (
         <div className="mt-3 p-2 bg-yellow-50 rounded flex items-center gap-2 text-xs">

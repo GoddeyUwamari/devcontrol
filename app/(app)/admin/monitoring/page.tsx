@@ -13,17 +13,19 @@ import { MonitoringErrorState, MonitoringErrorType } from '@/components/monitori
 import { ErrorBoundary } from '@/components/error-boundary'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import { alertHistoryService } from '@/lib/services/alert-history.service'
 import { toast } from 'sonner'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
 
 interface ServiceHealth {
-  name: string; description?: string; status: 'healthy' | 'degraded' | 'down'
-  uptime: string; responseTime: string; errorRate: number; critical?: boolean
+  name: string; description?: string; status: 'healthy' | 'degraded' | 'down' | 'unknown'
+  uptime: string; responseTime: string; errorRate: number | null; critical?: boolean
   recentIncidents?: number; uptimeHistory?: number[]
 }
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
+interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean }
 
 export default function MonitoringPage() {
   const router = useRouter()
@@ -34,6 +36,13 @@ export default function MonitoringPage() {
   const userRole = useMemo(() => {
     try { const token = localStorage.getItem('accessToken'); if (!token) return 'owner'; const payload = JSON.parse(atob(token.split('.')[1])); return payload.role ?? 'owner' } catch { return 'owner' }
   }, [])
+
+  const [coverage, setCoverage] = useState<CloudWatchCoverage | null>(null)
+  const coverageLabel = useMemo(() => {
+    if (!coverage) return 'EC2, Application Load Balancer'
+    const parts = [coverage.ec2 && 'EC2', coverage.loadBalancer && 'Application Load Balancer', coverage.rds && 'RDS (inventory only)'].filter(Boolean)
+    return parts.length > 0 ? parts.join(', ') : 'no monitored resources yet'
+  }, [coverage])
 
   const [systemStatus, setSystemStatus] = useState<'healthy' | 'degraded' | 'down'>('healthy')
   const [metricsAvailable, setMetricsAvailable] = useState(false)
@@ -56,6 +65,8 @@ export default function MonitoringPage() {
   const [diagnosticResult, setDiagnosticResult] = useState<any>(null)
   const [awsConnected, setAwsConnected] = useState<boolean | null>(null)
   const [cloudWatchMetrics, setCloudWatchMetrics] = useState<any>(null)
+  const [requestsAvailable, setRequestsAvailable] = useState(false)
+  const [trendAvailable, setTrendAvailable] = useState(false)
 
   const generateDemoMetrics = useCallback(() => {
     setError(null)
@@ -91,8 +102,27 @@ export default function MonitoringPage() {
     try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/cloudwatch/status`, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); setAwsConnected(data.success ? data.data.connected : false) } catch { setAwsConnected(false) }
   }, [])
 
-  const fetchCloudWatchMetrics = useCallback(async () => {
-    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/cloudwatch/metrics`, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data) { setCloudWatchMetrics(data.data); return data.data } return null } catch { return null }
+  const fetchCloudWatchMetrics = useCallback(async (range?: string) => {
+    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const url = `${API_URL}/api/cloudwatch/metrics${range ? `?range=${encodeURIComponent(range)}` : ''}`; const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data) { setCloudWatchMetrics(data.data); return data.data } return null } catch { return null }
+  }, [])
+
+  // Reuses the same alertHistoryService the /observability/alerts page is built on,
+  // instead of the CloudWatch-branch's previous demo-only alert list.
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const res = await alertHistoryService.getAlertHistory({ status: 'firing', limit: 20 })
+      const mapped = (res.data || []).map(a => ({
+        id: a.id,
+        title: a.alertName,
+        message: a.description,
+        severity: a.severity,
+        service: a.serviceName || a.serviceId || 'unknown',
+        triggeredAt: new Date(a.startedAt),
+      }))
+      setAlerts(mapped)
+    } catch (err) {
+      console.error('Error fetching alerts:', err)
+    }
   }, [])
 
   const saveSnapshot = useCallback(async (metrics: any) => {
@@ -114,19 +144,54 @@ export default function MonitoringPage() {
     const cw = cwData ?? cloudWatchMetrics
     if (cw && !demoMode) {
       const data = cw
-      setUptime(data.uptime !== null && data.uptime !== undefined ? `${data.uptime}%` : '99.9%')
-      setResponseTime(data.avgResponseTimeMs ?? 45); setResponseTimeString(`${data.avgResponseTimeMs ?? 45}ms`)
-      setRequestsPerMinute(data.requestsPerMinute ?? 0)
+      const hasUptime = data.uptime !== null && data.uptime !== undefined
+      const hasResponseTime = data.avgResponseTimeMs !== null && data.avgResponseTimeMs !== undefined
+      const hasRequests = data.requestsPerMinute !== null && data.requestsPerMinute !== undefined
+      const hasTrend = data.trendPercent !== null && data.trendPercent !== undefined
+
+      setUptime(hasUptime ? `${data.uptime}%` : 'N/A')
+      setResponseTime(hasResponseTime ? data.avgResponseTimeMs : 0)
+      setResponseTimeString(hasResponseTime ? `${data.avgResponseTimeMs}ms` : 'N/A')
+      setRequestsPerMinute(hasRequests ? data.requestsPerMinute : 0)
+      setRequestsAvailable(hasRequests)
       setMonthlyCost(data.monthlyCost !== null && data.monthlyCost !== undefined ? `$${Math.round(data.monthlyCost).toLocaleString()}` : '--')
-      setTrendPercent(0)
-      setResponseTimeData(Array.from({ length: 12 }, (_, i) => ({ timestamp: Date.now() - (11 - i) * 5 * 60 * 1000, value: Math.round((data.avgResponseTimeMs ?? 45) * (0.85 + Math.random() * 0.3)) })))
-      setServices([
-        { name: 'Compute (EC2)', description: 'api-server-overloaded · us-east-1', status: (data.uptime ?? 99.9) >= 99 ? 'healthy' : 'degraded', uptime: `${data.uptime ?? 99.9}%`, responseTime: `${data.avgResponseTimeMs ?? 45}ms`, errorRate: data.errorRate ?? 0, critical: true, recentIncidents: 0 },
-        { name: 'Database (RDS)', description: 'PostgreSQL · us-east-1', status: 'healthy', uptime: '100%', responseTime: '12ms', errorRate: 0, critical: true, recentIncidents: 0 },
-      ])
-      setSystemStatus((data.uptime ?? 99.9) >= 99.9 ? 'healthy' : 'degraded'); setMetricsAvailable(true); setError(null); setLoading(false); setLastSynced(new Date()); return
+      setTrendPercent(hasTrend ? data.trendPercent : 0)
+      setTrendAvailable(hasTrend)
+      setResponseTimeData(Array.isArray(data.responseTimeHistory) ? data.responseTimeHistory : [])
+      setCoverage(data.coverage ?? null)
+
+      const mappedServices: ServiceHealth[] = (data.services ?? []).map((s: any) => ({
+        name: s.name,
+        description: s.description,
+        status: s.status,
+        uptime: s.uptime !== null && s.uptime !== undefined ? `${s.uptime}%` : 'N/A',
+        responseTime: s.responseTimeMs !== null && s.responseTimeMs !== undefined ? `${s.responseTimeMs}ms` : 'N/A',
+        errorRate: s.errorRate ?? null,
+        critical: s.critical,
+      }))
+      setServices(mappedServices)
+
+      const anyDown = mappedServices.some(s => s.status === 'down')
+      const anyDegraded = mappedServices.some(s => s.status === 'degraded')
+      setSystemStatus(anyDown ? 'down' : anyDegraded ? 'degraded' : 'healthy')
+      setMetricsAvailable(true); setError(null); setLoading(false); setLastSynced(new Date())
+      fetchAlerts()
+      return
     }
     if (demoMode) { generateDemoMetrics(); return }
+    if (awsConnected === true) {
+      // AWS is connected but this fetch couldn't get CloudWatch data — don't fall
+      // through to the Prometheus path below. Prometheus isn't how this account's
+      // data is sourced, and querying it here would show a misleading "can't reach
+      // Prometheus" error for what's actually a CloudWatch/IAM-side hiccup.
+      setLoading(false); setMetricsAvailable(false)
+      setError({
+        type: 'connection',
+        message: "Can't fetch CloudWatch metrics right now",
+        action: 'Your AWS account is connected, but CloudWatch metrics could not be retrieved this time — usually a temporary API or IAM permissions issue, not an outage. Your infrastructure is still running normally.',
+      })
+      return
+    }
     try {
       setLoading(true); setError(null)
       const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 5000)
@@ -176,17 +241,17 @@ export default function MonitoringPage() {
       else setError({ type: 'connection', message: 'Unable to connect to Prometheus', action: 'Verify Prometheus is running and accessible at ' + (process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090') })
       setLoading(false); toast.error('Failed to fetch metrics')
     }
-  }, [timeRange, isDemoActive, generateDemoMetrics])
+  }, [timeRange, isDemoActive, generateDemoMetrics, fetchAlerts, awsConnected])
 
-  const handleRefresh = async () => { await fetchMetrics() }
+  const handleRefresh = async () => { await fetchCloudWatchMetrics(timeRange).then(fetchMetrics) }
 
   useEffect(() => {
     checkAwsConnection()
-    fetchCloudWatchMetrics().then(fetchMetrics)
+    fetchCloudWatchMetrics(timeRange).then(fetchMetrics)
     loadSnapshot()
-    const interval = setInterval(() => fetchCloudWatchMetrics().then(fetchMetrics), 60000)
+    const interval = setInterval(() => fetchCloudWatchMetrics(timeRange).then(fetchMetrics), 60000)
     return () => clearInterval(interval)
-  }, [checkAwsConnection, fetchCloudWatchMetrics, fetchMetrics, loadSnapshot])
+  }, [checkAwsConnection, fetchCloudWatchMetrics, fetchMetrics, loadSnapshot, timeRange])
 
   if (!metricsAvailable && !isDemoActive && !loading && !error && awsConnected !== true && !cloudWatchMetrics) {
     return (
@@ -206,7 +271,7 @@ export default function MonitoringPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Infrastructure Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Real-time AWS infrastructure health, powered by CloudWatch · EC2, RDS, Lambda · {AWS_REGION}</p>
+          <p className="text-sm text-slate-500 leading-relaxed">Real-time AWS infrastructure health, powered by CloudWatch · {coverageLabel} · {cloudWatchMetrics?.region || AWS_REGION}</p>
           {cloudWatchMetrics && (
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium bg-green-50 border border-green-200 rounded-full px-3 py-1 text-green-600">
@@ -258,8 +323,25 @@ export default function MonitoringPage() {
         </div>
       )}
 
-      {!isDemoActive && awsConnected === true && error && !cloudWatchMetrics && (
+      {/* Non-AWS orgs whose Prometheus source is unreachable — the diagnose/snapshot
+          tooling here is Prometheus-specific and only meaningful in that path. */}
+      {!isDemoActive && awsConnected !== true && error && (
         <MonitoringErrorState type={error.type} message={error.message} action={error.action} onRetry={handleRefresh} onSettings={() => router.push('/settings/monitoring')} onDiagnose={runDiagnostic} isDiagnosing={isDiagnosing} diagnosticResult={diagnosticResult} lastSnapshot={lastSnapshot} />
+      )}
+
+      {/* AWS-connected orgs whose CloudWatch fetch failed — a distinct, source-correct
+          card instead of reusing the Prometheus-flavored one above (wrong docs link,
+          wrong troubleshooting steps like "port 9090" for an IAM-role-based source). */}
+      {!isDemoActive && awsConnected === true && error && !cloudWatchMetrics && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 sm:p-10 text-center mb-7">
+          <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-4 text-2xl">⚠️</div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">{error.message}</h2>
+          <p className="text-sm text-slate-500 leading-relaxed max-w-md mx-auto mb-6">{error.action}</p>
+          <div className="flex gap-3 justify-center">
+            <button onClick={handleRefresh} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer transition-colors">Retry</button>
+            <a href="/settings/monitoring" className="bg-white text-slate-600 border border-slate-200 px-5 py-2.5 rounded-lg text-sm font-semibold no-underline hover:bg-slate-50 transition-colors">Check AWS Connection</a>
+          </div>
+        </div>
       )}
 
       {/* Loading skeleton */}
@@ -283,7 +365,7 @@ export default function MonitoringPage() {
                       ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
                       : 'One or more services may need attention. Review Service Health below for details.')
                   : systemStatus === 'healthy'
-                    ? `All ${services.length} services healthy. Average response time ${responseTimeString} with ${uptime} uptime. No active alerts detected.`
+                    ? `All ${services.length} services healthy. Average response time ${responseTimeString} with ${uptime} uptime. ${alerts.length === 0 ? 'No active alerts detected.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`
                     : 'System is down. Immediate investigation required across all services.'}
               </p>
             </div>
@@ -304,10 +386,10 @@ export default function MonitoringPage() {
           {/* 4 KPI cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
             {[
-              { label: 'System Uptime', value: uptime, sub: 'Last 30 days', color: uptime === '--' ? 'text-slate-300' : parseFloat(uptime) >= 99.9 ? 'text-green-600' : 'text-amber-500' },
-              { label: 'Avg Response Time', value: responseTimeString, sub: `${trendPercent > 0 ? '+' : ''}${trendPercent.toFixed(1)}% vs last period`, color: responseTime < 200 ? 'text-green-600' : responseTime < 500 ? 'text-amber-500' : 'text-red-600' },
-              { label: 'Requests / Min', value: requestsPerMinute.toLocaleString(), sub: requestsPerMinute === 0 && !isDemoActive ? 'No active throughput' : 'Current throughput', color: 'text-slate-900' },
-              { label: 'Monthly Cost', value: monthlyCost === '--' ? 'Syncing...' : monthlyCost, sub: monthlyCost === '--' ? 'Syncing — available in 24–48h' : 'Current monthly spend', color: monthlyCost === '--' ? 'text-amber-500' : 'text-slate-900' },
+              { label: 'System Uptime', value: uptime, sub: uptime === '--' || uptime === 'N/A' ? 'Not available' : 'Over selected range', color: (uptime === '--' || uptime === 'N/A') ? 'text-slate-300' : parseFloat(uptime) >= 99.9 ? 'text-green-600' : 'text-amber-500' },
+              { label: 'Avg Response Time', value: responseTimeString, sub: !isDemoActive && responseTimeString === 'N/A' ? 'No load balancer to measure' : !trendAvailable ? 'No prior-period data' : `${trendPercent > 0 ? '+' : ''}${trendPercent.toFixed(1)}% vs last period`, color: responseTimeString === 'N/A' ? 'text-slate-300' : responseTime < 200 ? 'text-green-600' : responseTime < 500 ? 'text-amber-500' : 'text-red-600' },
+              { label: 'Requests / Min', value: !isDemoActive && !requestsAvailable ? 'N/A' : requestsPerMinute.toLocaleString(), sub: !isDemoActive && !requestsAvailable ? 'No load balancer to measure' : requestsPerMinute === 0 && !isDemoActive ? 'No active throughput' : 'Current throughput', color: !isDemoActive && !requestsAvailable ? 'text-slate-300' : 'text-slate-900' },
+              { label: 'Monthly Cost', value: monthlyCost, sub: monthlyCost === '--' ? 'Cost data unavailable' : 'Current monthly spend', color: monthlyCost === '--' ? 'text-slate-300' : 'text-slate-900' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">{label}</p>
@@ -325,7 +407,9 @@ export default function MonitoringPage() {
                   <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Response Time Trend</p>
                   <p className="text-sm font-semibold text-slate-900">
                     {responseTimeString}
-                    <span className={`text-xs font-normal ml-2 ${trendPercent < 0 ? 'text-green-600' : 'text-amber-500'}`}>{trendPercent > 0 ? '+' : ''}{trendPercent.toFixed(1)}% vs last period</span>
+                    {trendAvailable && (
+                      <span className={`text-xs font-normal ml-2 ${trendPercent < 0 ? 'text-green-600' : 'text-amber-500'}`}>{trendPercent > 0 ? '+' : ''}{trendPercent.toFixed(1)}% vs last period</span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -374,7 +458,23 @@ export default function MonitoringPage() {
       )}
 
       {!loading && !isDemoActive && services.length === 0 && !error && (
-        <MonitoringEmptyState onSetup={() => router.push('/settings/monitoring')} />
+        awsConnected === true ? (
+          // AWS is connected and CloudWatch is reachable — the gap is that nothing has
+          // been discovered yet, not that monitoring was never set up. Sending this org
+          // to the generic "Setup Monitoring" CTA below would misstate which step they're on.
+          <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4 text-2xl">🔎</div>
+            <h2 className="text-lg font-bold text-slate-900 mb-2">AWS connected — no resources discovered yet</h2>
+            <p className="text-sm text-slate-500 leading-relaxed max-w-md mx-auto mb-6">
+              CloudWatch is reachable, but no EC2 instances, load balancers, or RDS databases have been discovered for this account yet. Run discovery to populate infrastructure health here.
+            </p>
+            <a href="/services" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors">
+              Run Resource Discovery <ArrowRight size={13} />
+            </a>
+          </div>
+        ) : (
+          <MonitoringEmptyState onSetup={() => router.push('/settings/monitoring')} />
+        )
       )}
     </div>
   )

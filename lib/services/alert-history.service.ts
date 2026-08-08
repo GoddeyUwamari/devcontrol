@@ -9,6 +9,16 @@ import {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+// All /api/alerts routes are behind authenticateToken (Bearer-header only, no
+// cookie fallback on the backend) — every call below must carry this or it 401s.
+function authHeaders(): Record<string, string> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 class AlertHistoryService {
   /**
    * Get paginated alert history with filters
@@ -27,9 +37,7 @@ class AlertHistoryService {
 
     const response = await fetch(`${API_BASE_URL}/api/alerts/history?${params}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
     });
 
     if (!response.ok) {
@@ -50,9 +58,7 @@ class AlertHistoryService {
 
     const response = await fetch(`${API_BASE_URL}/api/alerts/stats?${params}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
     });
 
     if (!response.ok) {
@@ -68,9 +74,7 @@ class AlertHistoryService {
   async getAlert(id: string): Promise<ApiResponse<Alert>> {
     const response = await fetch(`${API_BASE_URL}/api/alerts/${id}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
     });
 
     if (!response.ok) {
@@ -86,9 +90,7 @@ class AlertHistoryService {
   async acknowledgeAlert(id: string, user: string = 'admin'): Promise<ApiResponse<Alert>> {
     const response = await fetch(`${API_BASE_URL}/api/alerts/${id}/acknowledge`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
       body: JSON.stringify({ user }),
     });
 
@@ -106,9 +108,7 @@ class AlertHistoryService {
   async resolveAlert(id: string): Promise<ApiResponse<Alert>> {
     const response = await fetch(`${API_BASE_URL}/api/alerts/${id}/resolve`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
     });
 
     if (!response.ok) {
@@ -125,9 +125,7 @@ class AlertHistoryService {
   async deleteAlert(id: string): Promise<ApiResponse<null>> {
     const response = await fetch(`${API_BASE_URL}/api/alerts/${id}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
     });
 
     if (!response.ok) {

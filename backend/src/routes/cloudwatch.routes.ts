@@ -29,7 +29,8 @@ router.get('/metrics', authenticateToken, async (req, res) => {
     if (!organizationId) {
       return res.status(401).json({ success: false, error: 'Unauthorized' })
     }
-    const metrics = await cloudWatchService.getMetrics(organizationId)
+    const range = typeof req.query.range === 'string' ? req.query.range : undefined
+    const metrics = await cloudWatchService.getMetrics(organizationId, range)
     if (!metrics) {
       return res.json({ success: true, data: null, connected: false })
     }

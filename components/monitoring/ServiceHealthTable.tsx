@@ -6,10 +6,10 @@ import { cn } from '@/lib/utils'
 interface ServiceHealth {
   name: string
   description?: string
-  status: 'healthy' | 'degraded' | 'down'
+  status: 'healthy' | 'degraded' | 'down' | 'unknown'
   uptime: string
   responseTime: string
-  errorRate: number
+  errorRate: number | null
   critical?: boolean
   recentIncidents?: number
   uptimeHistory?: number[]
@@ -78,7 +78,8 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
                       "w-3 h-3 rounded-full",
                       service.status === 'healthy' && "bg-green-500",
                       service.status === 'degraded' && "bg-yellow-500",
-                      service.status === 'down' && "bg-red-500"
+                      service.status === 'down' && "bg-red-500",
+                      service.status === 'unknown' && "bg-gray-300"
                     )}
                   />
 
@@ -125,10 +126,10 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
                     <div
                       className={cn(
                         "text-sm font-semibold",
-                        service.errorRate > 1 ? "text-red-600" : "text-gray-900"
+                        service.errorRate === null ? "text-gray-400" : service.errorRate > 1 ? "text-red-600" : "text-gray-900"
                       )}
                     >
-                      {service.errorRate}%
+                      {service.errorRate === null ? '—' : `${service.errorRate}%`}
                     </div>
                     <div className="text-xs text-gray-500">Error Rate</div>
                   </div>
