@@ -75,6 +75,194 @@ interface InventoryRow {
   metadata: Record<string, any> | null
 }
 
+type Dimension = { Name: string; Value: string }
+
+interface MetricDefinition {
+  // Key this metric's fetched value is stored under in the `values` map passed to healthRule.
+  key: string
+  metricName: string
+  statistic: 'Average' | 'Sum'
+  // 'previous' fetches the same metric for the prior lookback window (used for trend
+  // comparisons). Defaults to 'current'.
+  window?: 'current' | 'previous'
+}
+
+interface HealthRuleContext {
+  lookbackSeconds: number
+  dims: Dimension[]
+}
+
+/**
+ * A capability definition describes how to fetch CloudWatch data for one resource type
+ * and how to turn that data (plus the resource's own inventory row) into a
+ * CloudWatchServiceHealth row. `extra` is an optional bag of additional derived values
+ * a capability needs to expose to callers beyond the per-resource health row — today
+ * only the load-balancer capability uses this, to feed the account-wide response-time/
+ * request-rate KPI rollups in getMetrics().
+ */
+interface ResourceCapability<TExtra = void> {
+  resourceType: CloudWatchServiceHealth['resourceType']
+  // Null namespace/dimensionKey means this resource type has no CloudWatch metrics wired
+  // up (e.g. RDS today) — the engine skips the CloudWatch fetch entirely and calls
+  // healthRule with an empty values map.
+  cloudwatchNamespace: string | null
+  dimensionKey: string | null
+  // Returns null when the resource can't be mapped to a CloudWatch dimension value
+  // (e.g. a malformed ALB ARN) — the engine treats that resource as unfetchable.
+  getDimensionValue: (resource: InventoryRow) => string | null
+  metrics: MetricDefinition[]
+  healthRule: (
+    resource: InventoryRow,
+    values: Record<string, number | null>,
+    context: HealthRuleContext
+  ) => { service: CloudWatchServiceHealth; extra: TExtra }
+}
+
+/**
+ * ALB's LoadBalancer dimension value is the ARN suffix after "loadbalancer/"
+ * (e.g. "app/my-alb/50dc6c495c0c9188"), not the full ARN.
+ */
+function albDimensionValue(resourceArn: string): string | null {
+  const match = resourceArn.match(/loadbalancer\/(.+)$/)
+  return match ? match[1] : null
+}
+
+interface AlbExtra {
+  avgResponseTimeMs: number | null
+  previousAvgResponseTimeMs: number | null
+  requestsPerMinute: number | null
+  errorRate: number | null
+  requestSum: number
+  dims: Dimension[]
+}
+
+const ec2Capability: ResourceCapability = {
+  resourceType: 'ec2',
+  cloudwatchNamespace: 'AWS/EC2',
+  dimensionKey: 'InstanceId',
+  getDimensionValue: (instance) => instance.resource_id,
+  metrics: [
+    { key: 'statusCheckFailed', metricName: 'StatusCheckFailed', statistic: 'Average' },
+    { key: 'cpu', metricName: 'CPUUtilization', statistic: 'Average' },
+  ],
+  healthRule: (instance, values) => {
+    const statusCheckFailed = values.statusCheckFailed
+    const cpu = values.cpu
+
+    const uptime = statusCheckFailed !== null ? Math.max(0, Math.min(100, Math.round((1 - statusCheckFailed) * 10000) / 100)) : null
+
+    let status: CloudWatchServiceHealth['status']
+    if (instance.status === 'stopped' || instance.status === 'stopping' || instance.status === 'shutting-down') {
+      status = 'down'
+    } else if (uptime !== null) {
+      status = uptime >= 99.9 ? 'healthy' : 'degraded'
+    } else if (cpu !== null) {
+      status = cpu < 80 ? 'healthy' : 'degraded'
+    } else {
+      status = 'unknown'
+    }
+
+    return {
+      service: {
+        resourceId: instance.resource_id,
+        name: instance.resource_name || instance.resource_id,
+        description: `EC2 · ${instance.resource_id}`,
+        resourceType: 'ec2',
+        status,
+        uptime,
+        responseTimeMs: null,
+        errorRate: null,
+        critical: true,
+        monitored: uptime !== null || cpu !== null,
+      },
+      extra: undefined,
+    }
+  },
+}
+
+const rdsCapability: ResourceCapability = {
+  resourceType: 'rds',
+  // No CloudWatch metrics wired for RDS yet — inventory-only, shown honestly as such.
+  cloudwatchNamespace: null,
+  dimensionKey: null,
+  getDimensionValue: () => null,
+  metrics: [],
+  healthRule: (r) => ({
+    service: {
+      resourceId: r.resource_id,
+      name: r.resource_name || r.resource_id,
+      description: `RDS · ${r.metadata?.engine ?? 'database'}`,
+      resourceType: 'rds',
+      status: r.status === 'available' ? 'healthy' : r.status === 'stopped' ? 'down' : 'unknown',
+      uptime: null,
+      responseTimeMs: null,
+      errorRate: null,
+      critical: true,
+      monitored: false,
+    },
+    extra: undefined,
+  }),
+}
+
+const loadBalancerCapability: ResourceCapability<AlbExtra> = {
+  resourceType: 'load-balancer',
+  cloudwatchNamespace: 'AWS/ApplicationELB',
+  dimensionKey: 'LoadBalancer',
+  getDimensionValue: (alb) => albDimensionValue(alb.resource_arn),
+  metrics: [
+    { key: 'latencySec', metricName: 'TargetResponseTime', statistic: 'Average', window: 'current' },
+    { key: 'requestSum', metricName: 'RequestCount', statistic: 'Sum', window: 'current' },
+    { key: 'errorSum', metricName: 'HTTPCode_Target_5XX_Count', statistic: 'Sum', window: 'current' },
+    { key: 'previousLatencySec', metricName: 'TargetResponseTime', statistic: 'Average', window: 'previous' },
+  ],
+  healthRule: (alb, values, { lookbackSeconds, dims }) => {
+    const latencySec = values.latencySec
+    const requestSum = values.requestSum
+    const errorSum = values.errorSum
+    const previousLatencySec = values.previousLatencySec
+
+    const avgResponseTimeMs = latencySec !== null ? Math.round(latencySec * 1000) : null
+    const previousAvgResponseTimeMs = previousLatencySec !== null ? Math.round(previousLatencySec * 1000) : null
+    const requestsPerMinute = requestSum !== null ? Math.round(requestSum / (lookbackSeconds / 60)) : null
+    const errorRate =
+      errorSum !== null && requestSum !== null && requestSum > 0
+        ? Math.round((errorSum / requestSum) * 10000) / 100
+        : requestSum !== null
+          ? 0
+          : null
+
+    const service: CloudWatchServiceHealth = {
+      resourceId: alb.resource_id,
+      name: alb.resource_name || alb.resource_id,
+      description: 'Application Load Balancer',
+      resourceType: 'load-balancer',
+      status: avgResponseTimeMs !== null ? (avgResponseTimeMs < 500 ? 'healthy' : 'degraded') : 'unknown',
+      uptime: null,
+      responseTimeMs: avgResponseTimeMs,
+      errorRate,
+      critical: false,
+      monitored: avgResponseTimeMs !== null,
+    }
+
+    return {
+      service,
+      extra: { avgResponseTimeMs, previousAvgResponseTimeMs, requestsPerMinute, errorRate, requestSum: requestSum ?? 0, dims },
+    }
+  },
+}
+
+// Adding a future resource type (e.g. Lambda, DynamoDB) means adding a capability
+// definition here — the fetch/dimension plumbing in evaluateResource() is generic.
+const resourceTypeRegistry: {
+  ec2: ResourceCapability
+  rds: ResourceCapability
+  'load-balancer': ResourceCapability<AlbExtra>
+} = {
+  ec2: ec2Capability,
+  rds: rdsCapability,
+  'load-balancer': loadBalancerCapability,
+}
+
 export class CloudWatchService {
   private async getAccount(organizationId: string): Promise<{ account_id: string; nickname: string | null } | null> {
     const result = await pool.query(
@@ -105,7 +293,7 @@ export class CloudWatchService {
     client: CloudWatchClient,
     namespace: string,
     metricName: string,
-    dimensions: { Name: string; Value: string }[],
+    dimensions: Dimension[],
     startTime: Date,
     endTime: Date,
     periodSeconds: number,
@@ -136,7 +324,7 @@ export class CloudWatchService {
 
   private async getResponseTimeSeries(
     client: CloudWatchClient,
-    dimensions: { Name: string; Value: string }[],
+    dimensions: Dimension[],
     startTime: Date,
     endTime: Date,
     periodSeconds: number
@@ -163,101 +351,42 @@ export class CloudWatchService {
   }
 
   /**
-   * CloudWatch's LoadBalancer dimension value is the ARN suffix after "loadbalancer/"
-   * (e.g. "app/my-alb/50dc6c495c0c9188"), not the full ARN.
+   * Generic engine: given a resource and its registry capability definition, fetches
+   * every metric the capability declares (skipping the CloudWatch call entirely for
+   * capabilities with no namespace/dimension wired up, e.g. RDS) and hands the raw
+   * values to the capability's healthRule to produce the resource's health row.
+   * Returns null when the resource can't be mapped to a CloudWatch dimension value.
    */
-  private albDimensionValue(resourceArn: string): string | null {
-    const match = resourceArn.match(/loadbalancer\/(.+)$/)
-    return match ? match[1] : null
-  }
-
-  private async getEC2ServiceHealth(
+  private async evaluateResource<TExtra>(
     client: CloudWatchClient,
-    instance: InventoryRow,
-    currentStart: Date,
-    now: Date,
-    periodSeconds: number
-  ): Promise<{ service: CloudWatchServiceHealth; uptime: number | null }> {
-    const dims = [{ Name: 'InstanceId', Value: instance.resource_id }]
-    const [statusCheckFailed, cpu] = await Promise.all([
-      this.getMetricStat(client, 'AWS/EC2', 'StatusCheckFailed', dims, currentStart, now, periodSeconds, 'Average'),
-      this.getMetricStat(client, 'AWS/EC2', 'CPUUtilization', dims, currentStart, now, periodSeconds, 'Average'),
-    ])
-
-    const uptime = statusCheckFailed !== null ? Math.max(0, Math.min(100, Math.round((1 - statusCheckFailed) * 10000) / 100)) : null
-
-    let status: CloudWatchServiceHealth['status']
-    if (instance.status === 'stopped' || instance.status === 'stopping' || instance.status === 'shutting-down') {
-      status = 'down'
-    } else if (uptime !== null) {
-      status = uptime >= 99.9 ? 'healthy' : 'degraded'
-    } else if (cpu !== null) {
-      status = cpu < 80 ? 'healthy' : 'degraded'
-    } else {
-      status = 'unknown'
-    }
-
-    return {
-      service: {
-        resourceId: instance.resource_id,
-        name: instance.resource_name || instance.resource_id,
-        description: `EC2 · ${instance.resource_id}`,
-        resourceType: 'ec2',
-        status,
-        uptime,
-        responseTimeMs: null,
-        errorRate: null,
-        critical: true,
-        monitored: uptime !== null || cpu !== null,
-      },
-      uptime,
-    }
-  }
-
-  private async getALBServiceHealth(
-    client: CloudWatchClient,
-    alb: InventoryRow,
+    capability: ResourceCapability<TExtra>,
+    resource: InventoryRow,
     currentStart: Date,
     previousStart: Date,
     now: Date,
     periodSeconds: number,
     lookbackSeconds: number
-  ) {
-    const dimValue = this.albDimensionValue(alb.resource_arn)
-    if (!dimValue) return null
-    const dims = [{ Name: 'LoadBalancer', Value: dimValue }]
+  ): Promise<{ service: CloudWatchServiceHealth; extra: TExtra } | null> {
+    let dims: Dimension[] = []
+    let values: Record<string, number | null> = {}
 
-    const [latencySec, requestSum, errorSum, previousLatencySec] = await Promise.all([
-      this.getMetricStat(client, 'AWS/ApplicationELB', 'TargetResponseTime', dims, currentStart, now, periodSeconds, 'Average'),
-      this.getMetricStat(client, 'AWS/ApplicationELB', 'RequestCount', dims, currentStart, now, periodSeconds, 'Sum'),
-      this.getMetricStat(client, 'AWS/ApplicationELB', 'HTTPCode_Target_5XX_Count', dims, currentStart, now, periodSeconds, 'Sum'),
-      this.getMetricStat(client, 'AWS/ApplicationELB', 'TargetResponseTime', dims, previousStart, currentStart, periodSeconds, 'Average'),
-    ])
+    if (capability.cloudwatchNamespace && capability.dimensionKey) {
+      const dimValue = capability.getDimensionValue(resource)
+      if (dimValue === null) return null
+      dims = [{ Name: capability.dimensionKey, Value: dimValue }]
 
-    const avgResponseTimeMs = latencySec !== null ? Math.round(latencySec * 1000) : null
-    const previousAvgResponseTimeMs = previousLatencySec !== null ? Math.round(previousLatencySec * 1000) : null
-    const requestsPerMinute = requestSum !== null ? Math.round(requestSum / (lookbackSeconds / 60)) : null
-    const errorRate =
-      errorSum !== null && requestSum !== null && requestSum > 0
-        ? Math.round((errorSum / requestSum) * 10000) / 100
-        : requestSum !== null
-          ? 0
-          : null
-
-    const service: CloudWatchServiceHealth = {
-      resourceId: alb.resource_id,
-      name: alb.resource_name || alb.resource_id,
-      description: 'Application Load Balancer',
-      resourceType: 'load-balancer',
-      status: avgResponseTimeMs !== null ? (avgResponseTimeMs < 500 ? 'healthy' : 'degraded') : 'unknown',
-      uptime: null,
-      responseTimeMs: avgResponseTimeMs,
-      errorRate,
-      critical: false,
-      monitored: avgResponseTimeMs !== null,
+      const namespace = capability.cloudwatchNamespace
+      const entries = await Promise.all(
+        capability.metrics.map(async (metric) => {
+          const [start, end] = metric.window === 'previous' ? [previousStart, currentStart] : [currentStart, now]
+          const value = await this.getMetricStat(client, namespace, metric.metricName, dims, start, end, periodSeconds, metric.statistic)
+          return [metric.key, value] as const
+        })
+      )
+      values = Object.fromEntries(entries)
     }
 
-    return { service, avgResponseTimeMs, previousAvgResponseTimeMs, requestsPerMinute, errorRate, requestSum: requestSum ?? 0, dims }
+    return capability.healthRule(resource, values, { lookbackSeconds, dims })
   }
 
   async getMetrics(organizationId: string, range?: string): Promise<CloudWatchMetrics | null> {
@@ -283,32 +412,53 @@ export class CloudWatchService {
     const rdsInstances = resources.filter((r) => r.resource_type === 'rds').slice(0, 15)
     const albs = resources.filter((r) => r.resource_type === 'load-balancer' && r.metadata?.type === 'application').slice(0, 5)
 
-    const ec2Results = await Promise.all(
-      ec2Instances.map((instance) => this.getEC2ServiceHealth(clients.cloudWatch, instance, currentStart, now, periodSeconds))
-    )
+    const ec2Results = (
+      await Promise.all(
+        ec2Instances.map((instance) =>
+          this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.ec2, instance, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
+        )
+      )
+    ).filter((r): r is NonNullable<typeof r> => r !== null)
     const ec2Services = ec2Results.map((r) => r.service)
-    const uptimeValues = ec2Results.map((r) => r.uptime).filter((v): v is number => v !== null)
+    const uptimeValues = ec2Services.map((s) => s.uptime).filter((v): v is number => v !== null)
     const uptime = uptimeValues.length > 0 ? Math.round((uptimeValues.reduce((a, b) => a + b, 0) / uptimeValues.length) * 100) / 100 : null
 
-    const rdsServices: CloudWatchServiceHealth[] = rdsInstances.map((r) => ({
-      resourceId: r.resource_id,
-      name: r.resource_name || r.resource_id,
-      description: `RDS · ${r.metadata?.engine ?? 'database'}`,
-      resourceType: 'rds',
-      status: r.status === 'available' ? 'healthy' : r.status === 'stopped' ? 'down' : 'unknown',
-      uptime: null,
-      responseTimeMs: null,
-      errorRate: null,
-      critical: true,
-      // No CloudWatch metrics wired for RDS yet — inventory-only, shown honestly as such.
-      monitored: false,
-    }))
+    const rdsResults = (
+      await Promise.all(
+        rdsInstances.map((instance) =>
+          this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.rds, instance, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
+        )
+      )
+    ).filter((r): r is NonNullable<typeof r> => r !== null)
+    const rdsServices = rdsResults.map((r) => r.service)
 
-    const albResults = (
-      await Promise.all(albs.map((alb) => this.getALBServiceHealth(clients.cloudWatch, alb, currentStart, previousStart, now, periodSeconds, lookbackSeconds)))
+    const albEvaluations = (
+      await Promise.all(
+        albs.map((alb) =>
+          this.evaluateResource(
+            clients.cloudWatch,
+            resourceTypeRegistry['load-balancer'],
+            alb,
+            currentStart,
+            previousStart,
+            now,
+            periodSeconds,
+            lookbackSeconds
+          )
+        )
+      )
     ).filter((r): r is NonNullable<typeof r> => r !== null)
 
-    const albServices = albResults.map((r) => r.service)
+    const albServices = albEvaluations.map((r) => r.service)
+    const albResults = albEvaluations.map((r) => ({
+      service: r.service,
+      avgResponseTimeMs: r.extra.avgResponseTimeMs,
+      previousAvgResponseTimeMs: r.extra.previousAvgResponseTimeMs,
+      requestsPerMinute: r.extra.requestsPerMinute,
+      errorRate: r.extra.errorRate,
+      requestSum: r.extra.requestSum,
+      dims: r.extra.dims,
+    }))
 
     // Response time / request-rate KPIs only make sense when at least one ALB exists —
     // an EC2-only or Lambda+API-Gateway account genuinely has no ALB-shaped metrics.
