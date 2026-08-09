@@ -20,6 +20,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { SNSClient } from '@aws-sdk/client-sns';
 import { IAMClient } from '@aws-sdk/client-iam';
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
+import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { pool } from '../config/database';
 
 interface AWSClients {
@@ -39,6 +40,7 @@ interface AWSClients {
   sqs: SQSClient;
   sns: SNSClient;
   iam: IAMClient;
+  resourceExplorer: ResourceExplorer2Client;
   region: string;
   enabled: boolean;
   // 12-digit account ID parsed from role_arn, when available — lets account-level
@@ -128,6 +130,7 @@ export class AWSClientFactory {
       sqs: new SQSClient(config),
       sns: new SNSClient(config),
       iam: new IAMClient({ ...config, region: 'us-east-1' }), // IAM is global
+      resourceExplorer: new ResourceExplorer2Client(config),
       region: awsRegion,
       enabled: true,
       accountId: parseAccountIdFromArn(role_arn),
@@ -174,6 +177,7 @@ export class AWSClientFactory {
       sqs: new SQSClient(config),
       sns: new SNSClient(config),
       iam: new IAMClient({ ...config, region: 'us-east-1' }), // IAM is global
+      resourceExplorer: new ResourceExplorer2Client(config),
       region: config.region,
       enabled: true,
     };
@@ -197,6 +201,7 @@ export class AWSClientFactory {
       sqs: {} as SQSClient,
       sns: {} as SNSClient,
       iam: {} as IAMClient,
+      resourceExplorer: {} as ResourceExplorer2Client,
       region: 'us-east-1',
       enabled: false,
     };

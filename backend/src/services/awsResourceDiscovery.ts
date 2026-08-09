@@ -4,51 +4,24 @@ import {
   paginateDescribeInstances,
   Instance,
   DescribeVolumesCommand,
-  DescribeAddressesCommand,
 } from '@aws-sdk/client-ec2';
 import {
   RDSClient,
   paginateDescribeDBInstances,
-  paginateDescribeDBClusters,
   DBInstance,
-  DBCluster,
 } from '@aws-sdk/client-rds';
 import {
-  EKSClient,
-  paginateListClusters as paginateEKSListClusters,
-  DescribeClusterCommand as EKSDescribeClusterCommand,
-} from '@aws-sdk/client-eks';
+  LambdaClient,
+  paginateListFunctions,
+  ListTagsCommand,
+  FunctionConfiguration,
+} from '@aws-sdk/client-lambda';
 import {
-  DynamoDBClient,
-  paginateListTables,
-  DescribeTableCommand,
-} from '@aws-sdk/client-dynamodb';
-import {
-  CloudFrontClient,
-  paginateListDistributions,
-  DistributionSummary,
-} from '@aws-sdk/client-cloudfront';
-import {
-  APIGatewayClient,
-  paginateGetRestApis,
-  RestApi,
-} from '@aws-sdk/client-api-gateway';
-import {
-  ElastiCacheClient,
-  paginateDescribeCacheClusters,
-  CacheCluster,
-} from '@aws-sdk/client-elasticache';
-import {
-  SQSClient,
-  paginateListQueues,
-  GetQueueAttributesCommand,
-} from '@aws-sdk/client-sqs';
-import {
-  SNSClient,
-  paginateListTopics,
-  GetTopicAttributesCommand,
-  Topic,
-} from '@aws-sdk/client-sns';
+  ElasticLoadBalancingV2Client,
+  paginateDescribeLoadBalancers,
+  DescribeTagsCommand as DescribeELBTagsCommand,
+  LoadBalancer,
+} from '@aws-sdk/client-elastic-load-balancing-v2';
 import {
   S3Client,
   ListBucketsCommand,
@@ -58,28 +31,10 @@ import {
   Bucket,
 } from '@aws-sdk/client-s3';
 import {
-  LambdaClient,
-  paginateListFunctions,
-  ListTagsCommand,
-  FunctionConfiguration,
-} from '@aws-sdk/client-lambda';
-import {
-  ECSClient,
-  paginateListClusters as paginateECSListClusters,
-  paginateListServices,
-  DescribeServicesCommand,
-  Service,
-} from '@aws-sdk/client-ecs';
-import {
-  ElasticLoadBalancingV2Client,
-  paginateDescribeLoadBalancers,
-  DescribeTagsCommand as DescribeELBTagsCommand,
-  LoadBalancer,
-} from '@aws-sdk/client-elastic-load-balancing-v2';
-import {
-  paginateDescribeVpcs,
-  Vpc,
-} from '@aws-sdk/client-ec2';
+  CloudFrontClient,
+  paginateListDistributions,
+  DistributionSummary,
+} from '@aws-sdk/client-cloudfront';
 import { AWSClientFactory } from './aws-client-factory.service';
 import {
   AWSResource,
@@ -99,6 +54,8 @@ import costOptimizationService from './cost-optimization.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { PoolClient } from 'pg';
+import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry } from './resourceExplorer.service';
+import { ResourceReconciliationService } from './resourceReconciliation.service';
 
 /**
  * Resource types allowed by subscription tier
@@ -133,6 +90,9 @@ const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
 };
 
 export class AWSResourceDiscoveryService {
+  private resourceExplorer = new ResourceExplorerService();
+  private reconciliation = new ResourceReconciliationService();
+
   constructor(private pool: Pool) {}
 
   /**
@@ -222,6 +182,7 @@ export class AWSResourceDiscoveryService {
       const errors: string[] = [];
       let totalDiscovered = 0;
       let totalUpdated = 0;
+      let resourcesTerminated = 0;
       const skippedTypes: string[] = [];
 
       // Discover EC2 instances
@@ -264,16 +225,25 @@ export class AWSResourceDiscoveryService {
         skippedTypes.push('rds');
       }
 
-      // Discover S3 buckets
+      // Discover S3 buckets. Kept as its own dedicated discovery (not folded into the
+      // generic Resource Explorer path) because ListBuckets is account-wide and
+      // region-independent, while Resource Explorer's Search is scoped to a single
+      // region's LOCAL index — see resourceExplorer.service.ts's OWN_DISCOVERY_CFN_TYPES
+      // doc comment. s3ArnsFound feeds S3's own reconcile() call below instead of relying
+      // on the (region-limited) Resource Explorer search for S3 presence.
+      let s3DiscoverySucceeded = false;
+      const s3ArnsFound = new Set<string>();
       if (this.isResourceTypeAllowed('s3', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering S3 buckets...`);
         try {
           const s3Resources = await this.discoverS3Buckets(organizationId, awsClients.s3!, awsClients.region);
           for (const resource of s3Resources) {
+            s3ArnsFound.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
           }
+          s3DiscoverySucceeded = true;
           console.log(`✅ [Discovery] Found ${s3Resources.length} S3 buckets`);
         } catch (error: any) {
           console.error(`❌ [Discovery] S3 discovery failed:`, error.message);
@@ -304,26 +274,6 @@ export class AWSResourceDiscoveryService {
         skippedTypes.push('lambda');
       }
 
-      // Discover ECS services
-      if (this.isResourceTypeAllowed('ecs', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering ECS services...`);
-        try {
-          const ecsResources = await this.discoverECSServices(organizationId, awsClients.ecs, awsClients.region);
-          for (const resource of ecsResources) {
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
-          console.log(`✅ [Discovery] Found ${ecsResources.length} ECS services`);
-        } catch (error: any) {
-          console.error(`❌ [Discovery] ECS discovery failed:`, error.message);
-          errors.push(`ECS: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping ECS services (not available in ${tier} tier)`);
-        skippedTypes.push('ecs');
-      }
-
       // Discover Load Balancers
       if (this.isResourceTypeAllowed('load-balancer', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Load Balancers...`);
@@ -344,76 +294,26 @@ export class AWSResourceDiscoveryService {
         skippedTypes.push('load-balancer');
       }
 
-      // Discover VPC resources
-      if (this.isResourceTypeAllowed('vpc', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering VPCs...`);
-        try {
-          const vpcResources = await this.discoverVPCResources(organizationId, awsClients.ec2!, awsClients.region);
-          for (const resource of vpcResources) {
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
-          console.log(`✅ [Discovery] Found ${vpcResources.length} VPCs`);
-        } catch (error: any) {
-          console.error(`❌ [Discovery] VPC discovery failed:`, error.message);
-          errors.push(`VPC: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping VPCs (not available in ${tier} tier)`);
-        skippedTypes.push('vpc');
-      }
-
-      // Discover EKS clusters
-      if (this.isResourceTypeAllowed('eks', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering EKS clusters...`);
-        try {
-          const eksResources = await this.discoverEKSClusters(organizationId, awsClients.eks, awsClients.region);
-          for (const resource of eksResources) {
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
-          console.log(`✅ [Discovery] Found ${eksResources.length} EKS clusters`);
-        } catch (error: any) {
-          console.error(`❌ [Discovery] EKS discovery failed:`, error.message);
-          errors.push(`EKS: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping EKS clusters (not available in ${tier} tier)`);
-        skippedTypes.push('eks');
-      }
-
-      // Discover DynamoDB tables
-      if (this.isResourceTypeAllowed('dynamodb', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering DynamoDB tables...`);
-        try {
-          const dynamoResources = await this.discoverDynamoDBTables(organizationId, awsClients.dynamodb, awsClients.region);
-          for (const resource of dynamoResources) {
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
-          console.log(`✅ [Discovery] Found ${dynamoResources.length} DynamoDB tables`);
-        } catch (error: any) {
-          console.error(`❌ [Discovery] DynamoDB discovery failed:`, error.message);
-          errors.push(`DynamoDB: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping DynamoDB tables (not available in ${tier} tier)`);
-        skippedTypes.push('dynamodb');
-      }
-
-      // Discover CloudFront distributions
+      // Discover CloudFront distributions. Kept as its own dedicated discovery, pinned to
+      // us-east-1 regardless of the org's configured region — CloudFront is a global service
+      // and live-testing confirmed Resource Explorer only indexes global-service resources
+      // via the us-east-1 index (a truly-global IAM resource appeared in a us-east-1 search
+      // but not in an ap-southeast-1 search of the same account). A generic search scoped to
+      // the org's own region would silently find zero CloudFront distributions for any org
+      // whose configured region isn't us-east-1. See OWN_DISCOVERY_CFN_TYPES.
+      let cloudFrontDiscoverySucceeded = false;
+      const cloudFrontArnsFound = new Set<string>();
       if (this.isResourceTypeAllowed('cloudfront', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering CloudFront distributions...`);
         try {
           const cfResources = await this.discoverCloudFrontDistributions(organizationId, awsClients.cloudFront);
           for (const resource of cfResources) {
+            cloudFrontArnsFound.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
           }
+          cloudFrontDiscoverySucceeded = true;
           console.log(`✅ [Discovery] Found ${cfResources.length} CloudFront distributions`);
         } catch (error: any) {
           console.error(`❌ [Discovery] CloudFront discovery failed:`, error.message);
@@ -424,104 +324,90 @@ export class AWSResourceDiscoveryService {
         skippedTypes.push('cloudfront');
       }
 
-      // Discover API Gateway REST APIs
-      if (this.isResourceTypeAllowed('api-gateway', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering API Gateway REST APIs...`);
+      // Generic resource inventory via AWS Resource Explorer (Phase 2B): replaces the old
+      // Describe*-based discovery for every type that isn't deep-monitored and doesn't have
+      // its own dedicated discovery (ecs, vpc, eks, dynamodb, api-gateway, elasticache, aurora,
+      // sqs, sns). S3 and CloudFront are deliberately excluded — see their own discovery blocks
+      // above. A single Search call both populates these generic rows AND supplies the presence
+      // signal that reconciliation uses to conservatively terminate stale rows for every type
+      // it's a valid signal for (RE_RECONCILED_TYPES) — see resourceReconciliation.service.ts
+      // for why a failed Search here must never advance any resource's missing_scan_count.
+      const allowedGenericTypes = GENERIC_RESOURCE_TYPES.filter((t) => this.isResourceTypeAllowed(t, allowedTypes));
+      const skippedGenericTypes = GENERIC_RESOURCE_TYPES.filter((t) => !allowedGenericTypes.includes(t));
+      skippedGenericTypes.forEach((t) => {
+        console.log(`⏭️  [Discovery] Skipping ${t} (not available in ${tier} tier)`);
+        skippedTypes.push(t);
+      });
+
+      console.log(`🔎 [Discovery] Searching AWS Resource Explorer for generic inventory + reconciliation...`);
+      const searchResult = await this.resourceExplorer.search(awsClients.resourceExplorer, awsClients.region);
+
+      if (searchResult.success) {
+        const { allArns, genericEntries } = this.resourceExplorer.normalize(searchResult.resources, awsClients.region);
+        const allowedEntries = genericEntries.filter((e) => allowedGenericTypes.includes(e.resourceType));
+
         try {
-          const agResources = await this.discoverAPIGatewayAPIs(organizationId, awsClients.apiGateway, awsClients.region);
-          for (const resource of agResources) {
-            const result = await this.upsertResource(client, resource);
+          for (const entry of allowedEntries) {
+            const result = await this.upsertGenericResource(client, organizationId, entry);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
           }
-          console.log(`✅ [Discovery] Found ${agResources.length} API Gateway REST APIs`);
+          console.log(`✅ [Discovery] Found ${allowedEntries.length} generic resources via Resource Explorer (${searchResult.resources.length} total indexed)`);
         } catch (error: any) {
-          console.error(`❌ [Discovery] API Gateway discovery failed:`, error.message);
-          errors.push(`API Gateway: ${error.message}`);
+          console.error(`❌ [Discovery] Resource Explorer generic upsert failed:`, error.message);
+          errors.push(`Resource Explorer inventory: ${error.message}`);
+        }
+
+        try {
+          const reconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, allArns, RE_RECONCILED_TYPES);
+          console.log(
+            `✅ [Discovery] Reconciliation complete (${reconciliation.resetCount} confirmed present, ` +
+            `${reconciliation.incrementedCount} absent this scan, ${reconciliation.terminatedArns.length} newly terminated)`
+          );
+          resourcesTerminated += reconciliation.terminatedArns.length;
+        } catch (error: any) {
+          console.error(`❌ [Discovery] Reconciliation failed:`, error.message);
+          errors.push(`Reconciliation: ${error.message}`);
         }
       } else {
-        console.log(`⏭️  [Discovery] Skipping API Gateway REST APIs (not available in ${tier} tier)`);
-        skippedTypes.push('api-gateway');
+        // Search itself failed (no index/view provisioned, throttling, permission error, etc.) —
+        // this is "no data this cycle", not "everything is gone". Skip both the generic upsert
+        // and reconciliation entirely; every aws_resources row keeps its last-known-good state.
+        console.error(`❌ [Discovery] Resource Explorer search failed, skipping generic inventory + reconciliation:`, searchResult.error);
+        errors.push(`Resource Explorer: ${searchResult.error}`);
       }
 
-      // Discover ElastiCache clusters
-      if (this.isResourceTypeAllowed('elasticache', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering ElastiCache clusters...`);
+      // S3 and CloudFront each get their own independent reconcile() call using their own
+      // dedicated discovery's ARN list — see the doc comments on their discovery blocks above
+      // for why the Resource Explorer search above isn't a valid presence signal for them.
+      // region: null because S3 buckets can each live in a different region than the org's
+      // configured region, and CloudFront rows are always stored with region='global'.
+      if (s3DiscoverySucceeded) {
         try {
-          const ecResources = await this.discoverElastiCacheClusters(organizationId, awsClients.elastiCache, awsClients.region);
-          for (const resource of ecResources) {
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
-          console.log(`✅ [Discovery] Found ${ecResources.length} ElastiCache clusters`);
+          const s3Reconciliation = await this.reconciliation.reconcile(client, organizationId, null, s3ArnsFound, ['s3']);
+          console.log(
+            `✅ [Discovery] S3 reconciliation complete (${s3Reconciliation.resetCount} confirmed present, ` +
+            `${s3Reconciliation.incrementedCount} absent this scan, ${s3Reconciliation.terminatedArns.length} newly terminated)`
+          );
+          resourcesTerminated += s3Reconciliation.terminatedArns.length;
         } catch (error: any) {
-          console.error(`❌ [Discovery] ElastiCache discovery failed:`, error.message);
-          errors.push(`ElastiCache: ${error.message}`);
+          console.error(`❌ [Discovery] S3 reconciliation failed:`, error.message);
+          errors.push(`S3 reconciliation: ${error.message}`);
         }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping ElastiCache clusters (not available in ${tier} tier)`);
-        skippedTypes.push('elasticache');
       }
 
-      // Discover Aurora clusters
-      if (this.isResourceTypeAllowed('aurora', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering Aurora clusters...`);
+      if (cloudFrontDiscoverySucceeded) {
         try {
-          const auroraResources = await this.discoverAuroraClusters(organizationId, awsClients.rds, awsClients.region);
-          for (const resource of auroraResources) {
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
-          console.log(`✅ [Discovery] Found ${auroraResources.length} Aurora clusters`);
+          const cfReconciliation = await this.reconciliation.reconcile(client, organizationId, null, cloudFrontArnsFound, ['cloudfront']);
+          console.log(
+            `✅ [Discovery] CloudFront reconciliation complete (${cfReconciliation.resetCount} confirmed present, ` +
+            `${cfReconciliation.incrementedCount} absent this scan, ${cfReconciliation.terminatedArns.length} newly terminated)`
+          );
+          resourcesTerminated += cfReconciliation.terminatedArns.length;
         } catch (error: any) {
-          console.error(`❌ [Discovery] Aurora discovery failed:`, error.message);
-          errors.push(`Aurora: ${error.message}`);
+          console.error(`❌ [Discovery] CloudFront reconciliation failed:`, error.message);
+          errors.push(`CloudFront reconciliation: ${error.message}`);
         }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping Aurora clusters (not available in ${tier} tier)`);
-        skippedTypes.push('aurora');
-      }
-
-      // Discover SQS queues
-      if (this.isResourceTypeAllowed('sqs', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering SQS queues...`);
-        try {
-          const sqsResources = await this.discoverSQSQueues(organizationId, awsClients.sqs, awsClients.region);
-          for (const resource of sqsResources) {
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
-          console.log(`✅ [Discovery] Found ${sqsResources.length} SQS queues`);
-        } catch (error: any) {
-          console.error(`❌ [Discovery] SQS discovery failed:`, error.message);
-          errors.push(`SQS: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping SQS queues (not available in ${tier} tier)`);
-        skippedTypes.push('sqs');
-      }
-
-      // Discover SNS topics
-      if (this.isResourceTypeAllowed('sns', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering SNS topics...`);
-        try {
-          const snsResources = await this.discoverSNSTopics(organizationId, awsClients.sns, awsClients.region);
-          for (const resource of snsResources) {
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
-          console.log(`✅ [Discovery] Found ${snsResources.length} SNS topics`);
-        } catch (error: any) {
-          console.error(`❌ [Discovery] SNS discovery failed:`, error.message);
-          errors.push(`SNS: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping SNS topics (not available in ${tier} tier)`);
-        skippedTypes.push('sns');
       }
 
       // Compliance scan: evaluate every currently-known resource for this org against
@@ -640,6 +526,7 @@ export class AWSResourceDiscoveryService {
       console.log(`  - Total resources discovered (new): ${totalDiscovered}`);
       console.log(`  - Total resources updated: ${totalUpdated}`);
       console.log(`  - Total resources: ${totalDiscovered + totalUpdated}`);
+      console.log(`  - Resources newly terminated (reconciliation): ${resourcesTerminated}`);
 
       if (skippedTypes.length > 0) {
         console.log(`  - ⏭️  Resource types skipped (tier limitation): ${skippedTypes.join(', ')}`);
@@ -655,12 +542,13 @@ export class AWSResourceDiscoveryService {
 
       await client.query(
         `UPDATE resource_discovery_jobs
-         SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, error_message = $4, compliance_scan_completed = $5, cost_analysis_completed = $6
-         WHERE id = $7`,
+         SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, resources_deleted = $4, error_message = $5, compliance_scan_completed = $6, cost_analysis_completed = $7
+         WHERE id = $8`,
         [
           errors.length > 0 ? 'failed' : 'completed',
           totalDiscovered,
           totalUpdated,
+          resourcesTerminated,
           errors.length > 0 ? errors.join('; ') : null,
           complianceScanCompleted,
           costAnalysisCompleted,
@@ -678,7 +566,7 @@ export class AWSResourceDiscoveryService {
         job_id: jobId,
         resources_discovered: totalDiscovered,
         resources_updated: totalUpdated,
-        resources_deleted: 0,
+        resources_deleted: resourcesTerminated,
         errors
       };
     } catch (error: any) {
@@ -904,6 +792,14 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
+   * Estimate monthly cost for S3 bucket
+   * Fixed estimate (actual cost depends on storage and requests)
+   */
+  private estimateS3Cost(): number {
+    return 5; // $5/month baseline estimate
+  }
+
+  /**
    * Logs only when a paginated list call actually followed more than one page —
    * lets a multi-page run be confirmed from logs alone, without noise on the
    * single-page case every real org hits today.
@@ -957,6 +853,83 @@ export class AWSResourceDiscoveryService {
         resource.is_public || false,
         resource.has_backup || false,
         JSON.stringify(resource.compliance_issues || []),
+      ]
+    );
+
+    return result.rows[0].inserted ? 'created' : 'updated';
+  }
+
+  /**
+   * Flat monthly cost baselines for Resource Explorer-sourced generic types. The old
+   * Describe*-based methods computed per-resource estimates from live capacity/usage data
+   * (RCU/WCU, node type, task count, cluster member count) that Resource Explorer's
+   * {arn, type, region, tags} shape doesn't provide — these are typical-case placeholders,
+   * not per-resource calculations.
+   */
+  private static readonly GENERIC_COST_BASELINE: Partial<Record<ResourceType, number>> = {
+    ecs: 9,
+    vpc: 0,
+    eks: 73,
+    dynamodb: 3,
+    'api-gateway': 3.5,
+    elasticache: 25,
+    aurora: 150,
+    sqs: 0.4,
+    sns: 0.5,
+  };
+
+  /**
+   * Upsert a Resource Explorer-sourced generic-inventory resource. Unlike upsertResource
+   * (used by the Describe*-based deep-monitored discovery), this never overwrites status,
+   * is_encrypted, is_public, has_backup, or compliance_issues on conflict — Resource
+   * Explorer's thin {arn, type, region, tags} data can't determine any of those, so
+   * clobbering them on every re-discovery would silently erase whatever a prior scan
+   * (or the compliance scanner) already determined. Termination is handled exclusively
+   * by ResourceReconciliationService, never by this upsert.
+   *
+   * status is inserted as 'unknown', not 'active' — Resource Explorer doesn't report
+   * operational state (a DynamoDB table stuck CREATING or an ECS service DRAINING would
+   * be indistinguishable from a healthy one), so claiming 'active' would be fabricating
+   * data DevControl doesn't actually have. 'unknown' is an existing ResourceStatus value
+   * (see mapEC2Status/mapRDSStatus's fallback) — this generic path is honest about being
+   * inventory-only, the same way cloudwatch.service.ts's rdsCapability is honest about
+   * having no CloudWatch metrics wired up. Never overwritten on conflict, so a resource
+   * whose status was previously known (e.g. from before it became generic-only) keeps it.
+   */
+  private async upsertGenericResource(
+    client: any,
+    organizationId: string,
+    entry: NormalizedResourceEntry
+  ): Promise<'created' | 'updated'> {
+    const resourceId = this.resourceExplorer.extractResourceId(entry.arn);
+    const resourceName = entry.tags.Name || resourceId;
+    const estimatedMonthlyCost = AWSResourceDiscoveryService.GENERIC_COST_BASELINE[entry.resourceType] ?? 0;
+
+    const result = await client.query(
+      `INSERT INTO aws_resources (
+        organization_id, resource_arn, resource_id, resource_name, resource_type, region,
+        tags, metadata, status, estimated_monthly_cost, actual_monthly_cost,
+        is_encrypted, is_public, has_backup, compliance_issues, missing_scan_count, last_synced_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'unknown', $9, 0, false, false, false, '[]', 0, NOW())
+      ON CONFLICT (organization_id, resource_arn)
+      DO UPDATE SET
+        resource_name = EXCLUDED.resource_name,
+        tags = EXCLUDED.tags,
+        metadata = EXCLUDED.metadata,
+        region = EXCLUDED.region,
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      RETURNING (xmax = 0) AS inserted`,
+      [
+        organizationId,
+        entry.arn,
+        resourceId,
+        resourceName,
+        entry.resourceType,
+        entry.region,
+        JSON.stringify(entry.tags || {}),
+        JSON.stringify({ source: 'resource-explorer', service: entry.service }),
+        estimatedMonthlyCost,
       ]
     );
 
@@ -1099,14 +1072,6 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
-   * Estimate monthly cost for S3 bucket
-   * Fixed estimate (actual cost depends on storage and requests)
-   */
-  private estimateS3Cost(): number {
-    return 5; // $5/month baseline estimate
-  }
-
-  /**
    * Discover Lambda functions
    */
   private async discoverLambdaFunctions(
@@ -1183,106 +1148,6 @@ export class AWSResourceDiscoveryService {
     const computeCost = (requests * duration * memoryGB) * 0.0000166667;
 
     return requestCost + computeCost;
-  }
-
-  /**
-   * Discover ECS services
-   */
-  private async discoverECSServices(
-    organizationId: string,
-    ecsClient: ECSClient,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      // List all clusters
-      const clusterArns: string[] = [];
-      let clusterPageCount = 0;
-      for await (const page of paginateECSListClusters({ client: ecsClient }, {})) {
-        clusterPageCount++;
-        clusterArns.push(...(page.clusterArns || []));
-      }
-      this.logIfPaginated('ECS clusters', clusterPageCount, clusterArns.length);
-
-      for (const clusterArn of clusterArns) {
-        // List services in cluster (default page size is only 10 — must paginate)
-        const serviceArns: string[] = [];
-        let servicePageCount = 0;
-        for await (const page of paginateListServices({ client: ecsClient }, { cluster: clusterArn })) {
-          servicePageCount++;
-          serviceArns.push(...(page.serviceArns || []));
-        }
-        this.logIfPaginated(`ECS services in cluster ${clusterArn}`, servicePageCount, serviceArns.length);
-
-        if (serviceArns.length === 0) continue;
-
-        // DescribeServices accepts at most 10 service ARNs per call — chunk
-        // accordingly (same pattern as getVolumeEncryptionMap's 200-id chunking below)
-        const services: Service[] = [];
-        const chunkSize = 10;
-        for (let i = 0; i < serviceArns.length; i += chunkSize) {
-          const chunk = serviceArns.slice(i, i + chunkSize);
-          const { services: chunkServices } = await ecsClient.send(
-            new DescribeServicesCommand({ cluster: clusterArn, services: chunk })
-          );
-          services.push(...(chunkServices || []));
-        }
-
-        for (const service of services) {
-          if (!service.serviceArn || !service.serviceName) continue;
-
-          const tags = (service.tags || []).reduce((acc, tag) => {
-            if (tag.key && tag.value) {
-              acc[tag.key] = tag.value;
-            }
-            return acc;
-          }, {} as Record<string, string>);
-
-          const name = tags.Name || service.serviceName;
-
-          resources.push({
-            organization_id: organizationId,
-            resource_arn: service.serviceArn,
-            resource_id: service.serviceName,
-            resource_name: name,
-            resource_type: 'ecs',
-            region,
-            tags,
-            metadata: {
-              cluster: service.clusterArn,
-              task_definition: service.taskDefinition,
-              desired_count: service.desiredCount,
-              running_count: service.runningCount,
-              launch_type: service.launchType,
-            },
-            status: (service.status || 'UNKNOWN') as ResourceStatus,
-            estimated_monthly_cost: this.estimateECSCost(service),
-          });
-        }
-      }
-    } catch (error: any) {
-      console.error('[ECS Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Estimate monthly cost for ECS service
-   */
-  private estimateECSCost(service: any): number {
-    // Fargate pricing: $0.04048 per vCPU/hour, $0.004445 per GB/hour
-    // Estimate: 0.25 vCPU, 0.5 GB, running 24/7
-    const vCPU = 0.25;
-    const memoryGB = 0.5;
-    const hours = 730; // hours per month
-    const tasks = service.desiredCount || 1;
-
-    const cpuCost = vCPU * 0.04048 * hours * tasks;
-    const memoryCost = memoryGB * 0.004445 * hours * tasks;
-
-    return cpuCost + memoryCost;
   }
 
   /**
@@ -1366,196 +1231,6 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
-   * Discover VPC resources (VPCs, Subnets, Security Groups)
-   */
-  private async discoverVPCResources(
-    organizationId: string,
-    ec2Client: EC2Client,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      // Discover VPCs
-      const vpcs: Vpc[] = [];
-      let pageCount = 0;
-      for await (const page of paginateDescribeVpcs({ client: ec2Client }, {})) {
-        pageCount++;
-        vpcs.push(...(page.Vpcs || []));
-      }
-      this.logIfPaginated('VPCs', pageCount, vpcs.length);
-
-      for (const vpc of vpcs) {
-        if (!vpc.VpcId) continue;
-
-        const tags = this.extractTags(vpc.Tags);
-        const name = tags.Name || vpc.VpcId;
-
-        // Get account ID from VPC owner ID
-        const accountId = vpc.OwnerId || '*';
-
-        resources.push({
-          organization_id: organizationId,
-          resource_arn: `arn:aws:ec2:${region}:${accountId}:vpc/${vpc.VpcId}`,
-          resource_id: vpc.VpcId,
-          resource_name: name,
-          resource_type: 'vpc',
-          region,
-          tags,
-          metadata: {
-            cidr_block: vpc.CidrBlock,
-            is_default: vpc.IsDefault,
-            state: vpc.State,
-          },
-          status: (vpc.State || 'available') as ResourceStatus,
-          estimated_monthly_cost: 0, // VPCs are free
-        });
-      }
-    } catch (error: any) {
-      console.error('[VPC Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Discover EKS clusters
-   */
-  private async discoverEKSClusters(
-    organizationId: string,
-    eksClient: EKSClient,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      const clusterNames: string[] = [];
-      let pageCount = 0;
-      for await (const page of paginateEKSListClusters({ client: eksClient }, {})) {
-        pageCount++;
-        clusterNames.push(...(page.clusters || []));
-      }
-      this.logIfPaginated('EKS clusters', pageCount, clusterNames.length);
-
-      if (clusterNames.length === 0) return resources;
-
-      for (const clusterName of clusterNames) {
-        try {
-          const { cluster } = await eksClient.send(
-            new EKSDescribeClusterCommand({ name: clusterName })
-          );
-
-          if (!cluster || !cluster.arn || !cluster.name) continue;
-
-          const tags = cluster.tags || {};
-
-          resources.push({
-            organization_id: organizationId,
-            resource_arn: cluster.arn,
-            resource_id: cluster.name,
-            resource_name: cluster.name,
-            resource_type: 'eks',
-            region,
-            tags,
-            metadata: {
-              kubernetes_version: cluster.version,
-              status: cluster.status,
-              endpoint: cluster.endpoint,
-              role_arn: cluster.roleArn,
-              created_at: cluster.createdAt?.toISOString(),
-            },
-            status: (cluster.status === 'ACTIVE' ? 'active' : 'inactive') as ResourceStatus,
-            estimated_monthly_cost: this.estimateEKSCost(),
-          });
-        } catch (error: any) {
-          console.error(`[EKS Discovery] Error describing cluster ${clusterName}:`, error.message);
-        }
-      }
-    } catch (error: any) {
-      console.error('[EKS Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Estimate monthly cost for EKS cluster
-   */
-  private estimateEKSCost(): number {
-    // EKS control plane: $0.10/hour = $73/month
-    return 73;
-  }
-
-  /**
-   * Discover DynamoDB tables
-   */
-  private async discoverDynamoDBTables(
-    organizationId: string,
-    dynamoClient: DynamoDBClient,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      const tableNames: string[] = [];
-      let pageCount = 0;
-      for await (const page of paginateListTables({ client: dynamoClient }, {})) {
-        pageCount++;
-        tableNames.push(...(page.TableNames || []));
-      }
-      this.logIfPaginated('DynamoDB tables', pageCount, tableNames.length);
-
-      for (const tableName of tableNames) {
-        try {
-          const { Table } = await dynamoClient.send(
-            new DescribeTableCommand({ TableName: tableName })
-          );
-
-          if (!Table || !Table.TableArn || !Table.TableName) continue;
-
-          resources.push({
-            organization_id: organizationId,
-            resource_arn: Table.TableArn,
-            resource_id: Table.TableName,
-            resource_name: Table.TableName,
-            resource_type: 'dynamodb',
-            region,
-            tags: {},
-            metadata: {
-              status: Table.TableStatus,
-              item_count: Table.ItemCount,
-              table_size_bytes: Table.TableSizeBytes,
-              billing_mode: Table.BillingModeSummary?.BillingMode || 'PROVISIONED',
-              read_capacity: Table.ProvisionedThroughput?.ReadCapacityUnits,
-              write_capacity: Table.ProvisionedThroughput?.WriteCapacityUnits,
-            },
-            status: (Table.TableStatus === 'ACTIVE' ? 'active' : 'inactive') as ResourceStatus,
-            estimated_monthly_cost: this.estimateDynamoDBCost(Table),
-          });
-        } catch (error: any) {
-          console.error(`[DynamoDB Discovery] Error describing table ${tableName}:`, error.message);
-        }
-      }
-    } catch (error: any) {
-      console.error('[DynamoDB Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Estimate monthly cost for DynamoDB table
-   */
-  private estimateDynamoDBCost(table: any): number {
-    // On-demand pricing estimate: $1.25 per million writes, $0.25 per million reads
-    // Provisioned: $0.00065/RCU/hour, $0.00013/WCU/hour
-    const rcu = table.ProvisionedThroughput?.ReadCapacityUnits || 5;
-    const wcu = table.ProvisionedThroughput?.WriteCapacityUnits || 5;
-    const hours = 730;
-    return (rcu * 0.00065 + wcu * 0.00013) * hours;
-  }
-
-  /**
    * Discover CloudFront distributions
    * CloudFront is a global service — uses us-east-1 endpoint
    */
@@ -1616,339 +1291,4 @@ export class AWSResourceDiscoveryService {
     return 8.5;
   }
 
-  /**
-   * Discover API Gateway REST APIs
-   */
-  private async discoverAPIGatewayAPIs(
-    organizationId: string,
-    agClient: APIGatewayClient,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      const apis: RestApi[] = [];
-      let pageCount = 0;
-      for await (const page of paginateGetRestApis({ client: agClient }, {})) {
-        pageCount++;
-        apis.push(...(page.items || []));
-      }
-      this.logIfPaginated('API Gateway REST APIs', pageCount, apis.length);
-
-      for (const api of apis) {
-        if (!api.id || !api.name) continue;
-
-        const arn = `arn:aws:apigateway:${region}::/restapis/${api.id}`;
-
-        resources.push({
-          organization_id: organizationId,
-          resource_arn: arn,
-          resource_id: api.id,
-          resource_name: api.name,
-          resource_type: 'api-gateway',
-          region,
-          tags: api.tags || {},
-          metadata: {
-            api_id: api.id,
-            protocol: 'REST',
-            description: api.description,
-            created_date: api.createdDate?.toISOString(),
-            endpoint_type: api.endpointConfiguration?.types?.[0],
-          },
-          status: 'active' as ResourceStatus,
-          estimated_monthly_cost: this.estimateAPIGatewayCost(),
-        });
-      }
-    } catch (error: any) {
-      console.error('[API Gateway Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Estimate monthly cost for API Gateway REST API
-   */
-  private estimateAPIGatewayCost(): number {
-    // $3.50 per million API calls — estimate 1M calls/month
-    return 3.5;
-  }
-
-  /**
-   * Discover ElastiCache clusters
-   */
-  private async discoverElastiCacheClusters(
-    organizationId: string,
-    ecClient: ElastiCacheClient,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      const cacheClusters: CacheCluster[] = [];
-      let pageCount = 0;
-      for await (const page of paginateDescribeCacheClusters({ client: ecClient }, { ShowCacheNodeInfo: true })) {
-        pageCount++;
-        cacheClusters.push(...(page.CacheClusters || []));
-      }
-      this.logIfPaginated('ElastiCache clusters', pageCount, cacheClusters.length);
-
-      for (const cluster of cacheClusters) {
-        if (!cluster.CacheClusterId) continue;
-
-        const arn = cluster.ARN || `arn:aws:elasticache:${region}:*:cluster:${cluster.CacheClusterId}`;
-
-        resources.push({
-          organization_id: organizationId,
-          resource_arn: arn,
-          resource_id: cluster.CacheClusterId,
-          resource_name: cluster.CacheClusterId,
-          resource_type: 'elasticache',
-          region,
-          tags: {},
-          metadata: {
-            engine: cluster.Engine,
-            engine_version: cluster.EngineVersion,
-            node_type: cluster.CacheNodeType,
-            num_nodes: cluster.NumCacheNodes,
-            status: cluster.CacheClusterStatus,
-            preferred_az: cluster.PreferredAvailabilityZone,
-          },
-          status: (cluster.CacheClusterStatus === 'available' ? 'available' : 'inactive') as ResourceStatus,
-          estimated_monthly_cost: this.estimateElastiCacheCost(cluster.CacheNodeType || 'cache.t3.micro'),
-        });
-      }
-    } catch (error: any) {
-      console.error('[ElastiCache Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Estimate monthly cost for ElastiCache cluster
-   */
-  private estimateElastiCacheCost(nodeType: string): number {
-    const costs: Record<string, number> = {
-      'cache.t3.micro':  13,
-      'cache.t3.small':  26,
-      'cache.t3.medium': 52,
-      'cache.r6g.large': 122,
-      'cache.r6g.xlarge': 244,
-    };
-    return costs[nodeType] || 25;
-  }
-
-  /**
-   * Discover Aurora clusters
-   * Filters RDS DB clusters by Aurora engine families
-   */
-  private async discoverAuroraClusters(
-    organizationId: string,
-    rdsClient: RDSClient,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      const dbClusters: DBCluster[] = [];
-      let pageCount = 0;
-      for await (const page of paginateDescribeDBClusters({ client: rdsClient }, {})) {
-        pageCount++;
-        dbClusters.push(...(page.DBClusters || []));
-      }
-      this.logIfPaginated('Aurora/RDS clusters', pageCount, dbClusters.length);
-
-      const auroraEngines = new Set(['aurora', 'aurora-mysql', 'aurora-postgresql']);
-
-      for (const cluster of dbClusters) {
-        if (!cluster.DBClusterIdentifier || !cluster.Engine) continue;
-        if (!auroraEngines.has(cluster.Engine)) continue;
-
-        const arn = cluster.DBClusterArn || `arn:aws:rds:${region}:*:cluster:${cluster.DBClusterIdentifier}`;
-        const tags = (cluster.TagList || []).reduce((acc: Record<string, string>, tag: any) => {
-          if (tag.Key && tag.Value) acc[tag.Key] = tag.Value;
-          return acc;
-        }, {});
-
-        resources.push({
-          organization_id: organizationId,
-          resource_arn: arn,
-          resource_id: cluster.DBClusterIdentifier,
-          resource_name: cluster.DBClusterIdentifier,
-          resource_type: 'aurora',
-          region,
-          tags,
-          metadata: {
-            engine: cluster.Engine,
-            engine_version: cluster.EngineVersion,
-            status: cluster.Status,
-            multi_az: cluster.MultiAZ,
-            db_cluster_members: cluster.DBClusterMembers?.length,
-            endpoint: cluster.Endpoint,
-            reader_endpoint: cluster.ReaderEndpoint,
-          },
-          status: (cluster.Status || 'unknown') as ResourceStatus,
-          is_encrypted: cluster.StorageEncrypted || false,
-          has_backup: (cluster.BackupRetentionPeriod || 0) > 0,
-          estimated_monthly_cost: this.estimateAuroraCost(cluster),
-        });
-      }
-    } catch (error: any) {
-      console.error('[Aurora Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Estimate monthly cost for Aurora cluster
-   */
-  private estimateAuroraCost(cluster: any): number {
-    // Aurora Serverless v2: ~$0.12/ACU/hour; provisioned: varies by instance class
-    // Estimate based on member count
-    const members = cluster.DBClusterMembers?.length || 1;
-    return members * 150; // ~$150/instance/month baseline
-  }
-
-  /**
-   * Discover SQS queues
-   */
-  private async discoverSQSQueues(
-    organizationId: string,
-    sqsClient: SQSClient,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      const queueUrls: string[] = [];
-      let pageCount = 0;
-      for await (const page of paginateListQueues({ client: sqsClient }, {})) {
-        pageCount++;
-        queueUrls.push(...(page.QueueUrls || []));
-      }
-      this.logIfPaginated('SQS queues', pageCount, queueUrls.length);
-
-      for (const queueUrl of queueUrls) {
-        try {
-          const { Attributes } = await sqsClient.send(
-            new GetQueueAttributesCommand({
-              QueueUrl: queueUrl,
-              AttributeNames: [
-                'QueueArn',
-                'ApproximateNumberOfMessages',
-                'VisibilityTimeout',
-                'CreatedTimestamp',
-                'FifoQueue',
-              ],
-            })
-          );
-
-          if (!Attributes?.QueueArn) continue;
-
-          const queueName = queueUrl.split('/').pop() || queueUrl;
-
-          resources.push({
-            organization_id: organizationId,
-            resource_arn: Attributes.QueueArn,
-            resource_id: queueName,
-            resource_name: queueName,
-            resource_type: 'sqs',
-            region,
-            tags: {},
-            metadata: {
-              queue_url: queueUrl,
-              approximate_number_of_messages: parseInt(Attributes.ApproximateNumberOfMessages || '0'),
-              visibility_timeout: parseInt(Attributes.VisibilityTimeout || '30'),
-              is_fifo: queueName.endsWith('.fifo'),
-            },
-            status: 'active' as ResourceStatus,
-            estimated_monthly_cost: this.estimateSQSCost(),
-          });
-        } catch (error: any) {
-          console.error(`[SQS Discovery] Error describing queue ${queueUrl}:`, error.message);
-        }
-      }
-    } catch (error: any) {
-      console.error('[SQS Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Estimate monthly cost for SQS queue
-   */
-  private estimateSQSCost(): number {
-    // $0.40 per million requests — estimate 1M requests/month
-    return 0.4;
-  }
-
-  /**
-   * Discover SNS topics
-   */
-  private async discoverSNSTopics(
-    organizationId: string,
-    snsClient: SNSClient,
-    region: string
-  ): Promise<CreateAWSResourceInput[]> {
-    const resources: CreateAWSResourceInput[] = [];
-
-    try {
-      const topics: Topic[] = [];
-      let pageCount = 0;
-      for await (const page of paginateListTopics({ client: snsClient }, {})) {
-        pageCount++;
-        topics.push(...(page.Topics || []));
-      }
-      this.logIfPaginated('SNS topics', pageCount, topics.length);
-
-      for (const topic of topics) {
-        if (!topic.TopicArn) continue;
-
-        try {
-          const { Attributes } = await snsClient.send(
-            new GetTopicAttributesCommand({ TopicArn: topic.TopicArn })
-          );
-
-          const topicName = topic.TopicArn.split(':').pop() || topic.TopicArn;
-
-          resources.push({
-            organization_id: organizationId,
-            resource_arn: topic.TopicArn,
-            resource_id: topicName,
-            resource_name: topicName,
-            resource_type: 'sns',
-            region,
-            tags: {},
-            metadata: {
-              subscriptions_confirmed: parseInt(Attributes?.SubscriptionsConfirmed || '0'),
-              subscriptions_pending: parseInt(Attributes?.SubscriptionsPending || '0'),
-              display_name: Attributes?.DisplayName,
-              fifo_topic: Attributes?.FifoTopic === 'true',
-            },
-            status: 'active' as ResourceStatus,
-            estimated_monthly_cost: this.estimateSNSCost(
-              parseInt(Attributes?.SubscriptionsConfirmed || '0')
-            ),
-          });
-        } catch (error: any) {
-          console.error(`[SNS Discovery] Error describing topic ${topic.TopicArn}:`, error.message);
-        }
-      }
-    } catch (error: any) {
-      console.error('[SNS Discovery] Error:', error.message);
-    }
-
-    return resources;
-  }
-
-  /**
-   * Estimate monthly cost for SNS topic
-   */
-  private estimateSNSCost(subscriptionCount: number): number {
-    // $0.50 per million publishes — estimate 100K publishes, $0.09/1000 deliveries
-    return 0.5 + (subscriptionCount * 0.09 / 1000);
-  }
 }
