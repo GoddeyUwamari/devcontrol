@@ -66,6 +66,9 @@ jobs:
       - name: Package dist
         run: tar czf dist.tar.gz -C backend/dist .
 
+      - name: Prepare package manifest for deploy
+        run: cp backend/package.json package.json.deploy
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -111,6 +114,9 @@ jobs:
       - name: Upload dist to S3
         run: aws s3 cp dist.tar.gz s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz
 
+      - name: Upload package manifest to S3
+        run: aws s3 cp package.json.deploy s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/package.json
+
       - name: Deploy via SSM and restart PM2
         id: deploy
         run: |
@@ -119,7 +125,7 @@ jobs:
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy devcontrol-api ${{ github.sha }}" \
-            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz /tmp/dist-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH tar xzf /tmp/dist-${{ github.sha }}.tar.gz -C /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/node_modules","sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production\"","sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env","sudo -H -u ubuntu --preserve-env=PATH pm2 save","echo ✅ Backend deployed, awaiting smoke test"]}' \
+            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/dist.tar.gz /tmp/dist-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH tar xzf /tmp/dist-${{ github.sha }}.tar.gz -C /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ github.sha }}/package.json /home/ubuntu/devcontrol/backend/package.json","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/node_modules","sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production\"","sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env","sudo -H -u ubuntu --preserve-env=PATH pm2 save","echo ✅ Backend deployed, awaiting smoke test"]}' \
             --query "Command.CommandId" --output text)
           echo "SSM command ID: $COMMAND_ID"
 
@@ -209,7 +215,7 @@ jobs:
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Rollback devcontrol-api to ${{ steps.get_prev_sha.outputs.prev_sha }}" \
-            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ steps.get_prev_sha.outputs.prev_sha }}/dist.tar.gz /tmp/dist-rollback.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH tar xzf /tmp/dist-rollback.tar.gz -C /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-rollback.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/node_modules","sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production\"","sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env","sudo -H -u ubuntu --preserve-env=PATH pm2 save","echo Rolled back to ${{ steps.get_prev_sha.outputs.prev_sha }}"]}' \
+            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ steps.get_prev_sha.outputs.prev_sha }}/dist.tar.gz /tmp/dist-rollback.tar.gz","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH tar xzf /tmp/dist-rollback.tar.gz -C /home/ubuntu/devcontrol/backend/dist","sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-rollback.tar.gz","sudo -H -u ubuntu --preserve-env=PATH bash -c \"aws s3 cp s3://devcontrol-deploy-artifacts/backend/${{ steps.get_prev_sha.outputs.prev_sha }}/package.json /home/ubuntu/devcontrol/backend/package.json || echo 'No package.json artifact for this SHA, keeping existing file'\"","sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/node_modules","sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol/backend && npm install --legacy-peer-deps --production\"","sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env","sudo -H -u ubuntu --preserve-env=PATH pm2 save","echo Rolled back to ${{ steps.get_prev_sha.outputs.prev_sha }}"]}' \
             --query "Command.CommandId" --output text)
           echo "Rollback SSM command ID: $COMMAND_ID"
 
