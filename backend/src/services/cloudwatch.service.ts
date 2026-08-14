@@ -36,8 +36,8 @@ export interface CloudWatchServiceHealth {
   resourceId: string
   name: string
   description: string
-  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda'
-  status: 'healthy' | 'degraded' | 'down' | 'unknown'
+  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb'
+  status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
   // null means CloudWatch genuinely has no data for this metric right now — never
   // fabricate a plausible-looking number in its place.
   uptime: number | null
@@ -46,6 +46,11 @@ export interface CloudWatchServiceHealth {
   critical: boolean
   // Whether any real metric backs this row at all, vs. inventory-only (e.g. RDS today).
   monitored: boolean
+  // Optional explainability fields — populated by capabilities with a richer, multi-signal
+  // health rule (currently only DynamoDB). Deliberately optional rather than backfilled
+  // across every existing capability in this same change; EC2/RDS/ALB/Lambda omit them.
+  reason?: string | null
+  signals?: Record<string, number | null> | null
 }
 
 export interface CloudWatchMetrics {
@@ -61,7 +66,7 @@ export interface CloudWatchMetrics {
   responseTimeHistory: ResponseTimePoint[]
   // What this account topology actually lets us measure — drives the page's coverage
   // claim instead of a hardcoded "EC2, RDS, Lambda" string.
-  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean }
+  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean }
   services: CloudWatchServiceHealth[]
   capturedAt: string
 }
@@ -69,7 +74,7 @@ export interface CloudWatchMetrics {
 interface InventoryRow {
   resource_id: string
   resource_name: string | null
-  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda'
+  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb'
   resource_arn: string
   status: string | null
   metadata: Record<string, any> | null
@@ -303,18 +308,89 @@ const lambdaCapability: ResourceCapability = {
   },
 }
 
-// Adding a future resource type (e.g. DynamoDB) means adding a capability
-// definition here — the fetch/dimension plumbing in evaluateResource() is generic.
+// Below what count of throttled requests (summed across the whole lookback window) we
+// treat throttling as a secondary factor rather than enough on its own, combined with
+// SystemErrors, to justify 'critical'. This is a magnitude heuristic, not true "repeated
+// over time" detection — a single-window Sum can't distinguish "many small bursts" from
+// "one big burst"; that would need multiple evaluation periods, deliberately out of scope
+// for this first pass. Easy to retune or replace once we have real production signal.
+const DYNAMODB_MEANINGFUL_THROTTLE_THRESHOLD = 10
+
+const dynamoDbCapability: ResourceCapability = {
+  resourceType: 'dynamodb',
+  cloudwatchNamespace: 'AWS/DynamoDB',
+  dimensionKey: 'TableName',
+  // Discovery stores the bare table name as resource_id (extracted from the ARN's
+  // "table/Name" suffix by resourceExplorer.service.ts's extractResourceId) — same value
+  // CloudWatch's TableName dimension expects, so no further parsing needed here.
+  getDimensionValue: (table) => table.resource_id,
+  metrics: [
+    { key: 'systemErrors', metricName: 'SystemErrors', statistic: 'Sum' },
+    { key: 'throttledRequests', metricName: 'ThrottledRequests', statistic: 'Sum' },
+  ],
+  healthRule: (table, values) => {
+    const systemErrors = values.systemErrors
+    const throttledRequests = values.throttledRequests
+
+    const hasData = systemErrors !== null || throttledRequests !== null
+    const hasSystemErrors = systemErrors !== null && systemErrors > 0
+    const hasThrottling = throttledRequests !== null && throttledRequests > 0
+    const hasMeaningfulThrottling = throttledRequests !== null && throttledRequests >= DYNAMODB_MEANINGFUL_THROTTLE_THRESHOLD
+
+    let status: CloudWatchServiceHealth['status']
+    let reason: string | null
+
+    if (!hasData) {
+      status = 'unknown'
+      reason = 'No CloudWatch telemetry available for this table in the selected window'
+    } else if (hasSystemErrors && hasMeaningfulThrottling) {
+      status = 'critical'
+      reason = 'DynamoDB system errors with significant throttling detected'
+    } else if (hasSystemErrors) {
+      status = 'degraded'
+      reason = 'DynamoDB system errors detected'
+    } else if (hasThrottling) {
+      status = 'degraded'
+      reason = 'DynamoDB throttling detected'
+    } else {
+      status = 'healthy'
+      reason = null
+    }
+
+    return {
+      service: {
+        resourceId: table.resource_id,
+        name: table.resource_name || table.resource_id,
+        description: 'DynamoDB table',
+        resourceType: 'dynamodb',
+        status,
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        critical: false,
+        monitored: hasData,
+        reason,
+        signals: { systemErrors, throttledRequests },
+      },
+      extra: undefined,
+    }
+  },
+}
+
+// Adding a future resource type means adding a capability definition here — the
+// fetch/dimension plumbing in evaluateResource() is generic.
 const resourceTypeRegistry: {
   ec2: ResourceCapability
   rds: ResourceCapability
   'load-balancer': ResourceCapability<AlbExtra>
   lambda: ResourceCapability
+  dynamodb: ResourceCapability
 } = {
   ec2: ec2Capability,
   rds: rdsCapability,
   'load-balancer': loadBalancerCapability,
   lambda: lambdaCapability,
+  dynamodb: dynamoDbCapability,
 }
 
 export class CloudWatchService {
@@ -335,7 +411,7 @@ export class CloudWatchService {
       `SELECT resource_id, resource_name, resource_type, resource_arn, status, metadata
        FROM aws_resources
        WHERE organization_id = $1
-         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda')
+         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb')
          AND status != 'terminated'
        ORDER BY resource_name ASC NULLS LAST`,
       [organizationId]
@@ -466,6 +542,7 @@ export class CloudWatchService {
     const rdsInstances = resources.filter((r) => r.resource_type === 'rds').slice(0, 15)
     const albs = resources.filter((r) => r.resource_type === 'load-balancer' && r.metadata?.type === 'application').slice(0, 5)
     const lambdaFunctions = resources.filter((r) => r.resource_type === 'lambda').slice(0, 15)
+    const dynamoTables = resources.filter((r) => r.resource_type === 'dynamodb').slice(0, 15)
 
     const ec2Results = (
       await Promise.all(
@@ -495,6 +572,15 @@ export class CloudWatchService {
       )
     ).filter((r): r is NonNullable<typeof r> => r !== null)
     const lambdaServices = lambdaResults.map((r) => r.service)
+
+    const dynamoResults = (
+      await Promise.all(
+        dynamoTables.map((table) =>
+          this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.dynamodb, table, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
+        )
+      )
+    ).filter((r): r is NonNullable<typeof r> => r !== null)
+    const dynamoServices = dynamoResults.map((r) => r.service)
 
     const albEvaluations = (
       await Promise.all(
@@ -580,8 +666,13 @@ export class CloudWatchService {
       monthlyCost,
       trendPercent,
       responseTimeHistory,
-      coverage: { ec2: ec2Instances.length > 0, loadBalancer: albResults.length > 0, rds: rdsInstances.length > 0 },
-      services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices],
+      coverage: {
+        ec2: ec2Instances.length > 0,
+        loadBalancer: albResults.length > 0,
+        rds: rdsInstances.length > 0,
+        dynamodb: dynamoTables.length > 0,
+      },
+      services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices],
       capturedAt: new Date().toISOString(),
     }
   }

@@ -20,12 +20,26 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
 
 interface ServiceHealth {
-  name: string; description?: string; status: 'healthy' | 'degraded' | 'down' | 'unknown'
+  name: string; description?: string; status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
   uptime: string; responseTime: string; errorRate: number | null; critical?: boolean
   recentIncidents?: number; uptimeHistory?: number[]; monitored?: boolean
 }
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
-interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean }
+interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean }
+
+// Shared styling for the non-healthy system-status banner — centralized here instead of
+// repeating the same 3-way ternary in multiple render spots, and so adding a future
+// status only means adding one branch, not hunting down every place it's rendered.
+function systemStatusBannerStyle(status: 'degraded' | 'critical' | 'down') {
+  switch (status) {
+    case 'degraded':
+      return { bg: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500', text: 'text-amber-800', subtext: 'text-amber-700', label: 'Degraded' }
+    case 'critical':
+      return { bg: 'bg-red-50 border-red-200', dot: 'bg-red-600', text: 'text-red-800', subtext: 'text-red-700', label: 'Critical' }
+    case 'down':
+      return { bg: 'bg-red-50 border-red-200', dot: 'bg-red-900', text: 'text-red-900', subtext: 'text-red-700', label: 'Down' }
+  }
+}
 
 export default function MonitoringPage() {
   const router = useRouter()
@@ -40,11 +54,11 @@ export default function MonitoringPage() {
   const [coverage, setCoverage] = useState<CloudWatchCoverage | null>(null)
   const coverageLabel = useMemo(() => {
     if (!coverage) return 'EC2, Application Load Balancer'
-    const parts = [coverage.ec2 && 'EC2', coverage.loadBalancer && 'Application Load Balancer', coverage.rds && 'RDS (inventory only)'].filter(Boolean)
+    const parts = [coverage.ec2 && 'EC2', coverage.loadBalancer && 'Application Load Balancer', coverage.rds && 'RDS (inventory only)', coverage.dynamodb && 'DynamoDB'].filter(Boolean)
     return parts.length > 0 ? parts.join(', ') : 'no monitored resources yet'
   }, [coverage])
 
-  const [systemStatus, setSystemStatus] = useState<'healthy' | 'degraded' | 'down'>('healthy')
+  const [systemStatus, setSystemStatus] = useState<'healthy' | 'degraded' | 'critical' | 'down'>('healthy')
   const [metricsAvailable, setMetricsAvailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<MonitoringError | null>(null)
@@ -173,13 +187,15 @@ export default function MonitoringPage() {
       setServices(mappedServices)
 
       // Only resources CloudWatch is actually confirming (monitored: true) can drive the
-      // system-wide status. A resource whose "down"/"degraded" reading comes solely from
-      // stale inventory data (no live CloudWatch signal) shouldn't be able to flip the
-      // whole system to Down on its own — see live-test finding 2026-08-08.
+      // system-wide status. A resource whose "down"/"degraded"/"critical" reading comes
+      // solely from stale inventory data (no live CloudWatch signal) shouldn't be able to
+      // flip the whole system on its own — see live-test finding 2026-08-08.
+      // Ordered most-to-least severe: down > critical > degraded > healthy.
       const monitoredServices = mappedServices.filter(s => s.monitored)
       const anyDown = monitoredServices.some(s => s.status === 'down')
+      const anyCritical = monitoredServices.some(s => s.status === 'critical')
       const anyDegraded = monitoredServices.some(s => s.status === 'degraded')
-      setSystemStatus(anyDown ? 'down' : anyDegraded ? 'degraded' : 'healthy')
+      setSystemStatus(anyDown ? 'down' : anyCritical ? 'critical' : anyDegraded ? 'degraded' : 'healthy')
       setMetricsAvailable(true); setError(null); setLoading(false); setLastSynced(new Date())
       fetchAlerts()
       return
@@ -366,13 +382,15 @@ export default function MonitoringPage() {
             <div className="flex-1">
               <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
               <p className="text-sm text-slate-700 leading-relaxed">
-                {systemStatus === 'degraded'
-                  ? (isDemoActive
-                      ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
-                      : 'One or more services may need attention. Review Service Health below for details.')
-                  : systemStatus === 'healthy'
-                    ? `All ${services.length} services healthy. Average response time ${responseTimeString} with ${uptime} uptime. ${alerts.length === 0 ? 'No active alerts detected.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`
-                    : 'System is down. Immediate investigation required across all services.'}
+                {systemStatus === 'down'
+                  ? 'System is down. Immediate investigation required across all services.'
+                  : systemStatus === 'critical'
+                    ? 'One or more services are reporting critical health signals. Review Service Health below for details.'
+                    : systemStatus === 'degraded'
+                      ? (isDemoActive
+                          ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
+                          : 'One or more services may need attention. Review Service Health below for details.')
+                      : `All ${services.length} services healthy. Average response time ${responseTimeString} with ${uptime} uptime. ${alerts.length === 0 ? 'No active alerts detected.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`}
               </p>
             </div>
             {alerts.length > 0 && (
@@ -381,13 +399,16 @@ export default function MonitoringPage() {
           </div>
 
           {/* System status banner */}
-          {systemStatus !== 'healthy' && (
-            <div className={`rounded-xl border px-5 py-3 mb-6 flex flex-wrap items-center gap-2 ${systemStatus === 'degraded' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
-              <div className={`w-2 h-2 rounded-full shrink-0 ${systemStatus === 'degraded' ? 'bg-amber-500' : 'bg-red-500'}`} />
-              <span className={`text-sm font-semibold ${systemStatus === 'degraded' ? 'text-amber-800' : 'text-red-800'}`}>System {systemStatus === 'degraded' ? 'Degraded' : 'Down'} · {alerts.length} active alert{alerts.length !== 1 ? 's' : ''}</span>
-              <span className={`text-xs ${systemStatus === 'degraded' ? 'text-amber-700' : 'text-red-700'}`}>· Last synced {lastSynced.toLocaleTimeString()}</span>
-            </div>
-          )}
+          {systemStatus !== 'healthy' && (() => {
+            const style = systemStatusBannerStyle(systemStatus)
+            return (
+              <div className={`rounded-xl border px-5 py-3 mb-6 flex flex-wrap items-center gap-2 ${style.bg}`}>
+                <div className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
+                <span className={`text-sm font-semibold ${style.text}`}>System {style.label} · {alerts.length} active alert{alerts.length !== 1 ? 's' : ''}</span>
+                <span className={`text-xs ${style.subtext}`}>· Last synced {lastSynced.toLocaleTimeString()}</span>
+              </div>
+            )
+          })()}
 
           {/* 4 KPI cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">

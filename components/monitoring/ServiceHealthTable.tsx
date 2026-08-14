@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 interface ServiceHealth {
   name: string
   description?: string
-  status: 'healthy' | 'degraded' | 'down' | 'unknown'
+  status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
   uptime: string
   responseTime: string
   errorRate: number | null
@@ -81,7 +81,8 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
                         ? "bg-gray-300"
                         : service.status === 'healthy' && "bg-green-500",
                       service.monitored !== false && service.status === 'degraded' && "bg-yellow-500",
-                      service.monitored !== false && service.status === 'down' && "bg-red-500",
+                      service.monitored !== false && service.status === 'critical' && "bg-red-600",
+                      service.monitored !== false && service.status === 'down' && "bg-red-900",
                       service.monitored !== false && service.status === 'unknown' && "bg-gray-300"
                     )}
                     title={service.monitored === false ? 'No live monitoring data — status from inventory only' : undefined}
