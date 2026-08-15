@@ -32,6 +32,15 @@ export interface ResponseTimePoint {
   value: number
 }
 
+// Phase B: generic, typed per-resource metric — backend supplies raw numbers only, never
+// pre-formatted strings, so the frontend controls display (thousands separators, rounding,
+// unit suffixes, future threshold-based coloring) without ever parsing a string back apart.
+export interface ServiceMetric {
+  label: string
+  value: number
+  unit?: string
+}
+
 export interface CloudWatchServiceHealth {
   resourceId: string
   name: string
@@ -51,6 +60,11 @@ export interface CloudWatchServiceHealth {
   // across every existing capability in this same change; EC2/RDS/ALB/Lambda omit them.
   reason?: string | null
   signals?: Record<string, number | null> | null
+  // Phase B: generic per-resource-type display metrics. Each capability decides what's
+  // meaningful for its type (CPU for EC2, invocations for Lambda, throttling for DynamoDB)
+  // and returns typed values here — the shared engine and any UI consuming this never need
+  // per-type branching. Omitted or empty when nothing meaningful is available yet.
+  metrics?: ServiceMetric[]
 }
 
 export interface CloudWatchMetrics {
@@ -179,6 +193,9 @@ const ec2Capability: ResourceCapability = {
         errorRate: null,
         critical: true,
         monitored: uptime !== null || cpu !== null,
+        // CPU was already being computed above for status evaluation — previously
+        // discarded after use, now also surfaced as a display metric.
+        metrics: cpu !== null ? [{ label: 'CPU', value: Math.round(cpu * 10) / 10, unit: '%' }] : undefined,
       },
       extra: undefined,
     }
@@ -204,6 +221,7 @@ const rdsCapability: ResourceCapability = {
       errorRate: null,
       critical: true,
       monitored: false,
+      // No CloudWatch data source yet — metrics intentionally omitted, not fabricated.
     },
     extra: undefined,
   }),
@@ -247,6 +265,10 @@ const loadBalancerCapability: ResourceCapability<AlbExtra> = {
       errorRate,
       critical: false,
       monitored: avgResponseTimeMs !== null,
+      metrics: [
+        ...(requestsPerMinute !== null ? [{ label: 'Requests/min', value: requestsPerMinute }] : []),
+        ...(errorRate !== null ? [{ label: 'Error rate', value: errorRate, unit: '%' }] : []),
+      ],
     }
 
     return {
@@ -302,6 +324,10 @@ const lambdaCapability: ResourceCapability = {
         errorRate,
         critical: false,
         monitored: invocations !== null,
+        metrics: [
+          ...(invocations !== null ? [{ label: 'Invocations', value: invocations }] : []),
+          ...(errors !== null ? [{ label: 'Errors', value: errors }] : []),
+        ],
       },
       extra: undefined,
     }
@@ -371,6 +397,10 @@ const dynamoDbCapability: ResourceCapability = {
         monitored: hasData,
         reason,
         signals: { systemErrors, throttledRequests },
+        metrics: [
+          ...(systemErrors !== null ? [{ label: 'System errors', value: systemErrors }] : []),
+          ...(throttledRequests !== null ? [{ label: 'Throttled', value: throttledRequests }] : []),
+        ],
       },
       extra: undefined,
     }

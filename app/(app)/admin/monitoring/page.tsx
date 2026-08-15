@@ -19,10 +19,18 @@ import { toast } from 'sonner'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
 
+interface ServiceMetric {
+  label: string
+  value: number
+  unit?: string
+}
+
 interface ServiceHealth {
   name: string; description?: string; status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
   uptime: string; responseTime: string; errorRate: number | null; critical?: boolean
   recentIncidents?: number; uptimeHistory?: number[]; monitored?: boolean
+  // Phase B additions, passed through from the backend response below.
+  resourceType?: string; metrics?: ServiceMetric[]
 }
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
 interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean }
@@ -213,6 +221,11 @@ export default function MonitoringPage() {
         errorRate: s.errorRate ?? null,
         critical: s.critical,
         monitored: s.monitored,
+        // Phase B: pass through resourceType and metrics — previously dropped here even
+        // though the backend already returned resourceType, which is why filter tabs and
+        // per-resource metrics couldn't be built without this fix.
+        resourceType: s.resourceType,
+        metrics: Array.isArray(s.metrics) ? s.metrics : undefined,
       }))
       setServices(mappedServices)
 
