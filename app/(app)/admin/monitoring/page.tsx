@@ -41,6 +41,18 @@ function systemStatusBannerStyle(status: 'degraded' | 'critical' | 'down') {
   }
 }
 
+// Health-summary status-dot color, keyed off the same systemStatus the banner uses —
+// separate from systemStatusBannerStyle because the summary line needs a 'healthy' case
+// too (the banner never renders when healthy, so it never needed one).
+function healthSummaryDotColor(status: 'healthy' | 'degraded' | 'critical' | 'down') {
+  switch (status) {
+    case 'healthy': return 'bg-green-500'
+    case 'degraded': return 'bg-amber-500'
+    case 'critical': return 'bg-red-600'
+    case 'down': return 'bg-red-900'
+  }
+}
+
 export default function MonitoringPage() {
   const router = useRouter()
   const demoMode = useDemoMode()
@@ -82,16 +94,34 @@ export default function MonitoringPage() {
   const [requestsAvailable, setRequestsAvailable] = useState(false)
   const [trendAvailable, setTrendAvailable] = useState(false)
 
+  // Phase A: health-status counts derived from the existing services list — no new
+  // backend data, just aggregating what fetchMetrics() already populates per resource.
+  const healthCounts = useMemo(() => {
+    const monitoredServices = services.filter(s => s.monitored)
+    return {
+      total: monitoredServices.length,
+      healthy: monitoredServices.filter(s => s.status === 'healthy').length,
+      degraded: monitoredServices.filter(s => s.status === 'degraded').length,
+      critical: monitoredServices.filter(s => s.status === 'critical').length,
+      down: monitoredServices.filter(s => s.status === 'down').length,
+    }
+  }, [services])
+
+  const overallHealthPercent = useMemo(() => {
+    if (healthCounts.total === 0) return null
+    return Math.round((healthCounts.healthy / healthCounts.total) * 100)
+  }, [healthCounts])
+
   const generateDemoMetrics = useCallback(() => {
     setError(null)
     const now = Date.now()
     const chartData = Array.from({ length: 12 }, (_, i) => ({ timestamp: now - (11 - i) * 5 * 60 * 1000, value: Math.round(120 + Math.random() * 80) }))
     setUptime('99.95%'); setResponseTime(145); setResponseTimeString('145ms'); setMonthlyCost('$847'); setRequestsPerMinute(1247); setResponseTimeData(chartData); setTrendPercent(-2.3)
     setServices([
-      { name: 'Payment API', description: 'Payment processing service', status: 'healthy', uptime: '99.99%', responseTime: '89ms', errorRate: 0.05, critical: true, recentIncidents: 0, uptimeHistory: [99.9,99.95,99.98,99.99,100,99.99,99.98,99.99] },
-      { name: 'User Service', description: 'User authentication and management', status: 'healthy', uptime: '99.98%', responseTime: '123ms', errorRate: 0.08, critical: true, recentIncidents: 0, uptimeHistory: [99.8,99.9,99.95,99.98,99.97,99.99,99.98,100] },
-      { name: 'Order Processor', description: 'Background order processing', status: 'degraded', uptime: '98.45%', responseTime: '458ms', errorRate: 1.23, critical: false, recentIncidents: 2, uptimeHistory: [99.5,98.8,97.5,98.2,98.9,98.5,98.1,98.45] },
-      { name: 'Notification Service', description: 'Email and push notifications', status: 'healthy', uptime: '99.92%', responseTime: '234ms', errorRate: 0.15, critical: false, recentIncidents: 0, uptimeHistory: [99.7,99.8,99.85,99.9,99.92,99.88,99.91,99.92] },
+      { name: 'Payment API', description: 'Payment processing service', status: 'healthy', uptime: '99.99%', responseTime: '89ms', errorRate: 0.05, critical: true, recentIncidents: 0, uptimeHistory: [99.9,99.95,99.98,99.99,100,99.99,99.98,99.99], monitored: true },
+      { name: 'User Service', description: 'User authentication and management', status: 'healthy', uptime: '99.98%', responseTime: '123ms', errorRate: 0.08, critical: true, recentIncidents: 0, uptimeHistory: [99.8,99.9,99.95,99.98,99.97,99.99,99.98,100], monitored: true },
+      { name: 'Order Processor', description: 'Background order processing', status: 'degraded', uptime: '98.45%', responseTime: '458ms', errorRate: 1.23, critical: false, recentIncidents: 2, uptimeHistory: [99.5,98.8,97.5,98.2,98.9,98.5,98.1,98.45], monitored: true },
+      { name: 'Notification Service', description: 'Email and push notifications', status: 'healthy', uptime: '99.92%', responseTime: '234ms', errorRate: 0.15, critical: false, recentIncidents: 0, uptimeHistory: [99.7,99.8,99.85,99.9,99.92,99.88,99.91,99.92], monitored: true },
     ])
     setSlos([{ name: 'API Uptime', current: 99.95, target: 99.9, errorBudget: 0.05, description: 'API availability SLO' }, { name: 'Response Time', current: 98.5, target: 95.0, errorBudget: 3.5, description: '< 500ms for 95% requests' }, { name: 'Error Rate', current: 99.9, target: 99.9, errorBudget: 0.0, description: '< 0.1% error rate' }])
     setAlerts([{ id: '1', title: 'High Response Time', message: 'Order Processor response time above threshold', severity: 'warning', service: 'order-processor', triggeredAt: new Date(Date.now() - 15 * 60 * 1000) }, { id: '2', title: 'Elevated Error Rate', message: 'Order Processor error rate at 1.23%', severity: 'warning', service: 'order-processor', triggeredAt: new Date(Date.now() - 8 * 60 * 1000) }])
@@ -222,7 +252,7 @@ export default function MonitoringPage() {
       const isAvailable = apiRes?.ok ?? false; setMetricsAvailable(isAvailable); setSystemStatus(isAvailable ? 'healthy' : 'down')
       if (!isAvailable) {
         setLoading(false)
-        setServices([{ name: 'DevControl API', description: 'Main application server', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0, critical: true }, { name: 'PostgreSQL', description: 'Primary database', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0, critical: true }, { name: 'Node Exporter', description: 'System metrics collector', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0 }])
+        setServices([{ name: 'DevControl API', description: 'Main application server', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0, critical: true, monitored: true }, { name: 'PostgreSQL', description: 'Primary database', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0, critical: true, monitored: true }, { name: 'Node Exporter', description: 'System metrics collector', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0, monitored: true }])
         setError({ type: 'connection', message: 'Unable to connect to Prometheus', action: 'Verify Prometheus is running and accessible at ' + (process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090') }); return
       }
       const uptimeData = await queryPrometheus('up{job="devcontrol-api"}')
@@ -241,9 +271,9 @@ export default function MonitoringPage() {
       if (requestRateQuery?.result?.[0]?.value?.[1]) { const rate = parseFloat(requestRateQuery.result[0].value[1]); if (!isNaN(rate)) setRequestsPerMinute(Math.round(rate)) }
       const serviceHealthData = await Promise.all([queryPrometheus('up{job="devcontrol-api"}'), queryPrometheus('up{job="postgres-exporter"}'), queryPrometheus('up{job="node-exporter"}')])
       const updatedServices: ServiceHealth[] = [
-        { name: 'DevControl API', description: 'Main application server', status: serviceHealthData[0]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[0]?.result?.[0]?.value?.[1] === '1' ? '99.95%' : '0%', responseTime: p95Value > 0 ? `${p95Value}ms` : '--', errorRate: 0.05, critical: true, recentIncidents: 0, uptimeHistory: [99,99.5,99.8,99.9,99.95,99.9,99.95,100] },
-        { name: 'PostgreSQL', description: 'Primary database', status: serviceHealthData[1]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[1]?.result?.[0]?.value?.[1] === '1' ? '100%' : '0%', responseTime: '12ms', errorRate: 0.0, critical: true, recentIncidents: 0, uptimeHistory: [100,100,100,100,100,100,100,100] },
-        { name: 'Node Exporter', description: 'System metrics collector', status: serviceHealthData[2]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[2]?.result?.[0]?.value?.[1] === '1' ? '100%' : '0%', responseTime: '--', errorRate: 0.0, critical: false, recentIncidents: 0, uptimeHistory: [100,100,99.9,100,100,100,100,100] },
+        { name: 'DevControl API', description: 'Main application server', status: serviceHealthData[0]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[0]?.result?.[0]?.value?.[1] === '1' ? '99.95%' : '0%', responseTime: p95Value > 0 ? `${p95Value}ms` : '--', errorRate: 0.05, critical: true, recentIncidents: 0, uptimeHistory: [99,99.5,99.8,99.9,99.95,99.9,99.95,100], monitored: true },
+        { name: 'PostgreSQL', description: 'Primary database', status: serviceHealthData[1]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[1]?.result?.[0]?.value?.[1] === '1' ? '100%' : '0%', responseTime: '12ms', errorRate: 0.0, critical: true, recentIncidents: 0, uptimeHistory: [100,100,100,100,100,100,100,100], monitored: true },
+        { name: 'Node Exporter', description: 'System metrics collector', status: serviceHealthData[2]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[2]?.result?.[0]?.value?.[1] === '1' ? '100%' : '0%', responseTime: '--', errorRate: 0.0, critical: false, recentIncidents: 0, uptimeHistory: [100,100,99.9,100,100,100,100,100], monitored: true },
       ]
       setServices(updatedServices); setLastSynced(new Date())
       const parsedUptime = parseFloat(uptime)
@@ -300,6 +330,19 @@ export default function MonitoringPage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" /> CloudWatch connected
               </span>
               <span className="text-[11px] text-slate-400">· Last synced {lastSynced.toLocaleTimeString()}</span>
+            </div>
+          )}
+          {/* Phase A: health-summary line, immediately visible below the header — surfaces
+              status counts the page already computes rather than burying them in the table. */}
+          {metricsAvailable && healthCounts.total > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${healthSummaryDotColor(systemStatus)}`} />
+              <span className="text-sm font-semibold text-slate-900">
+                {systemStatus === 'healthy' ? 'Healthy' : systemStatus === 'degraded' ? 'Degraded' : systemStatus === 'critical' ? 'Critical' : 'Down'}
+              </span>
+              <span className="text-sm text-slate-500">
+                · {healthCounts.total} resource{healthCounts.total !== 1 ? 's' : ''} monitored · {healthCounts.healthy} healthy · {healthCounts.degraded} degraded · {healthCounts.critical} critical
+              </span>
             </div>
           )}
         </div>
@@ -376,7 +419,10 @@ export default function MonitoringPage() {
       {/* Main content */}
       {(!loading || isDemoActive) && (!error || isDemoActive) && (
         <>
-          {/* AI Insight banner */}
+          {/* AI Insight banner — Phase A: rewritten healthy-case sentence to reference the
+              actual resource counts computed above instead of response-time/uptime figures
+              that are usually N/A for non-ALB accounts. Degraded/critical/down branches
+              unchanged from tonight's earlier fix. */}
           <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-6 py-4 mb-6 flex items-start gap-3.5">
             <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-white" /></div>
             <div className="flex-1">
@@ -390,7 +436,9 @@ export default function MonitoringPage() {
                       ? (isDemoActive
                           ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
                           : 'One or more services may need attention. Review Service Health below for details.')
-                      : `All ${services.length} services healthy. Average response time ${responseTimeString} with ${uptime} uptime. ${alerts.length === 0 ? 'No active alerts detected.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`}
+                      : healthCounts.total > 0
+                        ? `Infrastructure is healthy. ${healthCounts.total} AWS resource${healthCounts.total !== 1 ? 's are' : ' is'} currently monitored with no active health violations. ${alerts.length === 0 ? 'No reliability anomalies were detected during the selected period.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`
+                        : 'No monitored resources yet. Connect AWS or run resource discovery to start tracking infrastructure health.'}
               </p>
             </div>
             {alerts.length > 0 && (
@@ -410,12 +458,15 @@ export default function MonitoringPage() {
             )
           })()}
 
-          {/* 4 KPI cards */}
+          {/* 4 KPI cards — Phase A: replaced System Uptime/Avg Response Time/Requests-Min
+              (frequently N/A on non-ALB accounts) with capability-aware cards that are
+              always computable from data the page already has: overall health percentage,
+              monitored resource count, active alert count, and monthly cost (unchanged). */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
             {[
-              { label: 'System Uptime', value: uptime, sub: uptime === '--' || uptime === 'N/A' ? 'Not available' : 'Over selected range', color: (uptime === '--' || uptime === 'N/A') ? 'text-slate-300' : parseFloat(uptime) >= 99.9 ? 'text-green-600' : 'text-amber-500' },
-              { label: 'Avg Response Time', value: responseTimeString, sub: !isDemoActive && responseTimeString === 'N/A' ? 'No load balancer to measure' : !trendAvailable ? 'No prior-period data' : `${trendPercent > 0 ? '+' : ''}${trendPercent.toFixed(1)}% vs last period`, color: responseTimeString === 'N/A' ? 'text-slate-300' : responseTime < 200 ? 'text-green-600' : responseTime < 500 ? 'text-amber-500' : 'text-red-600' },
-              { label: 'Requests / Min', value: !isDemoActive && !requestsAvailable ? 'N/A' : requestsPerMinute.toLocaleString(), sub: !isDemoActive && !requestsAvailable ? 'No load balancer to measure' : requestsPerMinute === 0 && !isDemoActive ? 'No active throughput' : 'Current throughput', color: !isDemoActive && !requestsAvailable ? 'text-slate-300' : 'text-slate-900' },
+              { label: 'Overall Health', value: overallHealthPercent !== null ? `${overallHealthPercent}%` : 'N/A', sub: overallHealthPercent === null ? 'No monitored resources' : `${healthCounts.healthy}/${healthCounts.total} healthy`, color: overallHealthPercent === null ? 'text-slate-300' : overallHealthPercent >= 90 ? 'text-green-600' : overallHealthPercent >= 70 ? 'text-amber-500' : 'text-red-600' },
+              { label: 'Monitored Resources', value: healthCounts.total.toLocaleString(), sub: healthCounts.total === 0 ? 'Run discovery to add resources' : coverageLabel, color: healthCounts.total === 0 ? 'text-slate-300' : 'text-slate-900' },
+              { label: 'Active Alerts', value: alerts.length.toLocaleString(), sub: alerts.length === 0 ? 'No active alerts' : 'Needs attention', color: alerts.length === 0 ? 'text-slate-900' : 'text-red-600' },
               { label: 'Monthly Cost', value: monthlyCost, sub: monthlyCost === '--' ? 'Cost data unavailable' : 'Current monthly spend', color: monthlyCost === '--' ? 'text-slate-300' : 'text-slate-900' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
@@ -456,7 +507,7 @@ export default function MonitoringPage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Service Health</p>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-400">{services.filter(s => s.status === 'healthy').length}/{services.length} healthy</span>
+                <span className="text-xs text-slate-400">{healthCounts.healthy}/{healthCounts.total} healthy</span>
                 <a href="/services" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">All services <ArrowRight size={11} /></a>
               </div>
             </div>
