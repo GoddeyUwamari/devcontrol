@@ -42,6 +42,7 @@ const RESOURCE_TYPE_TABS: { key: string; label: string }[] = [
   { key: 'load-balancer', label: 'ALB' },
   { key: 'lambda', label: 'Lambda' },
   { key: 'dynamodb', label: 'DynamoDB' },
+  { key: 'ecs', label: 'ECS' },
 ]
 
 function formatMetricValue(metric: ServiceMetric): string {

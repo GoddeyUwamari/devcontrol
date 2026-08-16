@@ -1,4 +1,5 @@
 import { CloudWatchClient, GetMetricStatisticsCommand } from '@aws-sdk/client-cloudwatch'
+import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs'
 import { AWSClientFactory } from './aws-client-factory.service'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
@@ -45,7 +46,7 @@ export interface CloudWatchServiceHealth {
   resourceId: string
   name: string
   description: string
-  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb'
+  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs'
   status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
   // null means CloudWatch genuinely has no data for this metric right now — never
   // fabricate a plausible-looking number in its place.
@@ -56,7 +57,7 @@ export interface CloudWatchServiceHealth {
   // Whether any real metric backs this row at all, vs. inventory-only (e.g. RDS today).
   monitored: boolean
   // Optional explainability fields — populated by capabilities with a richer, multi-signal
-  // health rule (currently only DynamoDB). Deliberately optional rather than backfilled
+  // health rule (currently DynamoDB and ECS). Deliberately optional rather than backfilled
   // across every existing capability in this same change; EC2/RDS/ALB/Lambda omit them.
   reason?: string | null
   signals?: Record<string, number | null> | null
@@ -80,7 +81,7 @@ export interface CloudWatchMetrics {
   responseTimeHistory: ResponseTimePoint[]
   // What this account topology actually lets us measure — drives the page's coverage
   // claim instead of a hardcoded "EC2, RDS, Lambda" string.
-  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean }
+  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; ecs: boolean }
   services: CloudWatchServiceHealth[]
   capturedAt: string
 }
@@ -88,7 +89,7 @@ export interface CloudWatchMetrics {
 interface InventoryRow {
   resource_id: string
   resource_name: string | null
-  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb'
+  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs'
   resource_arn: string
   status: string | null
   metadata: Record<string, any> | null
@@ -118,6 +119,14 @@ interface HealthRuleContext {
  * a capability needs to expose to callers beyond the per-resource health row — today
  * only the load-balancer capability uses this, to feed the account-wide response-time/
  * request-rate KPI rollups in getMetrics().
+ *
+ * This contract is CloudWatch-specific by design (cloudwatchNamespace/dimensionKey are
+ * CloudWatch concepts). ECS deliberately does NOT implement this interface — its health
+ * source is the ECS control plane (DescribeServices), not CloudWatch, and is evaluated by
+ * a separate dedicated function below rather than being forced through evaluateResource().
+ * Both still produce the same universal CloudWatchServiceHealth shape, unified in
+ * getMetrics() — see the architecture note on evaluateEcsService() for why this is the
+ * minimal honest version of "provider-agnostic" rather than a premature formal interface.
  */
 interface ResourceCapability<TExtra = void> {
   resourceType: CloudWatchServiceHealth['resourceType']
@@ -144,6 +153,19 @@ interface ResourceCapability<TExtra = void> {
 function albDimensionValue(resourceArn: string): string | null {
   const match = resourceArn.match(/loadbalancer\/(.+)$/)
   return match ? match[1] : null
+}
+
+/**
+ * ECS service ARNs look like arn:aws:ecs:region:account:service/cluster-name/service-name.
+ * Discovery's generic extractResourceId() (lastIndexOf('/') vs lastIndexOf(':')) would
+ * collapse this to just "service-name", silently dropping the cluster — which
+ * DescribeServices requires alongside the service name. So ECS parses resource_arn
+ * directly here rather than relying on resource_id, unlike every other generic type.
+ */
+function parseEcsClusterAndService(resourceArn: string): { cluster: string; service: string } | null {
+  const match = resourceArn.match(/:service\/([^/]+)\/([^/]+)$/)
+  if (!match) return null
+  return { cluster: match[1], service: match[2] }
 }
 
 interface AlbExtra {
@@ -407,8 +429,10 @@ const dynamoDbCapability: ResourceCapability = {
   },
 }
 
-// Adding a future resource type means adding a capability definition here — the
-// fetch/dimension plumbing in evaluateResource() is generic.
+// Adding a future CloudWatch-backed resource type means adding a capability definition
+// here — the fetch/dimension plumbing in evaluateResource() is generic. ECS is
+// deliberately NOT in this registry — see evaluateEcsService() below and the
+// ResourceCapability doc comment for why.
 const resourceTypeRegistry: {
   ec2: ResourceCapability
   rds: ResourceCapability
@@ -441,7 +465,7 @@ export class CloudWatchService {
       `SELECT resource_id, resource_name, resource_type, resource_arn, status, metadata
        FROM aws_resources
        WHERE organization_id = $1
-         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb')
+         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs')
          AND status != 'terminated'
        ORDER BY resource_name ASC NULLS LAST`,
       [organizationId]
@@ -549,6 +573,131 @@ export class CloudWatchService {
     return capability.healthRule(resource, values, { lookbackSeconds, dims })
   }
 
+  /**
+   * ECS control-plane health, evaluated separately from the CloudWatch-only registry
+   * above. ECS's authoritative health signal — desired/running/pending task counts and
+   * service lifecycle state — comes from the ECS API's DescribeServices, not CloudWatch.
+   * CloudWatch does support ClusterName+ServiceName CPU/Memory metrics without Container
+   * Insights, but those are supplemental utilization numbers, not the control-plane
+   * source of truth; wiring them in as a secondary signal is a deliberate later step, not
+   * done here. This still returns the same universal CloudWatchServiceHealth shape so
+   * getMetrics() can unify it with every CloudWatch-backed type with no special casing
+   * downstream — the shared *output* contract is what matters, not a shared internal
+   * execution engine that ECS doesn't naturally fit.
+   */
+  private async evaluateEcsService(client: ECSClient, resource: InventoryRow): Promise<CloudWatchServiceHealth> {
+    const parsed = parseEcsClusterAndService(resource.resource_arn)
+
+    if (!parsed) {
+      return {
+        resourceId: resource.resource_id,
+        name: resource.resource_name || resource.resource_id,
+        description: 'ECS service',
+        resourceType: 'ecs',
+        status: 'unknown',
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        critical: false,
+        monitored: false,
+        reason: 'Could not determine cluster/service from resource ARN',
+      }
+    }
+
+    try {
+      const response = await client.send(
+        new DescribeServicesCommand({ cluster: parsed.cluster, services: [parsed.service] })
+      )
+
+      const svc = response.services?.[0]
+      const hasFailure = (response.failures?.length ?? 0) > 0
+
+      if (!svc || hasFailure) {
+        return {
+          resourceId: resource.resource_id,
+          name: resource.resource_name || resource.resource_id,
+          description: `ECS · ${parsed.cluster}`,
+          resourceType: 'ecs',
+          status: 'unknown',
+          uptime: null,
+          responseTimeMs: null,
+          errorRate: null,
+          critical: false,
+          monitored: false,
+          reason: hasFailure
+            ? (response.failures?.[0]?.reason ?? 'ECS reported a failure describing this service')
+            : 'ECS service not found',
+        }
+      }
+
+      const desiredCount = svc.desiredCount ?? 0
+      const runningCount = svc.runningCount ?? 0
+      const pendingCount = svc.pendingCount ?? 0
+      const ecsStatus = svc.status
+
+      // Service lifecycle state (ACTIVE/DRAINING/INACTIVE) is a different concept from
+      // task health (running vs. desired count) — a DRAINING service is often a
+      // deliberate, in-progress scale-down or deployment, not a failure, so it's
+      // Degraded rather than Down. INACTIVE means genuinely deleted/deactivated.
+      let status: CloudWatchServiceHealth['status']
+      let reason: string | null
+      if (ecsStatus === 'INACTIVE') {
+        status = 'down'
+        reason = 'ECS service is inactive'
+      } else if (ecsStatus === 'DRAINING') {
+        status = 'degraded'
+        reason = 'ECS service is draining (scale-down or deployment in progress)'
+      } else if (runningCount === 0 && desiredCount > 0) {
+        status = 'critical'
+        reason = 'No tasks running for a service with a nonzero desired count'
+      } else if (runningCount < desiredCount) {
+        status = 'degraded'
+        reason = `Running ${runningCount} of ${desiredCount} desired tasks`
+      } else if (ecsStatus === 'ACTIVE') {
+        status = 'healthy'
+        reason = null
+      } else {
+        status = 'unknown'
+        reason = `Unrecognized ECS service status: ${ecsStatus ?? 'none'}`
+      }
+
+      return {
+        resourceId: resource.resource_id,
+        name: resource.resource_name || resource.resource_id,
+        description: `ECS · ${parsed.cluster}`,
+        resourceType: 'ecs',
+        status,
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        critical: false,
+        monitored: true,
+        reason,
+        signals: { desiredCount, runningCount, pendingCount },
+        metrics: [
+          { label: 'Running', value: runningCount },
+          { label: 'Desired', value: desiredCount },
+          { label: 'Pending', value: pendingCount },
+        ],
+      }
+    } catch (err) {
+      console.error(`[ECS] DescribeServices failed for ${parsed.cluster}/${parsed.service}:`, err)
+      return {
+        resourceId: resource.resource_id,
+        name: resource.resource_name || resource.resource_id,
+        description: `ECS · ${parsed.cluster}`,
+        resourceType: 'ecs',
+        status: 'unknown',
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        critical: false,
+        monitored: false,
+        reason: 'Failed to reach the ECS API for this service',
+      }
+    }
+  }
+
   async getMetrics(organizationId: string, range?: string): Promise<CloudWatchMetrics | null> {
     const account = await this.getAccount(organizationId)
     if (!account) return null
@@ -573,6 +722,7 @@ export class CloudWatchService {
     const albs = resources.filter((r) => r.resource_type === 'load-balancer' && r.metadata?.type === 'application').slice(0, 5)
     const lambdaFunctions = resources.filter((r) => r.resource_type === 'lambda').slice(0, 15)
     const dynamoTables = resources.filter((r) => r.resource_type === 'dynamodb').slice(0, 15)
+    const ecsServicesInventory = resources.filter((r) => r.resource_type === 'ecs').slice(0, 15)
 
     const ec2Results = (
       await Promise.all(
@@ -611,6 +761,11 @@ export class CloudWatchService {
       )
     ).filter((r): r is NonNullable<typeof r> => r !== null)
     const dynamoServices = dynamoResults.map((r) => r.service)
+
+    // ECS bypasses evaluateResource() entirely — see evaluateEcsService() doc comment.
+    const ecsServices = await Promise.all(
+      ecsServicesInventory.map((svc) => this.evaluateEcsService(clients.ecs, svc))
+    )
 
     const albEvaluations = (
       await Promise.all(
@@ -701,8 +856,9 @@ export class CloudWatchService {
         loadBalancer: albResults.length > 0,
         rds: rdsInstances.length > 0,
         dynamodb: dynamoTables.length > 0,
+        ecs: ecsServicesInventory.length > 0,
       },
-      services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices],
+      services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices],
       capturedAt: new Date().toISOString(),
     }
   }
