@@ -447,6 +447,33 @@ const resourceTypeRegistry: {
   dynamodb: dynamoDbCapability,
 }
 
+/**
+ * INTERNAL ENGINEERING TRACKING ONLY — never serialized into any API response, never
+ * imported by frontend code. Distinguishes three genuinely different milestones that are
+ * easy to conflate in conversation and backlog notes: code that compiles, code that's
+ * deployed and running, and code that's actually been exercised against real customer
+ * AWS data. A clean deploy proves the code runs; it does not prove the feature works
+ * against real infrastructure. Update this by hand when a capability crosses a milestone
+ * (e.g. the first time a real ECS service is discovered and evaluateEcsService() actually
+ * executes a DescribeServices call against it, bump ecs to 'live_verified').
+ */
+type ValidationLevel = 'compiled' | 'deployed' | 'live_verified'
+
+const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType'], ValidationLevel> = {
+  ec2: 'live_verified',
+  rds: 'live_verified',
+  'load-balancer': 'live_verified',
+  lambda: 'live_verified',
+  // Only the no-data/Unknown path has been exercised against a real (disposable) inventory
+  // row in production. Healthy/Degraded/Critical are correct by code+type review only.
+  dynamodb: 'deployed',
+  // Deployed and type-safe; DescribeServices has never actually been called against real
+  // AWS data — this account has zero ECS resources. IAM permission for
+  // ecs:DescribeServices is also unconfirmed. Bump to 'live_verified' once a real or
+  // disposable ECS service has been evaluated end-to-end.
+  ecs: 'deployed',
+}
+
 export class CloudWatchService {
   private async getAccount(organizationId: string): Promise<{ account_id: string; nickname: string | null } | null> {
     const result = await pool.query(
@@ -861,6 +888,16 @@ export class CloudWatchService {
       services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices],
       capturedAt: new Date().toISOString(),
     }
+  }
+
+  /**
+   * Engineering-only accessor for CAPABILITY_VALIDATION_STATUS — not part of the public
+   * API surface, not called from any route today. Exists so this status is queryable from
+   * code (e.g. a future internal debug endpoint or a test asserting a capability has been
+   * bumped to 'live_verified' before some release gate) rather than only living in prose.
+   */
+  getCapabilityValidationStatus(): Record<CloudWatchServiceHealth['resourceType'], ValidationLevel> {
+    return { ...CAPABILITY_VALIDATION_STATUS }
   }
 
   async hasConnectedAccount(organizationId: string): Promise<boolean> {
