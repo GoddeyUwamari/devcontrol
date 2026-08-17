@@ -202,7 +202,7 @@ Return JSON with this structure:
 
       const response = await anthropic.messages.create(
         {
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-5',
           max_tokens: 4000,
           temperature: 0.3,
           system: systemPrompt,

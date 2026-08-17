@@ -241,7 +241,7 @@ DORA Metrics:
       console.log('[AI Chat] Sending request to Claude API...');
 
       const stream = await this.anthropic.messages.stream({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 2048,
         temperature: 0.3,
         system: systemPrompt,

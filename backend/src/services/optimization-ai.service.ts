@@ -40,7 +40,7 @@ export class OptimizationAIService {
       const prompt = this.buildPrioritizationPrompt(recommendations);
 
       const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 2048,
         temperature: 0.3,
         messages: [

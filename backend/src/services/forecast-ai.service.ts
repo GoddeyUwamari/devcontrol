@@ -20,7 +20,7 @@ export class ForecastAIService {
       const prompt = this.buildAnalysisPrompt(forecast);
 
       const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 2048,
         temperature: 0.3,
         messages: [{

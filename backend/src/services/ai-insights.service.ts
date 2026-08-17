@@ -135,7 +135,7 @@ export class AIInsightsService {
 
       console.log('[AI Insights] Analyzing cost increase with Claude...');
       const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 1024,
         temperature: 0.3,
         messages: [{
@@ -206,7 +206,7 @@ Be specific, technical, and actionable. Focus on AWS-specific optimizations.`;
 
       console.log('[AI Insights] Analyzing cost decrease with Claude...');
       const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 1024,
         temperature: 0.3,
         messages: [{
@@ -270,7 +270,7 @@ Focus on AWS cost optimization opportunities.`;
 
       console.log('[AI Insights] Analyzing cost trend with Claude...');
       const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 1024,
         temperature: 0.3,
         messages: [{
@@ -660,7 +660,7 @@ Keep it concise and actionable. Do not use markdown formatting, asterisks, bulle
 
       console.log('[AI Insights] Generating weekly summary with Claude...');
       const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 1024,
         temperature: 0.3,
         messages: [{
