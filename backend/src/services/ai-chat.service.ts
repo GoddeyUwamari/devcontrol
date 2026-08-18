@@ -12,7 +12,7 @@ export interface ChatContext {
   costs: {
     current: number;
     previous: number;
-    changePercent: number;
+    changePercent: number | null;
     topSpenders: Array<{
       service: string;
       cost: number;
@@ -178,7 +178,7 @@ Services in use: ${context.services.length > 0 ? context.services.join(', ') : '
 Cost data (${context.timeRange}):
 - Current spend: $${context.costs.current.toLocaleString()}/month
 - Previous period: $${context.costs.previous.toLocaleString()}/month
-- Change: ${context.costs.changePercent > 0 ? '+' : ''}${context.costs.changePercent.toFixed(1)}%
+- Change: ${context.costs.changePercent != null ? `${context.costs.changePercent > 0 ? '+' : ''}${context.costs.changePercent.toFixed(1)}%` : 'Not enough historical data yet to compare'}
 
 Top cost drivers:
 ${context.costs.topSpenders.length > 0
@@ -272,12 +272,12 @@ DORA Metrics:
     // Basic pattern matching for common questions
     if (lastMessage.includes('cost') || lastMessage.includes('spend') || lastMessage.includes('bill')) {
       const change = context.costs.changePercent;
-      const direction = change > 0 ? 'increased' : change < 0 ? 'decreased' : 'remained stable';
+      const direction = change == null ? null : change > 0 ? 'increased' : change < 0 ? 'decreased' : 'remained stable';
       const topSpender = context.costs.topSpenders[0];
 
       return `**🔍 What's happening**
 
-Your AWS spend is $${context.costs.current.toLocaleString()}/month, which has ${direction} by ${Math.abs(change).toFixed(1)}% compared to last period.
+Your AWS spend is $${context.costs.current.toLocaleString()}/month${direction ? `, which has ${direction} by ${Math.abs(change as number).toFixed(1)}% compared to last period` : ' (not enough historical data yet to compare against last period)'}.
 
 **💰 Cost / impact**
 
@@ -321,7 +321,7 @@ I can see your AWS environment with $${context.costs.current.toLocaleString()}/m
 **💰 Cost / impact**
 
 - Current spend: $${context.costs.current.toLocaleString()}/month
-- Change: ${context.costs.changePercent > 0 ? '+' : ''}${context.costs.changePercent.toFixed(1)}%
+- Change: ${context.costs.changePercent != null ? `${context.costs.changePercent > 0 ? '+' : ''}${context.costs.changePercent.toFixed(1)}%` : 'Not enough historical data yet to compare'}
 - Active alerts: ${context.alerts.total} (${context.alerts.critical} critical)
 
 **✅ Recommended actions**

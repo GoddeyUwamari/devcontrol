@@ -39,22 +39,70 @@ export class AIChatContextRepository {
   }
 
   /**
+   * Real month-over-month spend comparison — same algorithm and same underlying
+   * data (awsCostService.fetchCostTrend) as the Dashboard's
+   * computeMonthOverMonthCostChange() in app/(app)/dashboard/page.tsx. That
+   * function can't be imported directly: it's a private helper inside a Next.js
+   * page component in the frontend workspace, and this backend has its own
+   * separate tsconfig rootDir (backend/src) with no shared package boundary to
+   * the frontend app/ tree — so it's ported here verbatim against the same real
+   * Cost Explorer trend data both surfaces already read from, rather than
+   * re-derived independently. Returns null — never a fabricated 0 — when there
+   * isn't enough real daily coverage in either window to trust the comparison.
+   */
+  private computeMonthOverMonthChange(
+    costTrend: Array<{ date: string; total: number }>
+  ): { changePercent: number; previousTotal: number } | null {
+    if (!costTrend || costTrend.length === 0) return null;
+
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+    const dayOfMonth = now.getDate();
+    const lastMonth = curMonth === 0 ? 11 : curMonth - 1;
+    const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear;
+
+    let currentSum = 0, currentDays = 0;
+    let lastSum = 0, lastDays = 0;
+
+    for (const entry of costTrend) {
+      const [y, m, d] = entry.date.split('-').map(Number);
+      const month = m - 1;
+      if (y === curYear && month === curMonth && d <= dayOfMonth) {
+        currentSum += entry.total;
+        currentDays++;
+      } else if (y === lastMonthYear && month === lastMonth && d <= dayOfMonth) {
+        lastSum += entry.total;
+        lastDays++;
+      }
+    }
+
+    const minDays = Math.max(1, Math.floor(dayOfMonth * 0.8));
+    if (currentDays < minDays || lastDays < minDays || lastSum <= 0) return null;
+
+    return {
+      changePercent: Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10,
+      previousTotal: lastSum,
+    };
+  }
+
+  /**
    * Get cost data.
    * Reuses awsCostService.fetchMonthlyCosts() — the same live Cost Explorer call
    * that powers the Dashboard and AISummaryService — instead of re-deriving spend
-   * from aws_resources with a second, independently-maintained query.
-   *
-   * There is no authoritative previous-period figure available server-side (the
-   * Dashboard's month-over-month delta is computed client-side from a daily cost
-   * trend this context builder doesn't have). previous/changePercent used to be
-   * filled with `totalCurrent * 0.88` — a fabricated placeholder — whenever the
-   * (also-broken: risk_score_history has no total_cost column) history lookup
-   * failed, which was every call. Reporting 0% change against the real current
-   * total is an honest neutral default; it does not invent a number.
+   * from aws_resources with a second, independently-maintained query. The
+   * previous-period comparison reuses awsCostService.fetchCostTrend() at the same
+   * '90d' range the Dashboard requests, via computeMonthOverMonthChange() above.
    */
   private async getCostData(organizationId: string): Promise<ChatContext['costs']> {
     try {
-      const monthlyCost = await awsCostService.fetchMonthlyCosts(organizationId);
+      const [monthlyCost, costTrend] = await Promise.all([
+        awsCostService.fetchMonthlyCosts(organizationId),
+        awsCostService.fetchCostTrend(organizationId, '90d').catch((error: any) => {
+          console.error('[AI Chat Context] Error getting cost trend:', error.message);
+          return [];
+        }),
+      ]);
 
       const topSpenders = [...monthlyCost.byService]
         .sort((a, b) => b.amount - a.amount)
@@ -65,10 +113,12 @@ export class AIChatContextRepository {
           percentage: monthlyCost.total > 0 ? (item.amount / monthlyCost.total) * 100 : 0,
         }));
 
+      const monthOverMonth = this.computeMonthOverMonthChange(costTrend);
+
       return {
         current: Math.round(monthlyCost.total),
-        previous: Math.round(monthlyCost.total),
-        changePercent: 0,
+        previous: monthOverMonth ? Math.round(monthOverMonth.previousTotal) : Math.round(monthlyCost.total),
+        changePercent: monthOverMonth ? monthOverMonth.changePercent : null,
         topSpenders,
       };
     } catch (error: any) {
@@ -76,7 +126,7 @@ export class AIChatContextRepository {
       return {
         current: 0,
         previous: 0,
-        changePercent: 0,
+        changePercent: null,
         topSpenders: [],
       };
     }
