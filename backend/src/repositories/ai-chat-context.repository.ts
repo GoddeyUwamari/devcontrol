@@ -5,6 +5,7 @@
 
 import { Pool } from 'pg';
 import { ChatContext } from '../services/ai-chat.service';
+import awsCostService from '../services/aws-cost.service';
 
 export class AIChatContextRepository {
   constructor(private pool: Pool) {}
@@ -38,64 +39,36 @@ export class AIChatContextRepository {
   }
 
   /**
-   * Get cost data
+   * Get cost data.
+   * Reuses awsCostService.fetchMonthlyCosts() — the same live Cost Explorer call
+   * that powers the Dashboard and AISummaryService — instead of re-deriving spend
+   * from aws_resources with a second, independently-maintained query.
+   *
+   * There is no authoritative previous-period figure available server-side (the
+   * Dashboard's month-over-month delta is computed client-side from a daily cost
+   * trend this context builder doesn't have). previous/changePercent used to be
+   * filled with `totalCurrent * 0.88` — a fabricated placeholder — whenever the
+   * (also-broken: risk_score_history has no total_cost column) history lookup
+   * failed, which was every call. Reporting 0% change against the real current
+   * total is an honest neutral default; it does not invent a number.
    */
   private async getCostData(organizationId: string): Promise<ChatContext['costs']> {
     try {
-      const query = `
-        SELECT
-          service_type,
-          SUM(COALESCE(estimated_monthly_cost, 0)) as cost
-        FROM aws_resources
-        WHERE organization_id = $1
-        GROUP BY service_type
-        ORDER BY cost DESC
-      `;
+      const monthlyCost = await awsCostService.fetchMonthlyCosts(organizationId);
 
-      const result = await this.pool.query(query, [organizationId]);
-
-      const totalCurrent = result.rows.reduce(
-        (sum, row) => sum + parseFloat(row.cost || 0),
-        0
-      );
-
-      // Try to get historical cost data
-      let totalPrevious = totalCurrent;
-      try {
-        const historyQuery = `
-          SELECT total_cost
-          FROM risk_score_history
-          WHERE organization_id = $1
-          AND created_at >= NOW() - INTERVAL '60 days'
-          AND created_at < NOW() - INTERVAL '30 days'
-          ORDER BY created_at DESC
-          LIMIT 1
-        `;
-        const historyResult = await this.pool.query(historyQuery, [organizationId]);
-        if (historyResult.rows[0]?.total_cost) {
-          totalPrevious = parseFloat(historyResult.rows[0].total_cost);
-        }
-      } catch {
-        // Use estimate if history not available
-        totalPrevious = totalCurrent * 0.88; // Approximate based on typical patterns
-      }
-
-      const changePercent = totalPrevious > 0
-        ? ((totalCurrent - totalPrevious) / totalPrevious) * 100
-        : 0;
-
-      const topSpenders = result.rows.slice(0, 5).map(row => ({
-        service: row.service_type || 'Unknown',
-        cost: Math.round(parseFloat(row.cost || 0)),
-        percentage: totalCurrent > 0
-          ? (parseFloat(row.cost || 0) / totalCurrent) * 100
-          : 0,
-      }));
+      const topSpenders = [...monthlyCost.byService]
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 5)
+        .map(item => ({
+          service: item.service,
+          cost: Math.round(item.amount),
+          percentage: monthlyCost.total > 0 ? (item.amount / monthlyCost.total) * 100 : 0,
+        }));
 
       return {
-        current: Math.round(totalCurrent),
-        previous: Math.round(totalPrevious),
-        changePercent: Math.round(changePercent * 10) / 10,
+        current: Math.round(monthlyCost.total),
+        previous: Math.round(monthlyCost.total),
+        changePercent: 0,
         topSpenders,
       };
     } catch (error: any) {
@@ -124,7 +97,7 @@ export class AIChatContextRepository {
           ) as underutilized
         FROM aws_resources
         WHERE organization_id = $1
-        AND service_type = 'EC2'
+        AND resource_type = 'ec2'
       `;
 
       // RDS databases
@@ -134,7 +107,7 @@ export class AIChatContextRepository {
           SUM(COALESCE(estimated_monthly_cost, 0)) as storage_cost
         FROM aws_resources
         WHERE organization_id = $1
-        AND service_type = 'RDS'
+        AND resource_type = 'rds'
       `;
 
       // Lambda functions
@@ -144,7 +117,7 @@ export class AIChatContextRepository {
           COALESCE(SUM((tags->>'invocations')::bigint), 0) as invocations
         FROM aws_resources
         WHERE organization_id = $1
-        AND service_type = 'Lambda'
+        AND resource_type = 'lambda'
       `;
 
       const [ec2Result, rdsResult, lambdaResult] = await Promise.all([
@@ -228,15 +201,15 @@ export class AIChatContextRepository {
   private async getServices(organizationId: string): Promise<string[]> {
     try {
       const query = `
-        SELECT DISTINCT service_type
+        SELECT DISTINCT resource_type
         FROM aws_resources
         WHERE organization_id = $1
-        AND service_type IS NOT NULL
-        ORDER BY service_type
+        AND resource_type IS NOT NULL
+        ORDER BY resource_type
       `;
 
       const result = await this.pool.query(query, [organizationId]);
-      return result.rows.map(row => row.service_type);
+      return result.rows.map(row => row.resource_type);
     } catch (error: any) {
       console.error('[AI Chat Context] Error getting services:', error.message);
       return [];
@@ -251,14 +224,14 @@ export class AIChatContextRepository {
       // Check for cost anomalies based on significant changes
       const anomalyQuery = `
         SELECT
-          service_type,
+          resource_type,
           SUM(estimated_monthly_cost) as current_cost,
           COUNT(*) as resource_count
         FROM aws_resources
         WHERE organization_id = $1
         AND estimated_monthly_cost > 100
         AND updated_at > NOW() - INTERVAL '14 days'
-        GROUP BY service_type
+        GROUP BY resource_type
         HAVING SUM(estimated_monthly_cost) > 500
         ORDER BY current_cost DESC
         LIMIT 3
@@ -268,7 +241,7 @@ export class AIChatContextRepository {
 
       return result.rows.map(row => ({
         type: 'cost_spike',
-        service: row.service_type,
+        service: row.resource_type,
         description: `${row.resource_count} resources with high spend`,
         impact: `$${Math.round(row.current_cost)}/month`,
       }));
