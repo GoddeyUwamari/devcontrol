@@ -137,7 +137,6 @@ export class AIInsightsService {
       const message = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 1024,
-        temperature: 0.3,
         messages: [{
           role: 'user',
           content: prompt
@@ -208,7 +207,6 @@ Be specific, technical, and actionable. Focus on AWS-specific optimizations.`;
       const message = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 1024,
-        temperature: 0.3,
         messages: [{
           role: 'user',
           content: prompt
@@ -272,7 +270,6 @@ Focus on AWS cost optimization opportunities.`;
       const message = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 1024,
-        temperature: 0.3,
         messages: [{
           role: 'user',
           content: prompt
@@ -311,7 +308,6 @@ Focus on AWS cost optimization opportunities.`;
       const message = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 300,
-        temperature: 0.3,
         messages: [{ role: 'user', content: prompt }],
       });
 
@@ -378,7 +374,6 @@ Focus on AWS cost optimization opportunities.`;
       const message = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 400,
-        temperature: 0.3,
         tools: [tool],
         tool_choice: { type: 'tool', name: tool.name },
         messages: [{ role: 'user', content: prompt }],
@@ -662,7 +657,6 @@ Keep it concise and actionable. Do not use markdown formatting, asterisks, bulle
       const message = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 1024,
-        temperature: 0.3,
         messages: [{
           role: 'user',
           content: prompt

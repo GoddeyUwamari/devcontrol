@@ -243,7 +243,6 @@ DORA Metrics:
       const stream = await this.anthropic.messages.stream({
         model: 'claude-sonnet-5',
         max_tokens: 2048,
-        temperature: 0.3,
         system: systemPrompt,
         messages: messagesWithContext,
       });

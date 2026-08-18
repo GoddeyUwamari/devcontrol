@@ -22,7 +22,6 @@ export class ForecastAIService {
       const message = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 2048,
-        temperature: 0.3,
         messages: [{
           role: 'user',
           content: prompt,

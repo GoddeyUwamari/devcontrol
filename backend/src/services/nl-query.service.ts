@@ -198,7 +198,6 @@ export class NLQueryService {
       const message = await this.anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 512,
-        temperature: 0.3,
         messages: [{ role: 'user', content: prompt }],
       });
 

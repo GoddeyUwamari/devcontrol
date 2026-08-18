@@ -204,7 +204,6 @@ Return JSON with this structure:
         {
           model: 'claude-sonnet-5',
           max_tokens: 4000,
-          temperature: 0.3,
           system: systemPrompt,
           messages: [
             {

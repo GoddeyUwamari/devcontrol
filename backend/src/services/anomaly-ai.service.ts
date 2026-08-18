@@ -56,7 +56,6 @@ export class AnomalyAIService {
       const message = await this.client!.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 1024,
-        temperature: 0.2,
         messages: [{ role: 'user', content: prompt }],
       });
 
