@@ -6,9 +6,18 @@
 import { Pool } from 'pg';
 import { ChatContext } from '../services/ai-chat.service';
 import awsCostService from '../services/aws-cost.service';
+import { AlertHistoryRepository } from './alert-history.repository';
+import { DORAMetricsRepository } from './dora-metrics.repository';
+import { DORAMetricsService } from '../services/dora-metrics.service';
 
 export class AIChatContextRepository {
-  constructor(private pool: Pool) {}
+  private alertHistoryRepository: AlertHistoryRepository;
+  private doraMetricsService: DORAMetricsService;
+
+  constructor(private pool: Pool) {
+    this.alertHistoryRepository = new AlertHistoryRepository(pool);
+    this.doraMetricsService = new DORAMetricsService(new DORAMetricsRepository(pool), pool);
+  }
 
   /**
    * Gather complete context for AI chat
@@ -210,33 +219,29 @@ export class AIChatContextRepository {
   }
 
   /**
-   * Get alert data
+   * Get alert data.
+   * Reuses AlertHistoryRepository — the same real, working repository behind
+   * the authenticated alert-history routes — instead of a second, independently
+   * broken query against a `title` column that doesn't exist (real column:
+   * alert_name) and a `status = 'active'` filter that never matches any row
+   * (real status values: 'firing' | 'acknowledged' | 'resolved' — "active"
+   * means status = 'firing', per AlertHistoryRepository.getStats()).
    */
   private async getAlertData(organizationId: string): Promise<ChatContext['alerts']> {
     try {
-      const query = `
-        SELECT
-          COUNT(*) as total,
-          COUNT(*) FILTER (WHERE severity = 'critical') as critical,
-          array_agg(title ORDER BY created_at DESC) FILTER (
-            WHERE created_at > NOW() - INTERVAL '7 days'
-          ) as recent_titles
-        FROM alert_history
-        WHERE organization_id = $1
-        AND status = 'active'
-      `;
-
-      const result = await this.pool.query(query, [organizationId]);
-      const row = result.rows[0];
+      const [totalResult, criticalResult, recentResult] = await Promise.all([
+        this.alertHistoryRepository.findAll({ organizationId, status: 'firing', limit: 1 }),
+        this.alertHistoryRepository.findAll({ organizationId, status: 'firing', severity: 'critical', limit: 1 }),
+        this.alertHistoryRepository.findAll({ organizationId, status: 'firing', limit: 3 }),
+      ]);
 
       return {
-        total: parseInt(row?.total || 0),
-        critical: parseInt(row?.critical || 0),
-        recent: (row?.recent_titles || []).filter(Boolean).slice(0, 3),
+        total: totalResult.total,
+        critical: criticalResult.total,
+        recent: recentResult.alerts.map(a => a.alertName),
       };
     } catch (error: any) {
-      // Table might not exist yet
-      console.log('[AI Chat Context] Alert table not available:', error.message);
+      console.error('[AI Chat Context] Error getting alert data:', error.message);
       return {
         total: 0,
         critical: 0,
@@ -302,36 +307,34 @@ export class AIChatContextRepository {
   }
 
   /**
-   * Get DORA metrics
+   * Get DORA metrics.
+   * Reuses DORAMetricsService — the same real, working computation behind
+   * GET /api/metrics/dora — instead of querying a `dora_metrics` table that
+   * has never existed in any migration. DORA here is computed live from the
+   * real `deployments` table, not read from a persisted snapshot.
    */
   private async getDORAMetrics(organizationId: string): Promise<ChatContext['dora'] | undefined> {
     try {
-      const query = `
-        SELECT
-          deployment_frequency,
-          lead_time_for_changes,
-          mean_time_to_recovery,
-          change_failure_rate
-        FROM dora_metrics
-        WHERE organization_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
+      const metrics = await this.doraMetricsService.getComprehensiveMetrics({
+        organizationId,
+        dateRange: '30d',
+      });
 
-      const result = await this.pool.query(query, [organizationId]);
-
-      if (result.rows.length === 0) {
+      // deploymentsPerDay is 0 only when totalDeployments is 0 — no deployment
+      // history at all in this window, so there's genuinely nothing to report
+      // rather than a real measured zero across every metric.
+      if (metrics.deploymentFrequency.value === 0) {
         return undefined;
       }
 
-      const row = result.rows[0];
       return {
-        deploymentFrequency: row.deployment_frequency || 'Unknown',
-        leadTime: row.lead_time_for_changes || 'Unknown',
-        mttr: row.mean_time_to_recovery || 'Unknown',
+        deploymentFrequency: metrics.deploymentFrequency.description
+          ?? `${metrics.deploymentFrequency.value} ${metrics.deploymentFrequency.unit}`,
+        leadTime: `${metrics.leadTime.value} ${metrics.leadTime.unit}`,
+        mttr: `${metrics.mttr.value} ${metrics.mttr.unit}${metrics.mttr.description ? ` (${metrics.mttr.description})` : ''}`,
       };
     } catch (error: any) {
-      console.log('[AI Chat Context] DORA metrics not available:', error.message);
+      console.error('[AI Chat Context] Error getting DORA metrics:', error.message);
       return undefined;
     }
   }
