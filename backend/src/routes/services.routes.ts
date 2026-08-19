@@ -13,7 +13,7 @@ const discoveryService = new AWSResourceDiscoveryService(pool);
 
 // ─── Status mapping ───────────────────────────────────────────────────────────
 
-function mapStatus(resourceType: string, rawStatus: string | null): 'healthy' | 'warning' | 'critical' {
+export function mapStatus(resourceType: string, rawStatus: string | null): 'healthy' | 'warning' | 'critical' {
   if (!rawStatus) return 'warning';
   const s = rawStatus.toLowerCase();
 
@@ -251,6 +251,25 @@ async function fetchServices(orgId: string, filters: ServiceListFilters, limit?:
   });
 }
 
+// ─── Single-row fetch, mirroring fetchServices' terminated exclusion ────────
+// GET /:id below is a detail view of the same "current infrastructure" list
+// fetchServices serves — a soft-terminated resource must not be reachable
+// here either, let alone mapped to a false critical status via mapStatus.
+// fetchServices() itself isn't reused directly because this needs a single
+// id-scoped row, not the list's type/env/search filters.
+
+export async function fetchServiceById(orgId: string, id: string) {
+  const { rows } = await pool.query(
+    `SELECT * FROM aws_resources WHERE id = $1 AND organization_id = $2 AND status != 'terminated'`,
+    [id, orgId]
+  );
+  if (rows.length === 0) return null;
+
+  const row = rows[0];
+  const status = mapStatus(row.resource_type, row.status);
+  return { ...row, status, uptime: null };
+}
+
 // ─── GET /api/services/stats ─────────────────────────────────────────────────
 // Must be registered before /:id or Express treats "stats" as an id param
 
@@ -333,18 +352,9 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response, next: 
 
   // Try aws_resources first (UUID match)
   try {
-    const { rows } = await pool.query(
-      `SELECT * FROM aws_resources WHERE id = $1 AND organization_id = $2`,
-      [req.params.id, orgId]
-    );
-
-    if (rows.length > 0) {
-      const row = rows[0];
-      const status = mapStatus(row.resource_type, row.status);
-      res.json({
-        success: true,
-        service: { ...row, status, uptime: null },
-      });
+    const service = await fetchServiceById(orgId, req.params.id);
+    if (service) {
+      res.json({ success: true, service });
       return;
     }
   } catch {
