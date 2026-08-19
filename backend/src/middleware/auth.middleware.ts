@@ -15,8 +15,15 @@ import { pool, requestContext } from '../config/database';
  * connection instead of a fresh one from the pool that may carry a stale or
  * different org's RLS tag. Released once the response finishes (or the
  * connection drops before it does).
+ *
+ * Exported for use by routes that need RLS context but aren't reached via
+ * `authenticate`/`optionalAuthenticate` — e.g. github-webhook.routes.ts,
+ * which is authenticated by GitHub's HMAC signature rather than a user JWT
+ * and so never runs through those middlewares, but still needs its
+ * `pool.query()` calls scoped to an org for tables with RLS policies
+ * (services, deployments).
  */
-async function runWithOrgClient(
+export async function runWithOrgClient(
   organizationId: string,
   res: Response,
   next: NextFunction

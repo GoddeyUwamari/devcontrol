@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { pool } from '../config/database';
+import { runWithOrgClient } from '../middleware/auth.middleware';
 import { DeploymentsRepository } from '../repositories/deployments.repository';
 
 const router = Router();
@@ -96,43 +97,62 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  if (!ORGANIZATION_ID) {
+    console.error('[github-webhook] GITHUB_WEBHOOK_ORG_ID is not configured — cannot record deployment');
+    res.status(500).json({ success: false, error: 'Webhook organization not configured' });
+    return;
+  }
+
   const jobId = String(job.id);
 
-  try {
-    // GitHub redelivers on timeout/non-2xx; de-dupe on the job id.
-    const alreadyRecorded = await repository.findByMetadataField('github_job_id', jobId);
-    if (alreadyRecorded) {
-      res.status(200).json({ success: true, message: 'Already recorded', data: { id: alreadyRecorded.id } });
-      return;
+  // This route is authenticated by GitHub's HMAC signature, not a user JWT, so
+  // it never passes through authenticate/optionalAuthenticate — the only place
+  // that otherwise sets app.current_organization_id for RLS. Without it, the
+  // plain pool.query() calls below (services/deployments both have RLS
+  // policies keyed on that session variable) always fail: SELECTs silently
+  // return zero rows and the INSERT throws 42501. runWithOrgClient sets up the
+  // exact same AsyncLocalStorage-scoped, RLS-tagged connection that
+  // authenticate() uses, so resolveServiceId and DeploymentsRepository's
+  // pool.query() calls below transparently pick it up — same as every
+  // authenticated route already works. No client threading, no changes to
+  // resolveServiceId or DeploymentsRepository.
+  await runWithOrgClient(ORGANIZATION_ID, res, async () => {
+    try {
+      // GitHub redelivers on timeout/non-2xx; de-dupe on the job id.
+      const alreadyRecorded = await repository.findByMetadataField('github_job_id', jobId);
+      if (alreadyRecorded) {
+        res.status(200).json({ success: true, message: 'Already recorded', data: { id: alreadyRecorded.id } });
+        return;
+      }
+
+      const repoName = payload.repository?.name || 'devcontrol';
+      const service_id = await resolveServiceId(repoName);
+
+      const deployment = await repository.create({
+        service_id,
+        environment: 'production',
+        aws_region: 'us-east-1',
+        status: job.conclusion === 'success' ? 'success' : 'failed',
+        deployed_by: payload.sender?.login || 'github-actions',
+        deployed_at: job.completed_at ? new Date(job.completed_at) : new Date(),
+        organization_id: ORGANIZATION_ID,
+        metadata: {
+          source: 'github_actions',
+          github_run_id: job.run_id,
+          github_job_id: job.id,
+          workflow_name: DEPLOY_JOB_NAME,
+          head_sha: job.head_sha,
+          html_url: job.html_url,
+          conclusion: job.conclusion,
+        },
+      });
+
+      res.status(201).json({ success: true, data: deployment });
+    } catch (err: any) {
+      console.error('[github-webhook]', err);
+      res.status(500).json({ success: false, error: 'Failed to record deployment' });
     }
-
-    const repoName = payload.repository?.name || 'devcontrol';
-    const service_id = await resolveServiceId(repoName);
-
-    const deployment = await repository.create({
-      service_id,
-      environment: 'production',
-      aws_region: 'us-east-1',
-      status: job.conclusion === 'success' ? 'success' : 'failed',
-      deployed_by: payload.sender?.login || 'github-actions',
-      deployed_at: job.completed_at ? new Date(job.completed_at) : new Date(),
-      organization_id: ORGANIZATION_ID || undefined,
-      metadata: {
-        source: 'github_actions',
-        github_run_id: job.run_id,
-        github_job_id: job.id,
-        workflow_name: DEPLOY_JOB_NAME,
-        head_sha: job.head_sha,
-        html_url: job.html_url,
-        conclusion: job.conclusion,
-      },
-    });
-
-    res.status(201).json({ success: true, data: deployment });
-  } catch (err: any) {
-    console.error('[github-webhook]', err);
-    res.status(500).json({ success: false, error: 'Failed to record deployment' });
-  }
+  });
 });
 
 export default router;
