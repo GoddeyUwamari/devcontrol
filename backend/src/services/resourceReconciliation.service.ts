@@ -38,12 +38,12 @@ import { PoolClient } from 'pg';
 import { ResourceType } from '../types/aws-resources.types';
 
 /**
- * Discovery runs every 6 hours (resourceDiscovery.job.ts). 3 consecutive absences
- * spans ~12-18 hours of confirmed absence — long enough to ride out a transient
+ * Discovery runs every 6 hours (resourceDiscovery.job.ts). 2 consecutive absences
+ * spans ~12 hours of confirmed absence — long enough to ride out a transient
  * Resource Explorer hiccup or regional throttling on any single scan, short enough
- * to catch a genuine deletion within about a day.
+ * to catch a genuine deletion within about half a day.
  */
-export const MISSING_SCAN_THRESHOLD = 3;
+export const MISSING_SCAN_THRESHOLD = 2;
 
 /**
  * Wildcards the account-id segment of a standard ARN (arn:partition:service:region:account:...)

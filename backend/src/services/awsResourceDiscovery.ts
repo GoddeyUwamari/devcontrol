@@ -885,7 +885,17 @@ export class AWSResourceDiscoveryService {
    * Explorer's thin {arn, type, region, tags} data can't determine any of those, so
    * clobbering them on every re-discovery would silently erase whatever a prior scan
    * (or the compliance scanner) already determined. Termination is handled exclusively
-   * by ResourceReconciliationService, never by this upsert.
+   * by ResourceReconciliationService, never by this upsert — except for the one case
+   * this upsert must undo: if the row was previously terminated and Resource Explorer
+   * just found its ARN again (this method only runs for entries the scan returned),
+   * status is reset to 'unknown' so it doesn't stay stuck at 'terminated' forever.
+   * ResourceReconciliationService's reset query explicitly skips rows still marked
+   * 'terminated' (see its `status != 'terminated'` guard), so this upsert — which
+   * always runs before reconcile() in discoverAllResources — is what has to clear the
+   * flag first; the same present-again ARN is what makes reconcile() zero out
+   * missing_scan_count for it right after. This mirrors upsertResource's plain
+   * `status = EXCLUDED.status`, just constrained to the one honest value this
+   * thinner data source can assert.
    *
    * status is inserted as 'unknown', not 'active' — Resource Explorer doesn't report
    * operational state (a DynamoDB table stuck CREATING or an ECS service DRAINING would
@@ -917,6 +927,7 @@ export class AWSResourceDiscoveryService {
         tags = EXCLUDED.tags,
         metadata = EXCLUDED.metadata,
         region = EXCLUDED.region,
+        status = CASE WHEN aws_resources.status = 'terminated' THEN 'unknown' ELSE aws_resources.status END,
         last_synced_at = NOW(),
         updated_at = NOW()
       RETURNING (xmax = 0) AS inserted`,
