@@ -33,7 +33,7 @@ interface ServiceHealth {
   resourceType?: string; metrics?: ServiceMetric[]
 }
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
-interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean }
+interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; eks: boolean }
 
 // Shared styling for the non-healthy system-status banner — centralized here instead of
 // repeating the same 3-way ternary in multiple render spots, and so adding a future
@@ -74,7 +74,7 @@ export default function MonitoringPage() {
   const [coverage, setCoverage] = useState<CloudWatchCoverage | null>(null)
   const coverageLabel = useMemo(() => {
     if (!coverage) return 'EC2, Application Load Balancer'
-    const parts = [coverage.ec2 && 'EC2', coverage.loadBalancer && 'Application Load Balancer', coverage.rds && 'RDS (inventory only)', coverage.dynamodb && 'DynamoDB'].filter(Boolean)
+    const parts = [coverage.ec2 && 'EC2', coverage.loadBalancer && 'Application Load Balancer', coverage.rds && 'RDS (inventory only)', coverage.dynamodb && 'DynamoDB', coverage.eks && 'EKS'].filter(Boolean)
     return parts.length > 0 ? parts.join(', ') : 'no monitored resources yet'
   }, [coverage])
 

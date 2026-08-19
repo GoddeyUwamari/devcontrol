@@ -1,5 +1,6 @@
 import { CloudWatchClient, GetMetricStatisticsCommand } from '@aws-sdk/client-cloudwatch'
 import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs'
+import { EKSClient, DescribeClusterCommand } from '@aws-sdk/client-eks'
 import { AWSClientFactory } from './aws-client-factory.service'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
@@ -46,7 +47,7 @@ export interface CloudWatchServiceHealth {
   resourceId: string
   name: string
   description: string
-  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs'
+  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks'
   status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
   // null means CloudWatch genuinely has no data for this metric right now — never
   // fabricate a plausible-looking number in its place.
@@ -81,7 +82,7 @@ export interface CloudWatchMetrics {
   responseTimeHistory: ResponseTimePoint[]
   // What this account topology actually lets us measure — drives the page's coverage
   // claim instead of a hardcoded "EC2, RDS, Lambda" string.
-  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; ecs: boolean }
+  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; ecs: boolean; eks: boolean }
   services: CloudWatchServiceHealth[]
   capturedAt: string
 }
@@ -89,7 +90,7 @@ export interface CloudWatchMetrics {
 interface InventoryRow {
   resource_id: string
   resource_name: string | null
-  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs'
+  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks'
   resource_arn: string
   status: string | null
   metadata: Record<string, any> | null
@@ -472,6 +473,17 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   // ecs:DescribeServices is also unconfirmed. Bump to 'live_verified' once a real or
   // disposable ECS service has been evaluated end-to-end.
   ecs: 'deployed',
+  // Deployed and type-safe; eks:DescribeCluster has never actually been called against a
+  // real cluster — the connected test account (815931739526, us-east-1 + us-west-2) has
+  // zero EKS clusters. Unlike ECS, the IAM permission itself IS confirmed: live-tested via
+  // eks:DescribeCluster/ListNodegroups/DescribeNodegroup against a nonexistent cluster name
+  // under the connected org's actual assumed role (DevControlRole-Test, AWS managed
+  // ReadOnlyAccess) — got ResourceNotFoundException, not AccessDeniedException, proving the
+  // permission is granted without needing a real cluster to exist. That role uses a broad
+  // managed policy, not necessarily representative of a real customer's least-privilege
+  // onboarding grant. Bump to 'live_verified' once a real or disposable EKS cluster has
+  // been evaluated end-to-end.
+  eks: 'deployed',
 }
 
 export class CloudWatchService {
@@ -492,7 +504,7 @@ export class CloudWatchService {
       `SELECT resource_id, resource_name, resource_type, resource_arn, status, metadata
        FROM aws_resources
        WHERE organization_id = $1
-         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs')
+         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs', 'eks')
          AND status != 'terminated'
        ORDER BY resource_name ASC NULLS LAST`,
       [organizationId]
@@ -725,6 +737,128 @@ export class CloudWatchService {
     }
   }
 
+  /**
+   * EKS cluster control-plane health, evaluated separately from the CloudWatch-only
+   * registry above — same reasoning as evaluateEcsService(), but the authoritative
+   * signal here is even more direct than ECS's derived task counts: DescribeCluster
+   * returns both `status` (lifecycle) AND `health.issues` (a purpose-built, AWS-curated
+   * list of control-plane problems — IamRoleNotFound, Ec2SubnetNotFound,
+   * ClusterUnreachable, UnsupportedVersion, KmsKeyDisabled, etc. — live-verified against
+   * the installed @aws-sdk/client-eks type definitions). This is a genuine AWS-reported
+   * verdict, not something DevControl has to infer from proxy metrics.
+   *
+   * There is no "AWS/EKS" CloudWatch namespace publishing always-on free metrics the way
+   * AWS/EC2 or AWS/RDS do, and Container Insights — the only path to EKS CloudWatch
+   * telemetry — cannot be assumed enabled for any given customer cluster (both
+   * live-verified empty against the one connected test account, region us-east-1 and
+   * us-west-2). So, like ECS, this bypasses evaluateResource() and the CloudWatch-dimension
+   * registry entirely; there is currently no CloudWatch signal for EKS to fetch.
+   *
+   * Node-group-level detail (eks:ListNodegroups / eks:DescribeNodegroup — permissions
+   * confirmed available, live-tested against the connected test account's IAM role) is
+   * deliberately not fetched here. Cluster-level status+health is a complete, independent
+   * signal on its own; per-nodegroup health is additive future work, not required for a
+   * correct first version — see the audit note in this change's PR description.
+   *
+   * Scope boundary, stated explicitly: every signal here — `status` AND `health.issues`
+   * alike — is control-plane-level. It answers "does AWS's EKS control plane consider
+   * this cluster provisioned and reachable," never "are the workloads running on it
+   * healthy." Pod/container status, Deployment rollout state, and node `Ready` conditions
+   * are Kubernetes-API-level concepts that DescribeCluster/DescribeNodegroup cannot see
+   * into at all — that would need a network path to each cluster's API server plus
+   * cluster-side RBAC/access-entry grants this codebase's assumed-role architecture
+   * doesn't have. Deliberately not approximated by anything below; a `healthy` result
+   * here means "AWS reports no control-plane problems," not "the cluster's workloads
+   * are healthy."
+   */
+  private async evaluateEksService(client: EKSClient, resource: InventoryRow): Promise<CloudWatchServiceHealth> {
+    try {
+      const response = await client.send(new DescribeClusterCommand({ name: resource.resource_id }))
+      const cluster = response.cluster
+
+      if (!cluster) {
+        return {
+          resourceId: resource.resource_id,
+          name: resource.resource_name || resource.resource_id,
+          description: 'EKS cluster',
+          resourceType: 'eks',
+          status: 'unknown',
+          uptime: null,
+          responseTimeMs: null,
+          errorRate: null,
+          critical: false,
+          monitored: false,
+          reason: 'EKS cluster not found via the EKS API',
+        }
+      }
+
+      const issues = cluster.health?.issues ?? []
+      const clusterStatus = cluster.status
+
+      // Lifecycle state (CREATING/UPDATING/DELETING/PENDING) is a different concept from
+      // control-plane health (health.issues) — an in-progress AWS-driven operation isn't
+      // a failure, mirroring evaluateEcsService()'s DRAINING/INACTIVE split. Only FAILED
+      // is a lifecycle-level failure on its own; ACTIVE clusters are further checked
+      // against health.issues, since that field is only meaningfully populated in that
+      // state. PENDING (EKS-Anywhere/local clusters) and any unrecognized future status
+      // fall through to 'unknown' — DevControl has no rule for those, and guessing would
+      // be exactly the "terminated -> false critical" mistake class from the prior audit.
+      let status: CloudWatchServiceHealth['status']
+      let reason: string | null
+      if (clusterStatus === 'FAILED') {
+        status = 'critical'
+        reason = 'EKS cluster is in a failed state'
+      } else if (clusterStatus === 'CREATING' || clusterStatus === 'UPDATING' || clusterStatus === 'DELETING') {
+        status = 'degraded'
+        reason = `EKS cluster is ${clusterStatus.toLowerCase()} (in-progress AWS operation, not a failure)`
+      } else if (clusterStatus === 'ACTIVE') {
+        if (issues.length > 0) {
+          status = 'critical'
+          reason = issues.map((i) => i.message ?? i.code).filter(Boolean).join('; ') || 'EKS reported cluster health issues'
+        } else {
+          status = 'healthy'
+          reason = null
+        }
+      } else {
+        status = 'unknown'
+        reason = `Unrecognized or unsupported EKS cluster status: ${clusterStatus ?? 'none'}`
+      }
+
+      return {
+        resourceId: resource.resource_id,
+        name: resource.resource_name || resource.resource_id,
+        description: `EKS · Kubernetes ${cluster.version ?? 'unknown version'}`,
+        resourceType: 'eks',
+        status,
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        // Matches ECS's judgment call, not EC2/RDS's — a container-orchestration control
+        // plane, not a single compute/database instance.
+        critical: false,
+        monitored: true,
+        reason,
+        signals: { issueCount: issues.length },
+        metrics: [{ label: 'Health issues', value: issues.length }],
+      }
+    } catch (err) {
+      console.error(`[EKS] DescribeCluster failed for ${resource.resource_id}:`, err)
+      return {
+        resourceId: resource.resource_id,
+        name: resource.resource_name || resource.resource_id,
+        description: 'EKS cluster',
+        resourceType: 'eks',
+        status: 'unknown',
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        critical: false,
+        monitored: false,
+        reason: 'Failed to reach the EKS API for this cluster',
+      }
+    }
+  }
+
   async getMetrics(organizationId: string, range?: string): Promise<CloudWatchMetrics | null> {
     const account = await this.getAccount(organizationId)
     if (!account) return null
@@ -750,6 +884,7 @@ export class CloudWatchService {
     const lambdaFunctions = resources.filter((r) => r.resource_type === 'lambda').slice(0, 15)
     const dynamoTables = resources.filter((r) => r.resource_type === 'dynamodb').slice(0, 15)
     const ecsServicesInventory = resources.filter((r) => r.resource_type === 'ecs').slice(0, 15)
+    const eksClustersInventory = resources.filter((r) => r.resource_type === 'eks').slice(0, 15)
 
     const ec2Results = (
       await Promise.all(
@@ -792,6 +927,11 @@ export class CloudWatchService {
     // ECS bypasses evaluateResource() entirely — see evaluateEcsService() doc comment.
     const ecsServices = await Promise.all(
       ecsServicesInventory.map((svc) => this.evaluateEcsService(clients.ecs, svc))
+    )
+
+    // EKS also bypasses evaluateResource() entirely — see evaluateEksService() doc comment.
+    const eksServices = await Promise.all(
+      eksClustersInventory.map((cluster) => this.evaluateEksService(clients.eks, cluster))
     )
 
     const albEvaluations = (
@@ -884,8 +1024,9 @@ export class CloudWatchService {
         rds: rdsInstances.length > 0,
         dynamodb: dynamoTables.length > 0,
         ecs: ecsServicesInventory.length > 0,
+        eks: eksClustersInventory.length > 0,
       },
-      services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices],
+      services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices, ...eksServices],
       capturedAt: new Date().toISOString(),
     }
   }
