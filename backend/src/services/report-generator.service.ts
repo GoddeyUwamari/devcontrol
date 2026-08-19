@@ -154,9 +154,18 @@ export class ReportGeneratorService {
     filters?: ResourceFilters,
     executor?: PoolClient
   ): Promise<CostSummaryData> {
+    // Cost Summary is a point-in-time snapshot report, not a historical/audit
+    // report — a terminated resource no longer contributes current cost, unless
+    // the caller explicitly asked for it via filters.status (e.g. an audit export).
     const conditions: string[] = ['r.organization_id = $1'];
     const values: any[] = [organizationId];
     let paramIndex = 2;
+    if (filters?.status) {
+      conditions.push(`r.status = $${paramIndex++}`);
+      values.push(filters.status);
+    } else {
+      conditions.push(`r.status != 'terminated'`);
+    }
 
     // Apply filters
     if (filters?.resource_type) {
@@ -275,9 +284,16 @@ export class ReportGeneratorService {
     filters?: ResourceFilters,
     executor?: PoolClient
   ): Promise<SecurityAuditData> {
+    // Security Audit is current-posture reporting — see fetchCostSummaryData's note.
     const conditions: string[] = ['r.organization_id = $1'];
     const values: any[] = [organizationId];
     let paramIndex = 2;
+    if (filters?.status) {
+      conditions.push(`r.status = $${paramIndex++}`);
+      values.push(filters.status);
+    } else {
+      conditions.push(`r.status != 'terminated'`);
+    }
 
     // Apply filters
     if (filters?.resource_type) {
@@ -348,9 +364,18 @@ export class ReportGeneratorService {
     filters?: ResourceFilters,
     executor?: PoolClient
   ): Promise<ComplianceStatusData> {
+    // Compliance Status is current-posture reporting — see fetchCostSummaryData's note.
+    // compliance_issues itself is also overwritten in place on every scan (not an
+    // append-only findings log), so a terminated resource's issues are stale, not history.
     const conditions: string[] = ['r.organization_id = $1'];
     const values: any[] = [organizationId];
     let paramIndex = 2;
+    if (filters?.status) {
+      conditions.push(`r.status = $${paramIndex++}`);
+      values.push(filters.status);
+    } else {
+      conditions.push(`r.status != 'terminated'`);
+    }
 
     // Apply filters
     if (filters?.resource_type) {

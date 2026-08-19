@@ -146,6 +146,10 @@ export class AIChatContextRepository {
    */
   private async getResourceData(organizationId: string): Promise<ChatContext['resources']> {
     try {
+      // Current infrastructure context — excludes soft-terminated resources so the
+      // AI never describes something as part of "your infrastructure" that AWS no
+      // longer has (see resourceReconciliation.service.ts).
+
       // EC2 instances
       const ec2Query = `
         SELECT
@@ -157,6 +161,7 @@ export class AIChatContextRepository {
         FROM aws_resources
         WHERE organization_id = $1
         AND resource_type = 'ec2'
+        AND status != 'terminated'
       `;
 
       // RDS databases
@@ -167,6 +172,7 @@ export class AIChatContextRepository {
         FROM aws_resources
         WHERE organization_id = $1
         AND resource_type = 'rds'
+        AND status != 'terminated'
       `;
 
       // Lambda functions
@@ -177,6 +183,7 @@ export class AIChatContextRepository {
         FROM aws_resources
         WHERE organization_id = $1
         AND resource_type = 'lambda'
+        AND status != 'terminated'
       `;
 
       const [ec2Result, rdsResult, lambdaResult] = await Promise.all([
@@ -260,6 +267,7 @@ export class AIChatContextRepository {
         FROM aws_resources
         WHERE organization_id = $1
         AND resource_type IS NOT NULL
+        AND status != 'terminated'
         ORDER BY resource_type
       `;
 
@@ -286,6 +294,7 @@ export class AIChatContextRepository {
         WHERE organization_id = $1
         AND estimated_monthly_cost > 100
         AND updated_at > NOW() - INTERVAL '14 days'
+        AND status != 'terminated'
         GROUP BY resource_type
         HAVING SUM(estimated_monthly_cost) > 500
         ORDER BY current_cost DESC

@@ -186,9 +186,10 @@ export class ScheduledReportsService {
     if (result.pdf) fileSizeBytes += result.pdf.length;
     if (result.csv) fileSizeBytes += result.csv.length;
 
-    // Get resource count from database
+    // Get resource count from database — matches the current-inventory scope the
+    // report content itself now uses (see report-generator.service.ts).
     const countQuery = await (executor ?? this.pool).query(
-      'SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1',
+      `SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
       [report.organization_id]
     );
     const recordsProcessed = parseInt(countQuery.rows[0]?.count || '0');

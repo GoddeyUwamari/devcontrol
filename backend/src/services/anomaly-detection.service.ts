@@ -46,12 +46,17 @@ export class AnomalyDetectionService {
    * Detect cost anomalies (spikes or drops)
    */
   private async detectCostAnomalies(organizationId: string, client?: PoolClient): Promise<AnomalyDetection[]> {
-    // Get current total cost
+    // Get current total cost — excludes soft-terminated resources, which no
+    // longer contribute real current cost. The historicalQuery below is left
+    // as-is: it's an intentional trailing 30-day trend baseline, and a resource
+    // terminated partway through that window was still genuinely costing money
+    // on the earlier days in it.
     const currentCostQuery = `
       SELECT
         SUM((tags->>'estimated_monthly_cost')::numeric) as total_cost
       FROM aws_resources
       WHERE organization_id = $1
+        AND status != 'terminated'
     `;
 
     // Get historical costs (last 30 days)
@@ -137,6 +142,7 @@ export class AnomalyDetectionService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 'ec2'
+        AND status != 'terminated'
         AND tags->>'cpu_avg' IS NOT NULL
         AND (tags->>'cpu_avg')::float > 80
     `;
@@ -198,6 +204,7 @@ export class AnomalyDetectionService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 'lambda'
+        AND status != 'terminated'
         AND tags->>'invocations' IS NOT NULL
     `;
 
@@ -264,6 +271,7 @@ export class AnomalyDetectionService {
         tags
       FROM aws_resources
       WHERE organization_id = $1
+        AND status != 'terminated'
         AND tags->>'error_rate' IS NOT NULL
         AND (tags->>'error_rate')::float > 5
     `;

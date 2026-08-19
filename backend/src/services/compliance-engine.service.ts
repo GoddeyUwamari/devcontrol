@@ -227,7 +227,7 @@ export class ComplianceEngineService {
           COUNT(*) FILTER (WHERE tags IS NOT NULL AND tags != '{}' AND tags != 'null') as tagged_count,
           COUNT(*) FILTER (WHERE tags IS NULL OR tags = '{}' OR tags = 'null') as untagged_count
         FROM aws_resources
-        WHERE organization_id = $1`,
+        WHERE organization_id = $1 AND status != 'terminated'`,
         [organizationId]
       ).catch(() => ({ rows: [{}] })),
 
@@ -245,7 +245,7 @@ export class ComplianceEngineService {
           COUNT(*) FILTER (WHERE jsonb_array_length(compliance_issues) > 0) as resources_with_issues,
           COALESCE(SUM(jsonb_array_length(compliance_issues)), 0) as total_issues
         FROM aws_resources
-        WHERE organization_id = $1`,
+        WHERE organization_id = $1 AND status != 'terminated'`,
         [organizationId]
       ).catch(() => ({ rows: [{}] })),
     ]);

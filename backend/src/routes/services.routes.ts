@@ -162,7 +162,11 @@ function derivePrioritySeverity(
 type ServiceListFilters = { type?: string; env?: string; search?: string };
 
 async function fetchServices(orgId: string, filters: ServiceListFilters, limit?: number) {
-  const conditions: string[] = ['r.organization_id = $1'];
+  // Services list/stats represent current infrastructure — a soft-terminated
+  // resource (see resourceReconciliation.service.ts) is no longer a "service" and
+  // must not surface here at all, let alone as a false critical/needs_attention
+  // alarm via mapStatus's terminated->critical mapping below.
+  const conditions: string[] = ['r.organization_id = $1', "r.status != 'terminated'"];
   const values: any[] = [orgId];
   let p = 2;
 

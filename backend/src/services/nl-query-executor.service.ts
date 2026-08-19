@@ -69,6 +69,10 @@ export class NLQueryExecutorService {
     if (filters.status && typeof filters.status === 'string') {
       conditions.push(`status::text ILIKE $${idx++}`);
       values.push(String(filters.status));
+    } else {
+      // "Show me my resources" defaults to current infrastructure; a user asking
+      // specifically about terminated resources still gets them via filters.status.
+      conditions.push(`status != 'terminated'`);
     }
     if (filters.awsRegion && typeof filters.awsRegion === 'string') {
       conditions.push(`region::text ILIKE $${idx++}`);
@@ -289,6 +293,7 @@ export class NLQueryExecutorService {
        FROM aws_resources
        WHERE organization_id = $1
          AND estimated_monthly_cost > 0
+         AND status != 'terminated'
        GROUP BY resource_type
        ORDER BY total_cost DESC
        LIMIT 20`,

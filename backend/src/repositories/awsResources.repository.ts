@@ -38,6 +38,11 @@ export class AWSResourcesRepository {
     if (filters?.status) {
       conditions.push(`status = $${paramIndex++}`);
       values.push(filters.status);
+    } else {
+      // Operational default: current inventory excludes soft-terminated rows
+      // (see resourceReconciliation.service.ts). An explicit status filter —
+      // including status=terminated for an audit/history view — overrides this.
+      conditions.push(`status != 'terminated'`);
     }
 
     if (filters?.is_encrypted !== undefined) {
@@ -128,9 +133,16 @@ export class AWSResourcesRepository {
   async getStats(organizationId: string, executor?: PoolClient): Promise<ResourceStats> {
     const client = executor ?? await this.pool.connect();
     try {
+      // ResourceStats represents CURRENT resource inventory/posture (dashboard totals,
+      // cost, compliance, encryption/public/backup posture) — every sub-query below
+      // excludes soft-terminated rows (see resourceReconciliation.service.ts) so a
+      // resource AWS no longer has doesn't keep contaminating current-state figures.
+      // Historical/audit access to terminated rows still exists via findAll() with an
+      // explicit status=terminated filter.
+
       // Total resources
       const totalResult = await client.query(
-        'SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1',
+        `SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
         [organizationId]
       );
       const total = parseInt(totalResult.rows[0].count);
@@ -139,7 +151,7 @@ export class AWSResourcesRepository {
       const typeResult = await client.query(
         `SELECT resource_type, COUNT(*) as count
          FROM aws_resources
-         WHERE organization_id = $1
+         WHERE organization_id = $1 AND status != 'terminated'
          GROUP BY resource_type`,
         [organizationId]
       );
@@ -152,7 +164,7 @@ export class AWSResourcesRepository {
       const regionResult = await client.query(
         `SELECT region, COUNT(*) as count
          FROM aws_resources
-         WHERE organization_id = $1
+         WHERE organization_id = $1 AND status != 'terminated'
          GROUP BY region`,
         [organizationId]
       );
@@ -161,11 +173,14 @@ export class AWSResourcesRepository {
         byRegion[row.region] = parseInt(row.count);
       });
 
-      // By status
+      // By status — still scoped to current (non-terminated) inventory, so this
+      // breaks down the operational statuses (running/stopped/pending/etc.) making
+      // up `total` above, consistent with it. Historical status breakdowns including
+      // 'terminated' are available via findAll(filters.status).
       const statusResult = await client.query(
         `SELECT status, COUNT(*) as count
          FROM aws_resources
-         WHERE organization_id = $1 AND status IS NOT NULL
+         WHERE organization_id = $1 AND status IS NOT NULL AND status != 'terminated'
          GROUP BY status`,
         [organizationId]
       );
@@ -176,7 +191,7 @@ export class AWSResourcesRepository {
 
       // Total monthly cost
       const costResult = await client.query(
-        'SELECT SUM(estimated_monthly_cost) as total FROM aws_resources WHERE organization_id = $1',
+        `SELECT SUM(estimated_monthly_cost) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
         [organizationId]
       );
       const totalMonthlyCost = parseFloat(costResult.rows[0].total || 0);
@@ -185,7 +200,7 @@ export class AWSResourcesRepository {
       const costByTypeResult = await client.query(
         `SELECT resource_type, SUM(estimated_monthly_cost) as total
          FROM aws_resources
-         WHERE organization_id = $1
+         WHERE organization_id = $1 AND status != 'terminated'
          GROUP BY resource_type`,
         [organizationId]
       );
@@ -199,26 +214,26 @@ export class AWSResourcesRepository {
 
       // Counts for specific issues
       const unencryptedResult = await client.query(
-        'SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1 AND is_encrypted = false',
+        `SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1 AND is_encrypted = false AND status != 'terminated'`,
         [organizationId]
       );
       const unencryptedCount = parseInt(unencryptedResult.rows[0].count);
 
       const publicResult = await client.query(
-        'SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1 AND is_public = true',
+        `SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1 AND is_public = true AND status != 'terminated'`,
         [organizationId]
       );
       const publicCount = parseInt(publicResult.rows[0].count);
 
       const missingBackupResult = await client.query(
-        'SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1 AND has_backup = false AND resource_type IN (\'rds\', \'ec2\')',
+        `SELECT COUNT(*) as count FROM aws_resources WHERE organization_id = $1 AND has_backup = false AND resource_type IN ('rds', 'ec2') AND status != 'terminated'`,
         [organizationId]
       );
       const missingBackupCount = parseInt(missingBackupResult.rows[0].count);
 
       const orphanedResult = await client.query(
         `SELECT COUNT(*) as count, COALESCE(SUM(orphaned_monthly_savings), 0) as savings
-         FROM aws_resources WHERE organization_id = $1 AND is_orphaned = true`,
+         FROM aws_resources WHERE organization_id = $1 AND is_orphaned = true AND status != 'terminated'`,
         [organizationId]
       );
       const orphanedCount = parseInt(orphanedResult.rows[0].count);
@@ -263,7 +278,7 @@ export class AWSResourcesRepository {
     organizationId: string
   ): Promise<ComplianceStats> {
     const result = await client.query(
-      `SELECT compliance_issues FROM aws_resources WHERE organization_id = $1`,
+      `SELECT compliance_issues FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
       [organizationId]
     );
 
@@ -306,9 +321,13 @@ export class AWSResourcesRepository {
    * Get all compliance issues across all resources
    */
   async getComplianceIssues(organizationId: string): Promise<Array<AWSResource & { issues: ComplianceIssue[] }>> {
+    // Current compliance posture — compliance_issues is overwritten in place on every
+    // scan (not an append-only findings log), so a terminated resource's issues are
+    // stale-by-definition, not a historical record worth surfacing here.
     const result = await this.pool.query(
       `SELECT * FROM aws_resources
        WHERE organization_id = $1
+       AND status != 'terminated'
        AND jsonb_array_length(compliance_issues) > 0
        ORDER BY created_at DESC`,
       [organizationId]
@@ -329,6 +348,7 @@ export class AWSResourcesRepository {
     const result = await this.pool.query(
       `SELECT * FROM aws_resources
        WHERE organization_id = $1
+       AND status != 'terminated'
        AND (
          (resource_type = 'ec2' AND status = 'stopped') OR
          (resource_type = 's3' AND metadata->>'object_count' = '0')

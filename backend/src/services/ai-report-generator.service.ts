@@ -704,6 +704,7 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
        FROM aws_resources
        WHERE organization_id = $1
        AND estimated_monthly_cost > 0
+       AND status != 'terminated'
        ORDER BY estimated_monthly_cost DESC
        LIMIT 5`,
       [organizationId]

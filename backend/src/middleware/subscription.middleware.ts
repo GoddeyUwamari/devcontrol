@@ -257,7 +257,9 @@ async function getOrganizationLimits(organizationId: string): Promise<{
       [organizationId]
     ),
     pool.query(
-      'SELECT COUNT(*) FROM aws_resources WHERE organization_id = $1',
+      // Tier resource quota — a soft-terminated resource no longer exists in AWS
+      // and must not count against the org's maxResources limit.
+      `SELECT COUNT(*) FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
       [organizationId]
     ),
   ]);

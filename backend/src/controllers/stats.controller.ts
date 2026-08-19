@@ -34,7 +34,7 @@ export class StatsController {
         recentDeployments,
       ] = await Promise.all([
         pool.query(
-          'SELECT COUNT(*) as total FROM aws_resources WHERE organization_id = $1',
+          `SELECT COUNT(*) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
           [organizationId]
         ),
         pool.query(
@@ -55,7 +55,7 @@ export class StatsController {
           costSource = 'actual';
         } else {
           const estimateResult = await pool.query(
-            'SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1',
+            `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
             [organizationId]
           );
           totalCost = parseFloat(estimateResult.rows[0].total);
@@ -63,7 +63,7 @@ export class StatsController {
         }
       } catch (_err) {
         const estimateResult = await pool.query(
-          'SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1',
+          `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
           [organizationId]
         );
         totalCost = parseFloat(estimateResult.rows[0].total);

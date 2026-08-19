@@ -148,7 +148,7 @@ export class SystemIntelligenceService {
         const estimateResult = await pool.query(
           `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total
            FROM aws_resources
-           WHERE organization_id = $1`,
+           WHERE organization_id = $1 AND status != 'terminated'`,
           [organizationId]
         )
         monthlySpend = parseFloat(estimateResult.rows[0]?.total ?? '0')

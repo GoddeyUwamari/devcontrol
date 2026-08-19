@@ -279,6 +279,11 @@ export class AWSResourcesExportService {
     if (filters?.status) {
       conditions.push(`r.status = $${paramIndex++}`);
       values.push(filters.status);
+    } else {
+      // Operational default, same as awsResources.repository.ts::findAll() — an
+      // export with no explicit status filter is a current-inventory export. An
+      // explicit status=terminated filter (audit export) overrides this.
+      conditions.push(`r.status != 'terminated'`);
     }
 
     if (filters?.is_encrypted !== undefined) {

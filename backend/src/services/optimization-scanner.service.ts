@@ -73,6 +73,7 @@ export class OptimizationScannerService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 'ec2'
+        AND status != 'terminated'
         AND (tags->>'state' = 'running')
         AND (tags->>'cpu_avg')::float < 5
         AND (tags->>'days_observed')::int >= 7
@@ -138,6 +139,7 @@ export class OptimizationScannerService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 'ec2'
+        AND status != 'terminated'
         AND (tags->>'state' = 'running')
         AND (tags->>'cpu_avg')::float < 30
         AND (tags->>'cpu_avg')::float >= 5
@@ -206,6 +208,7 @@ export class OptimizationScannerService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 'ebs'
+        AND status != 'terminated'
         AND (tags->>'state' = 'available' OR tags->>'attached' = 'false')
     `;
 
@@ -261,6 +264,7 @@ export class OptimizationScannerService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 's3'
+        AND status != 'terminated'
         AND tags->>'snapshot' = 'true'
         AND created_at < NOW() - INTERVAL '90 days'
     `;
@@ -319,6 +323,7 @@ export class OptimizationScannerService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 'rds'
+        AND status != 'terminated'
         AND (tags->>'connections_avg')::float < 5
         AND (tags->>'days_observed')::int >= 7
     `;
@@ -372,6 +377,7 @@ export class OptimizationScannerService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 'elastic_ip'
+        AND status != 'terminated'
         AND (tags->>'associated' = 'false')
     `;
 
@@ -428,6 +434,7 @@ export class OptimizationScannerService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type IN ('load-balancer', 'elb')
+        AND status != 'terminated'
         AND (
           (tags->>'healthy_target_count')::int = 0
           OR (tags->>'request_count_7d')::float = 0
@@ -505,6 +512,7 @@ export class OptimizationScannerService {
       FROM aws_resources
       WHERE organization_id = $1
         AND resource_type = 'lambda'
+        AND status != 'terminated'
         AND (tags->>'memory_utilization')::float < 50
         AND (tags->>'invocations')::int > 1000
     `;

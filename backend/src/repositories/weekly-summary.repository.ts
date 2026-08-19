@@ -42,7 +42,7 @@ export class WeeklySummaryRepository {
           resource_type,
           region
          FROM aws_resources
-         WHERE organization_id = $1
+         WHERE organization_id = $1 AND status != 'terminated'
          GROUP BY resource_type, region
          ORDER BY total_cost DESC
          LIMIT 10`,
@@ -95,7 +95,7 @@ export class WeeklySummaryRepository {
       const result = await (client ?? this.pool).query(
         `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total_cost
          FROM aws_resources
-         WHERE organization_id = $1`,
+         WHERE organization_id = $1 AND status != 'terminated'`,
         [query.organizationId]
       );
 

@@ -412,13 +412,17 @@ export class AWSResourceDiscoveryService {
 
       // Compliance scan: evaluate every currently-known resource for this org against
       // real encryption/public-access/backup/tag/SOC2/HIPAA checks, persisting genuine
-      // compliance_issues instead of the stubbed always-[] value.
+      // compliance_issues instead of the stubbed always-[] value. Excludes soft-terminated
+      // rows (see resourceReconciliation.service.ts / ResourceReconciliationService, NOT
+      // touched by this line) — a resource AWS no longer has can't be re-scanned for real
+      // encryption/public-access state, and doing so would waste AWS API calls and could
+      // overwrite its last-known compliance_issues with a scan against a gone resource.
       let complianceScanCompleted = false;
       try {
         console.log(`🔎 [Discovery] Running compliance scan...`);
         const scanner = new ComplianceScannerService();
         const { rows: allResources } = await client.query(
-          `SELECT * FROM aws_resources WHERE organization_id = $1`,
+          `SELECT * FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
           [organizationId]
         );
 

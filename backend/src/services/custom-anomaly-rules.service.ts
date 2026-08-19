@@ -136,11 +136,14 @@ export class CustomAnomalyRulesService {
     client?: PoolClient
   ): Promise<AnomalyDetection | null> {
     const runner = client ?? this.pool;
-    // Fetch current metric value from aws_resources tags
+    // Fetch current metric value from aws_resources tags — excludes soft-terminated
+    // resources; the historicalResult baseline below is left as-is (genuine 30-day
+    // trend baseline, same reasoning as anomaly-detection.service.ts).
     const currentResult = await runner.query(
       `SELECT AVG((tags->$1)::numeric) as current_value
        FROM aws_resources
        WHERE organization_id = $2
+         AND status != 'terminated'
          AND tags ? $1
          AND (tags->$1) ~ '^[0-9]+(\.[0-9]+)?`,
       [rule.metric, organizationId]

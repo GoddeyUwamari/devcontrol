@@ -60,10 +60,15 @@ export class OrphanedResourceDetectorService {
    * Note: This is a simplified check - real implementation would query S3 for object count
    */
   private async findEmptyS3Buckets(organizationId: string): Promise<OrphanedResource[]> {
+    // Unlike findStoppedInstances (whose status = 'stopped' condition already
+    // excludes 'terminated' by construction), this has no status filter at all —
+    // a terminated bucket's last-known metadata could otherwise still match and
+    // get flagged as "orphaned" savings for a bucket that no longer exists.
     const result = await this.pool.query(
       `SELECT * FROM aws_resources
        WHERE organization_id = $1
        AND resource_type = 's3'
+       AND status != 'terminated'
        AND (metadata->>'object_count' = '0' OR metadata->>'object_count' IS NULL)`,
       [organizationId]
     );

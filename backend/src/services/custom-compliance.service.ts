@@ -448,7 +448,9 @@ export class CustomComplianceService {
     organizationId: string,
     filters?: Record<string, any>
   ): Promise<AWSResource[]> {
-    const conditions: string[] = ['organization_id = $1'];
+    // Compliance scan target list — a terminated resource no longer exists to
+    // evaluate against the framework's rules.
+    const conditions: string[] = ['organization_id = $1', "status != 'terminated'"];
     const values: any[] = [organizationId];
     let paramIndex = 2;
 

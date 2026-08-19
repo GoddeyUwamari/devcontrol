@@ -98,9 +98,10 @@ export class TaggingComplianceService {
     const client = await this.pool.connect();
 
     try {
-      // Fetch all resources
+      // Fetch all resources — excludes soft-terminated rows, which no longer exist
+      // to be tagged and shouldn't drag down the current compliance_rate.
       const result = await client.query(
-        `SELECT * FROM aws_resources WHERE organization_id = $1`,
+        `SELECT * FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
         [organizationId]
       );
 
