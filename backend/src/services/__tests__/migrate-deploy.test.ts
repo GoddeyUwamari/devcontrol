@@ -257,6 +257,191 @@ describe('CI workflow — migration tooling deployment never auto-executes migra
   });
 });
 
+describe('deploy-migration-tooling destination pre-flight (executes the actual extracted ci.yml symlink logic, not a duplicated equivalent)', () => {
+  /**
+   * Extracts the exact `bash -c "..."` symlink-decision command embedded in
+   * the deploy-migration-tooling SSM command list, strips only the
+   * `sudo -H -u ubuntu --preserve-env=... bash -c "..."` wrapper (sudo isn't
+   * available/meaningful in a test environment), and returns the raw inner
+   * shell source. If this command's shape ever changes (e.g. no longer
+   * matches `DEST=${DEST:-...}`), extraction fails loudly here rather than
+   * silently testing stale, hand-duplicated logic.
+   */
+  function extractPreflightScript(): string {
+    const ciYml = fs.readFileSync(CI_WORKFLOW_PATH, 'utf8');
+    const jobBlock = extractJobBlock(ciYml, 'deploy-migration-tooling');
+    const jsonBlobs = [...jobBlock.matchAll(/--parameters '(\{"commands":\[.*?\]\})' \\/g)].map((m) => m[1]);
+    if (jsonBlobs.length === 0) {
+      throw new Error('Could not find the SSM "commands" JSON blob inside deploy-migration-tooling');
+    }
+    const commands: string[] = JSON.parse(jsonBlobs[0]).commands;
+    const preflightCmd = commands.find((c) => c.includes('DEST=${DEST'));
+    if (!preflightCmd) {
+      throw new Error(
+        'Could not find the destination pre-flight command (expected a command containing `DEST=${DEST...}`) — ' +
+        'the workflow may have changed shape.'
+      );
+    }
+    const match = preflightCmd.match(/bash -c "([\s\S]*)"$/);
+    if (!match) {
+      throw new Error('Could not extract the inner bash -c script body from the pre-flight command');
+    }
+    return match[1];
+  }
+
+  let preflightScript: string;
+  let tmpBase: string;
+
+  beforeAll(() => {
+    preflightScript = extractPreflightScript();
+  });
+
+  beforeEach(() => {
+    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-preflight-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpBase, { recursive: true, force: true });
+  });
+
+  /** Runs the real extracted script against disposable DEST/RELEASE_DIR — never production. */
+  function runPreflight(dest: string, releaseDir: string): { status: number; stdout: string; stderr: string } {
+    const result = require('child_process').spawnSync('bash', ['-c', preflightScript], {
+      encoding: 'utf8',
+      env: { ...process.env, DEST: dest, RELEASE_DIR: releaseDir },
+    });
+    return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  it('the extracted script does not reference bash -n syntax errors', () => {
+    expect(() => execFileSync('bash', ['-n', '-c', preflightScript])).not.toThrow();
+  });
+
+  it('Case A — destination does not exist: creates the symlink and succeeds', () => {
+    const releaseDir = path.join(tmpBase, 'release-a');
+    const dest = path.join(tmpBase, 'nested', 'database');
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+
+    const { status } = runPreflight(dest, releaseDir);
+
+    expect(status).toBe(0);
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(releaseDir));
+  });
+
+  it('Case B — destination already a correct symlink: succeeds idempotently, no error', () => {
+    const releaseDir = path.join(tmpBase, 'release-b');
+    const dest = path.join(tmpBase, 'nested', 'database');
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.symlinkSync(releaseDir, dest);
+
+    const { status, stdout } = runPreflight(dest, releaseDir);
+
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/Case B/);
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
+  });
+
+  it('Case B (incorrect) — destination is a symlink pointing elsewhere: fails loudly, does not repoint it', () => {
+    const releaseDir = path.join(tmpBase, 'release-b2');
+    const wrongTarget = path.join(tmpBase, 'release-wrong');
+    const dest = path.join(tmpBase, 'nested', 'database');
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.mkdirSync(wrongTarget, { recursive: true });
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.symlinkSync(wrongTarget, dest);
+
+    const { status, stderr } = runPreflight(dest, releaseDir);
+
+    expect(status).not.toBe(0);
+    expect(stderr).toMatch(/is a symlink pointing to/);
+    // Never silently repointed — still points at the original wrong target.
+    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(wrongTarget));
+  });
+
+  it('Case C — destination exists as a real directory: fails loudly before touching it, contents untouched', () => {
+    const releaseDir = path.join(tmpBase, 'release-c');
+    const dest = path.join(tmpBase, 'nested', 'database');
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.mkdirSync(dest, { recursive: true });
+    fs.writeFileSync(path.join(dest, 'legacy-migrate.js'), '// legacy manual tooling', 'utf8');
+
+    const { status, stderr } = runPreflight(dest, releaseDir);
+
+    expect(status).not.toBe(0);
+    expect(stderr).toMatch(/already exists as a REAL DIRECTORY/);
+    expect(stderr).toMatch(/human must explicitly remediate/);
+    // The legacy directory's contents must be completely untouched.
+    expect(fs.lstatSync(dest).isDirectory()).toBe(true);
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(path.join(dest, 'legacy-migrate.js'), 'utf8')).toBe('// legacy manual tooling');
+  });
+
+  it('Case D — destination exists as an unexpected filesystem object: fails loudly, does not replace it', () => {
+    const releaseDir = path.join(tmpBase, 'release-d');
+    const dest = path.join(tmpBase, 'nested', 'database');
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, 'not a directory or symlink', 'utf8');
+
+    const { status, stderr } = runPreflight(dest, releaseDir);
+
+    expect(status).not.toBe(0);
+    expect(stderr).toMatch(/unexpected filesystem object/);
+    expect(fs.lstatSync(dest).isFile()).toBe(true);
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(false);
+  });
+});
+
+describe('deploy-migration-tooling artifact packaging excludes seeds/ (executes the actual extracted ci.yml command)', () => {
+  let tmpDir: string;
+  let packagingCommand: string;
+
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-artifact-seeds-test-'));
+
+    const ciYml = fs.readFileSync(CI_WORKFLOW_PATH, 'utf8');
+    const jobBlock = extractJobBlock(ciYml, 'deploy-migration-tooling');
+    const runMatch = jobBlock.match(/run:\s*(tar czf migrations\.tar\.gz\s.*)$/m);
+    if (!runMatch) {
+      throw new Error('Could not find the migrations.tar.gz packaging `run:` command inside deploy-migration-tooling');
+    }
+    packagingCommand = runMatch[1].trim();
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('database/seeds/ exists in source (sanity check the exclusion is actually exercised)', () => {
+    expect(fs.existsSync(path.join(REPO_ROOT, 'database', 'seeds'))).toBe(true);
+  });
+
+  it('the artifact produced by the actual ci.yml command never contains seeds/', () => {
+    const artifactPath = path.join(tmpDir, 'ci-extracted-seeds-check.tar.gz');
+    const commandToRun = packagingCommand.replace('migrations.tar.gz', artifactPath);
+    execSync(commandToRun, { cwd: REPO_ROOT });
+
+    const listing = execFileSync('tar', ['tzf', artifactPath], { encoding: 'utf8' });
+    expect(listing).not.toMatch(/(^|\/)seeds(\/|$)/m);
+  });
+
+  it('the artifact contains exactly the expected shape: only migrate.js and migrations/**, nothing else', () => {
+    const artifactPath = path.join(tmpDir, 'ci-extracted-shape-check.tar.gz');
+    const commandToRun = packagingCommand.replace('migrations.tar.gz', artifactPath);
+    execSync(commandToRun, { cwd: REPO_ROOT });
+
+    const listing = execFileSync('tar', ['tzf', artifactPath], { encoding: 'utf8' });
+    const entries = listing.split('\n').filter(Boolean);
+    const allowed = /^\.\/$|^\.\/migrate\.js$|^\.\/migrations\/?$|^\.\/migrations\/.*$/;
+    const unexpected = entries.filter((e) => !allowed.test(e));
+
+    expect(unexpected).toEqual([]);
+  });
+});
+
 describe('database/migrate.js — parseCliArgs (pure, no DB)', () => {
   it('defaults: no flags means no dry-run, no baseline note, no repository ref', () => {
     expect(parseCliArgs([])).toEqual({ dryRun: false, initBaselineNote: null, repositoryRef: null });
