@@ -390,11 +390,35 @@ jobs:
         id: deploy_migration_tooling
         run: |
           set -e
+          # The destination-symlink decision tree (Case A/B/B2/C/D/E) lives in
+          # .github/scripts/deploy-migration-symlink.sh, not inline here. It is
+          # base64-encoded and shipped as an opaque token — no `$`, quotes, or
+          # other shell metacharacters from that script ever appear in this
+          # JSON/YAML text, so nothing here can re-expand its variables early.
+          # The remote host decodes and runs the exact file this repo tests.
+          SYMLINK_SCRIPT_B64=$(base64 < .github/scripts/deploy-migration-symlink.sh | tr -d '\n')
+          PARAMS=$(jq -n \
+            --arg sha "${{ github.sha }}" \
+            --arg script_b64 "$SYMLINK_SCRIPT_B64" \
+            '{"commands": [
+              "set -e",
+              "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
+              ("export RELEASE_DIR=/home/ubuntu/devcontrol/database-releases/" + $sha),
+              ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR aws s3 cp s3://devcontrol-deploy-artifacts/database/" + $sha + "/migrations.tar.gz /tmp/migrations-" + $sha + ".tar.gz"),
+              ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"mkdir -p $RELEASE_DIR && tar xzf /tmp/migrations-" + $sha + ".tar.gz -C $RELEASE_DIR || (rm -rf $RELEASE_DIR; exit 1)\""),
+              ("sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/migrations-" + $sha + ".tar.gz"),
+              ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"echo " + $sha + " > $RELEASE_DIR/.deployed_sha\""),
+              ("echo " + $script_b64 + " | base64 -d | sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -s -- \"$RELEASE_DIR\" /home/ubuntu/devcontrol/database"),
+              "echo \"✅ Migration tooling deployed (files only — never executes migrations). The symlink step above logged its own Case A/B result, or this whole step already failed if it exited non-zero.\"",
+              "echo \"Operator commands (run manually via an authenticated session — never automatically):\"",
+              "echo \"  cd /home/ubuntu/devcontrol && NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --dry-run\"",
+              "echo \"  cd /home/ubuntu/devcontrol && NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --pending\""
+            ]}')
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy migration tooling ${{ github.sha }} (files only, no execution)" \
-            --parameters '{"commands":["set -e","export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin","export RELEASE_DIR=/home/ubuntu/devcontrol/database-releases/${{ github.sha }}","sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR aws s3 cp s3://devcontrol-deploy-artifacts/database/${{ github.sha }}/migrations.tar.gz /tmp/migrations-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"mkdir -p $RELEASE_DIR && tar xzf /tmp/migrations-${{ github.sha }}.tar.gz -C $RELEASE_DIR || (rm -rf $RELEASE_DIR; exit 1)\"","sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/migrations-${{ github.sha }}.tar.gz","sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"echo ${{ github.sha }} > $RELEASE_DIR/.deployed_sha\"","sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"DEST=${DEST:-/home/ubuntu/devcontrol/database}; if [ -L $DEST ]; then CUR=$(readlink -f $DEST); WANT=$(readlink -f $RELEASE_DIR); if [ $CUR = $WANT ]; then echo Case B: $DEST already symlinked to $RELEASE_DIR - idempotent, nothing to do.; else echo ERROR: $DEST is a symlink pointing to $CUR, not $RELEASE_DIR. Refusing to overwrite an existing symlink pointing elsewhere - a human must investigate. 1>&2; exit 1; fi; elif [ -d $DEST ]; then echo ERROR: $DEST already exists as a REAL DIRECTORY, not a symlink. Automatic replacement is intentionally refused - a human must explicitly remediate the legacy directory before this deploy can proceed safely. 1>&2; exit 1; elif [ -e $DEST ]; then echo ERROR: $DEST exists as an unexpected filesystem object - neither a symlink nor a directory. Refusing to replace it automatically. 1>&2; exit 1; else ln -s $RELEASE_DIR $DEST; echo Case A: created symlink $DEST to $RELEASE_DIR.; fi\"","echo \"✅ Migration tooling deployed at $RELEASE_DIR (symlinked from /home/ubuntu/devcontrol/database, or deployment failed loudly above if that path was in an unexpected state). This step does NOT execute any migration — it only makes files available.\"","echo \"Operator commands (run manually via an authenticated session — never automatically):\"","echo   cd /home/ubuntu/devcontrol \\&\\& NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --dry-run","echo   cd /home/ubuntu/devcontrol \\&\\& NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --pending"]}' \
+            --parameters "$PARAMS" \
             --query "Command.CommandId" --output text)
           echo "SSM command ID: $COMMAND_ID"
 

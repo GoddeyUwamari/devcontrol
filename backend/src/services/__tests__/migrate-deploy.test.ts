@@ -27,6 +27,35 @@ function extractJobBlock(ciYml: string, jobName: string): string {
   return match[0];
 }
 
+/**
+ * deploy-migration-tooling builds its SSM "commands" array dynamically with
+ * `jq` (so the base64-encoded symlink script can be embedded without any
+ * hand-escaping), unlike every other SSM step in this file, which embeds a
+ * static single-quoted JSON literal. Static regex extraction can't recover
+ * this job's real command list — so this extracts the actual
+ * `PARAMS=$(jq -n ... '{"commands": [...]}')` assignment from the job's
+ * `run:` block and executes it for real, substituting a concrete SHA for
+ * GitHub Actions' `${{ github.sha }}` templating (which bash never sees
+ * directly — the Actions runner replaces it with literal text before any
+ * shell runs). Returns the real resulting commands array, so a change that
+ * breaks the jq filter's actual output is caught here, not validated
+ * against a stale hand-duplicated assumption.
+ */
+function buildDeployMigrationToolingCommands(sha: string, scriptB64: string): string[] {
+  const ciYml = fs.readFileSync(CI_WORKFLOW_PATH, 'utf8');
+  const jobBlock = extractJobBlock(ciYml, 'deploy-migration-tooling');
+  const match = jobBlock.match(/PARAMS=\$\(jq -n[\s\S]*?\]\}'\)/);
+  if (!match) {
+    throw new Error(
+      'Could not find the PARAMS=$(jq -n ... ) block inside deploy-migration-tooling — the workflow may have changed shape.'
+    );
+  }
+  const paramsAssignment = match[0].replace(/\$\{\{ github\.sha \}\}/g, sha);
+  const script = [`SYMLINK_SCRIPT_B64=${JSON.stringify(scriptB64)}`, paramsAssignment, 'echo "$PARAMS"'].join('\n');
+  const output = execSync(script, { encoding: 'utf8', shell: '/bin/bash' });
+  return JSON.parse(output).commands;
+}
+
 // This local checkout installs everything into one root-level node_modules/
 // (no `backend/node_modules` exists here at all) — unlike production, which
 // runs a separate `cd backend && npm install`, producing a real, standalone
@@ -180,16 +209,20 @@ describe('CI workflow — migration tooling deployment never auto-executes migra
   });
 
   it('never invokes `node database/migrate.js` except inside an individual echo/documentation command string', () => {
-    // The workflow's SSM steps embed their command list as a single-line
-    // JSON blob (`--parameters '{"commands":[...]}'`), matching this file's
-    // existing style — so a naive per-text-line check would be fooled by
-    // unrelated "echo" tokens elsewhere on the same long line. Instead,
-    // parse every such JSON blob for real and inspect each command string
-    // in the array individually.
+    // deploy-backend's SSM steps embed their command list as a single-line
+    // JSON blob (`--parameters '{"commands":[...]}'`) — parse every such
+    // blob for real. deploy-migration-tooling builds its own commands array
+    // dynamically via jq (not a static blob this regex can see), so its
+    // real output is executed and included separately, via the same
+    // mechanism the "actually deployed script" tests below use.
     const jsonBlobs = [...ciYml.matchAll(/--parameters '(\{"commands":\[.*?\]\})' \\/g)].map((m) => m[1]);
-    expect(jsonBlobs.length).toBeGreaterThan(0); // sanity: SSM steps must actually exist to inspect
+    expect(jsonBlobs.length).toBeGreaterThan(0); // sanity: deploy-backend's SSM steps must actually exist
 
-    const allCommands: string[] = jsonBlobs.flatMap((blob) => JSON.parse(blob).commands);
+    const staticCommands: string[] = jsonBlobs.flatMap((blob) => JSON.parse(blob).commands);
+    const stubScriptB64 = Buffer.from('#!/usr/bin/env bash\necho stub\n').toString('base64');
+    const migrationToolingCommands = buildDeployMigrationToolingCommands('deadbeef'.repeat(5), stubScriptB64);
+    const allCommands = [...staticCommands, ...migrationToolingCommands];
+
     const migrateInvocations = allCommands.filter((cmd) => /node\s+\S*database\/migrate\.js/.test(cmd));
 
     expect(migrateInvocations.length).toBeGreaterThan(0); // sanity: the operator-command docs must exist somewhere
@@ -236,9 +269,13 @@ describe('CI workflow — migration tooling deployment never auto-executes migra
     expect(uploadMatch).toBeTruthy();
     const uploadKey = uploadMatch![1].trim();
 
-    const jsonBlobs = [...jobBlock.matchAll(/--parameters '(\{"commands":\[.*?\]\})' \\/g)].map((m) => m[1]);
-    expect(jsonBlobs.length).toBeGreaterThan(0);
-    const allCommands: string[] = jsonBlobs.flatMap((blob) => JSON.parse(blob).commands);
+    // The download key lives inside the dynamically jq-built commands array
+    // (see buildDeployMigrationToolingCommands) — execute it for real with
+    // a concrete stand-in SHA, since GitHub Actions' `${{ github.sha }}`
+    // templating is resolved before any shell runs, not by bash itself.
+    const sha = 'deadbeef'.repeat(5);
+    const stubScriptB64 = Buffer.from('#!/usr/bin/env bash\necho stub\n').toString('base64');
+    const allCommands = buildDeployMigrationToolingCommands(sha, stubScriptB64);
     const downloadCommand = allCommands.find((cmd) => /aws s3 cp\s+s3:\/\/.*migrations\.tar\.gz/.test(cmd));
     expect(downloadCommand).toBeTruthy();
     // Same embedded-space issue applies to the download command's source
@@ -248,73 +285,119 @@ describe('CI workflow — migration tooling deployment never auto-executes migra
     expect(downloadMatch).toBeTruthy();
     const downloadKey = downloadMatch![1];
 
-    // Both values above came from parsing the real file — neither side is a
-    // hardcoded expectation. A future edit that changes one location
-    // without the other (the exact "stale artifact path" bug class) fails
-    // this assertion regardless of what the "correct" value is assumed to
-    // be.
-    expect(downloadKey).toBe(uploadKey);
+    // uploadKey still contains the literal, un-resolved `${{ github.sha }}`
+    // placeholder (that step's `run:` line was never changed); downloadKey
+    // was produced by actually executing the jq filter with a concrete
+    // stand-in SHA substituted in. Resolve the same substitution on the
+    // upload side before comparing, so both sides represent the same
+    // hypothetical real SHA — neither side is a hardcoded expectation, so a
+    // future edit that changes one location without the other (the exact
+    // "stale artifact path" bug class) still fails this assertion
+    // regardless of what the "correct" value is assumed to be.
+    const uploadKeyResolved = uploadKey.replace(/\$\{\{\s*github\.sha\s*\}\}/g, sha);
+    expect(downloadKey).toBe(uploadKeyResolved);
   });
 });
 
-describe('deploy-migration-tooling destination pre-flight (executes the actual extracted ci.yml symlink logic, not a duplicated equivalent)', () => {
-  /**
-   * Extracts the exact `bash -c "..."` symlink-decision command embedded in
-   * the deploy-migration-tooling SSM command list, strips only the
-   * `sudo -H -u ubuntu --preserve-env=... bash -c "..."` wrapper (sudo isn't
-   * available/meaningful in a test environment), and returns the raw inner
-   * shell source. If this command's shape ever changes (e.g. no longer
-   * matches `DEST=${DEST:-...}`), extraction fails loudly here rather than
-   * silently testing stale, hand-duplicated logic.
-   */
-  function extractPreflightScript(): string {
-    const ciYml = fs.readFileSync(CI_WORKFLOW_PATH, 'utf8');
-    const jobBlock = extractJobBlock(ciYml, 'deploy-migration-tooling');
-    const jsonBlobs = [...jobBlock.matchAll(/--parameters '(\{"commands":\[.*?\]\})' \\/g)].map((m) => m[1]);
-    if (jsonBlobs.length === 0) {
-      throw new Error('Could not find the SSM "commands" JSON blob inside deploy-migration-tooling');
-    }
-    const commands: string[] = JSON.parse(jsonBlobs[0]).commands;
-    const preflightCmd = commands.find((c) => c.includes('DEST=${DEST'));
-    if (!preflightCmd) {
-      throw new Error(
-        'Could not find the destination pre-flight command (expected a command containing `DEST=${DEST...}`) — ' +
-        'the workflow may have changed shape.'
-      );
-    }
-    const match = preflightCmd.match(/bash -c "([\s\S]*)"$/);
-    if (!match) {
-      throw new Error('Could not extract the inner bash -c script body from the pre-flight command');
-    }
-    return match[1];
-  }
-
-  let preflightScript: string;
+describe('deploy-migration-tooling destination pre-flight (executes the real .github/scripts/deploy-migration-symlink.sh file — the exact artifact CI base64-encodes and ships, not a reconstructed fragment)', () => {
+  const SYMLINK_SCRIPT_PATH = path.join(REPO_ROOT, '.github', 'scripts', 'deploy-migration-symlink.sh');
   let tmpBase: string;
 
   beforeAll(() => {
-    preflightScript = extractPreflightScript();
+    expect(fs.existsSync(SYMLINK_SCRIPT_PATH)).toBe(true);
   });
 
   beforeEach(() => {
-    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-preflight-test-'));
+    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-symlink-script-test-'));
   });
 
   afterEach(() => {
     fs.rmSync(tmpBase, { recursive: true, force: true });
   });
 
-  /** Runs the real extracted script against disposable DEST/RELEASE_DIR — never production. */
-  function runPreflight(dest: string, releaseDir: string): { status: number; stdout: string; stderr: string } {
-    const result = require('child_process').spawnSync('bash', ['-c', preflightScript], {
+  /** Runs the real script file directly — no extraction, no re-parsing through any other shell. */
+  function run(releaseDir: string, dest: string): { status: number; stdout: string; stderr: string } {
+    const result = require('child_process').spawnSync('bash', [SYMLINK_SCRIPT_PATH, releaseDir, dest], {
       encoding: 'utf8',
-      env: { ...process.env, DEST: dest, RELEASE_DIR: releaseDir },
     });
     return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
   }
 
-  it('the extracted script does not reference bash -n syntax errors', () => {
-    expect(() => execFileSync('bash', ['-n', '-c', preflightScript])).not.toThrow();
+  /**
+   * Runs the script through the same general execution shape the real
+   * deployment uses: base64-decode piped into `bash -s -- <args>`, wrapped
+   * in a bare `set -e` with NO `pipefail`. That is deliberate, not an
+   * oversight — the real production SSM script (see the "Deploy migration
+   * tooling via SSM" step in ci.yml) only ever sets bare `set -e`, never
+   * `pipefail`. Using a stricter wrapper here would validate a
+   * configuration that isn't actually deployed and could mask a real
+   * regression (a failure that only fails to propagate without pipefail
+   * specifically). A sentinel command after the pipe proves whether the
+   * failure actually survived, since a bare `set -e` still aborts on a
+   * pipeline's failure as long as the failing stage is the pipeline's last
+   * command — which it is here (bash -s -- is last) — but this is exactly
+   * the propagation behavior that must be proven, not assumed.
+   */
+  function runThroughPipeline(releaseDir: string, dest: string): { status: number; stdout: string; stderr: string } {
+    const scriptB64 = fs.readFileSync(SYMLINK_SCRIPT_PATH).toString('base64');
+    const wrapperPath = path.join(tmpBase, `pipeline-wrapper-${Date.now()}-${Math.random()}.sh`);
+    fs.writeFileSync(
+      wrapperPath,
+      [
+        'set -e', // bare set -e, NO pipefail — matches the real deployed outer script exactly
+        `export RELEASE_DIR=${JSON.stringify(releaseDir)}`,
+        `echo ${scriptB64} | base64 -d | bash -s -- "$RELEASE_DIR" ${JSON.stringify(dest)}`,
+        'echo SENTINEL_AFTER_PIPE_RAN',
+      ].join('\n'),
+      'utf8'
+    );
+    const result = require('child_process').spawnSync('bash', [wrapperPath], { encoding: 'utf8' });
+    return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  it('the script has no syntax errors', () => {
+    expect(() => execFileSync('bash', ['-n', SYMLINK_SCRIPT_PATH])).not.toThrow();
+  });
+
+  it('DEST defaults to the real production path when the second argument is omitted', () => {
+    // Not invoked with the real default (that path does not exist on this
+    // machine) — instead confirms the literal default expression in the
+    // script source is wired to the real production path, so a future edit
+    // that silently changes or drops the default fails this test.
+    const src = fs.readFileSync(SYMLINK_SCRIPT_PATH, 'utf8');
+    expect(src).toMatch(/DEST="\$\{2:-\/home\/ubuntu\/devcontrol\/database\}"/);
+  });
+
+  it('ci.yml actually base64-encodes and ships this exact file (byte-identical, not a different or duplicated copy)', () => {
+    const ciYml = fs.readFileSync(CI_WORKFLOW_PATH, 'utf8');
+    const jobBlock = extractJobBlock(ciYml, 'deploy-migration-tooling');
+
+    const b64Match = jobBlock.match(
+      /SYMLINK_SCRIPT_B64=\$\((base64 < \.github\/scripts\/deploy-migration-symlink\.sh \| tr -d '\\n')\)/
+    );
+    expect(b64Match).toBeTruthy();
+
+    // Run the actual extracted encoding command against the real repo tree
+    // and confirm it decodes back to byte-identical content with the file
+    // every other test in this block exercises directly — proving the
+    // shipped artifact and the tested artifact are the same bytes, not
+    // just the same file path referenced in two places that could drift.
+    const encoded = execSync(b64Match![1], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    expect(decoded).toBe(fs.readFileSync(SYMLINK_SCRIPT_PATH, 'utf8'));
+
+    // Confirm the real, executed (not raw-source) command text pipes the
+    // decoded script into a standalone `bash -s --` invocation with the
+    // right arguments — checked against actual jq output so escaped-quote
+    // differences between jq source and decoded JSON can't produce a false
+    // match or a false failure here.
+    const stubScriptB64 = Buffer.from('#!/usr/bin/env bash\necho stub\n').toString('base64');
+    const commands = buildDeployMigrationToolingCommands('deadbeef'.repeat(5), stubScriptB64);
+    const symlinkInvocation = commands.find((c) => c.includes('base64 -d'));
+    expect(symlinkInvocation).toBeTruthy();
+    expect(symlinkInvocation).toMatch(
+      /base64 -d \| sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -s -- "\$RELEASE_DIR" \/home\/ubuntu\/devcontrol\/database/
+    );
   });
 
   it('Case A — destination does not exist: creates the symlink and succeeds', () => {
@@ -323,9 +406,23 @@ describe('deploy-migration-tooling destination pre-flight (executes the actual e
     fs.mkdirSync(releaseDir, { recursive: true });
     fs.mkdirSync(path.dirname(dest), { recursive: true });
 
-    const { status } = runPreflight(dest, releaseDir);
+    const { status } = run(releaseDir, dest);
 
     expect(status).toBe(0);
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(releaseDir));
+  });
+
+  it('Case A through the full base64-decode-pipe-into-bash pipeline (bare set -e, no pipefail): succeeds and the sentinel after it runs', () => {
+    const releaseDir = path.join(tmpBase, 'release-a-pipe');
+    const dest = path.join(tmpBase, 'nested-a-pipe', 'database');
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+
+    const { status, stdout } = runThroughPipeline(releaseDir, dest);
+
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/SENTINEL_AFTER_PIPE_RAN/);
     expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
     expect(fs.realpathSync(dest)).toBe(fs.realpathSync(releaseDir));
   });
@@ -337,14 +434,14 @@ describe('deploy-migration-tooling destination pre-flight (executes the actual e
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.symlinkSync(releaseDir, dest);
 
-    const { status, stdout } = runPreflight(dest, releaseDir);
+    const { status, stdout } = run(releaseDir, dest);
 
     expect(status).toBe(0);
     expect(stdout).toMatch(/Case B/);
     expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
   });
 
-  it('Case B (incorrect) — destination is a symlink pointing elsewhere: fails loudly, does not repoint it', () => {
+  it('Case B2 — destination is a symlink pointing elsewhere: fails loudly, does not repoint it', () => {
     const releaseDir = path.join(tmpBase, 'release-b2');
     const wrongTarget = path.join(tmpBase, 'release-wrong');
     const dest = path.join(tmpBase, 'nested', 'database');
@@ -353,7 +450,7 @@ describe('deploy-migration-tooling destination pre-flight (executes the actual e
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.symlinkSync(wrongTarget, dest);
 
-    const { status, stderr } = runPreflight(dest, releaseDir);
+    const { status, stderr } = run(releaseDir, dest);
 
     expect(status).not.toBe(0);
     expect(stderr).toMatch(/is a symlink pointing to/);
@@ -368,7 +465,7 @@ describe('deploy-migration-tooling destination pre-flight (executes the actual e
     fs.mkdirSync(dest, { recursive: true });
     fs.writeFileSync(path.join(dest, 'legacy-migrate.js'), '// legacy manual tooling', 'utf8');
 
-    const { status, stderr } = runPreflight(dest, releaseDir);
+    const { status, stderr } = run(releaseDir, dest);
 
     expect(status).not.toBe(0);
     expect(stderr).toMatch(/already exists as a REAL DIRECTORY/);
@@ -386,12 +483,48 @@ describe('deploy-migration-tooling destination pre-flight (executes the actual e
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, 'not a directory or symlink', 'utf8');
 
-    const { status, stderr } = runPreflight(dest, releaseDir);
+    const { status, stderr } = run(releaseDir, dest);
 
     expect(status).not.toBe(0);
     expect(stderr).toMatch(/unexpected filesystem object/);
     expect(fs.lstatSync(dest).isFile()).toBe(true);
     expect(fs.lstatSync(dest).isSymbolicLink()).toBe(false);
+  });
+
+  it('Case E — genuine OS-level failure (permission denied on ln, not one of the intended A/B/B2/C/D branches): propagates as a real non-zero exit both directly and through the full pipeline', () => {
+    if (typeof process.getuid === 'function' && process.getuid() === 0) {
+      // Root bypasses permission bits entirely, which would make this
+      // specific failure mode unreproducible rather than genuinely absent —
+      // skip rather than silently pass on a broken assumption.
+      return;
+    }
+
+    const releaseDir = path.join(tmpBase, 'release-e');
+    const readonlyParent = path.join(tmpBase, 'readonly-parent');
+    const dest = path.join(readonlyParent, 'database');
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.mkdirSync(readonlyParent, { recursive: true });
+    fs.chmodSync(readonlyParent, 0o555); // no write permission: ln -s cannot create an entry here
+    try {
+      // Direct execution: the script's own set -euo pipefail must catch
+      // ln's real failure and exit non-zero — a genuine unhandled OS error
+      // on stderr, not one of the four echo'd Case A/B2/C/D messages.
+      const direct = run(releaseDir, dest);
+      expect(direct.status).not.toBe(0);
+      expect(direct.stderr).toMatch(/[Pp]ermission denied/);
+      expect(fs.existsSync(dest)).toBe(false);
+
+      // Through the full pipeline, with the same bare set -e (no pipefail)
+      // the real production script uses: the sentinel after the pipe must
+      // never run, and the wrapper's own exit code must be non-zero.
+      const piped = runThroughPipeline(releaseDir, dest);
+      expect(piped.status).not.toBe(0);
+      expect(piped.stdout).not.toMatch(/SENTINEL_AFTER_PIPE_RAN/);
+      expect(piped.stderr).toMatch(/[Pp]ermission denied/);
+      expect(fs.existsSync(dest)).toBe(false);
+    } finally {
+      fs.chmodSync(readonlyParent, 0o755); // restore so afterEach's rmSync can clean up
+    }
   });
 });
 
