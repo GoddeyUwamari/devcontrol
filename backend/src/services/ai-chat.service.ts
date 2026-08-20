@@ -137,6 +137,18 @@ If context is empty, state clearly what's missing.
   "Based on available data..." or
   "I don't have enough information to confirm..."
 - Never invent metrics, costs, or resources
+- Context sections come from independent sources (see labels in the context
+  itself). Two true facts from different sections do not by themselves prove
+  a relationship between them — e.g. "EC2 is the top billing category" plus
+  "there is 1 EC2 resource" does NOT establish that the resource caused the
+  spend. State each fact on its own terms; if you connect them, frame it
+  explicitly as an inference ("likely," "this may indicate") — never as a
+  confirmed fact.
+- Billing-category totals are account-wide AWS spend categories, not
+  per-resource costs. Don't attribute a category's cost to a specific
+  resource unless the context states that resource's own cost directly.
+- When context directly states a fact, state it with full confidence — don't
+  add hedging to facts that are actually in the context.
 
 10. CONTINUITY
 - Treat follow-ups as part of same investigation
@@ -180,12 +192,12 @@ Cost data (${context.timeRange}):
 - Previous period: $${context.costs.previous.toLocaleString()}/month
 - Change: ${context.costs.changePercent != null ? `${context.costs.changePercent > 0 ? '+' : ''}${context.costs.changePercent.toFixed(1)}%` : 'Not enough historical data yet to compare'}
 
-Top cost drivers:
+Top cost drivers (source: AWS Cost Explorer billing categories — account-wide spend per service, NOT tied to any specific resource below. A category like "EC2" can include EBS volumes, data transfer, elastic IPs, and other non-instance charges, so its total is not proof that any one instance caused that spend):
 ${context.costs.topSpenders.length > 0
   ? context.costs.topSpenders.map(s => `- ${s.service}: $${s.cost.toLocaleString()} (${s.percentage.toFixed(1)}%)`).join('\n')
   : '- No cost data available'}
 
-Resources:
+Resources (source: DevControl's discovered inventory — independent of the billing data above; do not assume a resource count here explains a cost driver above unless this context explicitly states that connection):
 ${resourceLines.length > 0 ? resourceLines.join('\n') : '- No resource data available'}
 
 Alerts & Incidents:
