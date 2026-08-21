@@ -526,6 +526,135 @@ describe('deploy-migration-tooling destination pre-flight (executes the real .gi
       fs.chmodSync(readonlyParent, 0o755); // restore so afterEach's rmSync can clean up
     }
   });
+
+  /**
+   * A "valid release" per the script: a directory living directly under the
+   * same RELEASES_DIR (dirname of the release_dir argument) whose own
+   * basename exactly matches the content of its own .deployed_sha marker —
+   * the same marker CI writes inside the release directory before ever
+   * touching the symlink (see database/migrations/README.md).
+   */
+  function makeValidRelease(releasesDir: string, sha: string): string {
+    const dir = path.join(releasesDir, sha);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '.deployed_sha'), sha, 'utf8');
+    return dir;
+  }
+
+  it('Case F — known valid old release to known valid new release: advances the symlink, exit 0, destination is the new release', () => {
+    const releasesDir = path.join(tmpBase, 'nested', 'database-releases');
+    fs.mkdirSync(releasesDir, { recursive: true });
+    const dest = path.join(tmpBase, 'nested', 'database');
+    const oldRelease = makeValidRelease(releasesDir, 'oldsha1111111111');
+    const newRelease = makeValidRelease(releasesDir, 'newsha2222222222');
+    fs.symlinkSync(oldRelease, dest);
+
+    const { status, stdout } = run(newRelease, dest);
+
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/Case F/);
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(newRelease));
+
+    // No leftover "database.new.<pid>" temp link — the swap must be clean.
+    const leftovers = fs.readdirSync(path.dirname(dest)).filter((f) => f.startsWith('database.new.'));
+    expect(leftovers).toHaveLength(0);
+  });
+
+  it('Case F disqualified — current target resolves outside database-releases/: still refuses like Case B2, unchanged', () => {
+    const releasesDir = path.join(tmpBase, 'nested', 'database-releases');
+    fs.mkdirSync(releasesDir, { recursive: true });
+    const dest = path.join(tmpBase, 'nested', 'database');
+    const newRelease = makeValidRelease(releasesDir, 'newsha3333333333');
+
+    // Current target carries a plausible-looking, self-consistent
+    // .deployed_sha marker, but lives OUTSIDE database-releases/ entirely.
+    const outsideDir = path.join(tmpBase, 'somewhere-else', 'oldsha4444444444');
+    fs.mkdirSync(outsideDir, { recursive: true });
+    fs.writeFileSync(path.join(outsideDir, '.deployed_sha'), 'oldsha4444444444', 'utf8');
+    fs.symlinkSync(outsideDir, dest);
+
+    const { status, stderr } = run(newRelease, dest);
+
+    expect(status).not.toBe(0);
+    expect(stderr).toMatch(/is a symlink pointing to/);
+    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(outsideDir));
+  });
+
+  it('Case F disqualified — current symlink target does not exist: refuses, dest left as the same dangling symlink', () => {
+    const releasesDir = path.join(tmpBase, 'nested', 'database-releases');
+    fs.mkdirSync(releasesDir, { recursive: true });
+    const dest = path.join(tmpBase, 'nested', 'database');
+    const newRelease = makeValidRelease(releasesDir, 'newsha5555555555');
+
+    const missingTarget = path.join(releasesDir, 'oldsha-does-not-exist');
+    fs.symlinkSync(missingTarget, dest); // dangling — never created
+
+    const { status, stderr } = run(newRelease, dest);
+
+    expect(status).not.toBe(0);
+    expect(stderr).toMatch(/is a symlink pointing to/);
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(dest)).toBe(missingTarget);
+  });
+
+  it('Case F disqualified — new release fails its own valid-release check (basename does not match its own .deployed_sha): refuses, unchanged (proves the symmetric check)', () => {
+    const releasesDir = path.join(tmpBase, 'nested', 'database-releases');
+    fs.mkdirSync(releasesDir, { recursive: true });
+    const dest = path.join(tmpBase, 'nested', 'database');
+    const oldRelease = makeValidRelease(releasesDir, 'oldsha6666666666');
+    fs.symlinkSync(oldRelease, dest);
+
+    const newRelease = path.join(releasesDir, 'newsha7777777777');
+    fs.mkdirSync(newRelease, { recursive: true });
+    // Marker deliberately mismatches its own directory name.
+    fs.writeFileSync(path.join(newRelease, '.deployed_sha'), 'some-other-sha-entirely', 'utf8');
+
+    const { status, stderr } = run(newRelease, dest);
+
+    expect(status).not.toBe(0);
+    expect(stderr).toMatch(/is a symlink pointing to/);
+    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(oldRelease));
+  });
+
+  it('Case F — genuine OS-level failure creating the temp symlink: dest left completely untouched, no leftover temp file (same discipline as Case E)', () => {
+    if (typeof process.getuid === 'function' && process.getuid() === 0) {
+      // Root bypasses permission bits entirely — skip rather than silently
+      // pass on a broken assumption, matching the existing Case E test.
+      return;
+    }
+
+    const releasesParent = path.join(tmpBase, 'nested');
+    fs.mkdirSync(releasesParent, { recursive: true });
+    const releasesDir = path.join(releasesParent, 'database-releases');
+    fs.mkdirSync(releasesDir, { recursive: true });
+    const dest = path.join(releasesParent, 'database');
+    const oldRelease = makeValidRelease(releasesDir, 'oldsha8888888888');
+    const newRelease = makeValidRelease(releasesDir, 'newsha9999999999');
+    fs.symlinkSync(oldRelease, dest);
+
+    // Block creation of the temp symlink by making dest's parent directory
+    // read-only — same technique the existing Case E test uses, targeted at
+    // the Case F temp-symlink-then-mv-T swap instead of the Case A create.
+    fs.chmodSync(releasesParent, 0o555);
+    try {
+      const { status, stderr } = run(newRelease, dest);
+
+      expect(status).not.toBe(0);
+      expect(stderr).toMatch(/[Pp]ermission denied/);
+      expect(stderr).toMatch(/left completely untouched/);
+    } finally {
+      fs.chmodSync(releasesParent, 0o755); // restore so afterEach's rmSync can clean up
+    }
+
+    // dest must still be the original symlink to the OLD release.
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(oldRelease));
+
+    // No leftover "database.new.<pid>" temp link anywhere.
+    const leftovers = fs.readdirSync(releasesParent).filter((f) => f.startsWith('database.new.'));
+    expect(leftovers).toHaveLength(0);
+  });
 });
 
 describe('deploy-migration-tooling artifact packaging excludes seeds/ (executes the actual extracted ci.yml command)', () => {
