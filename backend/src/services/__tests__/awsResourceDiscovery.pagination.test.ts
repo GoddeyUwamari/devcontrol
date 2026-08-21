@@ -5,10 +5,20 @@
  * responses to exercise the loop logic directly, without touching production
  * data or requiring live AWS credentials.
  *
- * Each private discover* method is called directly via `(service as any)` —
- * they're deliberately narrow, side-effect-free (pure AWS call -> resource
- * array) units, so this avoids mocking the full discoverAllResources
+ * EC2 and S3 still have their own dedicated, per-type discovery methods on
+ * AWSResourceDiscoveryService, so those are called directly via
+ * `(service as any)` — deliberately narrow, side-effect-free (pure AWS call
+ * -> resource array) units, avoiding a mock of the full discoverAllResources
  * orchestration (Pool, AWSClientFactory, ComplianceScannerService, etc.).
+ *
+ * ECS is different: Phase 2B removed its dedicated Describe*-based discovery
+ * (ListClusters/ListServices/DescribeServices) entirely. ECS resources are
+ * now found the same way as every other "generic" type — via a single AWS
+ * Resource Explorer Search call, paginated by the SDK's own generated
+ * `paginateSearch`, and classified by `ResourceExplorerService.normalize()`.
+ * There is no more ECS-specific discovery method to call — the pagination
+ * and ECS-classification tests below exercise `ResourceExplorerService`
+ * directly, the actual unit ECS discovery now runs through.
  */
 
 import { EC2Client } from '@aws-sdk/client-ec2';
@@ -19,13 +29,9 @@ import {
   GetBucketEncryptionCommand,
   GetBucketAclCommand,
 } from '@aws-sdk/client-s3';
-import {
-  ECSClient,
-  ListClustersCommand,
-  ListServicesCommand,
-  DescribeServicesCommand,
-} from '@aws-sdk/client-ecs';
+import { ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
+import { ResourceExplorerService } from '../resourceExplorer.service';
 
 /**
  * AWS SDK v3's generated paginators (paginateDescribeInstances, paginateListServices,
@@ -125,71 +131,100 @@ describe('AWSResourceDiscoveryService pagination', () => {
     });
   });
 
-  describe('ECS service discovery — ListServices pagination + DescribeServices 10-ARN chunking', () => {
-    it('paginates ListServices past its 10-item default page and chunks DescribeServices at 10 ARNs/call', async () => {
-      const page1Arns = Array.from({ length: 10 }, (_, i) => `arn:aws:ecs:us-east-1:1:service/c/svc-${i}`);
-      const page2Arns = Array.from({ length: 5 }, (_, i) => `arn:aws:ecs:us-east-1:1:service/c/svc-${i + 10}`);
-      const allArns = [...page1Arns, ...page2Arns];
+  describe('ECS service discovery — via ResourceExplorerService.search() (generic Resource Explorer path)', () => {
+    const makeEcsResource = (n: number, overrides: Partial<REResource> = {}): REResource => ({
+      Arn: `arn:aws:ecs:us-east-1:1:service/cluster-c/svc-${n}`,
+      Region: 'us-east-1',
+      Service: 'ecs',
+      CfnResourceType: 'AWS::ECS::Service',
+      Properties: [{ Name: 'tags', Data: [{ Key: 'env', Value: 'prod' }] } as any],
+      ...overrides,
+    });
+
+    it('search() paginates past a NextToken-bearing page, collecting resources from every page in order', async () => {
+      const page1 = Array.from({ length: 10 }, (_, i) => makeEcsResource(i));
+      const page2 = Array.from({ length: 5 }, (_, i) => makeEcsResource(i + 10));
 
       const send = jest.fn(async (command: any) => {
-        if (command instanceof ListClustersCommand) {
-          return { clusterArns: ['arn:aws:ecs:us-east-1:1:cluster/c'] };
-        }
-        if (command instanceof ListServicesCommand) {
-          return command.input.nextToken
-            ? { serviceArns: page2Arns }
-            : { serviceArns: page1Arns, nextToken: 'svc-page-2' };
-        }
-        if (command instanceof DescribeServicesCommand) {
-          const requested: string[] = command.input.services!;
-          expect(requested.length).toBeLessThanOrEqual(10);
-          return {
-            services: requested.map((arn) => ({
-              serviceArn: arn,
-              serviceName: arn.split('/').pop(),
-              clusterArn: 'arn:aws:ecs:us-east-1:1:cluster/c',
-              status: 'ACTIVE',
-              desiredCount: 1,
-            })),
-          };
+        if (command instanceof SearchCommand) {
+          return command.input.NextToken
+            ? { Resources: page2 }
+            : { Resources: page1, NextToken: 'page-2' };
         }
         throw new Error(`Unexpected command: ${command.constructor.name}`);
       });
-      const ecsClient = withMockedSend(new ECSClient({ region: 'us-east-1' }), send);
+      const client = withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), send);
 
-      const resources = await (service as any).discoverECSServices('org-1', ecsClient, 'us-east-1');
+      const explorer = new ResourceExplorerService();
+      const result = await explorer.search(client, 'us-east-1');
 
-      const describeServicesCalls = send.mock.calls.filter(([cmd]) => cmd instanceof DescribeServicesCommand);
-      expect(describeServicesCalls).toHaveLength(2); // chunked 10 + 5, never one call with all 15
-      expect(resources).toHaveLength(15);
-      expect(resources.map((r: any) => r.resource_id)).toEqual(allArns.map((a) => a.split('/').pop()));
+      const searchCalls = send.mock.calls.filter(([cmd]) => cmd instanceof SearchCommand);
+      expect(searchCalls).toHaveLength(2); // paginateSearch followed NextToken, never one call
+      expect(result.success).toBe(true);
+      if (!result.success) throw new Error('unreachable');
+      expect(result.resources).toHaveLength(15);
+      expect(result.resources.map((r) => r.Arn)).toEqual([...page1, ...page2].map((r) => r.Arn));
     });
 
-    it('single-page case (≤10 services, real-world today) makes exactly one DescribeServices call', async () => {
-      const arns = Array.from({ length: 3 }, (_, i) => `arn:aws:ecs:us-east-1:1:service/c/svc-${i}`);
+    it('single-page case (real-world today) makes exactly one Search call', async () => {
+      const resources = [makeEcsResource(0), makeEcsResource(1)];
+      const send = jest.fn(async (command: any) => {
+        if (command instanceof SearchCommand) return { Resources: resources };
+        throw new Error(`Unexpected command: ${command.constructor.name}`);
+      });
+      const client = withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), send);
+
+      const explorer = new ResourceExplorerService();
+      const result = await explorer.search(client, 'us-east-1');
+
+      const searchCalls = send.mock.calls.filter(([cmd]) => cmd instanceof SearchCommand);
+      expect(searchCalls).toHaveLength(1);
+      expect(result.success).toBe(true);
+      if (!result.success) throw new Error('unreachable');
+      expect(result.resources).toHaveLength(2);
+    });
+
+    it('normalize() classifies an AWS::ECS::Service entry as a generic "ecs" resource, and includes its ARN in the reconciliation presence set', () => {
+      const ecsResource = makeEcsResource(0);
+      const explorer = new ResourceExplorerService();
+
+      const { allArns, genericEntries } = explorer.normalize([ecsResource], 'us-east-1');
+
+      expect(allArns.has(ecsResource.Arn!)).toBe(true);
+      expect(genericEntries).toHaveLength(1);
+      expect(genericEntries[0]).toMatchObject({
+        arn: ecsResource.Arn,
+        resourceType: 'ecs',
+        region: 'us-east-1',
+        service: 'ecs',
+        tags: { env: 'prod' },
+      });
+    });
+
+    it('end-to-end: a paginated Search response containing ECS services normalizes into exactly that many generic "ecs" entries', async () => {
+      const page1 = Array.from({ length: 10 }, (_, i) => makeEcsResource(i));
+      const page2 = Array.from({ length: 5 }, (_, i) => makeEcsResource(i + 10));
 
       const send = jest.fn(async (command: any) => {
-        if (command instanceof ListClustersCommand) return { clusterArns: ['arn:aws:ecs:us-east-1:1:cluster/c'] };
-        if (command instanceof ListServicesCommand) return { serviceArns: arns };
-        if (command instanceof DescribeServicesCommand) {
-          return {
-            services: (command.input.services as string[]).map((arn) => ({
-              serviceArn: arn,
-              serviceName: arn.split('/').pop(),
-              clusterArn: 'arn:aws:ecs:us-east-1:1:cluster/c',
-              status: 'ACTIVE',
-            })),
-          };
+        if (command instanceof SearchCommand) {
+          return command.input.NextToken
+            ? { Resources: page2 }
+            : { Resources: page1, NextToken: 'page-2' };
         }
-        throw new Error('unexpected command');
+        throw new Error(`Unexpected command: ${command.constructor.name}`);
       });
-      const ecsClient = withMockedSend(new ECSClient({ region: 'us-east-1' }), send);
+      const client = withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), send);
 
-      const resources = await (service as any).discoverECSServices('org-1', ecsClient, 'us-east-1');
+      const explorer = new ResourceExplorerService();
+      const searchResult = await explorer.search(client, 'us-east-1');
+      expect(searchResult.success).toBe(true);
+      if (!searchResult.success) throw new Error('unreachable');
 
-      const describeServicesCalls = send.mock.calls.filter(([cmd]) => cmd instanceof DescribeServicesCommand);
-      expect(describeServicesCalls).toHaveLength(1);
-      expect(resources).toHaveLength(3);
+      const { allArns, genericEntries } = explorer.normalize(searchResult.resources, 'us-east-1');
+      const ecsEntries = genericEntries.filter((e) => e.resourceType === 'ecs');
+
+      expect(ecsEntries).toHaveLength(15);
+      expect(allArns.size).toBe(15);
     });
   });
 });
