@@ -1,7 +1,21 @@
 #!/usr/bin/env node
 
 /**
- * Database Migration Runner
+ * DEPRECATED — not the canonical migration runner.
+ *
+ * database/migrate.js is the canonical migration runner for this repository
+ * (see database/migrations/README.md). This script has no migration-tracking
+ * ledger of its own — it re-executes every file in database/migrations/ on
+ * every invocation, relying entirely on each file's own idempotency, with no
+ * record of what has already run and no checksum protection against a file
+ * being edited after it was applied.
+ *
+ * Do not use this script for new deployments or migrations. It remains in
+ * the repository pending an explicit future removal decision; no evidence
+ * was found (as of the forensic migration audit) that it has ever been
+ * wired into any deployment, CI/CD, or package script.
+ *
+ * Database Migration Runner (legacy, non-canonical)
  * Runs all SQL migrations in order
  */
 
