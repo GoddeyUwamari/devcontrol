@@ -28,6 +28,7 @@ import { WeeklyAISummaryJob } from './jobs/weekly-ai-summary.job';
 import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
+import { RELEASE_SHA, BUILT_AT } from './version';
 import { createForecastRoutes } from './routes/forecast.routes';
 import { createCustomRulesRoutes } from './routes/custom-anomaly-rules.routes';
 import { createDoraBenchmarksRoutes } from './routes/dora-benchmarks.routes';
@@ -154,6 +155,21 @@ app.get('/health', async (req, res) => {
       environment: NODE_ENV,
     });
   }
+});
+
+// Runtime release-identity endpoint (release-lifecycle contract, Phase 3A).
+// Deliberately separate from /health: this reports which build is actually
+// executing in this process, not process/DB health -- the two questions
+// this project's own release-lifecycle audit found were being silently
+// conflated. RELEASE_SHA/BUILT_AT come from ./version, generated once at
+// build time (see scripts/generate-version.js) and compiled into this same
+// artifact -- there is no separate marker file read here, so this can never
+// disagree with what was actually baked into the running code.
+app.get('/version', (req, res) => {
+  res.json({
+    release_sha: RELEASE_SHA,
+    built_at: BUILT_AT,
+  });
 });
 
 // API routes

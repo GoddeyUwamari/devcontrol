@@ -4,8 +4,8 @@
   "description": "Backend API for Platform Portal",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
+    "dev": "node scripts/generate-version.js && ts-node-dev --respawn --transpile-only src/server.ts",
+    "build": "node scripts/generate-version.js && tsc",
     "start": "node dist/server.js",
     "test": "jest"
   },

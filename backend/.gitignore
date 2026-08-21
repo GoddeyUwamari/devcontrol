@@ -3,3 +3,6 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Generated at build time by scripts/generate-version.js -- never checked in.
+src/version.ts
