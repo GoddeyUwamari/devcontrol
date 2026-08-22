@@ -28,7 +28,13 @@ import { WeeklyAISummaryJob } from './jobs/weekly-ai-summary.job';
 import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
-import { RELEASE_SHA, BUILT_AT } from './version';
+import {
+  RELEASE_SHA,
+  BUILT_AT,
+  MINIMUM_REQUIRED_MIGRATION,
+  BASELINE_REPOSITORY_REF,
+  POST_BASELINE_VERIFIED,
+} from './version';
 import { createForecastRoutes } from './routes/forecast.routes';
 import { createCustomRulesRoutes } from './routes/custom-anomaly-rules.routes';
 import { createDoraBenchmarksRoutes } from './routes/dora-benchmarks.routes';
@@ -169,6 +175,9 @@ app.get('/version', (req, res) => {
   res.json({
     release_sha: RELEASE_SHA,
     built_at: BUILT_AT,
+    minimum_required_migration: MINIMUM_REQUIRED_MIGRATION,
+    baseline_repository_ref: BASELINE_REPOSITORY_REF,
+    post_baseline_verified: POST_BASELINE_VERIFIED,
   });
 });
 
