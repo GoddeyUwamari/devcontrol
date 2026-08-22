@@ -1,7 +1,9 @@
 /**
  * Live-Postgres coverage for
- * database/migrations/202608221231_enable_rls_on_anomaly_rules.sql --
- * executes the actual migration file's SQL (read from disk, not
+ * database/migrations-admin/202608221231_enable_rls_on_anomaly_rules.sql --
+ * an administrative migration (see database/migrations-admin/README.md for
+ * why it lives outside database/migrations/). Executes the actual
+ * migration file's SQL (read from disk, not
  * reimplemented) against a disposable fixture shaped like the real
  * production `anomaly_rules` table, in an isolated schema. Confirms it:
  *   - enables RLS and creates both policies on the existing table,
@@ -19,7 +21,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const MIGRATION_SQL = fs.readFileSync(
-  path.join(__dirname, '../../../../database/migrations/202608221231_enable_rls_on_anomaly_rules.sql'),
+  path.join(__dirname, '../../../../database/migrations-admin/202608221231_enable_rls_on_anomaly_rules.sql'),
   'utf8'
 );
 
@@ -220,5 +222,16 @@ describe('202608221231_enable_rls_on_anomaly_rules.sql', () => {
     } finally {
       await client.end();
     }
+  });
+
+  it('(7) classification: this administrative migration is invisible to the ordinary migration path', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getMigrationFiles, MIGRATIONS_DIR } = require('../../../../database/migrate.js');
+
+    const ordinaryFiles = getMigrationFiles(MIGRATIONS_DIR);
+    expect(ordinaryFiles).not.toContain('202608221231_enable_rls_on_anomaly_rules.sql');
+
+    const adminDir = path.join(MIGRATIONS_DIR, '..', 'migrations-admin');
+    expect(fs.existsSync(path.join(adminDir, '202608221231_enable_rls_on_anomaly_rules.sql'))).toBe(true);
   });
 });

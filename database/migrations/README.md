@@ -67,6 +67,13 @@ X was applied" — only what the evidence actually supports.
   runner. It remains in the repository as-is; see "Historical provenance"
   above. Do not merge it into `database/migrations/`, rename its files, or
   delete it without a separate, explicit decision.
+- **Related, deliberately separate:** `database/migrations-admin/` holds
+  migrations requiring ownership-level DDL that the application's
+  `devcontrol` role cannot perform (e.g. `ENABLE ROW LEVEL SECURITY` on a
+  `postgres`-owned table). It is never scanned by `database/migrate.js`'s
+  ordinary `MIGRATIONS_DIR` resolution or by
+  `.github/scripts/ci-bootstrap-schema.js` — see
+  `database/migrations-admin/README.md` for the full mechanism.
 
 ## Baseline
 
