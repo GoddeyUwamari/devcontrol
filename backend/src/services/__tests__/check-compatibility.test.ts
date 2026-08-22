@@ -419,12 +419,16 @@ describe('database/check-compatibility.js — read-only evaluator', () => {
     }
   });
 
-  it('(12) fetchDeclarationFromGit: reading an uncommitted path from a real commit throws, not a status', () => {
+  it('(12) fetchDeclarationFromGit: reading a ref that predates release-compatibility.json throws, not a status', () => {
     const repoRoot = path.join(__dirname, '..', '..', '..', '..');
-    // release-compatibility.json exists on disk at the repo root (Gate A) but
-    // has not been committed -- `git show HEAD:...` for an untracked path
-    // must fail. This is a real, read-only `git show` against local history:
-    // no network, no production contact, and no commit made by this test.
-    expect(() => fetchDeclarationFromGit('HEAD', repoRoot)).toThrow();
+    // HEAD~1 is a real, resolvable commit in this repository's actual history
+    // that predates release-compatibility.json's introduction -- unlike
+    // testing against an uncommitted local file (which breaks the moment
+    // this repo's own Phase 3F commit lands, as it does on CI verification
+    // branches), a historical ref that genuinely never had the file is a
+    // stable fixture regardless of the file's current commit status. This is
+    // a real, read-only `git show` against local history: no network, no
+    // production contact, and no commit made by this test.
+    expect(() => fetchDeclarationFromGit('HEAD~1', repoRoot)).toThrow();
   });
 });
