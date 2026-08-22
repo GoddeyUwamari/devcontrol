@@ -27,13 +27,44 @@ function resolveSha() {
   }
 }
 
+// Reads the tracked, human-authored release-compatibility declaration from
+// release-compatibility.json at the repo root (a sibling of both backend/
+// and database/ -- deliberately NOT inside database/, since that directory
+// is packaged verbatim into the migration-tooling deploy artifact and this
+// declaration is release/backend-side metadata, not something that ships to
+// the production host alongside migrate.js). Unlike RELEASE_SHA, these
+// fields are never derived -- they are copied forward verbatim from a
+// committed source, since version.ts itself is git-ignored and regenerated
+// every build (see backend/.gitignore). A missing file means "no declaration
+// for this release" (all fields null, evaluated as RELEASE-UNKNOWN
+// downstream) -- that is not an error. Malformed JSON in a file that does
+// exist IS an error and fails the build loudly, since that means someone's
+// authored declaration is broken, not absent.
+function resolveDeclaration() {
+  const declarationPath = path.join(__dirname, '..', '..', 'release-compatibility.json');
+  if (!fs.existsSync(declarationPath)) {
+    return { minimum_required_migration: null, baseline_repository_ref: null, post_baseline_verified: null };
+  }
+  const raw = fs.readFileSync(declarationPath, 'utf8');
+  const parsed = JSON.parse(raw);
+  return {
+    minimum_required_migration: parsed.minimum_required_migration ?? null,
+    baseline_repository_ref: parsed.baseline_repository_ref ?? null,
+    post_baseline_verified: parsed.post_baseline_verified ?? null,
+  };
+}
+
 const releaseSha = resolveSha();
 const builtAt = new Date().toISOString();
+const declaration = resolveDeclaration();
 
 const content = `// Auto-generated at build time by backend/scripts/generate-version.js.
 // Do not edit by hand -- regenerated on every "npm run build" / "npm run dev".
 export const RELEASE_SHA = ${JSON.stringify(releaseSha)};
 export const BUILT_AT = ${JSON.stringify(builtAt)};
+export const MINIMUM_REQUIRED_MIGRATION = ${JSON.stringify(declaration.minimum_required_migration)};
+export const BASELINE_REPOSITORY_REF = ${JSON.stringify(declaration.baseline_repository_ref)};
+export const POST_BASELINE_VERIFIED = ${JSON.stringify(declaration.post_baseline_verified)};
 `;
 
 fs.writeFileSync(path.join(__dirname, '..', 'src', 'version.ts'), content);

@@ -33,12 +33,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Full history (not the default depth-1 shallow clone) -- required
+          # by validate-release-compatibility-declaration.js below, which
+          # verifies a declared migration's post-baseline claim against real
+          # git history (git rev-parse / git ls-tree against an arbitrary
+          # historical ref). No other job's checkout needs this and none
+          # were changed.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: Validate release-compatibility declaration
+        run: node .github/scripts/validate-release-compatibility-declaration.js
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
