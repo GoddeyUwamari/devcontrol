@@ -145,6 +145,19 @@ describe('CustomAnomalyRulesService targets anomaly_rules, not custom_anomaly_ru
     expect(rows[0].metric).toBe('ec2_cpu');
   });
 
+  it('(4) UPDATE — updateRule() modifies the row in anomaly_rules', async () => {
+    const rule = await service.createRule(orgA, {
+      name: 'original', metric: 'total_cost', condition: 'greater_than', threshold: 100,
+    });
+    const updated = await service.updateRule(rule.id, orgA, { name: 'renamed', threshold: 200 });
+    expect(updated.name).toBe('renamed');
+    expect(updated.threshold).toBe(200);
+
+    const { rows } = await admin.query(`SELECT name, threshold FROM anomaly_rules WHERE id = $1`, [rule.id]);
+    expect(rows[0].name).toBe('renamed');
+    expect(await rowCount('custom_anomaly_rules')).toBe(0);
+  });
+
   it('(5) DELETE — deleteRule() removes the row from anomaly_rules', async () => {
     const rule = await service.createRule(orgA, {
       name: 'to delete', metric: 'total_cost', condition: 'less_than', threshold: 10,
@@ -152,5 +165,20 @@ describe('CustomAnomalyRulesService targets anomaly_rules, not custom_anomaly_ru
     await service.deleteRule(rule.id, orgA);
     expect(await rowCount('anomaly_rules')).toBe(0);
     expect(await rowCount('custom_anomaly_rules')).toBe(0);
+  });
+
+  it('(6) organization isolation — a rule from org B is invisible/unmodifiable via org A', async () => {
+    const bRule = await service.createRule(orgB, {
+      name: 'org-b rule', metric: 'total_cost', condition: 'greater_than', threshold: 50,
+    });
+
+    const aRules = await service.getRules(orgA);
+    expect(aRules.find(r => r.id === bRule.id)).toBeUndefined();
+
+    await expect(service.updateRule(bRule.id, orgA, { name: 'hijacked' })).rejects.toThrow('Rule not found');
+    await expect(service.deleteRule(bRule.id, orgA)).rejects.toThrow('Rule not found');
+
+    const { rows } = await admin.query(`SELECT name FROM anomaly_rules WHERE id = $1`, [bRule.id]);
+    expect(rows[0].name).toBe('org-b rule');
   });
 });

@@ -67,14 +67,14 @@ export class CustomAnomalyRulesService {
     const values: any[] = [];
     let idx = 1;
 
-    if (payload.name !== undefined)        { fields.push(`name = ${idx++}`);        values.push(payload.name); }
-    if (payload.description !== undefined) { fields.push(`description = ${idx++}`); values.push(payload.description); }
-    if (payload.metric !== undefined)      { fields.push(`metric = ${idx++}`);      values.push(payload.metric); }
-    if (payload.condition !== undefined)   { fields.push(`condition = ${idx++}`);   values.push(payload.condition); }
-    if (payload.threshold !== undefined)   { fields.push(`threshold = ${idx++}`);   values.push(payload.threshold); }
-    if (payload.timeWindow !== undefined)  { fields.push(`time_window = ${idx++}`); values.push(payload.timeWindow); }
-    if (payload.severity !== undefined)    { fields.push(`severity = ${idx++}`);    values.push(payload.severity); }
-    if (payload.enabled !== undefined)     { fields.push(`enabled = ${idx++}`);     values.push(payload.enabled); }
+    if (payload.name !== undefined)        { fields.push(`name = $${idx++}`);        values.push(payload.name); }
+    if (payload.description !== undefined) { fields.push(`description = $${idx++}`); values.push(payload.description); }
+    if (payload.metric !== undefined)      { fields.push(`metric = $${idx++}`);      values.push(payload.metric); }
+    if (payload.condition !== undefined)   { fields.push(`condition = $${idx++}`);   values.push(payload.condition); }
+    if (payload.threshold !== undefined)   { fields.push(`threshold = $${idx++}`);   values.push(payload.threshold); }
+    if (payload.timeWindow !== undefined)  { fields.push(`time_window = $${idx++}`); values.push(payload.timeWindow); }
+    if (payload.severity !== undefined)    { fields.push(`severity = $${idx++}`);    values.push(payload.severity); }
+    if (payload.enabled !== undefined)     { fields.push(`enabled = $${idx++}`);     values.push(payload.enabled); }
 
     fields.push(`updated_at = NOW()`);
     values.push(id, organizationId);
@@ -82,7 +82,7 @@ export class CustomAnomalyRulesService {
     const result = await this.pool.query(
       `UPDATE anomaly_rules
        SET ${fields.join(', ')}
-       WHERE id = ${idx++} AND organization_id = ${idx++}
+       WHERE id = $${idx++} AND organization_id = $${idx++}
        RETURNING *`,
       values
     );
