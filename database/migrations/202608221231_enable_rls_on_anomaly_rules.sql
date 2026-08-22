@@ -40,6 +40,20 @@
 --   the owning role/superusers, which the app never connects as).
 -- Date: 2026-08-22
 
+-- IMPORTANT OPERATIONAL NOTE:
+-- This migration must be executed explicitly with:
+--
+--   node database/migrate.js --execute-only 202608221231_enable_rls_on_anomaly_rules.sql
+--
+-- Do NOT run this migration via the generic --pending mode.
+-- The repository still contains the abandoned migration
+-- 202608221112_create_custom_anomaly_rules.sql, which attempts to
+-- CREATE TABLE custom_anomaly_rules and will fail against the existing
+-- production table before this migration can be reached.
+--
+-- This migration intentionally operates on the existing anomaly_rules
+-- table and does not create, drop, rename, or modify custom_anomaly_rules.
+
 DO $$
 DECLARE
   tbl_oid oid;
