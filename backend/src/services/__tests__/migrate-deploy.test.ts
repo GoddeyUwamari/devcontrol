@@ -705,8 +705,13 @@ describe('deploy-migration-tooling artifact packaging excludes seeds/ (executes 
 });
 
 describe('database/migrate.js — parseCliArgs (pure, no DB)', () => {
-  it('defaults: no flags means no dry-run, no baseline note, no repository ref', () => {
-    expect(parseCliArgs([])).toEqual({ dryRun: false, initBaselineNote: null, repositoryRef: null });
+  it('defaults: no flags means no dry-run, no baseline note, no repository ref, no execute-only target', () => {
+    expect(parseCliArgs([])).toEqual({
+      dryRun: false,
+      initBaselineNote: null,
+      repositoryRef: null,
+      executeOnly: null,
+    });
   });
 
   it('--dry-run and --pending both set dryRun', () => {
@@ -731,5 +736,39 @@ describe('database/migrate.js — parseCliArgs (pure, no DB)', () => {
     const result = parseCliArgs(['--repository-ref', 'abc1234']);
     expect(result.repositoryRef).toBe('abc1234');
     expect(result.initBaselineNote).toBeNull();
+  });
+
+  it('--execute-only captures the following argument as the target migration name', () => {
+    const result = parseCliArgs(['--execute-only', '031_new_migration.sql']);
+    expect(result.executeOnly).toBe('031_new_migration.sql');
+  });
+
+  it('--execute-only with no following value parses as empty string, not null — distinguishing "flag present but no value" from "flag absent" (runMigrations must fail closed on the former, never silently fall through to normal mode)', () => {
+    const result = parseCliArgs(['--execute-only']);
+    expect(result.executeOnly).toBe('');
+    expect(result.executeOnly).not.toBeNull();
+  });
+
+  it('--execute-only composes with --dry-run', () => {
+    const result = parseCliArgs(['--dry-run', '--execute-only', '031_new_migration.sql']);
+    expect(result.dryRun).toBe(true);
+    expect(result.executeOnly).toBe('031_new_migration.sql');
+  });
+
+  it('--execute-only absent entirely parses as null, distinct from an empty-string value', () => {
+    const result = parseCliArgs(['--dry-run']);
+    expect(result.executeOnly).toBeNull();
+  });
+
+  it('--execute-only immediately followed by --dry-run is a missing value, not a migration literally named "--dry-run"', () => {
+    const result = parseCliArgs(['--execute-only', '--dry-run']);
+    expect(result.executeOnly).toBe(''); // missing-value sentinel, not the flag's own text
+    expect(result.dryRun).toBe(true); // --dry-run is still recognized as its own flag
+  });
+
+  it('--execute-only immediately followed by any other known flag is likewise treated as a missing value', () => {
+    expect(parseCliArgs(['--execute-only', '--pending']).executeOnly).toBe('');
+    expect(parseCliArgs(['--execute-only', '--init-baseline']).executeOnly).toBe('');
+    expect(parseCliArgs(['--execute-only', '--repository-ref']).executeOnly).toBe('');
   });
 });

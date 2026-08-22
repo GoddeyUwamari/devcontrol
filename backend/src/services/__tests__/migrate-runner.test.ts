@@ -682,3 +682,430 @@ describe('database/migrate.js — legacy schema_migrations upgrade path (backfil
     }
   });
 });
+
+describe('database/migrate.js — targeted execution (--execute-only)', () => {
+  let schemaCounter = 0;
+  const schemas: string[] = [];
+  const fixtureDirs: string[] = [];
+
+  function nextSchema() {
+    const name = `migrate_execonly_test_${Date.now()}_${schemaCounter++}`;
+    schemas.push(name);
+    return name;
+  }
+
+  afterAll(async () => {
+    for (const s of schemas) await dropSchema(s);
+    for (const d of fixtureDirs) rmFixtureDir(d);
+  });
+
+  it('(19) valid pending target: executes only that migration, records exactly one row, leaves other pending migrations untouched and unexecuted', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_old_a.sql': 'CREATE TABLE old_a (id SERIAL PRIMARY KEY);',
+      '002_old_b.sql': 'CREATE TABLE old_b (id SERIAL PRIMARY KEY);',
+      '003_new_target.sql': 'CREATE TABLE new_target (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      const result = await runMigrations({ client, migrationsDir: dir, executeOnly: '003_new_target.sql' });
+
+      expect(result.executed).toEqual(['003_new_target.sql']);
+      expect(result.executeOnlyTarget).toBe('003_new_target.sql');
+
+      const { rows } = await client.query('SELECT migration_name FROM schema_migrations');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].migration_name).toBe('003_new_target.sql');
+
+      // The two "historical" files were never touched — no tables created,
+      // no ledger rows, nothing recorded as applied.
+      const targetTable = await client.query(`SELECT to_regclass('${schema}.new_target') AS t`);
+      expect(targetTable.rows[0].t).not.toBeNull();
+      const oldA = await client.query(`SELECT to_regclass('${schema}.old_a') AS t`);
+      expect(oldA.rows[0].t).toBeNull();
+      const oldB = await client.query(`SELECT to_regclass('${schema}.old_b') AS t`);
+      expect(oldB.rows[0].t).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(20) invalid target — filename does not exist: fails closed, zero DB changes', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_only.sql': 'CREATE TABLE only_thing (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: '999_does_not_exist.sql' })
+      ).rejects.toThrow(/was not found/);
+
+      const { rows } = await client.query('SELECT * FROM schema_migrations');
+      expect(rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(21) invalid target — already applied: fails closed rather than silently re-executing or no-op-succeeding', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_already.sql': 'CREATE TABLE already_applied (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await runMigrations({ client, migrationsDir: dir }); // normal run applies it first
+      const before = await client.query('SELECT COUNT(*)::int AS n FROM schema_migrations');
+      expect(before.rows[0].n).toBe(1);
+
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: '001_already.sql' })
+      ).rejects.toThrow(/already recorded in schema_migrations/);
+
+      const after = await client.query('SELECT COUNT(*)::int AS n FROM schema_migrations');
+      expect(after.rows[0].n).toBe(1); // not duplicated, not touched
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(22) invalid target — checksum mismatch on the target itself: fails closed with the existing mismatch error, not a distinct message', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const filePath = (d: string) => path.join(d, '001_drifted.sql');
+    const dir = mkFixtureDir({
+      '001_drifted.sql': 'CREATE TABLE drifted (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await runMigrations({ client, migrationsDir: dir });
+      fs.writeFileSync(filePath(dir), 'CREATE TABLE drifted (id SERIAL PRIMARY KEY, extra TEXT);', 'utf8');
+
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: '001_drifted.sql' })
+      ).rejects.toThrow(/Checksum mismatch/);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(23) global checksum safety: an unrelated mismatched migration blocks targeted execution too, even though the target itself is clean', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const stablePath = (d: string) => path.join(d, '001_stable.sql');
+    const dir = mkFixtureDir({
+      '001_stable.sql': 'CREATE TABLE stable_thing (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await runMigrations({ client, migrationsDir: dir });
+      fs.writeFileSync(stablePath(dir), 'CREATE TABLE stable_thing (id SERIAL PRIMARY KEY, changed BOOLEAN);', 'utf8');
+      fs.writeFileSync(
+        path.join(dir, '002_clean_target.sql'),
+        'CREATE TABLE clean_target (id SERIAL PRIMARY KEY);',
+        'utf8'
+      );
+
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: '002_clean_target.sql' })
+      ).rejects.toThrow(/Checksum mismatch/);
+
+      // The clean target must not have been executed either — the global
+      // mismatch gate blocks everything, targeted mode included.
+      const targetTable = await client.query(`SELECT to_regclass('${schema}.clean_target') AS t`);
+      expect(targetTable.rows[0].t).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(24) dry-run: zero writes, no ledger row, target and untouched-pending list reported correctly', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_old_hist.sql': 'CREATE TABLE old_hist (id SERIAL PRIMARY KEY);',
+      '002_new_dry.sql': 'CREATE TABLE new_dry (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      const result = await runMigrations({
+        client,
+        migrationsDir: dir,
+        executeOnly: '002_new_dry.sql',
+        dryRun: true,
+      });
+
+      expect(result.executed).toEqual([]);
+      expect(result.executeOnlyTarget).toBe('002_new_dry.sql');
+      // Full pending set remains reported (unfiltered) — this is what the
+      // banner's "other pending migrations" list is derived from.
+      expect(result.pending).toEqual(['001_old_hist.sql', '002_new_dry.sql']);
+
+      const { rows } = await client.query('SELECT * FROM schema_migrations');
+      expect(rows).toHaveLength(0);
+
+      const newDryTable = await client.query(`SELECT to_regclass('${schema}.new_dry') AS t`);
+      expect(newDryTable.rows[0].t).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(25) dry-run target validation still fails closed: an invalid target is rejected even under --dry-run, never silently accepted as a preview', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_only.sql': 'CREATE TABLE only_thing2 (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: '999_missing.sql', dryRun: true })
+      ).rejects.toThrow(/was not found/);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(26) --execute-only requires a non-empty value: an empty string (flag present, no value) fails closed rather than silently behaving like normal mode', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_only.sql': 'CREATE TABLE only_thing3 (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: '' })
+      ).rejects.toThrow(/requires a migration name/);
+
+      // Confirm it did NOT fall through and run the normal full sweep.
+      const { rows } = await client.query('SELECT * FROM schema_migrations');
+      expect(rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(27) rejects a path, not a bare filename, as the target', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_only.sql': 'CREATE TABLE only_thing4 (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: '../001_only.sql' })
+      ).rejects.toThrow(/not a path/);
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: 'subdir/001_only.sql' })
+      ).rejects.toThrow(/not a path/);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(28) normal mode is completely unaffected: with executeOnly unset (or null), full-sweep behavior is byte-for-byte the same as before this feature existed', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_first.sql': 'CREATE TABLE normal_first (id SERIAL PRIMARY KEY);',
+      '002_second.sql': 'CREATE TABLE normal_second (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      const result = await runMigrations({ client, migrationsDir: dir });
+      expect(result.executed).toEqual(['001_first.sql', '002_second.sql']);
+      expect(result.executeOnlyTarget).toBeUndefined();
+
+      const { rows } = await client.query('SELECT COUNT(*)::int AS n FROM schema_migrations');
+      expect(rows[0].n).toBe(2);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(29) advisory lock: targeted execution acquires and releases the same lock key, re-acquirable immediately after', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_locked.sql': 'CREATE TABLE locked_target (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await runMigrations({ client, migrationsDir: dir, executeOnly: '001_locked.sql' });
+
+      const second = new Client(dbConfig());
+      await second.connect();
+      try {
+        const { rows } = await second.query('SELECT pg_try_advisory_lock($1) AS acquired', [ADVISORY_LOCK_KEY]);
+        expect(rows[0].acquired).toBe(true);
+        await second.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]);
+      } finally {
+        await second.end();
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(30) advisory lock: a failed targeted execution still releases the lock (rollback + finally, same as normal mode)', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_broken_target.sql': 'CREATE TABLE broken_target (id SERIAL PRIMARY KEY,);', // syntax error
+    });
+    fixtureDirs.push(dir);
+    try {
+      await expect(
+        runMigrations({ client, migrationsDir: dir, executeOnly: '001_broken_target.sql' })
+      ).rejects.toThrow();
+
+      const { rows } = await client.query('SELECT * FROM schema_migrations');
+      expect(rows).toHaveLength(0);
+      const table = await client.query(`SELECT to_regclass('${schema}.broken_target') AS t`);
+      expect(table.rows[0].t).toBeNull();
+
+      const second = new Client(dbConfig());
+      await second.connect();
+      try {
+        const { rows: lockRows } = await second.query(
+          'SELECT pg_try_advisory_lock($1) AS acquired',
+          [ADVISORY_LOCK_KEY]
+        );
+        expect(lockRows[0].acquired).toBe(true);
+        await second.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]);
+      } finally {
+        await second.end();
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(31) provenance boundary: a successful targeted execution never touches migration_tracking_baseline, and schema_migrations rows mean exactly what a normal-mode row means', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_provenance_check.sql': 'CREATE TABLE provenance_check (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await runMigrations({ client, migrationsDir: dir, initBaselineNote: 'baseline for provenance-boundary test' });
+      await runMigrations({ client, migrationsDir: dir, executeOnly: '001_provenance_check.sql' });
+
+      // Baseline row itself is completely untouched by targeted execution.
+      const baseline = await getBaseline(client);
+      expect(baseline.note).toBe('baseline for provenance-boundary test');
+
+      // The inserted row has the exact same shape/columns a normal-mode
+      // execution produces — no new column, no provenance tag, nothing
+      // distinguishing it from any other runner-executed row.
+      const { rows } = await client.query('SELECT migration_name, checksum, executed_at FROM schema_migrations');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].migration_name).toBe('001_provenance_check.sql');
+      expect(rows[0].checksum).toBe(computeChecksum('CREATE TABLE provenance_check (id SERIAL PRIMARY KEY);'));
+      expect(rows[0].executed_at).toBeInstanceOf(Date);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(32) source inspection: database/migrate.js never shells out to anything (no child_process, no exec/spawn) — the provenance boundary is structural, not just documented. The file\'s doc comments legitimately mention `git show` as an operator-performed, out-of-band instruction; this test proves the script itself never executes it', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../../../database/migrate.js'), 'utf8');
+    expect(source).not.toMatch(/require\(\s*['"]child_process['"]\s*\)/);
+    expect(source).not.toMatch(/\bexecSync\s*\(|\bexec\s*\(|\bspawn\s*\(|\bspawnSync\s*\(/);
+  });
+
+  it('(33) end-to-end: `--execute-only --dry-run` (parsed exactly as the CLI would) fails closed as a missing-value invocation, never treating "--dry-run" as the migration name', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_only.sql': 'CREATE TABLE cli_edge_only (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { parseCliArgs: parse } = require('../../../../database/migrate.js');
+      const parsed = parse(['--execute-only', '--dry-run']);
+      expect(parsed.executeOnly).toBe('');
+      expect(parsed.dryRun).toBe(true);
+
+      await expect(
+        runMigrations({ client, migrationsDir: dir, ...parsed })
+      ).rejects.toThrow(/requires a migration name/);
+
+      const { rows } = await client.query('SELECT * FROM schema_migrations');
+      expect(rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(34) --execute-only combined with --init-baseline fails closed as mutually exclusive, rather than silently running baseline-init and ignoring the target', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({
+      '001_only.sql': 'CREATE TABLE cli_edge_combo (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+    try {
+      await expect(
+        runMigrations({
+          client,
+          migrationsDir: dir,
+          initBaselineNote: 'should never be created',
+          executeOnly: '001_only.sql',
+        })
+      ).rejects.toThrow(/mutually exclusive/);
+
+      // Neither operation happened — the check runs before ensureTrackingTables,
+      // so this isolated schema never even gets its own schema_migrations /
+      // migration_tracking_baseline tables (confirmed precisely, scoped to
+      // this schema, not an unqualified query that could fall through
+      // search_path to an unrelated pre-existing table of the same name in
+      // `public`).
+      const ledgerTables = await client.query(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name IN ('schema_migrations', 'migration_tracking_baseline')`,
+        [schema]
+      );
+      expect(ledgerTables.rows).toEqual([]);
+      const table = await client.query(`SELECT to_regclass('${schema}.cli_edge_combo') AS t`);
+      expect(table.rows[0].t).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('(35) the mutual-exclusion check runs before any DB connection side effect: tracking tables are never even bootstrapped for a rejected combination', async () => {
+    const schema = nextSchema();
+    const client = await newIsolatedClient(schema);
+    const dir = mkFixtureDir({});
+    fixtureDirs.push(dir);
+    try {
+      await expect(
+        runMigrations({
+          client,
+          migrationsDir: dir,
+          initBaselineNote: 'note',
+          executeOnly: 'x.sql',
+        })
+      ).rejects.toThrow(/mutually exclusive/);
+
+      // ensureTrackingTables() never ran for this rejected call — neither
+      // ledger table exists in this fresh, otherwise-untouched schema.
+      const tables = await client.query(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = $1`,
+        [schema]
+      );
+      expect(tables.rows.map((r: { table_name: string }) => r.table_name)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+});

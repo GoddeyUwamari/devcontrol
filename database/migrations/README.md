@@ -119,12 +119,71 @@ node database/migrate.js --dry-run                # list pending migrations, exe
 node database/migrate.js --pending                 # same as --dry-run
 node database/migrate.js --init-baseline "<note>" [--repository-ref <ref>]
                                                     # establish the baseline (one-time)
+node database/migrate.js --execute-only <name> [--dry-run]
+                                                    # execute exactly one named, currently-pending
+                                                    # migration, leaving every other pending
+                                                    # migration untouched
 ```
 
 `--repository-ref` is optional and purely operator-supplied (e.g. a deployed
 git SHA read from `.deployed_sha` — see "Production deployment" below). It
 is never inferred or guessed by the script itself, and has no effect unless
 combined with `--init-baseline`.
+
+### `--execute-only` — targeted execution of one migration
+
+**What problem this solves:** a database with a baseline but an empty
+`schema_migrations` (production's actual current state) has every
+pre-baseline migration file classified as `pending`, because "pending"
+means "no ledger row," regardless of whether the migration's effect is
+already known to be reflected in the live schema. Plain `node database/migrate.js`
+would attempt to re-execute all of them. `--execute-only <name>` lets an
+operator apply exactly one genuinely new migration without triggering that
+full sweep — the rest of the pending set is reported, explicitly, as
+untouched.
+
+**What this flag does NOT do, and never will:** it does not determine,
+verify, or attest to whether the named migration predates or postdates the
+baseline. `database/migrate.js` never invokes `git` and never will — the
+deployed migration-tooling artifact on the production host has no `.git`
+directory at all, so any such check would silently behave differently
+depending on environment, which would be a misleading safety guarantee
+worse than no guarantee at all.
+
+**Mandatory operator precondition, performed BEFORE invoking this flag,
+from a repository-aware environment (a developer checkout, not the
+production host):**
+
+```bash
+git show <migration_tracking_baseline.repository_ref>:database/migrations/
+```
+
+Confirm the target migration's file did **not** exist at that commit. This
+is what actually establishes "post-baseline" — the tool cannot establish it
+for you, and every invocation prints a warning saying exactly that:
+
+> Pending status does not prove historical non-execution. Post-baseline
+> status is not verified by this tool and must be independently confirmed
+> by the operator before invocation.
+
+**What the tool does check, automatically, before executing anything:**
+the target file exists in `database/migrations/`; it is currently
+classified as `pending` (not already applied, not checksum-mismatched); no
+*other* migration anywhere in the ledger has a checksum mismatch (the
+existing global fail-closed rule — unchanged, unweakened). The same
+advisory lock, the same per-migration `BEGIN`/`COMMIT`/`ROLLBACK`
+transaction, and the same `schema_migrations` insert shape as normal-mode
+execution are used — a row this creates means exactly what a row created
+by the full sweep means: *the runner executed this migration during this
+invocation.* Nothing more, nothing retroactive.
+
+**Do not use this to reconstruct historical execution.** `--execute-only`
+is for a migration you already know is genuinely new and post-baseline —
+never as a convenient way to hand-run `001`–`030` one at a time to make an
+empty ledger look populated. That would manufacture execution history and
+sidestep the real, still-unresolved provenance question this project has
+deliberately left open rather than paper over. See "Historical provenance"
+above for why.
 
 ## Production deployment
 
@@ -216,6 +275,17 @@ cd /home/ubuntu/devcontrol
 NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js \
   --init-baseline "production schema as of <date>; historical migration provenance not reconstructed, see database/migrations/README.md" \
   --repository-ref "$(cat database/.deployed_sha)"
+```
+
+And, for a single genuinely-new migration — only after the git-history
+precondition above has been performed, and only as its own explicitly-
+approved step, never part of any deployment:
+
+```bash
+cd /home/ubuntu/devcontrol
+NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --dry-run --execute-only <name>
+# review the preview output, then:
+NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --execute-only <name>
 ```
 
 ## Naming convention for new migrations

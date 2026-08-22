@@ -21,6 +21,20 @@
  *                                                       purely operator-supplied — e.g. a deployed git SHA —
  *                                                       never inferred or guessed by this script. Ignored
  *                                                       when --init-baseline is not also given.
+ *   node database/migrate.js --execute-only <name> [--dry-run]
+ *                                                       Execute exactly one named, currently-pending migration,
+ *                                                       leaving every other pending migration untouched. Exists
+ *                                                       so a genuinely new, post-baseline migration can be
+ *                                                       applied even while schema_migrations is historically
+ *                                                       incomplete for migrations that predate the baseline.
+ *                                                       This does NOT determine, verify, or attest to whether
+ *                                                       the named migration is actually post-baseline — that is
+ *                                                       an operator precondition (see database/migrations/README.md),
+ *                                                       established via `git show <baseline_repository_ref>:
+ *                                                       database/migrations/` from a repository-aware environment
+ *                                                       BEFORE invoking this flag, never by this script itself.
+ *                                                       This script never invokes git and never claims pending
+ *                                                       status proves historical non-execution.
  *
  * Environment Variables:
  * - DB_HOST: Database host (default: localhost)
@@ -248,6 +262,112 @@ async function initBaseline(client, note, repositoryRef) {
   return rows[0];
 }
 
+// Fixed wording, printed by every --execute-only invocation (dry-run and
+// real). Deliberately not conditional on whether a baseline exists or what
+// its repository_ref says — this tool cannot know whether the operator
+// actually performed the git-history check, so it warns unconditionally
+// rather than implying verification it never performed.
+const PROVENANCE_WARNING =
+  'Pending status does not prove historical non-execution. Post-baseline status is not ' +
+  'verified by this tool and must be independently confirmed by the operator before invocation.';
+
+function printTargetedBanner({ target, otherPending, executed }) {
+  console.log(`\n${'='.repeat(60)}`);
+  console.log('TARGETED MIGRATION MODE');
+  console.log('='.repeat(60));
+  console.log(`\nTarget:\n  ${target}\n`);
+  console.log(executed ? 'ONLY the target migration was executed.' : 'ONLY the target migration will be executed.');
+  console.log('\nOther migrations currently classified as pending:');
+  if (otherPending.length === 0) {
+    console.log('  (none)');
+  } else {
+    otherPending.forEach((file) => console.log(`  ${file}`));
+  }
+  console.log('\nThose migrations WILL NOT be executed.');
+  console.log('\nWARNING:');
+  console.log(PROVENANCE_WARNING);
+  console.log('='.repeat(60));
+}
+
+/**
+ * Executes exactly one named, currently-pending migration — never any
+ * other file — leaving schema_migrations' meaning completely unchanged: a
+ * row this inserts means exactly what a row inserted by the normal full
+ * sweep means ("the runner executed this migration during this
+ * invocation"), nothing more. Does not read migration_tracking_baseline,
+ * does not invoke git, does not attempt to infer whether the target
+ * predates or postdates the baseline — see the module doc comment and
+ * database/migrations/README.md for why that's an operator precondition,
+ * not something this function can establish.
+ *
+ * Callers must have already run the same global checksum-mismatch check
+ * `runMigrations` runs for normal mode (`mismatched.length > 0` refuses
+ * everything) before calling this — targeted mode never weakens that
+ * check, it only ever runs after it has already passed.
+ */
+async function runTargetedExecution({ client, migrationsDir, executeOnly, dryRun, files, pending, result }) {
+  if (!executeOnly.trim()) {
+    throw new Error(
+      '--execute-only requires a migration name, e.g.: --execute-only 031_new_migration.sql'
+    );
+  }
+  if (executeOnly.includes('/') || executeOnly.includes('\\') || executeOnly !== path.basename(executeOnly)) {
+    throw new Error(
+      `--execute-only must be a bare migration filename scoped to ${migrationsDir}, not a path: "${executeOnly}"`
+    );
+  }
+  if (!files.includes(executeOnly)) {
+    throw new Error(`--execute-only target "${executeOnly}" was not found in ${migrationsDir}.`);
+  }
+
+  const target = pending.find((p) => p.file === executeOnly);
+  if (!target) {
+    // In `files` but not in `pending`, and (by the time this is called)
+    // never in `mismatched` either — the shared mismatch check already
+    // refused if it were. The only remaining possibility is that it's
+    // already recorded as applied.
+    throw new Error(
+      `--execute-only target "${executeOnly}" is already recorded in schema_migrations — ` +
+      'nothing to do. Refusing to re-execute an already-applied migration.'
+    );
+  }
+
+  const otherPending = pending.filter((p) => p.file !== executeOnly).map((p) => p.file);
+
+  if (dryRun) {
+    console.log('\n🔍 Dry run — targeted execution preview (not executed):');
+    printTargetedBanner({ target: executeOnly, otherPending, executed: false });
+    return result;
+  }
+
+  await client.query(`SELECT pg_advisory_lock(${ADVISORY_LOCK_KEY})`);
+  try {
+    const sql = fs.readFileSync(path.join(migrationsDir, executeOnly), 'utf8');
+    console.log(`\n🚀 Executing (targeted): ${executeOnly}`);
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query(
+        'INSERT INTO schema_migrations (migration_name, checksum) VALUES ($1, $2)',
+        [executeOnly, target.checksum]
+      );
+      await client.query('COMMIT');
+      console.log(`✅ Applied: ${executeOnly}`);
+      result.executed.push(executeOnly);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error(`❌ Failed: ${executeOnly} — ${error.message}`);
+      console.error('   Rolled back. Not recorded as applied.');
+      throw error;
+    }
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock(${ADVISORY_LOCK_KEY})`);
+  }
+
+  printTargetedBanner({ target: executeOnly, otherPending, executed: true });
+  return result;
+}
+
 async function getAppliedMigrations(client) {
   const { rows } = await client.query(
     'SELECT migration_name, checksum, executed_at FROM schema_migrations ORDER BY migration_name'
@@ -301,9 +421,22 @@ async function runMigrations(options = {}) {
     dryRun = false,
     initBaselineNote = null,
     repositoryRef = null,
+    executeOnly = null,
     migrationsDir = MIGRATIONS_DIR,
     client: injectedClient = null,
   } = options;
+
+  // Checked before any DB connection is attempted — a pure, synchronous
+  // validation of the options themselves. --execute-only and
+  // --init-baseline are two different one-time, deliberate operations;
+  // combining them has no coherent meaning and must fail closed rather
+  // than silently letting --init-baseline's early return swallow
+  // --execute-only.
+  if (initBaselineNote !== null && executeOnly !== null) {
+    throw new Error(
+      '--execute-only and --init-baseline are mutually exclusive and cannot be combined in a single invocation.'
+    );
+  }
 
   const client = injectedClient || getClient();
   const ownsConnection = !injectedClient;
@@ -389,6 +522,16 @@ async function runMigrations(options = {}) {
       throw new Error('Checksum mismatch on previously-applied migration(s); refusing to proceed');
     }
 
+    // Targeted mode is an explicit, opt-in branch entered ONLY when
+    // --execute-only is given. It runs after the same global checksum
+    // -mismatch gate above (never weakened for this mode) and never falls
+    // through to the normal full-sweep dry-run/execution code below —
+    // normal mode's own behavior is completely unreachable from here.
+    if (executeOnly !== null) {
+      result.executeOnlyTarget = executeOnly;
+      return await runTargetedExecution({ client, migrationsDir, executeOnly, dryRun, files, pending, result });
+    }
+
     if (dryRun) {
       console.log('\n🔍 Dry run — pending migrations (not executed):');
       if (pending.length === 0) console.log('   (none)');
@@ -459,7 +602,23 @@ function parseCliArgs(argv) {
   const repositoryRefFlagIdx = argv.indexOf('--repository-ref');
   const repositoryRef = repositoryRefFlagIdx !== -1 ? (argv[repositoryRefFlagIdx + 1] || null) : null;
 
-  return { dryRun, initBaselineNote, repositoryRef };
+  // `null` = flag absent entirely (normal mode). `''` (empty string) = flag
+  // present but no value followed it — runMigrations()/runTargetedExecution
+  // must fail closed on that, never silently fall through to normal mode.
+  // Mirrors --init-baseline's existing `|| ''` convention, with one
+  // deliberate addition: if the token immediately after --execute-only is
+  // itself a recognized flag (e.g. `--execute-only --dry-run`), that's a
+  // missing value, not a migration literally named "--dry-run" — treated
+  // the same as no value at all, so it still fails closed downstream rather
+  // than being accepted as a bogus target name.
+  const KNOWN_FLAGS = ['--dry-run', '--pending', '--init-baseline', '--repository-ref', '--execute-only'];
+  const executeOnlyFlagIdx = argv.indexOf('--execute-only');
+  const executeOnlyRawValue = executeOnlyFlagIdx !== -1 ? argv[executeOnlyFlagIdx + 1] : undefined;
+  const executeOnly = executeOnlyFlagIdx !== -1
+    ? (executeOnlyRawValue && !KNOWN_FLAGS.includes(executeOnlyRawValue) ? executeOnlyRawValue : '')
+    : null;
+
+  return { dryRun, initBaselineNote, repositoryRef, executeOnly };
 }
 
 module.exports = {
