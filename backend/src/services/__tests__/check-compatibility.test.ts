@@ -9,6 +9,7 @@
  * directory.
  */
 
+import { execSync } from 'child_process';
 import { Client } from 'pg';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -421,14 +422,21 @@ describe('database/check-compatibility.js — read-only evaluator', () => {
 
   it('(12) fetchDeclarationFromGit: reading a ref that predates release-compatibility.json throws, not a status', () => {
     const repoRoot = path.join(__dirname, '..', '..', '..', '..');
-    // HEAD~1 is a real, resolvable commit in this repository's actual history
-    // that predates release-compatibility.json's introduction -- unlike
-    // testing against an uncommitted local file (which breaks the moment
-    // this repo's own Phase 3F commit lands, as it does on CI verification
-    // branches), a historical ref that genuinely never had the file is a
-    // stable fixture regardless of the file's current commit status. This is
-    // a real, read-only `git show` against local history: no network, no
+    // A fixed offset like HEAD~1 is NOT stable -- it breaks the instant any
+    // further commit lands on top (as happened when this very test's own fix
+    // was committed). Instead, resolve the actual commit that first
+    // introduced release-compatibility.json via `git log --follow`, and use
+    // ITS PARENT as the ref -- a fact anchored to the file's real history,
+    // true regardless of how many commits follow it. This is a real,
+    // read-only git operation against local history: no network, no
     // production contact, and no commit made by this test.
-    expect(() => fetchDeclarationFromGit('HEAD~1', repoRoot)).toThrow();
+    const introducingCommits = execSync(
+      'git log --follow --format=%H -- release-compatibility.json',
+      { cwd: repoRoot, encoding: 'utf8' }
+    ).trim().split('\n').filter(Boolean);
+    const firstCommitWithFile = introducingCommits[introducingCommits.length - 1];
+    const refBeforeFileExisted = `${firstCommitWithFile}^`;
+
+    expect(() => fetchDeclarationFromGit(refBeforeFileExisted, repoRoot)).toThrow();
   });
 });
