@@ -14,6 +14,14 @@
  * confirmed by that same README to be dead migrations rather than ones
  * this CI job happens to skip for convenience, is what lets every other
  * migration apply cleanly to a brand-new database.
+ *
+ * Also excludes 202608221231_enable_rls_on_anomaly_rules.sql for the same
+ * reason: it ALTERs the pre-existing, production-only anomaly_rules table
+ * (see that migration's own header) and deliberately refuses to run against
+ * any database where anomaly_rules doesn't already exist -- which a fresh
+ * CI database never will. Its own comments document that it must only ever
+ * be run via `--execute-only` against production, never via a blanket
+ * --pending run; this is that same constraint applied to CI's bootstrap.
  */
 const fs = require('fs');
 const path = require('path');
@@ -25,6 +33,7 @@ const SOURCE_DIR = path.join(__dirname, '..', '..', 'database', 'migrations');
 const EXCLUDED = new Set([
   '026_api_keys_org_scoping.sql',
   '027_webhook_endpoints_org_scoping.sql',
+  '202608221231_enable_rls_on_anomaly_rules.sql',
 ]);
 
 async function main() {

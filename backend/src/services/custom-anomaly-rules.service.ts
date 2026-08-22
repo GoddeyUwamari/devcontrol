@@ -34,7 +34,7 @@ export class CustomAnomalyRulesService {
 
   async getRules(organizationId: string, client?: PoolClient): Promise<CustomAnomalyRule[]> {
     const result = await (client ?? this.pool).query(
-      `SELECT * FROM custom_anomaly_rules
+      `SELECT * FROM anomaly_rules
        WHERE organization_id = $1
        ORDER BY created_at DESC`,
       [organizationId]
@@ -44,7 +44,7 @@ export class CustomAnomalyRulesService {
 
   async createRule(organizationId: string, payload: CreateRulePayload): Promise<CustomAnomalyRule> {
     const result = await this.pool.query(
-      `INSERT INTO custom_anomaly_rules
+      `INSERT INTO anomaly_rules
          (organization_id, name, description, metric, condition, threshold, time_window, severity)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
@@ -67,22 +67,22 @@ export class CustomAnomalyRulesService {
     const values: any[] = [];
     let idx = 1;
 
-    if (payload.name !== undefined)        { fields.push(`name = ${idx++}`);        values.push(payload.name); }
-    if (payload.description !== undefined) { fields.push(`description = ${idx++}`); values.push(payload.description); }
-    if (payload.metric !== undefined)      { fields.push(`metric = ${idx++}`);      values.push(payload.metric); }
-    if (payload.condition !== undefined)   { fields.push(`condition = ${idx++}`);   values.push(payload.condition); }
-    if (payload.threshold !== undefined)   { fields.push(`threshold = ${idx++}`);   values.push(payload.threshold); }
-    if (payload.timeWindow !== undefined)  { fields.push(`time_window = ${idx++}`); values.push(payload.timeWindow); }
-    if (payload.severity !== undefined)    { fields.push(`severity = ${idx++}`);    values.push(payload.severity); }
-    if (payload.enabled !== undefined)     { fields.push(`enabled = ${idx++}`);     values.push(payload.enabled); }
+    if (payload.name !== undefined)        { fields.push(`name = $${idx++}`);        values.push(payload.name); }
+    if (payload.description !== undefined) { fields.push(`description = $${idx++}`); values.push(payload.description); }
+    if (payload.metric !== undefined)      { fields.push(`metric = $${idx++}`);      values.push(payload.metric); }
+    if (payload.condition !== undefined)   { fields.push(`condition = $${idx++}`);   values.push(payload.condition); }
+    if (payload.threshold !== undefined)   { fields.push(`threshold = $${idx++}`);   values.push(payload.threshold); }
+    if (payload.timeWindow !== undefined)  { fields.push(`time_window = $${idx++}`); values.push(payload.timeWindow); }
+    if (payload.severity !== undefined)    { fields.push(`severity = $${idx++}`);    values.push(payload.severity); }
+    if (payload.enabled !== undefined)     { fields.push(`enabled = $${idx++}`);     values.push(payload.enabled); }
 
     fields.push(`updated_at = NOW()`);
     values.push(id, organizationId);
 
     const result = await this.pool.query(
-      `UPDATE custom_anomaly_rules
+      `UPDATE anomaly_rules
        SET ${fields.join(', ')}
-       WHERE id = ${idx++} AND organization_id = ${idx++}
+       WHERE id = $${idx++} AND organization_id = $${idx++}
        RETURNING *`,
       values
     );
@@ -93,7 +93,7 @@ export class CustomAnomalyRulesService {
 
   async deleteRule(id: string, organizationId: string): Promise<void> {
     const result = await this.pool.query(
-      `DELETE FROM custom_anomaly_rules
+      `DELETE FROM anomaly_rules
        WHERE id = $1 AND organization_id = $2`,
       [id, organizationId]
     );
