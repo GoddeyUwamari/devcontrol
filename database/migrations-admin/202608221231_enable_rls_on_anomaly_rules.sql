@@ -40,19 +40,52 @@
 --   the owning role/superusers, which the app never connects as).
 -- Date: 2026-08-22
 
--- IMPORTANT OPERATIONAL NOTE:
--- This migration must be executed explicitly with:
+-- ADMINISTRATIVE MIGRATION -- see database/migrations-admin/README.md.
 --
+-- This file lives in database/migrations-admin/, NOT database/migrations/,
+-- because it requires ownership-level DDL (ENABLE ROW LEVEL SECURITY,
+-- CREATE POLICY) that the application's normal `devcontrol` database role
+-- cannot perform -- devcontrol is deliberately non-owner/non-superuser on
+-- every application table, which is exactly what makes RLS meaningful once
+-- enabled. `anomaly_rules` is owned by `postgres`.
+--
+-- This structural separation (a different source directory, not a naming
+-- convention or an exclusion list) is what guarantees this file can never
+-- be picked up by an ordinary `node database/migrate.js --pending` sweep
+-- or by .github/scripts/ci-bootstrap-schema.js, both of which only ever
+-- scan database/migrations/.
+--
+-- IMPORTANT OPERATIONAL NOTE:
+-- This migration must be executed explicitly, using the canonical
+-- database/migrate.js runner (unmodified -- same checksum, transaction,
+-- advisory-lock, and schema_migrations behavior as any normal migration),
+-- pointed at the administrative deployment location and connected as
+-- PostgreSQL role `postgres` via Unix-socket peer authentication (no
+-- password, no new credential -- see database/migrations-admin/README.md
+-- for the full mechanism):
+--
+--   cd /opt/devcontrol-admin
+--   DB_USER=postgres DB_HOST=/var/run/postgresql \
 --   node database/migrate.js --execute-only 202608221231_enable_rls_on_anomaly_rules.sql
 --
--- Do NOT run this migration via the generic --pending mode.
--- The repository still contains the abandoned migration
--- 202608221112_create_custom_anomaly_rules.sql, which attempts to
--- CREATE TABLE custom_anomaly_rules and will fail against the existing
--- production table before this migration can be reached.
+-- No NODE_PATH override is needed or used: the administrative deployment
+-- ships its own self-contained node_modules/ (just `pg` and its
+-- dependencies) as a sibling of migrate.js, found by Node's ordinary
+-- module resolution -- deliberately, so nothing here ever needs to read
+-- from /home/ubuntu (see database/migrations-admin/README.md).
 --
--- This migration intentionally operates on the existing anomaly_rules
--- table and does not create, drop, rename, or modify custom_anomaly_rules.
+-- Do NOT run this migration via the generic --pending mode -- there is
+-- currently no automated sweep of database/migrations-admin/ at all, by
+-- design; every administrative migration requires its own separate,
+-- explicit execution authorization.
+--
+-- Unrelated to this file's own classification, but worth restating: the
+-- repository still separately contains the abandoned
+-- database/migrations/202608221112_create_custom_anomaly_rules.sql, which
+-- attempts to CREATE TABLE custom_anomaly_rules and would fail against the
+-- existing, incompatible production table of that name. This migration
+-- intentionally operates only on the existing anomaly_rules table and does
+-- not create, drop, rename, or modify custom_anomaly_rules.
 
 DO $$
 DECLARE
