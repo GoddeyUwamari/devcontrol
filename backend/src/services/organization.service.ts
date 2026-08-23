@@ -373,13 +373,40 @@ export class OrganizationService {
         invitationToken,
       });
     } else {
-      // User doesn't exist - invitationToken is NOT persisted anywhere in
-      // this branch (no membership row is created until the user registers),
-      // so there is nothing an accept-invitation link could later look up.
-      // Sending an email here would hand out a link that can never be
-      // completed. This is a separate, pre-existing persistence gap (not
-      // introduced or fixed by this change) -- intentionally left unwired
-      // rather than emailing an unusable token.
+      // User doesn't exist yet - persist a standalone invitation (durable,
+      // independent of organization_memberships, which requires a real
+      // user_id) so the link can be looked up and completed once they
+      // register and call acceptInvitation(). Upsert on
+      // (organization_id, lower(email)) WHERE accepted_at IS NULL so
+      // re-inviting the same not-yet-registered address refreshes the
+      // token/role/expiry instead of accumulating stale pending rows --
+      // see 202608231400_create_organization_invitations.sql.
+      await pool.query(
+        `INSERT INTO organization_invitations (
+          organization_id,
+          email,
+          role,
+          invited_by,
+          invitation_token,
+          invitation_expires_at
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (organization_id, lower(email)) WHERE accepted_at IS NULL
+        DO UPDATE SET
+          role = EXCLUDED.role,
+          invited_by = EXCLUDED.invited_by,
+          invitation_token = EXCLUDED.invitation_token,
+          invitation_expires_at = EXCLUDED.invitation_expires_at,
+          updated_at = NOW()`,
+        [organizationId, email.toLowerCase(), role, invitedBy, invitationToken, invitationExpiry]
+      );
+
+      await emailService.sendInvitationEmail({
+        to: email,
+        organizationName: org.displayName || org.name,
+        role,
+        invitationToken,
+      });
+
       console.log(
         `📧 Invitation sent to ${email} for organization ${organizationId}`
       );
@@ -401,27 +428,116 @@ export class OrganizationService {
       [invitationToken, userId]
     );
 
-    if (result.rows.length === 0) {
+    if (result.rows.length > 0) {
+      const { organization_id, role } = result.rows[0];
+
+      // Mark as joined
+      await pool.query(
+        `UPDATE organization_memberships
+         SET joined_at = NOW(),
+             invitation_token = NULL,
+             invitation_expires_at = NULL,
+             is_active = true
+         WHERE invitation_token = $1 AND user_id = $2`,
+        [invitationToken, userId]
+      );
+
+      return {
+        organizationId: organization_id,
+        role,
+      };
+    }
+
+    // Not an organization_memberships invitation for this user -- fall back
+    // to a standalone organization_invitations row (inviteUser()'s
+    // non-existent-user branch), which the invitee can now redeem since
+    // reaching this authenticated endpoint means they've since registered.
+    return this.acceptPendingInvitation(invitationToken, userId);
+  }
+
+  /**
+   * Accept a standalone invitation (organization_invitations) issued to an
+   * email that had no account at invite time. The invitee must have
+   * registered by now -- acceptInvitation() is only reachable authenticated.
+   */
+  private async acceptPendingInvitation(invitationToken: string, userId: string): Promise<any> {
+    const userResult = await pool.query(
+      'SELECT email FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
       throw new Error('Invalid or expired invitation');
     }
 
-    const { organization_id, role } = result.rows[0];
+    const accountEmail: string = userResult.rows[0].email;
 
-    // Mark as joined
-    await pool.query(
-      `UPDATE organization_memberships
-       SET joined_at = NOW(),
-           invitation_token = NULL,
-           invitation_expires_at = NULL,
-           is_active = true
-       WHERE invitation_token = $1 AND user_id = $2`,
-      [invitationToken, userId]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    return {
-      organizationId: organization_id,
-      role,
-    };
+      // FOR UPDATE: prevents a concurrent double-accept of the same
+      // invitation from both passing the accepted_at IS NULL check.
+      const invitationResult = await client.query(
+        `SELECT id, organization_id, email, role, invited_by
+         FROM organization_invitations
+         WHERE invitation_token = $1
+           AND invitation_expires_at > NOW()
+           AND accepted_at IS NULL
+         FOR UPDATE`,
+        [invitationToken]
+      );
+
+      if (invitationResult.rows.length === 0) {
+        throw new Error('Invalid or expired invitation');
+      }
+
+      const invitation = invitationResult.rows[0];
+
+      if (invitation.email.toLowerCase() !== accountEmail.toLowerCase()) {
+        throw new Error('This invitation was sent to a different email address');
+      }
+
+      const existingMembership = await client.query(
+        'SELECT id FROM organization_memberships WHERE organization_id = $1 AND user_id = $2',
+        [invitation.organization_id, userId]
+      );
+
+      if (existingMembership.rows.length > 0) {
+        throw new Error('User is already a member of this organization');
+      }
+
+      await client.query(
+        `INSERT INTO organization_memberships (
+          organization_id,
+          user_id,
+          role,
+          invited_by,
+          joined_at,
+          is_active
+        ) VALUES ($1, $2, $3, $4, NOW(), true)`,
+        [invitation.organization_id, userId, invitation.role, invitation.invited_by]
+      );
+
+      await client.query(
+        `UPDATE organization_invitations
+         SET accepted_at = NOW(), accepted_user_id = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [userId, invitation.id]
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        organizationId: invitation.organization_id,
+        role: invitation.role,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**

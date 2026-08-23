@@ -223,7 +223,14 @@ describe('OrganizationService.inviteUser() -> invitation email', () => {
     expect(expiryMs).toBeLessThanOrEqual(7 * 24 * 60 * 60 * 1000);
   });
 
-  it('non-existent-user branch: does NOT send an invitation email, because no token is persisted for that branch', async () => {
+  it('non-existent-user branch: now sends the invitation email, backed by organization_invitations', async () => {
+    // The persistence gap this test originally documented (token generated,
+    // never persisted, so sending would be a dead link) was closed by
+    // 202608231400_create_organization_invitations.sql -- see the dedicated,
+    // thorough coverage in organization-invitation-lifecycle.test.ts for the
+    // full persistence/acceptance state machine. This is a lighter
+    // regression check that the wiring point in inviteUser() itself still
+    // fires for this branch.
     const sendInviteSpy = jest.spyOn(emailService, 'sendInvitationEmail').mockResolvedValue(true);
 
     const orgId = await insertOrg();
@@ -238,16 +245,14 @@ describe('OrganizationService.inviteUser() -> invitation email', () => {
     });
 
     expect(result.invitationToken).toBeTruthy();
-    expect(sendInviteSpy).not.toHaveBeenCalled();
+    expect(sendInviteSpy).toHaveBeenCalledTimes(1);
+    expect(sendInviteSpy.mock.calls[0][0].invitationToken).toBe(result.invitationToken);
 
-    // Confirms this really is the known, pre-existing persistence gap (not
-    // solved by this change): nothing in the database references this token,
-    // so sending an email for it would have handed out a dead link.
     const { rows } = await pool.query(
-      `SELECT COUNT(*)::int AS count FROM organization_memberships
+      `SELECT COUNT(*)::int AS count FROM organization_invitations
        WHERE organization_id = $1 AND invitation_token = $2`,
       [orgId, result.invitationToken]
     );
-    expect(rows[0].count).toBe(0);
+    expect(rows[0].count).toBe(1);
   });
 });
