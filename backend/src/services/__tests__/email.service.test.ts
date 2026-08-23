@@ -202,6 +202,32 @@ describe('EmailService', () => {
       expect(loggedArgs).toContain('network timeout');
     });
 
+    it('returns false and logs safely (no token, no template data) when template rendering throws', async () => {
+      const EmailService = EmailServiceClass();
+      const service = new EmailService();
+
+      // Force a rendering failure without a new mocking seam -- same
+      // (service as any) pattern already used elsewhere in this suite --
+      // to prove send()'s try/catch now also covers template(templateData),
+      // not just the Resend network call.
+      (service as any).passwordResetTemplate = () => {
+        throw new Error('template render boom');
+      };
+
+      const result = await service.sendPasswordResetEmail({
+        to: 'user@example.com',
+        resetToken: 'super-secret-reset-token',
+      });
+
+      expect(result).toBe(false);
+      expect(mockSend).not.toHaveBeenCalled(); // never reached Resend at all
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedArgs = consoleErrorSpy.mock.calls.flat().map(String).join(' ');
+      expect(loggedArgs).toContain('template render boom');
+      expect(loggedArgs).not.toContain('super-secret-reset-token');
+      expect(loggedArgs).not.toContain('test-api-key');
+    });
+
     it('never throws out of sendVerificationEmail even on failure', async () => {
       mockSend.mockRejectedValueOnce(new Error('boom'));
       const EmailService = EmailServiceClass();
