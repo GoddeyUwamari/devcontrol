@@ -366,7 +366,6 @@ export class OrganizationService {
       console.log(
         `📧 Invitation sent to ${email} for organization ${organizationId}`
       );
-      console.log(`Invitation token: ${invitationToken}`);
     }
 
     // TODO: Send invitation email
