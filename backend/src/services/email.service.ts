@@ -110,9 +110,8 @@ export class EmailService {
       return false;
     }
 
-    const html = template(templateData);
-
     try {
+      const html = template(templateData);
       const result = await this.resend.emails.send({
         from: this.getSenderAddress(),
         to,
