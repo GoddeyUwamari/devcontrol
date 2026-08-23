@@ -21,6 +21,7 @@ import { Pool } from 'pg';
 import bcrypt from 'bcrypt';
 import { organizationService } from '../organization.service';
 import { emailService } from '../email.service';
+import { pool as appPool } from '../../config/database';
 
 function dbConfig() {
   return {
@@ -206,6 +207,88 @@ describe('OrganizationService.acceptInvitation() -> pending invitation path', ()
     await expect(
       organizationService.acceptInvitation(invite.invitationToken, invitee.id)
     ).rejects.toThrow('Invalid or expired invitation');
+  });
+
+  it('genuinely concurrent acceptance of the same pending invitation: exactly one attempt succeeds', async () => {
+    // Unlike the sequential double-accept test above, all acceptInvitation()
+    // calls below are fired without awaiting between them and raced via
+    // Promise.allSettled -- exercising real overlapping Postgres transactions
+    // racing on acceptPendingInvitation()'s `SELECT ... FOR UPDATE` against
+    // the actual database (not mocked, not serialized by the test itself).
+    //
+    // The appPool.query('SELECT 1') warm-up below is load-bearing, not
+    // decoration: verified empirically (by temporarily removing FOR UPDATE
+    // from the implementation) that without pre-warming, node-postgres's
+    // lazy connection establishment means the first request usually reuses
+    // an already-idle connection and fully completes its transaction before
+    // the pool finishes opening fresh physical connections for the rest --
+    // so every "loser" cleanly sees an already-accepted row and the test
+    // passes for the wrong reason regardless of whether FOR UPDATE is
+    // present. Forcing CONCURRENCY connections to exist and be idle first
+    // makes the acceptInvitation() calls actually start their transactions
+    // together, which is what actually exercises the row lock: confirmed
+    // that with the warm-up in place, removing FOR UPDATE makes this test
+    // fail reliably (multiple acceptances racing past the SELECT before any
+    // commits, then colliding on organization_memberships' unique
+    // constraint with a raw duplicate-key error) and restoring it makes the
+    // test pass reliably, across repeated runs both ways.
+    jest.spyOn(emailService, 'sendInvitationEmail').mockResolvedValue(true);
+    const { orgId, ownerId } = await insertOrgWithOwner();
+    const invitedEmail = uniqueEmail('concurrent-accept');
+
+    const invite = await organizationService.inviteUser(orgId, {
+      email: invitedEmail,
+      role: 'member',
+      invitedBy: ownerId,
+    });
+    const invitee = await insertUser({ email: invitedEmail, full_name: 'Concurrent Invitee' });
+
+    const CONCURRENCY = 25;
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => appPool.query('SELECT 1')));
+
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: CONCURRENCY }, () =>
+        organizationService.acceptInvitation(invite.invitationToken, invitee.id)
+      )
+    );
+
+    const fulfilled = outcomes.filter(
+      (o): o is PromiseFulfilledResult<any> => o.status === 'fulfilled'
+    );
+    const rejected = outcomes.filter(
+      (o): o is PromiseRejectedResult => o.status === 'rejected'
+    );
+
+    // Exactly one acceptance succeeds, all others fail/reject -- and every
+    // rejection is the clean, expected error, not a raw DB constraint
+    // violation (which is what a broken/missing lock would produce, as
+    // confirmed above).
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(CONCURRENCY - 1);
+    for (const r of rejected) {
+      expect(r.reason.message).toBe('Invalid or expired invitation');
+    }
+    expect(fulfilled[0].value).toEqual({ organizationId: orgId, role: 'member' });
+
+    // Exactly one membership was created -- no duplicate/partial state, and
+    // the pre-existing organization_memberships (organization_id, user_id)
+    // UNIQUE constraint would itself have rejected a second INSERT even if
+    // the row lock had somehow failed to serialize the two attempts.
+    const membership = await pool.query(
+      'SELECT id FROM organization_memberships WHERE organization_id = $1 AND user_id = $2',
+      [orgId, invitee.id]
+    );
+    expect(membership.rows).toHaveLength(1);
+
+    // The invitation is accepted exactly once, attributed to the one
+    // winning acceptance -- not left half-updated or double-updated.
+    const invitationRow = await pool.query(
+      `SELECT accepted_at, accepted_user_id FROM organization_invitations WHERE invitation_token = $1`,
+      [invite.invitationToken]
+    );
+    expect(invitationRow.rows).toHaveLength(1);
+    expect(invitationRow.rows[0].accepted_at).not.toBeNull();
+    expect(invitationRow.rows[0].accepted_user_id).toBe(invitee.id);
   });
 
   it("rejects when the invitation's email does not match the accepting account's email", async () => {
