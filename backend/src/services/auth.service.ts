@@ -206,7 +206,6 @@ export class AuthService {
       );
 
       // TODO: Send verification email
-      console.log(`📧 Email verification token for ${email}: ${verificationToken}`);
       console.log(`✅ Created organization "${organizationName}" (slug: ${slug}) for ${email}`);
 
       return {
@@ -640,7 +639,6 @@ export class AuthService {
     );
 
     // TODO: Send password reset email
-    console.log(`🔑 Password reset token for ${email}: ${resetToken}`);
 
     return 'If the email exists, a password reset link has been sent.';
   }
