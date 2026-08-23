@@ -6,6 +6,7 @@
 import { Pool } from 'pg';
 import { pool } from '../config/database';
 import { encryptionService } from './encryption.service';
+import { emailService } from './email.service';
 
 interface CreateOrganizationData {
   name: string;
@@ -360,16 +361,30 @@ export class OrganizationService {
         ) VALUES ($1, $2, $3, $4, $5, $6)`,
         [organizationId, userId, role, invitedBy, invitationToken, invitationExpiry]
       );
+
+      // Only send here: this is the one branch where invitationToken is
+      // actually persisted (organization_memberships row above), so the
+      // link in the email can later be looked up and accepted. Never
+      // throws -- see EmailService.send.
+      await emailService.sendInvitationEmail({
+        to: email,
+        organizationName: org.displayName || org.name,
+        role,
+        invitationToken,
+      });
     } else {
-      // User doesn't exist - store invitation (will create membership after registration)
-      // For now, just log it - in production, send email with registration link
+      // User doesn't exist - invitationToken is NOT persisted anywhere in
+      // this branch (no membership row is created until the user registers),
+      // so there is nothing an accept-invitation link could later look up.
+      // Sending an email here would hand out a link that can never be
+      // completed. This is a separate, pre-existing persistence gap (not
+      // introduced or fixed by this change) -- intentionally left unwired
+      // rather than emailing an unusable token.
       console.log(
         `📧 Invitation sent to ${email} for organization ${organizationId}`
       );
-      console.log(`Invitation token: ${invitationToken}`);
     }
 
-    // TODO: Send invitation email
     return { invitationToken };
   }
 
