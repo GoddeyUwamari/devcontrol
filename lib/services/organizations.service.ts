@@ -51,6 +51,11 @@ export interface UpdateMemberRoleRequest {
   role: "owner" | "admin" | "member" | "viewer";
 }
 
+export interface AcceptInvitationResult {
+  organizationId: string;
+  role: string;
+}
+
 export interface AWSCredentials {
   accessKeyId: string;
   secretAccessKey: string;
@@ -144,15 +149,16 @@ export const organizationsService = {
   },
 
   /**
-   * Accept an invitation
+   * Accept an invitation using the token from the invitation email
    */
   async acceptInvitation(
-    organizationId: string,
-    inviteId: string
-  ): Promise<void> {
-    await api.post(
-      `/api/organizations/${organizationId}/invitations/${inviteId}/accept`
-    );
+    invitationToken: string
+  ): Promise<AcceptInvitationResult> {
+    const response = await api.post<{
+      success: boolean;
+      data: AcceptInvitationResult;
+    }>("/api/organizations/accept-invitation", { invitationToken });
+    return response.data.data;
   },
 
   /**
