@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import { pool } from '../config/database';
 import { encryptionService } from './encryption.service';
+import { emailService } from './email.service';
 
 const BCRYPT_ROUNDS = 10;
 const ACCESS_TOKEN_EXPIRY = '7d'; // 7 days
@@ -205,8 +206,14 @@ export class AuthService {
         refreshToken
       );
 
-      // TODO: Send verification email
-      console.log(`📧 Email verification token for ${email}: ${verificationToken}`);
+      // Runs after COMMIT, so a delivery failure can never roll back or fail
+      // the registration that already succeeded -- emailService itself never
+      // throws (see EmailService.send), it only logs and returns false.
+      await emailService.sendVerificationEmail({
+        to: email,
+        fullName,
+        verificationToken,
+      });
       console.log(`✅ Created organization "${organizationName}" (slug: ${slug}) for ${email}`);
 
       return {
@@ -639,8 +646,14 @@ export class AuthService {
       [resetToken, resetExpiry, userId]
     );
 
-    // TODO: Send password reset email
-    console.log(`🔑 Password reset token for ${email}: ${resetToken}`);
+    // emailService.sendPasswordResetEmail never throws and its result is
+    // intentionally not inspected here -- the response below must be
+    // identical whether the account exists, doesn't exist, or the email
+    // provider fails, to preserve the account-enumeration-safe contract.
+    await emailService.sendPasswordResetEmail({
+      to: email,
+      resetToken,
+    });
 
     return 'If the email exists, a password reset link has been sent.';
   }
