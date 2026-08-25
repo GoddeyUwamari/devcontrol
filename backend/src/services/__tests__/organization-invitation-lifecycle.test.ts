@@ -74,6 +74,35 @@ async function insertOrgWithOwner(overrides: { max_users?: number } = {}) {
   return { orgId, ownerId: owner.id };
 }
 
+// Separate from insertOrgWithOwner because that helper's `overrides.max_users ?? 5`
+// can't express a real NULL (?? treats null and undefined the same) and always
+// hardcodes subscription_tier to 'free' -- both needed to reproduce the
+// removed-duplicate-check regression scenarios below.
+async function insertOrgWithOwnerAndLimit(overrides: {
+  subscription_tier?: string;
+  max_users?: number | null;
+} = {}) {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tier = overrides.subscription_tier ?? 'free';
+  const maxUsers = overrides.max_users === undefined ? 5 : overrides.max_users;
+  const { rows } = await pool.query(
+    `INSERT INTO organizations (name, slug, display_name, subscription_tier, max_services, max_users)
+     VALUES ($1, $2, $3, $4, 10, $5) RETURNING id`,
+    [`Fixture Org ${suffix}`, `fixture-org-${suffix}`, `Fixture Org Display ${suffix}`, tier, maxUsers]
+  );
+  const orgId = rows[0].id as string;
+  createdOrgIds.push(orgId);
+
+  const owner = await insertUser({ full_name: 'Org Owner' });
+  await pool.query(
+    `INSERT INTO organization_memberships (organization_id, user_id, role, joined_at, is_active)
+     VALUES ($1, $2, 'owner', NOW(), true)`,
+    [orgId, owner.id]
+  );
+
+  return { orgId, ownerId: owner.id };
+}
+
 afterEach(() => {
   jest.restoreAllMocks();
 });
@@ -405,5 +434,67 @@ describe('OrganizationService.acceptInvitation() -> existing-user path (regressi
       [orgId, invitee.email]
     );
     expect(pending.rows).toHaveLength(0);
+  });
+});
+
+// Regression coverage for the removed duplicate limit check
+// (organization.service.ts's own `memberCount >= org.maxUsers`, which had no
+// NULL/-1 handling, unlike checkResourceLimit()). These only prove inviteUser()
+// itself no longer blocks these cases -- actual limit *rejection* is
+// middleware/route-level behavior now and is covered separately in
+// subscription-limits.middleware.test.ts, not here.
+describe('OrganizationService.inviteUser() -> user-limit edge cases (post duplicate-check removal)', () => {
+  it('enterprise organization with max_users = NULL: invite succeeds', async () => {
+    const sendInviteSpy = jest.spyOn(emailService, 'sendInvitationEmail').mockResolvedValue(true);
+    const { orgId, ownerId } = await insertOrgWithOwnerAndLimit({
+      subscription_tier: 'enterprise',
+      max_users: null,
+    });
+    const invitee = await insertUser({ full_name: 'Invitee NULL Limit' });
+
+    const result = await organizationService.inviteUser(orgId, {
+      email: invitee.email,
+      role: 'member',
+      invitedBy: ownerId,
+    });
+
+    expect(result.invitationToken).toBeTruthy();
+    expect(sendInviteSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('organization with max_users = -1 (unlimited sentinel): invite succeeds', async () => {
+    const sendInviteSpy = jest.spyOn(emailService, 'sendInvitationEmail').mockResolvedValue(true);
+    const { orgId, ownerId } = await insertOrgWithOwnerAndLimit({
+      subscription_tier: 'enterprise',
+      max_users: -1,
+    });
+    const invitee = await insertUser({ full_name: 'Invitee Negative-One Limit' });
+
+    const result = await organizationService.inviteUser(orgId, {
+      email: invitee.email,
+      role: 'member',
+      invitedBy: ownerId,
+    });
+
+    expect(result.invitationToken).toBeTruthy();
+    expect(sendInviteSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('normal numeric max_users with capacity remaining: invite still succeeds', async () => {
+    const sendInviteSpy = jest.spyOn(emailService, 'sendInvitationEmail').mockResolvedValue(true);
+    const { orgId, ownerId } = await insertOrgWithOwnerAndLimit({
+      subscription_tier: 'free',
+      max_users: 5,
+    });
+    const invitee = await insertUser({ full_name: 'Invitee Numeric Limit' });
+
+    const result = await organizationService.inviteUser(orgId, {
+      email: invitee.email,
+      role: 'member',
+      invitedBy: ownerId,
+    });
+
+    expect(result.invitationToken).toBeTruthy();
+    expect(sendInviteSpy).toHaveBeenCalledTimes(1);
   });
 });
