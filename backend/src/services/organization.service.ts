@@ -315,13 +315,7 @@ export class OrganizationService {
   ): Promise<{ invitationToken: string }> {
     const { email, role, invitedBy } = data;
 
-    // Check if organization has reached user limit
     const org = await this.getOrganization(organizationId);
-    if (org.stats.memberCount >= org.maxUsers) {
-      throw new Error(
-        `Organization has reached its user limit (${org.maxUsers}). Upgrade to add more users.`
-      );
-    }
 
     // Check if user already exists
     let userId: string | null = null;
