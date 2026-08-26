@@ -21,7 +21,7 @@ export const TIER_LIMITS: Record<SubscriptionTier, {
 }> = {
   free: {
     maxServices: 5,
-    maxUsers: 3,
+    maxUsers: 1,
     maxDeploymentsPerMonth: 10,
     maxResources: 20,
     features: ['basic_dashboard', 'manual_deployments'],
