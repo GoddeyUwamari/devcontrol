@@ -9,6 +9,7 @@ import { Pool } from 'pg';
 import { pool } from '../config/database';
 import { encryptionService } from './encryption.service';
 import { emailService } from './email.service';
+import { TIER_LIMITS } from '../middleware/subscription.middleware';
 
 const BCRYPT_ROUNDS = 10;
 const ACCESS_TOKEN_EXPIRY = '7d'; // 7 days
@@ -144,6 +145,8 @@ export class AuthService {
       const user = userResult.rows[0];
 
       // Create organization for the user
+      // Initial limits come from TIER_LIMITS.free (the single authoritative
+      // plan-definition source) -- never hard-code Free-tier values here.
       const organizationName = `${fullName}'s Workspace`;
       const orgResult = await client.query(
         `INSERT INTO organizations (
@@ -153,8 +156,9 @@ export class AuthService {
           description,
           subscription_tier,
           max_services,
-          max_users
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          max_users,
+          max_deployments_per_month
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, name, slug, display_name, subscription_tier, created_at`,
         [
           organizationName,
@@ -162,8 +166,9 @@ export class AuthService {
           organizationName,
           `Personal workspace for ${fullName}`,
           'free',
-          5,
-          5
+          TIER_LIMITS.free.maxServices,
+          TIER_LIMITS.free.maxUsers,
+          TIER_LIMITS.free.maxDeploymentsPerMonth,
         ]
       );
 

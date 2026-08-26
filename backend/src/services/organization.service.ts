@@ -7,6 +7,7 @@ import { Pool } from 'pg';
 import { pool } from '../config/database';
 import { encryptionService } from './encryption.service';
 import { emailService } from './email.service';
+import { TIER_LIMITS } from '../middleware/subscription.middleware';
 
 interface CreateOrganizationData {
   name: string;
@@ -65,6 +66,8 @@ export class OrganizationService {
       await client.query('BEGIN');
 
       // Create organization
+      // Initial limits come from TIER_LIMITS.free (the single authoritative
+      // plan-definition source) -- never hard-code Free-tier values here.
       const orgResult = await client.query(
         `INSERT INTO organizations (
           name,
@@ -73,10 +76,20 @@ export class OrganizationService {
           description,
           subscription_tier,
           max_services,
-          max_users
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          max_users,
+          max_deployments_per_month
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, name, slug, display_name, description, subscription_tier, created_at`,
-        [name, slug, displayName, description || null, 'free', 10, 5]
+        [
+          name,
+          slug,
+          displayName,
+          description || null,
+          'free',
+          TIER_LIMITS.free.maxServices,
+          TIER_LIMITS.free.maxUsers,
+          TIER_LIMITS.free.maxDeploymentsPerMonth,
+        ]
       );
 
       const organization = orgResult.rows[0];
