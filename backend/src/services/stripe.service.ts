@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { pool } from '../config/database';
+import { TIER_LIMITS, SubscriptionTier } from '../middleware/subscription.middleware';
 
 // Initialize Stripe with API version
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -331,8 +332,40 @@ export class StripeService {
       }
 
       if (data.tier !== undefined) {
-        updates.push(`subscription_tier = $${paramIndex++}`);
-        values.push(data.tier);
+        // Only rewrite the tier + its entitlement columns when the tier is
+        // actually changing. Stripe fires customer.subscription.updated for
+        // many events (renewal, cancel_at_period_end toggling, etc.) that
+        // resolve to the same tier -- those must still update whatever
+        // other fields are present in `data`, but must not needlessly
+        // rewrite subscription_tier/max_services/max_users/
+        // max_deployments_per_month.
+        const currentTierResult = await pool.query(
+          'SELECT subscription_tier FROM organizations WHERE id = $1',
+          [organizationId]
+        );
+        const currentTier = currentTierResult.rows[0]?.subscription_tier;
+
+        if (currentTier !== data.tier) {
+          // Entitlement limits are always derived from the canonical
+          // TIER_LIMITS map for the tier -- never from caller-supplied
+          // values -- and written in the same UPDATE as the tier itself so
+          // they can never observably diverge.
+          const tierLimits = TIER_LIMITS[data.tier as SubscriptionTier];
+
+          updates.push(`subscription_tier = $${paramIndex++}`);
+          values.push(data.tier);
+
+          updates.push(`max_services = $${paramIndex++}`);
+          values.push(tierLimits.maxServices);
+
+          updates.push(`max_users = $${paramIndex++}`);
+          values.push(tierLimits.maxUsers);
+
+          updates.push(`max_deployments_per_month = $${paramIndex++}`);
+          values.push(tierLimits.maxDeploymentsPerMonth);
+        } else {
+          console.log(`ℹ️ Tier unchanged (${currentTier}) - skipping entitlement rewrite`);
+        }
       }
 
       if (data.currentPeriodStart !== undefined) {
