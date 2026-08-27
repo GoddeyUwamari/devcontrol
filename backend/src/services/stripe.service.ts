@@ -2,10 +2,22 @@ import Stripe from 'stripe';
 import { pool } from '../config/database';
 import { TIER_LIMITS, SubscriptionTier } from '../middleware/subscription.middleware';
 
-// Initialize Stripe with API version
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-12-15.clover',
-});
+// Lazily constructed so importing this module never requires
+// STRIPE_SECRET_KEY to be set -- construction only happens on the first
+// real call into the Stripe SDK. Production behavior is unchanged: that
+// first call still throws immediately if the key is missing/invalid, exactly
+// as the previous eager module-load-time construction did; this only defers
+// *when* that happens, it does not weaken or default the credential.
+let stripeClient: Stripe | null = null;
+
+function getStripeClient(): Stripe {
+  if (!stripeClient) {
+    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2025-12-15.clover',
+    });
+  }
+  return stripeClient;
+}
 
 export class StripeService {
   /**
@@ -17,7 +29,7 @@ export class StripeService {
     organizationId: string
   ): Promise<Stripe.Customer> {
     try {
-      const customer = await stripe.customers.create({
+      const customer = await getStripeClient().customers.create({
         email,
         name,
         metadata: {
@@ -53,7 +65,7 @@ export class StripeService {
     cancelUrl: string
   ): Promise<Stripe.Checkout.Session> {
     try {
-      const session = await stripe.checkout.sessions.create({
+      const session = await getStripeClient().checkout.sessions.create({
         customer: customerId,
         mode: 'subscription',
         payment_method_types: ['card'],
@@ -92,7 +104,7 @@ export class StripeService {
     priceId: string
   ): Promise<Stripe.Subscription> {
     try {
-      const subscription = await stripe.subscriptions.create({
+      const subscription = await getStripeClient().subscriptions.create({
         customer: customerId,
         items: [{ price: priceId }],
         payment_behavior: 'default_incomplete',
@@ -112,7 +124,7 @@ export class StripeService {
    */
   async cancelSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
     try {
-      const subscription = await stripe.subscriptions.cancel(subscriptionId);
+      const subscription = await getStripeClient().subscriptions.cancel(subscriptionId);
 
       console.log(`Canceled subscription ${subscriptionId}`);
       return subscription;
@@ -129,7 +141,7 @@ export class StripeService {
     subscriptionId: string
   ): Promise<Stripe.Subscription> {
     try {
-      const subscription = await stripe.subscriptions.update(subscriptionId, {
+      const subscription = await getStripeClient().subscriptions.update(subscriptionId, {
         cancel_at_period_end: true,
       });
 
@@ -146,7 +158,7 @@ export class StripeService {
    */
   async resumeSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
     try {
-      const subscription = await stripe.subscriptions.update(subscriptionId, {
+      const subscription = await getStripeClient().subscriptions.update(subscriptionId, {
         cancel_at_period_end: false,
       });
 
@@ -167,10 +179,10 @@ export class StripeService {
   ): Promise<Stripe.Subscription> {
     try {
       // Get current subscription
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId);
 
       // Update the subscription item with new price
-      const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
+      const updatedSubscription = await getStripeClient().subscriptions.update(subscriptionId, {
         items: [
           {
             id: subscription.items.data[0].id,
@@ -195,7 +207,7 @@ export class StripeService {
     try {
       // Note: Upcoming invoice API may not be available in all Stripe SDK versions
       // Using any type to avoid type issues
-      const invoice = await (stripe.invoices as any).retrieveUpcoming({
+      const invoice = await (getStripeClient().invoices as any).retrieveUpcoming({
         customer: customerId,
       });
 
@@ -218,7 +230,7 @@ export class StripeService {
     limit: number = 10
   ): Promise<Stripe.Invoice[]> {
     try {
-      const invoices = await stripe.invoices.list({
+      const invoices = await getStripeClient().invoices.list({
         customer: customerId,
         limit,
       });
@@ -238,7 +250,7 @@ export class StripeService {
     returnUrl: string
   ): Promise<Stripe.BillingPortal.Session> {
     try {
-      const session = await stripe.billingPortal.sessions.create({
+      const session = await getStripeClient().billingPortal.sessions.create({
         customer: customerId,
         return_url: returnUrl,
       });
@@ -256,7 +268,7 @@ export class StripeService {
    */
   async getSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
     try {
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId);
       return subscription;
     } catch (error) {
       console.error('Error retrieving subscription:', error);
@@ -269,7 +281,7 @@ export class StripeService {
    */
   async getCustomer(customerId: string): Promise<Stripe.Customer> {
     try {
-      const customer = await stripe.customers.retrieve(customerId);
+      const customer = await getStripeClient().customers.retrieve(customerId);
       return customer as Stripe.Customer;
     } catch (error) {
       console.error('Error retrieving customer:', error);
@@ -292,7 +304,7 @@ export class StripeService {
         return null;
       }
 
-      const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      const event = getStripeClient().webhooks.constructEvent(payload, signature, webhookSecret);
       return event;
     } catch (error) {
       console.error('Webhook signature verification failed:', error);
