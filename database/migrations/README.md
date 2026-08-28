@@ -69,11 +69,15 @@ X was applied" — only what the evidence actually supports.
   delete it without a separate, explicit decision.
 - **Related, deliberately separate:** `database/migrations-admin/` holds
   migrations requiring ownership-level DDL that the application's
-  `devcontrol` role cannot perform (e.g. `ENABLE ROW LEVEL SECURITY` on a
-  `postgres`-owned table). It is never scanned by `database/migrate.js`'s
-  ordinary `MIGRATIONS_DIR` resolution or by
-  `.github/scripts/ci-bootstrap-schema.js` — see
-  `database/migrations-admin/README.md` for the full mechanism.
+  `devcontrol` role cannot perform in **production** (e.g. `ENABLE ROW
+  LEVEL SECURITY` on a `postgres`-owned table). It is never scanned by
+  `database/migrate.js`'s ordinary `MIGRATIONS_DIR` resolution, so it can
+  never be swept into a production `--pending` run. It **is** scanned by
+  `.github/scripts/ci-bootstrap-schema.js` (with specific exclusions),
+  since CI's ephemeral database has no ownership split to protect in the
+  first place — see `database/migrations-admin/README.md`'s "CI ephemeral
+  schema inclusion" section for the full mechanism and why that doesn't
+  imply production authorization.
   `022_cost_recommendations_org_scoping.sql`,
   `028_alert_history_org_scoping.sql`, and eleven further migrations
   (`004_add_multi_tenancy.sql`, `005_migrate_existing_data.sql`,

@@ -162,10 +162,11 @@ ownership-based, not keyword-based. As with the moves above, this is a
 - No claim is made that these files' effects are reconciled with
   `schema_migrations` — none of them have a ledger row, and moving them
   does not create, remove, or verify one.
-- This move does not, by itself, change how CI's ephemeral schema is
-  built (`.github/scripts/ci-bootstrap-schema.js` is unmodified and still
-  only scans `database/migrations/`), and does not change any table's
-  actual ownership in any database.
+- This move does not, by itself, change any table's actual ownership in
+  any database. (A later, separate change taught CI's ephemeral schema
+  bootstrap to include eligible files from this directory — see "CI
+  ephemeral schema inclusion" below — but that was not part of this
+  reclassification.)
 - `016_create_ai_generated_reports.sql` is deliberately **not** included
   here despite touching a `postgres`-owned table (`scheduled_reports`):
   it also creates a new, unrelated table (`generated_reports`) in the same
@@ -215,13 +216,50 @@ as a reason to treat either as already applied.
 
 Classification is structural, not a naming convention or a maintained
 exclusion list: a migration is administrative *because* it lives in this
-directory, and nothing here is ever scanned by
-`database/migrate.js`'s ordinary `MIGRATIONS_DIR` resolution (which is
-always `database/migrations/`, hardcoded relative to wherever `migrate.js`
-itself is deployed) or by `.github/scripts/ci-bootstrap-schema.js`'s
-`SOURCE_DIR` (same directory). There is no list to remember to update —
-a migration simply cannot be swept up by the normal path unless it's
-physically moved there.
+directory, and nothing here is ever scanned by `database/migrate.js`'s
+ordinary `MIGRATIONS_DIR` resolution in **production** (always
+`database/migrations/`, hardcoded relative to wherever `migrate.js` itself
+is deployed) — there is no list to remember to update there; a migration
+simply cannot be swept into a production `--pending` sweep unless it's
+physically moved back to the ordinary directory. **This directory's CI
+treatment is different — see "CI ephemeral schema inclusion" below.**
+
+## CI ephemeral schema inclusion
+
+`.github/scripts/ci-bootstrap-schema.js` **does** scan this directory as
+of a later, separate change from every reclassification above — it no
+longer only scans `database/migrations/`. This is deliberately not the
+same thing as production execution:
+
+- The reason this directory exists at all is that production's
+  `devcontrol` role is non-superuser and doesn't own many application
+  tables, so DDL against them must run as `postgres` instead. CI's
+  ephemeral `lint-and-build` Postgres container has no such split: both
+  the schema-bootstrap step and the subsequent test-run step already
+  connect as `DB_USER=postgres` — the actual superuser of that disposable
+  database — so the ownership restriction this directory exists to solve
+  in production **cannot occur in CI regardless of which directory a
+  migration file lives in.**
+- Given that, `ci-bootstrap-schema.js` copies eligible `*.sql` files from
+  **both** `database/migrations/` and this directory into one shared temp
+  directory and applies them through a single `runMigrations()` call —
+  not a second pass — so the runner's own alphabetical filename sort
+  resolves ordering across both directories (e.g. an admin-classified
+  migration that `ALTER`s a table an ordinary migration creates).
+- `202608221231_enable_rls_on_anomaly_rules.sql` is excluded from this CI
+  sweep specifically, for a reason unrelated to ownership: it intentionally
+  `RAISE EXCEPTION`s unless the pre-existing production table
+  `anomaly_rules` already exists with an exact assumed shape, and no
+  migration in this repository creates that table. It cannot succeed
+  against any fresh database, CI included, by its own explicit design —
+  this exclusion reflects what that file already says about itself, not a
+  new decision made for CI's sake.
+- **This CI inclusion does not authorize, perform, or imply execution of
+  any admin migration against production.** Every administrative
+  migration still requires its own separate, explicit production
+  execution authorization exactly as described below — CI building a
+  disposable test schema is a different act entirely from applying DDL to
+  the real database.
 
 ## Explicit authorization required
 
