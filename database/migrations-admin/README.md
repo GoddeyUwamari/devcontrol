@@ -63,14 +63,155 @@ unaffected by this directory's existence or use.
 
 ## Which migrations are classified as administrative
 
-Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`** only.
+Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
+**`202608270610_add_stripe_fields.sql`**,
+**`022_cost_recommendations_org_scoping.sql`**,
+**`028_alert_history_org_scoping.sql`**,
+**`004_add_multi_tenancy.sql`**,
+**`005_migrate_existing_data.sql`**,
+**`006_create_service_dependencies.sql`**,
+**`008_create_aws_resources.sql`**,
+**`009_create_onboarding_progress.sql`**,
+**`010_create_analytics_events.sql`**,
+**`011_add_cost_attribution_to_aws_resources.sql`**,
+**`020_wire_compliance_and_orphaned_scanning.sql`**,
+**`021_wire_cost_recommendations_scanning.sql`**,
+**`023_create_account_security_findings.sql`**,
+**`029_add_resource_reconciliation.sql`**, and
+**`202608272014_extend_scheduled_reports_ai_types.sql`**.
 
 A migration belongs here if and only if it requires ownership-level DDL
 that `devcontrol` cannot perform under its normal grants — enabling RLS on
-a table it doesn't own, creating a policy, or replacing a function it
-doesn't own. Anything `devcontrol` can already do with its existing
-SELECT/INSERT/UPDATE/DELETE-plus-DDL-it-owns privileges belongs in the
-ordinary `database/migrations/` directory instead.
+a table it doesn't own, creating a policy, replacing a function it doesn't
+own, or **any other DDL — including a plain `ALTER TABLE ... ADD COLUMN`
+— against a table `devcontrol` doesn't own.** Anything `devcontrol` can
+already do with its existing SELECT/INSERT/UPDATE/DELETE-plus-DDL-it-owns
+privileges belongs in the ordinary `database/migrations/` directory instead.
+
+`202608270610_add_stripe_fields.sql` was moved into this directory after a
+live `--execute-only` attempt against production failed with PostgreSQL
+`42501: must be owner of table organizations`. Direct inspection confirmed
+`public.organizations` is owned by `postgres` in production (`pg_class` /
+`pg_get_userbyid`), while the ordinary runner connects as `devcontrol`
+(`current_user` = `session_user` = `devcontrol`) — the same ownership
+pattern already documented above for RLS, just triggered by ordinary
+`ADD COLUMN` DDL rather than `ENABLE ROW LEVEL SECURITY`. The failed
+attempt rolled back cleanly (`BEGIN`/`ROLLBACK`, per `database/migrate.js`'s
+own transaction handling) and was never recorded in `schema_migrations` —
+nothing was left partially applied. Only the migration's classification and
+deployment path changed; its SQL is untouched.
+
+`022_cost_recommendations_org_scoping.sql` and
+`028_alert_history_org_scoping.sql` were moved into this directory
+preventively, following a live, read-only production ownership audit (a
+single `pg_class`/`pg_namespace` query, not application documentation)
+across every table targeted by an `ALTER TABLE` statement anywhere in
+`database/migrations/`. That audit **directly observed** that
+`cost_recommendations` and `alert_history` are owned by `postgres` in
+production, and that the ordinary migration runner connects as
+`devcontrol` (`current_user` = `session_user` = `devcontrol`) — the same
+identity/ownership mismatch already established for `organizations`
+above. Both files also contain real `ALTER TABLE ... ENABLE ROW LEVEL
+SECURITY` and `CREATE POLICY` statements against those tables. PostgreSQL
+requires ownership of the target table for both `ALTER TABLE` and `CREATE
+POLICY` — this classification is made **because live ownership was
+verified to not match the connecting role**, not merely because the SQL
+happens to contain the words `ROW LEVEL SECURITY`/`POLICY`; a file
+containing those exact keywords against a `devcontrol`-owned table would
+not belong here, and (per the same audit) a file with neither keyword
+against a `postgres`-owned table still would. This is a **preventive**
+move: no migration in this directory (including these two) has been
+executed as part of this reclassification, and no claim is made here
+about whether either file has ever executed successfully against
+production historically, through any runner or otherwise — that remains
+exactly as unestablished as it was before this change, per the historical
+provenance standard already documented in `database/migrations/README.md`.
+
+`004_add_multi_tenancy.sql`, `005_migrate_existing_data.sql`,
+`006_create_service_dependencies.sql`, `008_create_aws_resources.sql`,
+`009_create_onboarding_progress.sql`, `010_create_analytics_events.sql`,
+`011_add_cost_attribution_to_aws_resources.sql`,
+`020_wire_compliance_and_orphaned_scanning.sql`,
+`021_wire_cost_recommendations_scanning.sql`,
+`023_create_account_security_findings.sql`, and
+`029_add_resource_reconciliation.sql` were moved into this directory as a
+batch, following the same live ownership audit referenced above extended
+to every table targeted by an `ALTER TABLE` statement anywhere in
+`database/migrations/`. That audit **directly observed** each of these
+files' target table(s) — `teams`, `services`, `deployments`,
+`infrastructure_resources`, `cost_recommendations`, `alert_history`,
+`audit_logs`, `service_dependencies`, `aws_resources`,
+`resource_discovery_jobs`, `onboarding_progress`, `analytics_events`, and
+`account_security_findings` — as `postgres`-owned, against the same
+`devcontrol` connecting identity confirmed throughout this document. Some
+of these files also contain real `ENABLE ROW LEVEL SECURITY`/`CREATE
+POLICY` DDL; at least one (`005_migrate_existing_data.sql`) contains
+**no** RLS or policy keywords at all and is classified here purely on
+verified ownership — direct evidence that this classification is
+ownership-based, not keyword-based. As with the moves above, this is a
+**preventive, classification-only** change:
+
+- No migration among these eleven has been executed as part of this
+  reclassification, and none is executed by moving it or by any CI job
+  that packages/deploys this directory.
+- No claim is made about whether any of these files has or has not
+  historically executed successfully against production, through
+  `database/migrate.js`, manually, or otherwise — that remains exactly as
+  unestablished as before this change, per `database/migrations/README.md`'s
+  historical provenance standard.
+- No claim is made that these files' effects are reconciled with
+  `schema_migrations` — none of them have a ledger row, and moving them
+  does not create, remove, or verify one.
+- This move does not, by itself, change how CI's ephemeral schema is
+  built (`.github/scripts/ci-bootstrap-schema.js` is unmodified and still
+  only scans `database/migrations/`), and does not change any table's
+  actual ownership in any database.
+- `016_create_ai_generated_reports.sql` is deliberately **not** included
+  here despite touching a `postgres`-owned table (`scheduled_reports`):
+  it also creates a new, unrelated table (`generated_reports`) in the same
+  file, so a whole-file move would misclassify its safe portion. Resolving
+  it requires a separate content decision, not a plain move.
+- `026_api_keys_org_scoping.sql` and `027_webhook_endpoints_org_scoping.sql`
+  are deliberately **not** included here: their target tables were not
+  found in production at all during the same audit, which is a different,
+  already-documented problem (see `database/migrations/README.md`'s
+  "Specific audited artifacts" table), not an ownership question this
+  directory's mechanism addresses.
+
+`202608272014_extend_scheduled_reports_ai_types.sql` is the resolution of
+the `016_create_ai_generated_reports.sql` mixed-file case flagged above.
+`scheduled_reports` was already confirmed `postgres`-owned by the same
+audit that covers the eleven-file batch. The original file has been
+**retired** (deleted, not repurposed) rather than edited in place or
+reused under its old name, and split in two:
+
+- `database/migrations/202608272013_create_generated_reports.sql` — the
+  `generated_reports` table, its five indexes, and its comments, unchanged
+  from the original file except for the separation itself and five
+  previously-added `CREATE INDEX IF NOT EXISTS` guards (`generated_reports`
+  is a table this migration creates itself, not `postgres`-owned, and
+  stays on the ordinary path).
+- This file — the `scheduled_reports_report_type_check` constraint
+  replacement, preserving the original's exact `DROP CONSTRAINT IF
+  EXISTS` / `ADD CONSTRAINT` semantics and its exact six allowed values.
+  The original's `DO $$ ... EXCEPTION WHEN OTHERS THEN RAISE NOTICE ...
+  END $$;` wrapper has been **removed entirely**: it existed only to
+  swallow a `42501` ownership error under the ordinary path so the rest
+  of the migration could still commit, which meant a real failure could
+  go unnoticed while the migration was still recorded as applied. On this
+  path, connecting as the actual table owner, a failure should abort and
+  roll back loudly instead.
+
+As with every move above, this is classification and content-separation
+only: **no claim is made that either resulting file has been executed,
+through any runner or otherwise, and neither has a `schema_migrations`
+row.** A prior, separate, read-only production verification (see the
+Stripe section below for the equivalent exercise) found both of the
+original file's intended effects — the `generated_reports` table/indexes/
+comments, and the new AI-inclusive `scheduled_reports` constraint — already
+present in production; that finding describes production's current state,
+not execution provenance for either new file, and is not re-asserted here
+as a reason to treat either as already applied.
 
 Classification is structural, not a naming convention or a maintained
 exclusion list: a migration is administrative *because* it lives in this
@@ -148,3 +289,57 @@ exactly like any other.
 This invocation must run as OS user `postgres` (e.g. via `runuser -u
 postgres --`) for peer authentication to apply — see "Why Unix-socket
 peer authentication," above.
+
+## Production execution history — `202608270610_add_stripe_fields.sql`
+
+A real (non-dry-run) `--execute-only 202608270610_add_stripe_fields.sql`
+attempt was made against production via the ordinary path, before this
+migration was reclassified into this directory (SSM CommandId
+`5848b26e-c714-4c8b-94ed-181858692709`, `ExecutionStartDateTime`
+`2026-08-27T22:22:58.572Z`). It failed and was rolled back. A fresh,
+separate read-only verification was then run against production to
+establish current state. What follows distinguishes exactly what each
+source actually established.
+
+**Directly observed (fresh `SELECT`s against production, same session):**
+- All 6 Stripe columns (`stripe_customer_id`, `stripe_subscription_id`,
+  `subscription_status`, `subscription_current_period_start`,
+  `subscription_current_period_end`, `subscription_cancel_at_period_end`)
+  currently exist on `public.organizations`.
+- All 3 Stripe indexes (`idx_organizations_stripe_customer_id`,
+  `idx_organizations_stripe_subscription_id`,
+  `idx_organizations_stripe_customer_unique`) currently exist, with
+  definitions matching this migration's `CREATE INDEX`/`CREATE UNIQUE INDEX`
+  statements exactly, including the unique index's partial
+  `WHERE (stripe_customer_id IS NOT NULL)` clause.
+- `schema_migrations` currently contains exactly 2 rows
+  (`202608221231_enable_rls_on_anomaly_rules.sql`,
+  `202608231400_create_organization_invitations.sql`) and does **not**
+  contain `202608270610_add_stripe_fields.sql`.
+- `public.organizations` is owned by `postgres`; the connection identity
+  the ordinary migration runner actually used was `devcontrol`
+  (`current_user` = `session_user` = `devcontrol`).
+- The real execution attempt failed with PostgreSQL
+  `42501: must be owner of table organizations`, and `database/migrate.js`
+  itself reported `Rolled back. Not recorded as applied.`
+
+**Inference (derived from the above, not a fresh observation on its own):**
+the schema state observed by the fresh verification is consistent with the
+Stripe columns and indexes having pre-existed this failed execution
+attempt, not having been created by it. This follows from combining two
+already-established facts — the failed statement almost certainly aborted
+before any DDL in the file took effect (ownership errors on the first
+statement in a multi-statement batch halt the whole batch), and
+`schema_migrations` still has no row for this migration — not from the
+rollback log in isolation. The failed transaction reporting `ROLLBACK` does
+not, by itself, prove the schema is unchanged; the fresh `SELECT` evidence
+above is what establishes the current state.
+
+**Not established:** neither the failed execution nor the fresh
+verification can determine *when* or *by what process* the Stripe columns
+and indexes already on `public.organizations` were originally created —
+only that they exist now, and that this migration's own ledger entry is
+still absent now. Net result: the migration remains **unrecorded in
+`schema_migrations`** despite its target schema objects already existing
+in production, and no successful execution of this migration (by any
+runner or path) has occurred as of this writing.

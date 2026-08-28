@@ -74,6 +74,33 @@ X was applied" — only what the evidence actually supports.
   ordinary `MIGRATIONS_DIR` resolution or by
   `.github/scripts/ci-bootstrap-schema.js` — see
   `database/migrations-admin/README.md` for the full mechanism.
+  `022_cost_recommendations_org_scoping.sql`,
+  `028_alert_history_org_scoping.sql`, and eleven further migrations
+  (`004_add_multi_tenancy.sql`, `005_migrate_existing_data.sql`,
+  `006_create_service_dependencies.sql`, `008_create_aws_resources.sql`,
+  `009_create_onboarding_progress.sql`, `010_create_analytics_events.sql`,
+  `011_add_cost_attribution_to_aws_resources.sql`,
+  `020_wire_compliance_and_orphaned_scanning.sql`,
+  `021_wire_cost_recommendations_scanning.sql`,
+  `023_create_account_security_findings.sql`,
+  `029_add_resource_reconciliation.sql`) were moved there after their
+  target tables were directly verified as `postgres`-owned — the same
+  ownership mismatch as above, based on verified table ownership rather
+  than on any migration merely containing RLS/policy keywords (one of the
+  eleven, `005_migrate_existing_data.sql`, contains no RLS/policy syntax
+  at all). See `database/migrations-admin/README.md` for the supporting
+  evidence. `016_create_ai_generated_reports.sql` was a mixed-target file
+  (a new, self-owned table plus an `ALTER TABLE` on the `postgres`-owned
+  `scheduled_reports`) and has since been retired and split: the
+  `generated_reports` table, its indexes, and its comments continue
+  unchanged as `202608272013_create_generated_reports.sql` in this
+  directory; the `scheduled_reports` constraint change moved to
+  `database/migrations-admin/202608272014_extend_scheduled_reports_ai_types.sql`
+  — see that file and `database/migrations-admin/README.md` for the
+  supporting evidence and the disposition of the retired original.
+  `026`/`027` (target tables not found in production — see "Specific
+  audited artifacts" above) remain deliberately unmoved; that move is not
+  addressed by this classification pass.
 
 ## Baseline
 
