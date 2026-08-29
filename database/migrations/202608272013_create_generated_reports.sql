@@ -46,47 +46,19 @@ CREATE TABLE IF NOT EXISTS generated_reports (
 -- =====================================================
 
 -- Query reports by organization
-CREATE INDEX idx_generated_reports_org ON generated_reports(organization_id);
+CREATE INDEX IF NOT EXISTS idx_generated_reports_org ON generated_reports(organization_id);
 
 -- Query reports by date range (for history and trends)
-CREATE INDEX idx_generated_reports_date ON generated_reports(date_range_to DESC);
+CREATE INDEX IF NOT EXISTS idx_generated_reports_date ON generated_reports(date_range_to DESC);
 
 -- Query reports by type
-CREATE INDEX idx_generated_reports_type ON generated_reports(report_type);
+CREATE INDEX IF NOT EXISTS idx_generated_reports_type ON generated_reports(report_type);
 
 -- Find reports linked to scheduled reports
-CREATE INDEX idx_generated_reports_scheduled ON generated_reports(scheduled_report_id) WHERE scheduled_report_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_generated_reports_scheduled ON generated_reports(scheduled_report_id) WHERE scheduled_report_id IS NOT NULL;
 
 -- Query by creation date for recent reports
-CREATE INDEX idx_generated_reports_created ON generated_reports(organization_id, created_at DESC);
-
--- =====================================================
--- Extend scheduled_reports to support AI report types
--- =====================================================
-
--- Note: Migration 013 already created scheduled_reports with report_type check
--- We'll add AI report types by dropping and recreating the constraint
-
-DO $$
-BEGIN
-  -- Drop existing constraint
-  ALTER TABLE scheduled_reports DROP CONSTRAINT IF EXISTS scheduled_reports_report_type_check;
-
-  -- Add new constraint with AI report types
-  ALTER TABLE scheduled_reports
-    ADD CONSTRAINT scheduled_reports_report_type_check
-    CHECK (report_type IN (
-      'cost_summary',
-      'security_audit',
-      'compliance_status',
-      'ai_executive_summary',
-      'ai_cost_analysis',
-      'ai_security_insights'
-    ));
-EXCEPTION
-  WHEN OTHERS THEN
-    RAISE NOTICE 'Could not modify scheduled_reports constraint: %', SQLERRM;
-END $$;
+CREATE INDEX IF NOT EXISTS idx_generated_reports_created ON generated_reports(organization_id, created_at DESC);
 
 -- =====================================================
 -- Comments for documentation
