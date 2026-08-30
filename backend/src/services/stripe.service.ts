@@ -53,6 +53,29 @@ export function isBillingInterval(value: unknown): value is BillingInterval {
  * new, and checkout for a tier/annual combination fails closed until its
  * *_ANNUAL var is set. Migration path: once every environment sets the
  * *_MONTHLY name explicitly, delete the legacy alias entry below.
+ *
+ * Canonical annual charges (read this before creating any *_ANNUAL Price in
+ * Stripe -- Prices are immutable once created):
+ *   - Starter: $490.00/year exactly (= $49 monthly x 10)
+ *   - Pro:     $1,990.00/year exactly (= $199 monthly x 10)
+ *   - Enterprise: no self-service annual Price -- Enterprise has no
+ *     self-serve Checkout at all (contact-sales only in every UI surface
+ *     across this repo's history), so *_ANNUAL should not be created for it
+ *     without a separate product decision.
+ * These totals are "2 months free," not a 20%-off discount ($490/12 =
+ * $40.83 and $1,990/12 = $165.83, displayed rounded as ~$41 and ~$166
+ * per-month-equivalent in the pricing UI). Source of truth: the annualPrice
+ * (41, 166) and annualSavings (98, 398) constants already live in
+ * app/(app)/settings/billing/upgrade/page.tsx and
+ * app/(marketing)/pricing/page.tsx -- 12*49-490=98 and 12*199-1990=398
+ * reproduce those exact hardcoded annualSavings values, which an even
+ * 20%-off discount does not. Those two figures were deliberately corrected
+ * in commits 10211f3 and 287109f (2026-05-08) from an earlier, buggy pair
+ * (63/239, where "annual" was priced *above* monthly) and have not changed
+ * since. components/billing/pricing-faq.tsx separately claims annual
+ * billing "saves 20%" -- that copy predates and was never reconciled with
+ * the 10211f3/287109f correction and should eventually be corrected to
+ * describe the actual ~16.6% ("2 months free") discount rather than 20%.
  */
 const PRICE_ENV_VAR_CANDIDATES: Record<CheckoutTier, Record<BillingInterval, readonly string[]>> = {
   starter: {
