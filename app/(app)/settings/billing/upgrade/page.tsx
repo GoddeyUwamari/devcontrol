@@ -116,7 +116,7 @@ export default function UpgradePage() {
   const handleUpgrade = async (plan: typeof plans[0]) => {
     setLoadingTier(plan.tier)
     try {
-      const result = await createCheckoutSession(plan.tier as any)
+      const result = await createCheckoutSession(plan.tier as any, billing)
       if (result.success && result.data?.url) {
         window.location.href = result.data.url
       } else {

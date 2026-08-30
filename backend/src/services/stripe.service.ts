@@ -28,11 +28,74 @@ export function isCheckoutTier(value: unknown): value is CheckoutTier {
   return typeof value === 'string' && (CHECKOUT_TIERS as readonly string[]).includes(value);
 }
 
-const CHECKOUT_TIER_PRICE_ENV_VAR: Record<CheckoutTier, string> = {
-  starter: 'STRIPE_PRICE_STARTER',
-  pro: 'STRIPE_PRICE_PRO',
-  enterprise: 'STRIPE_PRICE_ENTERPRISE',
+// Billing cadence a client may choose. Purely a Checkout-time selector of
+// which Stripe Price to buy -- it is never persisted and never changes
+// entitlements; TIER_LIMITS is keyed by tier only, so starter-monthly and
+// starter-annual always get identical resource limits.
+export type BillingInterval = 'monthly' | 'annual';
+export const BILLING_INTERVALS: readonly BillingInterval[] = ['monthly', 'annual'];
+
+export function isBillingInterval(value: unknown): value is BillingInterval {
+  return typeof value === 'string' && (BILLING_INTERVALS as readonly string[]).includes(value);
+}
+
+/**
+ * Canonical env var name(s) for each (tier, interval)'s Stripe Price ID, in
+ * lookup priority order. This is the single source of truth for price
+ * resolution -- both Checkout (getPriceIdForPlan) and webhook tier
+ * detection (getTierFromPriceId) read through it, so the mapping can never
+ * drift between the two directions.
+ *
+ * Monthly additionally accepts the legacy un-suffixed var name
+ * (STRIPE_PRICE_STARTER, STRIPE_PRICE_PRO, STRIPE_PRICE_ENTERPRISE) that
+ * predates annual billing, so deployments configured before this feature
+ * keep working without an env change. Annual has no legacy alias -- it is
+ * new, and checkout for a tier/annual combination fails closed until its
+ * *_ANNUAL var is set. Migration path: once every environment sets the
+ * *_MONTHLY name explicitly, delete the legacy alias entry below.
+ */
+const PRICE_ENV_VAR_CANDIDATES: Record<CheckoutTier, Record<BillingInterval, readonly string[]>> = {
+  starter: {
+    monthly: ['STRIPE_PRICE_STARTER_MONTHLY', 'STRIPE_PRICE_STARTER'],
+    annual: ['STRIPE_PRICE_STARTER_ANNUAL'],
+  },
+  pro: {
+    monthly: ['STRIPE_PRICE_PRO_MONTHLY', 'STRIPE_PRICE_PRO'],
+    annual: ['STRIPE_PRICE_PRO_ANNUAL'],
+  },
+  enterprise: {
+    monthly: ['STRIPE_PRICE_ENTERPRISE_MONTHLY', 'STRIPE_PRICE_ENTERPRISE'],
+    annual: ['STRIPE_PRICE_ENTERPRISE_ANNUAL'],
+  },
 };
+
+function resolvePriceEnvVar(
+  tier: CheckoutTier,
+  interval: BillingInterval
+): { value: string | null; candidates: readonly string[] } {
+  const candidates = PRICE_ENV_VAR_CANDIDATES[tier][interval];
+  for (const name of candidates) {
+    const value = process.env[name];
+    if (value) return { value, candidates };
+  }
+  return { value: null, candidates };
+}
+
+/**
+ * Every (tier, interval, priceId) triple whose env var is currently set.
+ * Recomputed on each call (not cached) so env changes -- including in
+ * tests -- are always reflected immediately.
+ */
+function getConfiguredPricePlans(): Array<{ tier: CheckoutTier; interval: BillingInterval; priceId: string }> {
+  const plans: Array<{ tier: CheckoutTier; interval: BillingInterval; priceId: string }> = [];
+  for (const tier of CHECKOUT_TIERS) {
+    for (const interval of BILLING_INTERVALS) {
+      const { value } = resolvePriceEnvVar(tier, interval);
+      if (value) plans.push({ tier, interval, priceId: value });
+    }
+  }
+  return plans;
+}
 
 export class StripeService {
   /**
@@ -454,32 +517,49 @@ export class StripeService {
   }
 
   /**
-   * Resolve the Stripe Price ID for a Checkout tier exclusively from
-   * server-side env vars. No hardcoded fallback IDs -- an unconfigured tier
-   * throws rather than silently checking out against a stale/wrong price.
+   * Resolve the Stripe Price ID for a (tier, billingInterval) plan
+   * exclusively from server-side env vars. No hardcoded fallback IDs -- an
+   * unconfigured plan throws rather than silently checking out against a
+   * stale/wrong price.
    */
-  getPriceIdForTier(tier: CheckoutTier): string {
-    const envVar = CHECKOUT_TIER_PRICE_ENV_VAR[tier];
-    const priceId = process.env[envVar];
-    if (!priceId) {
-      throw new Error(`${envVar} is not configured`);
+  getPriceIdForPlan(tier: CheckoutTier, interval: BillingInterval): string {
+    const { value, candidates } = resolvePriceEnvVar(tier, interval);
+    if (!value) {
+      throw new Error(
+        `No Stripe Price ID configured for ${tier}/${interval} (checked: ${candidates.join(', ')})`
+      );
     }
-    return priceId;
+    return value;
   }
 
   /**
-   * Get tier name from Stripe price ID
+   * Canonical env var names (one per enabled tier/interval combination)
+   * that resolve to no configured price. Used by env validation to fail
+   * closed before startup rather than let checkout fail per-request.
+   * Reports the canonical *_MONTHLY/*_ANNUAL name even for a monthly slot
+   * satisfied only by the legacy unsuffixed alias -- callers should treat
+   * the legacy alias as a stopgap, not a long-term substitute.
+   */
+  getMissingCheckoutPriceEnvVars(): string[] {
+    const missing: string[] = [];
+    for (const tier of CHECKOUT_TIERS) {
+      for (const interval of BILLING_INTERVALS) {
+        const { value, candidates } = resolvePriceEnvVar(tier, interval);
+        if (!value) missing.push(candidates[0]);
+      }
+    }
+    return missing;
+  }
+
+  /**
+   * Get tier name from a Stripe Price ID. Checks every configured
+   * (tier, interval) price -- monthly and annual alike -- so both
+   * cadences of the same tier resolve identically; unrecognized prices
+   * fall back to 'free'.
    */
   getTierFromPriceId(priceId: string): string {
-    const STARTER_PRICE_ID = process.env.STRIPE_PRICE_STARTER;
-    const PRO_PRICE_ID = process.env.STRIPE_PRICE_PRO;
-    const ENTERPRISE_PRICE_ID = process.env.STRIPE_PRICE_ENTERPRISE;
-
-    if (STARTER_PRICE_ID && priceId === STARTER_PRICE_ID) return 'starter';
-    if (PRO_PRICE_ID && priceId === PRO_PRICE_ID) return 'pro';
-    if (ENTERPRISE_PRICE_ID && priceId === ENTERPRISE_PRICE_ID) return 'enterprise';
-
-    return 'free';
+    const match = getConfiguredPricePlans().find(plan => plan.priceId === priceId);
+    return match ? match.tier : 'free';
   }
 }
 

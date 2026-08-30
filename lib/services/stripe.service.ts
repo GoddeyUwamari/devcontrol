@@ -12,22 +12,26 @@ import {
   CustomerPortalResponse,
   CancelSubscriptionResponse,
   SubscriptionTier,
+  BillingInterval,
 } from '@/types/billing';
 
 /**
  * Create a Stripe Checkout session and redirect to checkout
  *
  * The backend resolves the Stripe Price ID and the success/cancel redirect
- * URLs itself -- only the tier name is sent, and the server rejects
- * anything outside starter/pro/enterprise.
+ * URLs itself -- only the tier name and billing interval are sent, and the
+ * server rejects anything outside starter/pro/enterprise and
+ * monthly/annual (including any attempt to smuggle a priceId or other
+ * Stripe object id in the request body).
  */
 export async function createCheckoutSession(
-  tier: SubscriptionTier
+  tier: SubscriptionTier,
+  billingInterval: BillingInterval
 ): Promise<CheckoutSessionResponse> {
   try {
     const response = await api.post<CheckoutSessionResponse>(
       '/api/stripe/create-checkout-session',
-      { tier }
+      { tier, billingInterval }
     );
 
     return response.data;

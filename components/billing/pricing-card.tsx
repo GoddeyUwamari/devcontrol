@@ -58,7 +58,7 @@ export function PricingCard({ tier, currentTier, billingPeriod = 'monthly' }: Pr
     setLoading(true);
 
     try {
-      const result = await createCheckoutSession(tier.tier);
+      const result = await createCheckoutSession(tier.tier, billingPeriod);
 
       if (result.success && result.data?.url) {
         // Redirect to Stripe Checkout

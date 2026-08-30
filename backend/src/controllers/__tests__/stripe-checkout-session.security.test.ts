@@ -1,33 +1,41 @@
 /**
- * Live-Postgres coverage for the Stripe Checkout security fix: the server
- * must be authoritative over what a client can buy and where it gets
- * redirected.
+ * Live-Postgres coverage for the Stripe Checkout security architecture:
+ * the server is authoritative over what plan a client can buy, at what
+ * billing cadence, and where it gets redirected.
  *
- * Root cause under test: POST /api/stripe/create-checkout-session used to
- * take priceId/successUrl/cancelUrl directly from the request body and pass
- * them straight to stripe.checkout.sessions.create(). A caller could request
- * checkout against an arbitrary Stripe price (any amount/product, not just
- * the platform's own starter/pro/enterprise plans) and redirect the
- * completed/cancelled session to an attacker-controlled URL.
+ * POST /api/stripe/create-checkout-session accepts exactly two fields:
+ *   { tier: 'starter'|'pro'|'enterprise', billingInterval: 'monthly'|'annual' }
+ * Anything else in the body -- priceId, customerId, subscriptionId, amount,
+ * currency, line items, successUrl/cancelUrl -- is rejected with 400
+ * (StripeController.ALLOWED_CHECKOUT_FIELDS), not silently ignored, so an
+ * attempted bypass is observable and testable rather than a silent no-op.
  *
- * The fix: the client may only supply a tier name (starter/pro/enterprise).
- * The controller resolves the actual Stripe Price ID exclusively from
- * server-side env vars (StripeService.getPriceIdForTier) and always uses
- * fixed FRONTEND_URL-based success/cancel URLs -- any priceId/successUrl/
- * cancelUrl the client sends is read from nowhere and has no effect.
+ * The Stripe Price ID is resolved exclusively through
+ * StripeService.getPriceIdForPlan(tier, interval), which reads
+ * PRICE_ENV_VAR_CANDIDATES (stripe.service.ts) -- the same table
+ * getTierFromPriceId() reads in reverse for webhook tier detection, so
+ * checkout and webhook can never disagree about which Price ID belongs to
+ * which tier. There is no hardcoded fallback price anywhere in that path;
+ * an unconfigured (tier, interval) throws and the controller turns that
+ * into a 500, never a client-controlled price.
  *
- * Same pattern as stripe-webhook-entitlement-sync.test.ts: real Postgres for
- * the organization row, jest.spyOn on the actual Stripe-network-touching
- * service methods (createCustomer, createCheckoutSession) so the Stripe SDK
- * itself is never called, while the tier-validation and price-resolution
- * logic under test (isCheckoutTier, getPriceIdForTier, and the controller's
- * use of them) runs for real.
+ * Same pattern as stripe-webhook-entitlement-sync.test.ts: real Postgres
+ * for the organization row, jest.spyOn on the actual Stripe-network-
+ * touching service method (createCheckoutSession) so the Stripe SDK itself
+ * is never called, while tier/interval validation and price resolution
+ * (isCheckoutTier, isBillingInterval, getPriceIdForPlan, and the
+ * controller's use of them) run for real.
  */
 
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { stripeController } from '../stripe.controller';
-import stripeService, { CHECKOUT_TIERS, CheckoutTier, isCheckoutTier } from '../../services/stripe.service';
+import stripeService, {
+  CHECKOUT_TIERS,
+  BILLING_INTERVALS,
+  CheckoutTier,
+  BillingInterval,
+} from '../../services/stripe.service';
 
 function dbConfig() {
   return {
@@ -86,61 +94,62 @@ function stubCreateCheckoutSession() {
   } as any);
 }
 
-const ATTACKER_PRICE_ID = 'price_ATTACKER_CONTROLLED_ARBITRARY_AMOUNT';
-const ATTACKER_SUCCESS_URL = 'https://evil.example.com/success';
-const ATTACKER_CANCEL_URL = 'https://evil.example.com/cancel';
+// Test-only fake Price IDs -- never real Stripe values -- seeded for every
+// tier x interval combination so this suite is fully hermetic. It must not
+// depend on real Stripe configuration being present in the environment it
+// runs in: CI sets no STRIPE_* vars at all (see .github/workflows/ci.yml's
+// "Run backend tests" step) and backend/.env (the only place any of these
+// are configured locally) is git-ignored, so neither can be assumed.
+const FAKE_PRICE_IDS: Record<CheckoutTier, Record<BillingInterval, string>> = {
+  starter: { monthly: 'price_test_fake_starter_monthly', annual: 'price_test_fake_starter_annual' },
+  pro: { monthly: 'price_test_fake_pro_monthly', annual: 'price_test_fake_pro_annual' },
+  enterprise: { monthly: 'price_test_fake_enterprise_monthly', annual: 'price_test_fake_enterprise_annual' },
+};
+const PRICE_ENV_VAR: Record<CheckoutTier, Record<BillingInterval, string>> = {
+  starter: { monthly: 'STRIPE_PRICE_STARTER_MONTHLY', annual: 'STRIPE_PRICE_STARTER_ANNUAL' },
+  pro: { monthly: 'STRIPE_PRICE_PRO_MONTHLY', annual: 'STRIPE_PRICE_PRO_ANNUAL' },
+  enterprise: { monthly: 'STRIPE_PRICE_ENTERPRISE_MONTHLY', annual: 'STRIPE_PRICE_ENTERPRISE_ANNUAL' },
+};
 
-afterEach(() => {
-  jest.restoreAllMocks();
+const ATTACKER_PRICE_ID = 'price_ATTACKER_CONTROLLED_ARBITRARY_AMOUNT';
+
+let originalPriceEnv: Record<string, string | undefined>;
+
+beforeAll(() => {
+  originalPriceEnv = {};
+  for (const tier of CHECKOUT_TIERS) {
+    for (const interval of BILLING_INTERVALS) {
+      const envVar = PRICE_ENV_VAR[tier][interval];
+      originalPriceEnv[envVar] = process.env[envVar];
+      process.env[envVar] = FAKE_PRICE_IDS[tier][interval];
+    }
+  }
 });
 
 afterAll(async () => {
+  for (const [envVar, value] of Object.entries(originalPriceEnv)) {
+    if (value === undefined) delete process.env[envVar];
+    else process.env[envVar] = value;
+  }
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();
 });
 
-describe('tier validation fails closed', () => {
-  it.each([
-    ['missing tier', {}],
-    ['null tier', { tier: null }],
-    ['free tier (not a purchasable Checkout tier)', { tier: 'free' }],
-    ['unknown tier name', { tier: 'admin' }],
-    ['non-string tier', { tier: 42 }],
-  ])('%s -> 400, Stripe is never called', async (_label, body) => {
-    const { orgId } = await insertOrgWithCustomer();
-    const createSession = stubCreateCheckoutSession();
-    const { req, res, json, status } = mockReqRes(body, orgId);
-
-    await stripeController.createCheckoutSession(req, res);
-
-    expect(status).toHaveBeenCalledWith(400);
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({ success: false })
-    );
-    expect(createSession).not.toHaveBeenCalled();
-  });
-
-  it('lists the valid tiers in the 400 error', async () => {
-    const { orgId } = await insertOrgWithCustomer();
-    stubCreateCheckoutSession();
-    const { req, res, json } = mockReqRes({ tier: 'admin' }, orgId);
-
-    await stripeController.createCheckoutSession(req, res);
-
-    const [[payload]] = json.mock.calls;
-    expect(payload.error).toContain('starter');
-    expect(payload.error).toContain('pro');
-    expect(payload.error).toContain('enterprise');
-  });
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
-describe('server resolves price ID and redirect URLs itself, ignoring client input', () => {
-  it.each(CHECKOUT_TIERS)('valid tier "%s" resolves the price ID exclusively from its env var', async (tier) => {
+describe('every supported tier x billingInterval combination', () => {
+  const combos: Array<[CheckoutTier, BillingInterval]> = CHECKOUT_TIERS.flatMap(tier =>
+    BILLING_INTERVALS.map(interval => [tier, interval] as [CheckoutTier, BillingInterval])
+  );
+
+  it.each(combos)('%s / %s resolves that plan\'s server-configured Price ID', async (tier, interval) => {
     const { orgId, customerId } = await insertOrgWithCustomer();
     const createSession = stubCreateCheckoutSession();
-    const { req, res, status } = mockReqRes({ tier }, orgId);
+    const { req, res, status } = mockReqRes({ tier, billingInterval: interval }, orgId);
 
     await stripeController.createCheckoutSession(req, res);
 
@@ -150,80 +159,165 @@ describe('server resolves price ID and redirect URLs itself, ignoring client inp
 
     const [calledCustomerId, calledPriceId] = createSession.mock.calls[0];
     expect(calledCustomerId).toBe(customerId);
-    expect(calledPriceId).toBe(stripeService.getPriceIdForTier(tier as CheckoutTier));
+    expect(calledPriceId).toBe(stripeService.getPriceIdForPlan(tier, interval));
+  });
+});
+
+describe('input validation fails closed', () => {
+  it.each([
+    ['missing tier', { billingInterval: 'monthly' }],
+    ['missing billingInterval', { tier: 'starter' }],
+    ['empty body', {}],
+    ['free tier (not purchasable via Checkout)', { tier: 'free', billingInterval: 'monthly' }],
+    ['unknown tier name', { tier: 'admin', billingInterval: 'monthly' }],
+    ['unknown billingInterval alias "year"', { tier: 'starter', billingInterval: 'year' }],
+    ['unknown billingInterval alias "yearly"', { tier: 'starter', billingInterval: 'yearly' }],
+    ['non-string tier', { tier: 42, billingInterval: 'monthly' }],
+    ['non-string billingInterval', { tier: 'starter', billingInterval: true }],
+  ])('%s -> 400, Stripe is never called', async (_label, body) => {
+    const { orgId } = await insertOrgWithCustomer();
+    const createSession = stubCreateCheckoutSession();
+    const { req, res, status, json } = mockReqRes(body, orgId);
+
+    await stripeController.createCheckoutSession(req, res);
+
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+    expect(createSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('client cannot smuggle a Stripe object id or arbitrary line-item data', () => {
+  it.each([
+    ['priceId', { tier: 'pro', billingInterval: 'monthly', priceId: ATTACKER_PRICE_ID }],
+    ['customerId', { tier: 'pro', billingInterval: 'monthly', customerId: 'cus_attacker' }],
+    ['subscriptionId', { tier: 'pro', billingInterval: 'monthly', subscriptionId: 'sub_attacker' }],
+    ['amount', { tier: 'pro', billingInterval: 'monthly', amount: 1 }],
+    ['currency', { tier: 'pro', billingInterval: 'monthly', currency: 'usd' }],
+    ['lineItems', { tier: 'pro', billingInterval: 'monthly', lineItems: [{ price: ATTACKER_PRICE_ID }] }],
+    ['successUrl', { tier: 'pro', billingInterval: 'monthly', successUrl: 'https://evil.example.com' }],
+    ['cancelUrl', { tier: 'pro', billingInterval: 'monthly', cancelUrl: 'https://evil.example.com' }],
+  ])('a request containing "%s" is rejected with 400, not just ignored', async (_field, body) => {
+    const { orgId } = await insertOrgWithCustomer();
+    const createSession = stubCreateCheckoutSession();
+    const { req, res, status, json } = mockReqRes(body, orgId);
+
+    await stripeController.createCheckoutSession(req, res);
+
+    expect(status).toHaveBeenCalledWith(400);
+    const [[payload]] = json.mock.calls;
+    expect(payload.success).toBe(false);
+    expect(payload.error).toContain('Unsupported field');
+    expect(createSession).not.toHaveBeenCalled();
   });
 
-  it('a client-supplied priceId/successUrl/cancelUrl is read from nowhere and has zero effect', async () => {
-    const { orgId, customerId } = await insertOrgWithCustomer();
+  it('a valid request with priceId attached never lets that price reach Stripe', async () => {
+    const { orgId } = await insertOrgWithCustomer();
     const createSession = stubCreateCheckoutSession();
-    const { req, res, status } = mockReqRes(
-      {
-        tier: 'pro',
-        priceId: ATTACKER_PRICE_ID,
-        successUrl: ATTACKER_SUCCESS_URL,
-        cancelUrl: ATTACKER_CANCEL_URL,
-      },
+    const { req, res } = mockReqRes(
+      { tier: 'pro', billingInterval: 'monthly', priceId: ATTACKER_PRICE_ID },
       orgId
     );
 
     await stripeController.createCheckoutSession(req, res);
 
-    expect(status).not.toHaveBeenCalledWith(400);
-    const [calledCustomerId, calledPriceId, , calledSuccessUrl, calledCancelUrl] =
-      createSession.mock.calls[0];
-
-    expect(calledCustomerId).toBe(customerId);
-    expect(calledPriceId).toBe(stripeService.getPriceIdForTier('pro'));
-    expect(calledPriceId).not.toBe(ATTACKER_PRICE_ID);
-    expect(calledSuccessUrl).not.toBe(ATTACKER_SUCCESS_URL);
-    expect(calledCancelUrl).not.toBe(ATTACKER_CANCEL_URL);
-    expect(calledSuccessUrl).toBe(`${process.env.FRONTEND_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`);
-    expect(calledCancelUrl).toBe(`${process.env.FRONTEND_URL}/billing/cancel`);
+    expect(createSession).not.toHaveBeenCalled();
   });
 });
 
-describe('missing server-side price configuration fails closed, not with a client-controlled price', () => {
-  it('a valid tier whose env var is unset returns 500 and never calls Stripe', async () => {
+describe('missing server-side price configuration fails closed', () => {
+  it('a valid tier/monthly combo whose env var (and legacy alias) are unset returns 500 and never calls Stripe', async () => {
     const { orgId } = await insertOrgWithCustomer();
     const createSession = stubCreateCheckoutSession();
-    const original = process.env.STRIPE_PRICE_STARTER;
+    const originalMonthly = process.env.STRIPE_PRICE_STARTER_MONTHLY;
+    const originalLegacy = process.env.STRIPE_PRICE_STARTER;
+    delete process.env.STRIPE_PRICE_STARTER_MONTHLY;
     delete process.env.STRIPE_PRICE_STARTER;
 
     try {
-      const { req, res, status, json } = mockReqRes({ tier: 'starter' }, orgId);
+      const { req, res, status, json } = mockReqRes({ tier: 'starter', billingInterval: 'monthly' }, orgId);
 
       await stripeController.createCheckoutSession(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
-      expect(json).toHaveBeenCalledWith(
-        expect.objectContaining({ success: false })
-      );
+      expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
       expect(createSession).not.toHaveBeenCalled();
     } finally {
-      if (original !== undefined) process.env.STRIPE_PRICE_STARTER = original;
+      if (originalMonthly !== undefined) process.env.STRIPE_PRICE_STARTER_MONTHLY = originalMonthly;
+      if (originalLegacy !== undefined) process.env.STRIPE_PRICE_STARTER = originalLegacy;
+    }
+  });
+
+  it('a valid tier/annual combo whose env var is unset returns 500 and never calls Stripe (no silent fallback to monthly)', async () => {
+    const { orgId } = await insertOrgWithCustomer();
+    const createSession = stubCreateCheckoutSession();
+    const original = process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL;
+    delete process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL;
+
+    try {
+      const { req, res, status, json } = mockReqRes({ tier: 'enterprise', billingInterval: 'annual' }, orgId);
+
+      await stripeController.createCheckoutSession(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+      expect(createSession).not.toHaveBeenCalled();
+    } finally {
+      if (original !== undefined) process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL = original;
     }
   });
 });
 
-describe('StripeService.getPriceIdForTier / isCheckoutTier', () => {
-  it('has no hardcoded fallback -- throws when the env var is unset', () => {
-    const original = process.env.STRIPE_PRICE_ENTERPRISE;
-    delete process.env.STRIPE_PRICE_ENTERPRISE;
+describe('StripeService price resolver -- no hardcoded fallback IDs', () => {
+  it('getPriceIdForPlan throws (does not return a default) when unconfigured', () => {
+    const original = process.env.STRIPE_PRICE_PRO_ANNUAL;
+    delete process.env.STRIPE_PRICE_PRO_ANNUAL;
     try {
-      expect(() => stripeService.getPriceIdForTier('enterprise')).toThrow(
-        /STRIPE_PRICE_ENTERPRISE/
-      );
+      expect(() => stripeService.getPriceIdForPlan('pro', 'annual')).toThrow(/STRIPE_PRICE_PRO_ANNUAL/);
     } finally {
-      if (original !== undefined) process.env.STRIPE_PRICE_ENTERPRISE = original;
+      if (original !== undefined) process.env.STRIPE_PRICE_PRO_ANNUAL = original;
     }
   });
 
-  it('rejects tiers outside starter/pro/enterprise', () => {
-    expect(isCheckoutTier('free')).toBe(false);
-    expect(isCheckoutTier('admin')).toBe(false);
-    expect(isCheckoutTier(undefined)).toBe(false);
-    expect(isCheckoutTier('starter')).toBe(true);
-    expect(isCheckoutTier('pro')).toBe(true);
-    expect(isCheckoutTier('enterprise')).toBe(true);
+  it('getMissingCheckoutPriceEnvVars lists every unconfigured (tier, interval) canonical var name', () => {
+    const originalMonthly = process.env.STRIPE_PRICE_PRO_MONTHLY;
+    const originalLegacy = process.env.STRIPE_PRICE_PRO;
+    delete process.env.STRIPE_PRICE_PRO_MONTHLY;
+    delete process.env.STRIPE_PRICE_PRO;
+    try {
+      expect(stripeService.getMissingCheckoutPriceEnvVars()).toContain('STRIPE_PRICE_PRO_MONTHLY');
+    } finally {
+      if (originalMonthly !== undefined) process.env.STRIPE_PRICE_PRO_MONTHLY = originalMonthly;
+      if (originalLegacy !== undefined) process.env.STRIPE_PRICE_PRO = originalLegacy;
+    }
+  });
+
+  it('monthly resolution falls back to the legacy unsuffixed var only when *_MONTHLY is unset', () => {
+    const originalMonthly = process.env.STRIPE_PRICE_STARTER_MONTHLY;
+    const originalLegacy = process.env.STRIPE_PRICE_STARTER;
+    const fakeLegacyValue = 'price_test_fake_starter_legacy';
+    delete process.env.STRIPE_PRICE_STARTER_MONTHLY;
+    process.env.STRIPE_PRICE_STARTER = fakeLegacyValue;
+    try {
+      expect(stripeService.getPriceIdForPlan('starter', 'monthly')).toBe(fakeLegacyValue);
+    } finally {
+      if (originalMonthly !== undefined) process.env.STRIPE_PRICE_STARTER_MONTHLY = originalMonthly;
+      if (originalLegacy !== undefined) process.env.STRIPE_PRICE_STARTER = originalLegacy;
+      else delete process.env.STRIPE_PRICE_STARTER;
+    }
+  });
+});
+
+describe('webhook tier detection recognizes both monthly and annual prices for the same tier', () => {
+  it.each(CHECKOUT_TIERS)('%s: monthly and annual Price IDs both resolve to tier "%s"', (tier) => {
+    const monthlyPriceId = stripeService.getPriceIdForPlan(tier, 'monthly');
+    const annualPriceId = stripeService.getPriceIdForPlan(tier, 'annual');
+
+    expect(stripeService.getTierFromPriceId(monthlyPriceId)).toBe(tier);
+    expect(stripeService.getTierFromPriceId(annualPriceId)).toBe(tier);
+  });
+
+  it('an unrecognized Price ID still falls back to "free"', () => {
+    expect(stripeService.getTierFromPriceId('price_totally_unknown')).toBe('free');
   });
 });
