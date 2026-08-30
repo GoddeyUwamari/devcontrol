@@ -35,6 +35,7 @@ import stripeService, {
   BILLING_INTERVALS,
   CheckoutTier,
   BillingInterval,
+  isSupportedPlan,
 } from '../../services/stripe.service';
 
 function dbConfig() {
@@ -95,20 +96,23 @@ function stubCreateCheckoutSession() {
 }
 
 // Test-only fake Price IDs -- never real Stripe values -- seeded for every
-// tier x interval combination so this suite is fully hermetic. It must not
-// depend on real Stripe configuration being present in the environment it
-// runs in: CI sets no STRIPE_* vars at all (see .github/workflows/ci.yml's
-// "Run backend tests" step) and backend/.env (the only place any of these
-// are configured locally) is git-ignored, so neither can be assumed.
-const FAKE_PRICE_IDS: Record<CheckoutTier, Record<BillingInterval, string>> = {
+// *supported* tier x interval combination so this suite is fully hermetic.
+// It must not depend on real Stripe configuration being present in the
+// environment it runs in: CI sets no STRIPE_* vars at all (see
+// .github/workflows/ci.yml's "Run backend tests" step) and backend/.env
+// (the only place any of these are configured locally) is git-ignored, so
+// neither can be assumed. enterprise/annual is deliberately excluded here
+// (via isSupportedPlan) -- there is no such Price/env var to seed, since
+// Enterprise is monthly-only self-service (annual is Contact Sales).
+const FAKE_PRICE_IDS: Record<CheckoutTier, Partial<Record<BillingInterval, string>>> = {
   starter: { monthly: 'price_test_fake_starter_monthly', annual: 'price_test_fake_starter_annual' },
   pro: { monthly: 'price_test_fake_pro_monthly', annual: 'price_test_fake_pro_annual' },
-  enterprise: { monthly: 'price_test_fake_enterprise_monthly', annual: 'price_test_fake_enterprise_annual' },
+  enterprise: { monthly: 'price_test_fake_enterprise_monthly' },
 };
-const PRICE_ENV_VAR: Record<CheckoutTier, Record<BillingInterval, string>> = {
+const PRICE_ENV_VAR: Record<CheckoutTier, Partial<Record<BillingInterval, string>>> = {
   starter: { monthly: 'STRIPE_PRICE_STARTER_MONTHLY', annual: 'STRIPE_PRICE_STARTER_ANNUAL' },
   pro: { monthly: 'STRIPE_PRICE_PRO_MONTHLY', annual: 'STRIPE_PRICE_PRO_ANNUAL' },
-  enterprise: { monthly: 'STRIPE_PRICE_ENTERPRISE_MONTHLY', annual: 'STRIPE_PRICE_ENTERPRISE_ANNUAL' },
+  enterprise: { monthly: 'STRIPE_PRICE_ENTERPRISE_MONTHLY' },
 };
 
 const ATTACKER_PRICE_ID = 'price_ATTACKER_CONTROLLED_ARBITRARY_AMOUNT';
@@ -119,9 +123,10 @@ beforeAll(() => {
   originalPriceEnv = {};
   for (const tier of CHECKOUT_TIERS) {
     for (const interval of BILLING_INTERVALS) {
-      const envVar = PRICE_ENV_VAR[tier][interval];
+      if (!isSupportedPlan(tier, interval)) continue;
+      const envVar = PRICE_ENV_VAR[tier][interval]!;
       originalPriceEnv[envVar] = process.env[envVar];
-      process.env[envVar] = FAKE_PRICE_IDS[tier][interval];
+      process.env[envVar] = FAKE_PRICE_IDS[tier][interval]!;
     }
   }
 });
@@ -142,8 +147,13 @@ afterEach(() => {
 });
 
 describe('every supported tier x billingInterval combination', () => {
+  // Starter monthly, Starter annual, Pro monthly, Pro annual, Enterprise
+  // monthly -- enterprise/annual is intentionally excluded here and covered
+  // separately below as a rejected combination, not a valid one.
   const combos: Array<[CheckoutTier, BillingInterval]> = CHECKOUT_TIERS.flatMap(tier =>
-    BILLING_INTERVALS.map(interval => [tier, interval] as [CheckoutTier, BillingInterval])
+    BILLING_INTERVALS.filter(interval => isSupportedPlan(tier, interval)).map(
+      interval => [tier, interval] as [CheckoutTier, BillingInterval]
+    )
   );
 
   it.each(combos)('%s / %s resolves that plan\'s server-configured Price ID', async (tier, interval) => {
@@ -160,6 +170,42 @@ describe('every supported tier x billingInterval combination', () => {
     const [calledCustomerId, calledPriceId] = createSession.mock.calls[0];
     expect(calledCustomerId).toBe(customerId);
     expect(calledPriceId).toBe(stripeService.getPriceIdForPlan(tier, interval));
+  });
+});
+
+describe('enterprise does not support self-service annual billing', () => {
+  it('enterprise/annual -> 400 before any Stripe call, with a clear reason', async () => {
+    const { orgId } = await insertOrgWithCustomer();
+    const createSession = stubCreateCheckoutSession();
+    const { req, res, status, json } = mockReqRes({ tier: 'enterprise', billingInterval: 'annual' }, orgId);
+
+    await stripeController.createCheckoutSession(req, res);
+
+    expect(status).toHaveBeenCalledWith(400);
+    const [[payload]] = json.mock.calls;
+    expect(payload.success).toBe(false);
+    expect(payload.error).toMatch(/enterprise/i);
+    expect(payload.error).toMatch(/annual/i);
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it('STRIPE_PRICE_ENTERPRISE_ANNUAL is never required by env validation, configured or not', () => {
+    const original = process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL;
+    delete process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL;
+    try {
+      expect(stripeService.getMissingCheckoutPriceEnvVars()).not.toContain('STRIPE_PRICE_ENTERPRISE_ANNUAL');
+    } finally {
+      if (original !== undefined) process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL = original;
+    }
+  });
+
+  it('isSupportedPlan rejects only enterprise/annual, not enterprise/monthly or any starter/pro combination', () => {
+    expect(isSupportedPlan('enterprise', 'annual')).toBe(false);
+    expect(isSupportedPlan('enterprise', 'monthly')).toBe(true);
+    expect(isSupportedPlan('starter', 'monthly')).toBe(true);
+    expect(isSupportedPlan('starter', 'annual')).toBe(true);
+    expect(isSupportedPlan('pro', 'monthly')).toBe(true);
+    expect(isSupportedPlan('pro', 'annual')).toBe(true);
   });
 });
 
@@ -251,11 +297,11 @@ describe('missing server-side price configuration fails closed', () => {
   it('a valid tier/annual combo whose env var is unset returns 500 and never calls Stripe (no silent fallback to monthly)', async () => {
     const { orgId } = await insertOrgWithCustomer();
     const createSession = stubCreateCheckoutSession();
-    const original = process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL;
-    delete process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL;
+    const original = process.env.STRIPE_PRICE_PRO_ANNUAL;
+    delete process.env.STRIPE_PRICE_PRO_ANNUAL;
 
     try {
-      const { req, res, status, json } = mockReqRes({ tier: 'enterprise', billingInterval: 'annual' }, orgId);
+      const { req, res, status, json } = mockReqRes({ tier: 'pro', billingInterval: 'annual' }, orgId);
 
       await stripeController.createCheckoutSession(req, res);
 
@@ -263,7 +309,7 @@ describe('missing server-side price configuration fails closed', () => {
       expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
       expect(createSession).not.toHaveBeenCalled();
     } finally {
-      if (original !== undefined) process.env.STRIPE_PRICE_ENTERPRISE_ANNUAL = original;
+      if (original !== undefined) process.env.STRIPE_PRICE_PRO_ANNUAL = original;
     }
   });
 });
@@ -309,12 +355,20 @@ describe('StripeService price resolver -- no hardcoded fallback IDs', () => {
 });
 
 describe('webhook tier detection recognizes both monthly and annual prices for the same tier', () => {
-  it.each(CHECKOUT_TIERS)('%s: monthly and annual Price IDs both resolve to tier "%s"', (tier) => {
+  const annualCapableTiers = CHECKOUT_TIERS.filter(tier => isSupportedPlan(tier, 'annual'));
+
+  it.each(annualCapableTiers)('%s: monthly and annual Price IDs both resolve to tier "%s"', (tier) => {
     const monthlyPriceId = stripeService.getPriceIdForPlan(tier, 'monthly');
     const annualPriceId = stripeService.getPriceIdForPlan(tier, 'annual');
 
     expect(stripeService.getTierFromPriceId(monthlyPriceId)).toBe(tier);
     expect(stripeService.getTierFromPriceId(annualPriceId)).toBe(tier);
+  });
+
+  it('enterprise: only the monthly Price is resolvable/mappable -- there is no annual Price to recognize', () => {
+    const monthlyPriceId = stripeService.getPriceIdForPlan('enterprise', 'monthly');
+    expect(stripeService.getTierFromPriceId(monthlyPriceId)).toBe('enterprise');
+    expect(() => stripeService.getPriceIdForPlan('enterprise', 'annual')).toThrow();
   });
 
   it('an unrecognized Price ID still falls back to "free"', () => {

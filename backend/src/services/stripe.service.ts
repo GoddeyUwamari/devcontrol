@@ -39,6 +39,24 @@ export function isBillingInterval(value: unknown): value is BillingInterval {
   return typeof value === 'string' && (BILLING_INTERVALS as readonly string[]).includes(value);
 }
 
+// Tiers that support self-service annual billing. Enterprise is
+// Contact-Sales only for annual pricing (no self-serve Checkout path exists
+// for it anywhere in this app's UI) -- no Stripe Price should ever be
+// created for enterprise/annual, and requests for that combination must be
+// rejected before Checkout resolution is even attempted.
+const ANNUAL_CAPABLE_TIERS: ReadonlySet<CheckoutTier> = new Set(['starter', 'pro']);
+
+/**
+ * Whether a (tier, interval) combination is actually offered via
+ * self-service Checkout. This is the single source of truth for which
+ * plans exist at all -- distinct from isCheckoutTier/isBillingInterval,
+ * which only validate that each field is individually a recognized value.
+ * Currently the only unsupported combination is enterprise/annual.
+ */
+export function isSupportedPlan(tier: CheckoutTier, interval: BillingInterval): boolean {
+  return interval === 'monthly' || ANNUAL_CAPABLE_TIERS.has(tier);
+}
+
 /**
  * Canonical env var name(s) for each (tier, interval)'s Stripe Price ID, in
  * lookup priority order. This is the single source of truth for price
@@ -76,8 +94,13 @@ export function isBillingInterval(value: unknown): value is BillingInterval {
  * billing "saves 20%" -- that copy predates and was never reconciled with
  * the 10211f3/287109f correction and should eventually be corrected to
  * describe the actual ~16.6% ("2 months free") discount rather than 20%.
+ *
+ * Enterprise deliberately has no `annual` entry: it is Contact-Sales only
+ * for annual billing (see isSupportedPlan/ANNUAL_CAPABLE_TIERS above), so
+ * there is no STRIPE_PRICE_ENTERPRISE_ANNUAL to resolve and none should be
+ * created in Stripe or required by env validation.
  */
-const PRICE_ENV_VAR_CANDIDATES: Record<CheckoutTier, Record<BillingInterval, readonly string[]>> = {
+const PRICE_ENV_VAR_CANDIDATES: Record<CheckoutTier, Partial<Record<BillingInterval, readonly string[]>>> = {
   starter: {
     monthly: ['STRIPE_PRICE_STARTER_MONTHLY', 'STRIPE_PRICE_STARTER'],
     annual: ['STRIPE_PRICE_STARTER_ANNUAL'],
@@ -88,7 +111,6 @@ const PRICE_ENV_VAR_CANDIDATES: Record<CheckoutTier, Record<BillingInterval, rea
   },
   enterprise: {
     monthly: ['STRIPE_PRICE_ENTERPRISE_MONTHLY', 'STRIPE_PRICE_ENTERPRISE'],
-    annual: ['STRIPE_PRICE_ENTERPRISE_ANNUAL'],
   },
 };
 
@@ -97,6 +119,9 @@ function resolvePriceEnvVar(
   interval: BillingInterval
 ): { value: string | null; candidates: readonly string[] } {
   const candidates = PRICE_ENV_VAR_CANDIDATES[tier][interval];
+  if (!candidates) {
+    return { value: null, candidates: [] };
+  }
   for (const name of candidates) {
     const value = process.env[name];
     if (value) return { value, candidates };
@@ -562,11 +587,16 @@ export class StripeService {
    * Reports the canonical *_MONTHLY/*_ANNUAL name even for a monthly slot
    * satisfied only by the legacy unsuffixed alias -- callers should treat
    * the legacy alias as a stopgap, not a long-term substitute.
+   *
+   * Skips any (tier, interval) combination isSupportedPlan() rejects --
+   * currently enterprise/annual -- so STRIPE_PRICE_ENTERPRISE_ANNUAL is
+   * never required by startup env validation.
    */
   getMissingCheckoutPriceEnvVars(): string[] {
     const missing: string[] = [];
     for (const tier of CHECKOUT_TIERS) {
       for (const interval of BILLING_INTERVALS) {
+        if (!isSupportedPlan(tier, interval)) continue;
         const { value, candidates } = resolvePriceEnvVar(tier, interval);
         if (!value) missing.push(candidates[0]);
       }

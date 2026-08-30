@@ -7,6 +7,7 @@ import { Request, Response } from 'express';
 import stripeService, {
   isCheckoutTier,
   isBillingInterval,
+  isSupportedPlan,
   CHECKOUT_TIERS,
   BILLING_INTERVALS,
 } from '../services/stripe.service';
@@ -64,6 +65,14 @@ export class StripeController {
         res.status(400).json({
           success: false,
           error: `A valid billing interval is required (${BILLING_INTERVALS.join(', ')})`,
+        });
+        return;
+      }
+
+      if (!isSupportedPlan(tier, billingInterval)) {
+        res.status(400).json({
+          success: false,
+          error: 'Enterprise does not support self-service annual billing. Contact sales for annual Enterprise pricing.',
         });
         return;
       }
