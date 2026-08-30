@@ -13,8 +13,6 @@ const plans = [
     tier: 'starter',
     price: 49,
     annualPrice: 41,
-    priceId: 'price_1TJBsAHTCYC33ElRTp9R4lMh',
-    annualPriceId: 'price_1TJBwMHTCYC33ElR9RdjFpGW',
     description: 'Identify and eliminate the most common sources of AWS waste.',
     features: [
       'Up to 60 AWS resources',
@@ -34,8 +32,6 @@ const plans = [
     tier: 'pro',
     price: 199,
     annualPrice: 166,
-    priceId: 'price_1TJC3AHTCYC33ElRJY1RN0l6',
-    annualPriceId: 'price_1TJC4DHTCYC33ElRbANhI4iF',
     popular: true,
     description: 'Turn your AWS into a predictable, optimized system.',
     features: [
@@ -60,7 +56,6 @@ const plans = [
     name: 'Revenue Protection',
     tier: 'enterprise',
     price: 999,
-    priceId: 'price_1Skm4iH8pNFfrvRPa6nDnjqc',
     description: 'Protect revenue at scale and eliminate high-impact risk.',
     features: [
       '✨ Everything in Optimization Engine',
@@ -119,12 +114,9 @@ export default function UpgradePage() {
   }
 
   const handleUpgrade = async (plan: typeof plans[0]) => {
-    const priceId = billing === 'annual' && plan.annualPriceId
-      ? plan.annualPriceId
-      : plan.priceId
     setLoadingTier(plan.tier)
     try {
-      const result = await createCheckoutSession(plan.tier as any, priceId)
+      const result = await createCheckoutSession(plan.tier as any)
       if (result.success && result.data?.url) {
         window.location.href = result.data.url
       } else {

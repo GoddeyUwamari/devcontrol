@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from 'express';
-import stripeService from '../services/stripe.service';
+import stripeService, { isCheckoutTier, CHECKOUT_TIERS } from '../services/stripe.service';
 import { pool } from '../config/database';
 
 export class StripeController {
@@ -22,13 +22,18 @@ export class StripeController {
         return;
       }
 
-      const { priceId, successUrl, cancelUrl } = req.body;
+      // The server is authoritative here: only a known tier name is
+      // accepted from the client. The Stripe Price ID and the
+      // success/cancel URLs are resolved/fixed server-side and are never
+      // taken from the request body -- this prevents a caller from
+      // checking out against an arbitrary price or redirecting elsewhere.
+      const { tier } = req.body;
       const organizationId = req.user.organizationId;
 
-      if (!priceId) {
+      if (!isCheckoutTier(tier)) {
         res.status(400).json({
           success: false,
-          error: 'Price ID is required',
+          error: `A valid subscription tier is required (${CHECKOUT_TIERS.join(', ')})`,
         });
         return;
       }
@@ -68,13 +73,30 @@ export class StripeController {
         customerId = customer.id;
       }
 
+      let priceId: string;
+      try {
+        priceId = stripeService.getPriceIdForTier(tier);
+      } catch (error) {
+        console.error(`Checkout tier "${tier}" is not configured:`, error);
+        res.status(500).json({
+          success: false,
+          error: 'Checkout is not available for this plan right now',
+        });
+        return;
+      }
+
+      // Fixed, server-controlled redirect targets -- never taken from the
+      // request body.
+      const successUrl = `${process.env.FRONTEND_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${process.env.FRONTEND_URL}/billing/cancel`;
+
       // Create checkout session
       const session = await stripeService.createCheckoutSession(
         customerId,
         priceId,
         organizationId,
-        successUrl || `${process.env.FRONTEND_URL}/billing/success`,
-        cancelUrl || `${process.env.FRONTEND_URL}/billing`
+        successUrl,
+        cancelUrl
       );
 
       res.status(200).json({

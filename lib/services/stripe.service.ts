@@ -16,19 +16,18 @@ import {
 
 /**
  * Create a Stripe Checkout session and redirect to checkout
+ *
+ * The backend resolves the Stripe Price ID and the success/cancel redirect
+ * URLs itself -- only the tier name is sent, and the server rejects
+ * anything outside starter/pro/enterprise.
  */
 export async function createCheckoutSession(
-  tier: SubscriptionTier,
-  priceId: string
+  tier: SubscriptionTier
 ): Promise<CheckoutSessionResponse> {
   try {
     const response = await api.post<CheckoutSessionResponse>(
       '/api/stripe/create-checkout-session',
-      {
-        priceId,
-        successUrl: `${window.location.origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: `${window.location.origin}/billing/cancel`,
-      }
+      { tier }
     );
 
     return response.data;

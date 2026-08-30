@@ -19,6 +19,21 @@ function getStripeClient(): Stripe {
   return stripeClient;
 }
 
+// Tiers a client is allowed to request Checkout for. 'free' is excluded --
+// it has no Stripe price and never goes through Checkout.
+export type CheckoutTier = 'starter' | 'pro' | 'enterprise';
+export const CHECKOUT_TIERS: readonly CheckoutTier[] = ['starter', 'pro', 'enterprise'];
+
+export function isCheckoutTier(value: unknown): value is CheckoutTier {
+  return typeof value === 'string' && (CHECKOUT_TIERS as readonly string[]).includes(value);
+}
+
+const CHECKOUT_TIER_PRICE_ENV_VAR: Record<CheckoutTier, string> = {
+  starter: 'STRIPE_PRICE_STARTER',
+  pro: 'STRIPE_PRICE_PRO',
+  enterprise: 'STRIPE_PRICE_ENTERPRISE',
+};
+
 export class StripeService {
   /**
    * Create a Stripe customer for an organization
@@ -439,16 +454,30 @@ export class StripeService {
   }
 
   /**
+   * Resolve the Stripe Price ID for a Checkout tier exclusively from
+   * server-side env vars. No hardcoded fallback IDs -- an unconfigured tier
+   * throws rather than silently checking out against a stale/wrong price.
+   */
+  getPriceIdForTier(tier: CheckoutTier): string {
+    const envVar = CHECKOUT_TIER_PRICE_ENV_VAR[tier];
+    const priceId = process.env[envVar];
+    if (!priceId) {
+      throw new Error(`${envVar} is not configured`);
+    }
+    return priceId;
+  }
+
+  /**
    * Get tier name from Stripe price ID
    */
   getTierFromPriceId(priceId: string): string {
-    const STARTER_PRICE_ID = process.env.STRIPE_PRICE_STARTER || 'price_1TJBsAHTCYC33EIRTp9R4IMh';
-    const PRO_PRICE_ID = process.env.STRIPE_PRICE_PRO || 'price_1TJC3AHTCYC33EIRjY1RN0I6';
-    const ENTERPRISE_PRICE_ID = process.env.STRIPE_PRICE_ENTERPRISE || 'price_1Skm4iH8pNFfrvRPa6nDnjqc';
+    const STARTER_PRICE_ID = process.env.STRIPE_PRICE_STARTER;
+    const PRO_PRICE_ID = process.env.STRIPE_PRICE_PRO;
+    const ENTERPRISE_PRICE_ID = process.env.STRIPE_PRICE_ENTERPRISE;
 
-    if (priceId === STARTER_PRICE_ID) return 'starter';
-    if (priceId === PRO_PRICE_ID) return 'pro';
-    if (priceId === ENTERPRISE_PRICE_ID) return 'enterprise';
+    if (STARTER_PRICE_ID && priceId === STARTER_PRICE_ID) return 'starter';
+    if (PRO_PRICE_ID && priceId === PRO_PRICE_ID) return 'pro';
+    if (ENTERPRISE_PRICE_ID && priceId === ENTERPRISE_PRICE_ID) return 'enterprise';
 
     return 'free';
   }
