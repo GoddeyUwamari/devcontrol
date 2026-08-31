@@ -47,6 +47,7 @@ async function insertOrg(overrides: {
   billingLifecycleState?: string;
   paymentFailedAt?: Date | null;
   gracePeriodEndsAt?: Date | null;
+  latestProcessedInvoiceCreatedAt?: Date | null;
 } = {}): Promise<{ orgId: string; customerId: string }> {
   const suffix = uniqueSuffix();
   const tier = overrides.tier ?? 'pro';
@@ -56,8 +57,9 @@ async function insertOrg(overrides: {
     `INSERT INTO organizations (
        name, slug, display_name, subscription_tier, subscription_status,
        stripe_customer_id, stripe_subscription_id,
-       billing_lifecycle_state, payment_failed_at, grace_period_ends_at
-     ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9)
+       billing_lifecycle_state, payment_failed_at, grace_period_ends_at,
+       latest_processed_invoice_created_at
+     ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10)
      RETURNING id`,
     [
       `Payment Failure Org ${suffix}`,
@@ -69,6 +71,7 @@ async function insertOrg(overrides: {
       overrides.billingLifecycleState ?? 'healthy',
       overrides.paymentFailedAt ?? null,
       overrides.gracePeriodEndsAt ?? null,
+      overrides.latestProcessedInvoiceCreatedAt ?? null,
     ]
   );
   createdOrgIds.push(rows[0].id);
@@ -94,6 +97,7 @@ async function insertOwner(orgId: string): Promise<string> {
 async function fetchBillingRow(orgId: string) {
   const { rows } = await pool.query(
     `SELECT billing_lifecycle_state, payment_failed_at, grace_period_ends_at,
+            latest_processed_invoice_created_at,
             subscription_tier, subscription_status, xmin::text AS xmin
      FROM organizations WHERE id = $1`,
     [orgId]
@@ -128,8 +132,27 @@ async function deliverWebhook(event: any) {
   return { status, json };
 }
 
+/**
+ * `created` defaults to "now" -- Invoice.created (Unix seconds) is the
+ * shared ordering key recordPaymentFailure/recordPaymentRecovery compare
+ * against latest_processed_invoice_created_at (see stripe.service.ts).
+ * Tests that care about ordering pass an explicit `created` override.
+ */
 function fakeInvoice(customerId: string, overrides: Record<string, unknown> = {}) {
-  return { id: `in_test_${uniqueSuffix()}`, customer: customerId, ...overrides };
+  return {
+    id: `in_test_${uniqueSuffix()}`,
+    customer: customerId,
+    created: Math.floor(Date.now() / 1000),
+    ...overrides,
+  };
+}
+
+function daysAgo(days: number): Date {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+function unixSeconds(date: Date): number {
+  return Math.floor(date.getTime() / 1000);
 }
 
 /** Direct middleware invocation -- exercises the real authorization boundary, not just an internal helper. */
@@ -313,15 +336,26 @@ describe('invoice.paid -- recovery', () => {
     expect(after.status).not.toHaveBeenCalledWith(402);
   });
 
-  it('is a safe no-op on an already-healthy organization (no unnecessary UPDATE, per xmin)', async () => {
+  it('leaves lifecycle fields untouched on an already-healthy organization, only advancing the ordering high-water mark', async () => {
+    // Note: this organization's row IS touched now (unlike before the P1
+    // fix) -- every accepted invoice.paid advances
+    // latest_processed_invoice_created_at, even on a healthy org, since
+    // that's what lets a later STALE invoice.payment_failed for an even
+    // older invoice be correctly rejected (see the "critical stale
+    // failure case" tests below). What must NOT change is the actual
+    // lifecycle state itself.
     const { orgId, customerId } = await insertOrg({ tier: 'starter' });
     const before = await fetchBillingRow(orgId);
+    expect(before.latest_processed_invoice_created_at).toBeNull();
 
     const event = fakeEvent('invoice.paid', fakeInvoice(customerId));
     await deliverWebhook(event);
 
     const after = await fetchBillingRow(orgId);
-    expect(after.xmin).toBe(before.xmin);
+    expect(after.billing_lifecycle_state).toBe('healthy');
+    expect(after.payment_failed_at).toBeNull();
+    expect(after.grace_period_ends_at).toBeNull();
+    expect(after.latest_processed_invoice_created_at).not.toBeNull();
   });
 
   it('duplicate invoice.paid delivery after recovery is safe', async () => {
@@ -340,6 +374,113 @@ describe('invoice.paid -- recovery', () => {
     await deliverWebhook(event);
     const afterSecond = await fetchBillingRow(orgId);
     expect(afterSecond.xmin).toBe(afterFirst.xmin); // second delivery touched nothing
+  });
+});
+
+describe('out-of-order webhook delivery -- P1 fix (Stripe does not guarantee event order)', () => {
+  it('critical stale recovery case: current failure, then a delayed invoice.paid for an OLDER invoice, does not restore access', async () => {
+    const { orgId, customerId } = await insertOrg({ tier: 'pro' });
+
+    // The current, real failure -- a newer invoice than the stale one below.
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    const currentFailure = fakeInvoice(customerId, { created: unixSeconds(daysAgo(1)) });
+    await deliverWebhook(fakeEvent('invoice.payment_failed', currentFailure));
+
+    const afterFailure = await fetchBillingRow(orgId);
+    expect(afterFailure.billing_lifecycle_state).toBe('grace_period');
+    const deadlineAfterFailure = afterFailure.grace_period_ends_at;
+
+    // A delayed invoice.paid for an OLDER, already-superseded invoice
+    // (e.g. last billing period's receipt, redelivered late).
+    const staleOldInvoice = fakeInvoice(customerId, { created: unixSeconds(daysAgo(30)) });
+    await deliverWebhook(fakeEvent('invoice.paid', staleOldInvoice));
+
+    const after = await fetchBillingRow(orgId);
+    expect(after.billing_lifecycle_state).toBe('grace_period'); // NOT restored
+    expect(after.payment_failed_at).not.toBeNull();
+    expect(after.grace_period_ends_at).toEqual(deadlineAfterFailure); // deadline untouched
+  });
+
+  it('critical stale failure case: current recovery, then a delayed invoice.payment_failed for an OLDER invoice, does not reopen grace', async () => {
+    const { orgId, customerId } = await insertOrg({
+      tier: 'pro',
+      billingLifecycleState: 'grace_period',
+      paymentFailedAt: daysAgo(3),
+      gracePeriodEndsAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
+      latestProcessedInvoiceCreatedAt: daysAgo(3),
+    });
+
+    // The current, real recovery -- newer than the stale failure below.
+    const currentPaid = fakeInvoice(customerId, { created: unixSeconds(daysAgo(1)) });
+    await deliverWebhook(fakeEvent('invoice.paid', currentPaid));
+
+    const afterRecovery = await fetchBillingRow(orgId);
+    expect(afterRecovery.billing_lifecycle_state).toBe('healthy');
+
+    // A delayed invoice.payment_failed for an OLDER invoice than the one
+    // that just recovered the org (e.g. a redelivered retry notification
+    // for the episode that already resolved).
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    const staleOldFailure = fakeInvoice(customerId, { created: unixSeconds(daysAgo(5)) });
+    await deliverWebhook(fakeEvent('invoice.payment_failed', staleOldFailure));
+
+    const after = await fetchBillingRow(orgId);
+    expect(after.billing_lifecycle_state).toBe('healthy'); // NOT reopened
+    expect(after.payment_failed_at).toBeNull();
+    expect(after.grace_period_ends_at).toBeNull();
+  });
+
+  it('multiple invoices, ordering A: invoice A fails, invoice B (newer) succeeds, A\'s failure event arrives late -- final state reflects B (healthy)', async () => {
+    const { orgId, customerId } = await insertOrg({ tier: 'pro' });
+    const invoiceA = fakeInvoice(customerId, { created: unixSeconds(daysAgo(10)) });
+    const invoiceB = fakeInvoice(customerId, { created: unixSeconds(daysAgo(1)) });
+
+    // B (newer) succeeds, delivered first.
+    await deliverWebhook(fakeEvent('invoice.paid', invoiceB));
+    expect((await fetchBillingRow(orgId)).billing_lifecycle_state).toBe('healthy');
+
+    // A's failure (older than B) arrives late.
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoiceA));
+
+    const after = await fetchBillingRow(orgId);
+    expect(after.billing_lifecycle_state).toBe('healthy'); // reflects B, the newer state
+    expect(after.payment_failed_at).toBeNull();
+  });
+
+  it('multiple invoices, ordering B: invoice A succeeds, invoice B (newer) fails, A\'s success event arrives late -- final state reflects B (grace_period)', async () => {
+    const { orgId, customerId } = await insertOrg({ tier: 'pro' });
+    const invoiceA = fakeInvoice(customerId, { created: unixSeconds(daysAgo(10)) });
+    const invoiceB = fakeInvoice(customerId, { created: unixSeconds(daysAgo(1)) });
+
+    // B (newer) fails, delivered first.
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoiceB));
+    const afterB = await fetchBillingRow(orgId);
+    expect(afterB.billing_lifecycle_state).toBe('grace_period');
+
+    // A's success (older than B) arrives late.
+    await deliverWebhook(fakeEvent('invoice.paid', invoiceA));
+
+    const after = await fetchBillingRow(orgId);
+    expect(after.billing_lifecycle_state).toBe('grace_period'); // still reflects B, not incorrectly cleared by A
+    expect(after.grace_period_ends_at).toEqual(afterB.grace_period_ends_at);
+  });
+
+  it('cross-organization isolation: an out-of-order event for organization A never touches organization B', async () => {
+    const orgA = await insertOrg({ tier: 'pro' });
+    const orgB = await insertOrg({ tier: 'enterprise', billingLifecycleState: 'grace_period', paymentFailedAt: daysAgo(2), gracePeriodEndsAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) });
+    const beforeB = await fetchBillingRow(orgB.orgId);
+
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    // A stale/current event for org A's customer, regardless of ordering,
+    // must never be attributable to org B -- stripe_customer_id is UNIQUE,
+    // so this is also a direct proof of that constraint doing its job.
+    await deliverWebhook(fakeEvent('invoice.payment_failed', fakeInvoice(orgA.customerId, { created: unixSeconds(daysAgo(20)) })));
+    await deliverWebhook(fakeEvent('invoice.paid', fakeInvoice(orgA.customerId, { created: unixSeconds(daysAgo(1)) })));
+
+    const afterB = await fetchBillingRow(orgB.orgId);
+    expect(afterB).toEqual(beforeB);
   });
 });
 

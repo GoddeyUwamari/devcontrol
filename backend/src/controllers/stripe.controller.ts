@@ -1599,20 +1599,44 @@ export class StripeController {
   }
 
   /**
+   * Extracts a usable Invoice.created (Unix seconds -> Date) from a webhook
+   * payload, or null if it's missing/malformed. Stripe's own type defines
+   * this field as always present and non-null, but webhook payloads are
+   * untrusted input from the network -- this is the same defensive posture
+   * already applied to invoice.customer below, not a new pattern.
+   */
+  private extractInvoiceCreatedAt(invoice: any): Date | null {
+    return typeof invoice?.created === 'number' ? new Date(invoice.created * 1000) : null;
+  }
+
+  /**
    * invoice.paid -- the recovery half of the payment-failure lifecycle (see
    * handleInvoicePaymentFailed below for the failure half). Deliberately
    * touches ONLY billing_lifecycle_state/payment_failed_at/
-   * grace_period_ends_at -- never subscription_tier/subscription_status,
-   * which remain exclusively owned by handleSubscriptionUpdated/
-   * handleCheckoutSessionCompleted/handleSubscriptionDeleted above, so this
-   * handler can't regress entitlement-sync behavior. Runs on every paid
-   * invoice (not just ones that follow a failure) -- recordPaymentRecovery
-   * is a no-op when the org was already 'healthy', which is the common case.
+   * grace_period_ends_at/latest_processed_invoice_created_at -- never
+   * subscription_tier/subscription_status, which remain exclusively owned
+   * by handleSubscriptionUpdated/handleCheckoutSessionCompleted/
+   * handleSubscriptionDeleted above, so this handler can't regress
+   * entitlement-sync behavior. Runs on every paid invoice (not just ones
+   * that follow a failure) -- recordPaymentRecovery is a no-op when the org
+   * was already 'healthy', which is the common case.
+   *
+   * Passes this invoice's own created time through to recordPaymentRecovery
+   * so a stale, out-of-order invoice.paid for an invoice OLDER than one
+   * already processed (Stripe does not guarantee webhook delivery order)
+   * can never clear a genuinely current, still-unresolved failure -- see
+   * that method's comment for the full mechanism.
    */
   private async handleInvoicePaid(invoice: any): Promise<void> {
     const customerId = invoice.customer;
     if (!customerId) {
       console.warn(`invoice.paid ${invoice.id} has no customer -- skipping`);
+      return;
+    }
+
+    const invoiceCreatedAt = this.extractInvoiceCreatedAt(invoice);
+    if (!invoiceCreatedAt) {
+      console.warn(`invoice.paid ${invoice.id} has no usable created timestamp -- skipping`);
       return;
     }
 
@@ -1626,7 +1650,11 @@ export class StripeController {
       return;
     }
 
-    const { wasRecovery } = await stripeService.recordPaymentRecovery(organization.id);
+    const { wasRecovery, wasStale } = await stripeService.recordPaymentRecovery(organization.id, invoiceCreatedAt);
+    if (wasStale) {
+      console.log(`invoice.paid ${invoice.id} for organization ${organization.id} predates a payment event already processed -- ignoring (out-of-order delivery)`);
+      return;
+    }
     if (wasRecovery) {
       console.log(`Payment recovered for organization ${organization.id} (invoice ${invoice.id}) -- grace period cleared`);
     }
@@ -1635,10 +1663,11 @@ export class StripeController {
   /**
    * invoice.payment_failed -- the failure half of the payment-failure
    * lifecycle. Resolves the organization from Stripe's own invoice.customer
-   * (never a client-supplied id), records the failure idempotently (see
-   * StripeService.recordPaymentFailure for why repeated/duplicate delivery
-   * can't extend the grace deadline), and sends exactly one notification
-   * per failure episode. Deliberately does not touch subscription_tier or
+   * (never a client-supplied id), records the failure idempotently and
+   * order-safely (see StripeService.recordPaymentFailure for why repeated/
+   * duplicate/out-of-order delivery can't extend the grace deadline or
+   * reopen a resolved episode), and sends exactly one notification per
+   * failure episode. Deliberately does not touch subscription_tier or
    * subscription_status -- the organization keeps its paid tier during
    * grace; enforcement is handled separately by subscription.middleware.ts
    * reading billing_lifecycle_state/grace_period_ends_at.
@@ -1650,6 +1679,12 @@ export class StripeController {
       return;
     }
 
+    const invoiceCreatedAt = this.extractInvoiceCreatedAt(invoice);
+    if (!invoiceCreatedAt) {
+      console.warn(`invoice.payment_failed ${invoice.id} has no usable created timestamp -- skipping`);
+      return;
+    }
+
     const organization = await stripeService.getOrganizationByCustomerId(
       typeof customerId === 'string' ? customerId : customerId.id
     );
@@ -1658,7 +1693,11 @@ export class StripeController {
       return;
     }
 
-    const { wasNewFailure, row } = await stripeService.recordPaymentFailure(organization.id);
+    const { wasNewFailure, wasStale, row } = await stripeService.recordPaymentFailure(organization.id, invoiceCreatedAt);
+    if (wasStale) {
+      console.log(`invoice.payment_failed ${invoice.id} for organization ${organization.id} predates a payment event already processed -- ignoring (out-of-order delivery)`);
+      return;
+    }
     if (!wasNewFailure || !row.gracePeriodEndsAt) {
       // Already in an unresolved failure episode (or, defensively, a race
       // that left no deadline) -- the deadline and the one-time

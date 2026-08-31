@@ -1,14 +1,35 @@
 -- Migration: 202608312100_add_billing_lifecycle_state.sql
 -- Description: Adds the P0 payment-failure lifecycle's persisted state to
 --   organizations -- billing_lifecycle_state, payment_failed_at,
---   grace_period_ends_at -- consumed by StripeController.
---   handleInvoicePaymentFailed/handleInvoicePaid (backend/src/controllers/
---   stripe.controller.ts), StripeService.recordPaymentFailure/
---   recordPaymentRecovery (backend/src/services/stripe.service.ts), the
---   enforcement path in backend/src/middleware/subscription.middleware.ts
---   (getOrganizationTier/getOrganizationLimits/isOrgRestricted), and the
---   hourly reconciliation job (backend/src/jobs/
+--   grace_period_ends_at, latest_processed_invoice_created_at -- consumed by
+--   StripeController.handleInvoicePaymentFailed/handleInvoicePaid
+--   (backend/src/controllers/stripe.controller.ts), StripeService.
+--   recordPaymentFailure/recordPaymentRecovery (backend/src/services/
+--   stripe.service.ts), the enforcement path in backend/src/middleware/
+--   subscription.middleware.ts (getOrganizationTier/getOrganizationLimits/
+--   isOrgRestricted), and the hourly reconciliation job (backend/src/jobs/
 --   grace-period-enforcement.job.ts).
+--
+--   latest_processed_invoice_created_at closes a P1 found in review: Stripe
+--   explicitly does not guarantee webhook delivery order
+--   (https://docs.stripe.com/webhooks -- "Stripe... does not guarantee
+--   delivery of events in the order in which they are generated"), so an
+--   out-of-order invoice.paid for an OLDER, already-superseded invoice
+--   could otherwise clear a genuinely current failure, and symmetrically an
+--   out-of-order invoice.payment_failed for an older invoice could reopen a
+--   grace period after a genuine recovery. This column is a single,
+--   ever-advancing high-water mark of the newest invoice.created (Unix
+--   seconds -- see Invoice.created in node_modules/stripe/types/
+--   Invoices.d.ts, the only invoice-identity timestamp present and non-null
+--   on both invoice.paid and invoice.payment_failed payloads;
+--   status_transitions.paid_at is null on a failed invoice, so it can't
+--   serve as the shared comparison field) that either handler has actually
+--   accepted. Both recordPaymentFailure and recordPaymentRecovery reject
+--   (no-op) any invoice whose created time is strictly older than this
+--   mark, in either direction, and this mark is never cleared by recovery
+--   or cancellation -- only ever advanced -- so a stale event arriving
+--   after the fact can never resurrect a superseded state. See those two
+--   methods' own comments for the exact query shape.
 --
 --   Classified administrative (this directory, not database/migrations/)
 --   for the same reason as 202608270610_add_stripe_fields.sql -- the only
@@ -57,7 +78,8 @@ ALTER TABLE organizations
 ADD COLUMN IF NOT EXISTS billing_lifecycle_state VARCHAR(20) NOT NULL DEFAULT 'healthy'
   CHECK (billing_lifecycle_state IN ('healthy', 'grace_period', 'restricted')),
 ADD COLUMN IF NOT EXISTS payment_failed_at TIMESTAMPTZ,
-ADD COLUMN IF NOT EXISTS grace_period_ends_at TIMESTAMPTZ;
+ADD COLUMN IF NOT EXISTS grace_period_ends_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS latest_processed_invoice_created_at TIMESTAMPTZ;
 
 -- Serves the reconciliation job's exact scan (WHERE billing_lifecycle_state
 -- = 'grace_period' AND grace_period_ends_at < now()) and the lazy
@@ -72,6 +94,8 @@ COMMENT ON COLUMN organizations.payment_failed_at IS
   'When the CURRENT payment-failure episode began (T0). Set once per episode by StripeService.recordPaymentFailure; cleared on recovery or cancellation. Repeated invoice.payment_failed events during the same episode do not move this.';
 COMMENT ON COLUMN organizations.grace_period_ends_at IS
   'T0 + 7 days, persisted server-side at first-failure time (see StripeService.recordPaymentFailure). Never client-supplied, never extended by repeated failures. Cleared on recovery or cancellation.';
+COMMENT ON COLUMN organizations.latest_processed_invoice_created_at IS
+  'High-water mark (Invoice.created, Unix seconds, stored as a timestamp) of the newest invoice.paid/invoice.payment_failed this organization has actually accepted. Never cleared by recovery or cancellation -- only ever advanced -- so an out-of-order/stale webhook for an older invoice can never resurrect a state a newer event has already superseded. See StripeService.recordPaymentFailure/recordPaymentRecovery.';
 
 DO $$
 BEGIN
