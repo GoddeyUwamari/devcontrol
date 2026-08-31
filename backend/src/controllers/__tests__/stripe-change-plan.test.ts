@@ -90,7 +90,11 @@ async function fetchOrgTier(orgId: string): Promise<string> {
 
 function mockReqRes(body: any, organizationId: string) {
   const req = {
-    user: { organizationId, email: `owner-${uniqueSuffix()}@example.com` },
+    // role: 'owner' -- changePlan now requires owner/admin (see
+    // stripe-billing-authorization.test.ts for that check's own coverage).
+    // This suite is about change-plan business logic, not authorization,
+    // so every case here uses an authorized role to reach it.
+    user: { organizationId, email: `owner-${uniqueSuffix()}@example.com`, role: 'owner' },
     body,
   } as unknown as Request;
 
