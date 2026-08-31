@@ -22,6 +22,32 @@ const ALLOWED_CHECKOUT_FIELDS = new Set(['tier', 'billingInterval']);
 
 export class StripeController {
   /**
+   * Billing mutations (cancel, resume, change plan, open the Customer
+   * Portal) are restricted to organization owners/admins -- members and
+   * viewers can still read billing state (getSubscription/getInvoices)
+   * but must not be able to mutate the whole organization's subscription.
+   * Role comes exclusively from req.user.role, set server-side by
+   * authenticate() from the verified JWT -- never from the request body,
+   * query string, or headers. Mirrors the existing requireAdminOrOwner
+   * inline-helper convention (see remediation.routes.ts,
+   * cost-recommendations.routes.ts) rather than route-level middleware,
+   * so it's exercised the same way every other validation in this
+   * controller already is, and still protects the method if it's ever
+   * called directly.
+   */
+  private requireBillingAdmin(req: Request, res: Response): boolean {
+    const role = req.user?.role;
+    if (role !== 'owner' && role !== 'admin') {
+      res.status(403).json({
+        success: false,
+        error: 'Only organization owners and admins can manage billing.',
+      });
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * POST /api/stripe/create-checkout-session
    * Create a Stripe Checkout session for subscription
    */
@@ -167,6 +193,8 @@ export class StripeController {
         });
         return;
       }
+
+      if (!this.requireBillingAdmin(req, res)) return;
 
       const { returnUrl } = req.body;
       const organizationId = req.user.organizationId;
@@ -332,6 +360,8 @@ export class StripeController {
         return;
       }
 
+      if (!this.requireBillingAdmin(req, res)) return;
+
       const organizationId = req.user.organizationId;
       const { immediate } = req.body; // If true, cancel immediately; otherwise, at period end
 
@@ -399,6 +429,8 @@ export class StripeController {
         });
         return;
       }
+
+      if (!this.requireBillingAdmin(req, res)) return;
 
       const body = (req.body ?? {}) as Record<string, unknown>;
       const disallowedFields = Object.keys(body).filter(key => !ALLOWED_CHECKOUT_FIELDS.has(key));
@@ -513,6 +545,8 @@ export class StripeController {
         });
         return;
       }
+
+      if (!this.requireBillingAdmin(req, res)) return;
 
       const organizationId = req.user.organizationId;
 
