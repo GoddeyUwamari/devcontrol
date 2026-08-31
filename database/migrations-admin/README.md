@@ -77,8 +77,18 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`020_wire_compliance_and_orphaned_scanning.sql`**,
 **`021_wire_cost_recommendations_scanning.sql`**,
 **`023_create_account_security_findings.sql`**,
-**`029_add_resource_reconciliation.sql`**, and
-**`202608272014_extend_scheduled_reports_ai_types.sql`**.
+**`029_add_resource_reconciliation.sql`**,
+**`202608272014_extend_scheduled_reports_ai_types.sql`**, and
+**`202608312100_add_billing_lifecycle_state.sql`**.
+
+`202608312100_add_billing_lifecycle_state.sql` `ALTER TABLE`s
+`organizations` (adding the P0 payment-failure lifecycle's
+`billing_lifecycle_state`/`payment_failed_at`/`grace_period_ends_at`
+columns) -- the same table, and the same ownership finding, as
+`202608270610_add_stripe_fields.sql` above. No new ownership audit was
+needed: `organizations`' ownership hasn't changed, and a local
+`pg_get_userbyid(relowner)` check re-confirmed it at the time this
+migration was written.
 
 A migration belongs here if and only if it requires ownership-level DDL
 that `devcontrol` cannot perform under its normal grants — enabling RLS on

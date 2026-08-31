@@ -1,6 +1,17 @@
 import Stripe from 'stripe';
 import { pool } from '../config/database';
 import { TIER_LIMITS, SubscriptionTier } from '../middleware/subscription.middleware';
+import { emailService } from './email.service';
+
+export type BillingLifecycleState = 'healthy' | 'grace_period' | 'restricted';
+
+const GRACE_PERIOD_DAYS = 7;
+
+export interface BillingLifecycleRow {
+  billingLifecycleState: BillingLifecycleState;
+  paymentFailedAt: Date | null;
+  gracePeriodEndsAt: Date | null;
+}
 
 // Lazily constructed so importing this module never requires
 // STRIPE_SECRET_KEY to be set -- construction only happens on the first
@@ -741,6 +752,135 @@ export class StripeService {
   getTierFromPriceId(priceId: string): string {
     const match = getConfiguredPricePlans().find(plan => plan.priceId === priceId);
     return match ? match.tier : 'free';
+  }
+
+  /**
+   * Read an organization's current billing lifecycle state. Used both by
+   * subscription.middleware.ts's enforcement path and by getSubscription's
+   * API response -- the two deliberately different consumers of the same
+   * three columns (see recordPaymentFailure/recordPaymentRecovery below for
+   * why those columns exist and how they're written).
+   */
+  async getBillingLifecycleState(organizationId: string): Promise<BillingLifecycleRow | null> {
+    const { rows } = await pool.query(
+      `SELECT billing_lifecycle_state, payment_failed_at, grace_period_ends_at
+       FROM organizations WHERE id = $1`,
+      [organizationId]
+    );
+    if (rows.length === 0) return null;
+    return {
+      billingLifecycleState: rows[0].billing_lifecycle_state as BillingLifecycleState,
+      paymentFailedAt: rows[0].payment_failed_at,
+      gracePeriodEndsAt: rows[0].grace_period_ends_at,
+    };
+  }
+
+  /**
+   * Record a payment failure for an organization, idempotently.
+   *
+   * Only the FIRST failure of a episode (billing_lifecycle_state currently
+   * 'healthy') establishes payment_failed_at/grace_period_ends_at and moves
+   * the state to 'grace_period' -- a WHERE clause makes this a single
+   * conditional UPDATE rather than a read-then-write, so it's race-safe
+   * under concurrent webhook delivery too. Every subsequent
+   * invoice.payment_failed for the same still-unresolved episode (Stripe's
+   * own retry schedule, or a redelivered webhook) matches zero rows and is
+   * a pure no-op: the grace deadline never moves, and the caller (see
+   * StripeController.handleInvoicePaymentFailed) uses `wasNewFailure` to
+   * decide whether to send a notification at all -- so redelivery can never
+   * extend the deadline or spam email, without needing a separate webhook
+   * event ledger.
+   */
+  async recordPaymentFailure(organizationId: string): Promise<{ wasNewFailure: boolean; row: BillingLifecycleRow }> {
+    const graceEndsAt = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+
+    const result = await pool.query(
+      `UPDATE organizations
+       SET billing_lifecycle_state = 'grace_period',
+           payment_failed_at = NOW(),
+           grace_period_ends_at = $2
+       WHERE id = $1 AND billing_lifecycle_state = 'healthy'
+       RETURNING billing_lifecycle_state, payment_failed_at, grace_period_ends_at`,
+      [organizationId, graceEndsAt]
+    );
+
+    if (result.rows.length > 0) {
+      return {
+        wasNewFailure: true,
+        row: {
+          billingLifecycleState: result.rows[0].billing_lifecycle_state,
+          paymentFailedAt: result.rows[0].payment_failed_at,
+          gracePeriodEndsAt: result.rows[0].grace_period_ends_at,
+        },
+      };
+    }
+
+    // Already in grace_period or restricted -- read back the existing
+    // (unchanged) state for the caller rather than re-deriving it.
+    const existing = await this.getBillingLifecycleState(organizationId);
+    return { wasNewFailure: false, row: existing! };
+  }
+
+  /**
+   * Record a payment recovery (or an explicit reset, e.g. on subscription
+   * cancellation -- see StripeController.handleSubscriptionDeleted),
+   * idempotently. A WHERE clause excluding the already-healthy case means
+   * calling this when there was never a failure -- the overwhelmingly
+   * common case, since every invoice.paid runs through here -- is a
+   * zero-row no-op UPDATE, not a rewrite.
+   *
+   * Returns whether the organization was actually in grace_period/restricted
+   * before this call (i.e. whether this was a genuine recovery, as opposed
+   * to invoice.paid firing for an already-healthy org, which happens on
+   * every normal renewal).
+   */
+  async recordPaymentRecovery(organizationId: string): Promise<{ wasRecovery: boolean }> {
+    const result = await pool.query(
+      `UPDATE organizations
+       SET billing_lifecycle_state = 'healthy',
+           payment_failed_at = NULL,
+           grace_period_ends_at = NULL
+       WHERE id = $1 AND billing_lifecycle_state != 'healthy'
+       RETURNING id`,
+      [organizationId]
+    );
+    return { wasRecovery: result.rows.length > 0 };
+  }
+
+  /**
+   * Send the payment-failure notification email to the organization's
+   * owner, reusing the existing Resend-backed EmailService and the same
+   * "org owner" recipient-resolution query already established by
+   * weekly-summary.repository.ts's getUserInfo. Never throws (matches
+   * EmailService.send's own contract) and never includes any payment
+   * credential/card detail -- only the grace deadline and a link to the
+   * existing Stripe Customer Portal.
+   */
+  async sendPaymentFailedEmail(organizationId: string, graceEndsAt: Date): Promise<void> {
+    try {
+      const { rows } = await pool.query(
+        `SELECT u.email, u.full_name, o.name AS organization_name
+         FROM organizations o
+         JOIN organization_memberships om ON om.organization_id = o.id AND om.role = 'owner'
+         JOIN users u ON u.id = om.user_id
+         WHERE o.id = $1
+         LIMIT 1`,
+        [organizationId]
+      );
+
+      if (rows.length === 0) {
+        console.warn(`[Payment Failure] No owner found to notify for organization ${organizationId}`);
+        return;
+      }
+
+      await emailService.sendPaymentFailedEmail({
+        to: rows[0].email,
+        organizationName: rows[0].organization_name || 'Your Organization',
+        graceEndsAt,
+      });
+    } catch (error: any) {
+      console.error(`[Payment Failure] Failed to send notification for organization ${organizationId}:`, error.message);
+    }
   }
 }
 

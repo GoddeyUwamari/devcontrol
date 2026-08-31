@@ -16,6 +16,12 @@ export type SubscriptionStatus =
   | 'past_due'
   | 'unpaid';
 
+/** Application-level payment-failure lifecycle -- independent of Stripe's
+ * own `status` above. See backend/src/middleware/subscription.middleware.ts
+ * for enforcement and backend/src/controllers/stripe.controller.ts's
+ * handleInvoicePaymentFailed/handleInvoicePaid for how it's written. */
+export type BillingLifecycleState = 'healthy' | 'grace_period' | 'restricted';
+
 export interface Subscription {
   id?: string;
   tier: SubscriptionTier;
@@ -24,6 +30,15 @@ export interface Subscription {
   currentPeriodEnd?: number;
   cancelAtPeriodEnd: boolean;
   cancelAt?: number | null;
+  /** Always the organization's real paid tier, even while restricted --
+   * only isRestricted governs actual product access, never this field. */
+  billingLifecycleState?: BillingLifecycleState;
+  paymentFailedAt?: number | null;
+  graceEndsAt?: number | null;
+  /** True once the grace period has actually expired (state 'restricted',
+   * or 'grace_period' past its deadline) -- what the UI should key off of,
+   * rather than re-deriving it from graceEndsAt/Date.now() itself. */
+  isRestricted?: boolean;
 }
 
 export interface Invoice {

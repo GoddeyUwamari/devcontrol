@@ -88,8 +88,114 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
       : 'end of billing period';
   };
 
+  const formatGraceEndsAt = () => {
+    if (!subscription.graceEndsAt) return 'soon';
+    return new Date(subscription.graceEndsAt * 1000).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
+
+  // isRestricted (grace expired, or explicitly restricted) always takes
+  // precedence over a still-active grace period -- the two states are
+  // mutually exclusive by construction (see subscription.middleware.ts's
+  // isOrgRestricted), but checking isRestricted first here keeps that
+  // invariant true even if the API response is ever inconsistent.
+  const isRestricted = subscription.isRestricted === true;
+  const inGracePeriod = !isRestricted && subscription.billingLifecycleState === 'grace_period';
+
   return (
     <>
+      {isRestricted && (
+        <div
+          style={{
+            backgroundColor: 'rgba(220, 38, 38, 0.08)',
+            border: '1px solid #DC2626',
+            borderRadius: '0.75rem',
+            padding: '0.875rem 1rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            marginBottom: '1rem',
+          }}
+        >
+          <p style={{ fontSize: '0.875rem', color: '#991b1b', margin: 0, lineHeight: 1.4 }}>
+            <strong>Access restricted due to a payment issue.</strong>
+            {' '}Your {getTierDisplay()} plan and billing history are preserved -- resolve
+            payment to restore full access.
+            {!canManageBilling && ' Ask an organization owner or admin to update billing.'}
+          </p>
+          {canManageBilling && (
+            <button
+              onClick={handleOpenPortal}
+              disabled={portalLoading}
+              style={{
+                flexShrink: 0,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#991b1b',
+                border: '1px solid #DC2626',
+                borderRadius: '0.5rem',
+                padding: '0.375rem 0.75rem',
+                background: 'transparent',
+                cursor: portalLoading ? 'not-allowed' : 'pointer',
+                opacity: portalLoading ? 0.6 : 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {portalLoading ? 'Loading…' : 'Manage Billing'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {inGracePeriod && (
+        <div
+          style={{
+            backgroundColor: 'rgba(217, 119, 6, 0.10)',
+            border: '1px solid #D97706',
+            borderRadius: '0.75rem',
+            padding: '0.875rem 1rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            marginBottom: '1rem',
+          }}
+        >
+          <p style={{ fontSize: '0.875rem', color: '#92400e', margin: 0, lineHeight: 1.4 }}>
+            <strong>We couldn&apos;t process your last payment.</strong>
+            {' '}Your {getTierDisplay()} plan remains active until{' '}
+            <strong>{formatGraceEndsAt()}</strong>. Update your payment method before then to
+            avoid restricted access.
+            {!canManageBilling && ' Ask an organization owner or admin to update billing.'}
+          </p>
+          {canManageBilling && (
+            <button
+              onClick={handleOpenPortal}
+              disabled={portalLoading}
+              style={{
+                flexShrink: 0,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#92400e',
+                border: '1px solid #D97706',
+                borderRadius: '0.5rem',
+                padding: '0.375rem 0.75rem',
+                background: 'transparent',
+                cursor: portalLoading ? 'not-allowed' : 'pointer',
+                opacity: portalLoading ? 0.6 : 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {portalLoading ? 'Loading…' : 'Manage Billing'}
+            </button>
+          )}
+        </div>
+      )}
+
       {subscription.status === 'trialing' && (
         <div
           style={{
