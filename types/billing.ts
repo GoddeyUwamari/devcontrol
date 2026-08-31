@@ -98,3 +98,13 @@ export interface CancelSubscriptionResponse {
   };
   error?: string;
 }
+
+export interface ChangePlanResponse {
+  success: boolean;
+  data?: {
+    status: SubscriptionStatus;
+    tier: SubscriptionTier;
+    billingInterval: BillingInterval;
+  };
+  error?: string;
+}

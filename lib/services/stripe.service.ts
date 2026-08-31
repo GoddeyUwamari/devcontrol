@@ -11,6 +11,7 @@ import {
   InvoicesResponse,
   CustomerPortalResponse,
   CancelSubscriptionResponse,
+  ChangePlanResponse,
   SubscriptionTier,
   BillingInterval,
 } from '@/types/billing';
@@ -136,6 +137,31 @@ export async function resumeSubscription(): Promise<SubscriptionResponse> {
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to resume subscription',
+    };
+  }
+}
+
+/**
+ * Upgrade or downgrade the current subscription's tier and/or billing
+ * interval. Same as createCheckoutSession: the backend resolves the
+ * target Stripe Price ID itself -- only tier and billingInterval are sent.
+ */
+export async function changePlan(
+  tier: SubscriptionTier,
+  billingInterval: BillingInterval
+): Promise<ChangePlanResponse> {
+  try {
+    const response = await api.post<ChangePlanResponse>(
+      '/api/stripe/change-plan',
+      { tier, billingInterval }
+    );
+
+    return response.data;
+  } catch (error: any) {
+    console.error('Error changing subscription plan:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to change subscription plan',
     };
   }
 }
