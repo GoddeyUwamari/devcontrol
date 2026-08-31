@@ -7,6 +7,7 @@ import { createCheckoutSession, changePlan, getSubscription } from '@/lib/servic
 import { trackLeadQualified } from '@/lib/gtag'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useIsBillingAdmin } from '@/lib/hooks/use-current-role'
 
 const plans = [
   {
@@ -84,6 +85,13 @@ export default function UpgradePage() {
   const [loadingTier, setLoadingTier] = useState<string | null>(null)
   const [currentTier, setCurrentTier] = useState<string | null>(null)
   const router = useRouter()
+  // changePlan (modifying an *existing* subscription) is owner/admin-only
+  // server-side (StripeController.requireBillingAdmin); createCheckoutSession
+  // (starting a brand-new subscription from free tier) is not role-gated at
+  // all -- any authenticated member may do that. Gating below mirrors this
+  // exactly: only the changePlan path (hasExistingSubscription) is blocked
+  // for non-admins.
+  const isBillingAdmin = useIsBillingAdmin()
 
   useEffect(() => {
     getSubscription().then(result => {
@@ -188,6 +196,11 @@ export default function UpgradePage() {
               const price = billing === 'annual' && plan.annualPrice ? plan.annualPrice : plan.price
               const isLoading = loadingTier === plan.tier
               const showBanner = isCurrent || (!isDowngrade && plan.popular)
+              // Only a plan CHANGE (an org already on a paid tier) hits
+              // changePlan, which is owner/admin-only server-side. Starting
+              // a brand-new subscription from free tier (createCheckoutSession)
+              // has no role gate at all, so it stays open to every role.
+              const blockedByRole = hasExistingSubscription && !isBillingAdmin
 
               return (
                 <div
@@ -262,10 +275,11 @@ export default function UpgradePage() {
                       <button
                         onClick={() => {
                           trackLeadQualified(plan.name)
-                          if (isCurrent) return
+                          if (isCurrent || blockedByRole) return
                           handlePlanChange(plan)
                         }}
-                        disabled={isLoading || isCurrent}
+                        disabled={isLoading || isCurrent || blockedByRole}
+                        title={blockedByRole ? 'Only organization owners and admins can change the plan' : undefined}
                         className={`w-full py-3 px-4 rounded-xl font-semibold text-sm transition-all ${
                           isCurrent
                             ? 'border border-primary/30 text-primary/50 cursor-default'
@@ -283,6 +297,8 @@ export default function UpgradePage() {
                           </span>
                         ) : isCurrent ? (
                           'Current Plan'
+                        ) : blockedByRole ? (
+                          'Owner/admin required'
                         ) : isDowngrade ? (
                           `Switch to ${plan.name}`
                         ) : (

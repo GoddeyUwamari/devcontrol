@@ -26,8 +26,15 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useIsBillingAdmin } from '@/lib/hooks/use-current-role';
 
 export default function BillingPage() {
+  // Cancel/Resume/Manage Billing (Customer Portal) are all owner/admin-only
+  // server-side (StripeController.requireBillingAdmin) -- hide the same
+  // controls here so members/viewers never see an action they'd be
+  // rejected for. Backend authorization remains the real boundary; this is
+  // display-only.
+  const canManageBilling = useIsBillingAdmin();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,35 +206,43 @@ export default function BillingPage() {
                 </Button>
               ) : (
                 <>
-                  {subscription?.cancelAtPeriodEnd ? (
-                    <Button
-                      className="w-full"
-                      onClick={handleResumeSubscription}
-                      disabled={resumeLoading}
-                    >
-                      <PlayCircle className="mr-2 h-4 w-4" />
-                      {resumeLoading ? 'Resuming...' : 'Resume Subscription'}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => setCancelDialogOpen(true)}
-                    >
-                      Cancel Subscription
-                    </Button>
-                  )}
+                  {canManageBilling ? (
+                    <>
+                      {subscription?.cancelAtPeriodEnd ? (
+                        <Button
+                          className="w-full"
+                          onClick={handleResumeSubscription}
+                          disabled={resumeLoading}
+                        >
+                          <PlayCircle className="mr-2 h-4 w-4" />
+                          {resumeLoading ? 'Resuming...' : 'Resume Subscription'}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setCancelDialogOpen(true)}
+                        >
+                          Cancel Subscription
+                        </Button>
+                      )}
 
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleOpenPortal}
-                    disabled={portalLoading}
-                  >
-                    <CreditCard className="mr-2 h-4 w-4" />
-                    {portalLoading ? 'Loading...' : 'Manage Billing'}
-                    <ExternalLink className="ml-2 h-4 w-4" />
-                  </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleOpenPortal}
+                        disabled={portalLoading}
+                      >
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        {portalLoading ? 'Loading...' : 'Manage Billing'}
+                        <ExternalLink className="ml-2 h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Only organization owners and admins can cancel, resume, or manage billing.
+                    </p>
+                  )}
 
                   {subscription?.tier !== 'enterprise' && (
                     <Button
