@@ -57,6 +57,44 @@ export function isSupportedPlan(tier: CheckoutTier, interval: BillingInterval): 
   return interval === 'monthly' || ANNUAL_CAPABLE_TIERS.has(tier);
 }
 
+// Refund reasons the client-facing UI offers (components/payments/
+// issue-refund-dialog.tsx). Broader than Stripe's own Refund.reason enum --
+// see toStripeRefundReason below for the mapping, and STRIPE_REFUND_REASONS
+// for which of these actually reach Stripe's `reason` field.
+export type RefundReason =
+  | 'duplicate'
+  | 'fraudulent'
+  | 'requested_by_customer'
+  | 'service_not_provided'
+  | 'product_defective'
+  | 'other';
+
+const CLIENT_REFUND_REASONS: readonly RefundReason[] = [
+  'duplicate',
+  'fraudulent',
+  'requested_by_customer',
+  'service_not_provided',
+  'product_defective',
+  'other',
+];
+
+export function isRefundReason(value: unknown): value is RefundReason {
+  return typeof value === 'string' && (CLIENT_REFUND_REASONS as readonly string[]).includes(value);
+}
+
+// Only these three are valid values for Stripe's own Refund.reason field
+// (node_modules/stripe/types/Refunds.d.ts) -- the Stripe API rejects any
+// other value outright. The UI's other reasons (service_not_provided,
+// product_defective, other/custom text) are real, useful admin-facing
+// labels but have no Stripe equivalent, so they're preserved verbatim in
+// refunds.reason_detail (our own table) and simply never forwarded to
+// Stripe's `reason` param -- see StripeController.issueRefund.
+const STRIPE_REFUND_REASONS: ReadonlySet<string> = new Set(['duplicate', 'fraudulent', 'requested_by_customer']);
+
+export function toStripeRefundReason(reason: RefundReason): Stripe.RefundCreateParams.Reason | undefined {
+  return STRIPE_REFUND_REASONS.has(reason) ? (reason as Stripe.RefundCreateParams.Reason) : undefined;
+}
+
 /**
  * Canonical env var name(s) for each (tier, interval)'s Stripe Price ID, in
  * lookup priority order. This is the single source of truth for price
@@ -353,12 +391,14 @@ export class StripeService {
    */
   async listInvoices(
     customerId: string,
-    limit: number = 10
+    limit: number = 10,
+    startingAfter?: string
   ): Promise<Stripe.Invoice[]> {
     try {
       const invoices = await getStripeClient().invoices.list({
         customer: customerId,
         limit,
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
       });
 
       return invoices.data;
@@ -403,6 +443,21 @@ export class StripeService {
   }
 
   /**
+   * Retrieve a charge by ID. Used by the refund webhook path to resolve a
+   * refund's organization via its charge's customer when the refund itself
+   * carries no organizationId metadata (e.g. a refund issued directly in
+   * the Stripe Dashboard rather than through POST /api/refunds).
+   */
+  async retrieveCharge(chargeId: string): Promise<Stripe.Charge> {
+    try {
+      return await getStripeClient().charges.retrieve(chargeId);
+    } catch (error) {
+      console.error('Error retrieving charge:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Retrieve a customer by ID
    */
   async getCustomer(customerId: string): Promise<Stripe.Customer> {
@@ -411,6 +466,79 @@ export class StripeService {
       return customer as Stripe.Customer;
     } catch (error) {
       console.error('Error retrieving customer:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Retrieve an invoice by id. Callers must independently verify
+   * invoice.customer matches the requesting organization's
+   * stripe_customer_id before using anything from the result -- this
+   * method performs no authorization of its own.
+   */
+  async getInvoice(invoiceId: string): Promise<Stripe.Invoice> {
+    try {
+      return await getStripeClient().invoices.retrieve(invoiceId);
+    } catch (error) {
+      console.error('Error retrieving invoice:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * List the InvoicePayment records for an invoice, with each entry's
+   * underlying PaymentIntent expanded. This is how a refund/payment target
+   * is resolved from an invoice id under the installed Stripe API version
+   * (2025-12-15.clover), where Invoice no longer carries a direct
+   * payment_intent/charge field of its own -- see
+   * node_modules/stripe/types/InvoicePayments.d.ts. `expand:
+   * ['data.payment.payment_intent']` is 3 levels deep, within Stripe's
+   * 4-level list-expansion limit.
+   */
+  async listInvoicePayments(invoiceId: string): Promise<Stripe.InvoicePayment[]> {
+    try {
+      const payments = await getStripeClient().invoicePayments.list({
+        invoice: invoiceId,
+        expand: ['data.payment.payment_intent'],
+      });
+      return payments.data;
+    } catch (error) {
+      console.error('Error listing invoice payments:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Retrieve a PaymentIntent with its latest charge expanded. amount/
+   * amount_refunded live on the Charge, not the PaymentIntent, so this is
+   * what a caller needs to validate a requested refund amount against what
+   * is actually still refundable.
+   */
+  async getPaymentIntentWithCharge(paymentIntentId: string): Promise<Stripe.PaymentIntent> {
+    try {
+      return await getStripeClient().paymentIntents.retrieve(paymentIntentId, {
+        expand: ['latest_charge'],
+      });
+    } catch (error) {
+      console.error('Error retrieving payment intent:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a Stripe refund. `params` must already be fully server-resolved
+   * (payment_intent, amount, reason) by the caller -- see
+   * StripeController.issueRefund, which never forwards a client-supplied
+   * Stripe object id or amount without first validating it against the
+   * actual PaymentIntent/Charge this organization owns.
+   */
+  async createRefund(params: Stripe.RefundCreateParams): Promise<Stripe.Refund> {
+    try {
+      const refund = await getStripeClient().refunds.create(params);
+      console.log(`Created refund ${refund.id} for payment intent ${params.payment_intent}`);
+      return refund;
+    } catch (error) {
+      console.error('Error creating refund:', error);
       throw error;
     }
   }

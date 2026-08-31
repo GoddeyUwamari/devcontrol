@@ -33,9 +33,12 @@ export default function RefundsPage() {
   } = useQuery({
     queryKey: ['refunds', filters],
     queryFn: async () => {
-      // Note: The refunds service doesn't support filters yet,
-      // but we're setting it up for future enhancement
-      return await refundsService.getAll();
+      return await refundsService.getAll({
+        status: filters.status,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        search: filters.search,
+      });
     },
   });
 

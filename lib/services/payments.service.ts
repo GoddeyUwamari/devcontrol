@@ -2,15 +2,12 @@ import api, { handleApiResponse } from '../api';
 import type {
   Payment,
   PaymentIntent,
-  PaymentMethod,
   Refund,
   PaymentStats,
   RefundStats,
   PaymentFilters,
   CreatePaymentIntentPayload,
   CreateRefundPayload,
-  AddPaymentMethodPayload,
-  UpdatePaymentMethodPayload,
   ApiResponse,
 } from '../types';
 
@@ -66,49 +63,51 @@ export const paymentsService = {
   },
 };
 
-export const paymentMethodsService = {
-  // Get all payment methods
-  getAll: async (): Promise<PaymentMethod[]> => {
-    const response = await api.get<ApiResponse<PaymentMethod[]>>('/api/payment-methods');
-    return handleApiResponse(response);
-  },
+// Payment methods are managed entirely through the Stripe Customer Portal
+// (see app/(app)/payment-methods/page.tsx and lib/services/stripe.service.ts's
+// openCustomerPortal) -- there is deliberately no paymentMethodsService here.
+// It previously called /api/payment-methods endpoints that never existed on
+// the backend, backing a form that collected raw card numbers and CVCs
+// client-side with nowhere real to send them. Removed rather than
+// implemented: DevControl does not process card data itself.
 
-  // Add payment method
-  add: async (data: AddPaymentMethodPayload): Promise<PaymentMethod> => {
-    const response = await api.post<ApiResponse<PaymentMethod>>('/api/payment-methods', data);
-    return handleApiResponse(response);
-  },
-
-  // Update payment method
-  update: async (id: string, data: UpdatePaymentMethodPayload): Promise<PaymentMethod> => {
-    const response = await api.patch<ApiResponse<PaymentMethod>>(`/api/payment-methods/${id}`, data);
-    return handleApiResponse(response);
-  },
-
-  // Delete payment method
-  delete: async (id: string): Promise<void> => {
-    const response = await api.delete<ApiResponse<void>>(`/api/payment-methods/${id}`);
-    return handleApiResponse(response);
-  },
-
-  // Set as default payment method
-  setDefault: async (id: string): Promise<PaymentMethod> => {
-    const response = await api.post<ApiResponse<PaymentMethod>>(`/api/payment-methods/${id}/default`);
-    return handleApiResponse(response);
-  },
-};
+export interface RefundFilters {
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+}
 
 export const refundsService = {
   // Get all refunds
-  getAll: async (): Promise<Refund[]> => {
-    const response = await api.get<ApiResponse<Refund[]>>('/api/refunds');
+  getAll: async (filters?: RefundFilters): Promise<Refund[]> => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.startDate) params.append('startDate', filters.startDate);
+    if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.search) params.append('search', filters.search);
+
+    const queryString = params.toString();
+    const url = `/api/refunds${queryString ? `?${queryString}` : ''}`;
+
+    const response = await api.get<ApiResponse<Refund[]>>(url);
     return handleApiResponse(response);
   },
 
   // Create refund
   create: async (data: CreateRefundPayload): Promise<Refund> => {
-    const response = await api.post<ApiResponse<Refund>>('/api/refunds', data);
-    return handleApiResponse(response);
+    try {
+      const response = await api.post<ApiResponse<Refund>>('/api/refunds', data);
+      return handleApiResponse(response);
+    } catch (error: any) {
+      // Surface the backend's specific validation/authorization message
+      // (e.g. "Refund amount exceeds the refundable balance...") rather
+      // than axios's generic "Request failed with status code 4xx" --
+      // handleApiResponse never sees the response body here since axios
+      // rejects non-2xx responses before that helper runs.
+      const message = error.response?.data?.error || error.message || 'Failed to issue refund';
+      throw new Error(message);
+    }
   },
 
   // Get refund statistics

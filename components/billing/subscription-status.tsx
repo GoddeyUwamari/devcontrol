@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, CreditCard, TrendingUp } from 'lucide-react';
 import { openCustomerPortal } from '@/lib/services/stripe.service';
+import { useIsBillingAdmin } from '@/lib/hooks/use-current-role';
 
 interface SubscriptionStatusProps {
   subscription: Subscription;
@@ -13,6 +14,10 @@ interface SubscriptionStatusProps {
 
 export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
   const [portalLoading, setPortalLoading] = useState(false);
+  // Opening the Customer Portal is owner/admin-only server-side
+  // (StripeController.requireBillingAdmin) -- hide the trial banner's
+  // portal-triggering button for the same roles.
+  const canManageBilling = useIsBillingAdmin();
 
   const handleOpenPortal = async () => {
     setPortalLoading(true);
@@ -101,7 +106,9 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
           <p style={{ fontSize: '0.875rem', color: '#92400e', margin: 0, lineHeight: 1.4 }}>
             <strong>Your trial ends in {getTrialDaysRemaining()} days</strong>
             {' '}— add a payment method to keep access.
+            {!canManageBilling && ' Ask an organization owner or admin to add one.'}
           </p>
+          {canManageBilling && (
           <button
             onClick={handleOpenPortal}
             disabled={portalLoading}
@@ -121,6 +128,7 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
           >
             {portalLoading ? 'Loading…' : 'Add payment method'}
           </button>
+          )}
         </div>
       )}
       <Card>

@@ -193,6 +193,32 @@ export const tokenManager = {
   },
 
   /**
+   * Read the `role` claim directly off the stored access token's JWT
+   * payload (decoded, not verified -- this is UI-display-only; the
+   * authoritative check is always the backend's own JWT verification, e.g.
+   * StripeController.requireBillingAdmin). Needed because neither the
+   * login/register response's `user` object nor AuthContext's
+   * Organization type currently carries the caller's org role anywhere
+   * (it's only ever returned as a sibling `organization.role` field at
+   * login time and not persisted) -- see components/payments/
+   * issue-refund-dialog.tsx's caller for why this exists.
+   */
+  getCurrentRole(): string | null {
+    const token = this.getAccessToken();
+    if (!token) return null;
+    try {
+      const payloadSegment = token.split('.')[1];
+      if (!payloadSegment) return null;
+      const normalized = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
+      const json = atob(normalized);
+      const payload = JSON.parse(json);
+      return typeof payload.role === 'string' ? payload.role : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Set auth cookie for middleware
    */
   setAuthCookie(token: string): void {

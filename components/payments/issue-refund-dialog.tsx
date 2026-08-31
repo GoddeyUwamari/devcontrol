@@ -107,7 +107,8 @@ export function IssueRefundDialog({ open, onOpenChange, payment }: IssueRefundDi
         <DialogHeader>
           <DialogTitle>Issue Refund</DialogTitle>
           <DialogDescription>
-            Create a refund for this payment. Leave amount blank for a full refund.
+            This is an administrative billing action restricted to organization owners and admins.
+            It calls Stripe directly and cannot be undone. Leave amount blank for a full refund.
           </DialogDescription>
         </DialogHeader>
 

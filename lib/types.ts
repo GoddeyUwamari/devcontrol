@@ -217,19 +217,17 @@ export interface Payment {
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  /** Stripe-hosted invoice page for this payment (external link). */
+  hostedUrl?: string;
+  /** Stripe-hosted invoice PDF for this payment (external link). */
+  pdfUrl?: string;
 }
 
-export interface PaymentMethod {
-  id: string;
-  type: string;
-  brand?: string;
-  last4?: string;
-  expiryMonth?: number;
-  expiryYear?: number;
-  isDefault: boolean;
-  customerId?: string;
-  createdAt: string;
-}
+// There is deliberately no PaymentMethod type here. Payment methods are
+// managed entirely through the Stripe Customer Portal (see
+// app/(app)/payment-methods/page.tsx) -- DevControl never collects,
+// receives, or stores raw card data, so there is no local representation
+// of one to type.
 
 export interface PaymentIntent {
   id: string;
@@ -291,20 +289,6 @@ export interface CreateRefundPayload {
   amount?: number;
   reason?: string;
   metadata?: Record<string, unknown>;
-}
-
-export interface AddPaymentMethodPayload {
-  type: string;
-  cardNumber?: string;
-  expiryMonth?: number;
-  expiryYear?: number;
-  cvc?: string;
-  customerId?: string;
-}
-
-export interface UpdatePaymentMethodPayload {
-  expiryMonth?: number;
-  expiryYear?: number;
 }
 
 // Monitoring & Health Check

@@ -10,13 +10,17 @@ import { paymentsService } from '@/lib/services/payments.service';
 import { PaymentStatusBadge } from '@/components/payments/payment-status-badge';
 import { IssueRefundDialog } from '@/components/payments/issue-refund-dialog';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Breadcrumb } from '@/components/navigation/breadcrumb';
 import { BackButton } from '@/components/navigation/back-button';
+import { useIsBillingAdmin } from '@/lib/hooks/use-current-role';
 
 export default function PaymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const router = useRouter();
+  // Issuing a refund is an administrative billing action restricted to
+  // organization owners/admins server-side (StripeController.
+  // requireBillingAdmin) -- the control is hidden here for the same roles
+  // so members/viewers never see an action they'd be rejected for.
+  const canManageBilling = useIsBillingAdmin();
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
@@ -53,8 +57,9 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const handleDownloadReceipt = () => {
-    // This would integrate with a PDF generation service or backend endpoint
-    console.log('Download receipt for payment:', id);
+    if (payment?.pdfUrl) {
+      window.open(payment.pdfUrl, '_blank');
+    }
   };
 
   if (isLoading) {
@@ -107,7 +112,7 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  const canRefund = payment.status === 'succeeded';
+  const canRefund = payment.status === 'succeeded' && canManageBilling;
 
   return (
     <div className="space-y-6 px-4 md:px-6 lg:px-8 max-w-5xl mx-auto">
@@ -132,7 +137,7 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleDownloadReceipt}>
+          <Button variant="outline" onClick={handleDownloadReceipt} disabled={!payment.pdfUrl}>
             <Download className="h-4 w-4 mr-2" />
             Receipt
           </Button>
@@ -141,7 +146,7 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
             Print
           </Button>
           {canRefund && (
-            <Button onClick={() => setRefundDialogOpen(true)}>
+            <Button onClick={() => setRefundDialogOpen(true)} title="Administrative billing action -- restricted to organization owners/admins">
               Issue Refund
             </Button>
           )}
@@ -249,13 +254,17 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
             {payment.invoiceId ? (
               <div>
                 <p className="text-sm text-muted-foreground">Associated Invoice</p>
-                <Button
-                  variant="link"
-                  className="h-auto p-0 font-mono text-sm"
-                  onClick={() => router.push(`/invoices/${payment.invoiceId}`)}
-                >
-                  {payment.invoiceId}
-                </Button>
+                {payment.hostedUrl ? (
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 font-mono text-sm"
+                    onClick={() => window.open(payment.hostedUrl, '_blank')}
+                  >
+                    {payment.invoiceId}
+                  </Button>
+                ) : (
+                  <p className="font-mono text-sm">{payment.invoiceId}</p>
+                )}
               </div>
             ) : (
               <div>
