@@ -40,7 +40,6 @@ export function PricingCard({ tier, currentTier, billingPeriod = 'monthly' }: Pr
   const [loading, setLoading] = useState(false);
 
   const displayPrice = billingPeriod === 'annual' && tier.annualPrice !== undefined ? tier.annualPrice : tier.price;
-  const priceId = billingPeriod === 'annual' && tier.annualPriceId ? tier.annualPriceId : tier.priceId;
   const tierInfo = tierSubtitles[tier.tier] || { subtitle: '', idealFor: '' };
 
   const handleCheckout = async () => {
@@ -59,7 +58,7 @@ export function PricingCard({ tier, currentTier, billingPeriod = 'monthly' }: Pr
     setLoading(true);
 
     try {
-      const result = await createCheckoutSession(tier.tier, priceId);
+      const result = await createCheckoutSession(tier.tier, billingPeriod);
 
       if (result.success && result.data?.url) {
         // Redirect to Stripe Checkout

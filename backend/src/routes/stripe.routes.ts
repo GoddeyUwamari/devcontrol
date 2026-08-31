@@ -3,16 +3,16 @@
  * Handles Stripe payment and subscription endpoints
  */
 import { Router } from 'express';
-import express from 'express'; // ✅ ADD THIS
 import { stripeController } from '../controllers/stripe.controller';
 import { authenticate } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Webhook route MUST come FIRST and use raw body
+// Webhook route MUST come FIRST. Raw body is already applied at the app
+// level in server.ts (RAW_BODY_PATHS) before requests reach this router —
+// do not re-apply express.raw() here, it would double-parse the body.
 router.post(
   '/webhook',
-  express.raw({ type: 'application/json' }), // ✅ RAW BODY FOR STRIPE
   stripeController.handleWebhook.bind(stripeController)
 );
 

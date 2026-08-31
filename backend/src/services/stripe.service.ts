@@ -19,6 +19,132 @@ function getStripeClient(): Stripe {
   return stripeClient;
 }
 
+// Tiers a client is allowed to request Checkout for. 'free' is excluded --
+// it has no Stripe price and never goes through Checkout.
+export type CheckoutTier = 'starter' | 'pro' | 'enterprise';
+export const CHECKOUT_TIERS: readonly CheckoutTier[] = ['starter', 'pro', 'enterprise'];
+
+export function isCheckoutTier(value: unknown): value is CheckoutTier {
+  return typeof value === 'string' && (CHECKOUT_TIERS as readonly string[]).includes(value);
+}
+
+// Billing cadence a client may choose. Purely a Checkout-time selector of
+// which Stripe Price to buy -- it is never persisted and never changes
+// entitlements; TIER_LIMITS is keyed by tier only, so starter-monthly and
+// starter-annual always get identical resource limits.
+export type BillingInterval = 'monthly' | 'annual';
+export const BILLING_INTERVALS: readonly BillingInterval[] = ['monthly', 'annual'];
+
+export function isBillingInterval(value: unknown): value is BillingInterval {
+  return typeof value === 'string' && (BILLING_INTERVALS as readonly string[]).includes(value);
+}
+
+// Tiers that support self-service annual billing. Enterprise is
+// Contact-Sales only for annual pricing (no self-serve Checkout path exists
+// for it anywhere in this app's UI) -- no Stripe Price should ever be
+// created for enterprise/annual, and requests for that combination must be
+// rejected before Checkout resolution is even attempted.
+const ANNUAL_CAPABLE_TIERS: ReadonlySet<CheckoutTier> = new Set(['starter', 'pro']);
+
+/**
+ * Whether a (tier, interval) combination is actually offered via
+ * self-service Checkout. This is the single source of truth for which
+ * plans exist at all -- distinct from isCheckoutTier/isBillingInterval,
+ * which only validate that each field is individually a recognized value.
+ * Currently the only unsupported combination is enterprise/annual.
+ */
+export function isSupportedPlan(tier: CheckoutTier, interval: BillingInterval): boolean {
+  return interval === 'monthly' || ANNUAL_CAPABLE_TIERS.has(tier);
+}
+
+/**
+ * Canonical env var name(s) for each (tier, interval)'s Stripe Price ID, in
+ * lookup priority order. This is the single source of truth for price
+ * resolution -- both Checkout (getPriceIdForPlan) and webhook tier
+ * detection (getTierFromPriceId) read through it, so the mapping can never
+ * drift between the two directions.
+ *
+ * Monthly additionally accepts the legacy un-suffixed var name
+ * (STRIPE_PRICE_STARTER, STRIPE_PRICE_PRO, STRIPE_PRICE_ENTERPRISE) that
+ * predates annual billing, so deployments configured before this feature
+ * keep working without an env change. Annual has no legacy alias -- it is
+ * new, and checkout for a tier/annual combination fails closed until its
+ * *_ANNUAL var is set. Migration path: once every environment sets the
+ * *_MONTHLY name explicitly, delete the legacy alias entry below.
+ *
+ * Canonical annual charges (read this before creating any *_ANNUAL Price in
+ * Stripe -- Prices are immutable once created):
+ *   - Starter: $490.00/year exactly (= $49 monthly x 10)
+ *   - Pro:     $1,990.00/year exactly (= $199 monthly x 10)
+ *   - Enterprise: no self-service annual Price -- Enterprise has no
+ *     self-serve Checkout at all (contact-sales only in every UI surface
+ *     across this repo's history), so *_ANNUAL should not be created for it
+ *     without a separate product decision.
+ * These totals are "2 months free," not a 20%-off discount ($490/12 =
+ * $40.83 and $1,990/12 = $165.83, displayed rounded as ~$41 and ~$166
+ * per-month-equivalent in the pricing UI). Source of truth: the annualPrice
+ * (41, 166) and annualSavings (98, 398) constants already live in
+ * app/(app)/settings/billing/upgrade/page.tsx and
+ * app/(marketing)/pricing/page.tsx -- 12*49-490=98 and 12*199-1990=398
+ * reproduce those exact hardcoded annualSavings values, which an even
+ * 20%-off discount does not. Those two figures were deliberately corrected
+ * in commits 10211f3 and 287109f (2026-05-08) from an earlier, buggy pair
+ * (63/239, where "annual" was priced *above* monthly) and have not changed
+ * since. components/billing/pricing-faq.tsx separately claims annual
+ * billing "saves 20%" -- that copy predates and was never reconciled with
+ * the 10211f3/287109f correction and should eventually be corrected to
+ * describe the actual ~16.6% ("2 months free") discount rather than 20%.
+ *
+ * Enterprise deliberately has no `annual` entry: it is Contact-Sales only
+ * for annual billing (see isSupportedPlan/ANNUAL_CAPABLE_TIERS above), so
+ * there is no STRIPE_PRICE_ENTERPRISE_ANNUAL to resolve and none should be
+ * created in Stripe or required by env validation.
+ */
+const PRICE_ENV_VAR_CANDIDATES: Record<CheckoutTier, Partial<Record<BillingInterval, readonly string[]>>> = {
+  starter: {
+    monthly: ['STRIPE_PRICE_STARTER_MONTHLY', 'STRIPE_PRICE_STARTER'],
+    annual: ['STRIPE_PRICE_STARTER_ANNUAL'],
+  },
+  pro: {
+    monthly: ['STRIPE_PRICE_PRO_MONTHLY', 'STRIPE_PRICE_PRO'],
+    annual: ['STRIPE_PRICE_PRO_ANNUAL'],
+  },
+  enterprise: {
+    monthly: ['STRIPE_PRICE_ENTERPRISE_MONTHLY', 'STRIPE_PRICE_ENTERPRISE'],
+  },
+};
+
+function resolvePriceEnvVar(
+  tier: CheckoutTier,
+  interval: BillingInterval
+): { value: string | null; candidates: readonly string[] } {
+  const candidates = PRICE_ENV_VAR_CANDIDATES[tier][interval];
+  if (!candidates) {
+    return { value: null, candidates: [] };
+  }
+  for (const name of candidates) {
+    const value = process.env[name];
+    if (value) return { value, candidates };
+  }
+  return { value: null, candidates };
+}
+
+/**
+ * Every (tier, interval, priceId) triple whose env var is currently set.
+ * Recomputed on each call (not cached) so env changes -- including in
+ * tests -- are always reflected immediately.
+ */
+function getConfiguredPricePlans(): Array<{ tier: CheckoutTier; interval: BillingInterval; priceId: string }> {
+  const plans: Array<{ tier: CheckoutTier; interval: BillingInterval; priceId: string }> = [];
+  for (const tier of CHECKOUT_TIERS) {
+    for (const interval of BILLING_INTERVALS) {
+      const { value } = resolvePriceEnvVar(tier, interval);
+      if (value) plans.push({ tier, interval, priceId: value });
+    }
+  }
+  return plans;
+}
+
 export class StripeService {
   /**
    * Create a Stripe customer for an organization
@@ -439,18 +565,54 @@ export class StripeService {
   }
 
   /**
-   * Get tier name from Stripe price ID
+   * Resolve the Stripe Price ID for a (tier, billingInterval) plan
+   * exclusively from server-side env vars. No hardcoded fallback IDs -- an
+   * unconfigured plan throws rather than silently checking out against a
+   * stale/wrong price.
+   */
+  getPriceIdForPlan(tier: CheckoutTier, interval: BillingInterval): string {
+    const { value, candidates } = resolvePriceEnvVar(tier, interval);
+    if (!value) {
+      throw new Error(
+        `No Stripe Price ID configured for ${tier}/${interval} (checked: ${candidates.join(', ')})`
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Canonical env var names (one per enabled tier/interval combination)
+   * that resolve to no configured price. Used by env validation to fail
+   * closed before startup rather than let checkout fail per-request.
+   * Reports the canonical *_MONTHLY/*_ANNUAL name even for a monthly slot
+   * satisfied only by the legacy unsuffixed alias -- callers should treat
+   * the legacy alias as a stopgap, not a long-term substitute.
+   *
+   * Skips any (tier, interval) combination isSupportedPlan() rejects --
+   * currently enterprise/annual -- so STRIPE_PRICE_ENTERPRISE_ANNUAL is
+   * never required by startup env validation.
+   */
+  getMissingCheckoutPriceEnvVars(): string[] {
+    const missing: string[] = [];
+    for (const tier of CHECKOUT_TIERS) {
+      for (const interval of BILLING_INTERVALS) {
+        if (!isSupportedPlan(tier, interval)) continue;
+        const { value, candidates } = resolvePriceEnvVar(tier, interval);
+        if (!value) missing.push(candidates[0]);
+      }
+    }
+    return missing;
+  }
+
+  /**
+   * Get tier name from a Stripe Price ID. Checks every configured
+   * (tier, interval) price -- monthly and annual alike -- so both
+   * cadences of the same tier resolve identically; unrecognized prices
+   * fall back to 'free'.
    */
   getTierFromPriceId(priceId: string): string {
-    const STARTER_PRICE_ID = process.env.STRIPE_PRICE_STARTER || 'price_1TJBsAHTCYC33EIRTp9R4IMh';
-    const PRO_PRICE_ID = process.env.STRIPE_PRICE_PRO || 'price_1TJC3AHTCYC33EIRjY1RN0I6';
-    const ENTERPRISE_PRICE_ID = process.env.STRIPE_PRICE_ENTERPRISE || 'price_1Skm4iH8pNFfrvRPa6nDnjqc';
-
-    if (priceId === STARTER_PRICE_ID) return 'starter';
-    if (priceId === PRO_PRICE_ID) return 'pro';
-    if (priceId === ENTERPRISE_PRICE_ID) return 'enterprise';
-
-    return 'free';
+    const match = getConfiguredPricePlans().find(plan => plan.priceId === priceId);
+    return match ? match.tier : 'free';
   }
 }
 

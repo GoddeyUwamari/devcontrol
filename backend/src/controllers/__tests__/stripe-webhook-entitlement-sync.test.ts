@@ -54,11 +54,28 @@ function dbConfig() {
 
 const pool = new Pool(dbConfig());
 
-// Mirrors StripeService.getTierFromPriceId()'s own env-var-with-fallback
-// resolution, so the price IDs used here always match what the code under
-// test resolves them to, regardless of which environment this runs in.
-const STARTER_PRICE_ID = process.env.STRIPE_PRICE_STARTER || 'price_1TJBsAHTCYC33EIRTp9R4IMh';
-const PRO_PRICE_ID = process.env.STRIPE_PRICE_PRO || 'price_1TJC3AHTCYC33EIRjY1RN0I6';
+// This suite must not depend on any real Stripe configuration being present
+// in the environment it runs in -- CI sets none (see .github/workflows/
+// ci.yml's "Run backend tests" step) and backend/.env is git-ignored, so
+// neither can be assumed. Every price env var this file needs is seeded
+// here with a fake test-only value (never a real Stripe id) and restored in
+// afterAll, so resolution below always goes through the real
+// StripeService.getPriceIdForPlan() -- exercising actual production code,
+// not a locally-duplicated constant -- while being fully hermetic.
+const FAKE_PRICE_ENV: Record<string, string> = {
+  STRIPE_PRICE_STARTER_MONTHLY: 'price_test_fake_starter_monthly',
+  STRIPE_PRICE_STARTER_ANNUAL: 'price_test_fake_starter_annual',
+  STRIPE_PRICE_PRO_MONTHLY: 'price_test_fake_pro_monthly',
+};
+const originalPriceEnv: Record<string, string | undefined> = {};
+for (const [envVar, fakeValue] of Object.entries(FAKE_PRICE_ENV)) {
+  originalPriceEnv[envVar] = process.env[envVar];
+  process.env[envVar] = fakeValue;
+}
+
+const STARTER_PRICE_ID = stripeService.getPriceIdForPlan('starter', 'monthly');
+const PRO_PRICE_ID = stripeService.getPriceIdForPlan('pro', 'monthly');
+const STARTER_ANNUAL_PRICE_ID = stripeService.getPriceIdForPlan('starter', 'annual');
 
 const createdOrgIds: string[] = [];
 
@@ -138,6 +155,10 @@ afterEach(() => {
 });
 
 afterAll(async () => {
+  for (const [envVar, original] of Object.entries(originalPriceEnv)) {
+    if (original !== undefined) process.env[envVar] = original;
+    else delete process.env[envVar];
+  }
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
@@ -308,5 +329,81 @@ describe('same-tier update -- protection against unnecessary entitlement rewrite
     expect(after.max_services).toBe(TIER_LIMITS.pro.maxServices);
     expect(after.max_users).toBe(TIER_LIMITS.pro.maxUsers);
     expect(after.max_deployments_per_month).toBe(TIER_LIMITS.pro.maxDeploymentsPerMonth);
+  });
+});
+
+describe('annual billing cadence gets identical entitlements to monthly for the same tier', () => {
+  it('an annual-Price checkout.session.completed webhook raises entitlements to TIER_LIMITS.starter, same as monthly', async () => {
+    const customerId = `cus_test_${uniqueSuffix()}`;
+    const orgId = await insertOrg({ tier: 'free', stripeCustomerId: customerId });
+
+    const subscriptionId = `sub_test_${uniqueSuffix()}`;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const subscription = {
+      id: subscriptionId,
+      customer: customerId,
+      status: 'active',
+      items: { data: [{ price: { id: STARTER_ANNUAL_PRICE_ID } }] }, // annual Price, same tier as STARTER_PRICE_ID
+      current_period_start: nowSec,
+      current_period_end: nowSec + 365 * 24 * 60 * 60,
+      cancel_at_period_end: false,
+    };
+    jest.spyOn(stripeService, 'getSubscription').mockResolvedValue(subscription as any);
+
+    const session = {
+      metadata: { organizationId: orgId },
+      customer: customerId,
+      subscription: subscriptionId,
+    };
+
+    const { req, res, json, status } = mockWebhookReqRes(fakeEvent('checkout.session.completed', session));
+    stubSignatureVerification(fakeEvent('checkout.session.completed', session));
+
+    await stripeController.handleWebhook(req, res);
+
+    expect(status).not.toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith({ success: true, received: true });
+
+    const after = await fetchOrgRow(orgId);
+    expect(after.subscription_tier).toBe('starter');
+    // Identical to the monthly starter checkout-completion assertions above --
+    // entitlements are derived from TIER_LIMITS[tier] only, never from
+    // billing cadence.
+    expect(after.max_services).toBe(TIER_LIMITS.starter.maxServices);
+    expect(after.max_users).toBe(TIER_LIMITS.starter.maxUsers);
+    expect(after.max_deployments_per_month).toBe(TIER_LIMITS.starter.maxDeploymentsPerMonth);
+  });
+
+  it('switching an existing subscription from monthly-starter Price to annual-starter Price is a same-tier update: no entitlement rewrite, still safe', async () => {
+    const customerId = `cus_test_${uniqueSuffix()}`;
+    const orgId = await insertOrg({ tier: 'starter', stripeCustomerId: customerId });
+
+    const before = await fetchOrgRow(orgId);
+    expect(before.subscription_tier).toBe('starter');
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const subscription = {
+      id: `sub_test_${uniqueSuffix()}`,
+      customer: customerId,
+      status: 'active',
+      items: { data: [{ price: { id: STARTER_ANNUAL_PRICE_ID } }] }, // annual Price, still tier "starter"
+      current_period_start: nowSec,
+      current_period_end: nowSec + 365 * 24 * 60 * 60,
+      cancel_at_period_end: false,
+    };
+
+    const { req, res, json, status } = mockWebhookReqRes(fakeEvent('customer.subscription.updated', subscription));
+    stubSignatureVerification(fakeEvent('customer.subscription.updated', subscription));
+
+    await stripeController.handleWebhook(req, res);
+
+    expect(status).not.toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith({ success: true, received: true });
+
+    const after = await fetchOrgRow(orgId);
+    expect(after.subscription_tier).toBe('starter');
+    expect(after.max_services).toBe(TIER_LIMITS.starter.maxServices);
+    expect(after.max_users).toBe(TIER_LIMITS.starter.maxUsers);
+    expect(after.max_deployments_per_month).toBe(TIER_LIMITS.starter.maxDeploymentsPerMonth);
   });
 });

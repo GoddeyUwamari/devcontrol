@@ -4,6 +4,10 @@
 
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
 
+/** Billing cadence for Checkout. Never carries a Stripe Price ID -- the
+ * server resolves the actual price from (tier, billingInterval). */
+export type BillingInterval = 'monthly' | 'annual';
+
 export type SubscriptionStatus =
   | 'free'
   | 'active'

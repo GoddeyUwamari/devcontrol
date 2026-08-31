@@ -3,6 +3,8 @@
  * Ensures all required configuration is present and valid before server starts
  */
 
+import stripeService from '../services/stripe.service';
+
 /**
  * Validate required environment variables
  * Throws error if any required variables are missing or invalid
@@ -49,6 +51,27 @@ export function validateEnv(): void {
       `   Current length: ${encryptionKey.length} characters\n` +
       `   Generate with: openssl rand -hex 16`
     );
+  }
+
+  // Stripe billing validation. STRIPE_SECRET_KEY being set is what defines
+  // "billing enabled" for this environment -- environments that never use
+  // Stripe billing aren't forced to configure it at all, but once enabled
+  // every piece it depends on must actually be present. Fails closed
+  // (throws) rather than warning, so a misconfigured deployment can't start
+  // and silently serve checkout 500s or reject every webhook.
+  if (process.env.STRIPE_SECRET_KEY) {
+    const billingMissing: string[] = [];
+    if (!process.env.STRIPE_WEBHOOK_SECRET) billingMissing.push('STRIPE_WEBHOOK_SECRET');
+    billingMissing.push(...stripeService.getMissingCheckoutPriceEnvVars());
+
+    if (billingMissing.length > 0) {
+      throw new Error(
+        `❌ Stripe billing is enabled (STRIPE_SECRET_KEY is set) but required configuration is missing:\n` +
+        `   ${billingMissing.join(', ')}\n` +
+        `   Create/find these recurring Prices in the Stripe Dashboard (Products), then set them in your environment.\n` +
+        `   A tier's monthly price may alternatively use the legacy STRIPE_PRICE_<TIER> var name (no _MONTHLY suffix).`
+      );
+    }
   }
 
   // Production-specific validations

@@ -4,8 +4,21 @@
  */
 
 import { Request, Response } from 'express';
-import stripeService from '../services/stripe.service';
+import stripeService, {
+  isCheckoutTier,
+  isBillingInterval,
+  isSupportedPlan,
+  CHECKOUT_TIERS,
+  BILLING_INTERVALS,
+} from '../services/stripe.service';
 import { pool } from '../config/database';
+
+// The only fields Checkout accepts from the client. Anything else --
+// priceId, customerId, subscriptionId, amount, currency, line items,
+// successUrl/cancelUrl, etc. -- is rejected outright rather than silently
+// ignored, so an attempted bypass is observable (400) and testable instead
+// of quietly having no effect.
+const ALLOWED_CHECKOUT_FIELDS = new Set(['tier', 'billingInterval']);
 
 export class StripeController {
   /**
@@ -22,13 +35,44 @@ export class StripeController {
         return;
       }
 
-      const { priceId, successUrl, cancelUrl } = req.body;
-      const organizationId = req.user.organizationId;
-
-      if (!priceId) {
+      // The server is authoritative here: only a known tier + billing
+      // interval are accepted from the client. The Stripe Price ID and the
+      // success/cancel URLs are resolved/fixed server-side and are never
+      // taken from the request body -- this prevents a caller from
+      // checking out against an arbitrary price or redirecting elsewhere.
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const disallowedFields = Object.keys(body).filter(key => !ALLOWED_CHECKOUT_FIELDS.has(key));
+      if (disallowedFields.length > 0) {
         res.status(400).json({
           success: false,
-          error: 'Price ID is required',
+          error: `Unsupported field(s): ${disallowedFields.join(', ')}. Only "tier" and "billingInterval" are accepted.`,
+        });
+        return;
+      }
+
+      const { tier, billingInterval } = body;
+      const organizationId = req.user.organizationId;
+
+      if (!isCheckoutTier(tier)) {
+        res.status(400).json({
+          success: false,
+          error: `A valid subscription tier is required (${CHECKOUT_TIERS.join(', ')})`,
+        });
+        return;
+      }
+
+      if (!isBillingInterval(billingInterval)) {
+        res.status(400).json({
+          success: false,
+          error: `A valid billing interval is required (${BILLING_INTERVALS.join(', ')})`,
+        });
+        return;
+      }
+
+      if (!isSupportedPlan(tier, billingInterval)) {
+        res.status(400).json({
+          success: false,
+          error: 'Enterprise does not support self-service annual billing. Contact sales for annual Enterprise pricing.',
         });
         return;
       }
@@ -68,13 +112,30 @@ export class StripeController {
         customerId = customer.id;
       }
 
+      let priceId: string;
+      try {
+        priceId = stripeService.getPriceIdForPlan(tier, billingInterval);
+      } catch (error) {
+        console.error(`Checkout plan "${tier}/${billingInterval}" is not configured:`, error);
+        res.status(500).json({
+          success: false,
+          error: 'Checkout is not available for this plan right now',
+        });
+        return;
+      }
+
+      // Fixed, server-controlled redirect targets -- never taken from the
+      // request body.
+      const successUrl = `${process.env.FRONTEND_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${process.env.FRONTEND_URL}/billing/cancel`;
+
       // Create checkout session
       const session = await stripeService.createCheckoutSession(
         customerId,
         priceId,
         organizationId,
-        successUrl || `${process.env.FRONTEND_URL}/billing/success`,
-        cancelUrl || `${process.env.FRONTEND_URL}/billing`
+        successUrl,
+        cancelUrl
       );
 
       res.status(200).json({
