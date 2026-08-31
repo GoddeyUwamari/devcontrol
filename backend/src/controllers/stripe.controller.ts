@@ -383,6 +383,124 @@ export class StripeController {
   }
 
   /**
+   * POST /api/stripe/change-plan
+   * Upgrade or downgrade an existing subscription's tier and/or billing
+   * interval. Same server-authoritative validation as
+   * createCheckoutSession -- only tier + billingInterval are accepted from
+   * the client, and the target Price ID is resolved server-side via
+   * getPriceIdForPlan, never taken from the request body.
+   */
+  async changePlan(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+        });
+        return;
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const disallowedFields = Object.keys(body).filter(key => !ALLOWED_CHECKOUT_FIELDS.has(key));
+      if (disallowedFields.length > 0) {
+        res.status(400).json({
+          success: false,
+          error: `Unsupported field(s): ${disallowedFields.join(', ')}. Only "tier" and "billingInterval" are accepted.`,
+        });
+        return;
+      }
+
+      const { tier, billingInterval } = body;
+      const organizationId = req.user.organizationId;
+
+      if (!isCheckoutTier(tier)) {
+        res.status(400).json({
+          success: false,
+          error: `A valid subscription tier is required (${CHECKOUT_TIERS.join(', ')})`,
+        });
+        return;
+      }
+
+      if (!isBillingInterval(billingInterval)) {
+        res.status(400).json({
+          success: false,
+          error: `A valid billing interval is required (${BILLING_INTERVALS.join(', ')})`,
+        });
+        return;
+      }
+
+      if (!isSupportedPlan(tier, billingInterval)) {
+        res.status(400).json({
+          success: false,
+          error: 'Enterprise does not support self-service annual billing. Contact sales for annual Enterprise pricing.',
+        });
+        return;
+      }
+
+      if (!organizationId) {
+        res.status(400).json({
+          success: false,
+          error: 'Organization ID is required',
+        });
+        return;
+      }
+
+      // Get organization's existing subscription
+      const orgResult = await pool.query(
+        'SELECT stripe_subscription_id FROM organizations WHERE id = $1',
+        [organizationId]
+      );
+
+      if (orgResult.rows.length === 0 || !orgResult.rows[0].stripe_subscription_id) {
+        res.status(400).json({
+          success: false,
+          error: 'No active subscription found. Use create-checkout-session to start a new subscription.',
+        });
+        return;
+      }
+
+      const subscriptionId = orgResult.rows[0].stripe_subscription_id;
+
+      let newPriceId: string;
+      try {
+        newPriceId = stripeService.getPriceIdForPlan(tier, billingInterval);
+      } catch (error) {
+        console.error(`Plan change to "${tier}/${billingInterval}" is not configured:`, error);
+        res.status(500).json({
+          success: false,
+          error: 'That plan is not available right now',
+        });
+        return;
+      }
+
+      const subscription = await stripeService.updateSubscription(subscriptionId, newPriceId);
+
+      // Keep the DB in sync immediately rather than waiting for the
+      // customer.subscription.updated webhook -- same pattern as
+      // cancelSubscription/resumeSubscription below.
+      await stripeService.updateOrganizationSubscription(organizationId, {
+        status: subscription.status,
+        tier,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          status: subscription.status,
+          tier,
+          billingInterval,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error changing subscription plan:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to change subscription plan',
+      });
+    }
+  }
+
+  /**
    * POST /api/stripe/resume-subscription
    * Resume a subscription that was set to cancel
    */

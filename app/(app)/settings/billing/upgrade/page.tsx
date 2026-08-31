@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { CheckCircle2, Zap, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
-import { createCheckoutSession, getSubscription, openCustomerPortal } from '@/lib/services/stripe.service'
+import { createCheckoutSession, changePlan, getSubscription } from '@/lib/services/stripe.service'
 import { trackLeadQualified } from '@/lib/gtag'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 const plans = [
   {
@@ -82,7 +83,7 @@ export default function UpgradePage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
   const [loadingTier, setLoadingTier] = useState<string | null>(null)
   const [currentTier, setCurrentTier] = useState<string | null>(null)
-  const [portalLoading, setPortalLoading] = useState(false)
+  const router = useRouter()
 
   useEffect(() => {
     getSubscription().then(result => {
@@ -93,37 +94,36 @@ export default function UpgradePage() {
   const subscriptionLoaded = currentTier !== null
   const resolvedTier = currentTier ?? 'free'
   const canDowngrade = subscriptionLoaded && tierOrder[resolvedTier] > 1
+  // Anyone already on a paid tier has an existing Stripe subscription to
+  // modify in place (upgrade or downgrade) -- sending them through
+  // Checkout again would create a *second*, separate active subscription
+  // rather than changing the one they have. Only a free-tier org (no
+  // subscription yet) should go through Checkout.
+  const hasExistingSubscription = subscriptionLoaded && resolvedTier !== 'free'
 
-  const handleDowngrade = async () => {
-    setPortalLoading(true)
-    toast.info('Opening billing portal', {
-      description: 'Plan changes take effect at the start of your next billing cycle.',
-    })
-    try {
-      const result = await openCustomerPortal()
-      if (result.success && result.data?.url) {
-        window.location.href = result.data.url
-      } else {
-        toast.error('Failed to open portal', { description: result.error || 'Please try again' })
-      }
-    } catch (error: any) {
-      toast.error('Error', { description: error.message || 'Failed to open portal' })
-    } finally {
-      setPortalLoading(false)
-    }
-  }
-
-  const handleUpgrade = async (plan: typeof plans[0]) => {
+  const handlePlanChange = async (plan: typeof plans[0]) => {
     setLoadingTier(plan.tier)
     try {
-      const result = await createCheckoutSession(plan.tier as any, billing)
-      if (result.success && result.data?.url) {
-        window.location.href = result.data.url
+      if (hasExistingSubscription) {
+        const result = await changePlan(plan.tier as any, billing)
+        if (result.success) {
+          toast.success('Plan updated', {
+            description: `You're now on the ${plan.name} plan. A prorated charge or credit will appear on your next invoice.`,
+          })
+          router.push('/settings/billing')
+        } else {
+          toast.error('Failed to change plan', { description: result.error || 'Please try again' })
+        }
       } else {
-        toast.error('Failed to start checkout', { description: result.error || 'Please try again' })
+        const result = await createCheckoutSession(plan.tier as any, billing)
+        if (result.success && result.data?.url) {
+          window.location.href = result.data.url
+        } else {
+          toast.error('Failed to start checkout', { description: result.error || 'Please try again' })
+        }
       }
     } catch (error: any) {
-      toast.error('Error', { description: error.message || 'Failed to start checkout' })
+      toast.error('Error', { description: error.message || 'Failed to update plan' })
     } finally {
       setLoadingTier(null)
     }
@@ -263,10 +263,9 @@ export default function UpgradePage() {
                         onClick={() => {
                           trackLeadQualified(plan.name)
                           if (isCurrent) return
-                          if (isDowngrade) { handleDowngrade(); return }
-                          handleUpgrade(plan)
+                          handlePlanChange(plan)
                         }}
-                        disabled={isLoading || portalLoading || isCurrent}
+                        disabled={isLoading || isCurrent}
                         className={`w-full py-3 px-4 rounded-xl font-semibold text-sm transition-all ${
                           isCurrent
                             ? 'border border-primary/30 text-primary/50 cursor-default'
@@ -277,10 +276,10 @@ export default function UpgradePage() {
                             : 'border border-primary text-primary hover:bg-primary/5'
                         } disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
-                        {(isLoading || (isDowngrade && portalLoading)) ? (
+                        {isLoading ? (
                           <span className="flex items-center justify-center gap-2">
                             <Zap className="h-4 w-4 animate-spin" />
-                            {isDowngrade ? 'Opening portal...' : 'Starting checkout...'}
+                            {hasExistingSubscription ? 'Updating plan...' : 'Starting checkout...'}
                           </span>
                         ) : isCurrent ? (
                           'Current Plan'
@@ -300,7 +299,7 @@ export default function UpgradePage() {
 
       {canDowngrade && (
         <p className="text-center text-sm text-muted-foreground mb-8">
-          Plan changes take effect at the start of your next billing cycle.
+          Plan changes take effect immediately, with a prorated charge or credit applied to your next invoice.
         </p>
       )}
 

@@ -42,6 +42,12 @@ router.post(
 );
 
 router.post(
+  '/change-plan',
+  authenticate,
+  stripeController.changePlan.bind(stripeController)
+);
+
+router.post(
   '/resume-subscription',
   authenticate,
   stripeController.resumeSubscription.bind(stripeController)
