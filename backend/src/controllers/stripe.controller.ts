@@ -404,7 +404,7 @@ export class StripeController {
 
       // Get organization subscription
       const orgResult = await pool.query(
-        'SELECT stripe_subscription_id FROM organizations WHERE id = $1',
+        'SELECT stripe_subscription_id, subscription_status FROM organizations WHERE id = $1',
         [organizationId]
       );
 
@@ -412,6 +412,23 @@ export class StripeController {
         res.status(400).json({
           success: false,
           error: 'No active subscription found',
+        });
+        return;
+      }
+
+      // Idempotent short-circuit for a duplicate immediate-cancel request:
+      // Stripe rejects re-canceling a subscription that's already fully
+      // canceled (an invalid_request_error), which would otherwise surface
+      // as a spurious failure for what is, from the caller's perspective, a
+      // harmless retry (e.g. a duplicate click, or a request that raced the
+      // one that already succeeded). Report the current, already-canceled
+      // state directly instead of calling Stripe again. Not needed for the
+      // cancel-at-period-end path -- Stripe's own
+      // cancel_at_period_end=true update is naturally idempotent.
+      if (immediate && orgResult.rows[0].subscription_status === 'canceled') {
+        res.status(200).json({
+          success: true,
+          data: { status: 'canceled', cancelAtPeriodEnd: false, cancelAt: null },
         });
         return;
       }
@@ -426,9 +443,36 @@ export class StripeController {
         subscription = await stripeService.cancelSubscriptionAtPeriodEnd(subscriptionId);
       }
 
-      // Update database
+      // Update database. The local entitlement projection must transition
+      // synchronously with a successful *immediate* cancellation -- Stripe
+      // has already fully canceled the subscription by the time this call
+      // returns, so the organization must not retain paid-tier access
+      // until customer.subscription.deleted eventually arrives (webhook
+      // delivery is asynchronous, not instantaneous, and can be delayed by
+      // Stripe's own retry backoff if our endpoint is briefly unreachable).
+      // Only reached after the Stripe call above has actually succeeded --
+      // if it throws, this is never reached and no local state changes,
+      // which is what keeps a failed Stripe cancellation from ever
+      // desynchronizing local entitlement.
+      //
+      // customer.subscription.deleted (see handleSubscriptionDeleted below)
+      // remains the reconciliation/confirmation path for this, and is
+      // idempotent against it: updateOrganizationSubscription only
+      // rewrites tier/limits when the tier is actually changing, so the
+      // webhook re-asserting 'free' after this call already set it is a
+      // no-op there. It's also still the *sole* correction path if this
+      // synchronous update never runs at all (e.g. a crash between the
+      // Stripe call succeeding and this write) -- that handler doesn't
+      // depend on this one having run.
+      //
+      // cancel-at-period-end intentionally does NOT downgrade the tier
+      // here (`tier: undefined` leaves it untouched) -- the organization
+      // correctly keeps paid access until the period actually ends, and
+      // that transition remains driven by Stripe's own scheduled
+      // cancellation firing customer.subscription.updated/.deleted later.
       await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
+        tier: immediate ? 'free' : undefined,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
       });
 
@@ -1545,9 +1589,25 @@ export class StripeController {
 
       console.log(`🏢 Found organization: ${organization.id} (${organization.name})`);
 
-      // Get tier from price ID
+      // Get tier from price ID -- EXCEPT when the subscription itself has
+      // reached a terminal state. Stripe fires customer.subscription.updated
+      // for the status transition to 'canceled' (in addition to, and not
+      // necessarily after, customer.subscription.deleted for the same
+      // cancellation -- Stripe does not guarantee relative ordering between
+      // them), and 'incomplete_expired' subscriptions never had a
+      // successful payment to begin with. In both cases `items` still
+      // references the old/never-paid price, so resolving tier from price
+      // alone would resurrect paid entitlement -- overriding a synchronous
+      // cancellation (StripeController.cancelSubscription) or
+      // handleSubscriptionDeleted that already correctly downgraded this
+      // organization to 'free'. This intentionally does NOT include
+      // 'past_due'/'unpaid': those retain their paid tier by design during
+      // the payment-failure grace period (see subscription.middleware.ts's
+      // isOrgRestricted) -- access is restricted there via
+      // billing_lifecycle_state, never by rewriting subscription_tier.
       const priceId = subscription.items.data[0]?.price.id;
-      const tier = stripeService.getTierFromPriceId(priceId);
+      const isTerminated = subscription.status === 'canceled' || subscription.status === 'incomplete_expired';
+      const tier = isTerminated ? 'free' : stripeService.getTierFromPriceId(priceId);
 
       console.log(`💰 Price ID: ${priceId}`);
       console.log(`🎯 Detected tier: ${tier}`);
