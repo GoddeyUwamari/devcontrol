@@ -1,6 +1,17 @@
 import Stripe from 'stripe';
 import { pool } from '../config/database';
 import { TIER_LIMITS, SubscriptionTier } from '../middleware/subscription.middleware';
+import { emailService } from './email.service';
+
+export type BillingLifecycleState = 'healthy' | 'grace_period' | 'restricted';
+
+const GRACE_PERIOD_DAYS = 7;
+
+export interface BillingLifecycleRow {
+  billingLifecycleState: BillingLifecycleState;
+  paymentFailedAt: Date | null;
+  gracePeriodEndsAt: Date | null;
+}
 
 // Lazily constructed so importing this module never requires
 // STRIPE_SECRET_KEY to be set -- construction only happens on the first
@@ -741,6 +752,246 @@ export class StripeService {
   getTierFromPriceId(priceId: string): string {
     const match = getConfiguredPricePlans().find(plan => plan.priceId === priceId);
     return match ? match.tier : 'free';
+  }
+
+  /**
+   * Read an organization's current billing lifecycle state. Used both by
+   * subscription.middleware.ts's enforcement path and by getSubscription's
+   * API response -- the two deliberately different consumers of the same
+   * columns (see recordPaymentFailure/recordPaymentRecovery below for why
+   * those columns exist and how they're written).
+   */
+  async getBillingLifecycleState(organizationId: string): Promise<BillingLifecycleRow | null> {
+    const { rows } = await pool.query(
+      `SELECT billing_lifecycle_state, payment_failed_at, grace_period_ends_at
+       FROM organizations WHERE id = $1`,
+      [organizationId]
+    );
+    if (rows.length === 0) return null;
+    return {
+      billingLifecycleState: rows[0].billing_lifecycle_state as BillingLifecycleState,
+      paymentFailedAt: rows[0].payment_failed_at,
+      gracePeriodEndsAt: rows[0].grace_period_ends_at,
+    };
+  }
+
+  /**
+   * Record a payment failure for an organization, idempotently and safe
+   * against out-of-order webhook delivery.
+   *
+   * `invoiceCreatedAt` is the failing invoice's own Invoice.created (Unix
+   * seconds -> Date; see node_modules/stripe/types/Invoices.d.ts) -- the
+   * only invoice-identity timestamp present and non-null on every
+   * invoice.payment_failed *and* invoice.paid payload, which is what makes
+   * it usable as a single shared ordering key across both directions of
+   * this lifecycle. Stripe explicitly does not guarantee webhook delivery
+   * order, so this is not a defensive nicety: an invoice.payment_failed for
+   * an invoice OLDER than the newest one this organization has already
+   * processed (tracked in latest_processed_invoice_created_at) is rejected
+   * outright as stale, even if the organization is currently 'healthy' --
+   * otherwise a delayed, out-of-order failure notification for an invoice
+   * that predates a genuine recovery could incorrectly reopen a grace
+   * period for an organization that has already paid.
+   *
+   * The primary UPDATE below only fires for the actual first failure of a
+   * new episode (billing_lifecycle_state currently 'healthy') AND a
+   * non-stale invoice -- a single conditional UPDATE, not a read-then-write,
+   * so it's race-safe under concurrent webhook delivery. Every subsequent
+   * invoice.payment_failed for the same still-unresolved episode (Stripe's
+   * own retry schedule, or a redelivered webhook) matches zero rows and is
+   * a no-op there: the grace deadline never moves, and the caller (see
+   * StripeController.handleInvoicePaymentFailed) uses `wasNewFailure` to
+   * decide whether to send a notification at all -- so redelivery can
+   * never extend the deadline or spam email, without needing a separate
+   * webhook event ledger. If that first UPDATE doesn't fire, a second,
+   * independently-guarded UPDATE advances the high-water mark alone (no
+   * deadline/notification effect) for the case of a genuinely newer
+   * invoice also failing while the organization is already in an
+   * unresolved episode -- this keeps future staleness comparisons accurate
+   * without needing to re-derive them from anything but this column.
+   */
+  async recordPaymentFailure(
+    organizationId: string,
+    invoiceCreatedAt: Date
+  ): Promise<{ wasNewFailure: boolean; wasStale: boolean; row: BillingLifecycleRow }> {
+    const graceEndsAt = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+
+    const primary = await pool.query(
+      `UPDATE organizations
+       SET billing_lifecycle_state = 'grace_period',
+           payment_failed_at = NOW(),
+           grace_period_ends_at = $2,
+           latest_processed_invoice_created_at = $3
+       WHERE id = $1
+         AND billing_lifecycle_state = 'healthy'
+         AND (latest_processed_invoice_created_at IS NULL OR latest_processed_invoice_created_at <= $3)
+       RETURNING billing_lifecycle_state, payment_failed_at, grace_period_ends_at`,
+      [organizationId, graceEndsAt, invoiceCreatedAt]
+    );
+
+    if (primary.rows.length > 0) {
+      return {
+        wasNewFailure: true,
+        wasStale: false,
+        row: {
+          billingLifecycleState: primary.rows[0].billing_lifecycle_state,
+          paymentFailedAt: primary.rows[0].payment_failed_at,
+          gracePeriodEndsAt: primary.rows[0].grace_period_ends_at,
+        },
+      };
+    }
+
+    // Not the primary path: either already in an unresolved episode, or
+    // this invoice is stale relative to one already processed (or both).
+    // If it's a genuinely newer invoice failing while already non-healthy,
+    // advance the high-water mark only -- deadline/notification untouched.
+    await pool.query(
+      `UPDATE organizations
+       SET latest_processed_invoice_created_at = $2
+       WHERE id = $1
+         AND billing_lifecycle_state != 'healthy'
+         AND (latest_processed_invoice_created_at IS NULL OR latest_processed_invoice_created_at < $2)`,
+      [organizationId, invoiceCreatedAt]
+    );
+
+    const existing = await pool.query(
+      `SELECT billing_lifecycle_state, payment_failed_at, grace_period_ends_at, latest_processed_invoice_created_at
+       FROM organizations WHERE id = $1`,
+      [organizationId]
+    );
+    const row = existing.rows[0];
+    const currentMark: Date | null = row?.latest_processed_invoice_created_at ?? null;
+    const wasStale = currentMark !== null && invoiceCreatedAt.getTime() < new Date(currentMark).getTime();
+
+    return {
+      wasNewFailure: false,
+      wasStale,
+      row: {
+        billingLifecycleState: row.billing_lifecycle_state,
+        paymentFailedAt: row.payment_failed_at,
+        gracePeriodEndsAt: row.grace_period_ends_at,
+      },
+    };
+  }
+
+  /**
+   * Record a payment recovery, idempotently and safe against out-of-order
+   * webhook delivery -- the inverse of recordPaymentFailure, and guarded by
+   * the exact same latest_processed_invoice_created_at high-water mark (see
+   * that method's comment for why Invoice.created is the right shared
+   * ordering key). An invoice.paid for an invoice OLDER than the newest one
+   * already processed is rejected outright, even though the organization is
+   * currently non-healthy -- otherwise a delayed, out-of-order paid event
+   * for an invoice that predates a genuine, newer failure could incorrectly
+   * clear a grace period the organization is still actually in.
+   *
+   * `invoiceCreatedAt` is optional: pass it for an invoice.paid-driven
+   * recovery (see StripeController.handleInvoicePaid), and omit it for an
+   * unconditional reset with no invoice context at all -- currently only
+   * subscription cancellation/deletion (StripeController.
+   * handleSubscriptionDeleted), which is authoritative regardless of any
+   * invoice-ordering concern: there is no paid subscription left to protect
+   * once it's canceled, so no staleness check applies there.
+   *
+   * Returns whether the organization was actually in grace_period/restricted
+   * before this call (i.e. whether this was a genuine recovery, as opposed
+   * to invoice.paid firing for an already-healthy org, which happens on
+   * every normal renewal -- the overwhelmingly common case).
+   */
+  async recordPaymentRecovery(
+    organizationId: string,
+    invoiceCreatedAt?: Date
+  ): Promise<{ wasRecovery: boolean; wasStale: boolean }> {
+    if (!invoiceCreatedAt) {
+      const result = await pool.query(
+        `UPDATE organizations
+         SET billing_lifecycle_state = 'healthy',
+             payment_failed_at = NULL,
+             grace_period_ends_at = NULL
+         WHERE id = $1 AND billing_lifecycle_state != 'healthy'
+         RETURNING id`,
+        [organizationId]
+      );
+      return { wasRecovery: result.rows.length > 0, wasStale: false };
+    }
+
+    const primary = await pool.query(
+      `UPDATE organizations
+       SET billing_lifecycle_state = 'healthy',
+           payment_failed_at = NULL,
+           grace_period_ends_at = NULL,
+           latest_processed_invoice_created_at = $2
+       WHERE id = $1
+         AND billing_lifecycle_state != 'healthy'
+         AND (latest_processed_invoice_created_at IS NULL OR latest_processed_invoice_created_at <= $2)
+       RETURNING id`,
+      [organizationId, invoiceCreatedAt]
+    );
+
+    if (primary.rows.length > 0) {
+      return { wasRecovery: true, wasStale: false };
+    }
+
+    // Not the primary path: either already healthy (the common case -- a
+    // normal renewal), or this invoice is stale relative to a newer
+    // failure/recovery already processed. Advance the high-water mark only
+    // when already healthy and the invoice is genuinely newer -- this is
+    // what lets a later stale FAILURE for an even older invoice be
+    // correctly rejected; it must never fire while non-healthy, or it would
+    // silently erase the evidence a newer failure is still unresolved.
+    await pool.query(
+      `UPDATE organizations
+       SET latest_processed_invoice_created_at = $2
+       WHERE id = $1
+         AND billing_lifecycle_state = 'healthy'
+         AND (latest_processed_invoice_created_at IS NULL OR latest_processed_invoice_created_at < $2)`,
+      [organizationId, invoiceCreatedAt]
+    );
+
+    const existing = await pool.query(
+      `SELECT latest_processed_invoice_created_at FROM organizations WHERE id = $1`,
+      [organizationId]
+    );
+    const currentMark: Date | null = existing.rows[0]?.latest_processed_invoice_created_at ?? null;
+    const wasStale = currentMark !== null && invoiceCreatedAt.getTime() < new Date(currentMark).getTime();
+
+    return { wasRecovery: false, wasStale };
+  }
+
+  /**
+   * Send the payment-failure notification email to the organization's
+   * owner, reusing the existing Resend-backed EmailService and the same
+   * "org owner" recipient-resolution query already established by
+   * weekly-summary.repository.ts's getUserInfo. Never throws (matches
+   * EmailService.send's own contract) and never includes any payment
+   * credential/card detail -- only the grace deadline and a link to the
+   * existing Stripe Customer Portal.
+   */
+  async sendPaymentFailedEmail(organizationId: string, graceEndsAt: Date): Promise<void> {
+    try {
+      const { rows } = await pool.query(
+        `SELECT u.email, u.full_name, o.name AS organization_name
+         FROM organizations o
+         JOIN organization_memberships om ON om.organization_id = o.id AND om.role = 'owner'
+         JOIN users u ON u.id = om.user_id
+         WHERE o.id = $1
+         LIMIT 1`,
+        [organizationId]
+      );
+
+      if (rows.length === 0) {
+        console.warn(`[Payment Failure] No owner found to notify for organization ${organizationId}`);
+        return;
+      }
+
+      await emailService.sendPaymentFailedEmail({
+        to: rows[0].email,
+        organizationName: rows[0].organization_name || 'Your Organization',
+        graceEndsAt,
+      });
+    } catch (error: any) {
+      console.error(`[Payment Failure] Failed to send notification for organization ${organizationId}:`, error.message);
+    }
   }
 }
 

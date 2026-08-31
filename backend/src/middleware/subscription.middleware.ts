@@ -83,16 +83,53 @@ export function tierMeetsRequirement(currentTier: SubscriptionTier, requiredTier
 }
 
 /**
- * Get organization's subscription tier from the database
+ * Whether an organization's paid entitlements should currently be treated
+ * as restricted due to a payment-failure grace period -- either explicitly
+ * marked 'restricted' (by the grace-period reconciliation job, see
+ * jobs/grace-period-enforcement.job.ts), or still nominally 'grace_period'
+ * but past its persisted deadline. The latter is what makes this a lazy,
+ * per-request check rather than something that depends on the
+ * reconciliation job having already run: once grace_period_ends_at has
+ * passed, this returns true on the very next request regardless of
+ * whether the hourly job has caught up yet.
+ *
+ * Never trusts anything but the DB row -- there is no client input here at
+ * all, by construction, so this cannot be spoofed by a request body/query.
+ */
+export function isOrgRestricted(row: {
+  billing_lifecycle_state: string | null;
+  grace_period_ends_at: Date | string | null;
+}): boolean {
+  if (row.billing_lifecycle_state === 'restricted') return true;
+  if (row.billing_lifecycle_state === 'grace_period' && row.grace_period_ends_at) {
+    return new Date(row.grace_period_ends_at).getTime() < Date.now();
+  }
+  return false;
+}
+
+/**
+ * Get organization's subscription tier from the database, downgraded to
+ * 'free' for enforcement purposes while restricted (see isOrgRestricted).
+ * This never touches or reads the organization's real subscription_tier
+ * value's persistence -- it's purely an in-memory substitution for this
+ * one lookup, so the stored tier is always intact for recovery. Contrast
+ * with StripeController.getSubscription, which always reports the real
+ * paid tier to the client -- restriction affects access, not what plan the
+ * customer is shown as being on.
  */
 async function getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
   const result = await pool.query(
-    'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
+    `SELECT subscription_tier, billing_lifecycle_state, grace_period_ends_at
+     FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
     [organizationId]
   );
 
   if (result.rows.length === 0) {
     return 'free'; // Default to free if org not found
+  }
+
+  if (isOrgRestricted(result.rows[0])) {
+    return 'free';
   }
 
   return (result.rows[0].subscription_tier as SubscriptionTier) || 'free';
@@ -228,7 +265,8 @@ async function getOrganizationLimits(organizationId: string): Promise<{
 }> {
   // Get organization limits
   const orgResult = await pool.query(
-    `SELECT subscription_tier, max_services, max_users, max_deployments_per_month
+    `SELECT subscription_tier, max_services, max_users, max_deployments_per_month,
+            billing_lifecycle_state, grace_period_ends_at
      FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
     [organizationId]
   );
@@ -238,7 +276,12 @@ async function getOrganizationLimits(organizationId: string): Promise<{
   }
 
   const org = orgResult.rows[0];
-  const tier = (org.subscription_tier as SubscriptionTier) || 'free';
+  const restricted = isOrgRestricted(org);
+  // While restricted, ignore the org's own max_services/max_users/
+  // max_deployments_per_month override columns -- those still hold the
+  // real paid tier's numbers (never rewritten by restriction, so recovery
+  // needs no repair) -- and use the free tier's limits instead.
+  const tier: SubscriptionTier = restricted ? 'free' : ((org.subscription_tier as SubscriptionTier) || 'free');
 
   // Get current usage counts in parallel
   const [servicesResult, usersResult, deploymentsResult, awsResourcesResult] = await Promise.all([
@@ -267,9 +310,9 @@ async function getOrganizationLimits(organizationId: string): Promise<{
   return {
     tier,
     limits: {
-      maxServices: org.max_services || TIER_LIMITS[tier].maxServices,
-      maxUsers: org.max_users || TIER_LIMITS[tier].maxUsers,
-      maxDeploymentsPerMonth: org.max_deployments_per_month || TIER_LIMITS[tier].maxDeploymentsPerMonth,
+      maxServices: restricted ? TIER_LIMITS.free.maxServices : (org.max_services || TIER_LIMITS[tier].maxServices),
+      maxUsers: restricted ? TIER_LIMITS.free.maxUsers : (org.max_users || TIER_LIMITS[tier].maxUsers),
+      maxDeploymentsPerMonth: restricted ? TIER_LIMITS.free.maxDeploymentsPerMonth : (org.max_deployments_per_month || TIER_LIMITS[tier].maxDeploymentsPerMonth),
       maxResources: TIER_LIMITS[tier].maxResources,
     },
     usage: {

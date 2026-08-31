@@ -26,6 +26,7 @@ import { RiskScoreSnapshotJob } from './jobs/risk-score-snapshot.job';
 import { ScheduledReportsJob } from './jobs/scheduled-reports.job';
 import { WeeklyAISummaryJob } from './jobs/weekly-ai-summary.job';
 import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
+import { GracePeriodEnforcementJob } from './jobs/grace-period-enforcement.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
 import {
@@ -436,6 +437,12 @@ const startServer = async () => {
     const anomalyDetectionJob = new AnomalyDetectionJob(pool);
     anomalyDetectionJob.start();
     console.log('[Anomaly Detection] Job started');
+
+    // Start grace period enforcement job (reconciles expired payment-failure
+    // grace periods every hour -- see subscription.middleware.ts's
+    // isOrgRestricted for the lazy, primary enforcement path this backs up)
+    const gracePeriodEnforcementJob = new GracePeriodEnforcementJob(pool);
+    gracePeriodEnforcementJob.start();
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);

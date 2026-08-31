@@ -34,17 +34,25 @@ interface PasswordResetEmailParams {
   resetToken: string;
 }
 
+interface PaymentFailedEmailParams {
+  to: string;
+  organizationName: string;
+  graceEndsAt: Date;
+}
+
 export class EmailService {
   private resend: Resend | null = null;
   private invitationTemplate: HandlebarsTemplateDelegate | null = null;
   private verificationTemplate: HandlebarsTemplateDelegate | null = null;
   private passwordResetTemplate: HandlebarsTemplateDelegate | null = null;
+  private paymentFailedTemplate: HandlebarsTemplateDelegate | null = null;
 
   constructor() {
     this.setupResendClient();
     this.invitationTemplate = this.loadTemplate('invitation-email.html');
     this.verificationTemplate = this.loadTemplate('verification-email.html');
     this.passwordResetTemplate = this.loadTemplate('password-reset-email.html');
+    this.paymentFailedTemplate = this.loadTemplate('payment-failed-email.html');
   }
 
   /**
@@ -189,6 +197,36 @@ export class EmailService {
         year: new Date().getFullYear(),
       },
       operation: 'password reset email',
+    });
+  }
+
+  /**
+   * Payment-failure notification, sent to the organization owner when a
+   * subscription invoice fails to pay (see StripeController.
+   * handleInvoicePaymentFailed / StripeService.recordPaymentFailure). Only
+   * ever carries the grace-period deadline and a link to the existing
+   * Stripe Customer Portal -- never a card number, CVC, or any other
+   * payment-method detail.
+   */
+  async sendPaymentFailedEmail(params: PaymentFailedEmailParams): Promise<boolean> {
+    const { to, organizationName, graceEndsAt } = params;
+    const billingUrl = `${this.getFrontendUrl()}/settings/billing`;
+
+    return this.send({
+      to,
+      subject: `Action required: payment failed for ${organizationName}`,
+      template: this.paymentFailedTemplate,
+      templateData: {
+        organizationName,
+        graceEndsAtFormatted: graceEndsAt.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        }),
+        billingUrl,
+        year: new Date().getFullYear(),
+      },
+      operation: 'payment failed email',
     });
   }
 }
