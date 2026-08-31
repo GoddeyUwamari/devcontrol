@@ -577,9 +577,9 @@ export class StripeController {
           await this.handleSubscriptionDeleted(event.data.object);
           break;
 
-        case 'invoice.payment_succeeded':
-          console.log('✅ Processing successful payment');
-          await this.handleInvoicePaymentSucceeded(event.data.object);
+        case 'invoice.paid':
+          console.log('✅ Processing paid invoice');
+          await this.handleInvoicePaid(event.data.object);
           break;
 
         case 'invoice.payment_failed':
@@ -707,8 +707,8 @@ export class StripeController {
     console.log(`Subscription deleted for organization ${organization.id}, downgraded to free`);
   }
 
-  private async handleInvoicePaymentSucceeded(invoice: any): Promise<void> {
-    console.log(`Payment succeeded for invoice ${invoice.id}`);
+  private async handleInvoicePaid(invoice: any): Promise<void> {
+    console.log(`Invoice paid: ${invoice.id}`);
     // Could send receipt email, update credits, etc.
   }
 
