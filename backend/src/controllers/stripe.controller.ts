@@ -1919,11 +1919,31 @@ export class StripeController {
    * (never a client-supplied id), records the failure idempotently and
    * order-safely (see StripeService.recordPaymentFailure for why repeated/
    * duplicate/out-of-order delivery can't extend the grace deadline or
-   * reopen a resolved episode), and sends exactly one notification per
-   * failure episode. Deliberately does not touch subscription_tier or
+   * reopen a resolved episode), and sends the notification for a still-open
+   * episode whenever one hasn't been *confirmed delivered* yet -- not
+   * merely whenever this is the event that started the episode. This is
+   * the fix for a real reliability gap: the DB-state transition
+   * (healthy -> grace_period) and the notification's delivery outcome are
+   * two independently-failing steps, and gating the email purely on "was
+   * this the transition event" meant any failure in the notification path
+   * after that transition committed (a crash, a transient DB error, Resend
+   * being down) silently and permanently lost the notification -- no later
+   * redelivery of this or any other event for the same episode could ever
+   * recover it, because that flag can only be true once. `notificationPending`
+   * (organizations.payment_failed_notification_sent_at IS NULL while the
+   * episode is still 'grace_period') has no such one-shot limitation: any
+   * later invoice.payment_failed for the same still-open episode -- a
+   * genuine webhook retry, a ledger reclaim after a crash, or Stripe's own
+   * next dunning-retry event -- will attempt the notification again if and
+   * only if it was never confirmed sent, and will never resend once it
+   * has been. Deliberately does not touch subscription_tier or
    * subscription_status -- the organization keeps its paid tier during
    * grace; enforcement is handled separately by subscription.middleware.ts
-   * reading billing_lifecycle_state/grace_period_ends_at.
+   * reading billing_lifecycle_state/grace_period_ends_at. The DB-state
+   * transition above already committed by the time notificationPending is
+   * even checked, so entitlement correctness never depends on whether the
+   * code below succeeds -- Resend's availability is not part of
+   * entitlement correctness.
    */
   private async handleInvoicePaymentFailed(invoice: any): Promise<void> {
     const customerId = invoice.customer;
@@ -1946,21 +1966,32 @@ export class StripeController {
       return;
     }
 
-    const { wasNewFailure, wasStale, row } = await stripeService.recordPaymentFailure(organization.id, invoiceCreatedAt);
+    const { wasStale, row, notificationPending } = await stripeService.recordPaymentFailure(organization.id, invoiceCreatedAt);
     if (wasStale) {
       console.log(`invoice.payment_failed ${invoice.id} for organization ${organization.id} predates a payment event already processed -- ignoring (out-of-order delivery)`);
       return;
     }
-    if (!wasNewFailure || !row.gracePeriodEndsAt) {
-      // Already in an unresolved failure episode (or, defensively, a race
-      // that left no deadline) -- the deadline and the one-time
-      // notification were already handled by the first failure.
-      console.log(`Payment failure already recorded for organization ${organization.id} (invoice ${invoice.id}) -- no change`);
+    if (!row.gracePeriodEndsAt) {
+      // Defensive: billing_lifecycle_state isn't 'grace_period' at all
+      // (e.g. it was already recovered by a race with invoice.paid) --
+      // nothing to notify about.
+      console.log(`Payment failure recorded for organization ${organization.id} (invoice ${invoice.id}) but no grace deadline is set -- skipping notification`);
+      return;
+    }
+    if (!notificationPending) {
+      // Either this exact episode was already confirmed-notified, or (the
+      // defensive branch above already excluded "no episode at all").
+      console.log(`Payment failure already recorded and notified for organization ${organization.id} (invoice ${invoice.id}) -- no change`);
       return;
     }
 
-    console.log(`Payment failed for organization ${organization.id} (invoice ${invoice.id}) -- grace period ends ${row.gracePeriodEndsAt.toISOString()}`);
-    await stripeService.sendPaymentFailedEmail(organization.id, row.gracePeriodEndsAt);
+    console.log(`Payment failed for organization ${organization.id} (invoice ${invoice.id}) -- grace period ends ${row.gracePeriodEndsAt.toISOString()}; attempting notification`);
+    const sent = await stripeService.sendPaymentFailedEmail(organization.id, row.gracePeriodEndsAt);
+    if (sent) {
+      await stripeService.markPaymentFailedNotificationSent(organization.id);
+    } else {
+      console.warn(`Payment-failure notification for organization ${organization.id} (invoice ${invoice.id}) did not confirm delivery -- will retry on the next invoice.payment_failed delivery for this episode`);
+    }
   }
 }
 

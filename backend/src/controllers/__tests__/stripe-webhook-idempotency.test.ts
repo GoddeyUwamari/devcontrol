@@ -130,7 +130,7 @@ function spyOnDispatch() {
 }
 
 beforeEach(() => {
-  jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+  jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
   jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.spyOn(console, 'warn').mockImplementation(() => {});
   jest.spyOn(console, 'error').mockImplementation(() => {});

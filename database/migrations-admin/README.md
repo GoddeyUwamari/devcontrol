@@ -79,8 +79,17 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`023_create_account_security_findings.sql`**,
 **`029_add_resource_reconciliation.sql`**,
 **`202608272014_extend_scheduled_reports_ai_types.sql`**,
-**`202608312100_add_billing_lifecycle_state.sql`**, and
-**`202608312300_add_subscription_event_ordering.sql`**.
+**`202608312100_add_billing_lifecycle_state.sql`**,
+**`202608312300_add_subscription_event_ordering.sql`**, and
+**`202609010800_add_payment_failed_notification_tracking.sql`**.
+
+`202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
+`organizations` (adding the payment-failed-notification-reliability fix's
+`payment_failed_notification_sent_at` column) -- the same table, and the
+same ownership finding, as every other `ALTER TABLE organizations`
+migration above. Classified here from the start (not reclassified after a
+failed attempt) -- the ownership finding was already well-established by
+the time this migration was written.
 
 `202608312300_add_subscription_event_ordering.sql` `ALTER TABLE`s
 `organizations` (adding the P1 stale-subscription-event fix's

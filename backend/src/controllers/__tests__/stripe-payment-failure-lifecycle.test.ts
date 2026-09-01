@@ -97,7 +97,7 @@ async function insertOwner(orgId: string): Promise<string> {
 async function fetchBillingRow(orgId: string) {
   const { rows } = await pool.query(
     `SELECT billing_lifecycle_state, payment_failed_at, grace_period_ends_at,
-            latest_processed_invoice_created_at,
+            latest_processed_invoice_created_at, payment_failed_notification_sent_at,
             subscription_tier, subscription_status, xmin::text AS xmin
      FROM organizations WHERE id = $1`,
     [orgId]
@@ -194,7 +194,7 @@ afterAll(async () => {
 describe('invoice.payment_failed -- failure', () => {
   it('maps to the correct organization via Stripe customer id', async () => {
     const { orgId, customerId } = await insertOrg();
-    const emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    const emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
     const event = fakeEvent('invoice.payment_failed', fakeInvoice(customerId));
     stubSignatureVerification(event);
     const { req, res, status } = mockWebhookReqRes(event);
@@ -225,7 +225,7 @@ describe('invoice.payment_failed -- failure', () => {
 
   it('first failure establishes payment_failed_at and a grace deadline ~7 days out', async () => {
     const { orgId, customerId } = await insertOrg();
-    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
     const before = Date.now();
     const event = fakeEvent('invoice.payment_failed', fakeInvoice(customerId));
     stubSignatureVerification(event);
@@ -242,7 +242,7 @@ describe('invoice.payment_failed -- failure', () => {
 
   it('repeated failure does not extend the grace deadline, and preserves the paid tier', async () => {
     const { orgId, customerId } = await insertOrg({ tier: 'pro' });
-    const emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    const emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
 
     const first = fakeEvent('invoice.payment_failed', fakeInvoice(customerId));
     await deliverWebhook(first);
@@ -281,7 +281,7 @@ describe('invoice.payment_failed -- failure', () => {
 
   it('an exact duplicate webhook delivery is idempotent (same invoice id redelivered)', async () => {
     const { orgId, customerId } = await insertOrg();
-    const emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    const emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
     const invoice = fakeInvoice(customerId);
     const event = fakeEvent('invoice.payment_failed', invoice);
 
@@ -293,6 +293,125 @@ describe('invoice.payment_failed -- failure', () => {
 
     expect(afterSecond).toEqual(afterFirst);
     expect(emailSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Payment-failure notification reliability -- organizations.
+ * payment_failed_notification_sent_at (database/migrations-admin/
+ * 202609010800_add_payment_failed_notification_tracking.sql).
+ *
+ * Closes the gap the earlier "exactly one notification per episode" tests
+ * above could not catch: those tests only ever exercised a first attempt
+ * that succeeds. Before this fix, `wasNewFailure` (true only once, at the
+ * exact instant billing_lifecycle_state flips healthy -> grace_period) was
+ * the ONLY gate on sending the email -- so if that one attempt failed for
+ * any reason (a crash, a transient error, Resend being down), the
+ * notification was lost forever: no later delivery for the same episode
+ * could ever re-trigger it, because that flag can only be true once. These
+ * tests prove notificationPending (payment_failed_notification_sent_at IS
+ * NULL while still in grace_period) recovers from exactly that failure
+ * mode, without ever double-sending once a send is actually confirmed.
+ */
+describe('payment-failure notification reliability -- delivery tracking independent of the grace-period transition', () => {
+  it('A. failed first send: DB still transitions to grace_period, but the marker stays NULL and notification remains pending', async () => {
+    const { orgId, customerId } = await insertOrg();
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValueOnce(false); // simulated Resend outage / crash-equivalent
+
+    const event = fakeEvent('invoice.payment_failed', fakeInvoice(customerId));
+    await deliverWebhook(event);
+
+    const row = await fetchBillingRow(orgId);
+    expect(row.billing_lifecycle_state).toBe('grace_period'); // entitlement-affecting state transition succeeded regardless
+    expect(row.payment_failed_at).not.toBeNull();
+    expect(row.grace_period_ends_at).not.toBeNull();
+    expect(row.payment_failed_notification_sent_at).toBeNull(); // notification NOT confirmed -- remains pending
+  });
+
+  it('B. retry after failed first send: a genuinely separate subsequent invoice.payment_failed re-attempts and this time succeeds', async () => {
+    const { orgId, customerId } = await insertOrg();
+    const emailSpy = jest
+      .spyOn(stripeService, 'sendPaymentFailedEmail')
+      .mockResolvedValueOnce(false) // first attempt fails
+      .mockResolvedValueOnce(true); // second attempt (the "retry") succeeds
+
+    const firstInvoice = fakeInvoice(customerId);
+    const firstEvent = fakeEvent('invoice.payment_failed', firstInvoice);
+    await deliverWebhook(firstEvent);
+
+    const afterFirst = await fetchBillingRow(orgId);
+    expect(afterFirst.billing_lifecycle_state).toBe('grace_period');
+    expect(afterFirst.payment_failed_notification_sent_at).toBeNull();
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    // A genuinely separate, distinct invoice.payment_failed delivery for
+    // the SAME still-unresolved episode -- Stripe's own next dunning-retry
+    // event, or a redelivered webhook after a crash; either way, a
+    // different event id and a different (later) invoice.created, not the
+    // literal same event.
+    const secondInvoice = fakeInvoice(customerId, { created: firstInvoice.created + 3600 });
+    const secondEvent = fakeEvent('invoice.payment_failed', secondInvoice);
+    await deliverWebhook(secondEvent);
+
+    expect(emailSpy).toHaveBeenCalledTimes(2); // the notification WAS attempted again
+    const afterSecond = await fetchBillingRow(orgId);
+    expect(afterSecond.payment_failed_notification_sent_at).not.toBeNull(); // and this time it's confirmed
+    // The deadline/failure timestamp from the ORIGINAL episode start must
+    // not have moved -- only the notification-tracking column changed.
+    expect(afterSecond.payment_failed_at).toEqual(afterFirst.payment_failed_at);
+    expect(afterSecond.grace_period_ends_at).toEqual(afterFirst.grace_period_ends_at);
+  });
+
+  it('C. successful first send: marker is populated, and a distinct subsequent delivery for the same episode does not send another notification', async () => {
+    const { orgId, customerId } = await insertOrg();
+    const emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
+
+    const firstInvoice = fakeInvoice(customerId);
+    await deliverWebhook(fakeEvent('invoice.payment_failed', firstInvoice));
+
+    const afterFirst = await fetchBillingRow(orgId);
+    expect(afterFirst.payment_failed_notification_sent_at).not.toBeNull();
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    // A distinct event (different id, same still-open episode) -- e.g.
+    // Stripe's own dunning retry generating another invoice.payment_failed
+    // before the grace period ends. Must NOT resend.
+    const secondInvoice = fakeInvoice(customerId, { created: firstInvoice.created + 3600 });
+    await deliverWebhook(fakeEvent('invoice.payment_failed', secondInvoice));
+
+    expect(emailSpy).toHaveBeenCalledTimes(1); // still just once
+    const afterSecond = await fetchBillingRow(orgId);
+    expect(afterSecond.payment_failed_notification_sent_at).toEqual(afterFirst.payment_failed_notification_sent_at); // unchanged, not re-stamped
+  });
+
+  it('D. recovery and new episode: the marker is cleared on recovery, and a later, distinct failure is eligible for its own notification', async () => {
+    const { orgId, customerId } = await insertOrg();
+    const emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
+
+    const firstInvoice = fakeInvoice(customerId);
+    await deliverWebhook(fakeEvent('invoice.payment_failed', firstInvoice));
+    const afterFailure = await fetchBillingRow(orgId);
+    expect(afterFailure.billing_lifecycle_state).toBe('grace_period');
+    expect(afterFailure.payment_failed_notification_sent_at).not.toBeNull();
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    // Recovery: invoice.paid for a later invoice.
+    const paidInvoice = fakeInvoice(customerId, { created: firstInvoice.created + 3600 });
+    await deliverWebhook(fakeEvent('invoice.paid', paidInvoice));
+    const afterRecovery = await fetchBillingRow(orgId);
+    expect(afterRecovery.billing_lifecycle_state).toBe('healthy');
+    expect(afterRecovery.payment_failed_notification_sent_at).toBeNull(); // cleared on recovery
+
+    // A later, genuinely NEW failure episode -- must be independently
+    // eligible for its own notification, not permanently blocked by the
+    // first episode's already-confirmed send.
+    const secondFailureInvoice = fakeInvoice(customerId, { created: firstInvoice.created + 7200 });
+    await deliverWebhook(fakeEvent('invoice.payment_failed', secondFailureInvoice));
+
+    const afterSecondFailure = await fetchBillingRow(orgId);
+    expect(afterSecondFailure.billing_lifecycle_state).toBe('grace_period');
+    expect(afterSecondFailure.payment_failed_notification_sent_at).not.toBeNull();
+    expect(emailSpy).toHaveBeenCalledTimes(2); // notified once per distinct episode
   });
 });
 
@@ -389,7 +508,7 @@ describe('out-of-order webhook delivery -- P1 fix (Stripe does not guarantee eve
     const { orgId, customerId } = await insertOrg({ tier: 'pro' });
 
     // The current, real failure -- a newer invoice than the stale one below.
-    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
     const currentFailure = fakeInvoice(customerId, { created: unixSeconds(daysAgo(1)) });
     await deliverWebhook(fakeEvent('invoice.payment_failed', currentFailure));
 
@@ -427,7 +546,7 @@ describe('out-of-order webhook delivery -- P1 fix (Stripe does not guarantee eve
     // A delayed invoice.payment_failed for an OLDER invoice than the one
     // that just recovered the org (e.g. a redelivered retry notification
     // for the episode that already resolved).
-    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
     const staleOldFailure = fakeInvoice(customerId, { created: unixSeconds(daysAgo(5)) });
     await deliverWebhook(fakeEvent('invoice.payment_failed', staleOldFailure));
 
@@ -447,7 +566,7 @@ describe('out-of-order webhook delivery -- P1 fix (Stripe does not guarantee eve
     expect((await fetchBillingRow(orgId)).billing_lifecycle_state).toBe('healthy');
 
     // A's failure (older than B) arrives late.
-    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
     await deliverWebhook(fakeEvent('invoice.payment_failed', invoiceA));
 
     const after = await fetchBillingRow(orgId);
@@ -461,7 +580,7 @@ describe('out-of-order webhook delivery -- P1 fix (Stripe does not guarantee eve
     const invoiceB = fakeInvoice(customerId, { created: unixSeconds(daysAgo(1)) });
 
     // B (newer) fails, delivered first.
-    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
     await deliverWebhook(fakeEvent('invoice.payment_failed', invoiceB));
     const afterB = await fetchBillingRow(orgId);
     expect(afterB.billing_lifecycle_state).toBe('grace_period');
@@ -479,7 +598,7 @@ describe('out-of-order webhook delivery -- P1 fix (Stripe does not guarantee eve
     const orgB = await insertOrg({ tier: 'enterprise', billingLifecycleState: 'grace_period', paymentFailedAt: daysAgo(2), gracePeriodEndsAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) });
     const beforeB = await fetchBillingRow(orgB.orgId);
 
-    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue();
+    jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
     // A stale/current event for org A's customer, regardless of ordering,
     // must never be attributable to org B -- stripe_customer_id is UNIQUE,
     // so this is also a direct proof of that constraint doing its job.
