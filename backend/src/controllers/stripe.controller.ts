@@ -472,11 +472,17 @@ export class StripeController {
       // correctly keeps paid access until the period actually ends, and
       // that transition remains driven by Stripe's own scheduled
       // cancellation firing customer.subscription.updated/.deleted later.
+      // asOf: new Date() -- this is a synchronous, authoritative write: the
+      // Stripe API call just above already confirmed this state server-side,
+      // so it's always at least as fresh as anything a webhook could report
+      // about the same change, and it still advances the ordering mark so a
+      // later stale customer.subscription.updated can't undo it (see
+      // StripeService.updateOrganizationSubscription).
       await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
         tier: immediate ? 'free' : undefined,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      });
+      }, { asOf: new Date() });
 
       res.status(200).json({
         success: true,
@@ -592,11 +598,12 @@ export class StripeController {
 
       // Keep the DB in sync immediately rather than waiting for the
       // customer.subscription.updated webhook -- same pattern as
-      // cancelSubscription/resumeSubscription below.
+      // cancelSubscription/resumeSubscription below. asOf: new Date() -- see
+      // cancelSubscription's identical comment above.
       await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
         tier,
-      });
+      }, { asOf: new Date() });
 
       res.status(200).json({
         success: true,
@@ -652,11 +659,12 @@ export class StripeController {
       // Resume subscription
       const subscription = await stripeService.resumeSubscription(subscriptionId);
 
-      // Update database
+      // Update database. asOf: new Date() -- see cancelSubscription's
+      // identical comment above.
       await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
         cancelAtPeriodEnd: false,
-      });
+      }, { asOf: new Date() });
 
       res.status(200).json({
         success: true,
@@ -1503,6 +1511,16 @@ export class StripeController {
    * like a handled event -- see that method's comment on unhandled events.
    */
   private async dispatchWebhookEvent(event: Stripe.Event, res: Response): Promise<void> {
+    // Computed once here, not inside each handler: the Stripe Event
+    // envelope's own `created` is the ordering signal for the two
+    // subscription webhook handlers (see StripeService.
+    // updateOrganizationSubscription's own comment for why the envelope,
+    // not any field on the Subscription payload). checkout.session.completed
+    // deliberately does NOT receive this -- it's treated the same as the
+    // other synchronous, first-write call sites (asOf: new Date()), not as
+    // an ordering-sensitive subscription-lifecycle event.
+    const eventCreatedAt = new Date(event.created * 1000);
+
     switch (event.type) {
       case 'checkout.session.completed':
         await this.handleCheckoutSessionCompleted(event.data.object);
@@ -1510,11 +1528,11 @@ export class StripeController {
 
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
-        await this.handleSubscriptionUpdated(event.data.object);
+        await this.handleSubscriptionUpdated(event.data.object, eventCreatedAt);
         break;
 
       case 'customer.subscription.deleted':
-        await this.handleSubscriptionDeleted(event.data.object);
+        await this.handleSubscriptionDeleted(event.data.object, eventCreatedAt);
         break;
 
       case 'invoice.paid':
@@ -1564,11 +1582,14 @@ export class StripeController {
    * stripe_event_id against itself. It cannot and does not attempt to
    * detect that a *different* event id for the same object is stale
    * relative to another -- that is what
-   * organizations.latest_processed_invoice_created_at (invoice ordering)
-   * already handles, unchanged by this method, via
-   * StripeService.recordPaymentFailure/recordPaymentRecovery. Event-ID
-   * idempotency and object-level ordering are separate concerns solved by
-   * separate mechanisms; this method only ever does the former.
+   * organizations.latest_processed_invoice_created_at (invoice ordering,
+   * via StripeService.recordPaymentFailure/recordPaymentRecovery) and
+   * organizations.latest_processed_subscription_event_created_at
+   * (subscription ordering, via StripeService.
+   * updateOrganizationSubscription) each separately handle, unchanged by
+   * this method. Event-ID idempotency and object-level ordering are
+   * separate concerns solved by separate, domain-specific mechanisms; this
+   * method only ever does the former.
    *
    * HTTP status contract:
    *  - 200: fresh success, intentionally-unhandled event type, exact
@@ -1694,7 +1715,12 @@ export class StripeController {
       console.log(`💰 Price ID: ${priceId}`);
       console.log(`🎯 Detected tier: ${tier}`);
 
-      // Update organization with subscription details
+      // Update organization with subscription details. asOf: new Date() --
+      // treated as a synchronous, first-write establishment of this org's
+      // subscription state (same as cancelSubscription/changePlan/
+      // resumeSubscription below), not threaded from the enclosing
+      // checkout.session.completed event -- see StripeService.
+      // updateOrganizationSubscription's comment.
       await stripeService.updateOrganizationSubscription(organizationId, {
         subscriptionId: subscriptionId,
         status: subscription.status,
@@ -1702,7 +1728,7 @@ export class StripeController {
         currentPeriodStart: (subscription as any).current_period_start ? new Date((subscription as any).current_period_start * 1000) : undefined,
         currentPeriodEnd: (subscription as any).current_period_end ? new Date((subscription as any).current_period_end * 1000) : undefined,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      });
+      }, { asOf: new Date() });
 
       console.log(`✅ Organization ${organizationId} updated to ${tier} tier`);
     } catch (error) {
@@ -1711,7 +1737,7 @@ export class StripeController {
     }
   }
 
-  private async handleSubscriptionUpdated(subscription: any): Promise<void> {
+  private async handleSubscriptionUpdated(subscription: any, eventCreatedAt: Date): Promise<void> {
     try {
       const customerId = subscription.customer;
       console.log(`👤 Looking up organization for customer ${customerId}`);
@@ -1741,6 +1767,13 @@ export class StripeController {
       // the payment-failure grace period (see subscription.middleware.ts's
       // isOrgRestricted) -- access is restricted there via
       // billing_lifecycle_state, never by rewriting subscription_tier.
+      //
+      // This status-content check catches a stale event whose OWN payload
+      // says canceled/incomplete_expired, but it cannot catch a stale event
+      // whose payload still says active/past_due/etc. from before a
+      // cancellation that has since happened elsewhere (the P1 this
+      // eventCreatedAt ordering guard closes, below) -- content and
+      // staleness are orthogonal checks, both needed.
       const priceId = subscription.items.data[0]?.price.id;
       const isTerminated = subscription.status === 'canceled' || subscription.status === 'incomplete_expired';
       const tier = isTerminated ? 'free' : stripeService.getTierFromPriceId(priceId);
@@ -1749,15 +1782,24 @@ export class StripeController {
       console.log(`🎯 Detected tier: ${tier}`);
       console.log(`📊 Subscription status: ${subscription.status}`);
 
-      // Update organization
-      await stripeService.updateOrganizationSubscription(organization.id, {
+      // asOf: eventCreatedAt, strict (no allowTie) -- a stale delivery of
+      // this same event redelivered later can never re-win a tie against
+      // whatever it (or something newer) already set. See
+      // StripeService.updateOrganizationSubscription's comment for the full
+      // ordering contract.
+      const { applied } = await stripeService.updateOrganizationSubscription(organization.id, {
         subscriptionId: subscription.id,
         status: subscription.status,
         tier,
         currentPeriodStart: (subscription as any).current_period_start ? new Date((subscription as any).current_period_start * 1000) : undefined,
         currentPeriodEnd: (subscription as any).current_period_end ? new Date((subscription as any).current_period_end * 1000) : undefined,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      });
+      }, { asOf: eventCreatedAt });
+
+      if (!applied) {
+        console.log(`ℹ️ Stale customer.subscription.updated for organization ${organization.id} (event ${eventCreatedAt.toISOString()}) -- ignored, a newer subscription event already applied`);
+        return;
+      }
 
       console.log(`✅ Updated subscription for organization ${organization.id} to ${tier} tier`);
     } catch (error) {
@@ -1766,7 +1808,7 @@ export class StripeController {
     }
   }
 
-  private async handleSubscriptionDeleted(subscription: any): Promise<void> {
+  private async handleSubscriptionDeleted(subscription: any, eventCreatedAt: Date): Promise<void> {
     const customerId = subscription.customer;
     const organization = await stripeService.getOrganizationByCustomerId(customerId);
 
@@ -1775,20 +1817,35 @@ export class StripeController {
       return;
     }
 
-    // Downgrade to free tier
-    await stripeService.updateOrganizationSubscription(organization.id, {
+    // Downgrade to free tier. asOf: eventCreatedAt, allowTie: true --
+    // deletion is authoritative/terminal and wins an equal-timestamp tie
+    // against a customer.subscription.updated fired from the same
+    // cancellation (Stripe Event.created has one-second resolution, so
+    // this is the expected common case, not a rare edge case -- see
+    // StripeService.updateOrganizationSubscription's comment). A truly
+    // stale .deleted (older than an event already applied -- e.g. this
+    // organization has since resubscribed) is still correctly rejected.
+    const { applied } = await stripeService.updateOrganizationSubscription(organization.id, {
       subscriptionId: undefined,
       status: 'canceled',
       tier: 'free',
       cancelAtPeriodEnd: false,
-    });
+    }, { asOf: eventCreatedAt, allowTie: true });
+
+    if (!applied) {
+      console.log(`ℹ️ Stale customer.subscription.deleted for organization ${organization.id} (event ${eventCreatedAt.toISOString()}) -- ignored, a newer subscription event already applied`);
+      return;
+    }
 
     // Cancellation is authoritative over any in-flight payment-failure
     // episode: a canceled/deleted subscription has no grace period to
     // enforce (there's nothing paid left to restrict), and leaving a stale
     // grace_period/restricted state around would only confuse a future
     // resubscribe. recordPaymentRecovery is a no-op if the org was already
-    // 'healthy'.
+    // 'healthy'. Gated behind `applied` -- if this deletion was itself
+    // stale (rejected above), a newer subscription's own state (e.g. an
+    // active resubscription's payment-failure episode) must not be
+    // touched by it.
     await stripeService.recordPaymentRecovery(organization.id);
 
     console.log(`Subscription deleted for organization ${organization.id}, downgraded to free`);
