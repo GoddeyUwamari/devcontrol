@@ -16,25 +16,19 @@
 --
 --   PLACEMENT NOTE: this migration ALTERs `organizations`, adding a
 --   column, exactly like 202608270610_add_stripe_fields.sql and
---   202608312100_add_billing_lifecycle_state.sql before it -- both of
---   which are classified in database/migrations-admin/, not here, because
---   `organizations` is verified `postgres`-owned in production
---   (`pg_get_userbyid(relowner)`), while the ordinary runner connects as
+--   202608312100_add_billing_lifecycle_state.sql before it -- both
+--   classified in this directory because `organizations` is
+--   `postgres`-owned in production, while the ordinary runner connects as
 --   `devcontrol`, which cannot ALTER a table it does not own (PostgreSQL
---   42501 -- this is not hypothetical: `202608270610` failed with exactly
---   this error on a real, non-dry-run production attempt; see
---   database/migrations-admin/README.md's "Production execution history"
---   section for the full record). This file is placed in the ordinary
---   database/migrations/ path on explicit instruction, not because the
---   ownership finding has changed -- it has not been re-verified as
---   changed, and the local ownership check backing that finding was
---   re-confirmed unchanged during this same implementation session.
---   Executing this specific file via the ordinary devcontrol-authenticated
---   runner against production is expected to fail with the same 42501
---   error, requiring the same reclassification-and-retry
---   `202608270610` already went through. Flagged here so that failure, if
---   it happens, is recognized immediately rather than re-diagnosed from
---   scratch.
+--   42501). This file was initially placed in the ordinary
+--   database/migrations/ path and a real (non-dry-run) `--execute-only`
+--   attempt was made against production from there -- it failed with
+--   exactly `42501: must be owner of table organizations`, rolled back
+--   cleanly, and was never recorded in `schema_migrations`. This file was
+--   then moved into this directory as a direct result of that failure --
+--   the same reclassification-after-failed-attempt `202608270610` already
+--   went through. See database/migrations-admin/README.md's "Production
+--   execution history" section for the full record of the failed attempt.
 --
 --   Design notes:
 --   - Deliberately a SEPARATE column from latest_processed_invoice_

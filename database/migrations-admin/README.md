@@ -78,8 +78,21 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`021_wire_cost_recommendations_scanning.sql`**,
 **`023_create_account_security_findings.sql`**,
 **`029_add_resource_reconciliation.sql`**,
-**`202608272014_extend_scheduled_reports_ai_types.sql`**, and
-**`202608312100_add_billing_lifecycle_state.sql`**.
+**`202608272014_extend_scheduled_reports_ai_types.sql`**,
+**`202608312100_add_billing_lifecycle_state.sql`**, and
+**`202608312300_add_subscription_event_ordering.sql`**.
+
+`202608312300_add_subscription_event_ordering.sql` `ALTER TABLE`s
+`organizations` (adding the P1 stale-subscription-event fix's
+`latest_processed_subscription_event_created_at` column) -- the same
+table, and the same ownership finding, as `202608270610_add_stripe_fields.sql`
+and `202608312100_add_billing_lifecycle_state.sql` above. Unlike those two,
+this file's reclassification was not preventive: it was placed in the
+ordinary `database/migrations/` path first, a real `--execute-only` attempt
+against production from there failed with the exact `42501` error this
+directory exists to solve, and it was moved here as the direct, observed
+consequence -- see "Production execution history" below for the record of
+the failed ordinary-path attempt.
 
 `202608312100_add_billing_lifecycle_state.sql` `ALTER TABLE`s
 `organizations` (adding the P0 payment-failure lifecycle's
@@ -391,3 +404,32 @@ still absent now. Net result: the migration remains **unrecorded in
 `schema_migrations`** despite its target schema objects already existing
 in production, and no successful execution of this migration (by any
 runner or path) has occurred as of this writing.
+
+## Production execution history — `202608312300_add_subscription_event_ordering.sql`
+
+A real (non-dry-run) `--execute-only 202608312300_add_subscription_event_ordering.sql`
+attempt was made against production via the ordinary path, before this
+migration was reclassified into this directory (SSM CommandId
+`b777239f-78bd-4350-b7e9-395273dc320d`, `ExecutionStartDateTime`
+`2026-09-01T03:01:42.371Z`). A read-only pre-flight in the same session had
+already confirmed the deployed release matched the target commit and the
+migration file's checksum matched the exact Git blob at that commit before
+the attempt was made.
+
+**Directly observed:**
+- The attempt failed with PostgreSQL `42501: must be owner of table
+  organizations`, and `database/migrate.js` itself reported `Rolled back.
+  Not recorded as applied.`
+- A fresh read-only check immediately after confirmed `schema_migrations`
+  contained zero rows for this migration name, and
+  `organizations.latest_processed_subscription_event_created_at` did not
+  exist -- the failed attempt left no partial state.
+- A separate `/health` check immediately after returned `200`,
+  `database: connected` -- the failed attempt did not affect the running
+  application.
+
+Only the migration's classification and deployment path changed as a
+result; its SQL is unchanged from the ordinary-path version, and its
+checksum changed only because this reclassification note was added to the
+file's own header comment (the `ALTER TABLE`/`COMMENT ON` statements
+themselves are byte-identical).
