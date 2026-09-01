@@ -155,11 +155,14 @@ describe('POST /api/refunds (issueRefund) authorization', () => {
 
     expect(status).not.toHaveBeenCalledWith(403);
     expect(status).not.toHaveBeenCalledWith(400);
-    expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({
-      payment_intent: paymentIntentId,
-      amount: 5000,
-      reason: 'requested_by_customer',
-    }));
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payment_intent: paymentIntentId,
+        amount: 5000,
+        reason: 'requested_by_customer',
+      }),
+      expect.objectContaining({ idempotencyKey: expect.any(String) })
+    );
     expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: true, data: expect.objectContaining({ id: refundId }) }));
 
     const rows = await fetchRefundRows(orgId);
@@ -195,7 +198,10 @@ describe('POST /api/refunds (issueRefund) authorization', () => {
     await stripeController.issueRefund(req, res);
 
     expect(status).not.toHaveBeenCalledWith(400);
-    expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ payment_intent: paymentIntentId, amount: 2000 }));
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: paymentIntentId, amount: 2000 }),
+      expect.objectContaining({ idempotencyKey: expect.any(String) })
+    );
 
     const rows = await fetchRefundRows(orgId);
     expect(rows).toHaveLength(1);
@@ -489,5 +495,162 @@ describe('refund webhook idempotency and status sync', () => {
 
     const { rows } = await pool.query('SELECT subscription_tier FROM organizations WHERE id = $1', [orgId]);
     expect(rows[0].subscription_tier).toBe('free');
+  });
+});
+
+describe('outbound Stripe Idempotency-Key on refund creation', () => {
+  function stubCreateRefund(refundId: string, paymentIntentId: string, chargeId: string) {
+    return jest.spyOn(stripeService, 'createRefund').mockResolvedValue({
+      id: refundId,
+      amount: 2000,
+      currency: 'usd',
+      status: 'succeeded',
+      reason: null,
+      payment_intent: paymentIntentId,
+      charge: chargeId,
+      metadata: {},
+    } as any);
+  }
+
+  function capturedIdempotencyKey(createSpy: jest.SpyInstance, callIndex = 0): string {
+    const call = createSpy.mock.calls[callIndex];
+    expect(call?.[1]).toEqual(expect.objectContaining({ idempotencyKey: expect.any(String) }));
+    return (call![1] as { idempotencyKey: string }).idempotencyKey;
+  }
+
+  it('supplies an idempotency key on the outbound Stripe refund creation call', async () => {
+    const { orgId, customerId } = await insertOrgWithCustomer();
+    const paymentIntentId = `pi_test_${uniqueSuffix()}`;
+    const chargeId = `ch_test_${uniqueSuffix()}`;
+    const invoice = fakeInvoice(customerId, { amount_paid: 5000 });
+    const charge = { id: chargeId, amount: 5000, amount_refunded: 0, currency: 'usd', customer: customerId };
+    stubResolvedInvoice(invoice, paymentIntentId, charge);
+    const createSpy = stubCreateRefund(`re_test_${uniqueSuffix()}`, paymentIntentId, chargeId);
+
+    const { req, res } = mockReqRes({ paymentId: invoice.id, amount: 2000, reason: 'requested_by_customer' }, orgId, 'owner');
+    await stripeController.issueRefund(req, res);
+
+    const key = capturedIdempotencyKey(createSpy);
+    expect(typeof key).toBe('string');
+    expect(key.length).toBeGreaterThan(0);
+  });
+
+  it('a retry of the exact same logical refund request produces the same idempotency key', async () => {
+    const { orgId, customerId } = await insertOrgWithCustomer();
+    const paymentIntentId = `pi_test_${uniqueSuffix()}`;
+    const chargeId = `ch_test_${uniqueSuffix()}`;
+    const invoice = fakeInvoice(customerId, { amount_paid: 5000 });
+    // amount_refunded stays 0 across both attempts: this models the
+    // ambiguous-failure case (Stripe never actually processed the first
+    // attempt, or the app never learned that it did), which is exactly the
+    // scenario an outbound idempotency key needs to protect.
+    const charge = { id: chargeId, amount: 5000, amount_refunded: 0, currency: 'usd', customer: customerId };
+    stubResolvedInvoice(invoice, paymentIntentId, charge);
+    const createSpy = stubCreateRefund(`re_test_${uniqueSuffix()}`, paymentIntentId, chargeId);
+
+    const body = { paymentId: invoice.id, amount: 2000, reason: 'requested_by_customer' };
+
+    const first = mockReqRes(body, orgId, 'owner');
+    await stripeController.issueRefund(first.req, first.res);
+    const firstKey = capturedIdempotencyKey(createSpy, 0);
+
+    const second = mockReqRes(body, orgId, 'owner');
+    await stripeController.issueRefund(second.req, second.res);
+    const secondKey = capturedIdempotencyKey(createSpy, 1);
+
+    expect(secondKey).toBe(firstKey);
+  });
+
+  it('two independent legitimate refunds (different amounts) receive different idempotency keys', async () => {
+    const { orgId, customerId } = await insertOrgWithCustomer();
+    const paymentIntentId = `pi_test_${uniqueSuffix()}`;
+    const chargeId = `ch_test_${uniqueSuffix()}`;
+    const invoice = fakeInvoice(customerId, { amount_paid: 5000 });
+    const charge = { id: chargeId, amount: 5000, amount_refunded: 0, currency: 'usd', customer: customerId };
+    stubResolvedInvoice(invoice, paymentIntentId, charge);
+    const createSpy = stubCreateRefund(`re_test_${uniqueSuffix()}`, paymentIntentId, chargeId);
+
+    const first = mockReqRes({ paymentId: invoice.id, amount: 1000, reason: 'requested_by_customer' }, orgId, 'owner');
+    await stripeController.issueRefund(first.req, first.res);
+    const firstKey = capturedIdempotencyKey(createSpy, 0);
+
+    const second = mockReqRes({ paymentId: invoice.id, amount: 2000, reason: 'requested_by_customer' }, orgId, 'owner');
+    await stripeController.issueRefund(second.req, second.res);
+    const secondKey = capturedIdempotencyKey(createSpy, 1);
+
+    expect(secondKey).not.toBe(firstKey);
+  });
+
+  it('two independent legitimate refunds on different invoices receive different idempotency keys even with identical amount/reason', async () => {
+    const { orgId, customerId } = await insertOrgWithCustomer();
+
+    const paymentIntentId1 = `pi_test_${uniqueSuffix()}`;
+    const chargeId1 = `ch_test_${uniqueSuffix()}`;
+    const invoice1 = fakeInvoice(customerId, { amount_paid: 5000 });
+    stubResolvedInvoice(invoice1, paymentIntentId1, { id: chargeId1, amount: 5000, amount_refunded: 0, currency: 'usd', customer: customerId });
+    const createSpy = stubCreateRefund(`re_test_${uniqueSuffix()}`, paymentIntentId1, chargeId1);
+
+    const first = mockReqRes({ paymentId: invoice1.id, amount: 1500, reason: 'duplicate' }, orgId, 'owner');
+    await stripeController.issueRefund(first.req, first.res);
+    const firstKey = capturedIdempotencyKey(createSpy, 0);
+
+    const paymentIntentId2 = `pi_test_${uniqueSuffix()}`;
+    const chargeId2 = `ch_test_${uniqueSuffix()}`;
+    const invoice2 = fakeInvoice(customerId, { amount_paid: 5000 });
+    stubResolvedInvoice(invoice2, paymentIntentId2, { id: chargeId2, amount: 5000, amount_refunded: 0, currency: 'usd', customer: customerId });
+    createSpy.mockResolvedValueOnce({
+      id: `re_test_${uniqueSuffix()}`,
+      amount: 1500,
+      currency: 'usd',
+      status: 'succeeded',
+      reason: null,
+      payment_intent: paymentIntentId2,
+      charge: chargeId2,
+      metadata: {},
+    } as any);
+
+    const second = mockReqRes({ paymentId: invoice2.id, amount: 1500, reason: 'duplicate' }, orgId, 'owner');
+    await stripeController.issueRefund(second.req, second.res);
+    const secondKey = capturedIdempotencyKey(createSpy, 1);
+
+    expect(secondKey).not.toBe(firstKey);
+  });
+
+  it('existing refund success behavior (response shape, amount, persistence) is unchanged by the idempotency key addition', async () => {
+    const { orgId, customerId } = await insertOrgWithCustomer();
+    const paymentIntentId = `pi_test_${uniqueSuffix()}`;
+    const chargeId = `ch_test_${uniqueSuffix()}`;
+    const invoice = fakeInvoice(customerId, { amount_paid: 5000 });
+    const charge = { id: chargeId, amount: 5000, amount_refunded: 0, currency: 'usd', customer: customerId };
+    stubResolvedInvoice(invoice, paymentIntentId, charge);
+    const refundId = `re_test_${uniqueSuffix()}`;
+    stubCreateRefund(refundId, paymentIntentId, chargeId);
+
+    const { req, res, status, json } = mockReqRes({ paymentId: invoice.id, amount: 2000 }, orgId, 'owner');
+    await stripeController.issueRefund(req, res);
+
+    expect(status).not.toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: true, data: expect.objectContaining({ id: refundId }) }));
+
+    const rows = await fetchRefundRows(orgId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount).toBe(2000);
+  });
+
+  it('existing refund error behavior (Stripe rejection) is unchanged by the idempotency key addition', async () => {
+    const { orgId, customerId } = await insertOrgWithCustomer();
+    const paymentIntentId = `pi_test_${uniqueSuffix()}`;
+    const chargeId = `ch_test_${uniqueSuffix()}`;
+    const invoice = fakeInvoice(customerId, { amount_paid: 5000 });
+    const charge = { id: chargeId, amount: 5000, amount_refunded: 0, currency: 'usd', customer: customerId };
+    stubResolvedInvoice(invoice, paymentIntentId, charge);
+    jest.spyOn(stripeService, 'createRefund').mockRejectedValue(new Error('Stripe: refund failed'));
+
+    const { req, res, status, json } = mockReqRes({ paymentId: invoice.id, amount: 2000 }, orgId, 'owner');
+    await stripeController.issueRefund(req, res);
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'Stripe: refund failed' }));
+    expect(await fetchRefundRows(orgId)).toHaveLength(0);
   });
 });

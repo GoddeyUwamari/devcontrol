@@ -5,6 +5,7 @@
 
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
+import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import stripeService, {
   isCheckoutTier,
@@ -1221,6 +1222,57 @@ export class StripeController {
   }
 
   /**
+   * Deterministic outbound Stripe Idempotency-Key for a single logical
+   * refund operation, so retrying an ambiguous createRefund call (e.g. our
+   * process or network dropping the response after Stripe already
+   * processed it) replays the original refund instead of creating a
+   * second one.
+   *
+   * There's no client-supplied request/nonce id for this endpoint (see
+   * ALLOWED_REFUND_FIELDS), so the key is derived entirely from the
+   * server-resolved identity of the operation: which org, which
+   * PaymentIntent/charge/invoice, which amount, which reason, and who
+   * initiated it. Two genuinely different refunds normally differ on at
+   * least one of these (most concretely: after a refund succeeds, the
+   * remaining refundable balance -- and so the amount of any subsequent
+   * refund request -- changes). `amount` here is the raw client-supplied
+   * value (or the 'full' sentinel when omitted), never the resolved
+   * `refundAmount` -- that value is read live off the charge and would
+   * itself shift between an original attempt and a retry once the first
+   * refund actually lands, which would defeat the key's stability.
+   *
+   * Known accepted limitation: two deliberately independent refunds with
+   * the exact same explicit amount/reason against the same invoice by the
+   * same admin, within the same 24h window Stripe caches idempotency keys
+   * for, would collide and the second would just replay the first. There's
+   * no way to distinguish that from a retry without a client-generated
+   * nonce, which is out of scope for this change.
+   */
+  private buildRefundIdempotencyKey(params: {
+    organizationId: string;
+    paymentIntentId: string;
+    chargeId: string;
+    invoiceId: string;
+    amount: number | undefined;
+    reason: string | undefined;
+    initiatedBy: string | undefined;
+  }): string {
+    const amountSpec = typeof params.amount === 'number' ? `explicit:${params.amount}` : 'full';
+    const raw = [
+      'refund',
+      'v1',
+      params.organizationId,
+      params.paymentIntentId,
+      params.chargeId,
+      params.invoiceId,
+      amountSpec,
+      params.reason ?? 'none',
+      params.initiatedBy ?? 'unknown',
+    ].join(':');
+    return `refund_${createHash('sha256').update(raw).digest('hex')}`;
+  }
+
+  /**
    * POST /api/refunds
    * Issue a real Stripe refund (full or partial). Owner/admin only (see
    * requireBillingAdmin) -- members/viewers get 403 and Stripe is never
@@ -1342,16 +1394,29 @@ export class StripeController {
       const clientReason = typeof reason === 'string' && isRefundReason(reason) ? reason : undefined;
       const stripeReason = clientReason ? toStripeRefundReason(clientReason) : undefined;
 
-      const refund = await stripeService.createRefund({
-        payment_intent: paymentIntentId,
-        amount: refundAmount,
-        ...(stripeReason ? { reason: stripeReason } : {}),
-        metadata: {
-          organizationId,
-          invoiceId: invoice.id as string,
-          initiatedBy: req.user.userId,
-        },
+      const idempotencyKey = this.buildRefundIdempotencyKey({
+        organizationId,
+        paymentIntentId,
+        chargeId: charge.id,
+        invoiceId: invoice.id as string,
+        amount: typeof amount === 'number' ? amount : undefined,
+        reason: stripeReason,
+        initiatedBy: req.user.userId,
       });
+
+      const refund = await stripeService.createRefund(
+        {
+          payment_intent: paymentIntentId,
+          amount: refundAmount,
+          ...(stripeReason ? { reason: stripeReason } : {}),
+          metadata: {
+            organizationId,
+            invoiceId: invoice.id as string,
+            initiatedBy: req.user.userId,
+          },
+        },
+        { idempotencyKey }
+      );
 
       const row = await this.upsertRefundRecord(organizationId, refund, {
         invoiceId: invoice.id as string,

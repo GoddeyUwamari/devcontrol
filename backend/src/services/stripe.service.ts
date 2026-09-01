@@ -542,10 +542,19 @@ export class StripeService {
    * StripeController.issueRefund, which never forwards a client-supplied
    * Stripe object id or amount without first validating it against the
    * actual PaymentIntent/Charge this organization owns.
+   *
+   * `options.idempotencyKey` is passed straight through to the Stripe SDK
+   * (same `refunds.create(params, options)` shape Stripe itself uses) so a
+   * caller-computed key -- see StripeController.buildRefundIdempotencyKey --
+   * makes retrying this exact call (e.g. after a timed-out response) safe:
+   * Stripe returns the original refund instead of creating a duplicate one.
    */
-  async createRefund(params: Stripe.RefundCreateParams): Promise<Stripe.Refund> {
+  async createRefund(
+    params: Stripe.RefundCreateParams,
+    options?: Stripe.RequestOptions
+  ): Promise<Stripe.Refund> {
     try {
-      const refund = await getStripeClient().refunds.create(params);
+      const refund = await getStripeClient().refunds.create(params, options);
       console.log(`Created refund ${refund.id} for payment intent ${params.payment_intent}`);
       return refund;
     } catch (error) {
