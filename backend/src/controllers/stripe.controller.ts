@@ -5,6 +5,7 @@
 
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
+import type { PoolClient } from 'pg';
 import stripeService, {
   isCheckoutTier,
   isBillingInterval,
@@ -16,6 +17,7 @@ import stripeService, {
 } from '../services/stripe.service';
 import { pool } from '../config/database';
 import { runWithOrgClient } from '../middleware/auth.middleware';
+import { claimWebhookEvent, resolveWebhookEvent } from '../services/stripe-webhook-ledger.service';
 
 // The only fields POST /api/refunds accepts from the client. `paymentId` is
 // our own Payment.id, i.e. a Stripe invoice id -- never a payment_intent or
@@ -1430,13 +1432,16 @@ export class StripeController {
   /**
    * POST /api/stripe/webhook
    * Handle Stripe webhooks
+   *
+   * Signature verification and the HTTP response contract for a genuinely
+   * bad/missing signature are completely unchanged from before the
+   * idempotency ledger existed. Everything past a *verified* event now goes
+   * through claim -> dispatch -> resolve (processWebhookEventWithLedger)
+   * instead of going straight into the dispatch switch -- see that method
+   * for the full claim/resolve/HTTP-status contract.
    */
   async handleWebhook(req: Request, res: Response): Promise<void> {
     try {
-      console.log('🔍 DEBUG: req.body type:', typeof req.body);
-      console.log('🔍 DEBUG: req.body is Buffer?', Buffer.isBuffer(req.body));
-      console.log('🔍 DEBUG: req.body constructor:', req.body?.constructor?.name);
-
       const signature = req.headers['stripe-signature'] as string;
       if (!signature) {
         res.status(400).json({
@@ -1446,7 +1451,7 @@ export class StripeController {
         return;
       }
 
-      // ✅ Get raw payload - must be Buffer or string, not parsed object
+      // Get raw payload - must be Buffer or string, not parsed object
       let payload: string | Buffer;
       if (Buffer.isBuffer(req.body)) {
         payload = req.body;
@@ -1472,60 +1477,191 @@ export class StripeController {
         return;
       }
 
-      console.log('🔔 Webhook received:', event.type);
-      console.log('📦 Event ID:', event.id);
-      console.log('🔍 Event data:', JSON.stringify(event.data.object, null, 2));
+      console.log(`🔔 Webhook received: ${event.type} (${event.id})`);
 
-      // Handle different event types
-      switch (event.type) {
-        case 'checkout.session.completed':
-          console.log('💳 Processing checkout.session.completed');
-          await this.handleCheckoutSessionCompleted(event.data.object);
-          break;
-
-        case 'customer.subscription.created':
-        case 'customer.subscription.updated':
-          console.log('📋 Processing subscription event:', event.type);
-          await this.handleSubscriptionUpdated(event.data.object);
-          break;
-
-        case 'customer.subscription.deleted':
-          console.log('🗑️ Processing subscription deletion');
-          await this.handleSubscriptionDeleted(event.data.object);
-          break;
-
-        case 'invoice.paid':
-          console.log('✅ Processing paid invoice');
-          await this.handleInvoicePaid(event.data.object);
-          break;
-
-        case 'invoice.payment_failed':
-          console.log('❌ Processing failed payment');
-          await this.handleInvoicePaymentFailed(event.data.object);
-          break;
-
-        case 'charge.refunded':
-          console.log('💰 Processing charge.refunded');
-          await this.handleChargeRefunded(event.data.object, res);
-          break;
-
-        case 'refund.updated':
-          console.log('🔄 Processing refund.updated');
-          await this.handleRefundUpdated(event.data.object, res);
-          break;
-
-        default:
-          console.log('ℹ️ Unhandled event type:', event.type);
-      }
-
-      console.log('✅ Webhook processed successfully');
-      res.json({ success: true, received: true });
+      await this.processWebhookEventWithLedger(event, res);
     } catch (error) {
-      console.error('❌ Webhook error:', error);
+      // Reached only for a handler-thrown business error (see
+      // processWebhookEventWithLedger, which rethrows after recording the
+      // failure in the ledger) or an unexpected error before the ledger was
+      // even reached. Response shape/status (400) is unchanged from before
+      // the ledger existed -- Stripe retries on any non-2xx.
+      console.error('❌ Webhook error:', error instanceof Error ? error.message : error);
       res.status(400).json({
         success: false,
         error: error instanceof Error ? error.message : 'Webhook processing failed'
       });
+    }
+  }
+
+  /**
+   * Runs the existing per-event-type dispatch switch, unchanged. Never
+   * touches the ledger or the HTTP response itself -- that's entirely
+   * processWebhookEventWithLedger's job. An event type with no case here
+   * falls through to `default:` and returns normally (no throw), which is
+   * what lets processWebhookEventWithLedger mark it 'processed' exactly
+   * like a handled event -- see that method's comment on unhandled events.
+   */
+  private async dispatchWebhookEvent(event: Stripe.Event, res: Response): Promise<void> {
+    switch (event.type) {
+      case 'checkout.session.completed':
+        await this.handleCheckoutSessionCompleted(event.data.object);
+        break;
+
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        await this.handleSubscriptionUpdated(event.data.object);
+        break;
+
+      case 'customer.subscription.deleted':
+        await this.handleSubscriptionDeleted(event.data.object);
+        break;
+
+      case 'invoice.paid':
+        await this.handleInvoicePaid(event.data.object);
+        break;
+
+      case 'invoice.payment_failed':
+        await this.handleInvoicePaymentFailed(event.data.object);
+        break;
+
+      case 'charge.refunded':
+        await this.handleChargeRefunded(event.data.object, res);
+        break;
+
+      case 'refund.updated':
+        await this.handleRefundUpdated(event.data.object, res);
+        break;
+
+      default:
+        // Intentionally not an error: this application has no business
+        // logic for this event type. It still needs to reach a terminal
+        // ledger state (see caller) so it doesn't read as permanently stuck
+        // to an operator, and so Stripe isn't asked to keep retrying it.
+        console.log('ℹ️ Unhandled event type:', event.type);
+    }
+  }
+
+  /**
+   * Owns the stripe_webhook_events ledger lifecycle for one verified event:
+   * claim -> dispatchWebhookEvent (unchanged business logic) -> resolve.
+   * See backend/src/services/stripe-webhook-ledger.service.ts for the claim/
+   * resolve mechanics (session-level advisory lock, no time-based reclaim).
+   *
+   * Deliberately does NOT wrap dispatchWebhookEvent in the same DB
+   * transaction as the claim/resolve writes: several handlers make external
+   * calls (Stripe reads in checkout.session.completed/refund sync, a Resend
+   * email in handleInvoicePaymentFailed), and holding a Postgres transaction
+   * open across a network round-trip to a third party would tie up one of
+   * this pool's 50 connections for however long that call takes -- a real
+   * path to pool exhaustion this codebase doesn't currently risk anywhere
+   * else. Claim and resolve are each a single short, separately-committed
+   * statement instead; dispatchWebhookEvent runs in between using the
+   * existing shared `pool` exactly as it always has (handlers are
+   * completely unmodified by this change).
+   *
+   * Idempotency vs. ordering, explicitly: this ledger only ever compares a
+   * stripe_event_id against itself. It cannot and does not attempt to
+   * detect that a *different* event id for the same object is stale
+   * relative to another -- that is what
+   * organizations.latest_processed_invoice_created_at (invoice ordering)
+   * already handles, unchanged by this method, via
+   * StripeService.recordPaymentFailure/recordPaymentRecovery. Event-ID
+   * idempotency and object-level ordering are separate concerns solved by
+   * separate mechanisms; this method only ever does the former.
+   *
+   * HTTP status contract:
+   *  - 200: fresh success, intentionally-unhandled event type, exact
+   *    duplicate of an already-processed event, or a genuine
+   *    concurrent-in-flight duplicate. Stripe stops retrying in all four
+   *    cases -- correct, since none of them require another attempt.
+   *  - 400: the handler itself threw (existing, unchanged business-error
+   *    behavior -- propagates out to handleWebhook's catch).
+   *  - 503: this attempt could not be safely claimed or safely marked
+   *    resolved for infrastructure reasons (DB unreachable, an
+   *    astronomically rare advisory-lock hash collision that can't be
+   *    proven safe to skip, or the resolve write itself failing after the
+   *    handler already succeeded). Always retryable -- every current
+   *    handler's business mutation is independently idempotent (the
+   *    invoice high-water mark, the refunds ON CONFLICT upsert, and every
+   *    other handler's absolute-value/no-op-if-unchanged writes), so
+   *    Stripe re-delivering and this method re-running the handler is safe.
+   *    This is database idempotency, not external-side-effect idempotency:
+   *    a re-run can still repeat a read-only Stripe API call or (in one
+   *    narrow, pre-existing, out-of-scope-for-this-change window) skip the
+   *    payment-failed notification email -- see
+   *    StripeService.sendPaymentFailedEmail's own comment.
+   */
+  private async processWebhookEventWithLedger(event: Stripe.Event, res: Response): Promise<void> {
+    let client: PoolClient;
+    try {
+      client = await pool.connect();
+    } catch (connectError) {
+      console.error(`❌ Could not acquire a DB connection to process webhook ${event.id}:`, connectError instanceof Error ? connectError.message : connectError);
+      res.status(503).json({ success: false, error: 'Temporarily unable to process this event; please retry' });
+      return;
+    }
+
+    try {
+      let claimResult;
+      try {
+        claimResult = await claimWebhookEvent(client, event.id, event.type);
+      } catch (claimError) {
+        console.error(`❌ Failed to claim webhook ${event.id}:`, claimError instanceof Error ? claimError.message : claimError);
+        res.status(503).json({ success: false, error: 'Temporarily unable to process this event; please retry' });
+        return;
+      }
+
+      if (claimResult.kind === 'already_processed') {
+        console.log(`Webhook ${event.id} already processed -- skipping duplicate delivery`);
+        res.json({ success: true, received: true, duplicate: true });
+        return;
+      }
+      if (claimResult.kind === 'in_progress_elsewhere') {
+        console.log(`Webhook ${event.id} is currently being processed by another request -- skipping`);
+        res.json({ success: true, received: true, duplicate: true });
+        return;
+      }
+      if (claimResult.kind === 'ambiguous_retry') {
+        console.warn(`Webhook ${event.id} could not be safely claimed right now -- asking Stripe to retry`);
+        res.status(503).json({ success: false, error: 'Temporarily unable to process this event; please retry' });
+        return;
+      }
+
+      // claimResult.kind === 'claimed' from here on.
+      try {
+        await this.dispatchWebhookEvent(event, res);
+      } catch (handlerError) {
+        const message = handlerError instanceof Error ? handlerError.message : 'Unknown handler error';
+        try {
+          await resolveWebhookEvent(client, event.id, { success: false, errorMessage: message });
+        } catch (resolveError) {
+          console.error(`❌ Failed to record failure for webhook ${event.id}:`, resolveError instanceof Error ? resolveError.message : resolveError);
+        }
+        // Rethrow so handleWebhook's existing catch produces the same 400
+        // business-error response it always has.
+        throw handlerError;
+      }
+
+      try {
+        await resolveWebhookEvent(client, event.id, { success: true });
+      } catch (resolveError) {
+        // The business mutation already committed. Deliberately do NOT
+        // return 200 here: doing so would tell Stripe this event is fully
+        // handled, so nothing would ever come back to durably record that
+        // -- the row would stay 'processing' forever even though its
+        // advisory lock has already been released. A 503 lets Stripe
+        // redeliver; re-running the (already-succeeded) handler is safe for
+        // the same idempotency reasons documented on this method.
+        console.error(`❌ Webhook ${event.id} processed successfully but ledger resolve failed:`, resolveError instanceof Error ? resolveError.message : resolveError);
+        res.status(503).json({ success: false, error: 'Processed but failed to record completion; please retry' });
+        return;
+      }
+
+      console.log(`✅ Webhook ${event.id} processed successfully`);
+      res.json({ success: true, received: true });
+    } finally {
+      client.release();
     }
   }
   // Webhook event handlers

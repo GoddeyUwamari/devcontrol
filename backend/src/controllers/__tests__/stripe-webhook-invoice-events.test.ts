@@ -21,8 +21,17 @@ import { Request, Response } from 'express';
 import { stripeController } from '../stripe.controller';
 import stripeService from '../../services/stripe.service';
 
+// Random suffix, not just Date.now(): event ids are now persisted in
+// stripe_webhook_events under a UNIQUE constraint (see the webhook
+// idempotency ledger), so two events generated within the same millisecond
+// across parallel test files would otherwise collide and make one look like
+// a duplicate delivery of the other.
+function uniqueSuffix(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function fakeEvent(type: string, object: any) {
-  return { id: `evt_test_${Date.now()}`, type, data: { object } };
+  return { id: `evt_test_${uniqueSuffix()}`, type, data: { object } };
 }
 
 function mockWebhookReqRes(event: any) {
