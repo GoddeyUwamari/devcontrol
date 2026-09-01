@@ -578,7 +578,70 @@ export class StripeService {
   }
 
   /**
-   * Update organization subscription info in database
+   * Update organization subscription info in database -- the single write
+   * path for subscription_tier/subscription_status/stripe_subscription_id/
+   * period fields, called from both synchronous controller actions
+   * (cancelSubscription, changePlan, resumeSubscription,
+   * handleCheckoutSessionCompleted) and asynchronous webhook handlers
+   * (handleSubscriptionUpdated, handleSubscriptionDeleted).
+   *
+   * `ordering.asOf` is REQUIRED, not optional, and gates the entire write
+   * (every field in `data`, not just tier) via a single atomic CAS UPDATE
+   * against organizations.latest_processed_subscription_event_created_at --
+   * closes the P1 where a stale customer.subscription.updated (Stripe does
+   * not guarantee webhook delivery order) could resurrect entitlement after
+   * a legitimate cancellation, because its own payload is a perfectly valid
+   * Subscription snapshot from an earlier point in time; nothing in the
+   * payload's own content distinguishes "stale" from "fresh" -- only a
+   * comparison against something external (a clock) can.
+   *
+   * Every caller must pass a real, deliberate `asOf`:
+   *  - Webhook handlers pass the Stripe Event envelope's own `created`
+   *    (Unix seconds -> Date) -- NOT any field on the Subscription/Checkout
+   *    Session payload itself. Subscription.created is fixed at
+   *    subscription-creation time and never changes across updates (see
+   *    node_modules/stripe/types/Subscriptions.d.ts) -- useless for
+   *    comparing one update against another. current_period_start/end
+   *    aren't even top-level Subscription fields in the installed API
+   *    version. Only the enclosing Event's own `created` increases with
+   *    each real, distinct mutation Stripe reports, independent of
+   *    delivery order (see node_modules/stripe/types/Events.d.ts).
+   *  - Synchronous controller actions pass `new Date()` (this server's
+   *    clock), unconditionally accepted (see `allowTie` below is not
+   *    needed there -- a synchronous write always advances the mark
+   *    forward from whatever it was). This is what closes the *other* half
+   *    of the same bug: cancelSubscription/changePlan write tier
+   *    synchronously today with no ordering guard at all, so a stale
+   *    webhook arriving afterward could resurrect entitlement exactly the
+   *    same way even with the two webhook handlers fixed. Safety of mixing
+   *    our own clock with Stripe's here rests on ordinary NTP-level clock
+   *    sync between our server and Stripe's (sub-second in practice, not
+   *    guaranteed to the millisecond) -- the only failure mode from skew is
+   *    a *false rejection* of the real confirming webhook for a change we
+   *    just made synchronously (our clock briefly ahead of Stripe's), which
+   *    is harmless: the state it would have written is already correct, so
+   *    the mark simply stops advancing on that one redundant event rather
+   *    than any data becoming wrong. Skew can never cause a stale event to
+   *    be wrongly *accepted*, only (rarely, harmlessly) cause a fresh one to
+   *    be wrongly rejected.
+   *
+   * `ordering.allowTie` (default false) is the deliberate asymmetry between
+   * customer.subscription.updated (strict `>`, a tie is rejected) and
+   * customer.subscription.deleted (`allowTie: true`, `>=`, a tie is
+   * accepted and wins) -- Stripe Event.created has one-second resolution,
+   * so a same-second collision between an .updated and a .deleted fired
+   * from the same cancellation is the expected common case, not a rare
+   * edge case. Deletion is treated as authoritative/terminal at a tie
+   * because no Stripe operation ever "un-deletes" a subscription -- there
+   * is no legitimate .updated payload that should ever be trusted over a
+   * .deleted at the same instant.
+   *
+   * Returns `{ applied: false }` (no rows affected, nothing written) when
+   * `asOf` was not newer than (or, for deletion, at least as new as) the
+   * organization's existing mark -- i.e. this event/action was stale.
+   * Callers must check this and skip any downstream effect (e.g.
+   * recordPaymentRecovery) that would only be correct if the write actually
+   * landed.
    */
   async updateOrganizationSubscription(
     organizationId: string,
@@ -589,8 +652,9 @@ export class StripeService {
       currentPeriodStart?: Date;
       currentPeriodEnd?: Date;
       cancelAtPeriodEnd?: boolean;
-    }
-  ): Promise<void> {
+    },
+    ordering: { asOf: Date; allowTie?: boolean }
+  ): Promise<{ applied: boolean }> {
     try {
       console.log(`📝 Updating organization ${organizationId} with data:`, JSON.stringify(data, null, 2));
 
@@ -662,24 +726,52 @@ export class StripeService {
 
       if (updates.length === 0) {
         console.log('⚠️ No updates to perform');
-        return;
+        return { applied: false };
       }
 
       updates.push(`updated_at = CURRENT_TIMESTAMP`);
+
+      // Ordering guard: the same $asOf placeholder is referenced in both
+      // the SET clause (advancing the mark) and the WHERE clause (gating
+      // the whole write on it) -- one bound value, two references, so the
+      // comparison and the write are the same atomic statement. No
+      // read-then-write gap: concurrent callers racing on the same
+      // organization serialize on Postgres's own row lock for this UPDATE,
+      // and whichever commits first is what every later comparison is
+      // evaluated against.
+      const asOfParamIndex = paramIndex++;
+      values.push(ordering.asOf);
+      updates.push(`latest_processed_subscription_event_created_at = $${asOfParamIndex}`);
+
+      const idParamIndex = paramIndex++;
       values.push(organizationId);
+
+      const comparisonOperator = ordering.allowTie ? '<=' : '<';
 
       const query = `
         UPDATE organizations
         SET ${updates.join(', ')}
-        WHERE id = $${paramIndex}
+        WHERE id = $${idParamIndex}
+          AND (
+            latest_processed_subscription_event_created_at IS NULL
+            OR latest_processed_subscription_event_created_at ${comparisonOperator} $${asOfParamIndex}
+          )
       `;
 
       console.log(`🔍 SQL Query: ${query}`);
       console.log(`🔍 Values: ${JSON.stringify(values)}`);
 
       const result = await pool.query(query, values);
-      console.log(`✅ Database update result: ${result.rowCount} row(s) affected`);
-      console.log(`✅ Updated organization ${organizationId} subscription info`);
+      const applied = (result.rowCount ?? 0) > 0;
+
+      if (!applied) {
+        console.log(`⚠️ Stale subscription write ignored for organization ${organizationId} (asOf=${ordering.asOf.toISOString()} not newer than the recorded mark)`);
+      } else {
+        console.log(`✅ Database update result: ${result.rowCount} row(s) affected`);
+        console.log(`✅ Updated organization ${organizationId} subscription info`);
+      }
+
+      return { applied };
     } catch (error) {
       console.error('❌ Error updating organization subscription:', error);
       throw error;

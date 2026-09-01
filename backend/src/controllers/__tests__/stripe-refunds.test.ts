@@ -353,8 +353,15 @@ describe('POST /api/refunds -- server-side validation cannot be bypassed by the 
 });
 
 describe('refund webhook idempotency and status sync', () => {
-  function fakeRefundEvent(type: string, object: any) {
-    return { id: `evt_test_${uniqueSuffix()}`, type, data: { object } };
+  // See stripe-cancel-consistency.test.ts's identical fakeEvent helper:
+  // event.created now feeds the subscription-ordering high-water mark for
+  // any customer.subscription.* event, so it must not default to a
+  // colliding/fixed value.
+  let nextEventCreatedAtSeconds = Math.floor(Date.now() / 1000);
+
+  function fakeRefundEvent(type: string, object: any, createdAt?: number) {
+    const created = createdAt ?? nextEventCreatedAtSeconds++;
+    return { id: `evt_test_${uniqueSuffix()}`, type, data: { object }, created };
   }
 
   function mockWebhookReqRes(event: any) {

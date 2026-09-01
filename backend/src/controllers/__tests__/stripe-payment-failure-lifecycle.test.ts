@@ -105,8 +105,15 @@ async function fetchBillingRow(orgId: string) {
   return rows[0];
 }
 
-function fakeEvent(type: string, object: any) {
-  return { id: `evt_test_${uniqueSuffix()}`, type, data: { object } };
+// Monotonically increasing default for fabricated events' Stripe Event
+// envelope `created` (Unix seconds) -- see stripe-cancel-consistency.test.ts's
+// identical helper for why this must not default to a fixed/colliding value
+// now that subscription/checkout events feed the ordering high-water mark.
+let nextEventCreatedAtSeconds = Math.floor(Date.now() / 1000);
+
+function fakeEvent(type: string, object: any, createdAt?: number) {
+  const created = createdAt ?? nextEventCreatedAtSeconds++;
+  return { id: `evt_test_${uniqueSuffix()}`, type, data: { object }, created };
 }
 
 function mockWebhookReqRes(event: any) {

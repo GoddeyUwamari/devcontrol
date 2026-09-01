@@ -128,8 +128,15 @@ async function fetchOrgRow(organizationId: string) {
   return rows[0];
 }
 
-function fakeEvent(type: string, object: any) {
-  return { id: `evt_test_${uniqueSuffix()}`, type, data: { object } };
+// Monotonically increasing default for fabricated events' Stripe Event
+// envelope `created` (Unix seconds) -- see stripe-cancel-consistency.test.ts's
+// identical helper for why this must not default to a fixed/colliding value
+// now that subscription/checkout events feed the ordering high-water mark.
+let nextEventCreatedAtSeconds = Math.floor(Date.now() / 1000);
+
+function fakeEvent(type: string, object: any, createdAt?: number) {
+  const created = createdAt ?? nextEventCreatedAtSeconds++;
+  return { id: `evt_test_${uniqueSuffix()}`, type, data: { object }, created };
 }
 
 function mockWebhookReqRes(event: any) {
@@ -286,7 +293,11 @@ describe('same-tier update -- protection against unnecessary entitlement rewrite
     // Same tier as already stored, and nothing else supplied -- this is the
     // exact shape a same-tier customer.subscription.updated resolves the
     // tier portion of `data` to.
-    await stripeService.updateOrganizationSubscription(orgId, { tier: 'pro' });
+    // `asOf` is never reached here -- the function returns before touching
+    // ordering at all once it determines there's nothing to write (tier
+    // unchanged, no other fields supplied); see the early `updates.length
+    // === 0` return in updateOrganizationSubscription.
+    await stripeService.updateOrganizationSubscription(orgId, { tier: 'pro' }, { asOf: new Date() });
 
     const after = await fetchOrgRow(orgId);
     // xmin only advances when Postgres actually executes an UPDATE against
