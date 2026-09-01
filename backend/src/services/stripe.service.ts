@@ -905,19 +905,28 @@ export class StripeService {
   async recordPaymentFailure(
     organizationId: string,
     invoiceCreatedAt: Date
-  ): Promise<{ wasNewFailure: boolean; wasStale: boolean; row: BillingLifecycleRow }> {
+  ): Promise<{ wasNewFailure: boolean; wasStale: boolean; row: BillingLifecycleRow; notificationPending: boolean }> {
     const graceEndsAt = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
+    // payment_failed_notification_sent_at is reset to NULL here even though
+    // it should already be NULL from the prior episode's recovery -- a
+    // defensive reset, not a load-bearing one, so a brand-new episode can
+    // never inherit a stale "already notified" state if that clearing was
+    // ever missed elsewhere. See StripeService.markPaymentFailedNotificationSent
+    // for where this column is actually set, and StripeController.
+    // handleInvoicePaymentFailed for how notificationPending drives whether
+    // a notification is attempted.
     const primary = await pool.query(
       `UPDATE organizations
        SET billing_lifecycle_state = 'grace_period',
            payment_failed_at = NOW(),
            grace_period_ends_at = $2,
-           latest_processed_invoice_created_at = $3
+           latest_processed_invoice_created_at = $3,
+           payment_failed_notification_sent_at = NULL
        WHERE id = $1
          AND billing_lifecycle_state = 'healthy'
          AND (latest_processed_invoice_created_at IS NULL OR latest_processed_invoice_created_at <= $3)
-       RETURNING billing_lifecycle_state, payment_failed_at, grace_period_ends_at`,
+       RETURNING billing_lifecycle_state, payment_failed_at, grace_period_ends_at, payment_failed_notification_sent_at`,
       [organizationId, graceEndsAt, invoiceCreatedAt]
     );
 
@@ -930,13 +939,15 @@ export class StripeService {
           paymentFailedAt: primary.rows[0].payment_failed_at,
           gracePeriodEndsAt: primary.rows[0].grace_period_ends_at,
         },
+        notificationPending: true, // just reset to NULL above, in the same statement -- always pending for a freshly-started episode
       };
     }
 
     // Not the primary path: either already in an unresolved episode, or
     // this invoice is stale relative to one already processed (or both).
     // If it's a genuinely newer invoice failing while already non-healthy,
-    // advance the high-water mark only -- deadline/notification untouched.
+    // advance the high-water mark only -- deadline/notification-marker
+    // untouched, since this branch never represents a fresh episode.
     await pool.query(
       `UPDATE organizations
        SET latest_processed_invoice_created_at = $2
@@ -947,13 +958,24 @@ export class StripeService {
     );
 
     const existing = await pool.query(
-      `SELECT billing_lifecycle_state, payment_failed_at, grace_period_ends_at, latest_processed_invoice_created_at
+      `SELECT billing_lifecycle_state, payment_failed_at, grace_period_ends_at,
+              latest_processed_invoice_created_at, payment_failed_notification_sent_at
        FROM organizations WHERE id = $1`,
       [organizationId]
     );
     const row = existing.rows[0];
     const currentMark: Date | null = row?.latest_processed_invoice_created_at ?? null;
     const wasStale = currentMark !== null && invoiceCreatedAt.getTime() < new Date(currentMark).getTime();
+
+    // Pending exactly when this organization is still in an unresolved
+    // grace-period episode AND no notification has been confirmed sent for
+    // it yet -- this is what lets a genuine retry (Stripe's own dunning
+    // schedule redelivering invoice.payment_failed for the same still-open
+    // episode, or a redelivered webhook after a crash) recover a
+    // notification that never actually went out, without resending one
+    // that already did.
+    const notificationPending =
+      row.billing_lifecycle_state === 'grace_period' && row.payment_failed_notification_sent_at === null;
 
     return {
       wasNewFailure: false,
@@ -963,6 +985,7 @@ export class StripeService {
         paymentFailedAt: row.payment_failed_at,
         gracePeriodEndsAt: row.grace_period_ends_at,
       },
+      notificationPending,
     };
   }
 
@@ -971,9 +994,13 @@ export class StripeService {
    * webhook delivery -- the inverse of recordPaymentFailure, and guarded by
    * the exact same latest_processed_invoice_created_at high-water mark (see
    * that method's comment for why Invoice.created is the right shared
-   * ordering key). An invoice.paid for an invoice OLDER than the newest one
-   * already processed is rejected outright, even though the organization is
-   * currently non-healthy -- otherwise a delayed, out-of-order paid event
+   * ordering key). Also clears payment_failed_notification_sent_at (both
+   * branches below) -- once recovered, that column's value describes a
+   * resolved episode and must not carry forward into whatever the next,
+   * distinct failure episode turns out to be. An invoice.paid for an
+   * invoice OLDER than the newest one already processed is rejected
+   * outright, even though the organization is currently non-healthy --
+   * otherwise a delayed, out-of-order paid event
    * for an invoice that predates a genuine, newer failure could incorrectly
    * clear a grace period the organization is still actually in.
    *
@@ -999,7 +1026,8 @@ export class StripeService {
         `UPDATE organizations
          SET billing_lifecycle_state = 'healthy',
              payment_failed_at = NULL,
-             grace_period_ends_at = NULL
+             grace_period_ends_at = NULL,
+             payment_failed_notification_sent_at = NULL
          WHERE id = $1 AND billing_lifecycle_state != 'healthy'
          RETURNING id`,
         [organizationId]
@@ -1012,6 +1040,7 @@ export class StripeService {
        SET billing_lifecycle_state = 'healthy',
            payment_failed_at = NULL,
            grace_period_ends_at = NULL,
+           payment_failed_notification_sent_at = NULL,
            latest_processed_invoice_created_at = $2
        WHERE id = $1
          AND billing_lifecycle_state != 'healthy'
@@ -1058,8 +1087,18 @@ export class StripeService {
    * EmailService.send's own contract) and never includes any payment
    * credential/card detail -- only the grace deadline and a link to the
    * existing Stripe Customer Portal.
+   *
+   * Returns whether delivery was actually confirmed -- `true` only when
+   * emailService.sendPaymentFailedEmail itself reports success (a real
+   * Resend confirmation, not merely "we tried"); `false` for a missing
+   * owner, any thrown error, or a Resend-reported failure. The caller
+   * (StripeController.handleInvoicePaymentFailed) uses this to decide
+   * whether to call markPaymentFailedNotificationSent -- this method
+   * itself never touches that column, so a caller that ignores the return
+   * value (there is none left in this codebase) simply gets the previous
+   * fire-and-forget behavior with no notification-tracking side effect.
    */
-  async sendPaymentFailedEmail(organizationId: string, graceEndsAt: Date): Promise<void> {
+  async sendPaymentFailedEmail(organizationId: string, graceEndsAt: Date): Promise<boolean> {
     try {
       const { rows } = await pool.query(
         `SELECT u.email, u.full_name, o.name AS organization_name
@@ -1073,17 +1112,40 @@ export class StripeService {
 
       if (rows.length === 0) {
         console.warn(`[Payment Failure] No owner found to notify for organization ${organizationId}`);
-        return;
+        return false;
       }
 
-      await emailService.sendPaymentFailedEmail({
+      return await emailService.sendPaymentFailedEmail({
         to: rows[0].email,
         organizationName: rows[0].organization_name || 'Your Organization',
         graceEndsAt,
       });
     } catch (error: any) {
       console.error(`[Payment Failure] Failed to send notification for organization ${organizationId}:`, error.message);
+      return false;
     }
+  }
+
+  /**
+   * Marks the payment-failure notification as confirmed-delivered for this
+   * organization's CURRENT unresolved episode -- called only after
+   * sendPaymentFailedEmail has returned `true`. The WHERE clause is a CAS
+   * guard, not merely a filter: it only ever writes NOW() over a NULL
+   * value, and only while the episode it applies to is still open
+   * (billing_lifecycle_state = 'grace_period') -- if a recovery raced in
+   * between the send succeeding and this call running, there is no longer
+   * a relevant episode for this timestamp to describe, so this is
+   * correctly a no-op rather than stamping a resolved/irrelevant episode.
+   */
+  async markPaymentFailedNotificationSent(organizationId: string): Promise<void> {
+    await pool.query(
+      `UPDATE organizations
+       SET payment_failed_notification_sent_at = NOW()
+       WHERE id = $1
+         AND billing_lifecycle_state = 'grace_period'
+         AND payment_failed_notification_sent_at IS NULL`,
+      [organizationId]
+    );
   }
 }
 
