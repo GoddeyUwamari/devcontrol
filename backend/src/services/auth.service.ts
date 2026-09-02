@@ -10,6 +10,7 @@ import { pool } from '../config/database';
 import { encryptionService } from './encryption.service';
 import { emailService } from './email.service';
 import { TIER_LIMITS } from '../middleware/subscription.middleware';
+import { trackFunnelEventOnce } from './analyticsEvents';
 
 const BCRYPT_ROUNDS = 10;
 const ACCESS_TOKEN_EXPIRY = '7d'; // 7 days
@@ -187,6 +188,19 @@ export class AuthService {
 
       // Commit transaction
       await client.query('COMMIT');
+
+      // Funnel: only after the registration transaction has durably
+      // committed -- never on a rolled-back/partial signup (a thrown error
+      // above hits the catch/ROLLBACK below and never reaches this line).
+      // Uses its own connection (see analyticsEvents.ts) rather than
+      // `client`, which is released back to the pool right after this
+      // function returns regardless of what happens below.
+      await trackFunnelEventOnce({
+        organizationId: organization.id,
+        userId: user.id,
+        eventName: 'signup_completed',
+        properties: { tier: organization.subscription_tier },
+      });
 
       // Generate tokens for immediate login
       const accessToken = this.generateAccessToken({

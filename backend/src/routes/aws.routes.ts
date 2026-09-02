@@ -5,6 +5,7 @@ import { pool } from '../config/database'
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
 import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
+import { trackFunnelEvent } from '../services/analyticsEvents'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -197,6 +198,20 @@ router.post('/accounts', async (req: Request, res: Response) => {
         message: 'This organisation already has a connected AWS account. Disconnect it first.',
       })
     }
+
+    // Funnel: this INSERT's own ON CONFLICT (org_id) DO NOTHING + non-empty
+    // RETURNING already guarantees this branch executes exactly once per
+    // org (a second attempt hits the 409 above instead), so no additional
+    // dedupe guard is needed. This replaces onboardingEvents.ts's
+    // 'aws:connected' emitter for funnel purposes -- that one is only ever
+    // fired from the legacy access-key endpoint (organization.controller.ts),
+    // never from this, the actual connection flow in use today.
+    await trackFunnelEvent({
+      organizationId: orgId,
+      userId: req.user!.userId,
+      eventName: 'aws_connection_completed',
+      properties: { accountId },
+    })
 
     // Clean up session
     pool.query(`DELETE FROM aws_connect_sessions WHERE org_id = $1`, [orgId]).catch(() => {})
