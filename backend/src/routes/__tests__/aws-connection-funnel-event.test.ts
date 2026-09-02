@@ -151,6 +151,22 @@ async function fetchConnectedEvents(orgId: string) {
   return rows;
 }
 
+async function fetchStartedEvents(orgId: string) {
+  const { rows } = await pool.query(
+    `SELECT * FROM analytics_events WHERE organization_id = $1 AND event_name = 'aws_connection_started'`,
+    [orgId]
+  );
+  return rows;
+}
+
+async function fetchSessionRow(orgId: string) {
+  const { rows } = await pool.query(
+    `SELECT org_id, external_id, created_at, expires_at FROM aws_connect_sessions WHERE org_id = $1`,
+    [orgId]
+  );
+  return rows[0] as { org_id: string; external_id: string; created_at: Date; expires_at: Date } | undefined;
+}
+
 let server: http.Server;
 let baseUrl: string;
 
@@ -257,6 +273,112 @@ describe('POST /api/aws/accounts -- aws_connection_completed funnel event', () =
     expect(second.status).toBe(409);
 
     const rows = await fetchConnectedEvents(orgId);
+    expect(rows).toHaveLength(1);
+  });
+});
+
+describe('GET /api/aws/accounts/connect-init -- aws_connection_started funnel event', () => {
+  it('emits aws_connection_started exactly once, associated with the authenticated org', async () => {
+    const orgId = await insertOrg();
+    const userId = await insertUser();
+    stubAuth(userId, orgId);
+
+    const response = await fetch(`${baseUrl}/accounts/connect-init`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(response.status).toBe(200);
+
+    const rows = await fetchStartedEvents(orgId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].organization_id).toBe(orgId);
+    expect(rows[0].user_id).toBe(userId);
+    expect(rows[0].event_category).toBe('funnel');
+  });
+
+  it('a second connect-init call for the same org does NOT emit a second aws_connection_started event', async () => {
+    const orgId = await insertOrg();
+    const userId = await insertUser();
+    stubAuth(userId, orgId);
+
+    const first = await fetch(`${baseUrl}/accounts/connect-init`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(first.status).toBe(200);
+
+    const second = await fetch(`${baseUrl}/accounts/connect-init`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(second.status).toBe(200);
+
+    const rows = await fetchStartedEvents(orgId);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('a retry after the session has already expired still does not emit a second event, and existing session upsert behavior is unchanged', async () => {
+    const orgId = await insertOrg();
+    const userId = await insertUser();
+    stubAuth(userId, orgId);
+
+    const first = await fetch(`${baseUrl}/accounts/connect-init`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(first.status).toBe(200);
+    const firstBody = await first.json() as any;
+    const firstSessionRow = await fetchSessionRow(orgId);
+    expect(firstSessionRow).toBeDefined();
+
+    // Force the session into the expired state a real retry would find,
+    // without touching anything else about the row -- proves the *event*
+    // dedup is independent of session expiry/upsert semantics, which this
+    // task requires to stay untouched.
+    await pool.query(
+      `UPDATE aws_connect_sessions SET expires_at = NOW() - INTERVAL '1 minute' WHERE org_id = $1`,
+      [orgId]
+    );
+
+    const second = await fetch(`${baseUrl}/accounts/connect-init`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(second.status).toBe(200);
+    const secondBody = await second.json() as any;
+    const secondSessionRow = await fetchSessionRow(orgId);
+
+    // Existing upsert behavior unchanged: an expired session is replaced
+    // with a fresh externalId/expiry (same behavior as before this event
+    // was added), still exactly one row (org_id is PK).
+    expect(secondBody.data.externalId).not.toBe(firstBody.data.externalId);
+    expect(secondSessionRow).toBeDefined();
+    expect(secondSessionRow!.external_id).not.toBe(firstSessionRow!.external_id);
+    expect(new Date(secondSessionRow!.expires_at).getTime()).toBeGreaterThan(new Date(firstSessionRow!.expires_at).getTime());
+
+    // But the funnel event itself still fired only once, for the org's
+    // first-ever entry into the flow.
+    const rows = await fetchStartedEvents(orgId);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('reusing a still-valid session (no new row written) still only ever has one aws_connection_started event', async () => {
+    const orgId = await insertOrg();
+    const userId = await insertUser();
+    stubAuth(userId, orgId);
+
+    const first = await fetch(`${baseUrl}/accounts/connect-init`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(first.status).toBe(200);
+    const firstBody = await first.json() as any;
+
+    // Called again immediately -- the existing session is still valid, so
+    // the route's own logic reuses it (no INSERT/UPDATE at all) rather than
+    // rotating the externalId.
+    const second = await fetch(`${baseUrl}/accounts/connect-init`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(second.status).toBe(200);
+    const secondBody = await second.json() as any;
+    expect(secondBody.data.externalId).toBe(firstBody.data.externalId);
+
+    const rows = await fetchStartedEvents(orgId);
     expect(rows).toHaveLength(1);
   });
 });

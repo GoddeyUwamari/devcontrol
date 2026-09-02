@@ -5,7 +5,7 @@ import { pool } from '../config/database'
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
 import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
-import { trackFunnelEvent } from '../services/analyticsEvents'
+import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -100,6 +100,20 @@ router.get('/accounts/connect-init', async (req: Request, res: Response) => {
         [orgId, externalId]
       )
     }
+
+    // Funnel: the org has entered the AWS connection flow -- not that it
+    // succeeded (that's aws_connection_completed, on POST /accounts).
+    // Deliberately unconditional on whether this call created a new session
+    // row or reused an existing valid one: "started" is about the org's
+    // first-ever entry into this flow, not about aws_connect_sessions'
+    // upsert/attempt semantics, which are left entirely unchanged.
+    // trackFunnelEventOnce's own per-org dedup is what makes every
+    // subsequent visit -- including a full retry after expiry -- a no-op.
+    await trackFunnelEventOnce({
+      organizationId: orgId,
+      userId: req.user!.userId,
+      eventName: 'aws_connection_started',
+    })
 
     return res.json({
       success: true,
