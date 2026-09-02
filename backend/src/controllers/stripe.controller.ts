@@ -19,6 +19,7 @@ import stripeService, {
 import { pool } from '../config/database';
 import { runWithOrgClient } from '../middleware/auth.middleware';
 import { claimWebhookEvent, resolveWebhookEvent } from '../services/stripe-webhook-ledger.service';
+import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents';
 
 // The only fields POST /api/refunds accepts from the client. `paymentId` is
 // our own Payment.id, i.e. a Stripe invoice id -- never a payment_intent or
@@ -177,6 +178,18 @@ export class StripeController {
         successUrl,
         cancelUrl
       );
+
+      // Funnel: fires only after Stripe actually creates the session --
+      // never merely because the endpoint was requested (validation/price
+      // resolution failures above return before reaching this line). Not
+      // deduped: a customer abandoning and retrying checkout, or switching
+      // tiers, is each a legitimate, distinct checkout_started event.
+      await trackFunnelEvent({
+        organizationId,
+        userId: req.user.userId,
+        eventName: 'checkout_started',
+        properties: { tier, billingInterval },
+      });
 
       res.status(200).json({
         success: true,
@@ -1780,6 +1793,19 @@ export class StripeController {
       console.log(`💰 Price ID: ${priceId}`);
       console.log(`🎯 Detected tier: ${tier}`);
 
+      // Snapshot pre-update state so the funnel emit below can tell a
+      // genuine free/non-paying -> paid transition apart from a redelivered
+      // checkout.session.completed webhook for a checkout already applied
+      // (which would find the org already sitting on this tier).
+      const preUpdateResult = await pool.query(
+        'SELECT subscription_tier, subscription_status FROM organizations WHERE id = $1',
+        [organizationId]
+      );
+      const wasNonPaying =
+        preUpdateResult.rows.length === 0 ||
+        preUpdateResult.rows[0].subscription_tier === 'free' ||
+        preUpdateResult.rows[0].subscription_status === 'free';
+
       // Update organization with subscription details. asOf: new Date() --
       // treated as a synchronous, first-write establishment of this org's
       // subscription state (same as cancelSubscription/changePlan/
@@ -1796,6 +1822,22 @@ export class StripeController {
       }, { asOf: new Date() });
 
       console.log(`✅ Organization ${organizationId} updated to ${tier} tier`);
+
+      // Funnel: only a genuine free/non-paying -> paid transition counts --
+      // never a renewal (renewals never fire checkout.session.completed at
+      // all; they go through invoice.paid/customer.subscription.updated),
+      // never a plan change on an already-paying org (that path doesn't use
+      // Checkout), and never a redelivered webhook for a checkout already
+      // applied (caught by the pre-update snapshot above). Also guarded by
+      // trackFunnelEventOnce as a second, independent safeguard against
+      // webhook redelivery racing the snapshot check itself.
+      if (wasNonPaying && tier !== 'free') {
+        await trackFunnelEventOnce({
+          organizationId,
+          eventName: 'subscription_activated',
+          properties: { tier },
+        });
+      }
     } catch (error) {
       console.error('❌ Error handling checkout session completed:', error);
       throw error;

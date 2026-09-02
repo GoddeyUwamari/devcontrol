@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { trackFunnelEventOnce } from './analyticsEvents';
 import {
   EC2Client,
   paginateDescribeInstances,
@@ -564,6 +565,23 @@ export class AWSResourceDiscoveryService {
         console.log(`⚠️  [Discovery] Completed with errors`);
       } else {
         console.log(`🎉 [Discovery] AWS resource discovery completed successfully!\n`);
+      }
+
+      // Funnel: "resources actually persisted" is the correct completion
+      // signal here, not this job's own status column -- errors.length > 0
+      // marks the whole job 'failed' even when the core resource scans
+      // succeeded (e.g. a missing peripheral IAM permission for the
+      // compliance/security sub-scans), the exact reason onboarding.service
+      // .ts already checks aws_resources existence directly instead of
+      // trusting this status. aws_resources remains the authoritative
+      // product state; this only decides whether the one-time funnel event
+      // fires, guarded per-org so rescans/retries never re-fire it.
+      if (totalDiscovered > 0 || totalUpdated > 0) {
+        await trackFunnelEventOnce({
+          organizationId,
+          eventName: 'discovery_completed',
+          properties: { resourcesDiscovered: totalDiscovered, resourcesUpdated: totalUpdated },
+        });
       }
 
       return {
