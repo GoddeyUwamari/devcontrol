@@ -22,6 +22,7 @@ import type { PoolClient } from 'pg';
 
 export type FunnelEventName =
   | 'signup_completed'
+  | 'aws_connection_started'
   | 'aws_connection_completed'
   | 'discovery_completed'
   | 'first_insight_generated'
