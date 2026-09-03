@@ -36,7 +36,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
-import { optimizationService } from '@/lib/services/optimization.service'
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -249,17 +248,17 @@ export default function RecommendationsPage() {
     enabled: !isDemoActive,
   })
 
-  // FIX 3: Wire Analyze Costs to POST /api/optimizations/scan
+  // Analyze Costs runs the authoritative cost-recommendations analyzer
   const handleAnalyze = async () => {
     if (isDemoActive) return
     try {
       setIsAnalyzing(true)
-      const result = await optimizationService.scan()
+      const result = await costRecommendationsService.analyze()
       await Promise.all([
         refetch(),
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
       ])
-      toast.success(`Analysis complete — ${result.summary.totalRecommendations} recommendations found`)
+      toast.success(`Analysis complete — ${result.recommendationsFound} recommendations found`)
     } catch {
       toast.error('Analysis failed — try again')
     } finally {
@@ -394,7 +393,6 @@ export default function RecommendationsPage() {
             AI-powered recommendations to reduce your AWS costs
           </p>
         </div>
-        {/* FIX 3: Analyze Costs wired to /api/optimizations/scan */}
         <Button
           onClick={handleAnalyze}
           disabled={isAnalyzing || isDemoActive}
