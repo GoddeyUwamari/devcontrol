@@ -138,7 +138,7 @@ describe('cross-method consistency (the actual domain-value guarantee behind Das
 });
 
 describe('costRecommendationsService.analyze', () => {
-  it('transforms the analyze response used by /cost-optimization "Run scan" and /infrastructure/recommendations "Analyze Costs"', async () => {
+  it('transforms the analyze response used by /cost-optimization "Run scan"', async () => {
     mockedPost.mockResolvedValue(
       fakeResponse({
         recommendationsFound: 3,

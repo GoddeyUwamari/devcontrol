@@ -58,14 +58,13 @@ const routeLabels: Record<string, string> = {
   'ai-reports': 'AI Reports',
 };
 
-const parentPaths: Record<string, { label: string; href?: string }[]> = {
+export const parentPaths: Record<string, { label: string; href?: string }[]> = {
   '/deployments':      [{ label: 'Services', href: '/services' }],
   '/dependencies':     [{ label: 'Services', href: '/services' }],
   '/services/new':     [],
   '/recommendations':  [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/tenants':          [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/infrastructure/new':             [],
-  '/infrastructure/recommendations': [],
   '/status':           [{ label: 'Observability',  href: '/observability'  }],
   '/app/dora-metrics': [{ label: 'DevOps',         href: '/devops'         }],
   '/dora-metrics':     [{ label: 'DevOps',         href: '/devops'         }],

@@ -392,7 +392,7 @@ export default function EfficiencyPage() {
           region:     r.awsRegion || '—',
           cost:       r.costPerMonth ?? 0,
           efficiency: deriveEfficiencyScore(r),
-          issue:      r.status !== 'running' ? 'Resource not running' : 'Pending efficiency analysis',
+          issue:      r.status !== 'running' ? 'Resource not running' : 'Efficiency analysis not available',
           // No per-resource cost_recommendations data is fetched on this page (only
           // aggregate stats via costRecommendationsService.getStats() below) — null
           // rather than a fabricated 40%-of-cost heuristic.
