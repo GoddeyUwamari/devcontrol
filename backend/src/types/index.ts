@@ -182,6 +182,13 @@ export interface CostRecommendation {
   created_at: Date;
   updated_at: Date;
   resolved_at?: Date;
+  // Set once a completed, successful detector observation confirms this
+  // RESOLVED/DISMISSED row's underlying condition is genuinely gone. NULL
+  // means the occurrence is still open (default/safe state); non-null means
+  // a later identical finding is a new, independent occurrence. Never set
+  // for ACTIVE rows or for Reserved Instance Opportunity findings (excluded
+  // from this lifecycle -- synthetic, fleet-level aggregate identity).
+  occurrence_ended_at?: Date | null;
 }
 
 export interface CreateRecommendationRequest {

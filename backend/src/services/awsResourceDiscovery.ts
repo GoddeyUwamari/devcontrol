@@ -512,11 +512,27 @@ export class AWSResourceDiscoveryService {
       let costAnalysisCompleted = false;
       try {
         console.log(`🔎 [Discovery] Running cost optimization analysis...`);
-        const recommendations = await costOptimizationService.analyzeAllResources(organizationId);
+        const { observations, riRecommendations } = await costOptimizationService.analyzeAllResources(organizationId);
 
         const recommendationsRepo = new CostRecommendationsRepository();
-        await recommendationsRepo.deleteAllActive(organizationId);
-        const insertedCount = await recommendationsRepo.createBulk(recommendations, organizationId);
+
+        // Occurrence-lifecycle reconciliation for the 3 resource-level
+        // detectors -- mirrors the manual /api/cost-recommendations/analyze
+        // path (cost-recommendations.controller.ts): suppresses an unchanged
+        // Resolve/Dismiss'd finding instead of resurrecting it every scan.
+        const { insertedCount: nonRIInsertedCount } = await recommendationsRepo.reconcileActiveRecommendations(
+          organizationId,
+          observations
+        );
+
+        // Reserved Instance Opportunities stay on the prior unconditional
+        // delete+recreate behavior -- excluded from the occurrence lifecycle,
+        // see cost-optimization.service.ts.
+        await recommendationsRepo.deleteActiveByIssue(organizationId, 'Reserved Instance Opportunity');
+        const riInsertedCount = await recommendationsRepo.createBulk(riRecommendations, organizationId);
+
+        const insertedCount = nonRIInsertedCount + riInsertedCount;
+        const totalFound = observations.reduce((sum, o) => sum + o.recommendations.length, 0) + riRecommendations.length;
 
         // first_insight_generated: mirrors the manual /api/cost-recommendations/analyze
         // path (cost-recommendations.controller.ts) so an org whose first-ever
@@ -535,7 +551,7 @@ export class AWSResourceDiscoveryService {
           });
         }
 
-        console.log(`✅ [Discovery] Cost optimization analysis complete (${recommendations.length} opportunities found)`);
+        console.log(`✅ [Discovery] Cost optimization analysis complete (${totalFound} opportunities found)`);
         costAnalysisCompleted = true;
       } catch (error: any) {
         console.error(`❌ [Discovery] Cost optimization analysis failed:`, error.message);

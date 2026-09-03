@@ -30,17 +30,51 @@ interface OptimizationIssue {
   metadata: Record<string, any>;
 }
 
+// success=false means the detector's AWS call(s) threw internally (auth
+// failure, timeout, rate limit, etc.) -- issues is always [] in that case,
+// and MUST NOT be interpreted as "this detector found nothing." Only
+// success=true means the returned issues array is the complete observation
+// for that detector's scope this scan. Reserved Instance Opportunities are
+// deliberately NOT wrapped in this contract -- see analyzeAllResources().
+interface DetectorResult {
+  success: boolean;
+  issues: OptimizationIssue[];
+}
+
+// One entry per non-RI detector category, tagged with the fixed `issue`
+// string that detector always emits (the same canonical, already-stored
+// discriminator used as the identity tuple's third column) so the
+// repository's reconciliation logic knows which existing rows a given
+// category's success/failure applies to, without re-deriving that mapping.
+export interface DetectorObservation {
+  issue: string;
+  success: boolean;
+  recommendations: CreateRecommendationRequest[];
+}
+
 class CostOptimizationService {
   /**
    * Main analysis function - detects all cost optimization opportunities
    * for the given organization's connected AWS account.
+   *
+   * Returns the 3 resource-level detectors' output separately from Reserved
+   * Instance Opportunities: RI findings use a synthetic, fleet-level
+   * aggregate resource_id (`ri-opportunity-${instanceType}`), not a discrete
+   * AWS resource, so they are explicitly excluded from the occurrence
+   * lifecycle (resolve/dismiss suppression, disappearance/recurrence
+   * tracking) applied to the other three -- see
+   * CostRecommendationsRepository.reconcileActiveRecommendations() vs.
+   * deleteActiveByIssue()+createBulk() for how the two paths diverge.
    */
-  async analyzeAllResources(organizationId: string): Promise<CreateRecommendationRequest[]> {
+  async analyzeAllResources(organizationId: string): Promise<{
+    observations: DetectorObservation[];
+    riRecommendations: CreateRecommendationRequest[];
+  }> {
     const clients = await AWSClientFactory.createClients(organizationId);
 
     if (!clients.enabled) {
       console.log(`AWS not connected for org ${organizationId}, skipping cost analysis`);
-      return [];
+      return { observations: [], riRecommendations: [] };
     }
 
     try {
@@ -51,10 +85,7 @@ class CostOptimizationService {
         this.detectReservedInstanceOpportunities(clients.ec2),
       ]);
 
-      const allIssues = [...idleEC2, ...oversizedRDS, ...unusedEIPs, ...riOpportunities];
-
-      // Convert to CreateRecommendationRequest format
-      return allIssues.map((issue) => ({
+      const toRequest = (issue: OptimizationIssue): CreateRecommendationRequest => ({
         resource_id: issue.resourceId,
         resource_name: issue.resourceName,
         resource_type: issue.resourceType,
@@ -64,7 +95,18 @@ class CostOptimizationService {
         severity: issue.severity,
         aws_region: issue.awsRegion,
         metadata: issue.metadata,
-      }));
+      });
+
+      const observations: DetectorObservation[] = [
+        { issue: 'Idle Instance', success: idleEC2.success, recommendations: idleEC2.issues.map(toRequest) },
+        { issue: 'Oversized Instance', success: oversizedRDS.success, recommendations: oversizedRDS.issues.map(toRequest) },
+        { issue: 'Unused Elastic IP', success: unusedEIPs.success, recommendations: unusedEIPs.issues.map(toRequest) },
+      ];
+
+      return {
+        observations,
+        riRecommendations: riOpportunities.map(toRequest),
+      };
     } catch (error) {
       console.error('Error analyzing resources:', error);
       throw error;
@@ -77,7 +119,7 @@ class CostOptimizationService {
   private async detectIdleEC2Instances(
     ec2Client: EC2Client,
     cloudWatchClient: CloudWatchClient
-  ): Promise<OptimizationIssue[]> {
+  ): Promise<DetectorResult> {
     try {
       const command = new DescribeInstancesCommand({
         Filters: [
@@ -125,17 +167,17 @@ class CostOptimizationService {
         }
       }
 
-      return issues;
+      return { success: true, issues };
     } catch (error) {
       console.error('Error detecting idle EC2 instances:', error);
-      return [];
+      return { success: false, issues: [] };
     }
   }
 
   /**
    * Detect oversized RDS instances (dev/staging using production-sized instances)
    */
-  private async detectOversizedRDSInstances(rdsClient: RDSClient): Promise<OptimizationIssue[]> {
+  private async detectOversizedRDSInstances(rdsClient: RDSClient): Promise<DetectorResult> {
     try {
       const command = new DescribeDBInstancesCommand({});
       const response = await rdsClient.send(command);
@@ -184,17 +226,17 @@ class CostOptimizationService {
         }
       }
 
-      return issues;
+      return { success: true, issues };
     } catch (error) {
       console.error('Error detecting oversized RDS instances:', error);
-      return [];
+      return { success: false, issues: [] };
     }
   }
 
   /**
    * Detect unused Elastic IPs
    */
-  private async detectUnusedElasticIPs(ec2Client: EC2Client): Promise<OptimizationIssue[]> {
+  private async detectUnusedElasticIPs(ec2Client: EC2Client): Promise<DetectorResult> {
     try {
       const command = new DescribeAddressesCommand({});
       const response = await ec2Client.send(command);
@@ -222,10 +264,10 @@ class CostOptimizationService {
         }
       }
 
-      return issues;
+      return { success: true, issues };
     } catch (error) {
       console.error('Error detecting unused Elastic IPs:', error);
-      return [];
+      return { success: false, issues: [] };
     }
   }
 
