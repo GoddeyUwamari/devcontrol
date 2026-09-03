@@ -501,7 +501,7 @@ export default function EfficiencyPage() {
         <KPICard label="Total Spend"        value={kpis.totalSpend}                   delta={kpis.totalSpendDelta} prefix="$" accent />
         <KPICard label="Cost Per Resource"  value={kpis.costPerResource.toFixed(2)}   delta={kpis.costPerDelta}    prefix="$" />
         <KPICard label="Idle Resource Cost" value={kpis.idleCost}                     delta={kpis.idleDelta}       prefix="$" />
-        <KPICard label="Savings Realized"   value={kpis.savingsRealized}              delta={kpis.savingsDelta}    prefix="$" />
+        <KPICard label="Est. Savings Opportunity" value={kpis.savingsRealized}        delta={kpis.savingsDelta}    prefix="$" />
       </div>
 
       {/* ── CHARTS ── */}

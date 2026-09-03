@@ -129,8 +129,8 @@ export default function CostOptimizationPage() {
       ) : recommendations.length === 0 ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
           <CheckCircle2 size={32} className="text-green-600 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-slate-900 mb-2">No optimization opportunities detected</p>
-          <p className="text-sm text-slate-500 mb-6">Your infrastructure is running efficiently. Run a scan to check for new savings opportunities.</p>
+          <p className="text-sm font-semibold text-slate-900 mb-2">No active cost-saving opportunities detected</p>
+          <p className="text-sm text-slate-500 mb-6">Run a scan to check for new savings opportunities.</p>
           <div className="flex flex-col items-center gap-1.5 mb-2">
             {SCAN_CHECKS.map((check) => (
               <span key={check} className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">

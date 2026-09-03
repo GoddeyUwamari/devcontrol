@@ -4,6 +4,7 @@ import costOptimizationService from '../services/cost-optimization.service';
 import { RemediationService } from '../services/remediation.service';
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
+import { trackFunnelEventOnce } from '../services/analyticsEvents';
 
 const repository = new CostRecommendationsRepository();
 const remediationService = new RemediationService(pool);
@@ -30,6 +31,28 @@ export class CostRecommendationsController {
       };
 
       const recommendations = await repository.findAll(organizationId, filters);
+
+      // first_value_viewed: the real customer-facing recommendation read
+      // path (this endpoint, filtered to ACTIVE, is what the Cost
+      // Optimization page and Dashboard both actually call). Gated on the
+      // request being scoped to ACTIVE recommendations with a real dollar
+      // amount to see, so an unfiltered/historical read or an empty result
+      // doesn't count as "value seen." Guarded once-per-org by
+      // trackFunnelEventOnce, so every refresh after the first is a no-op.
+      if (filters.status === 'ACTIVE') {
+        const totalActiveSavings = recommendations.reduce(
+          (sum, r: any) => sum + (Number(r.potential_savings) || 0),
+          0
+        );
+        if (totalActiveSavings > 0) {
+          await trackFunnelEventOnce({
+            organizationId,
+            userId: (req as any).user?.userId ?? null,
+            eventName: 'first_value_viewed',
+            properties: { totalMonthlySavings: totalActiveSavings },
+          });
+        }
+      }
 
       const response: ApiResponse = {
         success: true,
@@ -143,6 +166,22 @@ export class CostRecommendationsController {
 
       // Get updated stats
       const stats = await repository.getStats(organizationId);
+
+      // first_insight_generated: any persisted recommendation existing for
+      // this org after a real scan, regardless of dollar amount -- mirrors
+      // the funnel's original intent, now against the authoritative table.
+      // Guarded once-per-org so repeated/retried scans never re-fire it.
+      if (insertedCount > 0) {
+        await trackFunnelEventOnce({
+          organizationId,
+          userId: (req as any).user?.userId ?? null,
+          eventName: 'first_insight_generated',
+          properties: {
+            recommendationCount: insertedCount,
+            totalMonthlySavings: stats.total_potential_savings,
+          },
+        });
+      }
 
       const response: ApiResponse = {
         success: true,

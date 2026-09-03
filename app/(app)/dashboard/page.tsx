@@ -698,7 +698,7 @@ export default function DashboardPage() {
         <div className="bg-[var(--bg-accent)] border-2 border-[var(--border-accent)] rounded-2xl px-5 py-4 mb-3">
           <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
           <div className="text-base font-semibold text-[var(--text-secondary)]">
-            No optimization opportunities identified · Your infrastructure is running efficiently
+            No active cost-saving opportunities identified
           </div>
         </div>
       )}
@@ -1281,13 +1281,18 @@ export default function DashboardPage() {
             <div>
               <p className="text-sm font-semibold text-foreground mb-1">Executive ROI summary</p>
               <p className="text-lg font-semibold text-foreground">
-                {isDemoActive || wasteAmount > 0 ? (
+                {isDemoActive ? (
                   <>
-                    DEVCONTROL has saved {isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')}{' '}
+                    DEVCONTROL has saved WayUP Technology{' '}
                     <span style={{ color: 'var(--text-success)' }}>${Math.round(annualizeMonthly(wasteAmountRaw)).toLocaleString()}</span> annualised
                   </>
+                ) : wasteAmount > 0 ? (
+                  <>
+                    DevControl has identified{' '}
+                    <span style={{ color: 'var(--text-success)' }}>${Math.round(annualizeMonthly(wasteAmountRaw)).toLocaleString()}</span> in estimated annual savings for {organization?.displayName || organization?.name || 'your organization'}
+                  </>
                 ) : (
-                  <>Your infrastructure is currently optimized — no cost-saving opportunities detected for {organization?.displayName || organization?.name || 'your organization'}</>
+                  <>No active cost-saving opportunities detected for {organization?.displayName || organization?.name || 'your organization'}</>
                 )}
               </p>
             </div>
