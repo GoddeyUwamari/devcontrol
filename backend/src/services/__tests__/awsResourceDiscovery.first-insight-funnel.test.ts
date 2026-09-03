@@ -122,10 +122,17 @@ describe('AWSResourceDiscoveryService.discoverAllResources -> first_insight_gene
   it('emits first_insight_generated when the scheduled scan is this org\'s first source of recommendations', async () => {
     const orgId = await insertOrg();
     mockDisabledAwsClients();
-    jest.spyOn(costOptimizationService, 'analyzeAllResources')
-      .mockResolvedValue([{ resource_id: 'i-abc', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 8.5, severity: 'LOW' } as any]);
-    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteAllActive').mockResolvedValue(0);
-    jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(1);
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({
+      observations: [
+        { issue: 'Idle Instance', success: true, recommendations: [{ resource_id: 'i-abc', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 8.5, severity: 'LOW' } as any] },
+        { issue: 'Oversized Instance', success: true, recommendations: [] },
+        { issue: 'Unused Elastic IP', success: true, recommendations: [] },
+      ],
+      riRecommendations: [],
+    });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 1 });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue(fakeStats(8.5));
 
     const service = new AWSResourceDiscoveryService(pool);
@@ -139,8 +146,16 @@ describe('AWSResourceDiscoveryService.discoverAllResources -> first_insight_gene
   it('does not emit when the scheduled scan finds no recommendations', async () => {
     const orgId = await insertOrg();
     mockDisabledAwsClients();
-    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue([]);
-    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteAllActive').mockResolvedValue(0);
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({
+      observations: [
+        { issue: 'Idle Instance', success: true, recommendations: [] },
+        { issue: 'Oversized Instance', success: true, recommendations: [] },
+        { issue: 'Unused Elastic IP', success: true, recommendations: [] },
+      ],
+      riRecommendations: [],
+    });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue(fakeStats(0));
 
@@ -154,10 +169,17 @@ describe('AWSResourceDiscoveryService.discoverAllResources -> first_insight_gene
   it('does not double-fire across two scheduled scans for the same org', async () => {
     const orgId = await insertOrg();
     mockDisabledAwsClients();
-    jest.spyOn(costOptimizationService, 'analyzeAllResources')
-      .mockResolvedValue([{ resource_id: 'i-abc', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 8.5, severity: 'LOW' } as any]);
-    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteAllActive').mockResolvedValue(0);
-    jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(1);
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({
+      observations: [
+        { issue: 'Idle Instance', success: true, recommendations: [{ resource_id: 'i-abc', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 8.5, severity: 'LOW' } as any] },
+        { issue: 'Oversized Instance', success: true, recommendations: [] },
+        { issue: 'Unused Elastic IP', success: true, recommendations: [] },
+      ],
+      riRecommendations: [],
+    });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 1 });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue(fakeStats(8.5));
 
     const service = new AWSResourceDiscoveryService(pool);
@@ -171,10 +193,17 @@ describe('AWSResourceDiscoveryService.discoverAllResources -> first_insight_gene
   it('does not double-fire when the manual analyze endpoint already recorded it for this org', async () => {
     const orgId = await insertOrg();
     mockDisabledAwsClients();
-    jest.spyOn(costOptimizationService, 'analyzeAllResources')
-      .mockResolvedValue([{ resource_id: 'i-abc', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 8.5, severity: 'LOW' } as any]);
-    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteAllActive').mockResolvedValue(0);
-    jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(1);
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({
+      observations: [
+        { issue: 'Idle Instance', success: true, recommendations: [{ resource_id: 'i-abc', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 8.5, severity: 'LOW' } as any] },
+        { issue: 'Oversized Instance', success: true, recommendations: [] },
+        { issue: 'Unused Elastic IP', success: true, recommendations: [] },
+      ],
+      riRecommendations: [],
+    });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 1 });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue(fakeStats(8.5));
 
     // Simulates a prior manual /api/cost-recommendations/analyze call for

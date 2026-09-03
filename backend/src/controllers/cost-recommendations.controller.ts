@@ -156,13 +156,26 @@ export class CostRecommendationsController {
       console.log(`Starting cost optimization analysis for org ${organizationId}...`);
 
       // Run the analysis against this org's connected AWS account
-      const recommendations = await costOptimizationService.analyzeAllResources(organizationId);
+      const { observations, riRecommendations } = await costOptimizationService.analyzeAllResources(organizationId);
 
-      // Clear existing ACTIVE recommendations before inserting new ones
-      await repository.deleteAllActive(organizationId);
+      // Occurrence-lifecycle reconciliation for the 3 resource-level detectors
+      // (idle EC2, oversized RDS, unused EIPs): suppresses an unchanged
+      // Resolve/Dismiss'd finding instead of resurrecting it every scan, and
+      // only ends that suppression once a detector successfully, completely
+      // observes the condition is genuinely gone.
+      const { insertedCount: nonRIInsertedCount } = await repository.reconcileActiveRecommendations(
+        organizationId,
+        observations
+      );
 
-      // Save new recommendations
-      const insertedCount = await repository.createBulk(recommendations, organizationId);
+      // Reserved Instance Opportunities are excluded from the occurrence
+      // lifecycle -- synthetic, fleet-level aggregate identity, not a
+      // discrete resource -- and keep the prior unconditional delete+recreate
+      // behavior.
+      await repository.deleteActiveByIssue(organizationId, 'Reserved Instance Opportunity');
+      const riInsertedCount = await repository.createBulk(riRecommendations, organizationId);
+
+      const insertedCount = nonRIInsertedCount + riInsertedCount;
 
       // Get updated stats
       const stats = await repository.getStats(organizationId);

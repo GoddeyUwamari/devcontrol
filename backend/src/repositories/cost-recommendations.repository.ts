@@ -7,6 +7,23 @@ import {
   RecommendationStats,
   RecommendationStatus,
 } from '../types';
+import { DetectorObservation } from '../services/cost-optimization.service';
+
+// Fixed, canonical issue strings for the 3 detectors this occurrence
+// lifecycle applies to (backend/src/services/cost-optimization.service.ts).
+// Reserved Instance Opportunity is deliberately excluded -- its resource_id
+// is a synthetic, fleet-level aggregate (`ri-opportunity-${instanceType}`),
+// not a discrete AWS resource, so it keeps the pre-existing unconditional
+// delete+recreate behavior via deleteActiveByIssue()+createBulk() instead of
+// reconcileActiveRecommendations().
+const NON_RI_ISSUES = ['Idle Instance', 'Oversized Instance', 'Unused Elastic IP'] as const;
+
+// Distinct from the migration runner's single-integer advisory lock
+// (database/migrate.js, key 727271, the untyped single-bigint keyspace) and
+// from stripe-webhook-ledger.service.ts's hashtextextended(id, 0) locks
+// (same two-argument keyspace, salt 0) -- this uses the same keyspace with
+// a different salt so none of the three can collide with each other.
+const RECONCILIATION_LOCK_SALT = 1;
 
 export class CostRecommendationsRepository {
   /**
@@ -130,7 +147,14 @@ export class CostRecommendationsRepository {
   }
 
   /**
-   * Create multiple recommendations in bulk
+   * Create multiple recommendations in bulk. Used for Reserved Instance
+   * Opportunities (unconditional insert, no occurrence-lifecycle awareness
+   * -- see the NON_RI_ISSUES comment above) and by callers that don't need
+   * suppression logic. ON CONFLICT DO NOTHING guards against
+   * idx_cost_recommendations_active_identity without aborting the whole
+   * batch on one incidental duplicate -- Postgres never raises an error to
+   * the client for a DO NOTHING conflict, so no per-row try/catch or
+   * savepoint is needed.
    */
   async createBulk(
     recommendations: CreateRecommendationRequest[],
@@ -150,9 +174,10 @@ export class CostRecommendationsRepository {
               potential_savings, severity, aws_region, metadata
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING
           `;
 
-          await client.query(query, [
+          const result = await client.query(query, [
             organizationId,
             rec.resource_id,
             rec.resource_name,
@@ -165,7 +190,7 @@ export class CostRecommendationsRepository {
             JSON.stringify(rec.metadata || {}),
           ]);
 
-          insertedCount++;
+          insertedCount += result.rowCount || 0;
         }
 
         await client.query('COMMIT');
@@ -173,6 +198,134 @@ export class CostRecommendationsRepository {
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
+      }
+    });
+  }
+
+  /**
+   * Reconciles ACTIVE recommendations for the 3 occurrence-lifecycle-aware
+   * detector categories (NON_RI_ISSUES) against this scan's fresh detector
+   * output, in one locked transaction per organization.
+   *
+   * For each category whose detector completed successfully this scan
+   * (observation.success === true):
+   *  - any RESOLVED/DISMISSED row for that issue whose resource_id is
+   *    absent from this scan's findings has its occurrence marked ended
+   *    (occurrence_ended_at set, once, if not already set) -- a completed,
+   *    successful "not found" observation is the only thing allowed to end
+   *    an occurrence.
+   *  - existing ACTIVE rows for that issue are replaced with this scan's
+   *    fresh findings, except a finding is skipped (suppressed) if a
+   *    RESOLVED/DISMISSED row for the same (organization_id, resource_id,
+   *    issue) still has an open occurrence (occurrence_ended_at IS NULL) --
+   *    this is the actual Resolve/Dismiss fix: an unchanged condition no
+   *    longer resurrects as a new ACTIVE row every scan.
+   *
+   * A category whose detector did NOT complete successfully this scan is
+   * left entirely untouched -- no rows ended, no ACTIVE rows deleted or
+   * replaced -- exactly preserving whatever was true as of the last
+   * successful scan, per the requirement that detector failure/timeout/
+   * AWS-not-connected must never be interpreted as disappearance.
+   *
+   * Serialized per-organization via a session-level advisory lock
+   * (hashtextextended keyspace, salt distinct from the migration runner's
+   * plain-integer lock and from stripe-webhook-ledger.service.ts's salt 0)
+   * so a concurrent scan for the same org -- manual analyze racing the
+   * 6-hour cron, or two overlapping manual scans -- waits rather than
+   * racing. Without this, a delete-then-insert split across two separately
+   * committed operations can both duplicate rows and silently drop a
+   * just-inserted row from a still-running concurrent scan.
+   */
+  async reconcileActiveRecommendations(
+    organizationId: string,
+    observations: DetectorObservation[]
+  ): Promise<{ insertedCount: number }> {
+    const successful = observations.filter((o) => o.success);
+    if (successful.length === 0) {
+      return { insertedCount: 0 };
+    }
+
+    return this.withOrgClient(organizationId, async (client) => {
+      await client.query(
+        `SELECT pg_advisory_lock(hashtextextended($1, ${RECONCILIATION_LOCK_SALT}))`,
+        [organizationId]
+      );
+
+      try {
+        await client.query('BEGIN');
+
+        let insertedCount = 0;
+
+        for (const observation of successful) {
+          const presentResourceIds = observation.recommendations.map((r) => r.resource_id);
+
+          // `<> ALL($3)` over an empty array is vacuously true for every row --
+          // correctly ends every open occurrence in this category when the
+          // detector completed successfully but found nothing at all.
+          await client.query(
+            `UPDATE cost_recommendations
+             SET occurrence_ended_at = NOW()
+             WHERE organization_id = $1
+               AND issue = $2
+               AND status IN ('RESOLVED', 'DISMISSED')
+               AND occurrence_ended_at IS NULL
+               AND resource_id <> ALL($3::varchar[])`,
+            [organizationId, observation.issue, presentResourceIds]
+          );
+
+          await client.query(
+            `DELETE FROM cost_recommendations
+             WHERE organization_id = $1 AND status = 'ACTIVE' AND issue = $2`,
+            [organizationId, observation.issue]
+          );
+
+          for (const rec of observation.recommendations) {
+            // Skip (suppress) if an open RESOLVED/DISMISSED occurrence exists
+            // for this exact tuple. ON CONFLICT is defense-in-depth against
+            // idx_cost_recommendations_active_identity -- the DELETE above
+            // already cleared this category's ACTIVE rows within this same
+            // transaction, so a conflict here would only arise from a
+            // pre-existing duplicate predating this migration.
+            const result = await client.query(
+              `INSERT INTO cost_recommendations (
+                 organization_id, resource_id, resource_name, resource_type, issue, description,
+                 potential_savings, severity, aws_region, metadata, status
+               )
+               SELECT $1::UUID, $2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::TEXT,
+                      $7::NUMERIC, $8::VARCHAR, $9::VARCHAR, $10::JSONB, 'ACTIVE'
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM cost_recommendations
+                 WHERE organization_id = $1::UUID AND resource_id = $2::VARCHAR AND issue = $5::VARCHAR
+                   AND status IN ('RESOLVED', 'DISMISSED') AND occurrence_ended_at IS NULL
+               )
+               ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING`,
+              [
+                organizationId,
+                rec.resource_id,
+                rec.resource_name,
+                rec.resource_type,
+                rec.issue,
+                rec.description,
+                rec.potential_savings,
+                rec.severity,
+                rec.aws_region,
+                JSON.stringify(rec.metadata || {}),
+              ]
+            );
+            insertedCount += result.rowCount || 0;
+          }
+        }
+
+        await client.query('COMMIT');
+        return { insertedCount };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        await client.query(
+          `SELECT pg_advisory_unlock(hashtextextended($1, ${RECONCILIATION_LOCK_SALT}))`,
+          [organizationId]
+        );
       }
     });
   }
@@ -214,13 +367,18 @@ export class CostRecommendationsRepository {
   }
 
   /**
-   * Delete all active recommendations for an organization (used before re-analyzing)
+   * Delete active recommendations for one issue category (used before
+   * re-analyzing). Scoped by issue rather than org-wide so a caller can
+   * clear exactly the category it just got fresh detector results for --
+   * e.g. Reserved Instance Opportunities, which are re-derived unconditionally
+   * every scan (see createBulk() above), independent of the occurrence
+   * lifecycle reconcileActiveRecommendations() applies to the other three.
    */
-  async deleteAllActive(organizationId: string): Promise<number> {
+  async deleteActiveByIssue(organizationId: string, issue: string): Promise<number> {
     return this.withOrgClient(organizationId, async (client) => {
       const result = await client.query(
-        'DELETE FROM cost_recommendations WHERE status = $1 AND organization_id = $2',
-        ['ACTIVE', organizationId]
+        'DELETE FROM cost_recommendations WHERE status = $1 AND organization_id = $2 AND issue = $3',
+        ['ACTIVE', organizationId, issue]
       );
       return result.rowCount || 0;
     });
