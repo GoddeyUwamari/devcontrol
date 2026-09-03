@@ -40,6 +40,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import { computeDashboardAwsGates } from './dashboardAwsGates'
 import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
@@ -347,9 +348,8 @@ export default function DashboardPage() {
   const accountFindingsBreakdown = formatSeverityCounts(riskScoreData?.current?.accountFindingsCounts)
   const resourceComplianceBreakdown = formatSeverityCounts(riskScoreData?.current?.resourceComplianceCounts)
   const isAwsConnected  = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
-  const hasBillingData   = !isDemoActive && !!stats && (stats.costSource === 'actual' || stats.monthlyAwsCost > 0)
-  const hasServicesOnly  = !isDemoActive && !!stats && stats.totalServices > 0 && !hasBillingData
-  const isBillingSyncing = !isDemoActive && isAwsConnected && !statsLoading && !!stats && stats.totalServices === 0 && !hasBillingData
+  const { hasBillingData, hasServicesOnly, isBillingSyncing, showRecommendationSections } =
+    computeDashboardAwsGates({ isDemoActive, isAwsConnected, statsLoading, stats })
 
   useEffect(() => {
   if (!isDemoActive && !statsLoading && !isAwsConnected && awsAccounts !== undefined) {
@@ -716,9 +716,11 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2.5">
                 <div className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--fill-warning)' }} />
                 <span className="text-[13px] text-foreground font-medium">
-                  Billing sync in progress (24–48h) · Preliminary savings already identified:
+                  Billing sync in progress (24–48h) · {topRecs.length > 0 ? 'Savings opportunities already identified:' : 'Scanning for savings opportunities…'}
                 </span>
-                <span className="font-semibold text-[13px]" style={{ color: 'var(--text-success)' }}>{wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}/month` : 'calculating...'}</span>
+                {topRecs.length > 0 && (
+                  <span className="font-semibold text-[13px]" style={{ color: 'var(--text-success)' }}>${wasteAmount.toLocaleString()}/month</span>
+                )}
               </div>
               <span className="text-xs text-[var(--text-secondary)] font-medium">Infrastructure + security ready</span>
             </div>
@@ -737,9 +739,13 @@ export default function DashboardPage() {
               {/* Urgent actions */}
               <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
                 <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Urgent actions</p>
-                <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>{topRecs.length}</div>
-                {topRecs.length > 0 && (
-                  <span className="text-xs font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                {topRecs.length > 0 ? (
+                  <>
+                    <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>{topRecs.length}</div>
+                    <span className="text-xs font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
+                  </>
+                ) : (
+                  <div className="text-base font-medium text-foreground leading-none mb-1">Scanning...</div>
                 )}
               </div>
               {/* Security health */}
@@ -952,8 +958,17 @@ export default function DashboardPage() {
                 </div>
                 <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
                   <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Savings opportunity</p>
-                  <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Analyzing...</div>
-                  <p className="text-xs text-[var(--text-secondary)]">Infrastructure scan in progress</p>
+                  {topRecs.length > 0 ? (
+                    <>
+                      <div className="text-lg font-semibold leading-snug mb-2" style={{ color: 'var(--text-success)' }}>${wasteAmount.toLocaleString()}/mo</div>
+                      <p className="text-xs text-[var(--text-secondary)]">{topRecs.length} opportunit{topRecs.length !== 1 ? 'ies' : 'y'} identified</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Analyzing...</div>
+                      <p className="text-xs text-[var(--text-secondary)]">Infrastructure scan in progress</p>
+                    </>
+                  )}
                 </div>
                 <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
                   <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Security health</p>
@@ -1249,7 +1264,11 @@ export default function DashboardPage() {
       )}
 
       {/* ── COST-SAVING OPPORTUNITIES ── */}
-      {isAwsConnected && !isBillingSyncing && !hasServicesOnly && (isDemoActive || hasBillingData) && (
+      {/* Derived entirely from cost_recommendations (idle EC2/EBS/RDS counts), not AWS
+          billing data -- shown as soon as the initial discovery scan has run at least
+          once, independent of hasBillingData/hasServicesOnly, which track the separate,
+          much slower (24-48h) Cost Explorer billing sync. */}
+      {showRecommendationSections && (
         <div className="mb-8">
           <p className="text-sm font-semibold text-foreground mb-4">Cost-saving opportunities</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
@@ -1279,7 +1298,9 @@ export default function DashboardPage() {
       )}
 
       {/* ── EXECUTIVE ROI SUMMARY ── */}
-      {isAwsConnected && !isBillingSyncing && !hasServicesOnly && (
+      {/* Same reasoning as Cost-saving opportunities above -- wasteAmount/topRecs come
+          from cost_recommendations, not billing data, so this doesn't wait on hasBillingData. */}
+      {showRecommendationSections && (
         <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border mb-8">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
             <div>
