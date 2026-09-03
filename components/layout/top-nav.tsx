@@ -35,7 +35,7 @@ type NavItem =
   | { label: string; href: string; icon: React.ElementType; children?: undefined }
   | { label: string; icon: React.ElementType; children: NavChild[]; href?: undefined };
 
-const navItems: NavItem[] = [
+export const navItems: NavItem[] = [
   {
     label: 'Services',
     icon: Layers,
@@ -52,7 +52,7 @@ const navItems: NavItem[] = [
     children: [
       { label: 'Infrastructure Overview', href: '/infrastructure', icon: Server, desc: 'All AWS resources' },
       { label: 'Add Resource', href: '/infrastructure/new', icon: Plus, desc: 'Add infrastructure resource' },
-      { label: 'Recommendations', href: '/infrastructure/recommendations', icon: Lightbulb, desc: 'AI-powered suggestions' },
+      { label: 'Recommendations', href: '/cost-optimization', icon: Lightbulb, desc: 'AI-powered suggestions' },
       { label: 'Tenants', href: '/tenants', icon: Building, desc: 'Multi-tenant management' },
     ],
   },
@@ -105,7 +105,7 @@ const navItems: NavItem[] = [
 ];
 
 // Mobile drawer sections (excludes Add Service / Add Resource)
-const mobileSections = [
+export const mobileSections = [
   {
     key: 'services',
     label: 'Services',

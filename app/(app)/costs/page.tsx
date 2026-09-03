@@ -777,7 +777,7 @@ export default function CostsPage() {
 
           <div className="bg-green-50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold text-green-600 uppercase tracking-widest mb-1">Total Identified</p>
+              <p className="text-xs font-semibold text-green-600 uppercase tracking-widest mb-1">Estimated Savings Opportunity</p>
               <p className="text-2xl font-extrabold text-green-600 m-0">${displaySavings.toLocaleString()}<span className="text-sm font-medium">/mo</span></p>
             </div>
             <div className="text-center sm:text-right">
