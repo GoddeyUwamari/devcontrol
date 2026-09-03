@@ -39,7 +39,8 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
-import type { PlatformDashboardStats } from '@/lib/types'
+import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
@@ -204,18 +205,21 @@ export default function DashboardPage() {
     enabled: !demoMode && !salesDemoMode,
   })
 
-  const { data: costRecsRaw = [] } = useQuery<Array<{ id: string; issue: string; potential_savings?: number; status?: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH'; resource_type?: string }>>({
+  // Same authoritative cost_recommendations boundary /costs and /cost-optimization
+  // already consume, via costRecommendationsService -- no independent fetch/transform.
+  const { data: costRecsRaw = [] } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations'],
-    queryFn: async () => {
-      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/cost-recommendations?status=ACTIVE`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        credentials: 'include',
-      })
-      if (!res.ok) return []
-      const json = await res.json()
-      return json.data ?? []
-    },
+    queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
+    staleTime: 60_000, refetchInterval: 300_000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !demoMode && !salesDemoMode,
+  })
+
+  // Server-computed aggregate (same SUM /costs and /costs/efficiency use via
+  // getStats()) rather than a client-side reduce over costRecsRaw.
+  const { data: costRecStats } = useQuery({
+    queryKey: ['cost-recommendations-stats'],
+    queryFn: costRecommendationsService.getStats,
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !demoMode && !salesDemoMode,
@@ -289,7 +293,7 @@ export default function DashboardPage() {
   // Raw (unrounded) monthly waste — kept separately so the annual projection can
   // round once after multiplying, matching costs/page.tsx and cost-optimization/page.tsx,
   // instead of rounding the monthly figure first and compounding the rounding error.
-  const wasteAmountRaw  = demoMode ? 1922 : costRecsRaw.reduce((sum, r) => sum + (Number(r.potential_savings) || 0), 0)
+  const wasteAmountRaw  = demoMode ? 1922 : (costRecStats?.totalPotentialSavings ?? 0)
   const wasteAmount     = Math.round(wasteAmountRaw)
   const efficiencyRatio = demoMode
     ? Math.round(((12847 - wasteAmount) / 12847) * 100)
@@ -522,7 +526,7 @@ export default function DashboardPage() {
       ]
     : costRecsRaw.slice(0, 5).map(r => ({
         label:    r.issue || 'Can reduce monthly AWS spend',
-        savings:  r.potential_savings != null ? `$${Math.round(r.potential_savings).toLocaleString()}/mo` : '',
+        savings:  r.potentialSavings != null ? `$${Math.round(r.potentialSavings).toLocaleString()}/mo` : '',
         severity: r.severity,
       }))
   // ROI badge for the Savings Actions KPI card: High if the aggregate opportunity is
@@ -535,9 +539,9 @@ export default function DashboardPage() {
   // cost recommendations — no new fetch. The real /api/cost-recommendations data only
   // ever tags resource_type as EC2/RDS/EIP today; EBS detection isn't wired to this
   // endpoint yet, so that bucket is honestly 0 for real orgs until it is.
-  const idleEC2Count = isDemoActive ? 3 : costRecsRaw.filter(r => r.resource_type === 'EC2').length
-  const unattachedEBSCount = isDemoActive ? 2 : costRecsRaw.filter(r => r.resource_type === 'EBS').length
-  const overprovisionedRDSCount = isDemoActive ? 1 : costRecsRaw.filter(r => r.resource_type === 'RDS').length
+  const idleEC2Count = isDemoActive ? 3 : costRecsRaw.filter(r => r.resourceType === 'EC2').length
+  const unattachedEBSCount = isDemoActive ? 2 : costRecsRaw.filter(r => r.resourceType === 'EBS').length
+  const overprovisionedRDSCount = isDemoActive ? 1 : costRecsRaw.filter(r => r.resourceType === 'RDS').length
 
   const doraRows: { label: string; value: string; tier: 'Elite' | 'High'; showTier?: boolean }[] = [
     { label: 'Deployment Frequency',  value: demoMode ? '4.2/day' : '—', tier: 'Elite', showTier: demoMode },

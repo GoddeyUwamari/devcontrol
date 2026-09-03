@@ -144,14 +144,14 @@ export default function CostOptimizationPage() {
           <div className="bg-white rounded-xl p-6 border border-slate-200 mb-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Monthly Savings</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Estimated Monthly Savings</p>
                 <p className="text-2xl font-bold text-green-600">{formatSavings(totalSavings)}</p>
                 {totalSavings > 0 && (
                   <p className="text-xs text-slate-500 mt-1">≈ ${Math.round(annualizeMonthly(totalSavings)).toLocaleString()}/year</p>
                 )}
               </div>
               <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Annual Savings</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Estimated Annual Savings</p>
                 <p className="text-2xl font-bold text-green-600">{totalSavings > 0 ? `$${Math.round(annualizeMonthly(totalSavings)).toLocaleString()}/yr` : '—'}</p>
               </div>
               <div>
