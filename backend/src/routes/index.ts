@@ -29,7 +29,6 @@ import aiInsightsRoutes from './ai-insights.routes';
 import aiChatRoutes from './ai-chat.routes';
 import nlQueryRoutes from './nl-query.routes';
 import aiReportsRoutes from './ai-reports.routes';
-import optimizationRoutes from './optimization.routes';
 import userPreferencesRoutes from './user-preferences.routes';
 import tenantsRoutes from './tenants.routes';
 import usageRoutes from './usage.routes';
@@ -71,7 +70,6 @@ router.use('/ai-insights', aiInsightsRoutes);
 router.use('/ai-chat', aiChatRoutes);
 router.use('/nl-query', nlQueryRoutes);
 router.use('/ai-reports', aiReportsRoutes);
-router.use('/optimizations', optimizationRoutes);
 router.use('/user/preferences', userPreferencesRoutes);
 router.use('/tenants', tenantsRoutes);
 router.use('/usage', usageRoutes);
@@ -110,7 +108,6 @@ router.get('/', (req, res) => {
       aiChat: '/api/ai-chat',
       nlQuery: '/api/nl-query',
       aiReports: '/api/ai-reports',
-      optimizations: '/api/optimizations',
       userPreferences: '/api/user/preferences',
       logs: '/api/logs',
     },
