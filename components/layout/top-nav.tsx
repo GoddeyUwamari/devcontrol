@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Layers, Server, DollarSign, Shield, GitBranch,
-  Plus, Rocket, Activity, Lightbulb, Building, TrendingDown,
+  Plus, Rocket, Activity, Building, TrendingDown,
   BarChart3, FileText, Sparkles, AlertTriangle, CheckSquare,
   ClipboardList, Users, Building2, Code, ChevronDown, BellDot,
   Search, Menu, X, Bell, Clock, Target, SlidersHorizontal, Wrench,
@@ -52,7 +52,6 @@ export const navItems: NavItem[] = [
     children: [
       { label: 'Infrastructure Overview', href: '/infrastructure', icon: Server, desc: 'All AWS resources' },
       { label: 'Add Resource', href: '/infrastructure/new', icon: Plus, desc: 'Add infrastructure resource' },
-      { label: 'Recommendations', href: '/cost-optimization', icon: Lightbulb, desc: 'AI-powered suggestions' },
       { label: 'Tenants', href: '/tenants', icon: Building, desc: 'Multi-tenant management' },
     ],
   },
@@ -120,7 +119,6 @@ export const mobileSections = [
     label: 'Infrastructure',
     items: [
       { label: 'Overview', href: '/infrastructure' },
-      { label: 'Recommendations', href: '/cost-optimization' },
       { label: 'Tenants', href: '/infrastructure/tenants' },
     ],
   },

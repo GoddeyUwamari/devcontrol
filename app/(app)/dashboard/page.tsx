@@ -556,18 +556,6 @@ export default function DashboardPage() {
     { label: 'Active Risks',             value: demoMode ? 3 : '—',                             status: 'warn' },
   ]
 
-  // Real severity-derived risk badge for a recommendation (no fabricated risk/effort/time claims)
-  const RiskBadge = ({ severity }: { severity?: 'LOW' | 'MEDIUM' | 'HIGH' }) => {
-    if (!severity) return null
-    const styles = {
-      LOW:    'text-emerald-700 bg-emerald-50 border-emerald-200',
-      MEDIUM: 'text-amber-700 bg-amber-50 border-amber-200',
-      HIGH:   'text-red-700 bg-red-50 border-red-200',
-    }
-    const labels = { LOW: 'Low risk', MEDIUM: 'Medium risk', HIGH: 'High risk' }
-    return <span className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${styles[severity]}`}>{labels[severity]}</span>
-  }
-
   // Reusable inline component for intelligence score bars
   const IntelScoreBars = ({ intel }: { intel: typeof DEMO_INTELLIGENCE | null }) => (
     <div className="flex flex-col gap-1.5">
@@ -1058,49 +1046,24 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
             {/* AI Advisor */}
             {topRecs.length > 0 ? <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
-              <div className="flex items-start justify-between mb-1">
+              <div className="flex items-start justify-between mb-4">
                 <div>
                   <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">AI advisor</p>
                   <p className="text-sm font-semibold text-foreground">Actions ready for approval</p>
                 </div>
                 <a href="/cost-optimization" className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>All →</a>
               </div>
-              {topRecs.length > 0 && (
-                <p className="text-xs text-foreground mb-4 leading-relaxed">
-                  {isDemoActive
-                    ? <>These {topRecs.length} changes reduce AWS waste immediately · zero downtime · fully reversible · takes &lt; 15 min</>
-                    : <>These {topRecs.length} changes may reduce AWS waste — review each recommendation</>}
+              {/* Concise summary, not a per-item list -- the full recommendation
+                  feed with per-resource detail lives on /cost-optimization. */}
+              <div className="flex flex-col items-center justify-center py-8 gap-3 text-center">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--bg-accent)' }}>
+                  <i className="ti ti-sparkles text-[18px]" style={{ color: 'var(--text-accent)' }} />
+                </div>
+                <p className="text-sm font-semibold text-foreground">
+                  {topRecs.length} optimization opportunit{topRecs.length !== 1 ? 'ies' : 'y'} ready for review
                 </p>
-              )}
-              {topRecs.map((rec, i) => (
-                <div key={i} className="flex items-start gap-3 py-3 border-b border-border">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--bg-accent)' }}><i className="ti ti-sparkles text-[13px]" style={{ color: 'var(--text-accent)' }} /></div>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold text-foreground mb-1">{rec.label}</div>
-                    <div className="text-xs text-[var(--text-secondary)] font-medium mb-1">Cost impact pending billing sync</div>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {isDemoActive ? (
-                        <>
-                          {i < 2 ? (
-                            <><span className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-1.5 py-0.5 rounded">Low risk</span><span className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-1.5 py-0.5 rounded">No downtime</span></>
-                          ) : (
-                            <span className="text-xs font-semibold text-[var(--text-warning)] bg-[var(--bg-warning)] border border-[var(--border-warning)] px-1.5 py-0.5 rounded">Low risk</span>
-                          )}
-                          <span className="text-xs font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">{rec.time}</span>
-                        </>
-                      ) : (
-                        <RiskBadge severity={rec.severity} />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              <div className="mt-4 p-3.5 bg-[var(--surface-1)] rounded-lg border border-border flex items-center justify-between">
-                <div>
-                  <div className="text-[13px] font-semibold text-foreground mb-0.5">Estimated impact</div>
-                  <div className="text-xs text-[var(--text-secondary)] font-medium">Savings estimate available once billing sync completes</div>
-                </div>
-                <a href="/cost-optimization" className="text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline whitespace-nowrap ml-4" style={{ background: 'var(--text-accent)' }}>Approve actions ({topRecs.length}) →</a>
+                <p className="text-xs text-[var(--text-secondary)] max-w-[220px]">Savings estimate available once billing sync completes</p>
+                <a href="/cost-optimization" className="mt-1 text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline whitespace-nowrap" style={{ background: 'var(--text-accent)' }}>Approve actions ({topRecs.length}) →</a>
               </div>
             </div> : <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
               <div className="flex items-start justify-between mb-4">
@@ -1464,37 +1427,22 @@ export default function DashboardPage() {
                     </div>
                     <a href="/cost-optimization" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>All <i className="ti ti-arrow-right text-[12px]" /></a>
                   </div>
-                  <p className="text-xs text-foreground mb-3 leading-relaxed px-3 py-2.5 rounded-lg border border-border" style={{ background: 'var(--bg-success)' }}>
-                    {isDemoActive
-                      ? <>These {topRecs.length} changes reduce AWS waste immediately — zero downtime · fully reversible</>
-                      : <>These {topRecs.length} changes may reduce AWS waste — review each recommendation</>}
-                  </p>
-                  {topRecs.map((rec, i) => (
-                    <div key={i} className="flex items-start gap-3 border border-border rounded-xl px-3 py-2.5 mb-1.5">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--bg-accent)' }}><i className="ti ti-sparkles text-[13px]" style={{ color: 'var(--text-accent)' }} /></div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-foreground leading-snug mb-0.5">{rec.label}</div>
-                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                          {showSavingsDollars
-                            ? <span className="text-xs font-bold" style={{ color: 'var(--text-success)' }}>{rec.savings}</span>
-                            : <span className="text-xs text-[var(--text-secondary)] italic">Cost impact pending billing sync</span>}
-                          {isDemoActive ? (
-                            <>
-                              {i < 2 ? (
-                                <><span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-success)', background: 'var(--bg-success)', border: '1px solid var(--border-success)' }}>Low risk</span><span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-success)', background: 'var(--bg-success)', border: '1px solid var(--border-success)' }}>No downtime</span><span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-accent)', background: 'var(--bg-accent)', border: '1px solid var(--border-accent)' }}>High confidence</span></>
-                              ) : (
-                                <><span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--text-warning)', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)' }}>Low risk</span><span className="text-xs font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">Effort: Medium</span></>
-                              )}
-                              <span className="text-xs font-semibold text-[var(--text-secondary)] bg-[var(--surface-1)] border border-border px-1.5 py-0.5 rounded">{rec.time}</span>
-                            </>
-                          ) : (
-                            <RiskBadge severity={rec.severity} />
-                          )}
-                        </div>
+                  {/* Concise summary + single CTA, not a per-item list -- the full
+                      recommendation feed with per-resource detail lives on
+                      /cost-optimization. */}
+                  <a href="/cost-optimization" className="flex items-center gap-3 px-4 py-3.5 border rounded-xl mb-2 no-underline" style={{ background: 'var(--text-accent)', borderColor: 'var(--border-accent)' }}>
+                    <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0"><i className="ti ti-sparkles text-[14px] text-white" /></div>
+                    <div>
+                      <div className="text-sm font-bold text-white mb-0.5">{topRecs.length} optimization opportunit{topRecs.length !== 1 ? 'ies' : 'y'} ready</div>
+                      <div className="text-xs text-white/80 font-medium">
+                        {isDemoActive
+                          ? 'Reduce AWS waste immediately — zero downtime, fully reversible'
+                          : 'May reduce AWS waste — review each recommendation'}
                       </div>
                     </div>
-                  ))}
-                  <div className="mt-4 p-3 bg-[var(--surface-1)] rounded-lg border border-border">
+                    <span className="ml-auto text-sm text-white font-bold">→</span>
+                  </a>
+                  <div className="mt-2 p-3 bg-[var(--surface-1)] rounded-lg border border-border">
                     <div className="text-xs font-semibold text-[var(--text-secondary)] mb-0.5">Total potential</div>
                     {showSavingsDollars
                       ? (wasteAmount > 0
