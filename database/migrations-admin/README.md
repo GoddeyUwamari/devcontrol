@@ -80,8 +80,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`029_add_resource_reconciliation.sql`**,
 **`202608272014_extend_scheduled_reports_ai_types.sql`**,
 **`202608312100_add_billing_lifecycle_state.sql`**,
-**`202608312300_add_subscription_event_ordering.sql`**, and
-**`202609010800_add_payment_failed_notification_tracking.sql`**.
+**`202608312300_add_subscription_event_ordering.sql`**,
+**`202609010800_add_payment_failed_notification_tracking.sql`**, and
+**`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**.
 
 `202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
 `organizations` (adding the payment-failed-notification-reliability fix's
@@ -442,3 +443,38 @@ result; its SQL is unchanged from the ordinary-path version, and its
 checksum changed only because this reclassification note was added to the
 file's own header comment (the `ALTER TABLE`/`COMMENT ON` statements
 themselves are byte-identical).
+
+## Production execution history — `202609031800_add_cost_recommendations_occurrence_lifecycle.sql`
+
+A real (non-dry-run) `--execute-only
+202609031800_add_cost_recommendations_occurrence_lifecycle.sql` attempt
+was made against production via the ordinary path, before this migration
+was reclassified into this directory (SSM CommandId
+`840a782e-c42a-4dbb-a18e-8f51eed26d0b`, `ExecutionStartDateTime`
+`2026-09-03T18:16:44.254Z`). A read-only precheck for this migration's own
+documented deployment precondition (no duplicate `(organization_id,
+resource_id, issue)` groups among `ACTIVE` rows in `cost_recommendations`)
+had already passed in the same session (`PRECHECK_ROWCOUNT: 0`) before the
+attempt was made.
+
+**Directly observed:**
+- The attempt failed with PostgreSQL `42501: must be owner of table
+  cost_recommendations`, and `database/migrate.js` itself reported
+  `Rolled back. Not recorded as applied.`
+- A dedicated, separate read-only ownership audit (`pg_class` /
+  `pg_get_userbyid(relowner)` joined against `pg_namespace`, plus
+  `pg_roles`) run immediately after confirmed `public.cost_recommendations`
+  is owned by `postgres` in production, while the ordinary migration
+  runner connects as `devcontrol` (`current_user` = `session_user` =
+  `devcontrol`, `rolsuper = false`) — the same ownership/identity mismatch
+  already documented above for `organizations`. The same audit also
+  confirmed `organizations` and `aws_accounts` are `postgres`-owned, and
+  enumerated every other `public`-schema table's owner in the same pass.
+- A separate `/health` check immediately after the failed attempt returned
+  `200`, `database: connected` — the failed attempt did not affect the
+  running application.
+
+Only the migration's classification and deployment path changed as a
+result; its SQL is unchanged from the ordinary-path version except for the
+addition of a PLACEMENT NOTE to its own header comment (the `ALTER TABLE`
+/ `CREATE UNIQUE INDEX` statements themselves are byte-identical).
