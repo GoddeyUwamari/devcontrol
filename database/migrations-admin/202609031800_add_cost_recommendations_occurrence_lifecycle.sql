@@ -18,6 +18,26 @@
 -- this is set once and never cleared; a later identical finding is then
 -- treated as a new, independent occurrence rather than a resurrection of
 -- the old one. ACTIVE rows never have this column set.
+--
+-- PLACEMENT NOTE: this file was initially placed in the ordinary
+-- database/migrations/ path and a real (non-dry-run) `--execute-only`
+-- attempt was made against production from there (SSM CommandId
+-- 840a782e-c42a-4dbb-a18e-8f51eed26d0b, ExecutionStartDateTime
+-- 2026-09-03T18:16:44.254Z) -- it failed with exactly
+-- `42501: must be owner of table cost_recommendations`, rolled back
+-- cleanly, and was never recorded in `schema_migrations`. A live,
+-- read-only pg_class/pg_roles ownership audit in the same session
+-- confirmed `cost_recommendations` is `postgres`-owned in production
+-- while the ordinary runner connects as `devcontrol` (non-superuser,
+-- owner of neither this table nor most of the schema). This file was
+-- then moved into database/migrations-admin/ as a direct result of that
+-- failure -- the same reclassification-after-failed-attempt
+-- `202608270610_add_stripe_fields.sql` and
+-- `202608312300_add_subscription_event_ordering.sql` already went
+-- through. See database/migrations-admin/README.md's "Production
+-- execution history" section for the full record. Only this note was
+-- added; the ALTER TABLE / CREATE UNIQUE INDEX statements below are
+-- byte-identical to the original ordinary-path version.
 ALTER TABLE cost_recommendations
   ADD COLUMN occurrence_ended_at TIMESTAMPTZ NULL DEFAULT NULL;
 
