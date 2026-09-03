@@ -516,7 +516,24 @@ export class AWSResourceDiscoveryService {
 
         const recommendationsRepo = new CostRecommendationsRepository();
         await recommendationsRepo.deleteAllActive(organizationId);
-        await recommendationsRepo.createBulk(recommendations, organizationId);
+        const insertedCount = await recommendationsRepo.createBulk(recommendations, organizationId);
+
+        // first_insight_generated: mirrors the manual /api/cost-recommendations/analyze
+        // path (cost-recommendations.controller.ts) so an org whose first-ever
+        // recommendations arrive from this scheduled scan -- not a manual click --
+        // still fires the funnel event. Guarded once-per-org by trackFunnelEventOnce,
+        // so a later scan (manual or scheduled) for the same org never re-fires it.
+        if (insertedCount > 0) {
+          const stats = await recommendationsRepo.getStats(organizationId);
+          await trackFunnelEventOnce({
+            organizationId,
+            eventName: 'first_insight_generated',
+            properties: {
+              recommendationCount: insertedCount,
+              totalMonthlySavings: stats.total_potential_savings,
+            },
+          });
+        }
 
         console.log(`✅ [Discovery] Cost optimization analysis complete (${recommendations.length} opportunities found)`);
         costAnalysisCompleted = true;

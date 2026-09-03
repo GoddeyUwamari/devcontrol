@@ -314,7 +314,7 @@ export default function CostsPage() {
 
   const kpiCards = [
     {
-      key: 'savings', label: 'Identified Savings',
+      key: 'savings', label: 'Estimated Savings Opportunity',
       value: (!isDemoActive && recStatsLoading) ? '—' : `$${displaySavings.toLocaleString()}/mo`,
       sub: mtdSpend > 0
         ? `$${displayAnnual.toLocaleString()} annually · ${Math.round((displaySavings / mtdSpend) * 100)}% of current spend`
@@ -600,7 +600,7 @@ export default function CostsPage() {
             { label: 'Current Run Rate',       value: `$${mtdSpend.toLocaleString()}/mo`, color: 'text-slate-900' },
             { label: 'Month-over-Month',       value: `${growthRate > 0 ? '+' : ''}${growthRate}%`, color: growthRate > 5 ? 'text-red-600' : 'text-green-600' },
             { label: 'Active Recommendations', value: `${activeRecsCount}`, color: 'text-slate-500' },
-            { label: 'Identified Savings',     value: `$${displaySavings.toLocaleString()}/mo`, color: 'text-green-600' },
+            { label: 'Estimated Savings Opportunity', value: `$${displaySavings.toLocaleString()}/mo`, color: 'text-green-600' },
           ].map(({ label, value, color }) => (
             <div key={label}>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
