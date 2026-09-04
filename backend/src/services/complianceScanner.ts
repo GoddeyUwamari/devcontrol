@@ -3,6 +3,7 @@ import {
   ComplianceIssue,
   ComplianceSeverity,
   ComplianceCategory,
+  SecurityGroupEvidence,
 } from '../types/aws-resources.types';
 import {
   S3Client,
@@ -19,6 +20,18 @@ import {
   ListMFADevicesCommand,
   ListAccessKeysCommand,
 } from '@aws-sdk/client-iam';
+import { computeSecurityGroupFindingKey, IpVersion } from '../utils/securityGroupFindingKey';
+
+/**
+ * A single category's scan result plus whether it's safe to trust an absence
+ * of a previously-seen finding as "resolved." Only checkSecurityGroups produces
+ * one today — see its doc comment for why pagination/error-partial-results need it.
+ */
+export interface CategoryObservation {
+  category: 'networking' | 'iam';
+  complete: boolean;
+  issues: ComplianceIssue[];
+}
 
 /**
  * Compliance Scanner Service
@@ -553,59 +566,135 @@ export class ComplianceScannerService {
   }
 
   /**
-   * Check for overly permissive security groups
-   * Identifies security groups with 0.0.0.0/0 ingress rules
+   * Check for overly permissive security groups.
+   * Identifies security groups with unrestricted (0.0.0.0/0 or ::/0) ingress rules,
+   * across every page of DescribeSecurityGroups.
+   *
+   * Unlike the rest of this service's checks, this one catches its own AWS errors
+   * instead of letting them propagate: the caller needs to know not just "did it
+   * fail" but "how much did it see before failing," so a previously-active finding
+   * that's genuinely still there isn't auto-resolved just because a later page of
+   * a paginated scan errored out. `complete: false` (whether from an error or from
+   * NextToken remaining unconsumed) tells AccountSecurityFindingsRepository.reconcileScan
+   * this observation must never be used to resolve stale findings — only a complete
+   * observation may do that. `issues` collected before a failure are still returned
+   * and may still be upserted (detecting a real problem is still real evidence, even
+   * from a partial scan) — only their *absence* must never be trusted from a partial run.
    */
-  async checkSecurityGroups(ec2Client: EC2Client, region: string, accountId?: string): Promise<ComplianceIssue[]> {
+  async checkSecurityGroups(ec2Client: EC2Client, region: string, accountId?: string): Promise<CategoryObservation> {
     const issues: ComplianceIssue[] = [];
+    let nextToken: string | undefined;
+    let complete = true;
 
-    // No catch here: an AWS error (e.g. AccessDenied from the assumed role) must
-    // propagate to the caller's Promise.all, not be swallowed into an empty result
-    // that looks identical to "no security groups have open ingress rules."
-    const { SecurityGroups } = await ec2Client.send(new DescribeSecurityGroupsCommand({}));
+    try {
+      do {
+        const { SecurityGroups, NextToken } = await ec2Client.send(
+          new DescribeSecurityGroupsCommand({ NextToken: nextToken })
+        );
 
-    for (const sg of SecurityGroups || []) {
-      // Check for 0.0.0.0/0 ingress rules
-      const openRules = sg.IpPermissions?.filter(rule =>
-        rule.IpRanges?.some(range => range.CidrIp === '0.0.0.0/0')
-      );
+        for (const sg of SecurityGroups || []) {
+          if (!sg.GroupId) continue;
 
-      if (openRules && openRules.length > 0) {
-        for (const rule of openRules) {
-          const fromPort = rule.FromPort || 0;
-          const toPort = rule.ToPort || 65535;
+          for (const rule of sg.IpPermissions || []) {
+            const protocol = rule.IpProtocol || '-1';
+            const fromPort = rule.FromPort ?? 0;
+            const toPort = rule.ToPort ?? 65535;
 
-          // Critical if SSH (22) or RDP (3389) is open to the world
-          if (fromPort <= 22 && toPort >= 22) {
-            issues.push({
-              severity: 'critical',
-              category: 'networking',
-              issue: `Security group "${sg.GroupName}" (${sg.GroupId}) allows SSH (port 22) from anywhere (0.0.0.0/0)`,
-              recommendation: 'Restrict SSH access to specific IP addresses or use AWS Systems Manager Session Manager instead.',
-              resource_arn: `arn:aws:ec2:${region}:${accountId || '*'}:security-group/${sg.GroupId}`,
-            });
-          } else if (fromPort <= 3389 && toPort >= 3389) {
-            issues.push({
-              severity: 'critical',
-              category: 'networking',
-              issue: `Security group "${sg.GroupName}" (${sg.GroupId}) allows RDP (port 3389) from anywhere (0.0.0.0/0)`,
-              recommendation: 'Restrict RDP access to specific IP addresses or use a bastion host.',
-              resource_arn: `arn:aws:ec2:${region}:${accountId || '*'}:security-group/${sg.GroupId}`,
-            });
-          } else {
-            issues.push({
-              severity: 'high',
-              category: 'networking',
-              issue: `Security group "${sg.GroupName}" (${sg.GroupId}) allows port ${fromPort}${fromPort !== toPort ? `-${toPort}` : ''} from anywhere (0.0.0.0/0)`,
-              recommendation: 'Restrict access to known IP ranges or use security group references for inter-resource communication.',
-              resource_arn: `arn:aws:ec2:${region}:${accountId || '*'}:security-group/${sg.GroupId}`,
-            });
+            for (const range of rule.IpRanges || []) {
+              if (range.CidrIp === '0.0.0.0/0') {
+                issues.push(
+                  this.buildUnrestrictedIngressIssue(sg.GroupId, sg.GroupName || sg.GroupId, sg.VpcId, region, accountId, protocol, fromPort, toPort, 'v4', '0.0.0.0/0')
+                );
+              }
+            }
+
+            for (const range of rule.Ipv6Ranges || []) {
+              if (range.CidrIpv6 === '::/0') {
+                issues.push(
+                  this.buildUnrestrictedIngressIssue(sg.GroupId, sg.GroupName || sg.GroupId, sg.VpcId, region, accountId, protocol, fromPort, toPort, 'v6', '::/0')
+                );
+              }
+            }
           }
         }
-      }
+
+        nextToken = NextToken;
+      } while (nextToken);
+    } catch (error: any) {
+      console.error('[Compliance] checkSecurityGroups failed (partial results may still be usable):', error.message);
+      complete = false;
     }
 
-    return issues;
+    return { category: 'networking', complete, issues };
+  }
+
+  /**
+   * Builds one unrestricted-ingress ComplianceIssue with its stable finding_key and
+   * narrow evidence. Severity: critical for SSH/RDP (the two ports every currently-
+   * supported CIS AWS Foundations Benchmark version explicitly names as "remote server
+   * administration ports" — see securityFrameworkMappings.ts), high for anything else.
+   */
+  private buildUnrestrictedIngressIssue(
+    groupId: string,
+    groupName: string,
+    vpcId: string | undefined,
+    region: string,
+    accountId: string | undefined,
+    protocol: string,
+    fromPort: number,
+    toPort: number,
+    ipVersion: IpVersion,
+    cidr: string
+  ): ComplianceIssue {
+    // SSH/RDP are TCP protocols. A rule's FromPort/ToPort only mean "port number" for
+    // TCP/UDP; for ICMP they mean type/code, so a numeric match against 22 or 3389 is
+    // coincidental, not an actual SSH/RDP exposure. AWS's protocol "-1" ("all
+    // protocols") genuinely does include TCP, so it's treated the same as an explicit
+    // "tcp" match; a rule for "udp" or any other specific non-TCP protocol is not.
+    const isTcpCapable = protocol === 'tcp' || protocol === '-1';
+    const isSSH = isTcpCapable && fromPort <= 22 && toPort >= 22;
+    const isRDP = isTcpCapable && fromPort <= 3389 && toPort >= 3389;
+    const portLabel = isSSH ? 'SSH (port 22)' : isRDP ? 'RDP (port 3389)' : `port ${fromPort}${fromPort !== toPort ? `-${toPort}` : ''}`;
+    const sourceLabel = ipVersion === 'v6' ? '::/0' : '0.0.0.0/0';
+
+    const findingKey = computeSecurityGroupFindingKey({
+      securityGroupId: groupId,
+      region,
+      direction: 'ingress',
+      protocol,
+      fromPort,
+      toPort,
+      ipVersion,
+    });
+
+    const evidence: SecurityGroupEvidence = {
+      schema_version: 1,
+      security_group_id: groupId,
+      security_group_name: groupName,
+      vpc_id: vpcId,
+      region,
+      direction: 'ingress',
+      protocol,
+      from_port: fromPort,
+      to_port: toPort,
+      ip_version: ipVersion,
+      cidr,
+      detected_at: new Date().toISOString(),
+    };
+
+    return {
+      severity: isSSH || isRDP ? 'critical' : 'high',
+      category: 'networking',
+      issue: `Security group "${groupName}" (${groupId}) allows ${portLabel} from anywhere (${sourceLabel})`,
+      recommendation: isSSH
+        ? 'Restrict SSH access to specific IP addresses or use AWS Systems Manager Session Manager instead.'
+        : isRDP
+          ? 'Restrict RDP access to specific IP addresses or use a bastion host.'
+          : 'Restrict access to known IP ranges or use security group references for inter-resource communication.',
+      resource_arn: `arn:aws:ec2:${region}:${accountId || '*'}:security-group/${groupId}`,
+      findingKey,
+      evidence,
+    };
   }
 
   /**

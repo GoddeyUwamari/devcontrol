@@ -20,6 +20,7 @@ import { CostTrendChart } from '@/components/dashboard/cost-trend-chart'
 import { CostBreakdownBarList } from '@/components/dashboard/cost-breakdown-barlist'
 import { RiskScoreTrendChart } from '@/components/dashboard/risk-score-trend-chart'
 import { useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
+import { useAccountSecurityFindingStats } from '@/lib/hooks/useAccountSecurityFindings'
 import type { DateRange } from '@/lib/services/risk-score.service'
 import { QuickInsights, generateDemoInsights } from '@/components/dashboard/quick-insights'
 import { ActivityFeed, generateDemoActivities } from '@/components/dashboard/activity-feed'
@@ -173,6 +174,10 @@ export default function DashboardPage() {
   const [insightDismissed, setInsightDismissed] = useState(false)
 
   const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange, !demoMode && !salesDemoMode)
+
+  // Same backend source (GET /api/security/account-findings/stats) the Security
+  // Overview page uses — no second calculation path for "how many active risks."
+  const { data: accountFindingStats } = useAccountSecurityFindingStats(!demoMode && !salesDemoMode)
 
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
@@ -550,10 +555,12 @@ export default function DashboardPage() {
     { label: 'Mean Time to Recovery', value: isDemoActive ? '36 min' : '—',    tier: 'Elite', showTier: isDemoActive },
   ]
 
+  const activeRisksCount = isDemoActive ? 3 : (accountFindingStats?.total ?? null)
+
   const securityRows: { label: string; value: string | number; status: 'good' | 'warn' | 'neutral' }[] = [
     { label: 'May expose production resources to unauthorized access', value: isDemoActive ? 0 : '—',                          status: isDemoActive ? 'good' : 'neutral' },
     { label: 'Compliance Frameworks',    value: isDemoActive ? '4/4' : '—',                    status: 'good' },
-    { label: 'Active Risks',             value: demoMode ? 3 : '—',                             status: 'warn' },
+    { label: 'Active Risks',             value: activeRisksCount ?? '—',                       status: activeRisksCount === null ? 'neutral' : activeRisksCount > 0 ? 'warn' : 'good' },
   ]
 
   // Reusable inline component for intelligence score bars
