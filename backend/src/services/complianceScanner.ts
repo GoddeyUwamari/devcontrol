@@ -4,6 +4,8 @@ import {
   ComplianceSeverity,
   ComplianceCategory,
   SecurityGroupEvidence,
+  IamMfaEvidence,
+  IamAccessKeyEvidence,
 } from '../types/aws-resources.types';
 import {
   S3Client,
@@ -16,11 +18,14 @@ import {
 } from '@aws-sdk/client-ec2';
 import {
   IAMClient,
-  ListUsersCommand,
+  paginateListUsers,
   ListMFADevicesCommand,
   ListAccessKeysCommand,
+  GetLoginProfileCommand,
+  NoSuchEntityException,
 } from '@aws-sdk/client-iam';
 import { computeSecurityGroupFindingKey, IpVersion } from '../utils/securityGroupFindingKey';
+import { computeIamFindingKey } from '../utils/iamFindingKey';
 
 /**
  * A single category's scan result plus whether it's safe to trust an absence
@@ -698,68 +703,170 @@ export class ComplianceScannerService {
   }
 
   /**
-   * Check IAM security best practices
-   * Checks for MFA on users and access key rotation
+   * Check IAM security best practices: MFA applicability for console-password
+   * users, and access-key rotation — across every page of ListUsers.
+   *
+   * Mirrors checkSecurityGroups' partial-scan contract: a per-user AWS error
+   * is caught here (not propagated) so users already processed before a later
+   * failure keep their findings, with `complete: false` telling the caller
+   * this observation must never be used to resolve stale findings — only a
+   * complete observation may do that. `issues` collected before a failure are
+   * still returned and may still be upserted (detecting a real problem is
+   * still real evidence, even from a partial scan) — only their *absence*
+   * must never be trusted from a partial run.
    */
-  async checkIAMSecurity(iamClient: IAMClient): Promise<ComplianceIssue[]> {
+  async checkIAMSecurity(iamClient: IAMClient): Promise<CategoryObservation> {
     const issues: ComplianceIssue[] = [];
+    let complete = true;
 
-    // No catches here: an AWS error (e.g. AccessDenied on ListUsers/ListMFADevices/
-    // ListAccessKeys from the assumed role) must propagate to the caller's Promise.all,
-    // not be swallowed into an empty result that looks identical to "all users compliant."
-    const { Users } = await iamClient.send(new ListUsersCommand({}));
+    try {
+      for await (const page of paginateListUsers({ client: iamClient }, {})) {
+        for (const user of page.Users || []) {
+          if (!user.UserName || !user.Arn) continue;
 
-    for (const user of Users || []) {
-      if (!user.UserName || !user.Arn) continue;
+          try {
+            issues.push(...(await this.checkIamUserSecurity(iamClient, user.UserName, user.Arn)));
+          } catch (error: any) {
+            console.error(
+              `[Compliance] checkIAMSecurity failed for user ${user.UserName} (partial results may still be usable):`,
+              error.message
+            );
+            complete = false;
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('[Compliance] checkIAMSecurity failed (partial results may still be usable):', error.message);
+      complete = false;
+    }
 
-      // Check if user has MFA enabled
-      const { MFADevices } = await iamClient.send(
-        new ListMFADevicesCommand({ UserName: user.UserName })
-      );
+    return { category: 'iam', complete, issues };
+  }
 
-      if (!MFADevices || MFADevices.length === 0) {
+  /**
+   * MFA + access-key checks for a single IAM user.
+   *
+   * MFA applicability depends on GetLoginProfile, which has three outcomes:
+   *  - success -> user has a console password. If MFA devices == 0, a
+   *    confirmed, CIS IAM.5-mapped, HIGH-severity finding.
+   *  - NoSuchEntityException -> user has no console password. CIS IAM.5 is
+   *    explicitly scoped to "IAM users that have a console password", so
+   *    this control does not apply here — no finding, regardless of MFA
+   *    device count.
+   *  - any other error (e.g. AccessDenied because the assumed role lacks
+   *    iam:GetLoginProfile) -> console-access applicability cannot be proven
+   *    either way. This is an explicitly ALLOWED unknown state, not a scan
+   *    failure: it must never be represented as "this user has console
+   *    access and no MFA" (that would overstate what AWS actually proved),
+   *    so it gets its own MEDIUM-severity, unmapped finding with
+   *    has_login_profile: "unknown" in its evidence, and — critically —
+   *    does NOT propagate as an error, so it never degrades this scan's
+   *    `complete` signal the way a ListMFADevices/ListAccessKeys failure does.
+   *
+   * Access-key check always runs independently of MFA/login-profile outcome.
+   * Exactly one finding per stale key (never two for the same key at
+   * different age thresholds) — severity escalates with age instead.
+   */
+  private async checkIamUserSecurity(
+    iamClient: IAMClient,
+    userName: string,
+    userArn: string
+  ): Promise<ComplianceIssue[]> {
+    const issues: ComplianceIssue[] = [];
+    const detectedAt = new Date().toISOString();
+
+    const { MFADevices } = await iamClient.send(new ListMFADevicesCommand({ UserName: userName }));
+    const mfaDeviceCount = MFADevices?.length ?? 0;
+
+    if (mfaDeviceCount === 0) {
+      let hasLoginProfile: boolean | 'unknown';
+      try {
+        await iamClient.send(new GetLoginProfileCommand({ UserName: userName }));
+        hasLoginProfile = true;
+      } catch (error) {
+        hasLoginProfile = error instanceof NoSuchEntityException ? false : 'unknown';
+      }
+
+      if (hasLoginProfile === true) {
+        const evidence: IamMfaEvidence = {
+          schema_version: 1,
+          resource_type: 'iam_user',
+          resource_identifier: userArn,
+          resource_name: userName,
+          finding_type: 'mfa_not_enabled',
+          relevant_aws_attributes: { has_login_profile: true, mfa_device_count: mfaDeviceCount },
+          detected_at: detectedAt,
+        };
         issues.push({
           severity: 'high',
           category: 'iam',
-          issue: `IAM user "${user.UserName}" does not have MFA enabled`,
-          recommendation: 'Enable multi-factor authentication (MFA) for all IAM users, especially those with console access.',
-          resource_arn: user.Arn,
+          issue: `IAM user "${userName}" has console access but no MFA device enabled`,
+          recommendation:
+            'Enable multi-factor authentication (MFA) for this user immediately — console access without MFA is a direct account-takeover risk.',
+          resource_arn: userArn,
+          findingKey: computeIamFindingKey({ findingType: 'mfa_not_enabled', userArn }),
+          evidence,
+        });
+      } else if (hasLoginProfile === 'unknown') {
+        const evidence: IamMfaEvidence = {
+          schema_version: 1,
+          resource_type: 'iam_user',
+          resource_identifier: userArn,
+          resource_name: userName,
+          finding_type: 'mfa_not_enabled',
+          relevant_aws_attributes: { has_login_profile: 'unknown', mfa_device_count: mfaDeviceCount },
+          detected_at: detectedAt,
+        };
+        issues.push({
+          severity: 'medium',
+          category: 'iam',
+          issue: `IAM user "${userName}" has no MFA device, and console access could not be verified`,
+          recommendation:
+            'Grant iam:GetLoginProfile so DevControl can confirm whether this user has console access. If it does, enable MFA immediately.',
+          resource_arn: userArn,
+          findingKey: computeIamFindingKey({ findingType: 'mfa_not_enabled', userArn }),
+          evidence,
         });
       }
+      // hasLoginProfile === false: no console password — CIS IAM.5 doesn't
+      // apply to this identity, and neither does our own finding.
+    }
 
-      // Check for old access keys (>90 days)
-      const { AccessKeyMetadata } = await iamClient.send(
-        new ListAccessKeysCommand({ UserName: user.UserName })
-      );
+    const { AccessKeyMetadata } = await iamClient.send(new ListAccessKeysCommand({ UserName: userName }));
 
-      for (const key of AccessKeyMetadata || []) {
-        if (!key.CreateDate || !key.AccessKeyId) continue;
+    for (const key of AccessKeyMetadata || []) {
+      if (!key.CreateDate || !key.AccessKeyId) continue;
 
-        const ageInDays = Math.floor(
-          (Date.now() - key.CreateDate.getTime()) / (1000 * 60 * 60 * 24)
-        );
+      const ageInDays = Math.floor((Date.now() - key.CreateDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (ageInDays <= 90) continue;
 
-        if (ageInDays > 90) {
-          issues.push({
-            severity: 'medium',
-            category: 'iam',
-            issue: `IAM user "${user.UserName}" has an access key (${key.AccessKeyId}) that is ${ageInDays} days old`,
-            recommendation: 'Rotate access keys every 90 days. Create a new key, update applications, then delete the old key.',
-            resource_arn: user.Arn,
-          });
-        }
+      const severity: ComplianceSeverity = ageInDays > 180 ? 'high' : 'medium';
+      const evidence: IamAccessKeyEvidence = {
+        schema_version: 1,
+        resource_type: 'iam_access_key',
+        resource_identifier: userArn,
+        resource_name: userName,
+        finding_type: 'access_key_stale',
+        relevant_aws_attributes: {
+          access_key_id: key.AccessKeyId,
+          age_in_days: ageInDays,
+          key_status: key.Status ?? 'Unknown',
+        },
+        detected_at: detectedAt,
+      };
 
-        // Warning for very old keys (>180 days)
-        if (ageInDays > 180) {
-          issues.push({
-            severity: 'high',
-            category: 'iam',
-            issue: `IAM user "${user.UserName}" has an access key (${key.AccessKeyId}) that is ${ageInDays} days old (>180 days)`,
-            recommendation: 'URGENT: Rotate this access key immediately. Keys over 180 days old pose a significant security risk.',
-            resource_arn: user.Arn,
-          });
-        }
-      }
+      issues.push({
+        severity,
+        category: 'iam',
+        issue: `IAM user "${userName}" has an access key (${key.AccessKeyId}) that is ${ageInDays} days old`,
+        recommendation:
+          severity === 'high'
+            ? 'URGENT: Rotate this access key immediately. Keys over 180 days old pose a significant security risk.'
+            : 'Rotate access keys every 90 days. Create a new key, update applications, then delete the old key.',
+        resource_arn: userArn,
+        findingKey: computeIamFindingKey({ findingType: 'access_key_stale', userArn, accessKeyId: key.AccessKeyId }),
+        evidence,
+      });
     }
 
     return issues;

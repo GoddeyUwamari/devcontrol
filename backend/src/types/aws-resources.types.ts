@@ -103,14 +103,14 @@ export interface ComplianceIssue {
   recommendation: string;
   resource_arn?: string;
   /**
-   * Optional stable identity, set by detectors that have one (currently only
-   * checkSecurityGroups) instead of relying on AccountSecurityFindingsRepository's
+   * Optional stable identity, set by detectors that have one (checkSecurityGroups,
+   * checkIAMSecurity) instead of relying on AccountSecurityFindingsRepository's
    * generic resource_arn|category|issue hash, which is unstable when `issue`
-   * embeds a mutable human-readable name.
+   * embeds a mutable human-readable name or value (e.g. an access key's age).
    */
   findingKey?: string;
   /** Optional narrow, versioned evidence — only set by detectors that define one. */
-  evidence?: SecurityGroupEvidence;
+  evidence?: FindingEvidence;
 }
 
 /**
@@ -132,6 +132,58 @@ export interface SecurityGroupEvidence {
   cidr: string;
   detected_at: string;
 }
+
+/**
+ * Narrow, versioned evidence for an IAM-user-missing-MFA finding.
+ * `has_login_profile` is `'unknown'` when GetLoginProfile could not confirm
+ * or deny console access (e.g. AccessDenied on that specific call) — this
+ * must never be conflated with `true` or `false`; see checkIAMSecurity's
+ * three-case handling (confirmed console user / confirmed no console access /
+ * unknown) and securityFrameworkMappings.ts, which only attaches CIS IAM.5
+ * when this is `true`.
+ */
+export interface IamMfaEvidence {
+  schema_version: 1;
+  resource_type: 'iam_user';
+  resource_identifier: string;
+  resource_name: string;
+  finding_type: 'mfa_not_enabled';
+  relevant_aws_attributes: {
+    has_login_profile: boolean | 'unknown';
+    mfa_device_count: number;
+  };
+  detected_at: string;
+}
+
+/**
+ * Narrow, versioned evidence for a stale-IAM-access-key finding.
+ * `access_key_id` is an identifier, not a secret — ListAccessKeys never
+ * returns the actual secret access-key value, so there is nothing sensitive
+ * to accidentally capture here.
+ */
+export interface IamAccessKeyEvidence {
+  schema_version: 1;
+  resource_type: 'iam_access_key';
+  resource_identifier: string;
+  resource_name: string;
+  finding_type: 'access_key_stale';
+  relevant_aws_attributes: {
+    access_key_id: string;
+    age_in_days: number;
+    key_status: string;
+  };
+  detected_at: string;
+}
+
+/**
+ * Union of every detector's evidence shape. Deliberately not a generic
+ * evidence framework — each member stays narrow and versioned; a new
+ * detector adds a new member here rather than generalizing the shape.
+ * SecurityGroupEvidence has no `resource_type` discriminant field (it
+ * predates this union); code that needs to distinguish members can check
+ * `'resource_type' in evidence` — present only on the IAM variants.
+ */
+export type FindingEvidence = SecurityGroupEvidence | IamMfaEvidence | IamAccessKeyEvidence;
 
 export interface ComplianceStats {
   total_issues: number;

@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
-import { ComplianceIssue, ComplianceSeverity, SecurityGroupEvidence } from '../types/aws-resources.types';
+import { ComplianceIssue, ComplianceSeverity, FindingEvidence } from '../types/aws-resources.types';
 import { getFrameworkMapping, FrameworkMapping } from '../config/securityFrameworkMappings';
 import { securityAuditService } from '../services/securityAudit.service';
 
@@ -28,7 +28,7 @@ export interface AccountSecurityFinding {
   disposition_actor_id: string | null;
   disposition_at: string | null;
   disposition_note: string | null;
-  evidence: SecurityGroupEvidence | null;
+  evidence: FindingEvidence | null;
   created_at: string;
   updated_at: string;
   /** Read-time projection — never stored. See deriveFindingStatus. */
@@ -45,7 +45,7 @@ export interface NewAccountFinding {
   recommendation: string;
   resourceIdentifier: string;
   region?: string;
-  evidence?: SecurityGroupEvidence;
+  evidence?: FindingEvidence;
 }
 
 export interface AccountFindingFilters {
@@ -112,7 +112,7 @@ export class AccountSecurityFindingsRepository {
   }
 
   private mapRow(row: any): AccountSecurityFinding {
-    const evidence: SecurityGroupEvidence | null = row.evidence ?? null;
+    const evidence: FindingEvidence | null = row.evidence ?? null;
     return {
       ...row,
       evidence,

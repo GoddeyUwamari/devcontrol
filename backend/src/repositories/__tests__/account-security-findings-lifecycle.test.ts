@@ -15,7 +15,8 @@ import {
   NewAccountFinding,
   deriveFindingStatus,
 } from '../account-security-findings.repository';
-import { SecurityGroupEvidence } from '../../types/aws-resources.types';
+import { SecurityGroupEvidence, IamAccessKeyEvidence } from '../../types/aws-resources.types';
+import { computeIamFindingKey } from '../../utils/iamFindingKey';
 
 function dbConfig() {
   return {
@@ -433,7 +434,7 @@ describe('getActive projection (derived_status, evidence, framework_mapping)', (
 
     const [finding] = await repository.getActive(orgId, { limit: 1 });
     expect(finding.derived_status).toBe('active');
-    expect(finding.evidence?.security_group_id).toBe('sg-test');
+    expect((finding.evidence as SecurityGroupEvidence | null)?.security_group_id).toBe('sg-test');
     expect(finding.framework_mapping).toMatchObject({ framework: 'CIS AWS Foundations Benchmark', control: '5.3' });
   });
 
@@ -446,5 +447,86 @@ describe('getActive projection (derived_status, evidence, framework_mapping)', (
 
     const [finding] = await repository.getActive(orgId, { limit: 1 });
     expect(finding.framework_mapping).toBeNull();
+  });
+});
+
+/**
+ * Regression coverage for the IAM Security Phase 2 bug fix: an earlier
+ * version of checkIAMSecurity never set a stable findingKey for access-key
+ * issues, so they fell through to this repository's generic fallback hash of
+ * the mutable issue text (which embeds the key's age in days) — meaning the
+ * same stale key got a brand-new finding_key every single day, silently
+ * "resolving" and recreating itself and losing any user disposition in the
+ * process. This uses the actual production computeIamFindingKey (not a
+ * synthetic key), across two reconcileScan calls shaped like the same real
+ * access key observed at two different ages, to prove disposition
+ * continuity end-to-end through the exact code path production uses.
+ */
+describe('IAM access-key finding identity — bug-fix regression coverage', () => {
+  function fakeIamAccessKeyEvidence(ageInDays: number, overrides: Partial<IamAccessKeyEvidence['relevant_aws_attributes']> = {}): IamAccessKeyEvidence {
+    return {
+      schema_version: 1,
+      resource_type: 'iam_access_key',
+      resource_identifier: 'arn:aws:iam::123456789012:user/stale-key-user',
+      resource_name: 'stale-key-user',
+      finding_type: 'access_key_stale',
+      relevant_aws_attributes: {
+        access_key_id: 'AKIAREGRESSIONTEST1',
+        age_in_days: ageInDays,
+        key_status: 'Active',
+        ...overrides,
+      },
+      detected_at: new Date().toISOString(),
+    };
+  }
+
+  function fakeIamAccessKeyFinding(ageInDays: number, severity: 'medium' | 'high'): NewAccountFinding {
+    const userArn = 'arn:aws:iam::123456789012:user/stale-key-user';
+    const accessKeyId = 'AKIAREGRESSIONTEST1';
+    return {
+      findingKey: computeIamFindingKey({ findingType: 'access_key_stale', userArn, accessKeyId }),
+      category: 'iam',
+      severity,
+      title: `IAM user "stale-key-user" has an access key (${accessKeyId}) that is ${ageInDays} days old`,
+      recommendation: 'Rotate this access key.',
+      resourceIdentifier: userArn,
+      evidence: fakeIamAccessKeyEvidence(ageInDays),
+    };
+  }
+
+  it('a disposition on a stale access key survives the same key aging from medium (91d) to high (181d) severity across rescans', async () => {
+    const orgId = await insertOrg();
+    const userId = await insertUser();
+
+    // Day 91: key first crosses the 90-day threshold.
+    await repository.reconcileScan(orgId, new Date(), [fakeIamAccessKeyFinding(91, 'medium')], ['iam']);
+    const firstRow = await fetchRow(orgId, computeIamFindingKey({
+      findingType: 'access_key_stale',
+      userArn: 'arn:aws:iam::123456789012:user/stale-key-user',
+      accessKeyId: 'AKIAREGRESSIONTEST1',
+    }));
+    expect(firstRow.severity).toBe('medium');
+
+    await repository.setDisposition(orgId, firstRow.id, 'accepted_risk', userId, 'Rotation scheduled next maintenance window');
+
+    // 90 days later: the SAME key, now 181 days old — a later scan reports it
+    // with the same finding_key (per computeIamFindingKey) but escalated severity.
+    const later = new Date();
+    await repository.reconcileScan(orgId, later, [fakeIamAccessKeyFinding(181, 'high')], ['iam']);
+
+    const secondRow = await fetchRow(orgId, computeIamFindingKey({
+      findingType: 'access_key_stale',
+      userArn: 'arn:aws:iam::123456789012:user/stale-key-user',
+      accessKeyId: 'AKIAREGRESSIONTEST1',
+    }));
+
+    // Same row (same id) — not resolved-and-recreated.
+    expect(secondRow.id).toBe(firstRow.id);
+    expect(secondRow.status).toBe('active');
+    // Severity reflects the new age...
+    expect(secondRow.severity).toBe('high');
+    // ...but the user's earlier disposition on this exact key survived.
+    expect(secondRow.disposition).toBe('accepted_risk');
+    expect(secondRow.disposition_note).toBe('Rotation scheduled next maintenance window');
   });
 });

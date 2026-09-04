@@ -481,24 +481,28 @@ export class AWSResourceDiscoveryService {
             return { category: 'networking' as const, complete: false, issues: [] };
           });
 
-        let iamIssues: typeof networkingObservation.issues = [];
-        let iamSucceeded = true;
-        try {
-          iamIssues = await scanner.checkIAMSecurity(awsClients.iam!);
-        } catch (error: any) {
-          console.error(`❌ [Discovery] IAM security scan failed:`, error.message);
-          errors.push(`IAM security scan: ${error.message}`);
-          iamSucceeded = false;
-        }
+        // checkIAMSecurity now returns the same CategoryObservation shape as
+        // checkSecurityGroups (previously it threw on any per-user failure,
+        // discarding findings from users already successfully processed
+        // earlier in that same call — see complianceScanner.ts). `.complete`
+        // is the honest completeness signal now; "didn't throw" is no longer
+        // how success is defined here.
+        const iamObservation = await scanner
+          .checkIAMSecurity(awsClients.iam!)
+          .catch((error: any) => {
+            console.error(`❌ [Discovery] IAM security scan failed:`, error.message);
+            errors.push(`IAM security scan: ${error.message}`);
+            return { category: 'iam' as const, complete: false, issues: [] };
+          });
 
         const findingsRepo = new AccountSecurityFindingsRepository();
         const findings = AccountSecurityFindingsRepository.fromComplianceIssues(
-          [...networkingObservation.issues, ...iamIssues],
+          [...networkingObservation.issues, ...iamObservation.issues],
           awsClients.region
         );
         const completeCategories: AccountFindingCategory[] = [
           ...(networkingObservation.complete ? (['networking'] as const) : []),
-          ...(iamSucceeded ? (['iam'] as const) : []),
+          ...(iamObservation.complete ? (['iam'] as const) : []),
         ];
         const { active, resolved } = await findingsRepo.reconcileScan(
           organizationId,
@@ -507,7 +511,7 @@ export class AWSResourceDiscoveryService {
           completeCategories
         );
 
-        const fullyComplete = networkingObservation.complete && iamSucceeded;
+        const fullyComplete = networkingObservation.complete && iamObservation.complete;
         if (!fullyComplete) {
           complianceScanCompleted = false;
         }
@@ -515,7 +519,7 @@ export class AWSResourceDiscoveryService {
           .record({
             organizationId,
             action: fullyComplete ? 'security.scan.completed' : 'security.scan.partial',
-            metadata: { active, resolved, networkingComplete: networkingObservation.complete, iamComplete: iamSucceeded },
+            metadata: { active, resolved, networkingComplete: networkingObservation.complete, iamComplete: iamObservation.complete },
           })
           .catch(() => {});
 
