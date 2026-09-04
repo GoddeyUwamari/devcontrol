@@ -64,7 +64,7 @@ const actionMap: Record<string, { statement: string; link: string }> = {
   'Resource Management': { statement: 'Resource management gaps detected',      link: '/security/resources' },
   'Encryption':          { statement: 'Encryption coverage incomplete',         link: '/security/encryption' },
   'Backup Coverage':     { statement: 'Backup coverage below threshold',        link: '/security/backup' },
-  'Compliance':          { statement: 'Compliance checks failing',              link: '/compliance/frameworks' },
+  'Compliance':          { statement: 'Unresolved security findings',           link: '/security#findings' },
 }
 
 const severityColor = (s: AnomalyDetection['severity']) => s === 'critical' ? '#DC2626' : s === 'warning' ? '#D97706' : '#64748B'
@@ -560,7 +560,7 @@ export default function SecurityPage() {
         </div>
 
         {/* Account Security Findings */}
-        <div className="bg-white rounded-xl p-5 border border-slate-100">
+        <div id="findings" className="bg-white rounded-xl p-5 border border-slate-100">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Account Security Findings</h2>
           </div>
