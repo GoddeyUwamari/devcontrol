@@ -20,6 +20,38 @@ export interface SecurityGroupEvidence {
   detected_at: string;
 }
 
+/** Mirrors backend/src/types/aws-resources.types.ts::IamMfaEvidence. */
+export interface IamMfaEvidence {
+  schema_version: 1;
+  resource_type: 'iam_user';
+  resource_identifier: string;
+  resource_name: string;
+  finding_type: 'mfa_not_enabled';
+  relevant_aws_attributes: {
+    has_login_profile: boolean | 'unknown';
+    mfa_device_count: number;
+  };
+  detected_at: string;
+}
+
+/** Mirrors backend/src/types/aws-resources.types.ts::IamAccessKeyEvidence. */
+export interface IamAccessKeyEvidence {
+  schema_version: 1;
+  resource_type: 'iam_access_key';
+  resource_identifier: string;
+  resource_name: string;
+  finding_type: 'access_key_stale';
+  relevant_aws_attributes: {
+    access_key_id: string;
+    age_in_days: number;
+    key_status: string;
+  };
+  detected_at: string;
+}
+
+/** Mirrors backend/src/types/aws-resources.types.ts::FindingEvidence. */
+export type FindingEvidence = SecurityGroupEvidence | IamMfaEvidence | IamAccessKeyEvidence;
+
 export interface FrameworkMapping {
   framework: string;
   version: string;
@@ -46,7 +78,7 @@ export interface AccountSecurityFinding {
   disposition_actor_id: string | null;
   disposition_at: string | null;
   disposition_note: string | null;
-  evidence: SecurityGroupEvidence | null;
+  evidence: FindingEvidence | null;
   created_at: string;
   updated_at: string;
   /** Read-time projection — RESOLVED means AWS-verified absence, never a user disposition. */

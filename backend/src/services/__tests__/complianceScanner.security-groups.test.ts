@@ -199,7 +199,7 @@ describe('ComplianceScannerService.checkSecurityGroups', () => {
     const { issues } = await scanner.checkSecurityGroups(mockEc2(send), 'us-east-1');
 
     expect(issues).toHaveLength(2);
-    const versions = issues.map((i) => i.evidence?.ip_version).sort();
+    const versions = issues.map((i) => (i.evidence as SecurityGroupEvidence | undefined)?.ip_version).sort();
     expect(versions).toEqual(['v4', 'v6']);
     expect(issues[0].findingKey).not.toBe(issues[1].findingKey);
   });
@@ -338,7 +338,7 @@ describe('ComplianceScannerService.checkSecurityGroups', () => {
 
     expect(send).toHaveBeenCalledTimes(2);
     expect(complete).toBe(true);
-    expect(issues.map((i) => i.evidence?.security_group_id).sort()).toEqual(['sg-page1', 'sg-page2']);
+    expect(issues.map((i) => (i.evidence as SecurityGroupEvidence | undefined)?.security_group_id).sort()).toEqual(['sg-page1', 'sg-page2']);
   });
 
   it('marks the observation incomplete (and keeps partial results) when a later page errors', async () => {
@@ -364,7 +364,7 @@ describe('ComplianceScannerService.checkSecurityGroups', () => {
     // Page 1's already-observed finding is still returned — a partial result may
     // still be upserted; it just must never be trusted to imply anything's absent.
     expect(issues).toHaveLength(1);
-    expect(issues[0].evidence?.security_group_id).toBe('sg-page1');
+    expect((issues[0].evidence as SecurityGroupEvidence | undefined)?.security_group_id).toBe('sg-page1');
   });
 
   it('marks the observation incomplete on an immediate AWS error, with no issues observed', async () => {
