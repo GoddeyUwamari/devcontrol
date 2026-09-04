@@ -122,13 +122,20 @@ export default function SecurityPage() {
   const activeAnomalies = anomalyStats?.active || anomalyData?.anomalies?.length || 0
   const criticalAnomalies = anomalyData?.anomalies?.filter((a: AnomalyDetection) => a.severity === 'critical' && a.status === 'active').length ?? 0
 
-  const displayFrameworks: FrameworkDisplay[] = frameworks.length > 0
-    ? frameworks.slice(0, 4).map((f) => ({ id: f.id, name: f.name, complianceScore: f.enabled ? 80 : 55, status: f.enabled ? 'passing' : 'failing' }))
-    : FALLBACK_FRAMEWORKS
+  // Real accounts with no frameworks added yet haven't been evaluated against anything —
+  // matches /compliance/frameworks' own "Risk Visibility: Not Established" state. Falling
+  // back to FALLBACK_FRAMEWORKS's demo-shaped percentages here would fabricate a compliance
+  // posture (87% passing, "1 framework failing") for a framework that was never scanned.
+  // Demo mode is the only case where that fallback is legitimate — same principle already
+  // applied to `findings` and `score` above.
+  const hasFrameworkData = demoMode || frameworks.length > 0
+  const displayFrameworks: FrameworkDisplay[] = demoMode
+    ? FALLBACK_FRAMEWORKS
+    : frameworks.slice(0, 4).map((f) => ({ id: f.id, name: f.name, complianceScore: f.enabled ? 80 : 55, status: f.enabled ? 'passing' : 'failing' }))
 
   const passingFrameworks = displayFrameworks.filter((f) => f.status === 'passing').length
   const failingFrameworks = displayFrameworks.filter((f) => f.status === 'failing').length
-  const totalFrameworks = displayFrameworks.length || 4
+  const totalFrameworks = displayFrameworks.length
 
   const trendDirection = riskTrend?.trend ?? 'stable'
   const trendPct = riskTrend?.trendPercentage ?? 5
@@ -209,7 +216,7 @@ export default function SecurityPage() {
 
   const navCards = [
     { icon: AlertTriangle, label: 'All Anomalies', desc: criticalAnomalies > 0 ? `${criticalAnomalies} critical — investigate now` : 'Investigate and resolve threats', href: '/anomalies', color: criticalAnomalies > 0 ? '#DC2626' : '#D97706', bg: criticalAnomalies > 0 ? '#FEF2F2' : '#FFFBEB' },
-    { icon: CheckSquare,   label: 'Compliance',    desc: failingFrameworks > 0 ? `${failingFrameworks} framework${failingFrameworks > 1 ? 's' : ''} failing — remediate now` : 'CIS, NIST, SOC 2, PCI-DSS', href: '/compliance/frameworks', color: failingFrameworks > 0 ? '#DC2626' : '#059669', bg: '#F5F3FF' },
+    { icon: CheckSquare,   label: 'Compliance',    desc: !hasFrameworkData ? 'Not yet evaluated' : failingFrameworks > 0 ? `${failingFrameworks} framework${failingFrameworks > 1 ? 's' : ''} failing — remediate now` : 'CIS, NIST, SOC 2, PCI-DSS', href: '/compliance/frameworks', color: !hasFrameworkData ? '#64748B' : failingFrameworks > 0 ? '#DC2626' : '#059669', bg: '#F5F3FF' },
     { icon: ClipboardList, label: 'Audit Logs',    desc: 'Full activity trail', href: '/audit-logs', color: '#7C3AED', bg: '#F5F3FF' },
   ]
 
@@ -382,7 +389,14 @@ export default function SecurityPage() {
         </div>
         <div className="bg-white rounded-xl p-5 border border-slate-100">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Compliance Status</p>
-          {frameworksLoading ? <Loader2 size={18} className="text-slate-300" /> : (
+          {frameworksLoading ? <Loader2 size={18} className="text-slate-300" /> : !hasFrameworkData ? (
+            <>
+              <div className="flex items-end gap-1 mb-2">
+                <span className="text-3xl font-bold text-slate-900 tracking-tight leading-none">—</span>
+              </div>
+              <span className="text-xs text-slate-400">Not yet evaluated</span>
+            </>
+          ) : (
             <>
               <div className="flex items-end gap-1 mb-2">
                 <span className="text-3xl font-bold text-slate-900 tracking-tight leading-none">{passingFrameworks}</span>
@@ -515,7 +529,12 @@ export default function SecurityPage() {
             <a href="/compliance/frameworks" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">Manage <ChevronRight size={12} /></a>
           </div>
           <div className="flex flex-col gap-3">
-            {displayFrameworks.map((f) => {
+            {!hasFrameworkData ? (
+              <div className="text-center py-8">
+                <p className="text-sm font-medium text-slate-500 mb-1">Risk Visibility: Not Established</p>
+                <p className="text-xs text-slate-400">Run a baseline scan to see your compliance posture.</p>
+              </div>
+            ) : displayFrameworks.map((f) => {
               const pct = f.complianceScore
               const passing = f.status === 'passing', failing = f.status === 'failing'
               const statusColor = passing ? '#059669' : failing ? '#DC2626' : '#D97706'
