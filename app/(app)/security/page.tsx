@@ -10,7 +10,7 @@ import {
 import {
   Shield, AlertTriangle, CheckSquare, ClipboardList,
   ArrowRight, ChevronRight, Loader2, RefreshCw,
-  TrendingUp, TrendingDown, Check,
+  TrendingUp, TrendingDown, Check, ShieldCheck, EyeOff, ShieldAlert,
 } from 'lucide-react'
 import { useCurrentRiskScore, useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
 import { useComplianceFrameworks } from '@/lib/hooks/useComplianceFrameworks'
@@ -18,7 +18,13 @@ import { useAccountSecurityFindings } from '@/lib/hooks/useAccountSecurityFindin
 import { anomalyService } from '@/lib/services/anomaly.service'
 import awsServicesService from '@/lib/services/aws-services.service'
 import { demoModeService } from '@/lib/services/demo-mode.service'
+import { accountSecurityFindingsService, DerivedFindingStatus, FrameworkMapping } from '@/lib/services/account-security-findings.service'
 import type { AnomalyDetection } from '@/types/anomaly.types'
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 type FrameworkDisplay = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing' }
 type FindingDisplay = {
@@ -28,12 +34,16 @@ type FindingDisplay = {
   recommendation: string
   resourceIdentifier: string
   category: 'networking' | 'iam'
+  derivedStatus: DerivedFindingStatus
+  frameworkMapping: FrameworkMapping | null
+  /** false for demo/fallback rows — disposition actions only make sense against real findings. */
+  actionable: boolean
 }
 
 const FALLBACK_FINDINGS: FindingDisplay[] = [
-  { id: '1', severity: 'critical', title: 'Security group "web-sg" (sg-0a1b2c3d) allows SSH (port 22) from anywhere (0.0.0.0/0)', recommendation: 'Restrict SSH access to specific IP addresses or use AWS Systems Manager Session Manager instead.', resourceIdentifier: 'sg-0a1b2c3d', category: 'networking' },
-  { id: '2', severity: 'high', title: 'IAM user "ci-deploy" does not have MFA enabled', recommendation: 'Enable multi-factor authentication (MFA) for all IAM users, especially those with console access.', resourceIdentifier: 'ci-deploy', category: 'iam' },
-  { id: '3', severity: 'medium', title: 'IAM user "data-pipeline" has an access key that is 124 days old', recommendation: 'Rotate access keys every 90 days.', resourceIdentifier: 'data-pipeline', category: 'iam' },
+  { id: '1', severity: 'critical', title: 'Security group "web-sg" (sg-0a1b2c3d) allows SSH (port 22) from anywhere (0.0.0.0/0)', recommendation: 'Restrict SSH access to specific IP addresses or use AWS Systems Manager Session Manager instead.', resourceIdentifier: 'sg-0a1b2c3d', category: 'networking', derivedStatus: 'active', frameworkMapping: { framework: 'CIS AWS Foundations Benchmark', version: '5.0.0', control: '5.3', title: 'Ensure no security groups allow ingress from 0.0.0.0/0 or ::/0 to remote server administration ports', securityHubControlId: 'EC2.53' }, actionable: false },
+  { id: '2', severity: 'high', title: 'IAM user "ci-deploy" does not have MFA enabled', recommendation: 'Enable multi-factor authentication (MFA) for all IAM users, especially those with console access.', resourceIdentifier: 'ci-deploy', category: 'iam', derivedStatus: 'active', frameworkMapping: null, actionable: false },
+  { id: '3', severity: 'medium', title: 'IAM user "data-pipeline" has an access key that is 124 days old', recommendation: 'Rotate access keys every 90 days.', resourceIdentifier: 'data-pipeline', category: 'iam', derivedStatus: 'active', frameworkMapping: null, actionable: false },
 ]
 
 const FALLBACK_FRAMEWORKS: FrameworkDisplay[] = [
@@ -63,9 +73,24 @@ const severityBadgeBg = (s: AnomalyDetection['severity']) => s === 'critical' ? 
 const findingSeverityColor = (s: FindingDisplay['severity']) => s === 'critical' ? '#DC2626' : s === 'high' ? '#D97706' : s === 'medium' ? '#D97706' : '#64748B'
 const findingSeverityBadgeBg = (s: FindingDisplay['severity']) => s === 'critical' ? '#FEE2E2' : s === 'high' ? '#FDE68A' : s === 'medium' ? '#FEF3C7' : '#F1F5F9'
 
+// derived_status labels a USER decision (acknowledged/dismissed/accepted_risk) or the
+// system-verified absence (resolved) — never conflate the two. This list only ever
+// shows findings with status='active' (see AccountSecurityFindingsRepository.getActive),
+// so 'resolved' never actually appears here; it's included for completeness/type-safety.
+const derivedStatusMeta: Record<DerivedFindingStatus, { label: string; color: string; bg: string }> = {
+  active:         { label: 'Active',            color: '#DC2626', bg: '#FEE2E2' },
+  acknowledged:   { label: 'Acknowledged',       color: '#2563EB', bg: '#DBEAFE' },
+  dismissed:      { label: 'Dismissed',          color: '#64748B', bg: '#F1F5F9' },
+  accepted_risk:  { label: 'Risk Accepted',      color: '#D97706', bg: '#FEF3C7' },
+  resolved:       { label: 'Verified Resolved',  color: '#059669', bg: '#F0FDF4' },
+}
+
 export default function SecurityPage() {
   const [acknowledging, setAcknowledging] = useState<string | null>(null)
   const [isScanning, setIsScanning] = useState(false)
+  const [dispositioningId, setDispositioningId] = useState<string | null>(null)
+  const [noteDialog, setNoteDialog] = useState<{ id: string; action: 'dismiss' | 'accept-risk' } | null>(null)
+  const [noteText, setNoteText] = useState('')
   const demoMode = demoModeService.isEnabled()
   const queryClient = useQueryClient()
 
@@ -146,7 +171,41 @@ export default function SecurityPage() {
         recommendation: f.recommendation,
         resourceIdentifier: f.resource_identifier,
         category: f.category,
+        derivedStatus: f.derived_status,
+        frameworkMapping: f.framework_mapping,
+        actionable: true,
       })) ?? [])
+
+  const runDisposition = async (id: string, action: 'acknowledge' | 'dismiss' | 'accept-risk', note?: string) => {
+    setDispositioningId(id)
+    try {
+      if (action === 'acknowledge') await accountSecurityFindingsService.acknowledge(id)
+      else if (action === 'dismiss') await accountSecurityFindingsService.dismiss(id, note!)
+      else await accountSecurityFindingsService.acceptRisk(id, note!)
+
+      await queryClient.invalidateQueries({ queryKey: ['account-security-findings'] })
+      toast.success(
+        action === 'acknowledge' ? 'Finding acknowledged' : action === 'dismiss' ? 'Finding dismissed' : 'Risk accepted',
+        { description: 'This records your decision — it does not change anything in AWS. Only a future scan can mark it Verified Resolved.' }
+      )
+    } catch (e: any) {
+      toast.error('Action failed', { description: e.message || 'Please try again.' })
+    } finally {
+      setDispositioningId(null)
+    }
+  }
+
+  const handleAcknowledgeFinding = (id: string) => runDisposition(id, 'acknowledge')
+  const openNoteDialog = (id: string, action: 'dismiss' | 'accept-risk') => {
+    setNoteText('')
+    setNoteDialog({ id, action })
+  }
+  const submitNoteDialog = async () => {
+    if (!noteDialog || noteText.trim().length === 0) return
+    const { id, action } = noteDialog
+    setNoteDialog(null)
+    await runDisposition(id, action, noteText.trim())
+  }
 
   const navCards = [
     { icon: AlertTriangle, label: 'All Anomalies', desc: criticalAnomalies > 0 ? `${criticalAnomalies} critical — investigate now` : 'Investigate and resolve threats', href: '/anomalies', color: criticalAnomalies > 0 ? '#DC2626' : '#D97706', bg: criticalAnomalies > 0 ? '#FEF2F2' : '#FFFBEB' },
@@ -491,24 +550,61 @@ export default function SecurityPage() {
               <div className="py-8 flex items-center justify-center"><Loader2 size={18} className="text-slate-300 animate-spin" /></div>
             ) : (
               <>
-                {findings.map((finding) => (
-                  <div key={finding.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3.5">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                        <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: findingSeverityColor(finding.severity) }} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-slate-900 mb-0.5 leading-snug">{finding.title}</p>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-slate-500 shrink-0">{finding.category === 'iam' ? 'IAM' : 'Security Group'} ·</span>
-                            <span className="truncate block text-xs text-slate-500 max-w-full">{finding.resourceIdentifier}</span>
+                {findings.map((finding) => {
+                  const statusMeta = derivedStatusMeta[finding.derivedStatus]
+                  const isBusy = dispositioningId === finding.id
+                  return (
+                    <div key={finding.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3.5">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                          <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: findingSeverityColor(finding.severity) }} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-slate-900 mb-0.5 leading-snug">{finding.title}</p>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-xs text-slate-500 shrink-0">{finding.category === 'iam' ? 'IAM' : 'Security Group'} ·</span>
+                              <span className="truncate block text-xs text-slate-500 max-w-full">{finding.resourceIdentifier}</span>
+                            </div>
                           </div>
                         </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full capitalize" style={{ background: findingSeverityBadgeBg(finding.severity), color: findingSeverityColor(finding.severity) }}>{finding.severity}</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ background: statusMeta.bg, color: statusMeta.color }}>{statusMeta.label}</span>
+                        </div>
                       </div>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0 capitalize" style={{ background: findingSeverityBadgeBg(finding.severity), color: findingSeverityColor(finding.severity) }}>{finding.severity}</span>
+                      <p className="text-xs text-slate-500 pl-4 mb-2">{finding.recommendation}</p>
+                      {finding.frameworkMapping && (
+                        <p className="text-xs text-slate-400 pl-4 mb-2">
+                          Control Assessment: {finding.frameworkMapping.framework} {finding.frameworkMapping.control} — Failing Control
+                        </p>
+                      )}
+                      {finding.actionable && finding.derivedStatus !== 'resolved' && (
+                        <div className="flex flex-wrap gap-2 pl-4">
+                          <button
+                            onClick={() => handleAcknowledgeFinding(finding.id)}
+                            disabled={isBusy}
+                            className="flex items-center gap-1 bg-white text-blue-600 border border-blue-200 rounded-lg px-2.5 py-1 text-xs font-semibold hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ShieldCheck size={11} /> Acknowledge
+                          </button>
+                          <button
+                            onClick={() => openNoteDialog(finding.id, 'dismiss')}
+                            disabled={isBusy}
+                            className="flex items-center gap-1 bg-white text-slate-500 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-medium hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <EyeOff size={11} /> Dismiss
+                          </button>
+                          <button
+                            onClick={() => openNoteDialog(finding.id, 'accept-risk')}
+                            disabled={isBusy}
+                            className="flex items-center gap-1 bg-white text-amber-600 border border-amber-200 rounded-lg px-2.5 py-1 text-xs font-semibold hover:bg-amber-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ShieldAlert size={11} /> Accept Risk
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 pl-4">{finding.recommendation}</p>
-                  </div>
-                ))}
+                  )
+                })}
                 {findings.length === 0 && (
                   <div className="text-center py-8">
                     <Check size={22} className="text-green-500 mx-auto mb-2" />
@@ -538,6 +634,32 @@ export default function SecurityPage() {
           </a>
         ))}
       </div>
+
+      <Dialog open={noteDialog !== null} onOpenChange={(open) => { if (!open) setNoteDialog(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{noteDialog?.action === 'dismiss' ? 'Dismiss finding' : 'Accept risk'}</DialogTitle>
+            <p className="text-sm text-muted-foreground pt-1">
+              {noteDialog?.action === 'dismiss'
+                ? 'This records that you dismissed this finding — it does not change anything in AWS. A justification is required.'
+                : 'This records that you accepted the risk this finding represents — it does not change anything in AWS. A justification is required.'}
+            </p>
+          </DialogHeader>
+          <Textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Why? (required)"
+            rows={3}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNoteDialog(null)}>Cancel</Button>
+            <Button onClick={submitNoteDialog} disabled={noteText.trim().length === 0}>
+              {noteDialog?.action === 'dismiss' ? 'Dismiss' : 'Accept Risk'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

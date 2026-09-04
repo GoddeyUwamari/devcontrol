@@ -53,7 +53,8 @@ import { ComplianceScannerService } from './complianceScanner';
 import { OrphanedResourceDetectorService } from './orphanedResourceDetector';
 import costOptimizationService from './cost-optimization.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
-import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
+import { AccountSecurityFindingsRepository, AccountFindingCategory } from '../repositories/account-security-findings.repository';
+import { securityAuditService } from './securityAudit.service';
 import { PoolClient } from 'pg';
 import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry } from './resourceExplorer.service';
 import { ResourceReconciliationService } from './resourceReconciliation.service';
@@ -455,28 +456,79 @@ export class AWSResourceDiscoveryService {
       // Account-level security findings: security groups and IAM users aren't rows in
       // aws_resources, so these run once per org (not per-resource) against the same
       // org-scoped AWS clients, persisting into account_security_findings instead.
+      //
+      // Networking (checkSecurityGroups) and IAM (checkIAMSecurity) are scanned and
+      // caught independently — deliberately not a combined Promise.all/try-catch —
+      // so an unrelated IAM failure (e.g. AccessDenied on ListUsers) can't discard
+      // otherwise-valid, already-collected security-group findings, and vice versa.
+      // Only a category whose scan actually completed is allowed to resolve that
+      // category's stale findings; a partial/failed scan's findings are still
+      // upserted (real evidence is real evidence) but can never imply absence.
+      securityAuditService
+        .record({ organizationId, action: 'security.scan.started' })
+        .catch(() => {});
+
       try {
         console.log(`🔎 [Discovery] Running account-level security scan (security groups + IAM)...`);
         const scanner = new ComplianceScannerService();
         const scanStartedAt = new Date();
 
-        const [sgIssues, iamIssues] = await Promise.all([
-          scanner.checkSecurityGroups(awsClients.ec2!, awsClients.region, awsClients.accountId),
-          scanner.checkIAMSecurity(awsClients.iam!),
-        ]);
+        const networkingObservation = await scanner
+          .checkSecurityGroups(awsClients.ec2!, awsClients.region, awsClients.accountId)
+          .catch((error: any) => {
+            console.error(`❌ [Discovery] Security group scan failed:`, error.message);
+            errors.push(`Security group scan: ${error.message}`);
+            return { category: 'networking' as const, complete: false, issues: [] };
+          });
+
+        let iamIssues: typeof networkingObservation.issues = [];
+        let iamSucceeded = true;
+        try {
+          iamIssues = await scanner.checkIAMSecurity(awsClients.iam!);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] IAM security scan failed:`, error.message);
+          errors.push(`IAM security scan: ${error.message}`);
+          iamSucceeded = false;
+        }
 
         const findingsRepo = new AccountSecurityFindingsRepository();
         const findings = AccountSecurityFindingsRepository.fromComplianceIssues(
-          [...sgIssues, ...iamIssues],
+          [...networkingObservation.issues, ...iamIssues],
           awsClients.region
         );
-        const { active, resolved } = await findingsRepo.reconcileScan(organizationId, scanStartedAt, findings);
+        const completeCategories: AccountFindingCategory[] = [
+          ...(networkingObservation.complete ? (['networking'] as const) : []),
+          ...(iamSucceeded ? (['iam'] as const) : []),
+        ];
+        const { active, resolved } = await findingsRepo.reconcileScan(
+          organizationId,
+          scanStartedAt,
+          findings,
+          completeCategories
+        );
 
-        console.log(`✅ [Discovery] Account-level security scan complete (${active} active, ${resolved} resolved)`);
+        const fullyComplete = networkingObservation.complete && iamSucceeded;
+        if (!fullyComplete) {
+          complianceScanCompleted = false;
+        }
+        securityAuditService
+          .record({
+            organizationId,
+            action: fullyComplete ? 'security.scan.completed' : 'security.scan.partial',
+            metadata: { active, resolved, networkingComplete: networkingObservation.complete, iamComplete: iamSucceeded },
+          })
+          .catch(() => {});
+
+        console.log(
+          `✅ [Discovery] Account-level security scan ${fullyComplete ? 'complete' : 'partial'} (${active} active, ${resolved} resolved)`
+        );
       } catch (error: any) {
         console.error(`❌ [Discovery] Account-level security scan failed:`, error.message);
         errors.push(`Account-level security scan: ${error.message}`);
         complianceScanCompleted = false;
+        securityAuditService
+          .record({ organizationId, action: 'security.scan.failed', metadata: { error: error.message } })
+          .catch(() => {});
       }
 
       // Orphaned-resource detection: identify stopped/unused resources from what's

@@ -102,6 +102,35 @@ export interface ComplianceIssue {
   issue: string;
   recommendation: string;
   resource_arn?: string;
+  /**
+   * Optional stable identity, set by detectors that have one (currently only
+   * checkSecurityGroups) instead of relying on AccountSecurityFindingsRepository's
+   * generic resource_arn|category|issue hash, which is unstable when `issue`
+   * embeds a mutable human-readable name.
+   */
+  findingKey?: string;
+  /** Optional narrow, versioned evidence — only set by detectors that define one. */
+  evidence?: SecurityGroupEvidence;
+}
+
+/**
+ * Narrow, versioned evidence for an unrestricted-security-group-ingress finding.
+ * Deliberately not a generic evidence abstraction — see account_security_findings
+ * migration comment for schema_version's role.
+ */
+export interface SecurityGroupEvidence {
+  schema_version: 1;
+  security_group_id: string;
+  security_group_name: string;
+  vpc_id?: string;
+  region: string;
+  direction: 'ingress' | 'egress';
+  protocol: string;
+  from_port: number;
+  to_port: number;
+  ip_version: 'v4' | 'v6';
+  cidr: string;
+  detected_at: string;
 }
 
 export interface ComplianceStats {

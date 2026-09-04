@@ -81,8 +81,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202608272014_extend_scheduled_reports_ai_types.sql`**,
 **`202608312100_add_billing_lifecycle_state.sql`**,
 **`202608312300_add_subscription_event_ordering.sql`**,
-**`202609010800_add_payment_failed_notification_tracking.sql`**, and
-**`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**.
+**`202609010800_add_payment_failed_notification_tracking.sql`**,
+**`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**, and
+**`202609040035_add_account_security_findings_disposition.sql`**.
 
 `202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
 `organizations` (adding the payment-failed-notification-reliability fix's
@@ -478,3 +479,22 @@ Only the migration's classification and deployment path changed as a
 result; its SQL is unchanged from the ordinary-path version except for the
 addition of a PLACEMENT NOTE to its own header comment (the `ALTER TABLE`
 / `CREATE UNIQUE INDEX` statements themselves are byte-identical).
+
+## Classification — `202609040035_add_account_security_findings_disposition.sql`
+
+Unlike every entry above, this file was placed directly in this directory
+from the start -- no ordinary-path attempt was made and none is expected to
+succeed. `account_security_findings` is already one of the eleven tables
+confirmed `postgres`-owned in production by the batch ownership audit
+described earlier in this document (the same audit that covers
+`023_create_account_security_findings.sql`, this table's own creation
+migration, which already lives here). Since that ownership finding was
+already established before this migration was written, writing it to the
+ordinary path first would only reproduce a known, already-documented
+`42501: must be owner of table account_security_findings` failure -- the
+same preventive reasoning already applied to
+`202609010800_add_payment_failed_notification_tracking.sql`. This migration
+adds five nullable/additive columns (`disposition`, `disposition_actor_id`,
+`disposition_at`, `disposition_note`, `evidence`) to that table; it contains
+no RLS or policy DDL, so, as with `005_migrate_existing_data.sql` above,
+this classification is ownership-based, not keyword-based.

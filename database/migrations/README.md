@@ -105,6 +105,11 @@ X was applied" — only what the evidence actually supports.
   `026`/`027` (target tables not found in production — see "Specific
   audited artifacts" above) remain deliberately unmoved; that move is not
   addressed by this classification pass.
+  `202609040035_add_account_security_findings_disposition.sql` was written
+  directly into `database/migrations-admin/` (not moved there after a
+  failed attempt) since `account_security_findings`'s `postgres` ownership
+  was already established by this same audit — see that directory's
+  README for detail.
 
 ## Baseline
 
