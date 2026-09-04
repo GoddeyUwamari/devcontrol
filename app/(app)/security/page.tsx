@@ -59,11 +59,32 @@ const FALLBACK_ANOMALIES: AnomalyDetection[] = [
   { id: '3', organizationId: 'demo', type: 'error_rate_spike', severity: 'info', resourceName: 'auth-service', resourceType: 'Lambda', metric: 'errors', currentValue: 120, expectedValue: 40, deviation: 200, historicalAverage: 40, historicalStdDev: 8, detectedAt: new Date(), timeWindow: '1h', title: 'Failed login attempts spike', description: '', aiExplanation: '', impact: '', recommendation: '', confidence: 72, status: 'active' },
 ]
 
+// Demo-only shape for the "Top Security Gaps" panel — real mode computes this
+// from riskScore.factors (see `riskFactors` below) and must never fall back to
+// these numbers; an undefined/errored riskScore in real mode has to render as
+// "not yet evaluated," not as a fabricated "Public Access: 78 Warning".
+const FALLBACK_RISK_FACTORS: { label: string; score: number; status: 'Pass' | 'Warning' }[] = [
+  { label: 'Encryption',         score: 95, status: 'Pass' },
+  { label: 'Public Access',       score: 78, status: 'Warning' },
+  { label: 'Backup Coverage',     score: 88, status: 'Pass' },
+  { label: 'Compliance',          score: 92, status: 'Pass' },
+  { label: 'Resource Management', score: 71, status: 'Warning' },
+]
+
+// Encryption/Public Access/Backup Coverage/Resource Management are risk-score
+// factors computed from real per-resource AWS attributes (aws_resources.is_encrypted/
+// is_public/has_backup/is_orphaned) — not evaluated compliance-framework results and
+// not individually browsable findings, so unlike Compliance (which now points at the
+// real account-findings list) they have no per-issue detail page. `/infrastructure`
+// is the real, existing page over that same resource data — the honest destination
+// until/unless a dedicated resource-issue view exists. Do not point these at
+// /security/public-access, /security/resources, /security/encryption, or
+// /security/backup — none of those routes exist (dead links, confirmed 404).
 const actionMap: Record<string, { statement: string; link: string }> = {
-  'Public Access':       { statement: 'Public access exposed — remediate now',  link: '/security/public-access' },
-  'Resource Management': { statement: 'Resource management gaps detected',      link: '/security/resources' },
-  'Encryption':          { statement: 'Encryption coverage incomplete',         link: '/security/encryption' },
-  'Backup Coverage':     { statement: 'Backup coverage below threshold',        link: '/security/backup' },
+  'Public Access':       { statement: 'Public access exposed — remediate now',  link: '/infrastructure' },
+  'Resource Management': { statement: 'Resource management gaps detected',      link: '/infrastructure' },
+  'Encryption':          { statement: 'Encryption coverage incomplete',         link: '/infrastructure' },
+  'Backup Coverage':     { statement: 'Backup coverage below threshold',        link: '/infrastructure' },
   'Compliance':          { statement: 'Unresolved security findings',           link: '/security#findings' },
 }
 
@@ -110,7 +131,12 @@ export default function SecurityPage() {
     staleTime: 2 * 60 * 1000,
   })
 
-  const { data: accountFindings, isLoading: findingsLoading } = useAccountSecurityFindings(5, !demoMode)
+  // No limit: the account_security_findings API has no server-side cap (see
+  // AccountSecurityFindingsRepository.getActive), and the panel below shows an
+  // explicit "N unresolved findings" count derived from this list — silently
+  // capping the fetch to a handful and rendering it with no count is exactly
+  // the truncation-without-disclosure this hook previously caused.
+  const { data: accountFindings, isLoading: findingsLoading } = useAccountSecurityFindings(undefined, !demoMode)
 
   // Real accounts: compliance + orphaned-resource scanning haven't run yet (backend stub),
   // so an undefined/errored fetch must not fall back to a fabricated "87 Good" — treat it
@@ -137,37 +163,53 @@ export default function SecurityPage() {
   const failingFrameworks = displayFrameworks.filter((f) => f.status === 'failing').length
   const totalFrameworks = displayFrameworks.length
 
+  // Real accounts: while riskTrend hasn't loaded yet (or errored), there is no
+  // real trend to report — `riskTrend` itself (not a defaulted direction/pct)
+  // gates whether the trend badge renders at all, so a transient loading window
+  // or a fetch failure can never flash a fabricated "+5 pts this month".
+  const hasTrendData = demoMode || riskTrend != null
   const trendDirection = riskTrend?.trend ?? 'stable'
   const trendPct = riskTrend?.trendPercentage ?? 5
   const TrendIcon = trendDirection === 'declining' ? TrendingDown : TrendingUp
   const trendColor = trendDirection === 'declining' ? '#DC2626' : '#059669'
   const trendLabel = trendDirection === 'declining' ? `-${Math.abs(trendPct)} pts this month` : `+${Math.abs(trendPct)} pts this month`
 
+  // Demo mode is the only case where a synthetic 30-day sine-wave curve is
+  // legitimate. A real account with no trend history yet must render as
+  // genuinely empty (chartData.length === 0 already renders the "Security
+  // posture stable" placeholder below) rather than a fabricated up-trend.
   const chartData = riskTrend?.history?.map((point) => ({
     date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     score: point.score,
-  })) ?? Array.from({ length: 30 }, (_, i) => ({
-    date: new Date(Date.now() - (29 - i) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    score: 82 + Math.round(Math.sin(i / 5) * 4 + (i / 30) * 5),
-  }))
+  })) ?? (demoMode
+    ? Array.from({ length: 30 }, (_, i) => ({
+        date: new Date(Date.now() - (29 - i) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        score: 82 + Math.round(Math.sin(i / 5) * 4 + (i / 30) * 5),
+      }))
+    : [])
 
-  const riskFactors: { label: string; score: number; status: 'Pass' | 'Warning' }[] = riskScore?.factors
-    ? [
-        { label: 'Encryption',         score: riskScore.factors.encryption,         status: riskScore.factors.encryption >= 80 ? 'Pass' : 'Warning' },
-        { label: 'Public Access',       score: riskScore.factors.publicAccess,       status: riskScore.factors.publicAccess >= 80 ? 'Pass' : 'Warning' },
-        { label: 'Backup Coverage',     score: riskScore.factors.backup,             status: riskScore.factors.backup >= 80 ? 'Pass' : 'Warning' },
-        { label: 'Compliance',          score: riskScore.factors.compliance,         status: riskScore.factors.compliance >= 80 ? 'Pass' : 'Warning' },
-        { label: 'Resource Management', score: riskScore.factors.resourceManagement, status: riskScore.factors.resourceManagement >= 80 ? 'Pass' : 'Warning' },
-      ]
-    : [
-        { label: 'Encryption',         score: 95, status: 'Pass' },
-        { label: 'Public Access',       score: 78, status: 'Warning' },
-        { label: 'Backup Coverage',     score: 88, status: 'Pass' },
-        { label: 'Compliance',          score: 92, status: 'Pass' },
-        { label: 'Resource Management', score: 71, status: 'Warning' },
-      ]
+  // Same principle as `score`/`findings`/`displayFrameworks` above: a real account
+  // with no risk score yet (loading, or an errored fetch) must never render
+  // FALLBACK_RISK_FACTORS' demo-shaped "Public Access: 78 Warning" as though it
+  // were this account's actual posture. The Top Security Gaps panel below treats
+  // demoMode || riskScore?.factors as the "have real data" signal, same as here.
+  const riskFactors: { label: string; score: number; status: 'Pass' | 'Warning' }[] = demoMode
+    ? FALLBACK_RISK_FACTORS
+    : (riskScore?.factors
+        ? [
+            { label: 'Encryption',         score: riskScore.factors.encryption,         status: riskScore.factors.encryption >= 80 ? 'Pass' : 'Warning' },
+            { label: 'Public Access',       score: riskScore.factors.publicAccess,       status: riskScore.factors.publicAccess >= 80 ? 'Pass' : 'Warning' },
+            { label: 'Backup Coverage',     score: riskScore.factors.backup,             status: riskScore.factors.backup >= 80 ? 'Pass' : 'Warning' },
+            { label: 'Compliance',          score: riskScore.factors.compliance,         status: riskScore.factors.compliance >= 80 ? 'Pass' : 'Warning' },
+            { label: 'Resource Management', score: riskScore.factors.resourceManagement, status: riskScore.factors.resourceManagement >= 80 ? 'Pass' : 'Warning' },
+          ]
+        : [])
 
-  const topAnomalies = anomalyData?.anomalies?.slice(0, 3) ?? FALLBACK_ANOMALIES
+  // Same principle: a real account with no anomaly data yet (loading, or an
+  // errored fetch) must render the honest "No active anomalies" empty state
+  // below, never FALLBACK_ANOMALIES' demo incidents ("Unusual IAM activity
+  // detected", "S3 bucket public access enabled") as though they were real.
+  const topAnomalies = demoMode ? FALLBACK_ANOMALIES : (anomalyData?.anomalies?.slice(0, 3) ?? [])
 
   const findings: FindingDisplay[] = demoMode
     ? FALLBACK_FINDINGS
@@ -420,10 +462,12 @@ export default function SecurityPage() {
               <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Security Score Trend</h2>
               <p className="text-xs text-slate-500 leading-relaxed">30-day posture history</p>
             </div>
-            <div className="flex items-center gap-1.5">
-              <TrendIcon size={13} style={{ color: trendColor }} />
-              <span className="text-xs font-semibold" style={{ color: trendColor }}>{trendLabel}</span>
-            </div>
+            {hasTrendData && (
+              <div className="flex items-center gap-1.5">
+                <TrendIcon size={13} style={{ color: trendColor }} />
+                <span className="text-xs font-semibold" style={{ color: trendColor }}>{trendLabel}</span>
+              </div>
+            )}
           </div>
           {trendLoading ? (
             <div className="h-44 flex items-center justify-center"><Loader2 size={18} className="text-slate-300" /></div>
@@ -454,19 +498,27 @@ export default function SecurityPage() {
         <div className="bg-white rounded-xl p-5 sm:p-8 border border-slate-100">
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-5">Top Security Gaps</h2>
           <div className="flex flex-col gap-4">
-            {riskFactors.filter(rf => rf.status === 'Warning').sort((a, b) => a.score - b.score).map(({ label, score: s }) => (
-              <div key={label}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs text-amber-500 font-semibold">{actionMap[label]?.statement ?? label}</span>
-                  <a href={actionMap[label]?.link ?? '/security'} className="text-xs font-semibold text-violet-600 no-underline">Review →</a>
-                </div>
-                <div className="h-1 bg-slate-100 rounded-full">
-                  <div className="h-full rounded-full bg-amber-500 transition-all duration-500" style={{ width: `${s}%` }} />
-                </div>
-              </div>
-            ))}
-            {riskFactors.filter(rf => rf.status === 'Warning').length === 0 && (
-              <div className="py-5 text-center"><p className="text-xs text-green-600 font-medium">All security checks passing</p></div>
+            {riskLoading && !demoMode ? (
+              <div className="py-5 flex items-center justify-center"><Loader2 size={18} className="text-slate-300 animate-spin" /></div>
+            ) : !demoMode && !riskScore?.factors ? (
+              <div className="py-5 text-center"><p className="text-xs text-slate-400 font-medium">Not yet evaluated</p></div>
+            ) : (
+              <>
+                {riskFactors.filter(rf => rf.status === 'Warning').sort((a, b) => a.score - b.score).map(({ label, score: s }) => (
+                  <div key={label}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-amber-500 font-semibold">{actionMap[label]?.statement ?? label}</span>
+                      <a href={actionMap[label]?.link ?? '/security'} className="text-xs font-semibold text-violet-600 no-underline">Review →</a>
+                    </div>
+                    <div className="h-1 bg-slate-100 rounded-full">
+                      <div className="h-full rounded-full bg-amber-500 transition-all duration-500" style={{ width: `${s}%` }} />
+                    </div>
+                  </div>
+                ))}
+                {riskFactors.filter(rf => rf.status === 'Warning').length === 0 && (
+                  <div className="py-5 text-center"><p className="text-xs text-green-600 font-medium">All security checks passing</p></div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -561,9 +613,18 @@ export default function SecurityPage() {
 
         {/* Account Security Findings */}
         <div id="findings" className="bg-white rounded-xl p-5 border border-slate-100">
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center justify-between mb-1">
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Account Security Findings</h2>
           </div>
+          {/* Explicit count so the list above/below it can never silently imply
+              "this is everything" when it isn't — this panel fetches the full,
+              unlimited findings list (see useAccountSecurityFindings(undefined, ...)
+              above), so this count is always the true total, not a page/slice size. */}
+          {!findingsLoading && (
+            <p className="text-xs text-slate-400 mb-4">
+              {findings.length === 0 ? 'No unresolved findings' : `${findings.length} unresolved finding${findings.length === 1 ? '' : 's'}`}
+            </p>
+          )}
           <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto">
             {findingsLoading && !demoMode ? (
               <div className="py-8 flex items-center justify-center"><Loader2 size={18} className="text-slate-300 animate-spin" /></div>

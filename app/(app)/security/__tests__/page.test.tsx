@@ -12,7 +12,7 @@
  * unrelated sections.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SecurityPage from '../page'
 
@@ -83,7 +83,13 @@ describe('Security Overview — compliance framework fallback', () => {
 
     expect(screen.getByText('My Custom Framework')).toBeInTheDocument()
     expect(screen.queryByText('CIS AWS Benchmark')).not.toBeInTheDocument()
-    expect(screen.queryByText('Not yet evaluated')).not.toBeInTheDocument()
+    // "Not yet evaluated" is no longer a safe blanket page-wide check here: the
+    // Top Security Gaps panel (this file's useRiskScore mock always returns no
+    // data) now legitimately renders that same string for its own, unrelated
+    // reason — see security-overview-truthfulness.test.tsx. Scope to the
+    // Compliance Status KPI card specifically, which is what this test is
+    // actually about.
+    expect(within(screen.getByText('Compliance Status').closest('div')!).queryByText('Not yet evaluated')).not.toBeInTheDocument()
   })
 
   it('B. empty framework data for a real account renders an honest unevaluated state, no fallback percentages', () => {
