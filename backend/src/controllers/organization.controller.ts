@@ -5,6 +5,7 @@
 
 import { Request, Response } from 'express';
 import { organizationService } from '../services/organization.service';
+import { trackFunnelEventOnce } from '../services/analyticsEvents';
 
 export class OrganizationController {
   /**
@@ -370,13 +371,32 @@ export class OrganizationController {
         region,
       });
 
-      // Emit onboarding event for AWS connection
+      // Both of the following fire only after setAWSCredentials() has
+      // resolved -- i.e. after the encrypted credentials were durably
+      // persisted. Note this endpoint never calls AWS to validate the
+      // credentials, so these mark successful credential persistence /
+      // connection setup, not a verified AWS connection.
       const user = (req as any).user;
       if (user) {
         const { emitOnboardingEvent } = require('../services/onboardingEvents');
         emitOnboardingEvent('aws:connected', {
           organizationId: id,
           userId: user.userId || user.id,
+        });
+
+        // trackFunnelEventOnce (not trackFunnelEvent): this endpoint has no
+        // constraint preventing repeat calls for the same org -- each call
+        // just overwrites the previously stored credentials -- so a plain
+        // trackFunnelEvent would record a new "completion" on every
+        // resave/reconnect. Once-per-org matches the canonical primary AWS
+        // flow's semantics (aws.routes.ts) despite the different dedup
+        // mechanism underneath (DB unique constraint there, INSERT ... WHERE
+        // NOT EXISTS guard here).
+        await trackFunnelEventOnce({
+          organizationId: id,
+          userId: user.userId || user.id,
+          eventName: 'aws_connection_completed',
+          properties: { source: 'legacy_access_key' },
         });
       }
 
