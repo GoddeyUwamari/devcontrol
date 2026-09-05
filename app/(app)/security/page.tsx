@@ -309,11 +309,11 @@ export default function SecurityPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Security Command Center</h1>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Cloud Security Command Center</h1>
             {demoMode && <span className="text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Demo Mode</span>}
             {isPreliminary && <span className="text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Preliminary — full scan pending</span>}
           </div>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Security posture, anomaly detection, compliance frameworks, and audit trail</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real-time security posture, risk detection, compliance, and audit visibility.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={handleRunScan} disabled={isScanning}

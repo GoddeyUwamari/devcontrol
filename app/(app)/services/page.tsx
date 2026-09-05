@@ -308,7 +308,7 @@ export default function ServicesPage() {
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-violet-600 mb-1">Services</p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Services Intelligence</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Performance, cost, and risk across all services — real time.</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real-time visibility into performance, cost, and risk across your entire cloud environment.</p>
         </div>
         <div className="flex items-center gap-2">
           <button

@@ -117,7 +117,7 @@ export default function DORAMetricsPage() {
         <div>
           <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">DevOps</p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5 leading-tight">Engineering Intelligence</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed mb-2 max-w-lg">DORA metrics benchmarked against industry standards · updated automatically from your deployment pipeline.</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed mb-2 max-w-lg">DORA metrics and engineering performance, automatically measured from your deployment pipeline.</p>
           <div className="flex items-center gap-1.5 text-xs" style={{ color: dataStateColor }}>
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dataStateColor }} />
             {dataStateLabel} · Last updated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
