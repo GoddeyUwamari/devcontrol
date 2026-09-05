@@ -336,7 +336,7 @@ export default function MonitoringPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Infrastructure Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Real-time AWS infrastructure health, powered by CloudWatch · {coverageLabel} · {cloudWatchMetrics?.region || AWS_REGION}</p>
+          <p className="text-sm text-slate-500 leading-relaxed">Real-time AWS infrastructure health, performance, cost, and risk. {coverageLabel} · {cloudWatchMetrics?.region || AWS_REGION}</p>
           {cloudWatchMetrics && (
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium bg-green-50 border border-green-200 rounded-full px-3 py-1 text-green-600">

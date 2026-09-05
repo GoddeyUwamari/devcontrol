@@ -90,8 +90,8 @@ export default function CostOptimizationPage() {
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1100px] mx-auto">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-2">Cost Optimization</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real savings opportunities identified from your connected AWS account.</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-2">Cloud Cost Optimization</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Identify waste, reduce cloud spend, and continuously optimize infrastructure costs.</p>
         </div>
         <div className="flex flex-col items-start sm:items-end gap-1.5">
           <button

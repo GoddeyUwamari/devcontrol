@@ -377,7 +377,7 @@ export default function CostsPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500 font-medium leading-relaxed">
-            Real-time AWS spend tracking, forecasting, and AI-powered savings recommendations
+            Real-time AWS spend visibility, forecasting, and AI-powered cost optimization.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
