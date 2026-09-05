@@ -43,13 +43,6 @@ const FRAMEWORK_STANDARDS: Array<{
   { key: 'pci', badge: 'PCI-DSS', badgeBg: '#FAEEDA', badgeColor: '#633806', name: 'PCI-DSS', desc: 'Payment card industry data security standards for handling cardholder data.', attribution: 'security_hub' },
 ];
 
-const PRE_BUILT_FRAMEWORKS = [
-  { badge: 'CIS AWS', badgeBg: '#EEEDFE', badgeColor: '#3C3489', name: 'CIS Benchmarks',  desc: 'Industry-standard security configuration guidelines for AWS infrastructure.', checks: '215 checks · Most popular · Recommended baseline', recommended: true },
-  { badge: 'SOC 2',   badgeBg: '#E1F5EE', badgeColor: '#085041', name: 'SOC 2 Type II',   desc: 'Security, availability, and confidentiality controls for service organizations.', checks: '180 checks · Enterprise', recommended: false },
-  { badge: 'NIST',    badgeBg: '#E6F1FB', badgeColor: '#0C447C', name: 'NIST CSF',         desc: 'Cybersecurity framework for identifying and managing security risk.', checks: '162 checks · Government', recommended: false },
-  { badge: 'PCI-DSS', badgeBg: '#FAEEDA', badgeColor: '#633806', name: 'PCI-DSS',          desc: 'Payment card industry data security standards for handling cardholder data.', checks: '139 checks · Payments', recommended: false },
-];
-
 function frameworkNameFor(frameworkId: string, frameworks: ComplianceFramework[]): string {
   return frameworks.find((f) => f.id === frameworkId)?.name ?? 'Custom framework';
 }
@@ -92,7 +85,6 @@ export default function ComplianceFrameworksPage() {
   const displayError = isDemoActive ? null : error;
 
   const handleCreateFramework = () => setCreateModalOpen(true);
-  const handleStartScan = (_: string) => setCreateModalOpen(true);
   const handleRunScan = (id: string) => handleExecuteScan(id);
   const handleViewDetails = (id: string) => {
     const real = frameworks.find(f => f.id === id);
@@ -296,35 +288,6 @@ export default function ComplianceFrameworksPage() {
           <div className="bg-white rounded-2xl p-12 text-center border border-slate-100">
             <RefreshCw size={22} className="text-slate-300 mx-auto mb-3 animate-spin" />
             <p className="text-sm text-slate-500">Loading frameworks...</p>
-          </div>
-        ) : displayFrameworks.length === 0 ? (
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Start with a pre-built framework</p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-              {PRE_BUILT_FRAMEWORKS.map(fw => (
-                <div key={fw.name} className={`bg-white rounded-xl border p-4 cursor-pointer hover:border-slate-300 transition-colors ${fw.recommended ? 'border-violet-200' : 'border-slate-200'}`}>
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: fw.badgeBg, color: fw.badgeColor }}>{fw.badge}</span>
-                    {fw.recommended && <span className="text-xs font-bold px-2 py-0.5 rounded bg-violet-600 text-white uppercase">Recommended</span>}
-                  </div>
-                  <p className="text-sm font-semibold text-slate-900 mb-1">{fw.name}</p>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-2">{fw.desc}</p>
-                  <p className="text-xs text-slate-500 mb-3">{fw.checks}</p>
-                  <button onClick={() => handleStartScan(fw.name)} className="w-full text-xs text-violet-700 bg-transparent border border-violet-600 rounded-lg py-1.5 cursor-pointer hover:bg-violet-50 transition-colors font-medium">
-                    {fw.recommended ? 'Scan with CIS →' : 'Start scan →'}
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-12 text-center">
-              <p className="text-sm font-semibold text-slate-900 mb-2.5">Your AWS environment is not currently being evaluated</p>
-              <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-lg mx-auto">Add a compliance framework to detect misconfigurations, policy violations, and audit risks before they become incidents.</p>
-              <p className="text-xs text-slate-500 mb-6">Run a baseline scan to see your compliance posture.</p>
-              <div className="flex flex-col items-center gap-2">
-                <button onClick={handleCreateFramework} className="bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg px-6 py-2.5 text-sm font-medium cursor-pointer transition-colors">Start Baseline Scan (CIS AWS)</button>
-                <p className="text-xs text-slate-500">~2–5 minutes · read-only · no infrastructure changes required</p>
-              </div>
-            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-3">

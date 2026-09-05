@@ -285,6 +285,59 @@ describe('Test 6 — no fake framework check counts', () => {
   })
 })
 
+describe('REAL MODE + ZERO FRAMEWORK EVALUATIONS — no dead-code regression of the pre-built-framework empty state', () => {
+  /**
+   * Regression coverage for a bug found after the initial truthfulness fix:
+   * a legacy "Start with a pre-built framework" empty state (fake
+   * `checks` counts + `handleStartScan` → `CreateFrameworkModal`) previously
+   * lived behind a `displayFrameworks.length === 0` branch. That branch has
+   * been deleted; this test locks in that real mode with zero frameworks
+   * and zero evaluations never resurrects it.
+   */
+  beforeEach(() => {
+    frameworksState = { frameworks: [], loading: false, error: null }
+    scansState = { scans: [], loading: false, error: null }
+  })
+
+  it('renders no fake check counts', () => {
+    renderPage()
+    expect(screen.queryByText(/215 checks/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/180 checks/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/162 checks/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/139 checks/)).not.toBeInTheDocument()
+  })
+
+  it('renders no "Scan with CIS" or "Start scan" actionable-looking buttons', () => {
+    renderPage()
+    expect(screen.queryByText(/Scan with CIS/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Start scan/)).not.toBeInTheDocument()
+  })
+
+  it('renders "🔒 Not yet available" as the only replacement control, disabled, for every framework', () => {
+    renderPage()
+    const locks = screen.getAllByText(/Not yet available/)
+    expect(locks.length).toBe(4)
+    for (const label of locks) {
+      const button = label.closest('button')!
+      expect(button).toBeDisabled()
+    }
+  })
+
+  it('clicking the unavailable control invokes no scan handler, opens no framework-builder modal, and makes no API request', () => {
+    renderPage()
+    const locks = screen.getAllByText(/Not yet available/)
+    for (const label of locks) {
+      fireEvent.click(label.closest('button')!)
+    }
+
+    expect(mockExecuteScan).not.toHaveBeenCalled()
+    expect(mockCreateFramework).not.toHaveBeenCalled()
+    expect(mockUpdateFramework).not.toHaveBeenCalled()
+    expect(mockDeleteFramework).not.toHaveBeenCalled()
+    expect(screen.queryByText('Create Framework')).not.toBeInTheDocument()
+  })
+})
+
 describe('AWS Security Hub panel — real mode', () => {
   it('shows a "Not connected" status and never implies Security Hub is already integrated', () => {
     renderPage()
