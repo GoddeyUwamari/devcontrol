@@ -77,7 +77,6 @@ const pricingFeatures = [
   'Auto-remediation workflows',
   'Audit logs & reporting',
   'Slack & PagerDuty integration',
-  'Full API & webhook access',
   'Priority support (4hr SLA)',
 ]
 

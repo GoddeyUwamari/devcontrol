@@ -1,6 +1,6 @@
 'use client'
 
-import { Terminal, GitBranch, Shield, BarChart3, Zap, RefreshCw, Bell, Cloud } from 'lucide-react'
+import { GitBranch, Shield, BarChart3, Zap, RefreshCw, Bell, Cloud } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 function useWindowWidth() {
@@ -27,7 +27,6 @@ export default function DevOpsPage() {
     { icon: Bell, title: 'Smart Alert Routing', desc: 'Route the right alerts to the right people via Slack, PagerDuty, or email. Reduce alert fatigue with intelligent thresholds that learn your infrastructure\'s normal behavior.' },
     { icon: Cloud, title: 'Multi-Account AWS Control', desc: 'Manage every AWS account and region from a single dashboard. Full resource inventory, cost breakdown, and security posture across your entire cloud estate.' },
     { icon: BarChart3, title: 'Unified Observability Dashboard', desc: 'Costs, security, performance, and DORA metrics in one place. Stop switching between 6 different tools and get the full picture of your infrastructure health instantly.' },
-    { icon: Terminal, title: 'Full API & CLI Access', desc: 'Integrate DevControl into your existing workflows. REST API, webhooks, and Terraform provider support let you embed infrastructure intelligence into your CI/CD pipeline.' },
   ]
 
   const impacts = [
@@ -123,7 +122,7 @@ export default function DevOpsPage() {
                 flexDirection: isMobile ? 'column' : 'row',
                 fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
               }}>
-                {['GitHub & AWS integration', 'No agents required', 'Full API access'].map(t => (
+                {['GitHub & AWS integration', 'No agents required'].map(t => (
                   <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ color: '#a78bfa' }}>✓</span> {t}
                   </span>
@@ -445,7 +444,6 @@ export default function DevOpsPage() {
                   'Unified view of costs, security, and performance',
                   'Drift detection before it causes production incidents',
                   'Smart alerts routed to the right engineer instantly',
-                  'Full API access to integrate with existing workflows',
                 ].map(point => (
                   <div key={point} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <span style={{ color: '#7c3aed', fontWeight: 700, marginTop: '1px' }}>✓</span>
