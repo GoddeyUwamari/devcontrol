@@ -168,7 +168,7 @@ export default function DashboardPage() {
   const lastWsUpdateRef = useRef<Record<string, number>>({})
 
   const [dismissedInsights, setDismissedInsights] = useState<string[]>([])
-  const [costDateRange, setCostDateRange] = useState<'7d' | '30d' | '90d' | '6mo' | '1yr'>('90d')
+  const [costDateRange, setCostDateRange] = useState<'7d' | '30d' | '90d' | '6mo' | '1yr'>('7d')
   const [riskScoreDateRange, setRiskScoreDateRange] = useState<DateRange>('30d')
   const [lastSynced] = useState<Date>(demoMode ? DEMO_LAST_SYNCED : new Date())
   const [insightDismissed, setInsightDismissed] = useState(false)
@@ -643,7 +643,7 @@ export default function DashboardPage() {
               : 'Connect your AWS account to get started · Setup takes 2 minutes'}
           </p>
         </div>
-        {isAwsConnected && (
+        {isAwsConnected && topRecs.length > 0 && (
           <a href="/cost-optimization" className="inline-flex items-center gap-1.5 bg-[var(--text-accent)] text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap shrink-0">
             {isBillingSyncing ? `Review Savings (${topRecs.length}) →` : `Review Savings (${topRecs.length}) →`}
           </a>
