@@ -643,11 +643,6 @@ export default function DashboardPage() {
               : 'Connect your AWS account to get started · Setup takes 2 minutes'}
           </p>
         </div>
-        {isAwsConnected && topRecs.length > 0 && (
-          <a href="/cost-optimization" className="inline-flex items-center gap-1.5 bg-[var(--text-accent)] text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap shrink-0">
-            {isBillingSyncing ? `Review Savings (${topRecs.length}) →` : `Review Savings (${topRecs.length}) →`}
-          </a>
-        )}
       </div>
 
       {/* ── RISK ALERT BANNER ── */}
@@ -690,6 +685,13 @@ export default function DashboardPage() {
           </div>
           <a href="/cost-optimization" className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap shrink-0">
             Review all
+          </a>
+        </div>
+      )}
+      {isAwsConnected && topRecs.length > 0 && (
+        <div className="flex justify-end mb-3">
+          <a href="/cost-optimization" className="inline-flex items-center gap-1.5 bg-[var(--text-accent)] text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap shrink-0">
+            {isBillingSyncing ? `Review Savings (${topRecs.length}) →` : `Review Savings (${topRecs.length}) →`}
           </a>
         </div>
       )}
