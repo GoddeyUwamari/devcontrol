@@ -6,7 +6,7 @@ import {
   Layers, Server, DollarSign, Shield, GitBranch,
   Plus, Rocket, Activity, Building, TrendingDown,
   BarChart3, FileText, Sparkles, AlertTriangle, CheckSquare,
-  ClipboardList, Users, Building2, Code, ChevronDown, BellDot,
+  ClipboardList, Users, Building2, ChevronDown, BellDot,
   Search, Menu, X, Bell, Clock, Target, SlidersHorizontal, Wrench,
 } from 'lucide-react';
 import {
@@ -98,7 +98,6 @@ export const navItems: NavItem[] = [
       { label: 'Teams', href: '/teams', icon: Users, desc: 'Team management and access' },
       { label: 'Enterprise', href: '/enterprise', icon: Building2, desc: 'Enterprise controls' },
       { label: 'Auto-Remediation', href: '/remediation', icon: Wrench, desc: 'Approval-based infrastructure fixes', badge: 'Enterprise' },
-      { label: 'Developers', href: '/developers', icon: Code, desc: 'API keys and integrations' },
     ],
   },
 ];
@@ -165,7 +164,6 @@ export const mobileSections = [
       { label: 'Teams', href: '/teams' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Auto-Remediation', href: '/remediation' },
-      { label: 'Developers', href: '/developers' },
     ],
   },
 ];
