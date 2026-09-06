@@ -5,18 +5,21 @@
 
 import { Pool } from 'pg';
 import { ChatContext } from '../services/ai-chat.service';
-import awsCostService from '../services/aws-cost.service';
+import awsCostService, { MonthlyCost } from '../services/aws-cost.service';
 import { AlertHistoryRepository } from './alert-history.repository';
 import { DORAMetricsRepository } from './dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
+import { AWSResourcesRepository } from './awsResources.repository';
 
 export class AIChatContextRepository {
   private alertHistoryRepository: AlertHistoryRepository;
   private doraMetricsService: DORAMetricsService;
+  private awsResourcesRepository: AWSResourcesRepository;
 
   constructor(private pool: Pool) {
     this.alertHistoryRepository = new AlertHistoryRepository(pool);
     this.doraMetricsService = new DORAMetricsService(new DORAMetricsRepository(pool), pool);
+    this.awsResourcesRepository = new AWSResourcesRepository(pool);
   }
 
   /**
@@ -25,8 +28,13 @@ export class AIChatContextRepository {
   async gatherContext(organizationId: string): Promise<ChatContext> {
     console.log(`[AI Chat Context] Gathering context for org: ${organizationId}`);
 
+    // Fetched up front (not inside the Promise.all below) because getCostData's
+    // estimated-fallback branch needs it too -- one query, reused, rather than
+    // a second identical lookup.
+    const resourceDataAsOf = await this.getDiscoveryFreshness(organizationId);
+
     const [costs, resources, alerts, services, anomalies, dora] = await Promise.all([
-      this.getCostData(organizationId),
+      this.getCostData(organizationId, resourceDataAsOf),
       this.getResourceData(organizationId),
       this.getAlertData(organizationId),
       this.getServices(organizationId),
@@ -34,7 +42,7 @@ export class AIChatContextRepository {
       this.getDORAMetrics(organizationId),
     ]);
 
-    console.log(`[AI Chat Context] Context gathered: ${services.length} services, $${costs.current} spend`);
+    console.log(`[AI Chat Context] Context gathered: ${services.length} services, $${costs.current} spend (source: ${costs.source})`);
 
     return {
       services,
@@ -44,7 +52,34 @@ export class AIChatContextRepository {
       anomalies,
       dora,
       timeRange: 'Last 30 days',
+      resourceDataAsOf,
     };
+  }
+
+  /**
+   * Latest successful (status = 'completed') discovery run's completion
+   * timestamp for this organization -- reuses the existing discovery-job
+   * repository/table (AWSResourcesRepository.getLatestDiscoveryJob(),
+   * resource_discovery_jobs; see database/migrations-admin/008_create_aws_resources.sql)
+   * rather than a second discovery mechanism or a manufactured timestamp.
+   *
+   * Deliberately returns null (never a fabricated/guessed value) when the
+   * most recent row isn't itself a completed run -- e.g. it's still
+   * 'running' or ended 'failed' -- since that row's completed_at is either
+   * absent or would misrepresent an unfinished/failed attempt as fresh data.
+   * Also null if no discovery job has ever run for this org at all.
+   */
+  private async getDiscoveryFreshness(organizationId: string): Promise<string | null> {
+    try {
+      const job = await this.awsResourcesRepository.getLatestDiscoveryJob(organizationId);
+      if (job && job.status === 'completed' && job.completed_at) {
+        return new Date(job.completed_at).toISOString();
+      }
+      return null;
+    } catch (error: any) {
+      console.error('[AI Chat Context] Error getting discovery freshness:', error.message);
+      return null;
+    }
   }
 
   /**
@@ -97,21 +132,44 @@ export class AIChatContextRepository {
 
   /**
    * Get cost data.
-   * Reuses awsCostService.fetchMonthlyCosts() — the same live Cost Explorer call
-   * that powers the Dashboard and AISummaryService — instead of re-deriving spend
-   * from aws_resources with a second, independently-maintained query. The
-   * previous-period comparison reuses awsCostService.fetchCostTrend() at the same
-   * '90d' range the Dashboard requests, via computeMonthOverMonthChange() above.
+   * Reuses awsCostService.fetchMonthlyCosts() — the same live-Cost-Explorer-or-
+   * cached call that powers the Dashboard and AISummaryService — instead of
+   * re-deriving spend from aws_resources with a second, independently-maintained
+   * query. The previous-period comparison reuses awsCostService.fetchCostTrend()
+   * at the same '90d' range the Dashboard requests, via
+   * computeMonthOverMonthChange() above.
+   *
+   * Distinguishes three states, mirroring stats.controller.ts's
+   * getDashboardStats() actual-vs-estimated logic exactly (same threshold,
+   * same fallback query) rather than inventing a new definition:
+   *   - 'actual': a real Cost Explorer result (fresh or served from
+   *     awsCostService's own cache — monthlyCost.fetchedAt says which, see
+   *     aws-cost.service.ts).
+   *   - 'estimated': Cost Explorer returned nothing/failed, but aws_resources
+   *     has a usable estimated_monthly_cost sum — the same DB fallback the
+   *     Dashboard already uses. Its "as of" is the discovery job's freshness
+   *     (discoveryAsOf), since that's what populated estimated_monthly_cost.
+   *   - 'unavailable': neither exists. current/previous are 0 here, but that
+   *     0 must never be read as confirmed spend — see formatContext() and
+   *     getFallbackResponse() in ai-chat.service.ts, both of which branch on
+   *     `source` before printing a dollar figure.
    */
-  private async getCostData(organizationId: string): Promise<ChatContext['costs']> {
+  private async getCostData(
+    organizationId: string,
+    discoveryAsOf: string | null
+  ): Promise<ChatContext['costs']> {
+    let monthlyCost: MonthlyCost | null = null;
     try {
-      const [monthlyCost, costTrend] = await Promise.all([
-        awsCostService.fetchMonthlyCosts(organizationId),
-        awsCostService.fetchCostTrend(organizationId, '90d').catch((error: any) => {
-          console.error('[AI Chat Context] Error getting cost trend:', error.message);
-          return [];
-        }),
-      ]);
+      monthlyCost = await awsCostService.fetchMonthlyCosts(organizationId);
+    } catch (error: any) {
+      console.error('[AI Chat Context] Error getting live cost data:', error.message);
+    }
+
+    if (monthlyCost && monthlyCost.total > 0) {
+      const costTrend = await awsCostService.fetchCostTrend(organizationId, '90d').catch((error: any) => {
+        console.error('[AI Chat Context] Error getting cost trend:', error.message);
+        return [];
+      });
 
       const topSpenders = [...monthlyCost.byService]
         .sort((a, b) => b.amount - a.amount)
@@ -119,7 +177,7 @@ export class AIChatContextRepository {
         .map(item => ({
           service: item.service,
           cost: Math.round(item.amount),
-          percentage: monthlyCost.total > 0 ? (item.amount / monthlyCost.total) * 100 : 0,
+          percentage: monthlyCost!.total > 0 ? (item.amount / monthlyCost!.total) * 100 : 0,
         }));
 
       const monthOverMonth = this.computeMonthOverMonthChange(costTrend);
@@ -129,16 +187,48 @@ export class AIChatContextRepository {
         previous: monthOverMonth ? Math.round(monthOverMonth.previousTotal) : Math.round(monthlyCost.total),
         changePercent: monthOverMonth ? monthOverMonth.changePercent : null,
         topSpenders,
-      };
-    } catch (error: any) {
-      console.error('[AI Chat Context] Error getting cost data:', error.message);
-      return {
-        current: 0,
-        previous: 0,
-        changePercent: null,
-        topSpenders: [],
+        source: 'actual',
+        asOf: monthlyCost.fetchedAt ?? null,
       };
     }
+
+    // Cost Explorer returned nothing (or threw) -- fall back to the same
+    // DB estimate stats.controller.ts's getDashboardStats() already uses,
+    // rather than silently reporting a bare $0 as if it were confirmed spend.
+    try {
+      const estimateResult = await this.pool.query(
+        `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
+        [organizationId]
+      );
+      const estimateTotal = parseFloat(estimateResult.rows[0]?.total || 0);
+
+      if (estimateTotal > 0) {
+        return {
+          current: Math.round(estimateTotal),
+          previous: Math.round(estimateTotal),
+          changePercent: null,
+          topSpenders: [],
+          source: 'estimated',
+          asOf: discoveryAsOf,
+        };
+      }
+    } catch (error: any) {
+      console.error('[AI Chat Context] Error getting cost estimate fallback:', error.message);
+    }
+
+    // Neither a live/cached Cost Explorer result nor a DB estimate exists --
+    // genuinely no cost data. current/previous are 0 by necessity of the
+    // ChatContext shape, but `source: 'unavailable'` is what formatContext()
+    // and getFallbackResponse() actually check before ever printing a dollar
+    // amount, so this 0 can never surface as a confirmed figure.
+    return {
+      current: 0,
+      previous: 0,
+      changePercent: null,
+      topSpenders: [],
+      source: 'unavailable',
+      asOf: null,
+    };
   }
 
   /**
