@@ -175,7 +175,7 @@ export function AIChatWidget() {
                     AWS Infrastructure Assistant
                   </h3>
                   <p className="text-gray-600 dark:text-gray-400 text-sm max-w-xs mx-auto">
-                    Ask me anything about your costs, resources, or reliability. I have access to your real-time AWS data.
+                    Ask me anything about your costs, resources, or reliability. I have access to your latest synced AWS cost and resource data.
                   </p>
                 </div>
 

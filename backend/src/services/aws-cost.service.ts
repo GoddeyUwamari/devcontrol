@@ -34,7 +34,7 @@ interface ResourceCost {
   tags?: Record<string, string>
 }
 
-interface MonthlyCost {
+export interface MonthlyCost {
   total: number
   byService: {
     service: string
@@ -44,6 +44,16 @@ interface MonthlyCost {
     start: string
     end: string
   }
+  // When this result was actually obtained from Cost Explorer -- set once, at
+  // the moment of a real fetch, and carried unchanged through the cache on
+  // every subsequent cache hit (see monthlyCostCache below). Consumers that
+  // need to know whether they're looking at a fresh or a cached result should
+  // compare this against Date.now(), not assume the value is current just
+  // because they received it just now. Optional so any caller pattern-matching
+  // on the pre-existing shape (there are several: stats.controller.ts,
+  // infrastructure.controller.ts, aws.routes.ts, system-intelligence.service.ts,
+  // cloudwatch.service.ts) is unaffected by this additive field.
+  fetchedAt?: string
 }
 
 interface MonthlyCostCacheEntry {
@@ -449,8 +459,11 @@ class AWSCostService {
       const fetchPromise = (async () => {
         const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
         const result = await orgService.fetchMonthlyCosts()
-        this.monthlyCostCache.set(organizationId, { data: result, timestamp: Date.now() })
-        return result
+        // Stamped once, right here, at the moment the real Cost Explorer call
+        // actually succeeded -- not when a later cache hit happens to be read.
+        const resultWithTimestamp: MonthlyCost = { ...result, fetchedAt: new Date().toISOString() }
+        this.monthlyCostCache.set(organizationId, { data: resultWithTimestamp, timestamp: Date.now() })
+        return resultWithTimestamp
       })().finally(() => {
         this.monthlyCostInFlight.delete(organizationId)
       })
@@ -510,6 +523,7 @@ class AWSCostService {
           start: startOfMonth.toISOString().split('T')[0],
           end: endOfToday.toISOString().split('T')[0],
         },
+        fetchedAt: new Date().toISOString(),
       }
     } catch (error) {
       console.error('Error fetching monthly costs:', error)
