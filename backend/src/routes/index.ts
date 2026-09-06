@@ -33,6 +33,7 @@ import userPreferencesRoutes from './user-preferences.routes';
 import tenantsRoutes from './tenants.routes';
 import usageRoutes from './usage.routes';
 import newsletterRoutes from './newsletter.routes';
+import activationFunnelRoutes from './activation-funnel.routes';
 
 const router = Router();
 
@@ -74,6 +75,7 @@ router.use('/user/preferences', userPreferencesRoutes);
 router.use('/tenants', tenantsRoutes);
 router.use('/usage', usageRoutes);
 router.use('/newsletter', newsletterRoutes);
+router.use('/admin/activation-funnel', activationFunnelRoutes);
 router.use('/', logsRoutes);
 
 // API root
