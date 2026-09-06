@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
 import costOptimizationService from '../services/cost-optimization.service';
 import { RemediationService } from '../services/remediation.service';
 import { pool } from '../config/database';
@@ -7,7 +8,29 @@ import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../typ
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
 
 const repository = new CostRecommendationsRepository();
+const analysisRunsRepository = new CostAnalysisRunsRepository();
 const remediationService = new RemediationService(pool);
+
+/**
+ * Maps a raw analyzeAllResources() failure into a safe, non-leaking message
+ * for GET /api/cost-recommendations/analysis-runs -- mirrors the same three
+ * cases CostRecommendationsController.analyze()'s own catch block already
+ * classifies for its HTTP error response, kept as a separate small helper
+ * (rather than a refactor of that already-working catch block) to avoid
+ * touching its tested, existing behavior. Never returns the raw error --
+ * see cost_analysis_runs.error_message's column comment in
+ * 202609060900_create_cost_analysis_runs.sql.
+ */
+function classifyRunFailureMessage(rawMessage: string | null): string | null {
+  if (!rawMessage) return null;
+  if (rawMessage.includes('AWS_NOT_CONNECTED')) {
+    return 'No AWS account connected for this organization.';
+  }
+  if (rawMessage.includes('not enabled')) {
+    return 'AWS Cost Explorer or CloudWatch is not enabled for this account.';
+  }
+  return 'The analysis did not complete due to an unexpected error.';
+}
 
 export class CostRecommendationsController {
   /**
@@ -146,11 +169,28 @@ export class CostRecommendationsController {
    * Analyze AWS resources and generate recommendations
    */
   async analyze(req: Request, res: Response): Promise<void> {
+    // Tracks this manual invocation in cost_analysis_runs, separately from
+    // resource_discovery_jobs (which only the scheduled discovery cron
+    // writes to -- see 202609060900_create_cost_analysis_runs.sql for why
+    // the two are not merged). Bookkeeping failures here are logged and
+    // swallowed, never allowed to block or alter the real analysis behavior
+    // below, which is unchanged from before this run-tracking was added.
+    let organizationIdForRun: string | undefined;
+    let runId: string | undefined;
+
     try {
       const organizationId = (req as any).user?.organizationId;
       if (!organizationId) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
+      }
+      organizationIdForRun = organizationId;
+
+      try {
+        const run = await analysisRunsRepository.create(organizationId);
+        runId = run.id;
+      } catch (trackingErr) {
+        console.error('Failed to create cost_analysis_runs row (non-fatal, analysis proceeds):', trackingErr);
       }
 
       console.log(`Starting cost optimization analysis for org ${organizationId}...`);
@@ -196,6 +236,19 @@ export class CostRecommendationsController {
         });
       }
 
+      // Only ever marked completed here, after analyzeAllResources() and
+      // reconciliation have both actually succeeded -- never speculatively.
+      if (runId) {
+        try {
+          await analysisRunsRepository.markCompleted(runId, organizationId, {
+            recommendationsFound: insertedCount,
+            totalPotentialSavings: stats.total_potential_savings,
+          });
+        } catch (trackingErr) {
+          console.error('Failed to mark cost_analysis_runs completed (non-fatal):', trackingErr);
+        }
+      }
+
       const response: ApiResponse = {
         success: true,
         data: {
@@ -210,6 +263,16 @@ export class CostRecommendationsController {
       res.json(response);
     } catch (error: any) {
       console.error('Error analyzing AWS resources:', error);
+
+      // Real error preserved server-side for diagnostics; never marked
+      // completed -- a thrown analysis always ends this run as 'failed'.
+      if (runId && organizationIdForRun) {
+        try {
+          await analysisRunsRepository.markFailed(runId, organizationIdForRun, error?.message || 'Unknown error');
+        } catch (trackingErr) {
+          console.error('Failed to mark cost_analysis_runs failed (non-fatal):', trackingErr);
+        }
+      }
 
       // Check for specific AWS errors
       if (error.message && error.message.includes('AWS_NOT_CONNECTED')) {
@@ -233,6 +296,51 @@ export class CostRecommendationsController {
       const response: ApiResponse = {
         success: false,
         error: `Failed to analyze AWS resources: ${error.message || 'Unknown error'}`,
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * GET /api/cost-recommendations/analysis-runs
+   * History of manual "Run cost analysis" invocations for this org, latest
+   * first -- the manual-run counterpart to
+   * GET /api/aws-resources/discovery/jobs (which only covers the scheduled
+   * discovery cron). See cost-analysis-runs.repository.ts and
+   * 202609060900_create_cost_analysis_runs.sql.
+   *
+   * Deliberately does not return the raw error_message column -- see
+   * classifyRunFailureMessage() above.
+   */
+  async getAnalysisRuns(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+      const runs = await analysisRunsRepository.getLatest(organizationId, limit);
+
+      const data = runs.map((run) => ({
+        id: run.id,
+        status: run.status,
+        recommendations_found: run.recommendations_found,
+        total_potential_savings: run.total_potential_savings,
+        started_at: run.started_at,
+        completed_at: run.completed_at,
+        created_at: run.created_at,
+        error_message: run.status === 'failed' ? classifyRunFailureMessage(run.error_message) : null,
+      }));
+
+      const response: ApiResponse = { success: true, data };
+      res.json(response);
+    } catch (error) {
+      console.error('Error fetching cost analysis runs:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: 'Failed to fetch cost analysis runs',
       };
       res.status(500).json(response);
     }
