@@ -21,7 +21,7 @@ export const startupFAQs = [
   },
   {
     question: 'Do you integrate with our existing tools?',
-    answer: 'Yes—we integrate with GitHub, GitLab, Slack, PagerDuty, Datadog, and 20+ other tools. Our API and webhooks let you build custom integrations for your specific workflow.',
+    answer: 'Yes—we integrate with GitHub, GitLab, Slack, PagerDuty, Datadog, and 20+ other tools.',
   },
   {
     question: 'What happens when we grow beyond the Starter plan?',
