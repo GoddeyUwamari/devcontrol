@@ -6,17 +6,37 @@ import type {
   ApiResponse,
 } from '../types';
 
+// Sanitized shape returned by GET /api/cost-recommendations/analysis-runs --
+// see CostRecommendationsController.getAnalysisRuns(): error_message here is
+// already a safe, classified string (or null), never the raw stored error.
+export interface CostAnalysisRun {
+  id: string;
+  status: 'running' | 'completed' | 'failed';
+  recommendations_found: number | null;
+  total_potential_savings: string | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  error_message: string | null;
+}
+
 export const costRecommendationsService = {
-  // Get all recommendations
+  // Get all recommendations. limit/offset are already supported by the backend
+  // (repository.findAll -- ORDER BY potential_savings DESC, created_at DESC) but were
+  // not previously exposed here; no backend change needed to add them.
   getAll: async (filters?: {
     severity?: string;
     status?: string;
     resourceType?: string;
+    limit?: number;
+    offset?: number;
   }): Promise<CostRecommendation[]> => {
     const params = new URLSearchParams();
     if (filters?.severity) params.append('severity', filters.severity);
     if (filters?.status) params.append('status', filters.status);
     if (filters?.resourceType) params.append('resource_type', filters.resourceType);
+    if (filters?.limit != null) params.append('limit', String(filters.limit));
+    if (filters?.offset != null) params.append('offset', String(filters.offset));
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
     const response = await api.get<ApiResponse<any>>(
@@ -98,6 +118,16 @@ export const costRecommendationsService = {
       },
       timestamp: result.timestamp,
     };
+  },
+
+  // History of manual "Run cost analysis" invocations, latest first -- the
+  // manual-run counterpart to awsResourcesService.getDiscoveryJobs(), which
+  // only covers the separate scheduled discovery cron.
+  getAnalysisRuns: async (limit: number = 5): Promise<CostAnalysisRun[]> => {
+    const response = await api.get<ApiResponse<CostAnalysisRun[]>>(
+      `/api/cost-recommendations/analysis-runs?limit=${limit}`
+    );
+    return handleApiResponse(response);
   },
 
   // Mark recommendation as resolved

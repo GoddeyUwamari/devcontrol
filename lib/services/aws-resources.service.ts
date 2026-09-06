@@ -51,6 +51,29 @@ export interface ComplianceIssue {
   resource_arn?: string;
 }
 
+// Raw shape of a resource_discovery_jobs row (backend/src/repositories/awsResources.repository.ts
+// getDiscoveryJobs() / getLatestDiscoveryJob() -- SELECT *, no camelCase transform applied server-side).
+// 'running' covers a job that started but has not yet reached completed_at -- including one that
+// crashed mid-run and never got a terminal status written.
+export interface DiscoveryJob {
+  id: string;
+  organization_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  resources_discovered: number;
+  resources_updated: number;
+  resources_deleted: number;
+  regions: string[];
+  resource_types: string[];
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  compliance_scan_completed: boolean;
+  // True only if CostOptimizationService.analyzeAllResources() completed without
+  // error during this job -- see database/migrations-admin/021_wire_cost_recommendations_scanning.sql.
+  cost_analysis_completed: boolean;
+}
+
 export interface ResourceStats {
   total_resources: number;
   by_type: Record<string, number>;
@@ -140,9 +163,12 @@ export const awsResourcesService = {
   },
 
   /**
-   * Get discovery job history
+   * Get discovery job history, most recent first (backend orders by created_at DESC).
+   * jobs[0] is the latest job -- covers both the manual "Discover" trigger and the
+   * 6-hourly automatic cron (backend/src/jobs/resourceDiscovery.job.ts), since both
+   * write to the same resource_discovery_jobs table via the same code path.
    */
-  getDiscoveryJobs: async (limit: number = 10) => {
+  getDiscoveryJobs: async (limit: number = 10): Promise<DiscoveryJob[]> => {
     const response = await api.get(`/api/aws-resources/discovery/jobs?limit=${limit}`);
     return handleApiResponse(response);
   },

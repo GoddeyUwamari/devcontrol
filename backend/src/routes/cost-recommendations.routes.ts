@@ -25,6 +25,10 @@ router.get('/', authenticateToken, (req, res) => controller.getAll(req, res));
 // Get recommendation statistics
 router.get('/stats', authenticateToken, (req, res) => controller.getStats(req, res));
 
+// Manual cost-analysis run history (must be registered before the /:id route
+// below, or Express would treat "analysis-runs" as an :id param)
+router.get('/analysis-runs', authenticateToken, (req, res) => controller.getAnalysisRuns(req, res));
+
 // Analyze AWS resources (create recommendations)
 router.post('/analyze', authenticateToken, (req, res) => controller.analyze(req, res));
 
