@@ -26,6 +26,7 @@ import {
   ISSUE_EC2_UNUSED_ELASTIC_IP,
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   ISSUE_EBS_UNATTACHED_VOLUME,
+  ISSUE_EBS_GP2_TO_GP3,
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
 } from '../config/optimization-rules';
@@ -44,6 +45,18 @@ import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usa
 // legitimately include weekly/monthly batch jobs that a 7-day window would
 // misclassify as unused.
 const LAMBDA_LOW_USAGE_MAX_INVOCATIONS_30D = 10;
+
+// AWS-published gp3 baseline performance included at no extra charge --
+// exceeding either means real AWS charges for provisioned IOPS/throughput
+// that this codebase does not price anywhere, so gp2_to_gp3 must not
+// recommend migration for a volume that would need it.
+const GP3_INCLUDED_BASELINE_IOPS = 3000;
+const GP3_INCLUDED_BASELINE_THROUGHPUT_MIBPS = 125;
+// AWS-published gp2 IOPS formula, used only as a fallback when AWS doesn't
+// report a real Iops value on the volume itself.
+const GP2_BASELINE_IOPS_PER_GB = 3;
+const GP2_MIN_IOPS = 100;
+const GP2_MAX_IOPS = 16000;
 
 interface OptimizationIssue {
   resourceId: string;
@@ -105,11 +118,12 @@ class CostOptimizationService {
     }
 
     try {
-      const [idleEC2, oversizedRDS, unusedEIPs, unattachedEBS, s3Lifecycle, lowUsageLambda, riOpportunities] = await Promise.all([
+      const [idleEC2, oversizedRDS, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, riOpportunities] = await Promise.all([
         this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch),
         this.detectOversizedRDSInstances(clients.rds),
         this.detectUnusedElasticIPs(clients.ec2),
         this.detectUnattachedEBSVolumes(clients.ec2),
+        this.detectGp2ToGp3Migrations(clients.ec2),
         this.detectS3LifecycleOptimization(clients.s3, clients.cloudWatch),
         this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch),
         this.detectReservedInstanceOpportunities(clients.ec2),
@@ -132,6 +146,7 @@ class CostOptimizationService {
         { issue: ISSUE_RDS_OVERSIZED_INSTANCE, success: oversizedRDS.success, recommendations: oversizedRDS.issues.map(toRequest) },
         { issue: ISSUE_EC2_UNUSED_ELASTIC_IP, success: unusedEIPs.success, recommendations: unusedEIPs.issues.map(toRequest) },
         { issue: ISSUE_EBS_UNATTACHED_VOLUME, success: unattachedEBS.success, recommendations: unattachedEBS.issues.map(toRequest) },
+        { issue: ISSUE_EBS_GP2_TO_GP3, success: gp2ToGp3.success, recommendations: gp2ToGp3.issues.map(toRequest) },
         { issue: ISSUE_S3_LIFECYCLE_OPTIMIZATION, success: s3Lifecycle.success, recommendations: s3Lifecycle.issues.map(toRequest) },
         { issue: ISSUE_LAMBDA_LOW_USAGE, success: lowUsageLambda.success, recommendations: lowUsageLambda.issues.map(toRequest) },
       ];
@@ -357,6 +372,113 @@ class CostOptimizationService {
       console.error('Error detecting unattached EBS volumes:', error);
       return { success: false, issues: [] };
     }
+  }
+
+  /**
+   * Detect gp2 volumes that would cost less on gp3 at the same provisioned
+   * size, with no performance regression.
+   *
+   * Savings is the storage-rate delta only (estimateEBSMonthlyCost('gp2', ...)
+   * minus estimateEBSMonthlyCost('gp3', ...), the same shared pricing helper
+   * discovery and ebs_unattached already use -- never a second EBS pricing
+   * calculation). This is a real, non-speculative saving *only* for volumes
+   * whose performance profile stays within gp3's included baseline (3,000
+   * IOPS / 125 MiB/s) -- gp3's provisioned-IOPS/throughput pricing above
+   * that baseline is not implemented anywhere in this codebase, so a volume
+   * that would need it is skipped entirely rather than understating its
+   * true post-migration cost.
+   *
+   * gp2's IOPS is either the value AWS itself reports on the volume, or (if
+   * that's absent) derived from AWS's published gp2 formula: baseline
+   * 100 IOPS, +3 IOPS per provisioned GB, capped at 16,000 IOPS. Either way,
+   * exceeding gp3's 3,000-IOPS free baseline is a hard exclusion, not a
+   * lower-confidence recommendation -- there is no partial-credit savings
+   * figure to offer once that line is crossed. gp2 has no independently
+   * configurable throughput (unlike gp3/io1/io2), so no separate throughput
+   * gate is evaluated; the IOPS gate is the sole, conservative eligibility
+   * check.
+   *
+   * Missing/invalid VolumeId, size, or a volume type other than gp2 all
+   * result in the volume being skipped -- never a fabricated or zero
+   * savings figure.
+   */
+  private async detectGp2ToGp3Migrations(ec2Client: EC2Client): Promise<DetectorResult> {
+    try {
+      const command = new DescribeVolumesCommand({
+        Filters: [
+          {
+            Name: 'volume-type',
+            Values: ['gp2'],
+          },
+        ],
+      });
+
+      const response = await ec2Client.send(command);
+      const issues: OptimizationIssue[] = [];
+
+      for (const volume of response.Volumes || []) {
+        if (!volume.VolumeId) continue;
+        if (volume.VolumeType !== 'gp2') continue; // defensive -- the API filter already guarantees this
+
+        const sizeGB = volume.Size;
+        if (typeof sizeGB !== 'number' || !Number.isFinite(sizeGB) || sizeGB <= 0) continue; // insufficient evidence -- skip, never assume a size
+
+        const currentIops = this.resolveGp2Iops(volume.Iops, sizeGB);
+        if (currentIops === null || currentIops > GP3_INCLUDED_BASELINE_IOPS) continue; // exceeds gp3's free baseline -- cannot defensibly price, skip
+
+        const currentMonthlyCost = estimateEBSMonthlyCost('gp2', sizeGB);
+        const proposedMonthlyCost = estimateEBSMonthlyCost('gp3', sizeGB);
+        const monthlySavings = currentMonthlyCost - proposedMonthlyCost;
+        if (!(monthlySavings > 0)) continue; // no real saving to report (also guards against pricing-table drift)
+
+        const nameTag = volume.Tags?.find((tag) => tag.Key === 'Name');
+
+        issues.push({
+          resourceId: volume.VolumeId,
+          resourceName: nameTag?.Value || volume.VolumeId,
+          resourceType: 'EBS',
+          issue: ISSUE_EBS_GP2_TO_GP3,
+          description: `This ${sizeGB}GB gp2 volume (~${currentIops} IOPS) can migrate to gp3 at the same size for a lower storage rate, with no performance change -- it stays within gp3's included ${GP3_INCLUDED_BASELINE_IOPS.toLocaleString()} IOPS / ${GP3_INCLUDED_BASELINE_THROUGHPUT_MIBPS} MiB/s baseline, so no paid provisioned performance is required.`,
+          potentialSavings: monthlySavings,
+          severity: this.calculateSeverity(monthlySavings),
+          awsRegion: volume.AvailabilityZone?.slice(0, -1) || process.env.AWS_REGION || 'us-east-1',
+          metadata: {
+            volume_type: 'gp2',
+            recommended_volume_type: 'gp3',
+            size_gb: sizeGB,
+            current_iops: currentIops,
+            gp3_included_baseline_iops: GP3_INCLUDED_BASELINE_IOPS,
+            gp3_included_baseline_throughput_mibps: GP3_INCLUDED_BASELINE_THROUGHPUT_MIBPS,
+            current_monthly_cost: currentMonthlyCost,
+            proposed_monthly_cost: proposedMonthlyCost,
+            savings_basis: 'estimated: gp2-to-gp3 storage-rate difference at the same provisioned size; limited to volumes whose IOPS stays within gp3\'s included baseline; does not model paid gp3 provisioned IOPS/throughput above that baseline',
+            availability_zone: volume.AvailabilityZone,
+            encrypted: volume.Encrypted || false,
+          },
+        });
+      }
+
+      return { success: true, issues };
+    } catch (error) {
+      console.error('Error detecting gp2-to-gp3 migration opportunities:', error);
+      return { success: false, issues: [] };
+    }
+  }
+
+  /**
+   * gp2's real, AWS-reported IOPS value when present; otherwise AWS's
+   * published gp2 formula (baseline 100, +3 per GB, capped at 16,000) as a
+   * fallback derived strictly from already-discovered size. Returns null
+   * only when neither a real value nor a valid size is available -- the
+   * caller must treat that as "cannot evaluate the safety gate" and skip
+   * the volume, never assume it's within baseline.
+   */
+  private resolveGp2Iops(reportedIops: number | undefined, sizeGB: number): number | null {
+    if (typeof reportedIops === 'number' && Number.isFinite(reportedIops) && reportedIops > 0) {
+      return reportedIops;
+    }
+    if (typeof sizeGB !== 'number' || !Number.isFinite(sizeGB) || sizeGB <= 0) return null;
+    return Math.min(GP2_MAX_IOPS, Math.max(GP2_MIN_IOPS, GP2_BASELINE_IOPS_PER_GB * sizeGB));
   }
 
   /**
