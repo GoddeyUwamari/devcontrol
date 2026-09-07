@@ -6,6 +6,7 @@ import { RemediationService } from '../services/remediation.service';
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
+import { ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, getOptimizationRules, getOptimizationRuleSummary } from '../config/optimization-rules';
 
 const repository = new CostRecommendationsRepository();
 const analysisRunsRepository = new CostAnalysisRunsRepository();
@@ -125,6 +126,40 @@ export class CostRecommendationsController {
   }
 
   /**
+   * GET /api/cost-recommendations/optimization-rules
+   * The Optimization Rule Registry's catalog + summary counts (see
+   * config/optimization-rules.ts). Not org-scoped -- the registry is static,
+   * code-defined metadata, not data derived from any organization's AWS
+   * account -- so this never queries the database. Requires authentication
+   * only, consistent with every other route on this router.
+   *
+   * This is the single source the frontend now reads to know which checks
+   * are actually implemented vs merely registered/planned -- see
+   * app/(app)/cost-optimization/page.tsx, which previously hardcoded its own
+   * SCAN_CHECKS list and could silently drift from what analyzeAllResources()
+   * actually runs.
+   */
+  async getOptimizationRules(req: Request, res: Response): Promise<void> {
+    try {
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          rules: getOptimizationRules(),
+          summary: getOptimizationRuleSummary(),
+        },
+      };
+      res.json(response);
+    } catch (error) {
+      console.error('Error fetching optimization rule catalog:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: 'Failed to fetch optimization rule catalog',
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
    * GET /api/cost-recommendations/:id
    * Get a single recommendation by ID
    */
@@ -212,7 +247,7 @@ export class CostRecommendationsController {
       // lifecycle -- synthetic, fleet-level aggregate identity, not a
       // discrete resource -- and keep the prior unconditional delete+recreate
       // behavior.
-      await repository.deleteActiveByIssue(organizationId, 'Reserved Instance Opportunity');
+      await repository.deleteActiveByIssue(organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
       const riInsertedCount = await repository.createBulk(riRecommendations, organizationId);
 
       const insertedCount = nonRIInsertedCount + riInsertedCount;

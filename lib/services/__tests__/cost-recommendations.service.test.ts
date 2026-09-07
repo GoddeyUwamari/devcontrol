@@ -137,6 +137,29 @@ describe('cross-method consistency (the actual domain-value guarantee behind Das
   });
 });
 
+describe('costRecommendationsService.getOptimizationRules', () => {
+  it('fetches the rule catalog from the registry endpoint and passes it through untransformed', async () => {
+    const catalog = {
+      rules: [
+        { id: 'ec2_idle', service: 'EC2', name: 'Idle EC2 instances', detail: 'CPU under 5%', status: 'implemented', issue: 'Idle Instance' },
+        { id: 'ec2_rightsizing', service: 'EC2', name: 'EC2 rightsizing', detail: 'Oversized relative to usage', status: 'planned' },
+      ],
+      summary: {
+        totalRules: 2,
+        implementedCount: 1,
+        plannedCount: 1,
+        services: [{ service: 'EC2', implementedCount: 1, plannedCount: 1, totalCount: 2 }],
+      },
+    };
+    mockedGet.mockResolvedValue(fakeResponse(catalog));
+
+    const result = await costRecommendationsService.getOptimizationRules();
+
+    expect(mockedGet).toHaveBeenCalledWith('/api/cost-recommendations/optimization-rules');
+    expect(result).toEqual(catalog);
+  });
+});
+
 describe('costRecommendationsService.analyze', () => {
   it('transforms the analyze response used by /cost-optimization "Run scan"', async () => {
     mockedPost.mockResolvedValue(

@@ -127,6 +127,32 @@ describe('Cost Optimization page: real data sources, not client-side re-aggregat
   })
 })
 
+describe('Cost Optimization page: optimization checks come from the backend rule registry, not a hardcoded list', () => {
+  it('no longer defines its own authoritative SCAN_CHECKS list', () => {
+    expect(source).not.toMatch(/const SCAN_CHECKS/)
+  })
+
+  it('fetches the rule catalog from the real registry endpoint', () => {
+    expect(source).toMatch(/queryFn:\s*costRecommendationsService\.getOptimizationRules/)
+    expect(source).toMatch(/queryKey:\s*\['optimization-rules'\]/)
+  })
+
+  it('derives the "what DevControl checks" list from fetched rules, not a literal array', () => {
+    expect(source).toMatch(/implementedRules\.map/)
+  })
+
+  it('never claims full/complete coverage of the registered rule catalog', () => {
+    expect(source).not.toMatch(/30\/30/)
+    expect(source).not.toMatch(/all 30/i)
+    expect(source).not.toMatch(/fully optimized/i)
+  })
+
+  it('discloses coverage as a fraction of the registry total, not a fixed literal count', () => {
+    expect(source).toMatch(/ruleCatalog\.summary\.implementedCount/)
+    expect(source).toMatch(/ruleCatalog\.summary\.totalRules/)
+  })
+})
+
 describe('Cost Optimization page: manual analysis is never mislabeled as scheduled discovery', () => {
   it('merges both sources through pickLatestAnalysis rather than assuming the discovery job is authoritative', () => {
     expect(source).toMatch(/pickLatestAnalysis\(/)

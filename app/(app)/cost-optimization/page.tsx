@@ -19,6 +19,7 @@ import { costRecommendationsService } from '@/lib/services/cost-recommendations.
 import awsAccountsService from '@/lib/services/aws-accounts.service';
 import { awsResourcesService } from '@/lib/services/aws-resources.service';
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
+import type { OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { annualizeMonthly, cn } from '@/lib/utils';
@@ -47,15 +48,16 @@ function severityToBadge(sev: RecommendationSeverity): { severity: 'high' | 'med
   return { severity: sev.toLowerCase() as 'high' | 'medium' | 'low', label: sev.charAt(0) + sev.slice(1).toLowerCase() };
 }
 
-// The 4 detection categories that actually run in
-// costOptimizationService.analyzeAllResources() on the backend -- not an
-// exhaustive list of every possible AWS cost optimization.
-const SCAN_CHECKS = [
-  { name: 'Idle EC2 instances', detail: 'CPU under 5% averaged over 7 days' },
-  { name: 'Oversized RDS instances', detail: 'Non-production databases on production-sized instance classes' },
-  { name: 'Unused Elastic IPs', detail: 'Allocated IPs not attached to a running instance' },
-  { name: 'Reserved Instance opportunities', detail: 'On-demand instances that could shift to Reserved pricing' },
-];
+// Fallback used only while the registry query hasn't resolved yet or fails --
+// never the authoritative list. The Optimization Rule Registry
+// (backend/src/config/optimization-rules.ts, served via
+// GET /api/cost-recommendations/optimization-rules) is now the single source
+// of truth for which checks are implemented vs planned; the frontend no
+// longer maintains its own list.
+const EMPTY_RULE_CATALOG: OptimizationRuleCatalog = {
+  rules: [],
+  summary: { totalRules: 0, implementedCount: 0, plannedCount: 0, services: [] },
+};
 
 const SOURCE_LABEL: Record<AnalysisSource, string> = {
   scheduled: 'Scheduled analysis',
@@ -204,6 +206,20 @@ export default function CostOptimizationPage() {
     refetchOnWindowFocus: false,
     enabled: !isDemoActive,
   });
+
+  // The Optimization Rule Registry catalog -- authoritative source for which
+  // checks are implemented vs planned. This is code-defined backend metadata,
+  // not org-scoped AWS data, so it changes rarely; a long staleTime avoids
+  // needless refetches.
+  const { data: ruleCatalog = EMPTY_RULE_CATALOG } = useQuery({
+    queryKey: ['optimization-rules'],
+    queryFn: costRecommendationsService.getOptimizationRules,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    enabled: !isDemoActive,
+  });
+  const implementedRules = ruleCatalog.rules.filter((rule) => rule.status === 'implemented');
+  const plannedRules = ruleCatalog.rules.filter((rule) => rule.status === 'planned');
 
   const invalidateRecommendationData = () => {
     queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] });
@@ -411,9 +427,9 @@ export default function CostOptimizationPage() {
                 </>
               )}
               <div className="flex flex-col items-center gap-1.5 mb-2">
-                {SCAN_CHECKS.map((check) => (
-                  <span key={check.name} className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-                    <CheckCircle2 size={12} className="text-green-600 shrink-0" /> {check.name}
+                {implementedRules.map((rule) => (
+                  <span key={rule.id} className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                    <CheckCircle2 size={12} className="text-green-600 shrink-0" /> {rule.name}
                   </span>
                 ))}
               </div>
@@ -507,21 +523,63 @@ export default function CostOptimizationPage() {
                   <CardHeader className="px-5 pb-0"><h2 className="text-sm font-bold text-slate-900">What DevControl checks</h2></CardHeader>
                   <CardContent className="px-5">
                     <div className="flex flex-col gap-3">
-                      {SCAN_CHECKS.map((check) => (
-                        <div key={check.name} className="flex items-start gap-2">
+                      {implementedRules.map((rule) => (
+                        <div key={rule.id} className="flex items-start gap-2">
                           <Server size={13} className="text-slate-400 mt-0.5 shrink-0" />
                           <div>
-                            <p className="text-xs font-semibold text-slate-700">{check.name}</p>
-                            <p className="text-[11px] text-slate-400 leading-snug">{check.detail}</p>
+                            <p className="text-xs font-semibold text-slate-700">{rule.name}</p>
+                            <p className="text-[11px] text-slate-400 leading-snug">{rule.detail}</p>
                           </div>
                         </div>
                       ))}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-3 leading-relaxed border-t border-slate-100 pt-3">
-                      These are the categories DevControl currently checks — not a complete list of every possible AWS cost optimization.
+                      {implementedRules.length} active check{implementedRules.length !== 1 ? 's' : ''} today — not a complete list of every possible AWS cost optimization.
                     </p>
                   </CardContent>
                 </Card>
+
+                {/* ── COVERAGE / PLANNED ──
+                    Registry-derived, never a hardcoded "every rule active"
+                    claim: an implementedCount below totalRules is expected
+                    and disclosed, not hidden. See config/optimization-rules.ts. */}
+                {ruleCatalog.summary.totalRules > 0 && (
+                  <Card>
+                    <CardHeader className="px-5 pb-0"><h2 className="text-sm font-bold text-slate-900">Coverage</h2></CardHeader>
+                    <CardContent className="px-5">
+                      <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+                        {ruleCatalog.summary.implementedCount} of {ruleCatalog.summary.totalRules} registered checks are active today, across {ruleCatalog.summary.services.length} AWS services DevControl has rules for.
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {ruleCatalog.summary.services.map((s) => (
+                          <span
+                            key={s.service}
+                            className={cn(
+                              'text-[11px] font-medium px-2 py-0.5 rounded-full',
+                              s.implementedCount > 0 ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'
+                            )}
+                          >
+                            {s.service}
+                          </span>
+                        ))}
+                      </div>
+                      {plannedRules.length > 0 && (
+                        <>
+                          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-t border-slate-100 pt-3 mb-2">
+                            Planned / coming soon
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            {plannedRules.map((rule) => (
+                              <p key={rule.id} className="text-[11px] text-slate-400 leading-snug">
+                                {rule.service} — {rule.name}
+                              </p>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </div>
           )}

@@ -3,7 +3,9 @@ import { trackFunnelEventOnce } from './analyticsEvents';
 import {
   EC2Client,
   paginateDescribeInstances,
+  paginateDescribeVolumes,
   Instance,
+  Volume,
   DescribeVolumesCommand,
 } from '@aws-sdk/client-ec2';
 import {
@@ -45,6 +47,7 @@ import {
   DiscoveryResult,
   DiscoveryJobStatus,
   EC2InstanceMetadata,
+  EBSVolumeMetadata,
   RDSInstanceMetadata,
   S3BucketMetadata,
 } from '../types/aws-resources.types';
@@ -58,14 +61,18 @@ import { securityAuditService } from './securityAudit.service';
 import { PoolClient } from 'pg';
 import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry } from './resourceExplorer.service';
 import { ResourceReconciliationService } from './resourceReconciliation.service';
+import { ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY } from '../config/optimization-rules';
+import { getBucketLifecycleStatus } from './s3-lifecycle.util';
+import { estimateEBSMonthlyCost } from '../config/aws-pricing';
 
 /**
  * Resource types allowed by subscription tier
  */
 const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
-  free: ['ec2', 'rds', 's3'], // 3 types - Core compute, database, storage
+  free: ['ec2', 'ebs', 'rds', 's3'], // 4 types - Core compute (+ its attached storage), database, storage
   starter: [
     'ec2',           // Compute instances
+    'ebs',           // Block storage volumes
     'rds',           // Relational databases
     's3',            // Object storage
     'lambda',        // Serverless functions
@@ -80,15 +87,15 @@ const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
     'aurora',        // Aurora DB clusters
     'sqs',           // SQS queues
     'sns',           // SNS topics
-  ], // 15 types
+  ], // 16 types
   pro: [
-    'ec2', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer',
+    'ec2', 'ebs', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer',
     'eks', 'dynamodb', 'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
-  ], // All 15 types
+  ], // All 16 types
   enterprise: [
-    'ec2', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer',
+    'ec2', 'ebs', 'rds', 's3', 'lambda', 'ecs', 'vpc', 'load-balancer',
     'eks', 'dynamodb', 'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
-  ], // All 15 types
+  ], // All 16 types
 };
 
 export class AWSResourceDiscoveryService {
@@ -205,6 +212,34 @@ export class AWSResourceDiscoveryService {
       } else {
         console.log(`⏭️  [Discovery] Skipping EC2 instances (not available in ${tier} tier)`);
         skippedTypes.push('ec2');
+      }
+
+      // Discover EBS volumes. Own dedicated discovery + reconcile() call
+      // (same pattern as S3/CloudFront below) rather than folding into the
+      // generic Resource Explorer path -- EBS needs real per-volume metadata
+      // (size, type, state) for the ebs_unattached analyzer, which the
+      // generic path's ARN-only presence signal can't provide.
+      let ebsDiscoverySucceeded = false;
+      const ebsArnsFound = new Set<string>();
+      if (this.isResourceTypeAllowed('ebs', allowedTypes)) {
+        console.log(`🔎 [Discovery] Discovering EBS volumes...`);
+        try {
+          const ebsResources = await this.discoverEBSVolumes(organizationId, awsClients.ec2!, awsClients.region);
+          for (const resource of ebsResources) {
+            ebsArnsFound.add(resource.resource_arn);
+            const result = await this.upsertResource(client, resource);
+            if (result === 'created') totalDiscovered++;
+            else if (result === 'updated') totalUpdated++;
+          }
+          ebsDiscoverySucceeded = true;
+          console.log(`✅ [Discovery] Found ${ebsResources.length} EBS volumes`);
+        } catch (error: any) {
+          console.error(`❌ [Discovery] EBS discovery failed:`, error.message);
+          errors.push(`EBS: ${error.message}`);
+        }
+      } else {
+        console.log(`⏭️  [Discovery] Skipping EBS volumes (not available in ${tier} tier)`);
+        skippedTypes.push('ebs');
       }
 
       // Discover RDS databases
@@ -412,6 +447,20 @@ export class AWSResourceDiscoveryService {
         }
       }
 
+      if (ebsDiscoverySucceeded) {
+        try {
+          const ebsReconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, ebsArnsFound, ['ebs']);
+          console.log(
+            `✅ [Discovery] EBS reconciliation complete (${ebsReconciliation.resetCount} confirmed present, ` +
+            `${ebsReconciliation.incrementedCount} absent this scan, ${ebsReconciliation.terminatedArns.length} newly terminated)`
+          );
+          resourcesTerminated += ebsReconciliation.terminatedArns.length;
+        } catch (error: any) {
+          console.error(`❌ [Discovery] EBS reconciliation failed:`, error.message);
+          errors.push(`EBS reconciliation: ${error.message}`);
+        }
+      }
+
       // Compliance scan: evaluate every currently-known resource for this org against
       // real encryption/public-access/backup/tag/SOC2/HIPAA checks, persisting genuine
       // compliance_issues instead of the stubbed always-[] value. Excludes soft-terminated
@@ -584,7 +633,7 @@ export class AWSResourceDiscoveryService {
         // Reserved Instance Opportunities stay on the prior unconditional
         // delete+recreate behavior -- excluded from the occurrence lifecycle,
         // see cost-optimization.service.ts.
-        await recommendationsRepo.deleteActiveByIssue(organizationId, 'Reserved Instance Opportunity');
+        await recommendationsRepo.deleteActiveByIssue(organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
         const riInsertedCount = await recommendationsRepo.createBulk(riRecommendations, organizationId);
 
         const insertedCount = nonRIInsertedCount + riInsertedCount;
@@ -759,6 +808,65 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
+   * Discover EBS volumes (all states, not just unattached -- the
+   * ebs_unattached analyzer in cost-optimization.service.ts filters for
+   * State: 'available' itself via its own independent DescribeVolumes call,
+   * same pattern as every other detector in that file. This discovery method
+   * only populates aws_resources inventory).
+   */
+  private async discoverEBSVolumes(
+    organizationId: string,
+    ec2Client: EC2Client,
+    region: string
+  ): Promise<CreateAWSResourceInput[]> {
+    const volumes: Volume[] = [];
+    let pageCount = 0;
+    for await (const page of paginateDescribeVolumes({ client: ec2Client }, {})) {
+      pageCount++;
+      volumes.push(...(page.Volumes || []));
+    }
+    this.logIfPaginated('EBS volumes', pageCount, volumes.length);
+
+    const resources: CreateAWSResourceInput[] = [];
+
+    for (const volume of volumes) {
+      if (!volume.VolumeId) continue;
+
+      const tags = this.extractTags(volume.Tags);
+      const name = tags.Name || volume.VolumeId;
+      const attachment = (volume.Attachments || [])[0];
+
+      const metadata: EBSVolumeMetadata = {
+        volume_type: volume.VolumeType || 'unknown',
+        size_gb: volume.Size || 0,
+        iops: volume.Iops,
+        throughput: volume.Throughput,
+        availability_zone: volume.AvailabilityZone,
+        attached: !!attachment,
+        attached_instance_id: attachment?.InstanceId,
+      };
+
+      resources.push({
+        organization_id: organizationId,
+        resource_arn: `arn:aws:ec2:${volume.AvailabilityZone?.slice(0, -1) || region}:*:volume/${volume.VolumeId}`,
+        resource_id: volume.VolumeId,
+        resource_name: name,
+        resource_type: 'ebs',
+        region,
+        tags,
+        metadata,
+        status: this.mapEBSStatus(volume.State),
+        estimated_monthly_cost: this.estimateEBSCost(volume.VolumeType, volume.Size || 0),
+        is_encrypted: volume.Encrypted || false,
+        is_public: false,
+        has_backup: false, // Determined by snapshot presence, not tracked here
+      });
+    }
+
+    return resources;
+  }
+
+  /**
    * Discover RDS database instances
    */
   private async discoverRDSDatabases(
@@ -875,11 +983,18 @@ export class AWSResourceDiscoveryService {
         console.error(`[S3 Discovery] Error processing bucket ${bucket.Name}:`, error.message);
       }
 
+      // Real lifecycle status from AWS (see s3-lifecycle.util.ts) -- replaces
+      // the old `lifecycle_rules: 0` placeholder that was never actually
+      // queried. An 'unavailable' read (AccessDenied/throttling/etc.) is
+      // stored as such, not silently written as "no rules".
+      const lifecycleStatus = await getBucketLifecycleStatus(s3Client, bucket.Name);
       const metadata: S3BucketMetadata = {
         creation_date: bucket.CreationDate?.toISOString(),
         versioning_enabled: false, // Could query GetBucketVersioning
         logging_enabled: false,
-        lifecycle_rules: 0,
+        lifecycle_status: lifecycleStatus.state,
+        ...(lifecycleStatus.state === 'has_lifecycle_rules' ? { lifecycle_rules: lifecycleStatus.enabledRuleCount } : {}),
+        ...(lifecycleStatus.state === 'no_lifecycle_configuration' ? { lifecycle_rules: 0 } : {}),
       };
 
       resources.push({
@@ -1091,6 +1206,24 @@ export class AWSResourceDiscoveryService {
    */
   private mapRDSStatus(status: string | undefined): ResourceStatus {
     return (status || 'unknown') as ResourceStatus;
+  }
+
+  /**
+   * EBS volume State maps directly onto ResourceStatus's existing
+   * 'available'/'unavailable' values -- no translation table needed, unlike
+   * EC2/RDS whose AWS-side state names don't already match ResourceStatus.
+   */
+  private mapEBSStatus(state: string | undefined): ResourceStatus {
+    return (state || 'unknown') as ResourceStatus;
+  }
+
+  /**
+   * Approximate EBS monthly cost -- see config/aws-pricing.ts, shared with
+   * cost-optimization.service.ts's ebs_unattached analyzer so both agree on
+   * the same pricing assumption.
+   */
+  private estimateEBSCost(volumeType: string | undefined, sizeGB: number): number {
+    return estimateEBSMonthlyCost(volumeType, sizeGB);
   }
 
   /**

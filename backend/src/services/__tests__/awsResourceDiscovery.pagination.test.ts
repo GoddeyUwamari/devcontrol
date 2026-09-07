@@ -28,6 +28,7 @@ import {
   GetBucketLocationCommand,
   GetBucketEncryptionCommand,
   GetBucketAclCommand,
+  GetBucketLifecycleConfigurationCommand,
 } from '@aws-sdk/client-s3';
 import { ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
@@ -90,6 +91,13 @@ describe('AWSResourceDiscoveryService pagination', () => {
       if (command instanceof GetBucketLocationCommand) return { LocationConstraint: 'us-east-1' };
       if (command instanceof GetBucketEncryptionCommand) throw new Error('no encryption configured');
       if (command instanceof GetBucketAclCommand) return { Grants: [] };
+      // Phase 2 (s3_lifecycle): real lifecycle check added to discovery.
+      // Mocked as "genuinely no configuration" here since these tests are
+      // about pagination, not lifecycle status -- see s3-lifecycle.util.test.ts
+      // for lifecycle-status-specific coverage.
+      if (command instanceof GetBucketLifecycleConfigurationCommand) {
+        throw { name: 'NoSuchLifecycleConfiguration' };
+      }
       return undefined;
     };
 

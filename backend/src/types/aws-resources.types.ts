@@ -9,6 +9,7 @@
 
 export type ResourceType =
   | 'ec2'
+  | 'ebs'
   | 'rds'
   | 's3'
   | 'lambda'
@@ -330,11 +331,29 @@ export interface RDSInstanceMetadata {
   vpc_id?: string;
 }
 
+export interface EBSVolumeMetadata {
+  volume_type: string;
+  size_gb: number;
+  iops?: number;
+  throughput?: number;
+  availability_zone?: string;
+  attached: boolean;
+  attached_instance_id?: string;
+}
+
 export interface S3BucketMetadata {
   creation_date?: string;
   versioning_enabled?: boolean;
   logging_enabled?: boolean;
+  // Count of *enabled* rules from a real GetBucketLifecycleConfiguration
+  // response (see s3-lifecycle.util.ts) -- 0 is a genuine "no rules" finding,
+  // never a placeholder default. Absent entirely when lifecycle_status is
+  // 'unavailable' (the call itself failed/was denied), since 0 there would
+  // misrepresent "we don't know" as "confirmed none".
   lifecycle_rules?: number;
+  // 'unavailable' means the AWS call failed (AccessDenied, throttling, etc.)
+  // -- never coerced into 'no_lifecycle_configuration'. See s3-lifecycle.util.ts.
+  lifecycle_status?: 'no_lifecycle_configuration' | 'has_lifecycle_rules' | 'unavailable';
 }
 
 // =====================================================
