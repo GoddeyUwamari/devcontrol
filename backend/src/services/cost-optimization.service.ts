@@ -36,6 +36,7 @@ import {
   estimateLambdaMonthlyCostFromUsage,
 } from '../config/aws-pricing';
 import { getBucketLifecycleStatus, hasOnlyNonExpiringRules } from './s3-lifecycle.util';
+import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
 
 // Heuristic threshold, same convention as idle EC2's "<5% CPU over 7 days":
 // an explicit, disclosed number rather than a hidden one. 30-day window
@@ -43,7 +44,6 @@ import { getBucketLifecycleStatus, hasOnlyNonExpiringRules } from './s3-lifecycl
 // legitimately include weekly/monthly batch jobs that a 7-day window would
 // misclassify as unused.
 const LAMBDA_LOW_USAGE_MAX_INVOCATIONS_30D = 10;
-const LAMBDA_USAGE_WINDOW_DAYS = 30;
 
 interface OptimizationIssue {
   resourceId: string;
@@ -111,7 +111,7 @@ class CostOptimizationService {
         this.detectUnusedElasticIPs(clients.ec2),
         this.detectUnattachedEBSVolumes(clients.ec2),
         this.detectS3LifecycleOptimization(clients.s3, clients.cloudWatch),
-        this.detectLowUsageLambdaFunctions(clients.lambda, clients.cloudWatch),
+        this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch),
         this.detectReservedInstanceOpportunities(clients.ec2),
       ]);
 
@@ -492,11 +492,13 @@ class CostOptimizationService {
    * A function's own single-bucket CloudWatch failure skips only that
    * function (logged), never fails the whole detector or is assumed zero.
    * Savings uses this function's REAL 30-day invocation count and average
-   * duration through AWS's public Lambda pricing formula -- replacing the
-   * previous fake fixed assumption of 100K invocations/month, which never
-   * reflected any real account's actual usage.
+   * duration through AWS's public Lambda pricing formula -- via the shared
+   * getLambdaUsageOverWindow() (lambda-usage.util.ts), the same source
+   * awsResourceDiscovery.ts now uses for `estimated_monthly_cost`, so
+   * inventory and optimization can never disagree about a function's usage.
    */
   private async detectLowUsageLambdaFunctions(
+    organizationId: string,
     lambdaClient: LambdaClient,
     cloudWatchClient: CloudWatchClient
   ): Promise<DetectorResult> {
@@ -507,7 +509,7 @@ class CostOptimizationService {
       for (const func of response.Functions || []) {
         if (!func.FunctionName) continue;
 
-        const usage = await this.getLambdaUsageOverWindow(cloudWatchClient, func.FunctionName);
+        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, func.FunctionName);
         if (usage === null) continue; // CloudWatch call itself failed -- never assumed zero
 
         const { invocations, avgDurationMs } = usage;
@@ -540,66 +542,6 @@ class CostOptimizationService {
     } catch (error) {
       console.error('Error detecting low-usage Lambda functions:', error);
       return { success: false, issues: [] };
-    }
-  }
-
-  /**
-   * Real Invocations (Sum) and Duration (Average) for one function over the
-   * full lookback window, as a single CloudWatch datapoint per metric
-   * (Period == window length, one bucket).
-   *
-   * Unlike S3's BucketSizeBytes (published daily regardless of activity) or
-   * EC2's CPUUtilization (published continuously for any running instance),
-   * AWS Lambda's Invocations metric only ever emits a datapoint for a period
-   * that had at least one invocation -- CloudWatch returning zero datapoints
-   * for a real, existing function is the documented, correct signal for
-   * "zero invocations in this window", not missing data. A thrown error from
-   * the API call itself (throttling, permissions, network) is the only case
-   * treated as "we don't know" -- returns null, and the caller skips the
-   * function rather than assuming zero.
-   */
-  private async getLambdaUsageOverWindow(
-    cloudWatchClient: CloudWatchClient,
-    functionName: string
-  ): Promise<{ invocations: number; avgDurationMs: number } | null> {
-    try {
-      const endTime = new Date();
-      const startTime = new Date(endTime.getTime() - LAMBDA_USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-      const windowSeconds = LAMBDA_USAGE_WINDOW_DAYS * 24 * 60 * 60;
-
-      const invocationsResponse = await cloudWatchClient.send(
-        new GetMetricStatisticsCommand({
-          Namespace: 'AWS/Lambda',
-          MetricName: 'Invocations',
-          Dimensions: [{ Name: 'FunctionName', Value: functionName }],
-          StartTime: startTime,
-          EndTime: endTime,
-          Period: windowSeconds,
-          Statistics: [Statistic.Sum],
-        })
-      );
-      const invocations = invocationsResponse.Datapoints?.[0]?.Sum ?? 0;
-
-      let avgDurationMs = 0;
-      if (invocations > 0) {
-        const durationResponse = await cloudWatchClient.send(
-          new GetMetricStatisticsCommand({
-            Namespace: 'AWS/Lambda',
-            MetricName: 'Duration',
-            Dimensions: [{ Name: 'FunctionName', Value: functionName }],
-            StartTime: startTime,
-            EndTime: endTime,
-            Period: windowSeconds,
-            Statistics: [Statistic.Average],
-          })
-        );
-        avgDurationMs = durationResponse.Datapoints?.[0]?.Average ?? 0;
-      }
-
-      return { invocations, avgDurationMs };
-    } catch (error) {
-      console.error(`Error fetching CloudWatch usage for Lambda function ${functionName}:`, error);
-      return null;
     }
   }
 

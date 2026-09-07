@@ -445,7 +445,10 @@ export interface InfrastructureResource {
   awsId: string;
   awsRegion: string;
   status: ResourceStatus;
-  costPerMonth: number;
+  // null means the cost hasn't actually been calculated yet for this
+  // resource (e.g. a Lambda function whose CloudWatch usage lookup failed
+  // on its most recent discovery) -- never coerce to 0.
+  costPerMonth: number | null;
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;

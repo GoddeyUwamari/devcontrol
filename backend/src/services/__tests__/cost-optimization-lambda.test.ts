@@ -26,7 +26,7 @@ describe('CostOptimizationService.detectLowUsageLambdaFunctions (lambda_low_usag
     const cwSend = jest.fn().mockResolvedValueOnce({ Datapoints: [] }); // Invocations: none
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), cwSend);
 
-    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions(lambdaClient, cwClient);
+    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions('test-org', lambdaClient, cwClient);
 
     expect(result.success).toBe(true);
     expect(result.issues).toHaveLength(1);
@@ -51,7 +51,7 @@ describe('CostOptimizationService.detectLowUsageLambdaFunctions (lambda_low_usag
       .mockResolvedValueOnce({ Datapoints: [{ Average: 250 }] }); // Duration: 250ms avg
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), cwSend);
 
-    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions(lambdaClient, cwClient);
+    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions('test-org', lambdaClient, cwClient);
 
     expect(result.issues).toHaveLength(1);
     const [issue] = result.issues;
@@ -72,7 +72,7 @@ describe('CostOptimizationService.detectLowUsageLambdaFunctions (lambda_low_usag
     const cwSend = jest.fn().mockResolvedValueOnce({ Datapoints: [{ Sum: 50000 }] });
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), cwSend);
 
-    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions(lambdaClient, cwClient);
+    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions('test-org', lambdaClient, cwClient);
 
     expect(result.issues).toHaveLength(0);
   });
@@ -86,7 +86,7 @@ describe('CostOptimizationService.detectLowUsageLambdaFunctions (lambda_low_usag
     const cwSend = jest.fn().mockRejectedValueOnce(new Error('Throttling: rate exceeded'));
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), cwSend);
 
-    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions(lambdaClient, cwClient);
+    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions('test-org', lambdaClient, cwClient);
 
     expect(result.success).toBe(true); // one function's failure doesn't fail the whole detector
     expect(result.issues).toHaveLength(0);
@@ -110,7 +110,7 @@ describe('CostOptimizationService.detectLowUsageLambdaFunctions (lambda_low_usag
       .mockResolvedValueOnce({ Datapoints: [{ Average: 100 }] }); // fn-low: Duration
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), cwSend);
 
-    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions(lambdaClient, cwClient);
+    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions('test-org', lambdaClient, cwClient);
 
     const flaggedIds = result.issues.map((i: any) => i.resourceId).sort();
     expect(flaggedIds).toEqual(['fn-low', 'fn-zero']);
@@ -121,7 +121,7 @@ describe('CostOptimizationService.detectLowUsageLambdaFunctions (lambda_low_usag
     const lambdaClient = withMockedSend(new LambdaClient({ region: 'us-east-1' }), lambdaSend);
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), jest.fn());
 
-    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions(lambdaClient, cwClient);
+    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions('test-org', lambdaClient, cwClient);
 
     expect(result).toEqual({ success: false, issues: [] });
   });
@@ -135,7 +135,7 @@ describe('CostOptimizationService.detectLowUsageLambdaFunctions (lambda_low_usag
     const cwSend = jest.fn().mockResolvedValueOnce({ Datapoints: [] });
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), cwSend);
 
-    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions(lambdaClient, cwClient);
+    const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions('test-org', lambdaClient, cwClient);
 
     expect(result.issues[0].metadata.memory_mb).toBe(128);
   });

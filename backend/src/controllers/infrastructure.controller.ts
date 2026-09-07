@@ -67,7 +67,12 @@ export class InfrastructureController {
                       ? 'pending'
                       : 'running'
             })(),
-          costPerMonth: parseFloat(r.estimated_monthly_cost) || 0,
+          // null (never 0) when the cost hasn't actually been calculated yet
+          // for this resource (e.g. a Lambda function whose CloudWatch usage
+          // lookup failed on its most recent discovery) -- estimated_monthly_cost
+          // is nullable precisely to distinguish "unknown" from "confirmed $0"
+          // (see awsResourceDiscovery.ts::discoverLambdaFunctions()).
+          costPerMonth: r.estimated_monthly_cost != null ? parseFloat(r.estimated_monthly_cost) : null,
           metadata: r.metadata,
           createdAt: r.created_at || new Date().toISOString(),
           updatedAt: r.updated_at || new Date().toISOString(),
