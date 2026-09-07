@@ -21,6 +21,7 @@ import { SNSClient } from '@aws-sdk/client-sns';
 import { IAMClient } from '@aws-sdk/client-iam';
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
+import { ApplicationAutoScalingClient } from '@aws-sdk/client-application-auto-scaling';
 import { pool } from '../config/database';
 
 export interface AWSClients {
@@ -59,6 +60,24 @@ export interface AWSClients {
    * credentials fetch.
    */
   getDynamoDBClientForRegion: (region: string) => DynamoDBClient;
+  /**
+   * Same additive, regional escape hatch as getDynamoDBClientForRegion above,
+   * for Application Auto Scaling (Phase 3E, Checkpoint C) -- a table's
+   * autoscaling configuration must be queried in the table's own region, not
+   * necessarily the org's primary region. Same reused credentials, zero
+   * additional AssumeRole calls.
+   */
+  getApplicationAutoScalingClientForRegion: (region: string) => ApplicationAutoScalingClient;
+  /**
+   * Same additive, regional escape hatch as getDynamoDBClientForRegion above,
+   * for CloudWatch (Phase 3E, Checkpoint C) -- a table's telemetry must be
+   * queried in the table's own region. Does NOT change the existing
+   * `cloudWatch` client's behavior (still scoped to the org's primary
+   * region) and is not wired into any consumer by this change -- callers
+   * opt in explicitly. Same reused credentials, zero additional AssumeRole
+   * calls.
+   */
+  getCloudWatchClientForRegion: (region: string) => CloudWatchClient;
 }
 
 /** Extracts the 12-digit account ID from an IAM role/user ARN, e.g. arn:aws:iam::123456789012:role/x */
@@ -148,6 +167,9 @@ export class AWSClientFactory {
       enabled: true,
       accountId: parseAccountIdFromArn(role_arn),
       getDynamoDBClientForRegion: (region: string) => new DynamoDBClient({ region, credentials: tempCredentials }),
+      getApplicationAutoScalingClientForRegion: (region: string) =>
+        new ApplicationAutoScalingClient({ region, credentials: tempCredentials }),
+      getCloudWatchClientForRegion: (region: string) => new CloudWatchClient({ region, credentials: tempCredentials }),
     };
   }
 
@@ -195,6 +217,9 @@ export class AWSClientFactory {
       region: config.region,
       enabled: true,
       getDynamoDBClientForRegion: (region: string) => new DynamoDBClient({ region, credentials: config.credentials }),
+      getApplicationAutoScalingClientForRegion: (region: string) =>
+        new ApplicationAutoScalingClient({ region, credentials: config.credentials }),
+      getCloudWatchClientForRegion: (region: string) => new CloudWatchClient({ region, credentials: config.credentials }),
     };
   }
 
@@ -220,6 +245,8 @@ export class AWSClientFactory {
       region: 'us-east-1',
       enabled: false,
       getDynamoDBClientForRegion: () => ({} as DynamoDBClient),
+      getApplicationAutoScalingClientForRegion: () => ({} as ApplicationAutoScalingClient),
+      getCloudWatchClientForRegion: () => ({} as CloudWatchClient),
     };
   }
 

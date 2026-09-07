@@ -37,7 +37,6 @@ describe('describeDynamoDBTable', () => {
         table_class: undefined,
         provisioned_read_capacity: 50,
         provisioned_write_capacity: 25,
-        autoscaling_state: 'AUTOSCALING_UNKNOWN',
       },
     });
   });
@@ -193,7 +192,31 @@ describe('describeDynamoDBTable', () => {
     }
   });
 
-  it('always reports autoscaling_state as AUTOSCALING_UNKNOWN -- no Application Auto Scaling integration exists to determine it', async () => {
+  it('captures real last_increase_date_time/last_decrease_date_time when AWS returns them', async () => {
+    const send = jest.fn().mockResolvedValueOnce({
+      Table: {
+        TableStatus: 'ACTIVE',
+        BillingModeSummary: { BillingMode: 'PROVISIONED' },
+        ProvisionedThroughput: {
+          ReadCapacityUnits: 100,
+          WriteCapacityUnits: 100,
+          LastIncreaseDateTime: new Date('2026-08-01T00:00:00.000Z'),
+          LastDecreaseDateTime: new Date('2026-08-15T00:00:00.000Z'),
+        },
+      },
+    });
+    const client = withMockedSend(send);
+
+    const result = await describeDynamoDBTable(client, 'recently-changed-table');
+
+    expect(result.status).toBe('described');
+    if (result.status === 'described') {
+      expect(result.config.last_increase_date_time).toBe('2026-08-01T00:00:00.000Z');
+      expect(result.config.last_decrease_date_time).toBe('2026-08-15T00:00:00.000Z');
+    }
+  });
+
+  it('leaves last_increase_date_time/last_decrease_date_time undefined -- never fabricated -- when AWS does not return them', async () => {
     const send = jest.fn().mockResolvedValueOnce({
       Table: {
         TableStatus: 'ACTIVE',
@@ -203,11 +226,12 @@ describe('describeDynamoDBTable', () => {
     });
     const client = withMockedSend(send);
 
-    const result = await describeDynamoDBTable(client, 'autoscaled-looking-table');
+    const result = await describeDynamoDBTable(client, 'never-changed-table');
 
     expect(result.status).toBe('described');
     if (result.status === 'described') {
-      expect(result.config.autoscaling_state).toBe('AUTOSCALING_UNKNOWN');
+      expect(result.config.last_increase_date_time).toBeUndefined();
+      expect(result.config.last_decrease_date_time).toBeUndefined();
     }
   });
 

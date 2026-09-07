@@ -13,6 +13,8 @@
  */
 import { EC2Client } from '@aws-sdk/client-ec2';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { ApplicationAutoScalingClient } from '@aws-sdk/client-application-auto-scaling';
+import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { AWSClientFactory } from '../aws-client-factory.service';
 
 jest.mock('../../config/database', () => ({
@@ -83,6 +85,69 @@ describe('AWSClientFactory.createClientsFromEnv -- getDynamoDBClientForRegion is
     expect(clients.enabled).toBe(false);
     // Additive field must still exist on the mock shape and must not throw.
     expect(() => clients.getDynamoDBClientForRegion('us-east-1')).not.toThrow();
+  });
+});
+
+describe('AWSClientFactory.createClientsFromEnv -- getApplicationAutoScalingClientForRegion/getCloudWatchClientForRegion are additive (Checkpoint C)', () => {
+  it('getApplicationAutoScalingClientForRegion builds a real client for the given region, independent of the default region field', async () => {
+    process.env.AWS_ACCESS_KEY_ID = 'test-key';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+    process.env.AWS_REGION = 'us-east-1';
+
+    const clients = AWSClientFactory.createClientsFromEnv();
+    const regionalClient = clients.getApplicationAutoScalingClientForRegion('eu-west-1');
+
+    expect(regionalClient).toBeInstanceOf(ApplicationAutoScalingClient);
+    expect(await regionalClient.config.region()).toBe('eu-west-1');
+  });
+
+  it('getCloudWatchClientForRegion builds a real client for the given region, and the default `cloudWatch` client is unaffected', async () => {
+    process.env.AWS_ACCESS_KEY_ID = 'test-key';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+    process.env.AWS_REGION = 'us-east-1';
+
+    const clients = AWSClientFactory.createClientsFromEnv();
+    const regionalClient = clients.getCloudWatchClientForRegion('eu-west-1');
+
+    expect(regionalClient).toBeInstanceOf(CloudWatchClient);
+    expect(await regionalClient.config.region()).toBe('eu-west-1');
+    expect(await clients.cloudWatch.config.region()).toBe('us-east-1');
+  });
+
+  it('two getApplicationAutoScalingClientForRegion calls for different regions produce two distinct client instances', () => {
+    process.env.AWS_ACCESS_KEY_ID = 'test-key';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+    process.env.AWS_REGION = 'us-east-1';
+
+    const clients = AWSClientFactory.createClientsFromEnv();
+    const a = clients.getApplicationAutoScalingClientForRegion('us-west-2');
+    const b = clients.getApplicationAutoScalingClientForRegion('ap-southeast-1');
+
+    expect(a).not.toBe(b);
+  });
+
+  it('two getCloudWatchClientForRegion calls for different regions produce two distinct client instances', () => {
+    process.env.AWS_ACCESS_KEY_ID = 'test-key';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+    process.env.AWS_REGION = 'us-east-1';
+
+    const clients = AWSClientFactory.createClientsFromEnv();
+    const a = clients.getCloudWatchClientForRegion('us-west-2');
+    const b = clients.getCloudWatchClientForRegion('ap-southeast-1');
+
+    expect(a).not.toBe(b);
+  });
+
+  it('falls back to mock clients (enabled: false) when no env credentials are configured -- both new fields still exist and do not throw', () => {
+    delete process.env.AWS_ACCESS_KEY_ID;
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    delete process.env.AWS_REGION;
+
+    const clients = AWSClientFactory.createClientsFromEnv();
+
+    expect(clients.enabled).toBe(false);
+    expect(() => clients.getApplicationAutoScalingClientForRegion('us-east-1')).not.toThrow();
+    expect(() => clients.getCloudWatchClientForRegion('us-east-1')).not.toThrow();
   });
 });
 

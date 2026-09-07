@@ -12,6 +12,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",
     "@aws-sdk/client-api-gateway": "^3.958.0",
+    "@aws-sdk/client-application-auto-scaling": "^3.958.0",
     "@aws-sdk/client-cloudfront": "^3.958.0",
     "@aws-sdk/client-cloudwatch": "^3.1017.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.958.0",
@@ -76,7 +77,9 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "testMatch": ["**/__tests__/**/*.test.ts"],
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
     "globals": {
       "ts-jest": {
         "tsconfig": "tsconfig.jest.json"
