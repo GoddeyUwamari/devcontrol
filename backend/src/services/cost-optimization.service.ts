@@ -18,8 +18,10 @@ import {
 } from '@aws-sdk/client-rds';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
+import { PoolClient } from 'pg';
 import { CreateRecommendationRequest, RecommendationSeverity } from '../types';
-import { AWSClientFactory } from './aws-client-factory.service';
+import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
+import { pool } from '../config/database';
 import {
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_RDS_OVERSIZED_INSTANCE,
@@ -29,15 +31,26 @@ import {
   ISSUE_EBS_GP2_TO_GP3,
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
+  ISSUE_DYNAMODB_CAPACITY,
 } from '../config/optimization-rules';
 import {
   estimateEBSMonthlyCost,
   S3_STANDARD_PER_GB_MONTH_USD,
   S3_STANDARD_IA_PER_GB_MONTH_USD,
   estimateLambdaMonthlyCostFromUsage,
+  estimateDynamoDBProvisionedMonthlyCost,
 } from '../config/aws-pricing';
 import { getBucketLifecycleStatus, hasOnlyNonExpiringRules } from './s3-lifecycle.util';
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
+import { describeDynamoDBTable, DynamoDBTableConfig } from './dynamodb-table.util';
+import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
+import {
+  fetchDynamoDBCapacityMetrics,
+  analyzeDynamoDBCapacityDimension,
+  DynamoDBCapacityDimensionAnalysis,
+  DYNAMODB_CAPACITY_ANALYSIS_WINDOW_DAYS,
+  DYNAMODB_CAPACITY_PERIOD_SECONDS,
+} from './dynamodb-capacity-analysis.util';
 
 // Heuristic threshold, same convention as idle EC2's "<5% CPU over 7 days":
 // an explicit, disclosed number rather than a hidden one. 30-day window
@@ -45,6 +58,21 @@ import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usa
 // legitimately include weekly/monthly batch jobs that a 7-day window would
 // misclassify as unused.
 const LAMBDA_LOW_USAGE_MAX_INVOCATIONS_30D = 10;
+
+// Phase 3E, dynamodb_capacity: locked v1 eligibility policy (see the
+// methodology checkpoints -- do not change without a new methodology
+// review). 20% is AWS's own documented reference investigation signal
+// (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/CostOptimization_RightSizedProvisioning.html),
+// adopted as DevControl's v1 threshold -- NOT an AWS-mandated rule, and
+// never described as one in evidence text. 85%/576 are DevControl policy
+// choices (conservative, not AWS-derived): a table must show hourly-average
+// utilization below 20% for at least 85% of its valid hourly intervals, over
+// a real, non-sparse sample (>=576 of the nominal 720 hourly intervals in a
+// 30-day window actually had both a consumed and a provisioned datapoint).
+const DYNAMODB_CAPACITY_REFERENCE_UTILIZATION_THRESHOLD_PERCENT = 20;
+const DYNAMODB_CAPACITY_MIN_LOW_UTILIZATION_INTERVAL_PERCENT = 85;
+const DYNAMODB_CAPACITY_NOMINAL_INTERVALS = (DYNAMODB_CAPACITY_ANALYSIS_WINDOW_DAYS * 24 * 60 * 60) / DYNAMODB_CAPACITY_PERIOD_SECONDS; // 720
+const DYNAMODB_CAPACITY_MIN_VALID_INTERVALS = Math.round(DYNAMODB_CAPACITY_NOMINAL_INTERVALS * 0.8); // 576 -- 80% of nominal
 
 // AWS-published gp3 baseline performance included at no extra charge --
 // exceeding either means real AWS charges for provisioned IOPS/throughput
@@ -118,7 +146,7 @@ class CostOptimizationService {
     }
 
     try {
-      const [idleEC2, oversizedRDS, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, riOpportunities] = await Promise.all([
+      const [idleEC2, oversizedRDS, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, riOpportunities] = await Promise.all([
         this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch),
         this.detectOversizedRDSInstances(clients.rds),
         this.detectUnusedElasticIPs(clients.ec2),
@@ -126,6 +154,7 @@ class CostOptimizationService {
         this.detectGp2ToGp3Migrations(clients.ec2),
         this.detectS3LifecycleOptimization(clients.s3, clients.cloudWatch),
         this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch),
+        this.detectDynamoDBCapacityOptimization(organizationId, clients),
         this.detectReservedInstanceOpportunities(clients.ec2),
       ]);
 
@@ -149,6 +178,7 @@ class CostOptimizationService {
         { issue: ISSUE_EBS_GP2_TO_GP3, success: gp2ToGp3.success, recommendations: gp2ToGp3.issues.map(toRequest) },
         { issue: ISSUE_S3_LIFECYCLE_OPTIMIZATION, success: s3Lifecycle.success, recommendations: s3Lifecycle.issues.map(toRequest) },
         { issue: ISSUE_LAMBDA_LOW_USAGE, success: lowUsageLambda.success, recommendations: lowUsageLambda.issues.map(toRequest) },
+        { issue: ISSUE_DYNAMODB_CAPACITY, success: dynamoDBCapacity.success, recommendations: dynamoDBCapacity.issues.map(toRequest) },
       ];
 
       return {
@@ -665,6 +695,373 @@ class CostOptimizationService {
       console.error('Error detecting low-usage Lambda functions:', error);
       return { success: false, issues: [] };
     }
+  }
+
+  /**
+   * Detect DynamoDB tables whose provisioned RCU/WCU has substantially
+   * exceeded observed workload demand over a real, recent window (Phase 3E
+   * `dynamodb_capacity`) -- foundation for this detector is PR #61/#62
+   * (billing mode, real capacity, GSI/replica metadata, real Application
+   * Auto Scaling state, capacity-change timestamps); methodology is locked
+   * by three prior audit/design checkpoints and must not be changed here:
+   *
+   * - 30-day window, 3,600s (1-hour) period, `Sum` for consumed/throttle,
+   *   `Average` for provisioned -- see dynamodb-capacity-analysis.util.ts.
+   * - Reference investigation signal: 20% hourly-average utilization (AWS's
+   *   own documented reference point, not an AWS-mandated rule).
+   * - Eligibility: >=85% of a dimension's valid hourly intervals must be
+   *   below 20%, over a real sample of >=576 (80% of the nominal 720)
+   *   valid intervals -- read and write evaluated fully independently, and
+   *   read OR write qualifying is sufficient (the occurrence identity is
+   *   (organization_id, resource_id, issue), so at most one row per table).
+   * - Any confirmed table-level provisioned-throughput throttling (Sum>0 in
+   *   any valid throttle interval) disqualifies that dimension. Zero valid
+   *   throttle datapoints also disqualifies -- "no throttling" can never be
+   *   claimed from zero evidence. Evidence text says exactly "no table-level
+   *   provisioned-throughput throttling observed," never the broader,
+   *   unproven "no throttling occurred" (table-level metrics cannot see
+   *   partition/key-range or account-level throttling).
+   * - GSI-bearing and Global Table (replica) tables are excluded outright --
+   *   AWS's own metrics reference confirms `TableName`-only queries (what
+   *   this detector uses) are blind to GSI-scoped consumption AND GSI-scoped
+   *   throttling; Global Tables have a separate, unmodeled replication-write
+   *   cost this codebase's pricing does not account for.
+   * - No exact recommended RCU/WCU is ever produced (Model B, evidence-only).
+   *   The cost figure is an explicitly-labeled illustrative scenario --
+   *   "modeled monthly savings if provisioned capacity matched the highest
+   *   hourly-average demand observed" -- never "recommended," "safe,"
+   *   "ceiling," or "maximum required" capacity. `savings_basis` always
+   *   starts with `scenario:`, never `ceiling:`.
+   *
+   * Architecture: reads already-enriched `aws_resources` metadata (written
+   * by awsResourceDiscovery.ts's enrichDynamoDBTables(), which already runs
+   * every six hours) as a cheap initial filter -- never re-runs DescribeTable
+   * for every table. Only candidates surviving that cheap filter get a
+   * targeted, fresh live DescribeTable + DescribeScalableTargets
+   * re-confirmation (via the table's own persisted region, using the
+   * regional client getters -- never the org's default single-region
+   * `clients.dynamodb`/`clients.cloudWatch`) before any CloudWatch call or
+   * cost calculation; a live-verification failure, or the fresh data itself
+   * failing any gate, fails that table closed rather than trusting stale
+   * metadata. Never reads `aws_resources.estimated_monthly_cost` (the
+   * unrelated flat `$3` generic placeholder) -- current and scenario cost
+   * are always computed fresh via estimateDynamoDBProvisionedMonthlyCost().
+   */
+  private async detectDynamoDBCapacityOptimization(
+    organizationId: string,
+    awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion' | 'getCloudWatchClientForRegion' | 'getApplicationAutoScalingClientForRegion'>
+  ): Promise<DetectorResult> {
+    let client: PoolClient | undefined;
+    try {
+      client = await pool.connect();
+      // Session-scoped (is_local = false) -- this same client runs the one
+      // aws_resources SELECT below, then is released immediately (never held
+      // open across the AWS calls that follow). Same fix as a1f894b/3687608
+      // (see system-intelligence.service.ts's computeSecurityScore()):
+      // a `true` (local) value would revert before this RLS-protected query
+      // ever ran, silently returning zero rows instead of erroring.
+      await client.query("SELECT set_config('app.current_organization_id', $1, false)", [organizationId]);
+
+      const tablesResult = await client.query(
+        `SELECT resource_id, resource_name, region, metadata
+         FROM aws_resources
+         WHERE organization_id = $1 AND resource_type = 'dynamodb'`,
+        [organizationId]
+      );
+      client.release();
+      client = undefined;
+
+      const issues: OptimizationIssue[] = [];
+      const now = new Date();
+
+      for (const row of tablesResult.rows) {
+        const metadata = (row.metadata || {}) as Record<string, any>;
+        const cheapGate = this.checkDynamoDBCapacityEligibilityGates(metadata, now);
+        if (!cheapGate.eligible) continue;
+
+        const tableName: string = row.resource_id;
+        const region: string = row.region;
+
+        const dynamoDBClient = awsClients.getDynamoDBClientForRegion(region);
+        const autoscalingClient = awsClients.getApplicationAutoScalingClientForRegion(region);
+
+        const tableResult = await describeDynamoDBTable(dynamoDBClient, tableName);
+        if (tableResult.status !== 'described') {
+          console.error(`[dynamodb_capacity] Live DescribeTable unavailable for ${tableName} (${region}): ${tableResult.reason}`);
+          continue; // fail closed -- never fall back to the stale metadata snapshot for the final decision
+        }
+
+        const autoscalingResult = await describeDynamoDBAutoscaling(autoscalingClient, tableName);
+        if (autoscalingResult.status !== 'described') {
+          console.error(`[dynamodb_capacity] Live Application Auto Scaling check unavailable for ${tableName} (${region}): ${autoscalingResult.reason}`);
+          continue; // fail closed -- never assume AUTOSCALING_DISABLED
+        }
+
+        const freshConfig: DynamoDBTableConfig = tableResult.config;
+        const freshAutoscalingState = autoscalingResult.config.autoscaling_state;
+        const freshGate = this.checkDynamoDBCapacityEligibilityGates(
+          { ...freshConfig, autoscaling_state: freshAutoscalingState },
+          now
+        );
+        if (!freshGate.eligible) continue;
+
+        const currentReadCapacity = freshConfig.provisioned_read_capacity;
+        const currentWriteCapacity = freshConfig.provisioned_write_capacity;
+        if (currentReadCapacity === undefined || currentWriteCapacity === undefined) continue; // insufficient evidence, never assumed
+
+        const cloudWatchClient = awsClients.getCloudWatchClientForRegion(region);
+        const metricsResult = await fetchDynamoDBCapacityMetrics(cloudWatchClient, tableName);
+        if (metricsResult.status !== 'fetched') {
+          console.error(`[dynamodb_capacity] CloudWatch capacity metrics unavailable for ${tableName} (${region}): ${metricsResult.reason}`);
+          continue;
+        }
+        const series = metricsResult.series;
+
+        const readAnalysis = analyzeDynamoDBCapacityDimension(
+          series.consumedReadPerSecond,
+          series.provisionedRead,
+          series.readThrottleEvents,
+          DYNAMODB_CAPACITY_REFERENCE_UTILIZATION_THRESHOLD_PERCENT
+        );
+        const writeAnalysis = analyzeDynamoDBCapacityDimension(
+          series.consumedWritePerSecond,
+          series.provisionedWrite,
+          series.writeThrottleEvents,
+          DYNAMODB_CAPACITY_REFERENCE_UTILIZATION_THRESHOLD_PERCENT
+        );
+
+        const readQualifies = this.dynamoDBCapacityDimensionQualifies(readAnalysis);
+        const writeQualifies = this.dynamoDBCapacityDimensionQualifies(writeAnalysis);
+        if (!readQualifies && !writeQualifies) continue; // no defensible review opportunity on either dimension
+
+        const tableClass = freshConfig.table_class;
+        const currentMonthlyCost = estimateDynamoDBProvisionedMonthlyCost(currentReadCapacity, currentWriteCapacity, tableClass);
+
+        // Scenario capacity per dimension: only a qualifying dimension is
+        // ever moved away from its real current value -- a non-qualifying
+        // dimension contributes its own current (unchanged) capacity, never
+        // a fabricated reduction.
+        const scenarioReadCapacity =
+          readQualifies && readAnalysis.highestHourlyAverageThroughputPerSecond !== null
+            ? Math.ceil(readAnalysis.highestHourlyAverageThroughputPerSecond)
+            : currentReadCapacity;
+        const scenarioWriteCapacity =
+          writeQualifies && writeAnalysis.highestHourlyAverageThroughputPerSecond !== null
+            ? Math.ceil(writeAnalysis.highestHourlyAverageThroughputPerSecond)
+            : currentWriteCapacity;
+
+        const scenarioMonthlyCost = estimateDynamoDBProvisionedMonthlyCost(scenarioReadCapacity, scenarioWriteCapacity, tableClass);
+        const modeledMonthlySavings = Math.max(0, currentMonthlyCost - scenarioMonthlyCost);
+
+        const tableAgeDays = Math.floor((now.getTime() - Date.parse(freshConfig.creation_date_time!)) / (24 * 60 * 60 * 1000));
+
+        const description = this.buildDynamoDBCapacityDescription({
+          currentReadCapacity,
+          currentWriteCapacity,
+          readAnalysis,
+          writeAnalysis,
+          readQualifies,
+          writeQualifies,
+          billingMode: freshConfig.billing_mode,
+          autoscalingState: freshAutoscalingState,
+          tableAgeDays,
+          currentMonthlyCost,
+          modeledMonthlySavings,
+        });
+
+        const savingsBasis =
+          'scenario:highest_observed_hourly_average — modeled monthly cost if provisioned capacity matched the single ' +
+          'highest hourly-average RCU/WCU observed in the 30-day analysis window; not a recommended or safe capacity ' +
+          'setting, no safety margin applied; does not account for sub-hour spikes hidden by hourly averaging, traffic ' +
+          'growth, or burst capacity';
+
+        issues.push({
+          resourceId: tableName,
+          resourceName: row.resource_name || tableName,
+          resourceType: 'DynamoDB',
+          issue: ISSUE_DYNAMODB_CAPACITY,
+          description,
+          potentialSavings: modeledMonthlySavings,
+          severity: this.calculateSeverity(modeledMonthlySavings),
+          awsRegion: region,
+          metadata: {
+            billing_mode: freshConfig.billing_mode,
+            autoscaling_state: freshAutoscalingState,
+            table_class: tableClass,
+            table_age_days: tableAgeDays,
+            analysis_window_days: DYNAMODB_CAPACITY_ANALYSIS_WINDOW_DAYS,
+            period_seconds: DYNAMODB_CAPACITY_PERIOD_SECONDS,
+            reference_utilization_threshold_percent: DYNAMODB_CAPACITY_REFERENCE_UTILIZATION_THRESHOLD_PERCENT,
+            min_low_utilization_interval_percent: DYNAMODB_CAPACITY_MIN_LOW_UTILIZATION_INTERVAL_PERCENT,
+            min_valid_intervals: DYNAMODB_CAPACITY_MIN_VALID_INTERVALS,
+            nominal_intervals: DYNAMODB_CAPACITY_NOMINAL_INTERVALS,
+            read: {
+              qualifies: readQualifies,
+              provisioned_read_capacity: currentReadCapacity,
+              valid_intervals: readAnalysis.validUtilizationIntervals,
+              total_intervals: readAnalysis.totalIntervals,
+              low_utilization_interval_percentage: readAnalysis.lowUtilizationPercentage,
+              highest_hourly_average_utilization_percent: readAnalysis.highestHourlyAverageUtilizationPercent,
+              throttle_valid_intervals: readAnalysis.throttleValidIntervals,
+              throttle_confirmed_intervals: readAnalysis.throttleConfirmedIntervals,
+            },
+            write: {
+              qualifies: writeQualifies,
+              provisioned_write_capacity: currentWriteCapacity,
+              valid_intervals: writeAnalysis.validUtilizationIntervals,
+              total_intervals: writeAnalysis.totalIntervals,
+              low_utilization_interval_percentage: writeAnalysis.lowUtilizationPercentage,
+              highest_hourly_average_utilization_percent: writeAnalysis.highestHourlyAverageUtilizationPercent,
+              throttle_valid_intervals: writeAnalysis.throttleValidIntervals,
+              throttle_confirmed_intervals: writeAnalysis.throttleConfirmedIntervals,
+            },
+            current_monthly_cost: currentMonthlyCost,
+            scenario_monthly_cost: scenarioMonthlyCost,
+            savings_basis: savingsBasis,
+          },
+        });
+      }
+
+      return { success: true, issues };
+    } catch (error) {
+      console.error('Error detecting DynamoDB capacity optimization opportunities:', error);
+      return { success: false, issues: [] };
+    } finally {
+      if (client) client.release();
+    }
+  }
+
+  /**
+   * Shared eligibility-gate check for `dynamodb_capacity`, used identically
+   * for the cheap pass over persisted `aws_resources.metadata` (a pure
+   * performance filter -- deciding which tables are worth 2 live API calls)
+   * and the authoritative final pass over freshly re-confirmed live data.
+   * Loosely typed so it structurally accepts both the raw JSONB metadata
+   * shape and a live `DynamoDBTableConfig` merged with a fresh autoscaling
+   * state -- see the two call sites above.
+   */
+  private checkDynamoDBCapacityEligibilityGates(
+    config: {
+      billing_mode?: string;
+      autoscaling_state?: string;
+      global_secondary_indexes?: unknown[];
+      replica_regions?: unknown[];
+      creation_date_time?: string;
+      last_increase_date_time?: string;
+      last_decrease_date_time?: string;
+    },
+    now: Date
+  ): { eligible: boolean; reason?: string } {
+    if (config.billing_mode !== 'PROVISIONED') {
+      return { eligible: false, reason: `billing_mode is ${config.billing_mode ?? 'unknown'}, not PROVISIONED` };
+    }
+    if (config.autoscaling_state !== 'AUTOSCALING_DISABLED') {
+      return { eligible: false, reason: `autoscaling_state is ${config.autoscaling_state ?? 'unknown'}, not AUTOSCALING_DISABLED` };
+    }
+    if (Array.isArray(config.global_secondary_indexes) && config.global_secondary_indexes.length > 0) {
+      return { eligible: false, reason: 'table has one or more Global Secondary Indexes' };
+    }
+    if (Array.isArray(config.replica_regions) && config.replica_regions.length > 0) {
+      return { eligible: false, reason: 'table is a Global Table with replica regions' };
+    }
+
+    const windowStartMs = now.getTime() - DYNAMODB_CAPACITY_ANALYSIS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+    if (!config.creation_date_time) {
+      return { eligible: false, reason: 'creation timestamp unavailable -- cannot confirm the table existed for the full analysis window' };
+    }
+    const creationMs = Date.parse(config.creation_date_time);
+    if (!Number.isFinite(creationMs) || creationMs > windowStartMs) {
+      return { eligible: false, reason: 'table has not existed for the full 30-day analysis window' };
+    }
+
+    const changeTimestamps: Array<[string, string | undefined]> = [
+      ['last_increase_date_time', config.last_increase_date_time],
+      ['last_decrease_date_time', config.last_decrease_date_time],
+    ];
+    for (const [label, ts] of changeTimestamps) {
+      if (!ts) continue; // absence == no known change, per the locked methodology -- never invented
+      const changeMs = Date.parse(ts);
+      if (Number.isFinite(changeMs) && changeMs >= windowStartMs) {
+        return { eligible: false, reason: `${label} falls inside the analysis window` };
+      }
+    }
+
+    return { eligible: true };
+  }
+
+  /** Locked v1 per-dimension eligibility policy -- see the class-level constants' doc comment. */
+  private dynamoDBCapacityDimensionQualifies(analysis: DynamoDBCapacityDimensionAnalysis): boolean {
+    return (
+      analysis.validUtilizationIntervals >= DYNAMODB_CAPACITY_MIN_VALID_INTERVALS &&
+      analysis.lowUtilizationPercentage >= DYNAMODB_CAPACITY_MIN_LOW_UTILIZATION_INTERVAL_PERCENT &&
+      analysis.throttleValidIntervals > 0 &&
+      analysis.throttleConfirmedIntervals === 0
+    );
+  }
+
+  private buildDynamoDBCapacityDescription(input: {
+    currentReadCapacity: number;
+    currentWriteCapacity: number;
+    readAnalysis: DynamoDBCapacityDimensionAnalysis;
+    writeAnalysis: DynamoDBCapacityDimensionAnalysis;
+    readQualifies: boolean;
+    writeQualifies: boolean;
+    billingMode: string;
+    autoscalingState: string;
+    tableAgeDays: number;
+    currentMonthlyCost: number;
+    modeledMonthlySavings: number;
+  }): string {
+    const pct = (n: number) => `${Math.round(n)}%`;
+    const dimensionBlock = (
+      label: 'Read' | 'Write',
+      unit: 'RCU' | 'WCU',
+      provisioned: number,
+      analysis: DynamoDBCapacityDimensionAnalysis,
+      qualifies: boolean
+    ): string =>
+      `${label} capacity\n` +
+      `- Provisioned: ${provisioned} ${unit}\n` +
+      `- Valid intervals: ${analysis.validUtilizationIntervals}/${analysis.totalIntervals}\n` +
+      `- Intervals below ${DYNAMODB_CAPACITY_REFERENCE_UTILIZATION_THRESHOLD_PERCENT}% hourly-average utilization: ${
+        analysis.validUtilizationIntervals > 0 ? pct(analysis.lowUtilizationPercentage) : 'insufficient evidence'
+      }\n` +
+      `- Highest hourly-average utilization observed: ${
+        analysis.highestHourlyAverageUtilizationPercent !== null ? pct(analysis.highestHourlyAverageUtilizationPercent) : 'insufficient evidence'
+      }\n` +
+      `- Table-level provisioned-throughput ${label.toLowerCase()} throttling: ${
+        analysis.throttleValidIntervals > 0 ? (analysis.throttleConfirmedIntervals > 0 ? 'observed' : 'none observed') : 'insufficient evidence'
+      }\n` +
+      `- Qualifies for review: ${qualifies ? 'YES' : 'NO'}`;
+
+    return (
+      `DynamoDB capacity review identified\n\n` +
+      `${dimensionBlock('Read', 'RCU', input.currentReadCapacity, input.readAnalysis, input.readQualifies)}\n\n` +
+      `${dimensionBlock('Write', 'WCU', input.currentWriteCapacity, input.writeAnalysis, input.writeQualifies)}\n\n` +
+      `Table context\n` +
+      `- Billing mode: ${input.billingMode}\n` +
+      `- Autoscaling: ${input.autoscalingState}\n` +
+      `- Global Secondary Indexes: none\n` +
+      `- Global Table replicas: none\n` +
+      `- Table age: ${input.tableAgeDays} days\n` +
+      `- Capacity changes inside analysis window: none\n\n` +
+      `Analysis\n` +
+      `- Window: ${DYNAMODB_CAPACITY_ANALYSIS_WINDOW_DAYS} days\n` +
+      `- Period: 1 hour\n` +
+      `- Reference threshold: ${DYNAMODB_CAPACITY_REFERENCE_UTILIZATION_THRESHOLD_PERCENT}% hourly-average utilization -- ` +
+      `AWS's own documented reference point for investigating possible over-provisioning, adopted by DevControl as its v1 ` +
+      `investigation threshold. Not independently validated against DevControl's own customer base, and not an AWS-mandated rule.\n` +
+      `- DevControl qualification policy: >=${DYNAMODB_CAPACITY_MIN_LOW_UTILIZATION_INTERVAL_PERCENT}% of valid intervals below ` +
+      `threshold, >=${DYNAMODB_CAPACITY_MIN_VALID_INTERVALS}/${DYNAMODB_CAPACITY_NOMINAL_INTERVALS} valid utilization sample required\n\n` +
+      `Potential cost scenario\n` +
+      `- Current modeled monthly cost: $${input.currentMonthlyCost.toFixed(2)}/month\n` +
+      `- Modeled monthly savings if provisioned capacity matched the highest hourly-average demand observed during the analysis window: ` +
+      `$${input.modeledMonthlySavings.toFixed(2)}/month\n\n` +
+      `This is an illustrative cost scenario, not a recommended capacity setting. Short-lived spikes narrower than one hour, workload ` +
+      `growth, burst capacity, and other DynamoDB capacity considerations are not fully modeled. Table-level throttle metrics confirm no ` +
+      `provisioned-throughput throttling at the table level; they do not by themselves rule out partition-level or account-level throttling.`
+    );
   }
 
   /**

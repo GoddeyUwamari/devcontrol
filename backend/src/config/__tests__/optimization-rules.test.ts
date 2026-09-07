@@ -27,6 +27,7 @@ import {
   ISSUE_EBS_GP2_TO_GP3,
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
+  ISSUE_DYNAMODB_CAPACITY,
 } from '../optimization-rules';
 
 describe('OPTIMIZATION_RULES: identity', () => {
@@ -70,6 +71,7 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     'ebs_gp2_to_gp3',
     's3_lifecycle',
     'lambda_low_usage',
+    'dynamodb_capacity',
   ].sort();
 
   it('marks exactly the currently-wired detectors as implemented', () => {
@@ -87,6 +89,7 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     expect(byId['ebs_gp2_to_gp3'].issue).toBe(ISSUE_EBS_GP2_TO_GP3);
     expect(byId['s3_lifecycle'].issue).toBe(ISSUE_S3_LIFECYCLE_OPTIMIZATION);
     expect(byId['lambda_low_usage'].issue).toBe(ISSUE_LAMBDA_LOW_USAGE);
+    expect(byId['dynamodb_capacity'].issue).toBe(ISSUE_DYNAMODB_CAPACITY);
   });
 
   it('no planned rule fabricates an issue identity', () => {

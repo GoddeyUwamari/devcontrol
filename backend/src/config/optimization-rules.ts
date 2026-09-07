@@ -58,6 +58,7 @@ export const ISSUE_EBS_GP2_TO_GP3 = 'gp2 to gp3 Migration Opportunity';
 export const ISSUE_EC2_OLD_GENERATION_INSTANCE = 'Old-Generation Instance';
 export const ISSUE_S3_LIFECYCLE_OPTIMIZATION = 'S3 Lifecycle Optimization';
 export const ISSUE_LAMBDA_LOW_USAGE = 'Low-Usage Lambda Function';
+export const ISSUE_DYNAMODB_CAPACITY = 'DynamoDB Capacity Review Opportunity';
 
 /** Display/grouping order used by the UI's service coverage list. */
 export const OPTIMIZATION_RULE_SERVICES = [
@@ -233,7 +234,8 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
     service: 'DynamoDB',
     name: 'Capacity/utilization optimization',
     detail: 'Provisioned read/write capacity far exceeding consumed capacity',
-    status: 'planned',
+    status: 'implemented',
+    issue: ISSUE_DYNAMODB_CAPACITY,
   },
   {
     id: 'dynamodb_capacity_mode',
