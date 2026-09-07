@@ -71,6 +71,26 @@ describe('Cost Optimization page: required terminology', () => {
   })
 })
 
+describe('Cost Optimization page: ceiling-basis savings are never presented as an ordinary estimate', () => {
+  // A detector can disclose its savings figure as a ceiling (e.g. S3
+  // lifecycle: assumes 100% of current Standard storage transitions, no
+  // retrieval fees netted out -- see cost-optimization.service.ts's
+  // savings_basis metadata). The card must say "Up to $X/mo", not present it
+  // as a plain expected monthly saving.
+  it('detects ceiling-basis recommendations from the metadata.savings_basis contract, not resourceType/issue guessing', () => {
+    expect(source).toMatch(/rec\.metadata\?\.savings_basis/)
+    expect(source).toMatch(/basis\.startsWith\(['"]ceiling['"]\)/)
+  })
+
+  it('renders ceiling-basis savings as "Up to $X/mo" rather than an unqualified figure', () => {
+    expect(source).toMatch(/Up to \$\{formatSavings\(rec\.potentialSavings\)\}/)
+  })
+
+  it('discloses the ceiling nature of the figure near the amount, not just in the page-wide disclaimer', () => {
+    expect(source).toMatch(/Estimated ceiling, not an expected saving/)
+  })
+})
+
 describe('Cost Optimization page: severity breakdown stays schema-accurate', () => {
   it('only renders High/Medium/Low severity rows', () => {
     const severityBlock = source.slice(source.indexOf('Severity breakdown'), source.indexOf('What DevControl checks'))
@@ -124,6 +144,32 @@ describe('Cost Optimization page: real data sources, not client-side re-aggregat
 
   it('also sources the manual "Run cost analysis" run history, not just the scheduled discovery cron', () => {
     expect(source).toMatch(/costRecommendationsService\.getAnalysisRuns/)
+  })
+})
+
+describe('Cost Optimization page: optimization checks come from the backend rule registry, not a hardcoded list', () => {
+  it('no longer defines its own authoritative SCAN_CHECKS list', () => {
+    expect(source).not.toMatch(/const SCAN_CHECKS/)
+  })
+
+  it('fetches the rule catalog from the real registry endpoint', () => {
+    expect(source).toMatch(/queryFn:\s*costRecommendationsService\.getOptimizationRules/)
+    expect(source).toMatch(/queryKey:\s*\['optimization-rules'\]/)
+  })
+
+  it('derives the "what DevControl checks" list from fetched rules, not a literal array', () => {
+    expect(source).toMatch(/implementedRules\.map/)
+  })
+
+  it('never claims full/complete coverage of the registered rule catalog', () => {
+    expect(source).not.toMatch(/30\/30/)
+    expect(source).not.toMatch(/all 30/i)
+    expect(source).not.toMatch(/fully optimized/i)
+  })
+
+  it('discloses coverage as a fraction of the registry total, not a fixed literal count', () => {
+    expect(source).toMatch(/ruleCatalog\.summary\.implementedCount/)
+    expect(source).toMatch(/ruleCatalog\.summary\.totalRules/)
   })
 })
 

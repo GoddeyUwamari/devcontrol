@@ -20,6 +20,41 @@ export interface CostAnalysisRun {
   error_message: string | null;
 }
 
+// Mirrors backend/src/config/optimization-rules.ts -- the Optimization Rule
+// Registry. 'implemented' means a real analyzer runs for it today
+// (cost-optimization.service.ts); 'planned' means it's registered for
+// roadmap/UI purposes only and produces no recommendations yet. `issue` is
+// only present for 'implemented' rules.
+export type OptimizationRuleStatus = 'implemented' | 'planned';
+
+export interface OptimizationRule {
+  id: string;
+  service: string;
+  name: string;
+  detail: string;
+  status: OptimizationRuleStatus;
+  issue?: string;
+}
+
+export interface OptimizationRuleServiceCoverage {
+  service: string;
+  implementedCount: number;
+  plannedCount: number;
+  totalCount: number;
+}
+
+export interface OptimizationRuleSummary {
+  totalRules: number;
+  implementedCount: number;
+  plannedCount: number;
+  services: OptimizationRuleServiceCoverage[];
+}
+
+export interface OptimizationRuleCatalog {
+  rules: OptimizationRule[];
+  summary: OptimizationRuleSummary;
+}
+
 export const costRecommendationsService = {
   // Get all recommendations. limit/offset are already supported by the backend
   // (repository.findAll -- ORDER BY potential_savings DESC, created_at DESC) but were
@@ -126,6 +161,18 @@ export const costRecommendationsService = {
   getAnalysisRuns: async (limit: number = 5): Promise<CostAnalysisRun[]> => {
     const response = await api.get<ApiResponse<CostAnalysisRun[]>>(
       `/api/cost-recommendations/analysis-runs?limit=${limit}`
+    );
+    return handleApiResponse(response);
+  },
+
+  // The Optimization Rule Registry catalog -- what DevControl actually checks
+  // today (implemented) vs. what's registered/planned but has no analyzer
+  // yet. Replaces the frontend's own previously-hardcoded SCAN_CHECKS list
+  // as the authoritative source for the Cost Optimization page's "What
+  // DevControl checks" / coverage / planned sections.
+  getOptimizationRules: async (): Promise<OptimizationRuleCatalog> => {
+    const response = await api.get<ApiResponse<OptimizationRuleCatalog>>(
+      '/api/cost-recommendations/optimization-rules'
     );
     return handleApiResponse(response);
   },

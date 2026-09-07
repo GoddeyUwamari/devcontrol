@@ -8,15 +8,31 @@ import {
   RecommendationStatus,
 } from '../types';
 import { DetectorObservation } from '../services/cost-optimization.service';
+import {
+  ISSUE_EC2_IDLE_INSTANCE,
+  ISSUE_RDS_OVERSIZED_INSTANCE,
+  ISSUE_EC2_UNUSED_ELASTIC_IP,
+  ISSUE_EBS_UNATTACHED_VOLUME,
+  ISSUE_S3_LIFECYCLE_OPTIMIZATION,
+  ISSUE_LAMBDA_LOW_USAGE,
+} from '../config/optimization-rules';
 
-// Fixed, canonical issue strings for the 3 detectors this occurrence
-// lifecycle applies to (backend/src/services/cost-optimization.service.ts).
-// Reserved Instance Opportunity is deliberately excluded -- its resource_id
-// is a synthetic, fleet-level aggregate (`ri-opportunity-${instanceType}`),
-// not a discrete AWS resource, so it keeps the pre-existing unconditional
-// delete+recreate behavior via deleteActiveByIssue()+createBulk() instead of
-// reconcileActiveRecommendations().
-const NON_RI_ISSUES = ['Idle Instance', 'Oversized Instance', 'Unused Elastic IP'] as const;
+// Fixed, canonical issue strings for the resource-identity-based detectors
+// this occurrence lifecycle applies to
+// (backend/src/services/cost-optimization.service.ts, via the shared
+// identities in config/optimization-rules.ts). Reserved Instance Opportunity
+// is deliberately excluded -- its resource_id is a synthetic, fleet-level
+// aggregate (`ri-opportunity-${instanceType}`), not a discrete AWS resource,
+// so it keeps the pre-existing unconditional delete+recreate behavior via
+// deleteActiveByIssue()+createBulk() instead of reconcileActiveRecommendations().
+const NON_RI_ISSUES = [
+  ISSUE_EC2_IDLE_INSTANCE,
+  ISSUE_RDS_OVERSIZED_INSTANCE,
+  ISSUE_EC2_UNUSED_ELASTIC_IP,
+  ISSUE_EBS_UNATTACHED_VOLUME,
+  ISSUE_S3_LIFECYCLE_OPTIMIZATION,
+  ISSUE_LAMBDA_LOW_USAGE,
+] as const;
 
 // Distinct from the migration runner's single-integer advisory lock
 // (database/migrate.js, key 727271, the untyped single-bigint keyspace) and
