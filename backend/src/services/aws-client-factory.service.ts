@@ -23,7 +23,7 @@ import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { pool } from '../config/database';
 
-interface AWSClients {
+export interface AWSClients {
   costExplorer: CostExplorerClient;
   ec2: EC2Client;
   rds: RDSClient;
@@ -46,6 +46,19 @@ interface AWSClients {
   // 12-digit account ID parsed from role_arn, when available — lets account-level
   // checks (e.g. security group findings) build a real resource ARN instead of '*'.
   accountId?: string;
+  /**
+   * Additive, regional escape hatch: builds a DynamoDBClient for a specific
+   * region using the SAME credentials already resolved for this call (the
+   * `dynamodb` client above is scoped only to `region`, the org's single
+   * configured/primary region). Needed because a DynamoDB table's real
+   * region (from Resource Explorer's per-resource Region field -- see
+   * resourceExplorer.service.ts) is not guaranteed to match the org's
+   * primary region, and every other client on this object intentionally
+   * keeps that single-region assumption unchanged. Costs zero additional
+   * AssumeRole calls -- it's a plain client construction, not a new
+   * credentials fetch.
+   */
+  getDynamoDBClientForRegion: (region: string) => DynamoDBClient;
 }
 
 /** Extracts the 12-digit account ID from an IAM role/user ARN, e.g. arn:aws:iam::123456789012:role/x */
@@ -134,6 +147,7 @@ export class AWSClientFactory {
       region: awsRegion,
       enabled: true,
       accountId: parseAccountIdFromArn(role_arn),
+      getDynamoDBClientForRegion: (region: string) => new DynamoDBClient({ region, credentials: tempCredentials }),
     };
   }
 
@@ -180,6 +194,7 @@ export class AWSClientFactory {
       resourceExplorer: new ResourceExplorer2Client(config),
       region: config.region,
       enabled: true,
+      getDynamoDBClientForRegion: (region: string) => new DynamoDBClient({ region, credentials: config.credentials }),
     };
   }
 
@@ -204,6 +219,7 @@ export class AWSClientFactory {
       resourceExplorer: {} as ResourceExplorer2Client,
       region: 'us-east-1',
       enabled: false,
+      getDynamoDBClientForRegion: () => ({} as DynamoDBClient),
     };
   }
 
