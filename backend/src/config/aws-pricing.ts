@@ -65,3 +65,55 @@ export function estimateLambdaMonthlyCostFromUsage(
   const computeCost = invocations * durationSeconds * memoryGB * LAMBDA_PRICE_PER_GB_SECOND_USD;
   return requestCost + computeCost;
 }
+
+// AWS DynamoDB Provisioned Capacity pricing, us-east-1, $/unit-hour --
+// fetched directly from AWS's own official pricing page
+// (https://aws.amazon.com/dynamodb/pricing/provisioned/, worked-example
+// figures, cross-checked across two independent fetches of the same page)
+// on 2026-09-07. Not a live AWS Pricing API call; re-verify against that
+// same page before relying on this for a real customer-facing dollar figure
+// if meaningful time has passed.
+//
+// Two table classes, each with its own RCU/WCU rate -- Standard (the
+// default AWS assumes when no table class is specified, not a guess this
+// codebase is making) and Standard-IA (a real, distinct, higher rate; see
+// DynamoDBTableConfig.table_class in dynamodb-table.util.ts, already
+// discovered today).
+//
+// This models PROVISIONED capacity only. On-demand pricing
+// ($0.6250 per million writes, $0.125 per million reads, same source) is a
+// completely different pricing model (per-request, not per-hour-capacity)
+// and belongs to the separate, deliberately deferred
+// dynamodb_on_demand_vs_provisioned rule -- not implemented here.
+//
+// Does not model: the perpetual free tier (25 WCUs + 25 RCUs per region per
+// month, account-wide, not attributable to one table -- same simplification
+// already made for Lambda's free tier above); Global Table replicated-write
+// capacity (each replica incurs its own WCU charges under a materially
+// different model not covered by this per-table calculation); Reserved
+// Capacity discounts (up to ~54-77% off list price for 1-3 year commitments
+// -- a distinct purchasing option, not the on-demand-provisioned rate this
+// codebase's other estimates already model everywhere else, e.g. EC2/RDS
+// not modeling Reserved Instances/Savings Plans either).
+export const DYNAMODB_PROVISIONED_RCU_PER_HOUR_USD: Record<string, number> = {
+  STANDARD: 0.00013,
+  STANDARD_INFREQUENT_ACCESS: 0.00016,
+};
+export const DYNAMODB_PROVISIONED_WCU_PER_HOUR_USD: Record<string, number> = {
+  STANDARD: 0.00065,
+  STANDARD_INFREQUENT_ACCESS: 0.00081,
+};
+
+export function estimateDynamoDBProvisionedMonthlyCost(
+  readCapacityUnits: number,
+  writeCapacityUnits: number,
+  tableClass?: string
+): number {
+  const resolvedClass = tableClass && DYNAMODB_PROVISIONED_RCU_PER_HOUR_USD[tableClass] !== undefined
+    ? tableClass
+    : 'STANDARD';
+  const hoursPerMonth = 730; // same 730-hours/month convention already used by estimateLBCost() in awsResourceDiscovery.ts
+  const rcuCost = readCapacityUnits * DYNAMODB_PROVISIONED_RCU_PER_HOUR_USD[resolvedClass] * hoursPerMonth;
+  const wcuCost = writeCapacityUnits * DYNAMODB_PROVISIONED_WCU_PER_HOUR_USD[resolvedClass] * hoursPerMonth;
+  return rcuCost + wcuCost;
+}

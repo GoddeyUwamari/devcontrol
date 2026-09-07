@@ -39,7 +39,7 @@ import {
   DistributionSummary,
 } from '@aws-sdk/client-cloudfront';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
-import { AWSClientFactory } from './aws-client-factory.service';
+import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
 import {
   AWSResource,
   CreateAWSResourceInput,
@@ -66,6 +66,7 @@ import { ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY } from '../config/optimization-
 import { getBucketLifecycleStatus } from './s3-lifecycle.util';
 import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
+import { describeDynamoDBTable } from './dynamodb-table.util';
 
 /**
  * Resource types allowed by subscription tier
@@ -395,6 +396,17 @@ export class AWSResourceDiscoveryService {
         } catch (error: any) {
           console.error(`❌ [Discovery] Resource Explorer generic upsert failed:`, error.message);
           errors.push(`Resource Explorer inventory: ${error.message}`);
+        }
+
+        try {
+          const dynamoDbEntries = allowedEntries.filter((e) => e.resourceType === 'dynamodb');
+          if (dynamoDbEntries.length > 0) {
+            const enrichedCount = await this.enrichDynamoDBTables(organizationId, client, awsClients, dynamoDbEntries);
+            console.log(`✅ [Discovery] Enriched ${enrichedCount} of ${dynamoDbEntries.length} DynamoDB table(s) with real configuration`);
+          }
+        } catch (error: any) {
+          console.error(`❌ [Discovery] DynamoDB enrichment failed:`, error.message);
+          errors.push(`DynamoDB enrichment: ${error.message}`);
         }
 
         try {
@@ -1158,7 +1170,19 @@ export class AWSResourceDiscoveryService {
       DO UPDATE SET
         resource_name = EXCLUDED.resource_name,
         tags = EXCLUDED.tags,
-        metadata = EXCLUDED.metadata,
+        -- Merge, not overwrite: a dedicated enrichment step (e.g.
+        -- enrichDynamoDBTables()) can add real per-resource config on top of
+        -- this generic {source, service} baseline in the same discovery run.
+        -- An unconditional overwrite here would silently erase that
+        -- enrichment on every subsequent cycle whose own enrichment attempt
+        -- happens to fail transiently (AWS throttling, a permissions blip),
+        -- even though nothing about the resource actually changed -- the
+        -- same class of bug Phase 3B fixed for Lambda's estimated_monthly_cost
+        -- via COALESCE. Behavior-preserving for every generic type that
+        -- writes no metadata beyond {source, service} (every one of them,
+        -- as of this change): EXCLUDED.metadata's keys still take precedence
+        -- on overlap, so a changed service/source value still updates.
+        metadata = aws_resources.metadata || EXCLUDED.metadata,
         region = EXCLUDED.region,
         status = CASE WHEN aws_resources.status = 'terminated' THEN 'unknown' ELSE aws_resources.status END,
         last_synced_at = NOW(),
@@ -1178,6 +1202,65 @@ export class AWSResourceDiscoveryService {
     );
 
     return result.rows[0].inserted ? 'created' : 'updated';
+  }
+
+  /**
+   * Enriches already-upserted generic DynamoDB rows with real per-table
+   * configuration from DescribeTable -- billing mode, provisioned capacity,
+   * table class, GSIs, and Global Table replicas (see dynamodb-table.util.ts).
+   * Foundation only: this never fetches CloudWatch telemetry, never touches
+   * pricing/estimated_monthly_cost, and never creates a cost_recommendations
+   * row -- see cost-optimization.service.ts's future dynamodb_* detectors
+   * (not yet built) for that layer.
+   *
+   * A table whose DescribeTable call fails this cycle (permissions,
+   * throttling, a deleted table) is left completely untouched -- no metadata
+   * write at all for that one table, preserving whatever it already had from
+   * a prior successful cycle (see upsertGenericResource's metadata-merge
+   * comment for why an unconditional overwrite would be unsafe here). This
+   * never fabricates a billing mode or any other field.
+   *
+   * Builds one DynamoDBClient per DISTINCT region actually reported for
+   * these tables (via AWSClientFactory.getDynamoDBClientForRegion), not the
+   * org's single configured/primary region -- a table's real region, from
+   * Resource Explorer's per-resource Region field, is not guaranteed to
+   * match it. Reuses the same AssumeRole credentials already established for
+   * this discovery run; costs zero additional AssumeRole calls.
+   */
+  private async enrichDynamoDBTables(
+    organizationId: string,
+    client: PoolClient,
+    awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion'>,
+    entries: NormalizedResourceEntry[]
+  ): Promise<number> {
+    let enrichedCount = 0;
+    const clientsByRegion = new Map<string, ReturnType<AWSClients['getDynamoDBClientForRegion']>>();
+
+    for (const entry of entries) {
+      let regionalClient = clientsByRegion.get(entry.region);
+      if (!regionalClient) {
+        regionalClient = awsClients.getDynamoDBClientForRegion(entry.region);
+        clientsByRegion.set(entry.region, regionalClient);
+      }
+
+      const tableName = this.resourceExplorer.extractResourceId(entry.arn);
+      const result = await describeDynamoDBTable(regionalClient, tableName);
+
+      if (result.status !== 'described') {
+        console.error(`[Discovery] DynamoDB DescribeTable unavailable for ${tableName} (${entry.region}): ${result.reason}`);
+        continue;
+      }
+
+      await client.query(
+        `UPDATE aws_resources
+         SET metadata = metadata || $1::jsonb, updated_at = NOW()
+         WHERE organization_id = $2 AND resource_arn = $3`,
+        [JSON.stringify(result.config), organizationId, entry.arn]
+      );
+      enrichedCount++;
+    }
+
+    return enrichedCount;
   }
 
   /**
