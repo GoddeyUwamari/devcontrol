@@ -54,8 +54,11 @@ export class AWSResourcesExportService {
       label: 'Monthly Cost',
       field: 'estimated_monthly_cost',
       formatter: (r: any) => {
-        const cost = r.estimated_monthly_cost || 0;
-        return `$${cost.toFixed(2)}`;
+        // null means the cost hasn't actually been calculated yet for this
+        // resource (e.g. a Lambda function whose CloudWatch usage lookup
+        // failed on its most recent discovery) -- never coerce to $0.00.
+        if (r.estimated_monthly_cost == null) return 'Not available';
+        return `$${Number(r.estimated_monthly_cost).toFixed(2)}`;
       },
     },
     security: {

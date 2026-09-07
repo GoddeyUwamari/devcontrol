@@ -51,7 +51,9 @@ export interface AWSResource {
   tags: Record<string, string>;
   metadata: Record<string, any>;
   status: ResourceStatus | null;
-  estimated_monthly_cost: number;
+  // null means "not yet calculated" (e.g. a Lambda function whose CloudWatch
+  // usage lookup failed on its most recent discovery) -- never coerce to 0.
+  estimated_monthly_cost: number | null;
   actual_monthly_cost: number;
   is_encrypted: boolean;
   is_public: boolean;
@@ -75,7 +77,7 @@ export interface CreateAWSResourceInput {
   tags?: Record<string, string>;
   metadata?: Record<string, any>;
   status?: ResourceStatus;
-  estimated_monthly_cost?: number;
+  estimated_monthly_cost?: number | null;
   actual_monthly_cost?: number;
   is_encrypted?: boolean;
   is_public?: boolean;

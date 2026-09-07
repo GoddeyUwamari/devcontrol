@@ -863,7 +863,7 @@ function InfrastructureContent() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
                     <span className="text-xs text-slate-500 font-mono">{r.awsRegion || '—'}</span>
-                    <span className="ml-auto text-sm font-bold text-slate-900">${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="ml-auto text-sm font-bold text-slate-900">{r.costPerMonth != null ? `$${r.costPerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>
                   </div>
                 </div>
 
@@ -890,7 +890,7 @@ function InfrastructureContent() {
                   <span className="text-xs text-slate-500 font-mono overflow-hidden text-ellipsis whitespace-nowrap block">{r.awsId || '—'}</span>
                   <span className="text-[13px] text-slate-500">{r.serviceName || '—'}</span>
                   <span className="text-[13px] text-slate-500 font-mono">{r.awsRegion || '—'}</span>
-                  <span className="text-sm font-bold text-slate-900">${(r.costPerMonth ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="text-sm font-bold text-slate-900">{r.costPerMonth != null ? `$${r.costPerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                 </div>
               </div>

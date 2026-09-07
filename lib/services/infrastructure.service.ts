@@ -27,7 +27,12 @@ export const infrastructureService = {
       awsId: r.awsId || r.aws_id || r.resource_id || '—',
       awsRegion: r.awsRegion || r.aws_region || r.region || '—',
       status: r.status || 'running',
-      costPerMonth: parseFloat(r.costPerMonth || r.cost_per_month || '0') || 0,
+      // null (not 0) means the cost hasn't actually been calculated yet for
+      // this resource -- see InfrastructureResource's costPerMonth doc comment.
+      costPerMonth: (() => {
+        const raw = r.costPerMonth ?? r.cost_per_month;
+        return raw != null ? parseFloat(raw) : null;
+      })(),
       metadata: r.metadata,
       createdAt: r.createdAt || r.created_at || new Date().toISOString(),
       updatedAt: r.updatedAt || r.updated_at || new Date().toISOString(),

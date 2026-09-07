@@ -36,7 +36,17 @@ export interface ChatContext {
   resources: {
     ec2?: { count: number; underutilized: number };
     rds?: { count: number; storageCost: number };
-    lambda?: { count: number; invocations: number };
+    // invocations is a real, usage-based figure -- SUM of each function's
+    // real 30-day CloudWatch Invocations (see awsResourceDiscovery.ts's
+    // discoverLambdaFunctions()/lambda-usage.util.ts), read back from
+    // aws_resources.metadata->>'invocations_30d'. It replaces a prior
+    // implementation that summed a `tags->>'invocations'` value nothing
+    // ever wrote, and so always silently reported 0. invocationsKnownForCount
+    // is how many of `count` functions actually have a known usage figure
+    // (a per-function CloudWatch failure leaves that one function's usage
+    // unknown, not zero) -- callers must not present `invocations` as a
+    // complete total when invocationsKnownForCount < count.
+    lambda?: { count: number; invocations: number; invocationsKnownForCount: number };
   };
   alerts: {
     total: number;
@@ -219,7 +229,17 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       resourceLines.push(`- RDS: ${context.resources.rds.count} databases, storage cost $${context.resources.rds.storageCost}/month`);
     }
     if (context.resources.lambda) {
-      resourceLines.push(`- Lambda: ${context.resources.lambda.count} functions, ${context.resources.lambda.invocations.toLocaleString()} invocations/month`);
+      const { count, invocations, invocationsKnownForCount } = context.resources.lambda;
+      if (invocationsKnownForCount === 0) {
+        // No function's real 30-day usage could be determined (CloudWatch
+        // unavailable for all of them) -- state that plainly rather than
+        // asserting a specific invocation count we don't actually have.
+        resourceLines.push(`- Lambda: ${count} functions, 30-day invocation data unavailable`);
+      } else if (invocationsKnownForCount < count) {
+        resourceLines.push(`- Lambda: ${count} functions, ${invocations.toLocaleString()} invocations over the last 30 days (usage known for ${invocationsKnownForCount} of ${count} functions; the rest are unavailable, not zero)`);
+      } else {
+        resourceLines.push(`- Lambda: ${count} functions, ${invocations.toLocaleString()} invocations over the last 30 days`);
+      }
     }
 
     const costSourceLabel = {
@@ -260,7 +280,7 @@ Alerts & Incidents:
 ${context.alerts.recent.length > 0 ? `- Recent: ${context.alerts.recent.join(', ')}` : '- No recent incidents'}
 
 ${context.anomalies && context.anomalies.length > 0 ? `
-Detected Anomalies:
+Detected Anomalies (source: DevControl resource inventory estimate -- the same estimated_monthly_cost basis as the resource inventory above, not a confirmed AWS Cost Explorer billing event):
 ${context.anomalies.map(a => `- ${a.service} ${a.type}: ${a.description} (${a.impact})`).join('\n')}
 ` : ''}
 
