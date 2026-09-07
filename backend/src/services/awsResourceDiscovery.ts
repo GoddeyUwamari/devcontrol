@@ -67,6 +67,7 @@ import { getBucketLifecycleStatus } from './s3-lifecycle.util';
 import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
 import { describeDynamoDBTable } from './dynamodb-table.util';
+import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
 
 /**
  * Resource types allowed by subscription tier
@@ -1220,27 +1221,46 @@ export class AWSResourceDiscoveryService {
    * comment for why an unconditional overwrite would be unsafe here). This
    * never fabricates a billing mode or any other field.
    *
-   * Builds one DynamoDBClient per DISTINCT region actually reported for
-   * these tables (via AWSClientFactory.getDynamoDBClientForRegion), not the
-   * org's single configured/primary region -- a table's real region, from
-   * Resource Explorer's per-resource Region field, is not guaranteed to
-   * match it. Reuses the same AssumeRole credentials already established for
-   * this discovery run; costs zero additional AssumeRole calls.
+   * Builds one DynamoDBClient and one ApplicationAutoScalingClient per
+   * DISTINCT region actually reported for these tables (via
+   * AWSClientFactory.getDynamoDBClientForRegion/
+   * getApplicationAutoScalingClientForRegion), not the org's single
+   * configured/primary region -- a table's real region, from Resource
+   * Explorer's per-resource Region field, is not guaranteed to match it.
+   * Reuses the same AssumeRole credentials already established for this
+   * discovery run; costs zero additional AssumeRole calls.
+   *
+   * Autoscaling (Phase 3E, Checkpoint C): a table's autoscaling state comes
+   * from a genuinely separate AWS API (Application Auto Scaling's
+   * DescribeScalableTargets, see dynamodb-autoscaling.util.ts) than
+   * DescribeTable. Its failure is NOT treated the same as a DescribeTable
+   * failure: if DescribeTable succeeds but the autoscaling check fails, the
+   * real DescribeTable-derived fields are still persisted, with
+   * autoscaling_state explicitly recorded as AUTOSCALING_UNKNOWN -- never
+   * silently omitted, and never collapsed into AUTOSCALING_DISABLED. Only a
+   * DescribeTable failure skips the table entirely, as before.
    */
   private async enrichDynamoDBTables(
     organizationId: string,
     client: PoolClient,
-    awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion'>,
+    awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion' | 'getApplicationAutoScalingClientForRegion'>,
     entries: NormalizedResourceEntry[]
   ): Promise<number> {
     let enrichedCount = 0;
-    const clientsByRegion = new Map<string, ReturnType<AWSClients['getDynamoDBClientForRegion']>>();
+    const dynamoDbClientsByRegion = new Map<string, ReturnType<AWSClients['getDynamoDBClientForRegion']>>();
+    const autoscalingClientsByRegion = new Map<string, ReturnType<AWSClients['getApplicationAutoScalingClientForRegion']>>();
 
     for (const entry of entries) {
-      let regionalClient = clientsByRegion.get(entry.region);
+      let regionalClient = dynamoDbClientsByRegion.get(entry.region);
       if (!regionalClient) {
         regionalClient = awsClients.getDynamoDBClientForRegion(entry.region);
-        clientsByRegion.set(entry.region, regionalClient);
+        dynamoDbClientsByRegion.set(entry.region, regionalClient);
+      }
+
+      let regionalAutoscalingClient = autoscalingClientsByRegion.get(entry.region);
+      if (!regionalAutoscalingClient) {
+        regionalAutoscalingClient = awsClients.getApplicationAutoScalingClientForRegion(entry.region);
+        autoscalingClientsByRegion.set(entry.region, regionalAutoscalingClient);
       }
 
       const tableName = this.resourceExplorer.extractResourceId(entry.arn);
@@ -1251,11 +1271,31 @@ export class AWSResourceDiscoveryService {
         continue;
       }
 
+      const autoscalingResult = await describeDynamoDBAutoscaling(regionalAutoscalingClient, tableName);
+      const autoscaling_state =
+        autoscalingResult.status === 'described' ? autoscalingResult.config.autoscaling_state : 'AUTOSCALING_UNKNOWN';
+      if (autoscalingResult.status !== 'described') {
+        console.error(
+          `[Discovery] Application Auto Scaling DescribeScalableTargets unavailable for ${tableName} (${entry.region}): ${autoscalingResult.reason}`
+        );
+      }
+
+      const metadata = {
+        ...result.config,
+        autoscaling_state,
+        ...(autoscalingResult.status === 'described'
+          ? {
+              read_capacity_autoscaled: autoscalingResult.config.read_capacity_autoscaled,
+              write_capacity_autoscaled: autoscalingResult.config.write_capacity_autoscaled,
+            }
+          : {}),
+      };
+
       await client.query(
         `UPDATE aws_resources
          SET metadata = metadata || $1::jsonb, updated_at = NOW()
          WHERE organization_id = $2 AND resource_arn = $3`,
-        [JSON.stringify(result.config), organizationId, entry.arn]
+        [JSON.stringify(metadata), organizationId, entry.arn]
       );
       enrichedCount++;
     }

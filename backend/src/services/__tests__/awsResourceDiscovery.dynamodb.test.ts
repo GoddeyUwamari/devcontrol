@@ -4,13 +4,25 @@
  * dedicated test file (dynamodb-table.util.test.ts); this suite mocks it to
  * isolate region-client reuse/caching, per-table independence, and the
  * UPDATE it issues.
+ *
+ * Phase 3E, Checkpoint C: describeDynamoDBAutoscaling() is now also called
+ * per table (via a separate regional ApplicationAutoScalingClient) and its
+ * result merged into the same persisted metadata object. A DescribeTable
+ * failure still skips the table entirely (unchanged); an autoscaling-check
+ * failure does NOT skip the table -- the real DescribeTable-derived fields
+ * are still persisted, with autoscaling_state recorded as
+ * AUTOSCALING_UNKNOWN rather than silently omitted or collapsed into
+ * AUTOSCALING_DISABLED.
  */
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { NormalizedResourceEntry } from '../resourceExplorer.service';
 import * as dynamoTableUtil from '../dynamodb-table.util';
+import * as dynamoAutoscalingUtil from '../dynamodb-autoscaling.util';
 
 jest.mock('../dynamodb-table.util');
+jest.mock('../dynamodb-autoscaling.util');
 const mockedDescribeDynamoDBTable = dynamoTableUtil.describeDynamoDBTable as jest.Mock;
+const mockedDescribeDynamoDBAutoscaling = dynamoAutoscalingUtil.describeDynamoDBAutoscaling as jest.Mock;
 
 function entry(overrides: Partial<NormalizedResourceEntry> = {}): NormalizedResourceEntry {
   return {
@@ -23,49 +35,71 @@ function entry(overrides: Partial<NormalizedResourceEntry> = {}): NormalizedReso
   };
 }
 
+// Default autoscaling mock: DISABLED, matching the vast majority of tests
+// below whose focus is DescribeTable orchestration, not autoscaling itself.
+const DEFAULT_AUTOSCALING_RESULT = {
+  status: 'described',
+  config: { autoscaling_state: 'AUTOSCALING_DISABLED', read_capacity_autoscaled: false, write_capacity_autoscaled: false },
+};
+
 describe('AWSResourceDiscoveryService.enrichDynamoDBTables', () => {
   const service = new AWSResourceDiscoveryService({} as any);
 
   beforeEach(() => {
     mockedDescribeDynamoDBTable.mockReset();
+    mockedDescribeDynamoDBAutoscaling.mockReset();
+    mockedDescribeDynamoDBAutoscaling.mockResolvedValue(DEFAULT_AUTOSCALING_RESULT);
   });
 
-  it('builds one regional client for a table and issues a merge UPDATE with the real config', async () => {
+  it('builds one regional client for a table and issues a merge UPDATE with the real config plus autoscaling state', async () => {
     mockedDescribeDynamoDBTable.mockResolvedValueOnce({
       status: 'described',
       config: { billing_mode: 'PROVISIONED', table_status: 'ACTIVE' },
     });
     const query = jest.fn().mockResolvedValue({});
     const dynamoClient = { fake: 'client-for-us-east-1' };
+    const autoscalingClient = { fake: 'autoscaling-client-for-us-east-1' };
     const getDynamoDBClientForRegion = jest.fn().mockReturnValue(dynamoClient);
+    const getApplicationAutoScalingClientForRegion = jest.fn().mockReturnValue(autoscalingClient);
 
     const enrichedCount = await (service as any).enrichDynamoDBTables(
       'org-1',
       { query },
-      { getDynamoDBClientForRegion },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
       [entry({ arn: 'arn:aws:dynamodb:us-east-1:123456789012:table/orders' })]
     );
 
     expect(enrichedCount).toBe(1);
     expect(getDynamoDBClientForRegion).toHaveBeenCalledWith('us-east-1');
+    expect(getApplicationAutoScalingClientForRegion).toHaveBeenCalledWith('us-east-1');
     expect(mockedDescribeDynamoDBTable).toHaveBeenCalledWith(dynamoClient, 'orders');
+    expect(mockedDescribeDynamoDBAutoscaling).toHaveBeenCalledWith(autoscalingClient, 'orders');
     expect(query).toHaveBeenCalledTimes(1);
     const [sql, params] = query.mock.calls[0];
     expect(sql).toMatch(/metadata = metadata \|\| \$1::jsonb/);
-    expect(params[0]).toBe(JSON.stringify({ billing_mode: 'PROVISIONED', table_status: 'ACTIVE' }));
+    expect(params[0]).toBe(
+      JSON.stringify({
+        billing_mode: 'PROVISIONED',
+        table_status: 'ACTIVE',
+        autoscaling_state: 'AUTOSCALING_DISABLED',
+        read_capacity_autoscaled: false,
+        write_capacity_autoscaled: false,
+      })
+    );
     expect(params[1]).toBe('org-1');
     expect(params[2]).toBe('arn:aws:dynamodb:us-east-1:123456789012:table/orders');
   });
 
-  it('reuses the same regional client for multiple tables in the same region -- one client construction, not one per table', async () => {
+  it('reuses the same regional client (both DynamoDB and Application Auto Scaling) for multiple tables in the same region', async () => {
     mockedDescribeDynamoDBTable.mockResolvedValue({ status: 'described', config: { billing_mode: 'PAY_PER_REQUEST' } });
     const query = jest.fn().mockResolvedValue({});
     const getDynamoDBClientForRegion = jest.fn().mockReturnValue({ fake: 'client' });
+    const getApplicationAutoScalingClientForRegion = jest.fn().mockReturnValue({ fake: 'autoscaling-client' });
 
     const enrichedCount = await (service as any).enrichDynamoDBTables(
       'org-1',
       { query },
-      { getDynamoDBClientForRegion },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
       [
         entry({ arn: 'arn:aws:dynamodb:us-east-1:123456789012:table/a', region: 'us-east-1' }),
         entry({ arn: 'arn:aws:dynamodb:us-east-1:123456789012:table/b', region: 'us-east-1' }),
@@ -74,17 +108,19 @@ describe('AWSResourceDiscoveryService.enrichDynamoDBTables', () => {
 
     expect(enrichedCount).toBe(2);
     expect(getDynamoDBClientForRegion).toHaveBeenCalledTimes(1);
+    expect(getApplicationAutoScalingClientForRegion).toHaveBeenCalledTimes(1);
   });
 
-  it('builds a separate regional client per distinct region', async () => {
+  it('builds a separate regional client per distinct region for both DynamoDB and Application Auto Scaling', async () => {
     mockedDescribeDynamoDBTable.mockResolvedValue({ status: 'described', config: { billing_mode: 'PAY_PER_REQUEST' } });
     const query = jest.fn().mockResolvedValue({});
     const getDynamoDBClientForRegion = jest.fn((region: string) => ({ fake: `client-for-${region}` }));
+    const getApplicationAutoScalingClientForRegion = jest.fn((region: string) => ({ fake: `autoscaling-client-for-${region}` }));
 
     await (service as any).enrichDynamoDBTables(
       'org-1',
       { query },
-      { getDynamoDBClientForRegion },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
       [
         entry({ arn: 'arn:aws:dynamodb:us-east-1:123456789012:table/a', region: 'us-east-1' }),
         entry({ arn: 'arn:aws:dynamodb:eu-west-1:123456789012:table/b', region: 'eu-west-1' }),
@@ -94,6 +130,9 @@ describe('AWSResourceDiscoveryService.enrichDynamoDBTables', () => {
     expect(getDynamoDBClientForRegion).toHaveBeenCalledTimes(2);
     expect(getDynamoDBClientForRegion).toHaveBeenCalledWith('us-east-1');
     expect(getDynamoDBClientForRegion).toHaveBeenCalledWith('eu-west-1');
+    expect(getApplicationAutoScalingClientForRegion).toHaveBeenCalledTimes(2);
+    expect(getApplicationAutoScalingClientForRegion).toHaveBeenCalledWith('us-east-1');
+    expect(getApplicationAutoScalingClientForRegion).toHaveBeenCalledWith('eu-west-1');
   });
 
   it('a DescribeTable failure for one table does not affect another table\'s (or another region\'s) result', async () => {
@@ -102,11 +141,12 @@ describe('AWSResourceDiscoveryService.enrichDynamoDBTables', () => {
       .mockResolvedValueOnce({ status: 'described', config: { billing_mode: 'PROVISIONED' } }); // eu-west-1/table-ok
     const query = jest.fn().mockResolvedValue({});
     const getDynamoDBClientForRegion = jest.fn((region: string) => ({ fake: region }));
+    const getApplicationAutoScalingClientForRegion = jest.fn((region: string) => ({ fake: `autoscaling-${region}` }));
 
     const enrichedCount = await (service as any).enrichDynamoDBTables(
       'org-1',
       { query },
-      { getDynamoDBClientForRegion },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
       [
         entry({ arn: 'arn:aws:dynamodb:us-east-1:123456789012:table/table-fails', region: 'us-east-1' }),
         entry({ arn: 'arn:aws:dynamodb:eu-west-1:123456789012:table/table-ok', region: 'eu-west-1' }),
@@ -116,32 +156,44 @@ describe('AWSResourceDiscoveryService.enrichDynamoDBTables', () => {
     expect(enrichedCount).toBe(1); // only the successful one counted
     expect(query).toHaveBeenCalledTimes(1); // no UPDATE issued for the failed table
     expect(query.mock.calls[0][1][2]).toBe('arn:aws:dynamodb:eu-west-1:123456789012:table/table-ok');
+    // Application Auto Scaling is only ever checked for the table whose DescribeTable succeeded --
+    // a DescribeTable failure skips the table before the autoscaling check.
+    expect(mockedDescribeDynamoDBAutoscaling).toHaveBeenCalledTimes(1);
   });
 
   it('never writes anything for a table whose DescribeTable call fails -- no fabricated metadata', async () => {
     mockedDescribeDynamoDBTable.mockResolvedValueOnce({ status: 'unavailable', reason: 'AccessDenied' });
     const query = jest.fn().mockResolvedValue({});
     const getDynamoDBClientForRegion = jest.fn().mockReturnValue({});
+    const getApplicationAutoScalingClientForRegion = jest.fn().mockReturnValue({});
 
     const enrichedCount = await (service as any).enrichDynamoDBTables(
       'org-1',
       { query },
-      { getDynamoDBClientForRegion },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
       [entry()]
     );
 
     expect(enrichedCount).toBe(0);
     expect(query).not.toHaveBeenCalled();
+    expect(mockedDescribeDynamoDBAutoscaling).not.toHaveBeenCalled();
   });
 
   it('returns 0 and builds no client at all for an empty entries list', async () => {
     const query = jest.fn();
     const getDynamoDBClientForRegion = jest.fn();
+    const getApplicationAutoScalingClientForRegion = jest.fn();
 
-    const enrichedCount = await (service as any).enrichDynamoDBTables('org-1', { query }, { getDynamoDBClientForRegion }, []);
+    const enrichedCount = await (service as any).enrichDynamoDBTables(
+      'org-1',
+      { query },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
+      []
+    );
 
     expect(enrichedCount).toBe(0);
     expect(getDynamoDBClientForRegion).not.toHaveBeenCalled();
+    expect(getApplicationAutoScalingClientForRegion).not.toHaveBeenCalled();
     expect(query).not.toHaveBeenCalled();
   });
 
@@ -149,9 +201,72 @@ describe('AWSResourceDiscoveryService.enrichDynamoDBTables', () => {
     mockedDescribeDynamoDBTable.mockResolvedValueOnce({ status: 'described', config: { billing_mode: 'PROVISIONED' } });
     const query = jest.fn().mockResolvedValue({});
     const getDynamoDBClientForRegion = jest.fn().mockReturnValue({});
+    const getApplicationAutoScalingClientForRegion = jest.fn().mockReturnValue({});
 
-    await (service as any).enrichDynamoDBTables('org-specific-id', { query }, { getDynamoDBClientForRegion }, [entry()]);
+    await (service as any).enrichDynamoDBTables(
+      'org-specific-id',
+      { query },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
+      [entry()]
+    );
 
     expect(query.mock.calls[0][1][1]).toBe('org-specific-id');
+  });
+
+  it('persists DescribeTable-derived fields with autoscaling_state as AUTOSCALING_UNKNOWN -- table is NOT skipped -- when only the autoscaling check fails', async () => {
+    mockedDescribeDynamoDBTable.mockResolvedValueOnce({
+      status: 'described',
+      config: { billing_mode: 'PROVISIONED', table_status: 'ACTIVE' },
+    });
+    mockedDescribeDynamoDBAutoscaling.mockResolvedValueOnce({ status: 'unavailable', reason: 'AccessDeniedException' });
+    const query = jest.fn().mockResolvedValue({});
+    const getDynamoDBClientForRegion = jest.fn().mockReturnValue({});
+    const getApplicationAutoScalingClientForRegion = jest.fn().mockReturnValue({});
+
+    const enrichedCount = await (service as any).enrichDynamoDBTables(
+      'org-1',
+      { query },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
+      [entry()]
+    );
+
+    expect(enrichedCount).toBe(1);
+    expect(query).toHaveBeenCalledTimes(1);
+    const params = query.mock.calls[0][1];
+    expect(params[0]).toBe(
+      JSON.stringify({
+        billing_mode: 'PROVISIONED',
+        table_status: 'ACTIVE',
+        autoscaling_state: 'AUTOSCALING_UNKNOWN',
+      })
+    );
+  });
+
+  it('reports AUTOSCALING_ENABLED with both dimension flags when Application Auto Scaling governs the table', async () => {
+    mockedDescribeDynamoDBTable.mockResolvedValueOnce({ status: 'described', config: { billing_mode: 'PROVISIONED' } });
+    mockedDescribeDynamoDBAutoscaling.mockResolvedValueOnce({
+      status: 'described',
+      config: { autoscaling_state: 'AUTOSCALING_ENABLED', read_capacity_autoscaled: true, write_capacity_autoscaled: false },
+    });
+    const query = jest.fn().mockResolvedValue({});
+    const getDynamoDBClientForRegion = jest.fn().mockReturnValue({});
+    const getApplicationAutoScalingClientForRegion = jest.fn().mockReturnValue({});
+
+    await (service as any).enrichDynamoDBTables(
+      'org-1',
+      { query },
+      { getDynamoDBClientForRegion, getApplicationAutoScalingClientForRegion },
+      [entry()]
+    );
+
+    const params = query.mock.calls[0][1];
+    expect(params[0]).toBe(
+      JSON.stringify({
+        billing_mode: 'PROVISIONED',
+        autoscaling_state: 'AUTOSCALING_ENABLED',
+        read_capacity_autoscaled: true,
+        write_capacity_autoscaled: false,
+      })
+    );
   });
 });

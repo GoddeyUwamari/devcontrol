@@ -24,17 +24,20 @@
  * that as "we don't know anything more about this table this cycle," never
  * as "assume no configuration" or "assume PAY_PER_REQUEST."
  *
- * Autoscaling (Phase 3E, Checkpoint B): DynamoDB's own DescribeTable response
- * cannot tell you whether Application Auto Scaling is managing a table's
- * capacity -- that lives in a separate AWS service (Application Auto
- * Scaling's DescribeScalableTargets/DescribeScalingPolicies), which this
- * codebase deliberately does not call yet (no @aws-sdk/client-application-
- * auto-scaling dependency, no new IAM ask -- see the Checkpoint B report for
- * the investigated tradeoff). `autoscaling_state` is therefore always
- * 'AUTOSCALING_UNKNOWN' today -- recorded explicitly, not omitted, so a
- * future capacity-safety rule has a real field to check and a documented
- * reason it's never anything else yet, rather than an absent key that could
- * be misread as "not evaluated" vs. "evaluated, genuinely unknown."
+ * Autoscaling is deliberately NOT this module's concern: DynamoDB's own
+ * DescribeTable response cannot tell you whether Application Auto Scaling
+ * is managing a table's capacity -- that lives in a genuinely separate AWS
+ * service. See dynamodb-autoscaling.util.ts (Phase 3E, Checkpoint C) for
+ * that evidence source; the caller (awsResourceDiscovery.ts's
+ * enrichDynamoDBTables()) merges both this module's config and that one's
+ * into a single persisted metadata object.
+ *
+ * `last_increase_date_time`/`last_decrease_date_time` (Checkpoint C): real
+ * AWS values from ProvisionedThroughputDescription, present only when AWS
+ * actually returns them -- never fabricated, never defaulted to an epoch/
+ * zero timestamp when absent. A future capacity-safety rule uses these to
+ * avoid recommending a change immediately after the customer's own recent,
+ * manual capacity change -- the exact recency threshold is not decided here.
  */
 import { DynamoDBClient, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 
@@ -68,12 +71,12 @@ export interface DynamoDBTableConfig {
   /** Global Table replica region names, when this table has any. */
   replica_regions?: string[];
   /**
-   * Always 'AUTOSCALING_UNKNOWN' today -- see this file's module doc comment.
-   * A future capacity-safety rule must treat this exactly like any other
-   * unknown/unresolved evidence gate: unsafe to recommend against, not a
-   * reason to fall back to a lower-confidence recommendation.
+   * Real AWS values, present only when AWS returns them (older tables, or
+   * ones whose capacity has never been changed, may have neither) -- never
+   * fabricated, never defaulted to an epoch/zero timestamp.
    */
-  autoscaling_state: DynamoDBAutoscalingState;
+  last_increase_date_time?: string;
+  last_decrease_date_time?: string;
 }
 
 export type DynamoDBTableDescribeResult =
@@ -105,12 +108,13 @@ export async function describeDynamoDBTable(
       table_status: table.TableStatus,
       creation_date_time: table.CreationDateTime?.toISOString(),
       table_class: table.TableClassSummary?.TableClass,
-      autoscaling_state: 'AUTOSCALING_UNKNOWN',
     };
 
     if (table.ProvisionedThroughput) {
       config.provisioned_read_capacity = table.ProvisionedThroughput.ReadCapacityUnits;
       config.provisioned_write_capacity = table.ProvisionedThroughput.WriteCapacityUnits;
+      config.last_increase_date_time = table.ProvisionedThroughput.LastIncreaseDateTime?.toISOString();
+      config.last_decrease_date_time = table.ProvisionedThroughput.LastDecreaseDateTime?.toISOString();
     }
 
     if (table.GlobalSecondaryIndexes && table.GlobalSecondaryIndexes.length > 0) {
