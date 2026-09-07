@@ -265,11 +265,22 @@ export class AIChatContextRepository {
         AND status != 'terminated'
       `;
 
-      // Lambda functions
+      // Lambda functions.
+      // invocations is summed from metadata->>'invocations_30d' -- the real
+      // 30-day CloudWatch usage figure discovery now persists per function
+      // (see awsResourceDiscovery.ts::discoverLambdaFunctions() and
+      // lambda-usage.util.ts). This replaces a prior query that summed
+      // tags->>'invocations', a key nothing ever wrote, so it always
+      // evaluated to a confident 0 regardless of real usage.
+      // known_for_count is how many functions actually have that key set --
+      // a per-function CloudWatch failure at discovery time leaves it unset
+      // (not 0) for that one function, and callers must not present the sum
+      // as a complete total when known_for_count < total.
       const lambdaQuery = `
         SELECT
           COUNT(*) as total,
-          COALESCE(SUM((tags->>'invocations')::bigint), 0) as invocations
+          COUNT(*) FILTER (WHERE metadata ? 'invocations_30d') as known_for_count,
+          COALESCE(SUM((metadata->>'invocations_30d')::bigint), 0) as invocations
         FROM aws_resources
         WHERE organization_id = $1
         AND resource_type = 'lambda'
@@ -305,6 +316,7 @@ export class AIChatContextRepository {
         resources.lambda = {
           count: lambdaCount,
           invocations: parseInt(lambdaResult.rows[0]?.invocations || 0),
+          invocationsKnownForCount: parseInt(lambdaResult.rows[0]?.known_for_count || 0),
         };
       }
 

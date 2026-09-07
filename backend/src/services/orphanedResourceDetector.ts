@@ -51,7 +51,11 @@ export class OrphanedResourceDetectorService {
       resource,
       orphaned_type: 'stopped_instance' as OrphanedResourceType,
       age_days: this.calculateAgeDays(resource.updated_at),
-      potential_savings: resource.estimated_monthly_cost,
+      // EC2's estimated_monthly_cost is always synchronously computed (never
+      // null in practice -- only Lambda's usage-based estimate can be null,
+      // see awsResourceDiscovery.ts); the ?? 0 here is a type-narrowing
+      // guard for the shared nullable column type, not a new behavior.
+      potential_savings: resource.estimated_monthly_cost ?? 0,
     }));
   }
 
@@ -77,7 +81,11 @@ export class OrphanedResourceDetectorService {
       resource,
       orphaned_type: 'empty_s3_bucket' as OrphanedResourceType,
       age_days: this.calculateAgeDays(resource.first_discovered_at),
-      potential_savings: resource.estimated_monthly_cost * 0.8, // Estimate 80% savings from deleting empty bucket
+      // S3's estimated_monthly_cost is always synchronously computed (never
+      // null in practice -- only Lambda's usage-based estimate can be null,
+      // see awsResourceDiscovery.ts); the ?? 0 here is a type-narrowing
+      // guard for the shared nullable column type, not a new behavior.
+      potential_savings: (resource.estimated_monthly_cost ?? 0) * 0.8, // Estimate 80% savings from deleting empty bucket
     }));
   }
 

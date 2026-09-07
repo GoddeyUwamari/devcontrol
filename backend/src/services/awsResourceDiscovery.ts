@@ -38,6 +38,7 @@ import {
   paginateListDistributions,
   DistributionSummary,
 } from '@aws-sdk/client-cloudfront';
+import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { AWSClientFactory } from './aws-client-factory.service';
 import {
   AWSResource,
@@ -63,7 +64,8 @@ import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, N
 import { ResourceReconciliationService } from './resourceReconciliation.service';
 import { ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY } from '../config/optimization-rules';
 import { getBucketLifecycleStatus } from './s3-lifecycle.util';
-import { estimateEBSMonthlyCost } from '../config/aws-pricing';
+import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
+import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
 
 /**
  * Resource types allowed by subscription tier
@@ -295,7 +297,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('lambda', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Lambda functions...`);
         try {
-          const lambdaResources = await this.discoverLambdaFunctions(organizationId, awsClients.lambda, awsClients.region);
+          const lambdaResources = await this.discoverLambdaFunctions(organizationId, awsClients.lambda, awsClients.cloudWatch, awsClients.region);
           for (const resource of lambdaResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -1056,7 +1058,12 @@ export class AWSResourceDiscoveryService {
         tags = EXCLUDED.tags,
         metadata = EXCLUDED.metadata,
         status = EXCLUDED.status,
-        estimated_monthly_cost = EXCLUDED.estimated_monthly_cost,
+        -- COALESCE, not a plain overwrite: a NULL here means this cycle's
+        -- calculation was unavailable (e.g. a Lambda function's CloudWatch
+        -- usage lookup failed), not a confirmed $0 -- so the previously
+        -- persisted value is preserved instead of being clobbered. See
+        -- discoverLambdaFunctions()'s doc comment.
+        estimated_monthly_cost = COALESCE(EXCLUDED.estimated_monthly_cost, aws_resources.estimated_monthly_cost),
         is_encrypted = EXCLUDED.is_encrypted,
         is_public = EXCLUDED.is_public,
         has_backup = EXCLUDED.has_backup,
@@ -1073,7 +1080,7 @@ export class AWSResourceDiscoveryService {
         JSON.stringify(resource.tags || {}),
         JSON.stringify(resource.metadata || {}),
         resource.status,
-        resource.estimated_monthly_cost || 0,
+        resource.estimated_monthly_cost ?? null,
         resource.actual_monthly_cost || 0,
         resource.is_encrypted || false,
         resource.is_public || false,
@@ -1327,11 +1334,39 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
-   * Discover Lambda functions
+   * Discover Lambda functions.
+   *
+   * `estimated_monthly_cost` is now a real usage-based estimate -- real
+   * 30-day CloudWatch Invocations/Duration (via the shared
+   * getLambdaUsageOverWindow(), lambda-usage.util.ts) run through the same
+   * published AWS pricing formula the lambda_low_usage optimization detector
+   * already uses (estimateLambdaMonthlyCostFromUsage(), aws-pricing.ts) --
+   * replacing the previous fabricated assumption of 100K invocations/month,
+   * which never reflected any real account's actual usage. Discovery and
+   * the optimization scan now share one implementation and cannot disagree.
+   *
+   * A per-function CloudWatch failure (throttling, permissions, network) is
+   * never coerced into a $0 or fabricated estimate: `estimated_monthly_cost`
+   * is left `null` for that function this cycle. upsertResource's
+   * ON CONFLICT clause preserves whatever value was already persisted from a
+   * prior successful discovery rather than overwriting it with a NULL, so a
+   * transient failure never silently erases a previously-known-good
+   * estimate; only a function whose very first discovery hits a CloudWatch
+   * failure would show `null` (genuinely "not yet calculated", not "$0").
+   *
+   * Known limitations, disclosed rather than silently modeled: the pricing
+   * formula does not account for AWS Lambda's free tier, Graviton/arm64's
+   * ~20% lower per-GB-second price (the function's real Architectures value
+   * is recorded in metadata but not yet priced differently), or Provisioned
+   * Concurrency (which carries real cost independent of invocation count --
+   * a zero-invocation function with provisioned concurrency is NOT actually
+   * $0/month; this is a known follow-up, not something this estimate claims
+   * to cover).
    */
   private async discoverLambdaFunctions(
     organizationId: string,
     lambdaClient: LambdaClient,
+    cloudWatchClient: CloudWatchClient,
     region: string
   ): Promise<CreateAWSResourceInput[]> {
     const resources: CreateAWSResourceInput[] = [];
@@ -1360,6 +1395,8 @@ export class AWSResourceDiscoveryService {
         }
 
         const name = tags.Name || func.FunctionName;
+        const memoryMB = func.MemorySize || 128;
+        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, func.FunctionName);
 
         resources.push({
           organization_id: organizationId,
@@ -1376,10 +1413,23 @@ export class AWSResourceDiscoveryService {
             last_modified: func.LastModified,
             code_size: func.CodeSize,
             handler: func.Handler,
+            architecture: func.Architectures?.[0] || 'x86_64',
+            ...(usage
+              ? {
+                  cost_basis: `usage_based: real ${LAMBDA_USAGE_WINDOW_DAYS}-day CloudWatch Invocations/Duration x published on-demand pricing; does not model the Lambda free tier, Provisioned Concurrency, or an arm64/Graviton price difference`,
+                  invocations_30d: usage.invocations,
+                  avg_duration_ms: usage.avgDurationMs,
+                  usage_state: usage.invocations === 0 ? 'zero_usage' : 'normal_usage',
+                }
+              : { usage_state: 'unavailable' }),
           },
           status: (func.State || 'Active') as ResourceStatus,
           is_encrypted: !!func.Environment?.Variables,
-          estimated_monthly_cost: this.estimateLambdaCost(func),
+          // null (never 0) when CloudWatch usage couldn't be determined -- see
+          // doc comment above and upsertResource's COALESCE-based merge.
+          estimated_monthly_cost: usage
+            ? estimateLambdaMonthlyCostFromUsage(usage.invocations, usage.avgDurationMs, memoryMB)
+            : null,
         });
       }
     } catch (error: any) {
@@ -1387,22 +1437,6 @@ export class AWSResourceDiscoveryService {
     }
 
     return resources;
-  }
-
-  /**
-   * Estimate monthly cost for Lambda function
-   */
-  private estimateLambdaCost(func: any): number {
-    // Lambda pricing: $0.20 per 1M requests + $0.0000166667 per GB-second
-    // Estimate: 100K requests/month, actual memory, 1s avg duration
-    const requests = 100_000;
-    const memoryGB = (func.MemorySize || 128) / 1024;
-    const duration = Math.min(func.Timeout || 3, 3); // Assume 3s avg
-
-    const requestCost = (requests / 1_000_000) * 0.20;
-    const computeCost = (requests * duration * memoryGB) * 0.0000166667;
-
-    return requestCost + computeCost;
   }
 
   /**
