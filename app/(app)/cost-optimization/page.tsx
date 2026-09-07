@@ -40,6 +40,16 @@ function formatSavings(value: number | null | undefined): string {
   return value != null ? `$${Math.round(value).toLocaleString()}/mo` : '—';
 }
 
+// A detector may disclose its savings figure as a ceiling (e.g. S3 lifecycle:
+// assumes 100% of current Standard storage transitions, no retrieval fees
+// netted out) rather than an ordinary expected saving -- see
+// backend/src/services/cost-optimization.service.ts's savings_basis metadata.
+// The card must not present a ceiling as if it were a plain monthly estimate.
+function isSavingsCeiling(rec: CostRecommendation): boolean {
+  const basis = rec.metadata?.savings_basis;
+  return typeof basis === 'string' && basis.startsWith('ceiling');
+}
+
 function formatWholeDollars(value: number): string {
   return `$${Math.round(value).toLocaleString()}`;
 }
@@ -464,7 +474,14 @@ export default function CostOptimizationPage() {
                         </div>
                       </div>
                       <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3">
-                        <p className="text-xl sm:text-2xl font-bold text-green-600 whitespace-nowrap">{formatSavings(rec.potentialSavings)}</p>
+                        <div className="text-right">
+                          <p className="text-xl sm:text-2xl font-bold text-green-600 whitespace-nowrap">
+                            {isSavingsCeiling(rec) ? `Up to ${formatSavings(rec.potentialSavings)}` : formatSavings(rec.potentialSavings)}
+                          </p>
+                          {isSavingsCeiling(rec) && (
+                            <p className="text-[10px] text-slate-400 font-medium">Estimated ceiling, not an expected saving</p>
+                          )}
+                        </div>
                         <div className="flex gap-2">
                           <button
                             onClick={() => resolveMutation.mutate(rec.id)}
