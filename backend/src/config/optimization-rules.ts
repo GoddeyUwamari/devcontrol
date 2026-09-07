@@ -54,6 +54,7 @@ export const ISSUE_RDS_OVERSIZED_INSTANCE = 'Oversized Instance';
 export const ISSUE_EC2_UNUSED_ELASTIC_IP = 'Unused Elastic IP';
 export const ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY = 'Reserved Instance Opportunity';
 export const ISSUE_EBS_UNATTACHED_VOLUME = 'Unattached EBS Volume';
+export const ISSUE_EBS_GP2_TO_GP3 = 'gp2 to gp3 Migration Opportunity';
 export const ISSUE_EC2_OLD_GENERATION_INSTANCE = 'Old-Generation Instance';
 export const ISSUE_S3_LIFECYCLE_OPTIMIZATION = 'S3 Lifecycle Optimization';
 export const ISSUE_LAMBDA_LOW_USAGE = 'Low-Usage Lambda Function';
@@ -136,7 +137,8 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
     service: 'EBS',
     name: 'gp2 to gp3 migration',
     detail: 'gp2 volumes that would cost less on gp3 at equivalent performance',
-    status: 'planned',
+    status: 'implemented',
+    issue: ISSUE_EBS_GP2_TO_GP3,
   },
   {
     id: 'ebs_oversized',

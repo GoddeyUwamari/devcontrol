@@ -24,6 +24,7 @@ import {
   ISSUE_EC2_UNUSED_ELASTIC_IP,
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   ISSUE_EBS_UNATTACHED_VOLUME,
+  ISSUE_EBS_GP2_TO_GP3,
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
 } from '../optimization-rules';
@@ -66,6 +67,7 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     'ec2_reserved_instances',
     'rds_rightsizing',
     'ebs_unattached',
+    'ebs_gp2_to_gp3',
     's3_lifecycle',
     'lambda_low_usage',
   ].sort();
@@ -82,6 +84,7 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     expect(byId['ec2_reserved_instances'].issue).toBe(ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
     expect(byId['rds_rightsizing'].issue).toBe(ISSUE_RDS_OVERSIZED_INSTANCE);
     expect(byId['ebs_unattached'].issue).toBe(ISSUE_EBS_UNATTACHED_VOLUME);
+    expect(byId['ebs_gp2_to_gp3'].issue).toBe(ISSUE_EBS_GP2_TO_GP3);
     expect(byId['s3_lifecycle'].issue).toBe(ISSUE_S3_LIFECYCLE_OPTIMIZATION);
     expect(byId['lambda_low_usage'].issue).toBe(ISSUE_LAMBDA_LOW_USAGE);
   });
