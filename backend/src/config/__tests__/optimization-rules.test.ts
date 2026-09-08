@@ -28,6 +28,7 @@ import {
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
   ISSUE_DYNAMODB_CAPACITY,
+  ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
 } from '../optimization-rules';
 
 describe('OPTIMIZATION_RULES: identity', () => {
@@ -72,6 +73,7 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     's3_lifecycle',
     'lambda_low_usage',
     'dynamodb_capacity',
+    'dynamodb_capacity_mode',
   ].sort();
 
   it('marks exactly the currently-wired detectors as implemented', () => {
@@ -90,6 +92,7 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     expect(byId['s3_lifecycle'].issue).toBe(ISSUE_S3_LIFECYCLE_OPTIMIZATION);
     expect(byId['lambda_low_usage'].issue).toBe(ISSUE_LAMBDA_LOW_USAGE);
     expect(byId['dynamodb_capacity'].issue).toBe(ISSUE_DYNAMODB_CAPACITY);
+    expect(byId['dynamodb_capacity_mode'].issue).toBe(ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED);
   });
 
   it('no planned rule fabricates an issue identity', () => {

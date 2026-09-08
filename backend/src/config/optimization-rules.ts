@@ -59,6 +59,7 @@ export const ISSUE_EC2_OLD_GENERATION_INSTANCE = 'Old-Generation Instance';
 export const ISSUE_S3_LIFECYCLE_OPTIMIZATION = 'S3 Lifecycle Optimization';
 export const ISSUE_LAMBDA_LOW_USAGE = 'Low-Usage Lambda Function';
 export const ISSUE_DYNAMODB_CAPACITY = 'DynamoDB Capacity Review Opportunity';
+export const ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED = 'DynamoDB Capacity Mode Comparison';
 
 /** Display/grouping order used by the UI's service coverage list. */
 export const OPTIMIZATION_RULE_SERVICES = [
@@ -241,8 +242,9 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
     id: 'dynamodb_capacity_mode',
     service: 'DynamoDB',
     name: 'On-demand vs provisioned capacity',
-    detail: 'Tables whose traffic pattern would cost less under the other capacity mode',
-    status: 'planned',
+    detail: 'Evidence-based comparison of modeled provisioned vs. on-demand cost from a table’s observed 30-day workload; flags a mode-switch opportunity only when the cost advantage, utilization, and workload-shape evidence together clear DevControl’s confidence policy',
+    status: 'implemented',
+    issue: ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
   },
 
   // ── NAT Gateway ──────────────────────────────────────────────────────

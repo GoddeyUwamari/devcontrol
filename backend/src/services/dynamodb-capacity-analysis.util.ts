@@ -260,3 +260,117 @@ export function analyzeDynamoDBCapacityDimension(
     throttleConfirmedIntervals,
   };
 }
+
+export interface DynamoDBModeComparisonDimensionAnalysis {
+  totalIntervals: number;
+  /** Completeness of the Consumed*CapacityUnits series alone, independent of the Provisioned series -- `dynamodb_on_demand_vs_provisioned`'s data-completeness gate (locked at 576/720) checks this, not validUtilizationIntervals below, per methodology checkpoint. */
+  validConsumedIntervals: number;
+  /** Completeness of the Provisioned*CapacityUnits series alone, independent of the Consumed series. */
+  validProvisionedIntervals: number;
+  /** Intervals with both a real consumed and a real provisioned datapoint -- required to compute a per-interval utilization ratio at all. */
+  validUtilizationIntervals: number;
+  /** Mean of (consumed/provisioned x 100) across validUtilizationIntervals -- the figure compared against AWS's documented ~35% on-demand-favorable reference (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/CostOptimization_TableCapacityMode.html). Null if validUtilizationIntervals is 0 -- never fabricated as 0% or 100%. */
+  averageUtilizationPercent: number | null;
+  /** The single highest hourly-average consumed-per-second value observed across validConsumedIntervals. NEVER "true peak" -- it is an hourly average, not an instantaneous maximum (same AWS-documented smoothing caveat as analyzeDynamoDBCapacityDimension's highestHourlyAverageThroughputPerSecond). Null if validConsumedIntervals is 0. */
+  highestObservedHourlyAverageThroughputPerSecond: number | null;
+  /** Of validConsumedIntervals, the percentage whose consumed-per-second value is below `peakFraction` (caller-supplied; AWS's own qualitative reference is "zero or below 30% of the peak for a given hour") of highestObservedHourlyAverageThroughputPerSecond. AWS does not itself specify how frequently that condition must occur; the frequency floor this percentage is compared against is DevControl policy, not AWS's. Null if there is no positive peak to compare against. */
+  percentIntervalsBelowPeakFraction: number | null;
+  /** Real request-unit volume actually consumed across validConsumedIntervals (a true Sum, recovered from the per-second series via x periodSeconds -- never re-fetched) -- the direct RRU/WRU cost basis for the on-demand side of the comparison. Null if validConsumedIntervals is 0. */
+  sumConsumedRequestUnits: number | null;
+  /** Real RCU-hour/WCU-hour volume actually provisioned across validProvisionedIntervals (Average x periodSeconds/3600, summed) -- the window-based cost basis for the provisioned side of the comparison. Null if validProvisionedIntervals is 0. */
+  sumProvisionedCapacityUnitHours: number | null;
+  /** Tracked completely independently of utilization/consumed/provisioned validity, mirroring analyzeDynamoDBCapacityDimension's established discipline -- a missing throttle datapoint is excluded, never assumed zero. */
+  throttleValidIntervals: number;
+  throttleConfirmedIntervals: number;
+}
+
+/**
+ * Pure reduction over one dimension's (read or write) aligned series, for
+ * the `dynamodb_on_demand_vs_provisioned` rule (Phase 3E methodology
+ * checkpoint). A deliberate sibling to analyzeDynamoDBCapacityDimension()
+ * above, not a modification of it: that function's policy is locked to
+ * `dynamodb_capacity`'s different question (what fraction of hours sat below
+ * a low-utilization investigation threshold); this one answers a different
+ * question (what would this same historical workload have cost under each
+ * capacity mode, and does its shape look on-demand-favorable) and needs
+ * different statistics (a mean utilization, not a "% of hours below
+ * threshold"; real summed request-unit/unit-hour volumes for cost, not just
+ * a peak). Takes no threshold-eligibility decision itself -- the 35%
+ * AWS-reference-utilization check, the frequency floor a workload must clear
+ * at `peakFraction`, and the cost-advantage gates all belong to the detector
+ * in cost-optimization.service.ts, exactly mirroring how this file's
+ * existing function takes its own `referenceThresholdPercent` as a
+ * caller-supplied parameter rather than hardcoding a policy value here.
+ */
+export function analyzeDynamoDBModeComparisonDimension(
+  consumedPerSecond: Array<number | null>,
+  provisioned: Array<number | null>,
+  throttleEvents: Array<number | null>,
+  periodSeconds: number,
+  peakFraction: number
+): DynamoDBModeComparisonDimensionAnalysis {
+  const totalIntervals = consumedPerSecond.length;
+
+  let validConsumedIntervals = 0;
+  let sumConsumedRequestUnits = 0;
+  let highestObservedHourlyAverageThroughputPerSecond: number | null = null;
+  for (let i = 0; i < totalIntervals; i++) {
+    const consumed = consumedPerSecond[i];
+    if (consumed === null) continue;
+    validConsumedIntervals++;
+    sumConsumedRequestUnits += consumed * periodSeconds;
+    if (highestObservedHourlyAverageThroughputPerSecond === null || consumed > highestObservedHourlyAverageThroughputPerSecond) {
+      highestObservedHourlyAverageThroughputPerSecond = consumed;
+    }
+  }
+
+  let validProvisionedIntervals = 0;
+  let sumProvisionedCapacityUnitHours = 0;
+  for (const prov of provisioned) {
+    if (prov === null) continue;
+    validProvisionedIntervals++;
+    sumProvisionedCapacityUnitHours += prov * (periodSeconds / 3600);
+  }
+
+  let validUtilizationIntervals = 0;
+  let utilizationPercentSum = 0;
+  for (let i = 0; i < totalIntervals; i++) {
+    const consumed = consumedPerSecond[i];
+    const prov = provisioned[i];
+    if (consumed === null || prov === null || !(prov > 0)) continue;
+    validUtilizationIntervals++;
+    utilizationPercentSum += (consumed / prov) * 100;
+  }
+
+  let intervalsBelowPeak = 0;
+  let peakComparableIntervals = 0;
+  if (highestObservedHourlyAverageThroughputPerSecond !== null && highestObservedHourlyAverageThroughputPerSecond > 0) {
+    for (const consumed of consumedPerSecond) {
+      if (consumed === null) continue;
+      peakComparableIntervals++;
+      if (consumed < peakFraction * highestObservedHourlyAverageThroughputPerSecond) intervalsBelowPeak++;
+    }
+  }
+
+  let throttleValidIntervals = 0;
+  let throttleConfirmedIntervals = 0;
+  for (const t of throttleEvents) {
+    if (t === null) continue; // never assumed zero
+    throttleValidIntervals++;
+    if (t > 0) throttleConfirmedIntervals++;
+  }
+
+  return {
+    totalIntervals,
+    validConsumedIntervals,
+    validProvisionedIntervals,
+    validUtilizationIntervals,
+    averageUtilizationPercent: validUtilizationIntervals > 0 ? utilizationPercentSum / validUtilizationIntervals : null,
+    highestObservedHourlyAverageThroughputPerSecond,
+    percentIntervalsBelowPeakFraction: peakComparableIntervals > 0 ? (intervalsBelowPeak / peakComparableIntervals) * 100 : null,
+    sumConsumedRequestUnits: validConsumedIntervals > 0 ? sumConsumedRequestUnits : null,
+    sumProvisionedCapacityUnitHours: validProvisionedIntervals > 0 ? sumProvisionedCapacityUnitHours : null,
+    throttleValidIntervals,
+    throttleConfirmedIntervals,
+  };
+}
