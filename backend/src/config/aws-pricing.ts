@@ -117,3 +117,89 @@ export function estimateDynamoDBProvisionedMonthlyCost(
   const wcuCost = writeCapacityUnits * DYNAMODB_PROVISIONED_WCU_PER_HOUR_USD[resolvedClass] * hoursPerMonth;
   return rcuCost + wcuCost;
 }
+
+// AWS DynamoDB On-Demand Capacity pricing, us-east-1, $/million request
+// units -- fetched directly from AWS's own official pricing page
+// (https://aws.amazon.com/dynamodb/pricing/on-demand/) on 2026-09-08, and
+// cross-checked against AWS's Developer Guide for the request-unit
+// definitions themselves
+// (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/read-write-operations.html).
+// Not a live AWS Pricing API call; re-verify against that page before
+// relying on this for a real customer-facing dollar figure if meaningful
+// time has passed.
+//
+// A read capacity unit (RCU) and a read request unit (RRU) -- and
+// symmetrically a write capacity unit (WCU) and write request unit (WRU) --
+// are the same underlying unit of consumption. AWS defines the request-unit
+// accounting rules (4 KB rounding and the strongly-consistent/eventually-
+// consistent/transactional multipliers for reads; 1 KB rounding and the
+// transactional multiplier for writes) once, independent of billing mode;
+// capacity mode only changes how that consumption is billed
+// (pre-provisioned-and-averaged vs. pay-per-request). This is why a
+// currently-PROVISIONED table's real ConsumedRead/WriteCapacityUnits history
+// is a direct, lossless stand-in for the RRU/WRU volume that same historical
+// workload would have billed under on-demand -- see
+// dynamodb-capacity-analysis.util.ts's analyzeDynamoDBModeComparisonDimension(),
+// which builds the on-demand side of the `dynamodb_on_demand_vs_provisioned`
+// comparison from exactly that history, and estimateDynamoDBOnDemandCostFromRequestUnits()
+// below, which turns it into a dollar figure.
+//
+// Does not model (same v1 scope decision as the provisioned constants
+// above, and confirmed by the Phase 3E methodology checkpoint): the
+// perpetual free tier (25 WCU + 25 RCU per region per month, account-wide,
+// not attributable to one table); Database Savings Plans (up to 18% off
+// on-demand throughput -- a billing-relationship fact this service cannot
+// observe without Cost Explorer/Billing integration); Global Table
+// replicated-write pricing (rWRU, billed per replica region -- a completely
+// different, unmodeled multiplier callers must exclude those tables for);
+// Reserved Provisioned Capacity (a provisioned-only purchasing option, and
+// not eligible for Standard-IA or replicated capacity even there).
+export const DYNAMODB_ON_DEMAND_RRU_PRICE_PER_MILLION_USD: Record<string, number> = {
+  STANDARD: 0.125,
+  STANDARD_INFREQUENT_ACCESS: 0.155,
+};
+export const DYNAMODB_ON_DEMAND_WRU_PRICE_PER_MILLION_USD: Record<string, number> = {
+  STANDARD: 0.625,
+  STANDARD_INFREQUENT_ACCESS: 0.780,
+};
+
+export function estimateDynamoDBOnDemandCostFromRequestUnits(
+  readRequestUnits: number,
+  writeRequestUnits: number,
+  tableClass?: string
+): number {
+  const resolvedClass = tableClass && DYNAMODB_ON_DEMAND_RRU_PRICE_PER_MILLION_USD[tableClass] !== undefined
+    ? tableClass
+    : 'STANDARD';
+  const readCost = (readRequestUnits / 1_000_000) * DYNAMODB_ON_DEMAND_RRU_PRICE_PER_MILLION_USD[resolvedClass];
+  const writeCost = (writeRequestUnits / 1_000_000) * DYNAMODB_ON_DEMAND_WRU_PRICE_PER_MILLION_USD[resolvedClass];
+  return readCost + writeCost;
+}
+
+/**
+ * Window-based provisioned-capacity cost. Unlike
+ * estimateDynamoDBProvisionedMonthlyCost() above -- which assumes a single,
+ * unchanging capacity setting held for a canonical 730-hour month, the right
+ * model for `dynamodb_capacity`'s illustrative scenario -- this takes the
+ * caller's own already-summed RCU-hours/WCU-hours actually observed over its
+ * real analysis window (hourly Average(ProvisionedReadCapacityUnits) x 1
+ * hour, summed only across valid intervals; see
+ * dynamodb-capacity-analysis.util.ts's analyzeDynamoDBModeComparisonDimension()).
+ * `dynamodb_on_demand_vs_provisioned` needs this instead so its provisioned
+ * side and on-demand side are both built from the identical observed hours,
+ * never a synthetic full-month projection on one side only. Reuses the same
+ * per-unit-hour rate constants as estimateDynamoDBProvisionedMonthlyCost() --
+ * do not duplicate the rate table.
+ */
+export function estimateDynamoDBProvisionedCostFromUnitHours(
+  readCapacityUnitHours: number,
+  writeCapacityUnitHours: number,
+  tableClass?: string
+): number {
+  const resolvedClass = tableClass && DYNAMODB_PROVISIONED_RCU_PER_HOUR_USD[tableClass] !== undefined
+    ? tableClass
+    : 'STANDARD';
+  const rcuCost = readCapacityUnitHours * DYNAMODB_PROVISIONED_RCU_PER_HOUR_USD[resolvedClass];
+  const wcuCost = writeCapacityUnitHours * DYNAMODB_PROVISIONED_WCU_PER_HOUR_USD[resolvedClass];
+  return rcuCost + wcuCost;
+}
