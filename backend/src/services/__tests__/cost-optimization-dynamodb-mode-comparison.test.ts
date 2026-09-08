@@ -299,6 +299,11 @@ describe('CostOptimizationService.detectDynamoDBOnDemandVsProvisionedOptimizatio
       mockLiveDescribeTable({
         billing_mode: 'PROVISIONED',
         creation_date_time: isoDaysAgo(400),
+        // Both present and outside the window -- proof AWS is tracking this
+        // table's capacity-change history at all, which the recommendation
+        // gate requires before it can conclude "no recent change" safely.
+        last_increase_date_time: isoDaysAgo(200),
+        last_decrease_date_time: isoDaysAgo(200),
         provisioned_read_capacity: 1000,
         provisioned_write_capacity: 1000,
         table_class: 'STANDARD',
@@ -347,6 +352,8 @@ describe('CostOptimizationService.detectDynamoDBOnDemandVsProvisionedOptimizatio
       mockLiveDescribeTable({
         billing_mode: 'PROVISIONED',
         creation_date_time: isoDaysAgo(400),
+        last_increase_date_time: isoDaysAgo(200),
+        last_decrease_date_time: isoDaysAgo(200),
         provisioned_read_capacity: 1000,
         provisioned_write_capacity: 1000,
         table_class: 'STANDARD',
@@ -474,13 +481,23 @@ describe('CostOptimizationService.detectDynamoDBOnDemandVsProvisionedOptimizatio
     });
   });
 
-  describe('recent capacity change (soft exclusion -- comparison still emitted)', () => {
-    it('emits a comparison-only row when a manual capacity increase occurred inside the analysis window', async () => {
+  describe('capacity-change context (soft exclusion -- comparison still emitted)', () => {
+    // Methodology correction: AWS's DescribeTable response cannot
+    // distinguish "this table has never had a capacity change" from "we
+    // have no information either way" -- both produce the identical absent
+    // `last_increase_date_time`/`last_decrease_date_time` field. Per the
+    // locked methodology ("if the required timestamp is unavailable: fail
+    // closed for the recommendation layer"), absence must never be read as
+    // an affirmative "no known change" -- only genuinely present timestamps
+    // that fall outside the window can establish that.
+
+    it('(1) qualifies when both timestamps are present and fall outside the analysis window', async () => {
       mockAwsResourcesRows([{ resource_id: 'table-1', region: 'us-east-1', metadata: eligibleMetadata() }]);
       mockLiveDescribeTable({
         billing_mode: 'PROVISIONED',
         creation_date_time: isoDaysAgo(400),
-        last_increase_date_time: isoDaysAgo(5),
+        last_increase_date_time: isoDaysAgo(200),
+        last_decrease_date_time: isoDaysAgo(200),
         provisioned_read_capacity: 1000,
         provisioned_write_capacity: 1000,
         table_class: 'STANDARD',
@@ -491,15 +508,18 @@ describe('CostOptimizationService.detectDynamoDBOnDemandVsProvisionedOptimizatio
       const result = await run();
 
       expect(result.issues).toHaveLength(1);
-      expect(result.issues[0].potentialSavings).toBe(0);
-      expect(result.issues[0].metadata.recommendation.blocked_reasons.some((r: string) => /capacity change/.test(r))).toBe(true);
+      expect(result.issues[0].metadata.recommendation.recommended).toBe(true);
+      expect(result.issues[0].potentialSavings).toBeGreaterThan(0);
     });
 
-    it('does not block on a capacity-change timestamp with no known change -- absence means no known change, never invented', async () => {
+    it('(2) emits a comparison-only row and suppresses the recommendation when both timestamps are unavailable -- never fabricates "no recent change"', async () => {
       mockAwsResourcesRows([{ resource_id: 'table-1', region: 'us-east-1', metadata: eligibleMetadata() }]);
       mockLiveDescribeTable({
         billing_mode: 'PROVISIONED',
         creation_date_time: isoDaysAgo(400),
+        // last_increase_date_time / last_decrease_date_time both omitted --
+        // AWS never returned them, which this rule must treat as
+        // "unavailable," not as proof no change occurred.
         provisioned_read_capacity: 1000,
         provisioned_write_capacity: 1000,
         table_class: 'STANDARD',
@@ -508,7 +528,60 @@ describe('CostOptimizationService.detectDynamoDBOnDemandVsProvisionedOptimizatio
       mockMetrics(QUALIFYING_READ, QUALIFYING_WRITE);
 
       const result = await run();
-      expect(result.issues[0].metadata.recommendation.recommended).toBe(true);
+
+      expect(result.issues).toHaveLength(1); // Layer 1-2 evidence still emitted
+      expect(result.issues[0].metadata.modeled_cost_difference).toBeGreaterThan(0);
+      expect(result.issues[0].metadata.recommendation.recommended).toBe(false);
+      expect(result.issues[0].potentialSavings).toBe(0); // (4) suppressed recommendation -> potentialSavings = 0
+      expect(
+        result.issues[0].metadata.recommendation.blocked_reasons.some((r: string) => /last_increase_date_time is unavailable/.test(r))
+      ).toBe(true);
+    });
+
+    it('(2b) suppresses the recommendation when only one of the two timestamps is unavailable', async () => {
+      mockAwsResourcesRows([{ resource_id: 'table-1', region: 'us-east-1', metadata: eligibleMetadata() }]);
+      mockLiveDescribeTable({
+        billing_mode: 'PROVISIONED',
+        creation_date_time: isoDaysAgo(400),
+        last_increase_date_time: isoDaysAgo(200), // present, outside window
+        // last_decrease_date_time omitted -- still unavailable, still blocks
+        provisioned_read_capacity: 1000,
+        provisioned_write_capacity: 1000,
+        table_class: 'STANDARD',
+      });
+      mockLiveAutoscaling('AUTOSCALING_DISABLED');
+      mockMetrics(QUALIFYING_READ, QUALIFYING_WRITE);
+
+      const result = await run();
+
+      expect(result.issues[0].metadata.recommendation.recommended).toBe(false);
+      expect(result.issues[0].potentialSavings).toBe(0);
+      expect(
+        result.issues[0].metadata.recommendation.blocked_reasons.some((r: string) => /last_decrease_date_time is unavailable/.test(r))
+      ).toBe(true);
+    });
+
+    it('(3) emits a comparison-only row when a manual capacity increase occurred inside the analysis window', async () => {
+      mockAwsResourcesRows([{ resource_id: 'table-1', region: 'us-east-1', metadata: eligibleMetadata() }]);
+      mockLiveDescribeTable({
+        billing_mode: 'PROVISIONED',
+        creation_date_time: isoDaysAgo(400),
+        last_increase_date_time: isoDaysAgo(5),
+        last_decrease_date_time: isoDaysAgo(200),
+        provisioned_read_capacity: 1000,
+        provisioned_write_capacity: 1000,
+        table_class: 'STANDARD',
+      });
+      mockLiveAutoscaling('AUTOSCALING_DISABLED');
+      mockMetrics(QUALIFYING_READ, QUALIFYING_WRITE);
+
+      const result = await run();
+
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].potentialSavings).toBe(0); // (4) suppressed recommendation -> potentialSavings = 0
+      expect(
+        result.issues[0].metadata.recommendation.blocked_reasons.some((r: string) => /last_increase_date_time falls inside the analysis window/.test(r))
+      ).toBe(true);
     });
   });
 

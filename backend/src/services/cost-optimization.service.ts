@@ -1305,11 +1305,12 @@ class CostOptimizationService {
         const modeledPercentageDifference = modeledProvisionedCost > 0 ? (modeledCostDifference / modeledProvisionedCost) * 100 : 0;
 
         const tableAgeDays = Math.floor((now.getTime() - Date.parse(freshConfig.creation_date_time!)) / (24 * 60 * 60 * 1000));
-        const capacityChange = this.checkDynamoDBRecentCapacityChange(freshConfig, now);
+        const capacityChangeContext = this.checkDynamoDBCapacityChangeContext(freshConfig, now);
 
         const recommendationGate = this.checkDynamoDBModeComparisonRecommendationGate({
           autoscalingState,
-          capacityChangedRecently: capacityChange.changedRecently,
+          capacityChangeSafeForRecommendation: capacityChangeContext.safeForRecommendation,
+          capacityChangeReason: capacityChangeContext.reason,
           readAnalysis,
           writeAnalysis,
           modeledPercentageDifference,
@@ -1329,8 +1330,8 @@ class CostOptimizationService {
           billingMode: freshConfig.billing_mode,
           autoscalingState,
           tableAgeDays,
-          capacityChangedRecently: capacityChange.changedRecently,
-          capacityChangeReason: capacityChange.reason,
+          capacityChangeSafeForRecommendation: capacityChangeContext.safeForRecommendation,
+          capacityChangeContextReason: capacityChangeContext.reason,
           modeledProvisionedCost,
           modeledOnDemandCost,
           modeledCostDifference,
@@ -1364,9 +1365,9 @@ class CostOptimizationService {
             table_age_days: tableAgeDays,
             gsi_presence: false,
             replica_presence: false,
-            capacity_change_context: capacityChange.changedRecently
-              ? capacityChange.reason
-              : 'no known provisioned-capacity change inside the analysis window',
+            capacity_change_context: capacityChangeContext.safeForRecommendation
+              ? 'no manual capacity change confirmed inside the analysis window -- both last_increase_date_time and last_decrease_date_time are present and fall outside the window'
+              : capacityChangeContext.reason,
             read: {
               provisioned_read_capacity: currentReadCapacity,
               consumed_valid_intervals: readAnalysis.validConsumedIntervals,
@@ -1489,52 +1490,81 @@ class CostOptimizationService {
   }
 
   /**
-   * Whether a manual provisioned-capacity change (AWS's own
-   * `last_increase_date_time`/`last_decrease_date_time`, from
-   * ProvisionedThroughputDescription) falls inside the analysis window.
-   * Absence of either timestamp means "no known change" -- per this
-   * codebase's already-locked convention (dynamodb-table.util.ts,
-   * checkDynamoDBCapacityEligibilityGates() above), AWS only populates these
-   * fields when a real change actually happened, so a genuinely old,
-   * never-resized table legitimately has neither. This is deliberately not
-   * reinterpreted as "unavailable" for this rule either -- an actual
-   * DescribeTable failure (where creation_date_time etc. would also be
-   * missing) is already handled as a hard, whole-row exclusion above; this
-   * function only runs on data that has already passed that check.
+   * Whether the recommendation gate can safely conclude that no manual
+   * provisioned-capacity change occurred inside the analysis window, using
+   * AWS's own `last_increase_date_time`/`last_decrease_date_time` (from
+   * ProvisionedThroughputDescription, dynamodb-table.util.ts).
+   *
+   * Methodology correction (`dynamodb_on_demand_vs_provisioned` only -- does
+   * NOT apply to the unrelated, already-shipped `dynamodb_capacity` rule,
+   * whose own eligibility gate above is intentionally left as-is): AWS's
+   * DescribeTable response cannot distinguish "this table has never had a
+   * capacity change" from "we simply have no information either way" --
+   * both produce the identical absent field (`string | undefined`), and
+   * neither this codebase's metadata nor AWS's own API surfaces a third,
+   * more informative state. Per this rule's locked methodology ("if the
+   * required timestamp is unavailable: fail closed for the recommendation
+   * layer"), an absent timestamp must NOT be read as an affirmative "no
+   * known change" -- that would fabricate a fact this data cannot actually
+   * support. A recommendation is only safe when BOTH timestamps are
+   * genuinely present (proof AWS is tracking this table's capacity-change
+   * history at all) AND both fall outside the window; an absent timestamp
+   * blocks Layer 3 exactly like a confirmed in-window one does. Layers 1-2
+   * (the observed-workload evidence and the modeled cost comparison) are
+   * entirely unaffected by this function's result and still populate
+   * normally regardless of which reason it returns.
    */
-  private checkDynamoDBRecentCapacityChange(
+  private checkDynamoDBCapacityChangeContext(
     config: { last_increase_date_time?: string; last_decrease_date_time?: string },
     now: Date
-  ): { changedRecently: boolean; reason?: string } {
+  ): { safeForRecommendation: boolean; reason?: string } {
     const windowStartMs = now.getTime() - DYNAMODB_CAPACITY_ANALYSIS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-    const changeTimestamps: Array<[string, string | undefined]> = [
+    const timestamps: Array<[string, string | undefined]> = [
       ['last_increase_date_time', config.last_increase_date_time],
       ['last_decrease_date_time', config.last_decrease_date_time],
     ];
-    for (const [label, ts] of changeTimestamps) {
-      if (!ts) continue; // absence == no known change, never invented
+    for (const [label, ts] of timestamps) {
+      if (!ts) {
+        return {
+          safeForRecommendation: false,
+          reason: `${label} is unavailable -- cannot confirm no manual capacity change occurred inside the analysis window`,
+        };
+      }
       const changeMs = Date.parse(ts);
       if (Number.isFinite(changeMs) && changeMs >= windowStartMs) {
-        return { changedRecently: true, reason: `${label} falls inside the analysis window` };
+        return { safeForRecommendation: false, reason: `${label} falls inside the analysis window` };
       }
     }
-    return { changedRecently: false };
+    return { safeForRecommendation: true };
   }
 
   /**
    * Layer 3 (recommendation) gate for `dynamodb_on_demand_vs_provisioned`.
-   * All conditions are required (AND, not OR) -- both read and write must
-   * independently clear the utilization/workload-shape/throttle checks,
-   * the deliberately conservative choice for a whole-table, binary switch
-   * decision: a steady/high-utilization or unconfirmed-throttle pattern on
-   * either axis disqualifies the recommendation even if the other axis looks
-   * on-demand-favorable. Returns every reason that failed, not just the
-   * first, so evidence can show the customer (or a reviewer) exactly why a
-   * comparison did not become a recommendation.
+   *
+   * Read/write combination policy -- DevControl policy, NOT AWS guidance:
+   * DevControl evaluates read and write capacity independently (each has its
+   * own utilization, workload-shape, and throttle evidence -- see
+   * dimensionSatisfiesPolicy() below), but because switching a DynamoDB
+   * table's capacity mode is a single table-level action, the recommendation
+   * gate requires BOTH dimensions to satisfy the applicable recommendation
+   * criteria (AND, not OR) when both dimensions have qualifying provisioned
+   * capacity. This is the deliberately conservative choice for a whole-table,
+   * binary switch decision: a steady/high-utilization or unconfirmed-throttle
+   * pattern on either axis disqualifies the recommendation even if the other
+   * axis looks on-demand-favorable. AWS's own capacity-mode guidance
+   * evaluates workload shape qualitatively and does not itself prescribe how
+   * a multi-dimension table should combine independent read/write signals
+   * into one switch decision -- this combination rule is entirely
+   * DevControl's own policy choice, not derived from AWS documentation.
+   *
+   * Returns every reason that failed, not just the first, so evidence can
+   * show the customer (or a reviewer) exactly why a comparison did not
+   * become a recommendation.
    */
   private checkDynamoDBModeComparisonRecommendationGate(input: {
     autoscalingState: string;
-    capacityChangedRecently: boolean;
+    capacityChangeSafeForRecommendation: boolean;
+    capacityChangeReason?: string;
     readAnalysis: DynamoDBModeComparisonDimensionAnalysis;
     writeAnalysis: DynamoDBModeComparisonDimensionAnalysis;
     modeledPercentageDifference: number;
@@ -1545,8 +1575,8 @@ class CostOptimizationService {
     if (input.autoscalingState !== 'AUTOSCALING_DISABLED') {
       reasons.push(`autoscaling_state is ${input.autoscalingState}, not AUTOSCALING_DISABLED`);
     }
-    if (input.capacityChangedRecently) {
-      reasons.push('a manual provisioned-capacity change occurred inside the analysis window');
+    if (!input.capacityChangeSafeForRecommendation) {
+      reasons.push(input.capacityChangeReason ?? 'capacity-change context could not be established for the recommendation gate');
     }
 
     const dimensionSatisfiesPolicy = (analysis: DynamoDBModeComparisonDimensionAnalysis, label: 'read' | 'write'): boolean => {
@@ -1601,7 +1631,7 @@ class CostOptimizationService {
       readOk &&
       writeOk &&
       input.autoscalingState === 'AUTOSCALING_DISABLED' &&
-      !input.capacityChangedRecently &&
+      input.capacityChangeSafeForRecommendation &&
       input.modeledPercentageDifference >= DYNAMODB_MODE_COMPARISON_MIN_PERCENTAGE_ADVANTAGE &&
       input.modeledCostDifference >= DYNAMODB_MODE_COMPARISON_MIN_ABSOLUTE_ADVANTAGE_USD;
 
@@ -1616,8 +1646,8 @@ class CostOptimizationService {
     billingMode: string;
     autoscalingState: string;
     tableAgeDays: number;
-    capacityChangedRecently: boolean;
-    capacityChangeReason?: string;
+    capacityChangeSafeForRecommendation: boolean;
+    capacityChangeContextReason?: string;
     modeledProvisionedCost: number;
     modeledOnDemandCost: number;
     modeledCostDifference: number;
@@ -1648,7 +1678,7 @@ class CostOptimizationService {
       `- Global Secondary Indexes: none\n` +
       `- Global Table replicas: none\n` +
       `- Table age: ${input.tableAgeDays} days\n` +
-      `- Capacity change inside analysis window: ${input.capacityChangedRecently ? input.capacityChangeReason : 'none known'}\n\n` +
+      `- Capacity-change context: ${input.capacityChangeSafeForRecommendation ? 'no manual change confirmed inside the analysis window' : input.capacityChangeContextReason}\n\n` +
       `Modeled economics (30-day observed workload, current AWS list price)\n` +
       `- Modeled provisioned cost: $${input.modeledProvisionedCost.toFixed(2)}/month equivalent\n` +
       `- Modeled on-demand cost: $${input.modeledOnDemandCost.toFixed(2)}/month equivalent\n` +
