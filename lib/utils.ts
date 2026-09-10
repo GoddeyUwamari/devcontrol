@@ -39,6 +39,24 @@ export function annualizeMonthly(monthlyValue: number): number {
   return monthlyValue * 12
 }
 
+/**
+ * Canonical formatter for a DevControl savings/cost-opportunity dollar
+ * amount (e.g. cost_recommendations.potential_savings and any aggregate
+ * derived from it, including an annualized figure via annualizeMonthly()
+ * above). Whole-dollar `Math.round()` collapses any genuine saving under
+ * $1 (e.g. a small EBS gp2->gp3 delta) to "$0", which reads as "no real
+ * saving" even though the detector found a real, non-fabricated one --
+ * this keeps that value visible at 2 decimal places instead, while still
+ * rounding to a whole dollar once the amount is $1 or more, and keeping a
+ * genuine (non-null) zero distinguishable from missing/unavailable data.
+ */
+export function formatSavingsCurrency(value: number | null | undefined): string {
+  if (value == null) return '—'
+  if (value === 0) return '$0'
+  if (Math.abs(value) < 1) return `$${value.toFixed(2)}`
+  return `$${Math.round(value).toLocaleString()}`
+}
+
 export function formatFullTimestamp(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return d.toLocaleString('en-US', {

@@ -22,7 +22,7 @@ import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
 import type { OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
-import { annualizeMonthly, cn } from '@/lib/utils';
+import { annualizeMonthly, cn, formatSavingsCurrency } from '@/lib/utils';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
@@ -37,7 +37,7 @@ import { deriveAnalysisStatus, pickLatestAnalysis, type AnalysisStatusKey, type 
 const RECOMMENDATIONS_FETCH_LIMIT = 100;
 
 function formatSavings(value: number | null | undefined): string {
-  return value != null ? `$${Math.round(value).toLocaleString()}/mo` : '—';
+  return value != null ? `${formatSavingsCurrency(value)}/mo` : '—';
 }
 
 // A detector may disclose its savings figure as a ceiling (e.g. S3 lifecycle:
@@ -50,8 +50,11 @@ function isSavingsCeiling(rec: CostRecommendation): boolean {
   return typeof basis === 'string' && basis.startsWith('ceiling');
 }
 
+// Despite the name (kept for call-site stability), this now shows 2 decimal
+// places for a genuine sub-$1 amount rather than rounding it to "$0" -- see
+// formatSavingsCurrency() in lib/utils.ts.
 function formatWholeDollars(value: number): string {
-  return `$${Math.round(value).toLocaleString()}`;
+  return formatSavingsCurrency(value);
 }
 
 function severityToBadge(sev: RecommendationSeverity): { severity: 'high' | 'medium' | 'low'; label: string } {

@@ -27,6 +27,7 @@ import { RiskTrackingService } from './risk-tracking.service';
 import { RiskScore } from '../utils/riskScoring';
 import { AccountSecurityFindingsRepository, AccountSecurityFinding } from '../repositories/account-security-findings.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { formatSavingsCurrency } from '../utils/formatSavingsCurrency';
 
 const EMPTY_FIELDS: StructuredDashboardSummary = {
   overallHealth: { score: null, context: null },
@@ -191,7 +192,11 @@ export class AISummaryService {
       resourceComplianceCount,
       topFindingKey: topFinding ? `${topFinding.title}|${topFinding.severity}` : null,
       activeRecommendations: costStats.active_recommendations,
-      totalPotentialSavingsRounded: Math.round(costStats.total_potential_savings),
+      // formatSavingsCurrency(), not Math.round(): this cache key must change
+      // whenever the prose buildSummary() below actually generates would change,
+      // and that prose now shows sub-dollar totals at 2dp instead of rounding
+      // them all to the same "$0" bucket.
+      totalPotentialSavingsRounded: formatSavingsCurrency(costStats.total_potential_savings),
       criticalAnomalies,
     };
   }
@@ -251,7 +256,7 @@ export class AISummaryService {
         factLines.push(
           `${costStats.active_recommendations} active cost optimization` +
           `${costStats.active_recommendations !== 1 ? 's' : ''} could save approximately ` +
-          `$${Math.round(costStats.total_potential_savings).toLocaleString()}/month.`
+          `${formatSavingsCurrency(costStats.total_potential_savings)}/month.`
         );
       }
 
