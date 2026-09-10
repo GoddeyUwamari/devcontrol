@@ -20,6 +20,7 @@ import { costRecommendationsService } from '@/lib/services/cost-recommendations.
 import { anomalyService } from '@/lib/services/anomaly.service'
 import type { InfrastructureResource, PlatformDashboardStats } from '@/lib/types'
 import type { AnomalyDetection } from '@/types/anomaly.types'
+import { formatSavingsCurrency } from '@/lib/utils'
 import Link from 'next/link'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
@@ -501,7 +502,7 @@ export default function EfficiencyPage() {
         <KPICard label="Total Spend"        value={kpis.totalSpend}                   delta={kpis.totalSpendDelta} prefix="$" accent />
         <KPICard label="Cost Per Resource"  value={kpis.costPerResource.toFixed(2)}   delta={kpis.costPerDelta}    prefix="$" />
         <KPICard label="Idle Resource Cost" value={kpis.idleCost}                     delta={kpis.idleDelta}       prefix="$" />
-        <KPICard label="Est. Savings Opportunity" value={kpis.savingsRealized}        delta={kpis.savingsDelta}    prefix="$" />
+        <KPICard label="Est. Savings Opportunity" value={isDemoActive ? kpis.savingsRealized : formatSavingsCurrency(kpis.savingsRealized)} delta={kpis.savingsDelta} prefix={isDemoActive ? '$' : ''} />
       </div>
 
       {/* ── CHARTS ── */}

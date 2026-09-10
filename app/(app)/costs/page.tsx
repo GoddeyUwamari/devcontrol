@@ -19,7 +19,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
 import type { PlatformDashboardStats, CostRecommendation, RecommendationSeverity } from '@/lib/types'
-import { annualizeMonthly } from '@/lib/utils'
+import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -223,7 +223,7 @@ export default function CostsPage() {
 
   const totalSavings   = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
   const displaySavings = totalSavings
-  const displayAnnual  = Math.round(annualizeMonthly(displaySavings))
+  const displayAnnual  = annualizeMonthly(displaySavings)
   const activeRecsCount = isDemoActive ? DEMO_TOP_SAVINGS.length : (recStats?.activeRecommendations ?? 0)
 
   const topSavingsRows: { id: string; title: string; savings: number; severity: RecommendationSeverity }[] = isDemoActive
@@ -315,10 +315,10 @@ export default function CostsPage() {
   const kpiCards = [
     {
       key: 'savings', label: 'Estimated Savings Opportunity',
-      value: (!isDemoActive && recStatsLoading) ? '—' : `$${displaySavings.toLocaleString()}/mo`,
+      value: (!isDemoActive && recStatsLoading) ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`,
       sub: mtdSpend > 0
-        ? `$${displayAnnual.toLocaleString()} annually · ${Math.round((displaySavings / mtdSpend) * 100)}% of current spend`
-        : `$${displayAnnual.toLocaleString()} annually`,
+        ? `${formatSavingsCurrency(displayAnnual)} annually · ${Math.round((displaySavings / mtdSpend) * 100)}% of current spend`
+        : `${formatSavingsCurrency(displayAnnual)} annually`,
       subColor: 'text-green-600', TrendIcon: TrendingDown, trendColor: 'text-green-600',
       href: '/cost-optimization', borderTop: 'border-t-[3px] border-t-green-500', valueColor: 'text-green-600',
     },
@@ -600,7 +600,7 @@ export default function CostsPage() {
             { label: 'Current Run Rate',       value: `$${mtdSpend.toLocaleString()}/mo`, color: 'text-slate-900' },
             { label: 'Month-over-Month',       value: `${growthRate > 0 ? '+' : ''}${growthRate}%`, color: growthRate > 5 ? 'text-red-600' : 'text-green-600' },
             { label: 'Active Recommendations', value: `${activeRecsCount}`, color: 'text-slate-500' },
-            { label: 'Estimated Savings Opportunity', value: `$${displaySavings.toLocaleString()}/mo`, color: 'text-green-600' },
+            { label: 'Estimated Savings Opportunity', value: `${formatSavingsCurrency(displaySavings)}/mo`, color: 'text-green-600' },
           ].map(({ label, value, color }) => (
             <div key={label}>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
@@ -723,9 +723,9 @@ export default function CostsPage() {
                 const savingsFlag = amount === 0 ? null : isDemoActive
                   ? (isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null)
                   : (isCompute && categorySavings!.compute.total > 0
-                      ? `⚠ $${Math.round(categorySavings!.compute.total).toLocaleString()}/mo savings available · ${categorySavings!.compute.issue}`
+                      ? `⚠ ${formatSavingsCurrency(categorySavings!.compute.total)}/mo savings available · ${categorySavings!.compute.issue}`
                       : isDatabase && categorySavings!.database.total > 0
-                        ? `⚠ $${Math.round(categorySavings!.database.total).toLocaleString()}/mo savings available · ${categorySavings!.database.issue}`
+                        ? `⚠ ${formatSavingsCurrency(categorySavings!.database.total)}/mo savings available · ${categorySavings!.database.issue}`
                         : null)
                 return (
                   <div key={name}>
@@ -778,7 +778,7 @@ export default function CostsPage() {
           <div className="bg-green-50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-green-600 uppercase tracking-widest mb-1">Estimated Savings Opportunity</p>
-              <p className="text-2xl font-extrabold text-green-600 m-0">${displaySavings.toLocaleString()}<span className="text-sm font-medium">/mo</span></p>
+              <p className="text-2xl font-extrabold text-green-600 m-0">{formatSavingsCurrency(displaySavings)}<span className="text-sm font-medium">/mo</span></p>
             </div>
             <div className="text-center sm:text-right">
               <a href="/cost-optimization" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold no-underline inline-block transition-colors whitespace-nowrap">
@@ -793,7 +793,7 @@ export default function CostsPage() {
               <div key={rec.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
-                  <span className="text-xs font-bold text-green-600 shrink-0">${rec.savings.toLocaleString()}/mo</span>
+                  <span className="text-xs font-bold text-green-600 shrink-0">{formatSavingsCurrency(rec.savings)}/mo</span>
                 </div>
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${severityStyles[rec.severity]}`}>
                   {rec.severity}

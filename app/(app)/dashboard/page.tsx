@@ -46,7 +46,7 @@ import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
-import { annualizeMonthly } from '@/lib/utils'
+import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { DemoModeBanner } from '@/components/demo/DemoModeBanner'
@@ -300,7 +300,13 @@ export default function DashboardPage() {
   // round once after multiplying, matching costs/page.tsx and cost-optimization/page.tsx,
   // instead of rounding the monthly figure first and compounding the rounding error.
   const wasteAmountRaw  = demoMode ? 1922 : (costRecStats?.totalPotentialSavings ?? 0)
-  const wasteAmount     = Math.round(wasteAmountRaw)
+  // Deliberately NOT Math.round()'d: a genuine sub-$1 saving (e.g. $0.16) would
+  // round to 0 here, which then falsifies every `wasteAmount > 0` gate below
+  // (hiding "High ROI available" badges and showing the empty "No opportunities
+  // identified yet" state for a real, active recommendation). Display call
+  // sites format this via formatSavingsCurrency(), which handles the same
+  // sub-$1 case correctly instead of collapsing it to "$0".
+  const wasteAmount     = wasteAmountRaw
   const efficiencyRatio = demoMode
     ? Math.round(((12847 - wasteAmount) / 12847) * 100)
     : currentSpend > 0 ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100) : null
@@ -531,7 +537,7 @@ export default function DashboardPage() {
       ]
     : costRecsRaw.slice(0, 5).map(r => ({
         label:    r.issue || 'Can reduce monthly AWS spend',
-        savings:  r.potentialSavings != null ? `$${Math.round(r.potentialSavings).toLocaleString()}/mo` : '',
+        savings:  r.potentialSavings != null ? `${formatSavingsCurrency(r.potentialSavings)}/mo` : '',
         severity: r.severity,
       }))
   // ROI badge for the Savings Actions KPI card: High if the aggregate opportunity is
@@ -673,7 +679,7 @@ export default function DashboardPage() {
             <div className="text-base font-semibold text-foreground mb-2">
               {isDemoActive
                 ? '$800–$2,400/month in identified savings · 3 optimizations to review'
-                : `$${wasteAmount.toLocaleString()}/month in identified savings · ${topRecs.length} optimization${topRecs.length !== 1 ? 's' : ''} to review`}
+                : `${formatSavingsCurrency(wasteAmount)}/month in identified savings · ${topRecs.length} optimization${topRecs.length !== 1 ? 's' : ''} to review`}
             </div>
             {isDemoActive && (
               <div className="flex gap-1.5 flex-wrap">
@@ -716,7 +722,7 @@ export default function DashboardPage() {
                   Billing sync in progress (24–48h) · {topRecs.length > 0 ? 'Savings opportunities already identified:' : 'Scanning for savings opportunities…'}
                 </span>
                 {topRecs.length > 0 && (
-                  <span className="font-semibold text-[13px]" style={{ color: 'var(--text-success)' }}>${wasteAmount.toLocaleString()}/month</span>
+                  <span className="font-semibold text-[13px]" style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(wasteAmount)}/month</span>
                 )}
               </div>
               <span className="text-xs text-[var(--text-secondary)] font-medium">Infrastructure + security ready</span>
@@ -888,7 +894,7 @@ export default function DashboardPage() {
                     )}
                     <div className="flex items-center gap-1.5 mt-2">
                       <i className="ti ti-trending-up text-[14px]" style={{ color: 'var(--text-success)' }} />
-                      <span className="text-[13px] font-semibold" style={{ color: 'var(--text-success)' }}>Potential savings: ${wasteAmount.toLocaleString()}/month</span>
+                      <span className="text-[13px] font-semibold" style={{ color: 'var(--text-success)' }}>Potential savings: {formatSavingsCurrency(wasteAmount)}/month</span>
                     </div>
                   </div>
                 </div>
@@ -957,7 +963,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Savings opportunity</p>
                   {topRecs.length > 0 ? (
                     <>
-                      <div className="text-lg font-semibold leading-snug mb-2" style={{ color: 'var(--text-success)' }}>${wasteAmount.toLocaleString()}/mo</div>
+                      <div className="text-lg font-semibold leading-snug mb-2" style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(wasteAmount)}/mo</div>
                       <p className="text-xs text-[var(--text-secondary)]">{topRecs.length} opportunit{topRecs.length !== 1 ? 'ies' : 'y'} identified</p>
                     </>
                   ) : (
@@ -1281,12 +1287,12 @@ export default function DashboardPage() {
                 {isDemoActive ? (
                   <>
                     DEVCONTROL has saved WayUP Technology{' '}
-                    <span style={{ color: 'var(--text-success)' }}>${Math.round(annualizeMonthly(wasteAmountRaw)).toLocaleString()}</span> annualised
+                    <span style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(annualizeMonthly(wasteAmountRaw))}</span> annualised
                   </>
                 ) : wasteAmount > 0 ? (
                   <>
                     DevControl has identified{' '}
-                    <span style={{ color: 'var(--text-success)' }}>${Math.round(annualizeMonthly(wasteAmountRaw)).toLocaleString()}</span> in estimated annual savings for {organization?.displayName || organization?.name || 'your organization'}
+                    <span style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(annualizeMonthly(wasteAmountRaw))}</span> in estimated annual savings for {organization?.displayName || organization?.name || 'your organization'}
                   </>
                 ) : (
                   <>No active cost-saving opportunities detected for {organization?.displayName || organization?.name || 'your organization'}</>
@@ -1302,8 +1308,8 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
             {[
-              { label: 'Monthly savings',         value: wasteAmount > 0 ? `$${wasteAmount.toLocaleString()}` : '—',            sub: wasteAmount > 0 ? 'AI-identified waste' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
-              { label: 'Annual projection',        value: wasteAmount > 0 ? `$${Math.round(annualizeMonthly(wasteAmountRaw)).toLocaleString()}` : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
+              { label: 'Monthly savings',         value: wasteAmount > 0 ? formatSavingsCurrency(wasteAmount) : '—',            sub: wasteAmount > 0 ? 'AI-identified waste' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
+              { label: 'Annual projection',        value: wasteAmount > 0 ? formatSavingsCurrency(annualizeMonthly(wasteAmountRaw)) : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
               { label: 'Avg. ROI payback',         value: isDemoActive ? '< 15 min' : '—',                                      sub: isDemoActive ? 'Zero-risk changes only' : 'Not yet available',                  color: isDemoActive ? 'var(--text-accent)' : 'var(--text-secondary)' },
               { label: 'Can reduce monthly spend',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: 'var(--text-warning)' },
             ].map(({ label, value, sub, color }) => (
@@ -1455,7 +1461,7 @@ export default function DashboardPage() {
                     <div className="text-xs font-semibold text-[var(--text-secondary)] mb-0.5">Total potential</div>
                     {showSavingsDollars
                       ? (wasteAmount > 0
-                          ? <div className="text-lg font-bold tracking-tight" style={{ color: 'var(--text-success)' }}>${wasteAmount.toLocaleString()}/mo</div>
+                          ? <div className="text-lg font-bold tracking-tight" style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(wasteAmount)}/mo</div>
                           : <div className="text-[13px] text-[var(--text-secondary)] italic">{isDemoActive ? 'Calculating...' : 'No savings opportunities identified yet'}</div>)
                       : <div className="text-[13px] text-[var(--text-secondary)] italic">Calculated once billing syncs</div>}
                   </div>
