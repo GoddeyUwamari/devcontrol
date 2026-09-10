@@ -293,7 +293,7 @@ export default function CostOptimizationPage() {
   const hiddenCount = Math.max(0, activeCount - recommendations.length);
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1100px] mx-auto">
+    <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-2">Cost Optimization</h1>
