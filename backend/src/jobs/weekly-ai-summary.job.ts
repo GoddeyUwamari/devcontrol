@@ -14,6 +14,7 @@ import { WeeklySummaryRepository } from '../repositories/weekly-summary.reposito
 import { RiskTrackingService } from '../services/risk-tracking.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
+import { RELEASE_SHA } from '../version';
 
 export class WeeklyAISummaryJob {
   private aiService: AIInsightsService;
@@ -75,11 +76,20 @@ export class WeeklyAISummaryJob {
   start(): void {
     // Run every Monday at 9 AM (0 9 * * 1)
     this.task = cron.schedule('0 9 * * 1', async () => {
-      console.log('[Weekly AI Summary] Starting weekly summary job...');
       try {
         await this.sendWeeklySummaries();
       } catch (error: any) {
-        console.error('[Weekly AI Summary] Job error:', error.message);
+        // sendWeeklySummaries() already catches every per-org failure internally
+        // and never rethrows for those -- reaching here means something broke
+        // before/outside the per-org loop (e.g. getActiveOrganizations() itself
+        // failing), so no COMPLETE marker was ever logged for this run. Emitted
+        // as its own structured marker (see weeklyEmailJobMonitor.ts) rather than
+        // relying on a bare stack trace to be greppable.
+        console.error(`[Weekly AI Summary] ERROR ${JSON.stringify({
+          timestamp: new Date().toISOString(),
+          message: error.message,
+          releaseSha: RELEASE_SHA,
+        })}`);
       }
     });
 
@@ -116,9 +126,22 @@ export class WeeklyAISummaryJob {
   }
 
   /**
-   * Send weekly summaries to all active organizations
+   * Send weekly summaries to all active organizations.
+   *
+   * Emits a structured START marker here and a matching COMPLETE marker at
+   * the end -- the only two lines weeklyEmailJobMonitor.ts's read-only,
+   * production-log-based monitor looks for to establish whether a given
+   * Monday run happened, finished, and under which release. Deliberately
+   * carries only counts and the release SHA, never an org id, email address,
+   * or any other customer-identifying data.
    */
   private async sendWeeklySummaries(): Promise<{ sent: number; errors: number }> {
+    const startedAt = new Date();
+    console.log(`[Weekly AI Summary] START ${JSON.stringify({
+      timestamp: startedAt.toISOString(),
+      releaseSha: RELEASE_SHA,
+    })}`);
+
     const organizations = await this.repository.getActiveOrganizations();
     console.log(`[Weekly AI Summary] Found ${organizations.length} organizations`);
 
@@ -135,7 +158,15 @@ export class WeeklyAISummaryJob {
       }
     }
 
-    console.log(`[Weekly AI Summary] Completed: ${sent} sent, ${errors} errors`);
+    const completedAt = new Date();
+    console.log(`[Weekly AI Summary] COMPLETE ${JSON.stringify({
+      timestamp: completedAt.toISOString(),
+      durationMs: completedAt.getTime() - startedAt.getTime(),
+      organizations: organizations.length,
+      sent,
+      errors,
+      releaseSha: RELEASE_SHA,
+    })}`);
     return { sent, errors };
   }
 
