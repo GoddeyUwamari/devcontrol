@@ -5,6 +5,9 @@
 
 import { Pool, PoolClient } from 'pg';
 import awsCostService from '../services/aws-cost.service';
+import { requestContext } from '../config/database';
+import { DORAMetricsRepository, DORAMetricsFilters } from './dora-metrics.repository';
+import { DORAMetricsService, BenchmarkLevel } from '../services/dora-metrics.service';
 
 export interface WeeklyDataQuery {
   organizationId: string;
@@ -24,8 +27,39 @@ export interface WeeklyCostComparison {
   costSource: 'actual' | 'estimated';
 }
 
+export interface DORABenchmarkResult {
+  level: BenchmarkLevel;
+  isCustom: boolean;
+}
+
+export interface WeeklyDORAMetrics {
+  deploymentFrequency: string;
+  leadTime: string;
+  mttr: string;
+  changeFailureRate: number;
+  benchmarks: {
+    deploymentFrequency: DORABenchmarkResult | null;
+    leadTime: DORABenchmarkResult | null;
+    changeFailureRate: DORABenchmarkResult | null;
+    mttr: DORABenchmarkResult | null;
+  };
+}
+
+const EMPTY_DORA_BENCHMARKS: WeeklyDORAMetrics['benchmarks'] = {
+  deploymentFrequency: null,
+  leadTime: null,
+  changeFailureRate: null,
+  mttr: null,
+};
+
 export class WeeklySummaryRepository {
-  constructor(private pool: Pool) {}
+  private doraMetricsRepository: DORAMetricsRepository;
+  private doraMetricsService: DORAMetricsService;
+
+  constructor(private pool: Pool) {
+    this.doraMetricsRepository = new DORAMetricsRepository(pool);
+    this.doraMetricsService = new DORAMetricsService(this.doraMetricsRepository);
+  }
 
   /**
    * Get current cost breakdown by resource type/region, for the "top cost drivers" list.
@@ -218,9 +252,36 @@ export class WeeklySummaryRepository {
   }
 
   /**
-   * Get DORA metrics for the week (aggregated)
+   * Get DORA metrics for the week (aggregated).
+   *
+   * Deployment frequency and change failure rate are computed directly here —
+   * simple per-org counts over the window, already correct. Lead time and MTTR
+   * are NOT re-derived here: they reuse DORAMetricsRepository.calculateLeadTime()
+   * / calculateMTTR(), the same calculations the DORA dashboard already uses
+   * (dora-metrics.controller.ts -> GET /api/metrics/dora), instead of this
+   * function's old standalone queries.
+   *
+   * The old lead-time query filtered on `status = 'running'` to mean "average
+   * time from commit to deploy" — but nothing in this codebase ever writes
+   * that status to a deployment row (GitHub-webhook rows are only ever
+   * 'success'/'failed', see github-webhook.routes.ts; the manual deployments
+   * API never transitions status after insert either), and there is no commit
+   * timestamp column to measure commit-to-deploy from in the first place. That
+   * query always matched zero rows and always rendered "N/A", regardless of
+   * how much real deploy history existed. DORAMetricsRepository.calculateLeadTime
+   * measures something real and already shipped instead: average time between
+   * consecutive successful deployments. MTTR was simply hardcoded to 'N/A' and
+   * never computed at all, even though calculateMTTR() already existed.
+   *
+   * DORAMetricsRepository's own pool.query() calls only pick up this org's RLS
+   * context via the AsyncLocalStorage-based `pool` proxy in config/database.ts
+   * (the same mechanism auth.middleware.ts's runWithOrgClient uses for every
+   * authenticated route). The weekly email job doesn't run inside that
+   * context — it threads its own `client` explicitly instead — so that scope
+   * is opened here around the reused calls specifically, tied to the same
+   * already org-tagged `client` the rest of this function uses.
    */
-  async getWeeklyDORAMetrics(query: WeeklyDataQuery, client?: PoolClient) {
+  async getWeeklyDORAMetrics(query: WeeklyDataQuery, client?: PoolClient): Promise<WeeklyDORAMetrics> {
     try {
       // Get deployment count for frequency
       const deploymentResult = await (client ?? this.pool).query(
@@ -233,20 +294,8 @@ export class WeeklySummaryRepository {
 
       const deploymentCount = parseInt(deploymentResult.rows[0]?.deployment_count || '0');
       const days = Math.ceil((query.endDate.getTime() - query.startDate.getTime()) / (1000 * 60 * 60 * 24));
-      const deploymentFrequency = days > 0 ? (deploymentCount / days).toFixed(1) : '0';
-
-      // Get lead time (average time from commit to deploy)
-      const leadTimeResult = await (client ?? this.pool).query(
-        `SELECT AVG(EXTRACT(EPOCH FROM (deployed_at - created_at)) / 3600) as avg_lead_time_hours
-         FROM deployments
-         WHERE organization_id = $1
-           AND deployed_at BETWEEN $2 AND $3
-           AND status = 'running'`,
-        [query.organizationId, query.startDate, query.endDate]
-      );
-
-      const avgLeadTimeHours = parseFloat(leadTimeResult.rows[0]?.avg_lead_time_hours || '0');
-      const leadTime = avgLeadTimeHours > 0 ? `${avgLeadTimeHours.toFixed(1)} hours` : 'N/A';
+      const deploymentsPerDay = days > 0 ? deploymentCount / days : 0;
+      const deploymentFrequency = deploymentsPerDay.toFixed(1);
 
       // Get change failure rate
       const failureResult = await (client ?? this.pool).query(
@@ -261,13 +310,60 @@ export class WeeklySummaryRepository {
 
       const total = parseInt(failureResult.rows[0]?.total || '0');
       const failed = parseInt(failureResult.rows[0]?.failed || '0');
-      const changeFailureRate = total > 0 ? ((failed / total) * 100) : 0;
+      const changeFailureRate = total > 0 ? Math.round(((failed / total) * 100) * 10) / 10 : 0;
+
+      // Lead time + MTTR, reused from DORAMetricsRepository (see doc comment above).
+      const doraFilters: DORAMetricsFilters = { organizationId: query.organizationId, dateRange: '7d' };
+      const [leadTimeResult, mttrResult] = client
+        ? await requestContext.run(client, () => Promise.all([
+            this.doraMetricsRepository.calculateLeadTime(doraFilters),
+            this.doraMetricsRepository.calculateMTTR(doraFilters),
+          ]))
+        : await Promise.all([
+            this.doraMetricsRepository.calculateLeadTime(doraFilters),
+            this.doraMetricsRepository.calculateMTTR(doraFilters),
+          ]);
+
+      const leadTime = leadTimeResult.averageLeadTimeHours > 0
+        ? `${leadTimeResult.averageLeadTimeHours.toFixed(1)} hours`
+        : 'N/A';
+      const mttr = mttrResult.incidents > 0
+        ? mttrResult.averageMTTRMinutes < 60
+          ? `${mttrResult.averageMTTRMinutes.toFixed(0)} minutes`
+          : `${(mttrResult.averageMTTRMinutes / 60).toFixed(1)} hours`
+        : 'N/A';
+
+      // Benchmark tiers use only the documented, industry-standard DORA 2024
+      // bands in DORAMetricsService (the same source the dashboard uses) —
+      // never an invented threshold or an LLM's own qualitative judgment. Only
+      // attached when there's an actual value to grade: unknown/insufficient
+      // data must never be silently labeled with a tier (e.g. "low").
+      //
+      // Per-org custom benchmarks (custom_dora_benchmarks) are intentionally
+      // not applied here — see PR notes: that table isn't present in every
+      // environment's schema today, so this matches the dashboard's own
+      // effective (industry-default) behavior wherever it's absent.
+      const benchmarks: WeeklyDORAMetrics['benchmarks'] = {
+        deploymentFrequency: deploymentCount > 0
+          ? { level: this.doraMetricsService.resolveDeploymentFrequency(deploymentsPerDay).benchmark, isCustom: false }
+          : null,
+        changeFailureRate: total > 0
+          ? { level: this.doraMetricsService.resolveChangeFailureRate(changeFailureRate).benchmark, isCustom: false }
+          : null,
+        leadTime: leadTimeResult.averageLeadTimeHours > 0
+          ? { level: this.doraMetricsService.resolveLeadTime(leadTimeResult.averageLeadTimeHours).benchmark, isCustom: false }
+          : null,
+        mttr: mttrResult.incidents > 0
+          ? { level: this.doraMetricsService.resolveMTTR(mttrResult.averageMTTRMinutes).benchmark, isCustom: false }
+          : null,
+      };
 
       return {
         deploymentFrequency: `${deploymentFrequency} per day`,
         leadTime,
-        mttr: 'N/A',
-        changeFailureRate: Math.round(changeFailureRate * 10) / 10
+        mttr,
+        changeFailureRate,
+        benchmarks,
       };
     } catch (error) {
       console.warn('[Weekly Summary] DORA metrics query failed:', error);
@@ -275,7 +371,8 @@ export class WeeklySummaryRepository {
         deploymentFrequency: 'N/A',
         leadTime: 'N/A',
         mttr: 'N/A',
-        changeFailureRate: 0
+        changeFailureRate: 0,
+        benchmarks: EMPTY_DORA_BENCHMARKS,
       };
     }
   }

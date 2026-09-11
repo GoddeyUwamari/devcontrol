@@ -166,6 +166,11 @@ export class DORAMetricsService {
 
   // ─── Benchmark resolvers ────────────────────────────────────────────────────
   //
+  // Public so other consumers (e.g. the weekly summary email) can label a raw
+  // measured value with the same industry-standard tier the dashboard shows,
+  // instead of re-deriving their own thresholds or leaving an LLM to invent a
+  // qualitative judgment ("healthy", "low") with no defensible basis.
+  //
   // Each resolver returns { benchmark, isCustomBenchmark }.
   // When a custom threshold is provided:
   //   - For frequency metrics (higher = better):  elite ≥ t, high ≥ t×0.5, medium ≥ t×0.2
@@ -176,7 +181,7 @@ export class DORAMetricsService {
    * Deployment Frequency — higher is better
    * Industry: Elite >1/day, High ≥0.14/day (~1/week), Medium ≥0.03/day (~1/month)
    */
-  private resolveDeploymentFrequency(
+  resolveDeploymentFrequency(
     deploymentsPerDay: number,
     custom?: CustomBenchmarkRow
   ): { benchmark: BenchmarkLevel; isCustomBenchmark: boolean } {
@@ -201,7 +206,7 @@ export class DORAMetricsService {
    * Lead Time — lower is better (hours)
    * Industry: Elite <24h, High ≤168h (1 week), Medium ≤720h (1 month)
    */
-  private resolveLeadTime(
+  resolveLeadTime(
     leadTimeHours: number,
     custom?: CustomBenchmarkRow
   ): { benchmark: BenchmarkLevel; isCustomBenchmark: boolean } {
@@ -226,7 +231,7 @@ export class DORAMetricsService {
    * Change Failure Rate — lower is better (percentage)
    * Industry: Elite ≤15%, High ≤30%, Medium ≤45%
    */
-  private resolveChangeFailureRate(
+  resolveChangeFailureRate(
     failureRate: number,
     custom?: CustomBenchmarkRow
   ): { benchmark: BenchmarkLevel; isCustomBenchmark: boolean } {
@@ -251,7 +256,7 @@ export class DORAMetricsService {
    * MTTR — lower is better (minutes)
    * Industry: Elite <60min, High <1440min (1 day), Medium ≤10080min (1 week)
    */
-  private resolveMTTR(
+  resolveMTTR(
     mttrMinutes: number,
     custom?: CustomBenchmarkRow
   ): { benchmark: BenchmarkLevel; isCustomBenchmark: boolean } {

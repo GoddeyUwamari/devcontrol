@@ -66,6 +66,16 @@ export interface WeeklySummaryData {
     leadTime: string;
     mttr: string;
     changeFailureRate: number;
+    // Industry-standard DORA benchmark tier per metric, when there's enough
+    // data to grade one — see WeeklySummaryRepository.getWeeklyDORAMetrics.
+    // Optional so any other/older caller constructing this shape without it
+    // still type-checks.
+    benchmarks?: {
+      deploymentFrequency: { level: string; isCustom: boolean } | null;
+      leadTime: { level: string; isCustom: boolean } | null;
+      changeFailureRate: { level: string; isCustom: boolean } | null;
+      mttr: { level: string; isCustom: boolean } | null;
+    };
   };
 }
 
@@ -441,6 +451,18 @@ Be specific, technical, and focus on AWS-specific optimizations. Keep each secti
   }
 
   /**
+   * Render a DORA benchmark tier as short, explicitly-sourced text, e.g.
+   * " (industry benchmark: Elite)" or " (org benchmark: High)". Returns ''
+   * when there's no benchmark to show — callers must not fall back to
+   * inventing a qualitative word themselves in that case.
+   */
+  private benchmarkLabel(b?: { level: string; isCustom: boolean } | null): string {
+    if (!b) return '';
+    const level = b.level.charAt(0).toUpperCase() + b.level.slice(1);
+    return ` (${b.isCustom ? 'org' : 'industry'} benchmark: ${level})`;
+  }
+
+  /**
    * Parse AI response into structured format
    */
   private parseAIResponse(response: string): AIInsightResponse {
@@ -639,16 +661,16 @@ ${data.alerts.topAlert ? `
 Most significant: ${data.alerts.topAlert.title} (${data.alerts.topAlert.severity})
 ` : ''}
 
-DORA METRICS:
-- Deployment frequency: ${data.dora.deploymentFrequency}
-- Lead time: ${data.dora.leadTime}
-- MTTR: ${data.dora.mttr}
-- Change failure rate: ${data.dora.changeFailureRate}%
+DORA METRICS (any "benchmark" label is the industry-standard DORA 2024 tier for that exact measured value — not a DevControl opinion):
+- Deployment frequency: ${data.dora.deploymentFrequency}${this.benchmarkLabel(data.dora.benchmarks?.deploymentFrequency)}
+- Lead time: ${data.dora.leadTime}${this.benchmarkLabel(data.dora.benchmarks?.leadTime)}
+- MTTR: ${data.dora.mttr}${this.benchmarkLabel(data.dora.benchmarks?.mttr)}
+- Change failure rate: ${data.dora.changeFailureRate}%${this.benchmarkLabel(data.dora.benchmarks?.changeFailureRate)}
 
 Provide:
 1. COST_SUMMARY: One sentence explaining cost change
 2. ALERT_SUMMARY: One sentence about most important alert (or "No critical alerts this week" if none)
-3. DORA_SUMMARY: One sentence highlighting biggest improvement or concern
+3. DORA_SUMMARY: One sentence stating the measured DORA value(s) above worth calling out. Only use a qualitative word like "healthy", "strong", "low", or "elite" if it exactly matches a benchmark label given above for that metric — never invent your own qualitative judgment about a metric with no benchmark label. If a value is "N/A", do not speculate about why; just don't mention it.
 4. RECOMMENDATION: One actionable recommendation with estimated savings if applicable
 
 Keep it concise and actionable. Do not use markdown formatting, asterisks, bullet points, or bold syntax in your response.`;
@@ -738,7 +760,14 @@ Keep it concise and actionable. Do not use markdown formatting, asterisks, bulle
       },
       dora: {
         ...data.dora,
-        summary: `Deployment frequency: ${data.dora.deploymentFrequency}, Lead time: ${data.dora.leadTime}.`
+        summary: [
+          `Deployment frequency: ${data.dora.deploymentFrequency}${this.benchmarkLabel(data.dora.benchmarks?.deploymentFrequency)}.`,
+          `Lead time: ${data.dora.leadTime}${this.benchmarkLabel(data.dora.benchmarks?.leadTime)}.`,
+          `Change failure rate: ${data.dora.changeFailureRate}%${this.benchmarkLabel(data.dora.benchmarks?.changeFailureRate)}.`,
+          data.dora.mttr !== 'N/A'
+            ? `MTTR: ${data.dora.mttr}${this.benchmarkLabel(data.dora.benchmarks?.mttr)}.`
+            : null,
+        ].filter(Boolean).join(' ')
       },
       recommendation: {
         text: 'Review your dashboard for detailed insights and optimization opportunities.',
