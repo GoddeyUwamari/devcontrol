@@ -1,43 +1,151 @@
 'use client'
 
-import { useState } from 'react'
-import { useDemoMode } from '@/components/demo/demo-mode-toggle'
-import { useSalesDemo } from '@/lib/demo/sales-demo-data'
-import { Sparkles, ArrowRight, Target, AlertTriangle, Activity, Lock } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
 import { usePlan } from '@/lib/hooks/use-plan'
+import sloService, {
+  SloDefinition, SloWithEvaluation, CreateSloPayload, SloIndicator, SloResourceType,
+  SLI_RESOURCE_TYPE, SLI_LABEL,
+} from '@/lib/services/slo.service'
+import { awsResourcesService, AWSResource } from '@/lib/services/aws-resources.service'
+import { Plus, Trash2, Lock, Target, AlertTriangle, HelpCircle, PlugZap } from 'lucide-react'
+import { toast } from 'sonner'
 import Link from 'next/link'
 
-interface SLO {
-  id: string; name: string; description: string; category: string
-  current: number; target: number; errorBudget: number; errorBudgetUsed: number
-  trend: 'up' | 'down' | 'stable'; trendValue: number
-  status: 'met' | 'at_risk' | 'breached'; window: string
-}
-
-const DEMO_SLOS: SLO[] = [
-  { id: 's1', name: 'API Availability',       description: 'Overall API uptime across all endpoints',        category: 'Availability', current: 99.97, target: 99.9,  errorBudget: 0.1,  errorBudgetUsed: 30,  trend: 'stable', trendValue: 0.01,  status: 'met',      window: '30 days' },
-  { id: 's2', name: 'Response Time p95',       description: '95th percentile latency under 500ms',            category: 'Performance',  current: 98.50, target: 95.0,  errorBudget: 5.0,  errorBudgetUsed: 30,  trend: 'up',     trendValue: 1.2,   status: 'met',      window: '30 days' },
-  { id: 's3', name: 'Error Rate',              description: 'Less than 0.1% error rate across all services', category: 'Reliability',  current: 99.88, target: 99.9,  errorBudget: 0.1,  errorBudgetUsed: 120, trend: 'down',   trendValue: -0.05, status: 'at_risk',  window: '30 days' },
-  { id: 's4', name: 'Deployment Success Rate', description: 'Successful deployments to production',          category: 'Deployment',   current: 98.80, target: 98.0,  errorBudget: 2.0,  errorBudgetUsed: 60,  trend: 'up',     trendValue: 0.8,   status: 'met',      window: '30 days' },
-  { id: 's5', name: 'Data Pipeline Freshness', description: 'Data pipelines completing within SLA window',   category: 'Data',         current: 97.20, target: 99.0,  errorBudget: 1.0,  errorBudgetUsed: 280, trend: 'down',   trendValue: -1.8,  status: 'breached', window: '30 days' },
-  { id: 's6', name: 'Payment Processing',      description: 'Payment transactions completing successfully',   category: 'Business',     current: 99.96, target: 99.95, errorBudget: 0.05, errorBudgetUsed: 80,  trend: 'stable', trendValue: 0.0,   status: 'met',      window: '30 days' },
+// Kept in sync with backend/src/services/slo-evaluation.ts by construction — every
+// choice below is validated server-side (slo.service.ts's validateCreatePayload)
+// against the exact same canonical set, so this list can never offer something the
+// backend would reject. GET /api/slos/options exists for the same canonical values if
+// a future consumer needs them without importing this file.
+const SLI_OPTIONS: SloIndicator[] = ['ec2_availability', 'alb_latency_avg', 'alb_error_rate', 'lambda_error_rate']
+const WINDOW_OPTIONS: Array<{ value: '24h' | '7d'; label: string }> = [
+  { value: '24h', label: '24 hours' },
+  { value: '7d', label: '7 days' },
 ]
 
-const DEMO_STATS = { total: 6, met: 4, atRisk: 1, breached: 1, avgCompliance: 99.05 }
+const DEFAULT_FORM: CreateSloPayload = { name: '', resourceId: '', sli: 'ec2_availability', targetValue: 99.9, evaluationWindow: '7d' }
+
+function targetUnitLabel(sli: SloIndicator): string {
+  return sli === 'alb_latency_avg' ? 'ms (max average latency)' : '% (required success rate)'
+}
+
+function statusMeta(status: SloWithEvaluation['evaluation']['status']) {
+  switch (status) {
+    case 'healthy': return { label: 'Healthy', badge: 'bg-emerald-100 text-emerald-700', bg: 'bg-white', border: 'border-slate-200' }
+    case 'breached': return { label: 'Breached', badge: 'bg-red-600 text-white', bg: 'bg-red-50', border: 'border-red-200' }
+    case 'insufficient_data': return { label: 'Insufficient Data', badge: 'bg-slate-100 text-slate-600', bg: 'bg-white', border: 'border-slate-200' }
+    case 'resource_not_found': return { label: 'Resource Not Found', badge: 'bg-amber-100 text-amber-800', bg: 'bg-amber-50', border: 'border-amber-200' }
+    case 'aws_not_connected': return { label: 'AWS Not Connected', badge: 'bg-slate-100 text-slate-600', bg: 'bg-white', border: 'border-slate-200' }
+  }
+}
+
+function formatObserved(evaluation: SloWithEvaluation['evaluation'], sli: SloIndicator): string {
+  if (evaluation.observedValue === null) return '—'
+  if (evaluation.unit === 'ms') return `${evaluation.observedValue.toFixed(0)}ms avg`
+  // Percent-based SLIs are stored/evaluated as a success rate internally (see
+  // slo-evaluation.ts) — error-rate SLIs are shown back to the user as the error rate
+  // they actually named the SLO for, not the internal success-rate framing.
+  const isErrorRateSli = sli === 'alb_error_rate' || sli === 'lambda_error_rate'
+  if (isErrorRateSli) return `${(100 - evaluation.observedValue).toFixed(2)}% errors (${evaluation.observedValue.toFixed(2)}% success)`
+  return `${evaluation.observedValue.toFixed(2)}%`
+}
 
 export default function SLODashboardPage() {
-  const demoMode = useDemoMode()
-  const salesDemoMode = useSalesDemo((state) => state.enabled)
-  const isDemoActive = demoMode || salesDemoMode
   const { isEnterprise } = usePlan()
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
 
-  if (!isEnterprise && !isDemoActive) {
+  const [items, setItems] = useState<SloWithEvaluation[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState<CreateSloPayload>(DEFAULT_FORM)
+  const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const [resourceOptions, setResourceOptions] = useState<AWSResource[]>([])
+  const [resourceOptionsLoading, setResourceOptionsLoading] = useState(false)
+
+  const loadSlos = useCallback(async () => {
+    if (!isEnterprise) { setIsLoading(false); return }
+    setLoadError(null)
+    try {
+      const data = await sloService.evaluateAll()
+      setItems(data)
+    } catch {
+      setLoadError('Failed to load SLOs. Please try again.')
+      toast.error('Failed to load SLOs')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [isEnterprise])
+
+  useEffect(() => { loadSlos() }, [loadSlos])
+
+  // Resource picker: derives its choices from the org's actual discovered inventory for
+  // the selected SLI's resource type, rather than a free-text field prone to typos that
+  // would just surface as "resource_not_found" later — the same class of honesty
+  // problem this whole feature exists to fix.
+  useEffect(() => {
+    if (!isEnterprise) return
+    const resourceType: SloResourceType = SLI_RESOURCE_TYPE[form.sli]
+    setResourceOptionsLoading(true)
+    setResourceOptions([])
+    awsResourcesService.getAll({ resource_type: resourceType, limit: 100 })
+      .then((result: any) => setResourceOptions(result?.resources ?? []))
+      .catch(() => setResourceOptions([]))
+      .finally(() => setResourceOptionsLoading(false))
+  }, [form.sli, isEnterprise])
+
+  const resetForm = () => { setForm(DEFAULT_FORM); setShowForm(false) }
+
+  const handleCreate = async () => {
+    if (!form.name.trim()) { toast.error('SLO name is required'); return }
+    if (!form.resourceId) { toast.error('Select a resource'); return }
+    if (!Number.isFinite(form.targetValue) || form.targetValue <= 0) { toast.error('Enter a valid target'); return }
+    setSaving(true)
+    try {
+      await sloService.createSlo(form)
+      toast.success('SLO created')
+      resetForm()
+      await loadSlos()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Failed to create SLO')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleToggle = async (slo: SloDefinition) => {
+    try {
+      await sloService.updateSlo(slo.id, { enabled: !slo.enabled })
+      toast.success(slo.enabled ? 'SLO disabled' : 'SLO enabled')
+      await loadSlos()
+    } catch {
+      toast.error('Failed to update SLO')
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id)
+    try {
+      await sloService.deleteSlo(id)
+      toast.success('SLO deleted')
+      await loadSlos()
+    } catch {
+      toast.error('Failed to delete SLO')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // ── Enterprise gate — UX only. The real security boundary is requireEnterprise on
+  // every /api/slos route (backend/src/routes/slo.routes.ts); this just avoids showing
+  // the management UI to an org that could not use it anyway. ──
+  if (!isEnterprise) {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
           <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Observability</p>
-          <h1 className="text-2xl font-bold text-gray-900">SLO Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900">SLO Dashboard &amp; Management</h1>
           <p className="text-xs text-gray-500 font-medium mt-1.5">Define and track Service Level Objectives across your infrastructure.</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
@@ -46,7 +154,7 @@ export default function SLODashboardPage() {
           </div>
           <h2 className="text-sm font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-            Advanced SLO management is available on the Enterprise plan. Define custom SLOs, track breach history, and automate alerts.
+            SLO Dashboard &amp; Management is available on the Enterprise plan — define reliability targets for EC2, ALB, and Lambda and track them against real CloudWatch telemetry.
           </p>
           <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
             Upgrade to Enterprise
@@ -56,259 +164,230 @@ export default function SLODashboardPage() {
     )
   }
 
-  const displaySLOs = isDemoActive ? DEMO_SLOS : []
-  const displayStats = isDemoActive ? DEMO_STATS : { total: 0, met: 0, atRisk: 0, breached: 0, avgCompliance: 0 }
-  const categories = ['all', ...Array.from(new Set(DEMO_SLOS.map(s => s.category)))]
-  const filteredSLOs = selectedCategory === 'all' ? displaySLOs : displaySLOs.filter(s => s.category === selectedCategory)
-
-  const ACTIONS_DEMO = [
-    { priority: 1, priorityColor: 'text-red-600', title: 'Resolve Data Pipeline breach', impact: 'SLA exposure active', impactColor: 'text-red-600', sub: 'Data Pipeline Freshness · 280% error budget consumed · ingestion delays suspected · reporting impact', bg: 'bg-red-50', border: 'border-red-200', badge: 'Critical', badgeCls: 'bg-red-600 text-white', ctaLabel: 'Investigate →', ctaHref: '/observability/alert-history', ctaCls: 'bg-red-600 hover:bg-red-700 text-white border-transparent' },
-    { priority: 2, priorityColor: 'text-amber-500', title: 'Monitor Error Rate SLO', impact: 'budget 120% consumed', impactColor: 'text-amber-500', sub: 'Error Rate · trending worse ↓ 0.05% · user-facing risk if unresolved · error budget degrading', bg: 'bg-amber-50', border: 'border-amber-200', badge: 'At Risk', badgeCls: 'bg-amber-100 text-amber-800', ctaLabel: 'Review →', ctaHref: '/observability/alert-history', ctaCls: 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200' },
-    { priority: 3, priorityColor: 'text-slate-500', title: 'Define SLO for API Server — 99.9% uptime', impact: 'latency signal active', impactColor: 'text-slate-500', sub: 'production-api-server · CloudWatch signal · no SLO defined · reliability blind spot', bg: 'bg-slate-50', border: 'border-slate-100', badge: 'Gap Detected', badgeCls: 'bg-slate-100 text-slate-500', ctaLabel: 'Add SLO →', ctaHref: '/monitoring', ctaCls: 'bg-violet-600 hover:bg-violet-700 text-white border-transparent' },
-    { priority: 4, priorityColor: 'text-slate-500', title: 'Define SLO for CloudFront CDN — error rate <1%', impact: 'anomaly warning active', impactColor: 'text-slate-500', sub: 'production-cdn · latency warning in anomalies · no SLO defined · user experience risk', bg: 'bg-slate-50', border: 'border-slate-100', badge: 'Gap Detected', badgeCls: 'bg-slate-100 text-slate-500', ctaLabel: 'Add SLO →', ctaHref: '/monitoring', ctaCls: 'bg-violet-600 hover:bg-violet-700 text-white border-transparent' },
-  ]
+  const healthyCount = items.filter((i) => i.evaluation.status === 'healthy').length
+  const breachedCount = items.filter((i) => i.evaluation.status === 'breached').length
+  const unknownCount = items.length - healthyCount - breachedCount
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
 
-      {/* Page header */}
+      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Observability</p>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">SLO Intelligence</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Reliability targets, error budget tracking, and breach risk across all services.</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <a href="/monitoring" className="bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs font-semibold no-underline hover:bg-slate-50 transition-colors whitespace-nowrap">Monitoring Overview</a>
-          {displayStats.breached > 0
-            ? <a href="/observability/alert-history" className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2.5 text-xs font-bold no-underline transition-colors whitespace-nowrap">
-                <AlertTriangle size={11} /> Resolve Breached SLOs
-              </a>
-            : <a href="/monitoring" className="bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs font-semibold no-underline hover:bg-slate-50 transition-colors whitespace-nowrap">+ Custom SLO</a>
-          }
-        </div>
-      </div>
-
-      {/* Decision Intelligence */}
-      <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-5 py-4 mb-4 flex items-start gap-3.5">
-        <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={12} className="text-white" /></div>
-        <div className="flex-1">
-          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
-          <p className="text-sm text-slate-700 leading-relaxed">
-            {isDemoActive
-              ? <>Primary risk is <strong className="text-red-600">data pipeline instability</strong> — error budget <strong className="text-red-600">280% consumed</strong>. If unresolved, reporting latency and downstream systems will degrade within 24h. Error Rate SLO approaching breach at 120% budget. 4 of 6 SLOs healthy.<span className="block mt-1.5 text-xs text-slate-500">Recommended: investigate ingestion delays in last 24h window · define CDN SLO to track latency automatically.</span></>
-              : <>No reliability targets defined — <strong className="text-red-600">system risk is currently unbounded</strong>. Without SLOs, you cannot detect performance degradation before users feel it.<span className="block mt-1.5 text-xs text-slate-500">Define your first SLO to begin measuring reliability against targets.</span></>
-            }
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">SLO Dashboard &amp; Management</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-xl">
+            Live evaluation against real CloudWatch telemetry — EC2 availability, ALB average latency, ALB and Lambda error rate, over a 24-hour or 7-day window. Averages, not percentiles; not application-level uptime.
           </p>
         </div>
-        {isDemoActive && displayStats.breached > 0 && (
-          <a href="/observability/alert-history" className="text-xs font-bold text-red-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">View alerts <ArrowRight size={10} /></a>
-        )}
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center gap-2 bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shrink-0"
+        >
+          <Plus size={16} /> New SLO
+        </button>
       </div>
 
-      {/* Reliability Intelligence Strip */}
-      {isDemoActive && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 mb-4">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5 flex-wrap">
-              {/* Score ring */}
-              <div className="flex items-center gap-3">
-                <div className="relative w-12 h-12 shrink-0">
-                  <svg width="54" height="54" viewBox="0 0 54 54">
-                    <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
-                    <circle cx="27" cy="27" r="23" fill="none" stroke="#D97706" strokeWidth="5" strokeDasharray="144.5" strokeDashoffset="58" strokeLinecap="round" transform="rotate(-90 27 27)"/>
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-slate-900">60</span>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Reliability Score</p>
-                  <p className="text-sm font-semibold text-slate-900 mb-0.5">At Risk</p>
-                  <p className="text-xs text-slate-500">6/6 services measured · High confidence</p>
-                </div>
-              </div>
-              <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
-              {/* Score drivers */}
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">Driven by</p>
-                <div className="flex flex-col gap-0.5">
-                  <p className="text-xs text-red-600 font-semibold">● Data pipeline breach (280% error budget)</p>
-                  <p className="text-xs text-amber-500 font-medium">● Error rate nearing budget limit (120%)</p>
-                  <p className="text-xs text-slate-500 font-medium">● CDN latency anomaly detected</p>
-                </div>
-              </div>
-              <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
-              {/* Business impact */}
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Business Impact</p>
-                <p className="text-sm font-semibold text-slate-900 mb-0.5">Reporting latency · downstream degradation</p>
-                <p className="text-xs font-semibold text-red-600">If unresolved: SLA breach exposure within 24h</p>
-              </div>
-              <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
-              {/* Services impacted */}
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Services Impacted</p>
-                <p className="text-base font-bold text-red-600 mb-0.5">2 of 6</p>
-                <p className="text-xs text-slate-500">1 breached · 1 at risk</p>
-              </div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
+        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">SLOs Defined</p>
+          <div className="text-2xl font-bold text-slate-900">{items.length}</div>
+        </div>
+        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
+          <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-3">Healthy</p>
+          <div className="text-2xl font-bold text-emerald-600">{healthyCount}</div>
+        </div>
+        <div className={`rounded-xl p-4 sm:p-5 border ${breachedCount > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
+          <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3">Breached</p>
+          <div className="text-2xl font-bold text-red-600">{breachedCount}</div>
+        </div>
+        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Unknown / No Data</p>
+          <div className="text-2xl font-bold text-slate-500">{unknownCount}</div>
+        </div>
+      </div>
+
+      {/* Create form */}
+      {showForm && (
+        <div className="bg-white border border-violet-200 rounded-xl p-6 mb-6 shadow-sm">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-sm font-semibold text-slate-900">Create New SLO</h2>
+            <button onClick={resetForm} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">SLO Name *</label>
+              <input
+                type="text" value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. Checkout API availability"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
             </div>
-            <a href="/ai-reports" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Service Level Indicator *</label>
+              <select
+                value={form.sli}
+                onChange={(e) => setForm({ ...form, sli: e.target.value as SloIndicator, resourceId: '' })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+              >
+                {SLI_OPTIONS.map((sli) => <option key={sli} value={sli}>{SLI_LABEL[sli]}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Resource * {resourceOptionsLoading && <span className="text-slate-400 font-normal">(loading…)</span>}
+              </label>
+              <select
+                value={form.resourceId}
+                onChange={(e) => setForm({ ...form, resourceId: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                disabled={resourceOptionsLoading}
+              >
+                <option value="">
+                  {resourceOptionsLoading ? 'Loading resources…' : resourceOptions.length === 0 ? `No ${SLI_RESOURCE_TYPE[form.sli]} resources discovered` : 'Select a resource'}
+                </option>
+                {resourceOptions.map((r) => (
+                  <option key={r.resource_id} value={r.resource_id}>{r.resource_name || r.resource_id}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Target ({targetUnitLabel(form.sli)}) *</label>
+              <input
+                type="number" step="0.001" value={form.targetValue}
+                onChange={(e) => setForm({ ...form, targetValue: parseFloat(e.target.value) })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Evaluation Window *</label>
+              <select
+                value={form.evaluationWindow}
+                onChange={(e) => setForm({ ...form, evaluationWindow: e.target.value as '24h' | '7d' })}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+              >
+                {WINDOW_OPTIONS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 mb-4">
+            <HelpCircle size={13} className="text-slate-400 shrink-0" />
+            <p className="text-xs text-slate-500">
+              {form.sli === 'alb_latency_avg'
+                ? 'Latency is an average over the window, never a percentile (no p95/p99 data is available). No error budget applies to a latency target.'
+                : 'Target is the required success rate. Error budget = 1 − target, tracked against the observed failure rate over the window.'}
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button onClick={resetForm} className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-500 border border-slate-200 bg-white">Cancel</button>
+            <button onClick={handleCreate} disabled={saving} className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-violet-700 hover:bg-violet-800 disabled:opacity-50">
+              {saving ? 'Creating…' : 'Create SLO'}
+            </button>
           </div>
         </div>
       )}
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4">
-        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">SLOs Meeting Target</p>
-          {displayStats.total > 0
-            ? <div className="text-2xl font-bold text-slate-900 tracking-tight leading-none mb-1.5">{displayStats.met}<span className="text-base text-slate-300 font-normal">/{displayStats.total}</span></div>
-            : <div className="text-xs text-slate-300 mb-2">No SLOs defined yet</div>}
-          <p className="text-xs text-slate-500">Within defined targets</p>
-        </div>
-        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-          <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">At Risk</p>
-          {displayStats.total > 0
-            ? <div className="text-2xl font-bold text-amber-500 tracking-tight leading-none mb-1.5">{displayStats.atRisk}</div>
-            : <div className="text-xs text-slate-300 mb-2">No data — define SLOs</div>}
-          <p className="text-xs text-slate-500 mb-0.5">Error budget &gt;50% used</p>
-          {displayStats.atRisk > 0 && <p className="text-xs font-bold text-amber-500">Review now →</p>}
-        </div>
-        <div className={`rounded-xl p-4 sm:p-5 border ${displayStats.breached > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
-          <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3">Breached</p>
-          {displayStats.total > 0
-            ? <div className="text-2xl font-bold text-red-600 tracking-tight leading-none mb-1.5">{displayStats.breached}</div>
-            : <div className="text-xs text-slate-300 mb-2">No breaches detected</div>}
-          <p className="text-xs text-slate-500 mb-0.5">Immediate action required</p>
-          {displayStats.breached > 0 && <p className="text-xs font-bold text-red-600">Resolve now →</p>}
-        </div>
-        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Avg Compliance</p>
-          {displayStats.total > 0
-            ? <div className="text-2xl font-bold text-green-600 tracking-tight leading-none mb-1.5">{displayStats.avgCompliance.toFixed(2)}%</div>
-            : <div className="text-xs text-slate-400 mb-2">No data yet</div>}
-          <p className="text-xs text-slate-500">Across all SLOs</p>
-        </div>
-      </div>
-
-      {/* Recommended Actions */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-4">
-        <div className="mb-4">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Recommended Actions</p>
-          <p className="text-xs text-slate-500">{isDemoActive ? 'Ranked by urgency · derived from active signals in your infrastructure' : 'Define SLOs to begin measuring reliability against targets'}</p>
-        </div>
-        {isDemoActive ? (
-          <div className="flex flex-col gap-2.5">
-            {ACTIONS_DEMO.map(action => (
-              <div key={action.priority} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between ${action.bg} rounded-xl border ${action.border} px-4 py-3 gap-3`}>
-                <div className="flex items-start gap-3.5">
-                  <div className="text-center min-w-[36px] shrink-0">
-                    <p className={`text-xs font-bold uppercase mb-0.5 ${action.priorityColor}`}>Priority</p>
-                    <p className={`text-base font-bold ${action.priorityColor}`}>{action.priority}</p>
-                  </div>
-                  <div className={`w-px h-8 self-center border-l ${action.border} shrink-0`} />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 mb-0.5">{action.title} — <span className={action.impactColor}>{action.impact}</span></p>
-                    <p className="text-xs text-slate-500">{action.sub}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
-                  <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded ${action.badgeCls}`}>{action.badge}</span>
-                  <a href={action.ctaHref} className={`border rounded-lg px-3 py-1.5 text-xs font-bold cursor-pointer no-underline transition-colors ${action.ctaCls}`}>{action.ctaLabel}</a>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {[
-              { label: 'Define an uptime SLO', sub: 'Track availability across your API endpoints', href: '/monitoring', ctaLabel: 'Add Uptime SLO →' },
-              { label: 'Define a latency SLO', sub: 'Measure p95 response time against a target threshold', href: '/monitoring', ctaLabel: 'Add Latency SLO →' },
-              { label: 'Define an error rate SLO', sub: 'Detect service degradation before users feel it', href: '/monitoring', ctaLabel: 'Add Error Rate SLO →' },
-            ].map(item => (
-              <div key={item.label} className="flex items-center justify-between bg-slate-50 rounded-xl border border-slate-100 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 mb-0.5">{item.label}</p>
-                  <p className="text-xs text-slate-500">{item.sub}</p>
-                </div>
-                <a href={item.href} className="bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-1.5 text-xs font-bold no-underline transition-colors whitespace-nowrap">{item.ctaLabel}</a>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* SLO Cards */}
+      {/* SLO list */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-        <div className="px-5 sm:px-7 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Service Level Objectives</p>
-            <p className="text-xs text-slate-500">{filteredSLOs.length} SLOs · 30-day rolling window</p>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {categories.map(cat => (
-              <button key={cat} onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold border-none cursor-pointer transition-colors ${selectedCategory === cat ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
-                {cat === 'all' ? 'All' : cat}
-              </button>
-            ))}
-          </div>
+        <div className="px-5 sm:px-7 py-4 border-b border-slate-100">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Service Level Objectives</p>
+          <p className="text-xs text-slate-500">{items.length} SLOs · evaluated live against CloudWatch on each load</p>
         </div>
 
-        {filteredSLOs.length === 0 ? (
+        {isLoading ? (
+          <div className="p-10 sm:p-16 text-center text-sm text-slate-400">Loading…</div>
+        ) : loadError ? (
+          <div className="p-10 sm:p-16 text-center">
+            <AlertTriangle size={20} className="text-red-400 mx-auto mb-3" />
+            <p className="text-sm text-slate-600">{loadError}</p>
+          </div>
+        ) : items.length === 0 ? (
           <div className="p-10 sm:p-16 text-center">
             <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4"><Target size={20} className="text-slate-300" /></div>
-            <p className="text-sm font-semibold text-slate-900 mb-2">Reliability visibility: 0%</p>
-            <p className="text-sm text-slate-500 leading-relaxed mb-7 max-w-sm mx-auto">Without SLOs, system risk is unknown — you cannot detect performance degradation before users feel it or quantify reliability exposure.</p>
-            <a href="/monitoring" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-lg text-sm font-semibold no-underline transition-colors">
-              <Activity size={13} /> Set Up SLO Tracking
-            </a>
+            <p className="text-sm font-semibold text-slate-900 mb-2">No SLOs configured</p>
+            <p className="text-sm text-slate-500 leading-relaxed mb-7 max-w-sm mx-auto">Create an SLO to begin monitoring service reliability.</p>
+            <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-lg text-sm font-semibold transition-colors">
+              <Plus size={13} /> New SLO
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y sm:divide-y-0 divide-slate-100" style={{ gap: '1px', background: '#F1F5F9' }}>
-            {filteredSLOs.map((slo) => {
-              const isBreached = slo.status === 'breached', isAtRisk = slo.status === 'at_risk'
-              const valueColor = isBreached ? '#DC2626' : isAtRisk ? '#D97706' : '#0F172A'
-              const budgetBarColor = slo.errorBudgetUsed > 100 ? '#DC2626' : slo.errorBudgetUsed > 50 ? '#D97706' : '#059669'
-              const budgetTextColor = slo.errorBudgetUsed > 100 ? 'text-red-600' : slo.errorBudgetUsed > 50 ? 'text-amber-500' : 'text-slate-500'
-              const statusBadgeCls = slo.status === 'met' ? 'bg-slate-100 text-slate-500' : slo.status === 'at_risk' ? 'bg-amber-100 text-amber-800' : 'bg-red-600 text-white'
-              const statusLabel = slo.status === 'met' ? 'Met' : slo.status === 'at_risk' ? 'At Risk' : 'Breached'
+            {items.map(({ definition, evaluation }) => {
+              const meta = statusMeta(evaluation.status)
+              const budget = evaluation.errorBudget
               return (
-                <div key={slo.id} className={`p-5 sm:p-7 ${isBreached ? 'bg-red-50' : 'bg-white'}`}>
+                <div key={definition.id} className={`p-5 sm:p-7 ${meta.bg}`}>
                   <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      {!isBreached && <span className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${isAtRisk ? 'bg-amber-500' : 'bg-green-500'}`} />}
-                      <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{slo.category}</p>
-                        <p className="text-sm font-semibold text-slate-900">{slo.name}</p>
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{SLI_LABEL[definition.sli]}</p>
+                      <p className="text-sm font-semibold text-slate-900">{definition.name}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{definition.resourceId}</p>
+                    </div>
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 ml-2 ${meta.badge}`}>{meta.label}</span>
+                  </div>
+
+                  {evaluation.status === 'aws_not_connected' && (
+                    <p className="text-xs text-slate-500 flex items-center gap-1.5 mb-4"><PlugZap size={12} /> Connect an AWS account to evaluate this SLO.</p>
+                  )}
+                  {evaluation.status === 'resource_not_found' && (
+                    <p className="text-xs text-amber-700 mb-4">This resource is no longer in your discovered inventory.</p>
+                  )}
+                  {evaluation.status === 'insufficient_data' && (
+                    <p className="text-xs text-slate-500 mb-4">CloudWatch has no data for this resource in the last {definition.evaluationWindow}.</p>
+                  )}
+
+                  {(evaluation.status === 'healthy' || evaluation.status === 'breached') && (
+                    <>
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className={`text-lg font-bold tracking-tight ${evaluation.status === 'breached' ? 'text-red-600' : 'text-slate-900'}`}>
+                          {formatObserved(evaluation, definition.sli)}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          target {definition.targetValue}{evaluation.unit === 'ms' ? 'ms' : '%'}
+                        </span>
                       </div>
-                    </div>
-                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 ml-2 ${statusBadgeCls}`}>{statusLabel}</span>
-                  </div>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-5">{slo.description}</p>
-                  <div className="flex items-baseline gap-2 mb-2">
-                    <span className="text-2xl font-bold tracking-tight" style={{ color: valueColor }}>{slo.current.toFixed(2)}%</span>
-                    <span className="text-xs text-slate-500">target {slo.target}%</span>
-                    <span className={`text-xs font-semibold ml-auto ${slo.trend === 'up' ? 'text-green-600' : slo.trend === 'down' ? 'text-red-600' : 'text-slate-500'}`}>
-                      {slo.trend === 'up' ? '↑' : slo.trend === 'down' ? '↓' : '→'}{slo.trendValue !== 0 ? ` ${Math.abs(slo.trendValue)}%` : ' stable'}
-                    </span>
-                  </div>
-                  <div className="h-1.5 bg-slate-100 rounded-full mb-4 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(slo.current, 100)}%`, background: valueColor }} />
-                  </div>
-                  <div className={`rounded-lg px-3.5 py-2.5 ${isBreached ? 'bg-red-100' : 'bg-slate-50'}`}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Error Budget</span>
-                      <span className={`text-xs font-bold ${budgetTextColor}`}>{slo.errorBudgetUsed}% used</span>
-                    </div>
-                    <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(slo.errorBudgetUsed, 100)}%`, background: budgetBarColor }} />
-                    </div>
-                    {(isAtRisk || isBreached) && (
-                      <p className={`text-xs font-bold mt-1.5 ${isBreached ? 'text-red-800' : 'text-amber-800'}`}>
-                        {isBreached ? `Immediate investigation required · ${slo.errorBudgetUsed}% consumed` : `Budget exhausted · trending ${slo.trend === 'down' ? 'worse ↓' : 'stable'}`}
-                      </p>
-                    )}
-                    {slo.status === 'met' && <p className="text-xs text-slate-500 mt-1.5">{slo.window} rolling window</p>}
+                      {budget.applicable && budget.consumedFraction !== null && (
+                        <div className={`rounded-lg px-3.5 py-2.5 mb-4 ${evaluation.status === 'breached' ? 'bg-red-100' : 'bg-slate-50'}`}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Error Budget</span>
+                            <span className={`text-xs font-bold ${budget.consumedFraction > 1 ? 'text-red-600' : budget.consumedFraction > 0.5 ? 'text-amber-600' : 'text-slate-500'}`}>
+                              {(budget.consumedFraction * 100).toFixed(1)}% used
+                            </span>
+                          </div>
+                          <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-300"
+                              style={{ width: `${Math.min(budget.consumedFraction * 100, 100)}%`, background: budget.consumedFraction > 1 ? '#DC2626' : budget.consumedFraction > 0.5 ? '#D97706' : '#059669' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {!budget.applicable && (
+                        <p className="text-xs text-slate-400 mb-4">No error budget for latency SLIs.</p>
+                      )}
+                    </>
+                  )}
+
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                    <button onClick={() => handleToggle(definition)} className="text-xs font-semibold text-slate-500 hover:text-violet-700">
+                      {definition.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(definition.id)}
+                      disabled={deletingId === definition.id}
+                      className="text-xs font-semibold text-red-500 hover:text-red-700 flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <Trash2 size={12} /> Delete
+                    </button>
                   </div>
                 </div>
               )
