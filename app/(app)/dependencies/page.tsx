@@ -277,15 +277,15 @@ export default function DependenciesPage() {
     queryFn: () => dependenciesService.detectCircularDependencies(),
   })
 
-  // Use demo data when in demo mode, fallback to cache when error/offline
+  // Use demo data when in demo mode, fallback to cache when error/offline. A real,
+  // non-demo account with zero dependencies and no cache gets an honest empty array —
+  // never DEMO_DEPENDENCIES, which would render fabricated data as the customer's own.
   const shouldUseCachedData = !demoMode && (pageError || !isOnline) && cachedDependencies.length > 0
   const displayDependencies = demoMode
     ? DEMO_DEPENDENCIES
     : shouldUseCachedData
     ? cachedDependencies
-    : dependencies.length > 0
-    ? dependencies
-    : DEMO_DEPENDENCIES
+    : dependencies
   const displayCycles = demoMode ? DEMO_CIRCULAR_DEPENDENCIES : cycles
 
   const hasDependencies = displayDependencies.length > 0
@@ -479,7 +479,7 @@ export default function DependenciesPage() {
   }
 
   // Empty State - but NOT when demo mode is on
-  if (false) {
+  if (!hasDependencies) {
     return (
       <div className="px-4 py-6 sm:px-6 sm:py-10 lg:px-14 lg:py-10 overflow-x-hidden" style={{
         maxWidth: '1320px',

@@ -134,10 +134,10 @@ function ROICalculator() {
         <div className="text-center mb-12">
           <div className="text-[11px] font-bold text-violet-700 uppercase tracking-widest mb-3">ROI Calculator</div>
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-indigo-950 tracking-tight mb-3">
-            How Much AWS Spend Are You Wasting?
+            How Much Could Typical AWS Waste Cost You?
           </h2>
           <p className="text-base text-gray-700 max-w-lg mx-auto leading-relaxed">
-            Move the slider to your monthly AWS spend. See what is likely leaking — and what you could recover.
+            Move the slider to your monthly AWS spend. This is an industry-average illustration, not an analysis of your AWS account — connect AWS to get your own numbers.
           </p>
         </div>
 
@@ -160,9 +160,9 @@ function ROICalculator() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             {[
-              { label: 'Estimated waste',     value: `${fmt(wasteLow)}–${fmt(wasteHigh)}`, sub: '20–40% of AWS spend', color: 'text-red-600'    },
-              { label: 'Recoverable savings',  value: `${fmt(savings)}/mo`,                sub: `${fmt(annual)}/year`, color: 'text-emerald-600' },
-              { label: 'DevControl ROI',       value: `${roi}x`,                           sub: '$199/mo Pro plan',   color: 'text-violet-700'  },
+              { label: 'Typical waste range', value: `${fmt(wasteLow)}–${fmt(wasteHigh)}`, sub: 'Industry avg., 20–40% of spend', color: 'text-red-600'    },
+              { label: 'Illustrative savings', value: `${fmt(savings)}/mo`,                sub: `${fmt(annual)}/year, industry avg.`, color: 'text-emerald-600' },
+              { label: 'Hypothetical ROI',     value: `${roi}x`,                           sub: 'vs. $199/mo Pro plan',   color: 'text-violet-700'  },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="bg-gray-50 rounded-xl p-4 sm:p-5 border border-gray-100">
                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">{label}</p>
@@ -174,8 +174,8 @@ function ROICalculator() {
 
           <div className="mb-8">
             <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-              <span>Savings vs DevControl cost</span>
-              <span>{fmt(savings)} savings vs $199 cost</span>
+              <span>Illustrative savings vs DevControl cost</span>
+              <span>{fmt(savings)} vs $199 cost</span>
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
               <div className="h-full rounded-full transition-all duration-300" style={{ width: `${barPct}%`, background: 'linear-gradient(90deg, #7c3aed, #059669)' }} />
@@ -183,10 +183,10 @@ function ROICalculator() {
           </div>
 
           <a href="/register" className="block text-center bg-violet-700 hover:bg-violet-800 text-white py-4 px-8 rounded-xl font-bold text-base no-underline shadow-lg shadow-violet-200 mb-3 transition-colors">
-            {`Reveal my ${fmt(savings)}/mo in savings — free`}
+            Connect your AWS account — free
           </a>
           <p className="text-center text-xs text-gray-400">
-            2-minute setup · Read-only AWS access · No credit card required
+            Figures above are an industry-average illustration, not a DevControl-specific estimate of your account · 2-minute setup · Read-only AWS access · No credit card required
           </p>
         </div>
 
@@ -228,7 +228,7 @@ function ROICalculator() {
               <div className="flex flex-col gap-3">
                 {[
                   'Shows exactly which resources waste money — with fix instructions',
-                  'AI-powered rightsizing and idle detection across 50+ resource types',
+                  'AI-powered rightsizing and idle detection across EC2, RDS, EBS, S3, Lambda, and DynamoDB',
                   'Fully automated — first insights in 15 minutes',
                   'Security posture, DORA metrics, and compliance in one view',
                   'Real-time anomaly detection before month-end surprises',
@@ -272,15 +272,14 @@ export default function PricingPage() {
         <div className="max-w-[1400px] mx-auto">
           <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-xs font-semibold text-emerald-700 mb-5">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            Teams identify $800–$8,000+/month in waste
+            Find AWS waste your team is missing
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-indigo-950 leading-tight tracking-tight mb-3">
             Simple Pricing.{' '}
             <span className="text-violet-700">Serious Savings.</span>
           </h1>
           <p className="text-base sm:text-lg text-gray-700 leading-relaxed max-w-lg mx-auto mb-7">
-            Start free. Upgrade when you are ready for AI-powered cost optimization, security scanning, and DORA metrics.{' '}
-            <strong className="text-slate-900">Average ROI on Pro: 8x within 30 days.</strong>
+            Start free. Upgrade when you are ready for AI-powered cost optimization, security scanning, and DORA metrics.
           </p>
           <div className="flex flex-wrap justify-center items-center gap-3 sm:gap-6 text-xs sm:text-sm font-medium text-gray-700 mb-8">
             {[
@@ -469,7 +468,7 @@ export default function PricingPage() {
             Ready to Optimize Your AWS Costs?
           </h2>
           <p className="text-base sm:text-lg text-white/85 max-w-md mx-auto mb-8 leading-relaxed">
-            Join 500+ engineering teams identifying $800–$8,000+/month in waste with DevControl.
+            Connect your AWS account and see what DevControl finds — free for 14 days.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 flex-wrap">
             <a href="/register" className="w-full sm:w-auto text-center bg-white text-violet-700 px-8 py-3.5 rounded-xl font-bold text-base no-underline">

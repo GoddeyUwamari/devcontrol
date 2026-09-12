@@ -5,7 +5,7 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
-import { requireAdmin } from '../middleware/rbac.middleware';
+import { requirePlatformStaff } from '../middleware/platformAuth.middleware';
 import { onboardingService } from '../services/onboarding.service';
 
 const router = express.Router();
@@ -147,16 +147,22 @@ router.post('/re-enable', authenticate, async (req: Request, res: Response, next
 
 // =====================================================
 // GET /api/onboarding/metrics
-// Get overall onboarding metrics (admin only)
+// Get overall onboarding metrics (platform staff only)
 // =====================================================
 
 // getMetrics()/getFunnelMetrics() below are platform-wide aggregates (across
-// every organization, not just the caller's) — requireAdmin at least closes
-// "any authenticated member/viewer" access; a true platform-staff-only role
-// doesn't exist yet in this codebase's role model (owner/admin/member/viewer
-// are all per-organization), so any org's own admin/owner can still see
-// aggregate counts about every other org. Flagged, not solved here.
-router.get('/metrics', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+// every organization, not just the caller's). Previously gated by requireAdmin,
+// a per-organization role every self-serve customer holds for their own org --
+// that let any customer's own org admin/owner reach platform-wide aggregate
+// counts about every other org. Fixed by switching to requirePlatformStaff
+// (platformAuth.middleware.ts), the same true platform-staff check already
+// used by /api/admin/activation-funnel. Note: these two endpoints have no
+// frontend consumer today (confirmed via full-repo search) and also have a
+// separate, unfixed RLS-blinding correctness bug -- see activationFunnel.service.ts's
+// doc comment and prefer /api/admin/activation-funnel as the real source of
+// truth for platform-wide funnel measurement; this change only closes the
+// authorization gap on these two legacy endpoints, it does not fix their numbers.
+router.get('/metrics', authenticate, requirePlatformStaff, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const metrics = await onboardingService.getMetrics();
 
@@ -171,10 +177,10 @@ router.get('/metrics', authenticate, requireAdmin, async (req: Request, res: Res
 
 // =====================================================
 // GET /api/onboarding/funnel
-// Get funnel conversion rates (admin only)
+// Get funnel conversion rates (platform staff only)
 // =====================================================
 
-router.get('/funnel', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/funnel', authenticate, requirePlatformStaff, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const funnel = await onboardingService.getFunnelMetrics();
 

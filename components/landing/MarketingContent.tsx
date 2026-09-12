@@ -51,8 +51,8 @@ const integrations = [
 const securityItems = [
   {
     icon: ShieldCheck,
-    title: 'Read-Only AWS Access',
-    description: 'We only request the minimum permissions needed. No write access, ever. Your infrastructure stays fully under your control.',
+    title: 'Read-Only by Default',
+    description: 'Standard onboarding only requests read-only permissions. Optional remediation actions require separate, explicit permission and your approval — your infrastructure stays under your control.',
   },
   {
     icon: Lock,
