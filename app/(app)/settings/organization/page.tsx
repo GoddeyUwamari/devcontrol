@@ -24,7 +24,7 @@ export default function OrganizationSettingsPage() {
               Organization Settings
             </h1>
             <p className="text-muted-foreground">
-              Manage your organization&apos;s settings, members, and integrations
+              Manage your organization&apos;s settings, members, and danger zone
             </p>
           </div>
 
