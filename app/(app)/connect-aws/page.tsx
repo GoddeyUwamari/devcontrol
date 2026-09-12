@@ -64,6 +64,11 @@ export default function ConnectAwsPage() {
       await awsAccountsService.connect({ roleArn: roleArn.trim(), nickname: nickname.trim() || undefined })
       setSuccess(true)
       queryClient.invalidateQueries({ queryKey: ['aws-accounts'] })
+      // The dashboard's platform-dashboard-stats query caches for 4 hours with
+      // refetchOnMount disabled (see app/(app)/dashboard/page.tsx) — without this,
+      // a user redirected here right after connecting would be stuck looking at
+      // the pre-connection (empty) stats for up to 4 hours.
+      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       toast.success('AWS account connected successfully')
       setTimeout(() => router.push('/dashboard'), 1500)
     } catch (err: unknown) {
