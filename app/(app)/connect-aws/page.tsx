@@ -187,13 +187,13 @@ export default function ConnectAwsPage() {
             <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3.5">What DevControl reads</p>
               <ul className="space-y-2.5 mb-1">
-                {['EC2, RDS, Lambda, S3 resource metadata','CloudWatch metrics and alarms','Cost and usage reports','Security Hub findings','CloudTrail audit logs'].map((item) => (
+                {['EC2, RDS, Lambda, S3 resource metadata','CloudWatch metrics and alarms','Cost and usage reports'].map((item) => (
                   <li key={item} className="flex items-start gap-2.5 text-sm text-slate-500 leading-snug">
                     <span className="text-green-600 font-semibold shrink-0">✓</span>{item}
                   </li>
                 ))}
               </ul>
-              <p className="text-xs text-slate-400 leading-relaxed mt-3">Read-only. DevControl never modifies your infrastructure.</p>
+              <p className="text-xs text-slate-400 leading-relaxed mt-3">Read-only by default. Optional remediation actions require separate, explicit permission and your approval.</p>
 
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mt-6 mb-3.5">Security</p>
               <ul className="space-y-2.5">

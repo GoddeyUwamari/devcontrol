@@ -11,6 +11,7 @@
 
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
+import { formatSavingsCurrency } from '../utils/formatSavingsCurrency';
 
 export type ActivityEventType = 'sync' | 'optimization' | 'security' | 'score' | 'anomaly';
 
@@ -162,7 +163,7 @@ export class ActivityFeedService {
     );
     return result.rows.map((row) => ({
       type: 'optimization' as const,
-      message: `Cost optimization found · ${row.issue} — ~$${Math.round(row.potential_savings).toLocaleString()}/month opportunity`,
+      message: `Cost optimization found · ${row.issue} — ~${formatSavingsCurrency(row.potential_savings)}/month opportunity`,
       timestamp: new Date(row.created_at).toISOString(),
       severity: row.severity ? String(row.severity).toLowerCase() : undefined,
     }));

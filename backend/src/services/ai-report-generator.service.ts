@@ -21,6 +21,12 @@ export interface ReportData {
     from: string;
     to: string;
   };
+  // True only when fetchReportData()'s underlying queries failed and this is
+  // the all-zero getFallbackReportData() placeholder -- distinguishes "cost
+  // analysis genuinely found zero opportunities" from "we don't actually know
+  // because the data fetch itself failed," so a fallback report never reports
+  // unavailable data as a positive infrastructure finding.
+  dataUnavailable?: boolean;
   costs: {
     current: number;
     previous: number;
@@ -391,7 +397,13 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
             ]
           : []),
       ],
-      executiveSummary: `This week's infrastructure performance shows AWS costs at $${data.costs.current.toLocaleString()}/month (${costChange} ${costChangeAbs.toFixed(1)}%). Security score is ${data.security.score}/100 with ${data.security.criticalIssues} critical issues. ${data.deployments.total} deployments achieved ${data.deployments.total > 0 ? ((data.deployments.successful / data.deployments.total) * 100).toFixed(1) : '0'}% success rate. ${data.resources.unusedResources.length > 0 ? `Opportunity to save $${data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0)}/month by optimizing unused resources.` : 'Infrastructure is well-optimized.'}`,
+      executiveSummary: `This week's infrastructure performance shows AWS costs at $${data.costs.current.toLocaleString()}/month (${costChange} ${costChangeAbs.toFixed(1)}%). Security score is ${data.security.score}/100 with ${data.security.criticalIssues} critical issues. ${data.deployments.total} deployments achieved ${data.deployments.total > 0 ? ((data.deployments.successful / data.deployments.total) * 100).toFixed(1) : '0'}% success rate. ${
+        data.dataUnavailable
+          ? 'Cost data is currently unavailable, so optimization opportunities could not be assessed this period.'
+          : data.resources.unusedResources.length > 0
+            ? `Opportunity to save $${data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0)}/month by optimizing unused resources.`
+            : 'No cost-optimization opportunities identified this period.'
+      }`,
     };
   }
 
@@ -497,10 +509,11 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
         deployments,
         resources,
         alerts,
+        dataUnavailable: false,
       };
     } catch (error: any) {
       console.error('[AI Report Generator] Error fetching report data:', error.message);
-      return fallback;
+      return { ...fallback, dataUnavailable: true };
     }
   }
 

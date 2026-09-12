@@ -18,6 +18,7 @@ import type { InfrastructureResource, ResourceType, PlatformDashboardStats } fro
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { formatSavingsCurrency } from '@/lib/utils'
 
 const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
   ec2:        { icon: Server,    color: '#3B82F6', bg: '#EFF6FF' },
@@ -259,7 +260,7 @@ function InfrastructureContent() {
     enabled: !isDemoActive,
   })
 
-  const { data: systemIntelligence } = useQuery({
+  const { data: systemIntelligence, isLoading: intelLoading } = useQuery({
     queryKey: ['system-intelligence'],
     queryFn: fetchSystemIntelligence,
     enabled: !isDemoActive,
@@ -353,15 +354,24 @@ function InfrastructureContent() {
     },
   }
 
-  const intel            = isDemoActive ? DEMO_INTELLIGENCE : (systemIntelligence ?? DEMO_INTELLIGENCE)
-  const intelComponents  = intel.components ?? DEMO_INTELLIGENCE.components
-  const intelScore       = intel.system_score
-  const intelStatus      = intel.status === 'good' ? 'Healthy' : intel.status === 'warning' ? 'Partially Optimized' : 'At Risk'
-  const intelTopAction   = typeof intel.top_action === 'string' ? intel.top_action : intel.top_action?.message ?? 'Over-provisioned compute + unused storage'
+  // Real-account failures (loading, missing token, non-OK response, thrown error — see
+  // fetchSystemIntelligence above) must never render as DEMO_INTELLIGENCE. `intel` is only
+  // ever the demo object in demo mode; otherwise it's the real API payload or null.
+  const intel            = isDemoActive ? DEMO_INTELLIGENCE : (systemIntelligence ?? null)
+  const intelReady       = isDemoActive || (intel != null && intel.system_score != null)
+  const EMPTY_INTEL_COMPONENTS = {
+    cost:          { score: 0, detail: '', status: 'unknown' },
+    security:      { score: 0, detail: '', status: 'unknown' },
+    observability: { score: 0, detail: '', status: 'unknown' },
+  }
+  const intelComponents  = intel?.components ?? EMPTY_INTEL_COMPONENTS
+  const intelScore       = intel?.system_score ?? 0
+  const intelStatus      = intel?.status === 'good' ? 'Healthy' : intel?.status === 'warning' ? 'Partially Optimized' : intel?.status === 'critical' ? 'At Risk' : 'Calculating'
+  const intelTopAction   = typeof intel?.top_action === 'string' ? intel.top_action : intel?.top_action?.message ?? 'Analyzing your infrastructure…'
   const intelCostScore   = intelComponents.cost.score
   const intelSecScore    = intelComponents.security.score
   const intelObsScore    = intelComponents.observability.score
-  const intelScoreDelta  = isDemoActive ? 18 : (intel.system_score > 0 ? Math.min(Math.round((100 - intel.system_score) * 0.55), 25) : 0)
+  const intelScoreDelta  = isDemoActive ? 18 : (intelScore > 0 ? Math.min(Math.round((100 - intelScore) * 0.55), 25) : 0)
   const intelWaste       = isDemoActive ? 1060 : (recommendationStats?.totalPotentialSavings ?? 0)
   const intelAnalyzed    = isDemoActive ? 19 : allResources.length
   const intelTotal       = isDemoActive ? 20 : ((totalResources as number) || intelAnalyzed)
@@ -496,7 +506,7 @@ function InfrastructureContent() {
             </a>
             {(isDemoActive || totalRecoverable > 0) && (
               <p className="text-xs text-slate-500 text-right">
-                Applies {optimizationCount} recommended optimization{optimizationCount !== 1 ? 's' : ''} · Est. savings: ${Math.round(totalRecoverable).toLocaleString()}/mo
+                Applies {optimizationCount} recommended optimization{optimizationCount !== 1 ? 's' : ''} · Est. savings: {formatSavingsCurrency(totalRecoverable)}/mo
               </p>
             )}
           </div>
@@ -528,6 +538,7 @@ function InfrastructureContent() {
 
       {/* SYSTEM INTELLIGENCE STRIP */}
       <div className="bg-white rounded-xl border border-slate-200 border-l-4 border-l-violet-700 px-6 py-5 mb-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        {intelReady ? (
         <div className="flex flex-col lg:flex-row lg:items-center gap-5 flex-wrap">
 
           {/* Score ring */}
@@ -554,7 +565,7 @@ function InfrastructureContent() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Primary Issue</p>
             <p className="text-sm font-semibold text-slate-900 mb-0.5">{intelTopAction}</p>
-            <p className="text-xs font-bold text-red-600">${Math.round(intelWaste).toLocaleString()}/mo active waste</p>
+            <p className="text-xs font-bold text-red-600">{formatSavingsCurrency(intelWaste)}/mo active waste</p>
           </div>
 
           <div className="hidden lg:block w-px h-11 bg-slate-200 shrink-0" />
@@ -582,6 +593,15 @@ function InfrastructureContent() {
             ))}
           </div>
         </div>
+        ) : (
+        <div data-testid="intel-not-ready" className="flex flex-col gap-1">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
+          <p className="text-base font-bold text-slate-900 mb-0.5">{intelLoading ? 'Calculating…' : 'Not yet available'}</p>
+          <p className="text-xs text-slate-500">
+            {intelLoading ? 'Analyzing your infrastructure — this can take a minute.' : 'Run a sync to generate your system intelligence score.'}
+          </p>
+        </div>
+        )}
 
         <a href="/ai-reports" className="text-xs font-bold text-violet-700 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
           Full report <ArrowRight size={11} />
@@ -599,7 +619,7 @@ function InfrastructureContent() {
             Top concentration: <strong className="text-slate-900">{costByService[0].name} ({costByService[0].pct}%)</strong>
             {costByService[1] && <> and <strong className="text-slate-900">{costByService[1].name} ({costByService[1].pct}%)</strong></>}
             {' '}— primary rightsizing candidate{costByService[1] ? 's' : ''}
-            {totalRecoverable > 0 && <> driving <strong className="text-slate-900">${Math.round(totalRecoverable).toLocaleString()}/mo</strong> in recoverable waste</>}.
+            {totalRecoverable > 0 && <> driving <strong className="text-slate-900">{formatSavingsCurrency(totalRecoverable)}/mo</strong> in recoverable waste</>}.
           </p>
           <div className="flex flex-col gap-2.5">
             {costByService.map((row) => (
@@ -687,7 +707,7 @@ function InfrastructureContent() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-0.5">Top Actions</p>
             <p className="text-[13px] text-slate-500">
-              Ranked by impact · {optimizationCount} recommended changes ready · <strong className="text-emerald-600">${Math.round(totalRecoverable).toLocaleString()}/mo recoverable today</strong>
+              Ranked by impact · {optimizationCount} recommended changes ready · <strong className="text-emerald-600">{formatSavingsCurrency(totalRecoverable)}/mo recoverable today</strong>
             </p>
           </div>
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-red-600 text-white">Act Now</span>
@@ -705,7 +725,7 @@ function InfrastructureContent() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">
                     {action.title}
-                    {action.savings != null && <span className="text-emerald-600 font-bold"> — save ${Math.round(action.savings).toLocaleString()}/mo</span>}
+                    {action.savings != null && <span className="text-emerald-600 font-bold"> — save {formatSavingsCurrency(action.savings)}/mo</span>}
                   </p>
                   <p className="text-xs text-slate-500">{action.sub}</p>
                 </div>

@@ -8,7 +8,6 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Loader2 } from "lucide-react";
 import { GeneralSettingsTab } from "@/components/settings/general-settings-tab";
 import { MembersTab } from "@/components/settings/members-tab";
-import { AWSCredentialsTab } from "@/components/settings/aws-credentials-tab";
 import { DangerZoneTab } from "@/components/settings/danger-zone-tab";
 
 export default function OrganizationSettingsPage() {
@@ -25,7 +24,7 @@ export default function OrganizationSettingsPage() {
               Organization Settings
             </h1>
             <p className="text-muted-foreground">
-              Manage your organization&apos;s settings, members, and integrations
+              Manage your organization&apos;s settings, members, and danger zone
             </p>
           </div>
 
@@ -37,10 +36,9 @@ export default function OrganizationSettingsPage() {
           </Card>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="members">Members</TabsTrigger>
-              <TabsTrigger value="aws">AWS Integration</TabsTrigger>
               <TabsTrigger value="danger">Danger Zone</TabsTrigger>
             </TabsList>
 
@@ -50,10 +48,6 @@ export default function OrganizationSettingsPage() {
 
             <TabsContent value="members">
               <MembersTab organization={organization} />
-            </TabsContent>
-
-            <TabsContent value="aws">
-              <AWSCredentialsTab organization={organization} />
             </TabsContent>
 
             <TabsContent value="danger">
