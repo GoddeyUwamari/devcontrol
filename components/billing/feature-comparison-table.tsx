@@ -15,55 +15,83 @@ interface Feature {
 }
 
 const features: Feature[] = [
-  // Resources
-  { category: 'Resources', name: 'AWS Resources', free: '20', starter: '60', pro: '500', enterprise: 'Unlimited', tooltip: 'Number of AWS resources you can track and manage' },
-  { category: 'Resources', name: 'Resource Types', free: '3 types', starter: '10 types', pro: 'All types', enterprise: 'All types', tooltip: 'EC2, RDS, S3, Lambda, CloudFront, VPC, ELB, and more' },
-  { category: 'Resources', name: 'Multi-region support', free: true, starter: true, pro: true, enterprise: true },
-
-  // Security & Compliance
-  { category: 'Security & Compliance', name: 'Basic security flags', free: true, starter: true, pro: true, enterprise: true },
-  { category: 'Security & Compliance', name: 'Advanced security scanning', free: false, starter: true, pro: true, enterprise: true, tooltip: 'Automated detection of security misconfigurations' },
-  { category: 'Security & Compliance', name: 'Compliance scanning (SOC 2, HIPAA)', free: false, starter: false, pro: true, enterprise: true, highlight: true, tooltip: 'Automated compliance checks against industry frameworks' },
-  { category: 'Security & Compliance', name: 'Custom compliance frameworks', free: false, starter: false, pro: false, enterprise: true, highlight: true },
-  { category: 'Security & Compliance', name: 'Auto-remediation workflows', free: false, starter: false, pro: false, enterprise: true, highlight: true, tooltip: 'Automatically fix issues based on your defined policies' },
+  // Resources & Discovery
+  { category: 'Resources & Discovery', name: 'AWS Account Connection', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Resources & Discovery', name: 'AWS Resource Discovery & Inventory', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Resources & Discovery', name: 'Expanded Resource Discovery', free: false, starter: true, pro: true, enterprise: true },
+  { category: 'Resources & Discovery', name: 'Multi-Account Visibility', free: false, starter: false, pro: false, enterprise: true },
+  { category: 'Resources & Discovery', name: 'AWS Resources', free: '20', starter: '60', pro: '500', enterprise: 'Unlimited', tooltip: 'Number of AWS resources you can track and manage' },
+  { category: 'Resources & Discovery', name: 'Team Members', free: '1', starter: '3', pro: '10', enterprise: 'Unlimited' },
+  { category: 'Resources & Discovery', name: 'Cost History', free: 'Real-time only', starter: '30-day', pro: '90-day', enterprise: '90-day' },
 
   // Cost Management
-  { category: 'Cost Management', name: 'Total cost visibility', free: true, starter: true, pro: true, enterprise: true },
-  { category: 'Cost Management', name: 'Cost attribution by team/service', free: false, starter: true, pro: true, enterprise: true, tooltip: 'See costs broken down by team, project, or service' },
-  { category: 'Cost Management', name: 'Orphaned resource detection', free: false, starter: true, pro: true, enterprise: true, tooltip: 'Find and eliminate unused resources wasting money' },
-  { category: 'Cost Management', name: 'Smart savings recommendations', free: false, starter: true, pro: true, enterprise: true, highlight: true },
-  { category: 'Cost Management', name: 'Reserved Instance opportunities', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Cost Overview (real-time spend tracking)', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Orphaned Resource Detection', free: false, starter: true, pro: true, enterprise: true, tooltip: 'Find and eliminate unused resources wasting money' },
+  { category: 'Cost Management', name: 'Cost Optimization Opportunities', free: false, starter: true, pro: true, enterprise: true, highlight: true },
+  { category: 'Cost Management', name: 'Cost Data Export', free: false, starter: true, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Cost Optimization — EC2, EBS, RDS, S3, Lambda, DynamoDB', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Reserved Instance & Rightsizing Opportunities', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Resource Efficiency Analysis', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Team Cost Attribution', free: false, starter: false, pro: true, enterprise: true, tooltip: 'See costs broken down by team, project, or service' },
+  { category: 'Cost Management', name: 'Predictive Budget Forecasting', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Enterprise Optimization Rules', free: false, starter: false, pro: false, enterprise: true },
+  { category: 'Cost Management', name: 'Custom Optimization Policies', free: false, starter: false, pro: false, enterprise: true },
 
-  // Features
-  { category: 'Features', name: 'Manual tagging', free: '5 at a time', starter: '25 at a time', pro: 'Unlimited', enterprise: 'Unlimited' },
-  { category: 'Features', name: 'Bulk actions', free: false, starter: true, pro: true, enterprise: true },
-  { category: 'Features', name: 'Bulk remediation', free: false, starter: false, pro: false, enterprise: true },
-  { category: 'Features', name: 'Risk score & trends', free: false, starter: false, pro: true, enterprise: true, tooltip: 'Track infrastructure health over time' },
+  // Security & Compliance
+  { category: 'Security & Compliance', name: 'Security Overview', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Security & Compliance', name: 'IAM & MFA Visibility', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Security & Compliance', name: 'Security Group Risk Detection', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Security & Compliance', name: 'EC2 Encryption Visibility', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Security & Compliance', name: 'Security Findings', free: false, starter: true, pro: true, enterprise: true, tooltip: 'Automated detection of security misconfigurations' },
+  { category: 'Security & Compliance', name: 'Advanced Security Overview', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Security & Compliance', name: 'Risk Score', free: false, starter: false, pro: true, enterprise: true, tooltip: 'Track infrastructure health over time' },
+  { category: 'Security & Compliance', name: 'SOC 2, NIST, PCI DSS, CIS Compliance Readiness', free: false, starter: false, pro: true, enterprise: true, highlight: true, tooltip: 'Automated compliance checks against industry frameworks' },
+  { category: 'Security & Compliance', name: 'Enterprise Security Command Center', free: false, starter: false, pro: false, enterprise: true, highlight: true },
+  { category: 'Security & Compliance', name: 'Advanced Compliance Management', free: false, starter: false, pro: false, enterprise: true, highlight: true },
+  { category: 'Security & Compliance', name: 'Full PDF Compliance Reports', free: false, starter: false, pro: false, enterprise: true },
+  { category: 'Security & Compliance', name: 'Custom Anomaly Rules', free: false, starter: false, pro: false, enterprise: true },
 
-  // Integrations
-  { category: 'Integrations', name: 'Export reports (CSV/PDF)', free: false, starter: true, pro: true, enterprise: true },
-  { category: 'Integrations', name: 'Scheduled reports', free: false, starter: false, pro: false, enterprise: true },
-  { category: 'Integrations', name: 'Slack integration', free: false, starter: false, pro: true, enterprise: true },
-  { category: 'Integrations', name: 'Email alerts', free: true, starter: true, pro: true, enterprise: true },
-  { category: 'Integrations', name: 'Jira/Linear ticket creation', free: false, starter: false, pro: true, enterprise: true },
+  // AI & Automation
+  { category: 'AI & Automation', name: 'AI Chat Assistant', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'AI & Automation', name: 'Natural-Language Queries', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'AI & Automation', name: 'AI-Generated Reports', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'AI & Automation', name: 'Scheduled AI Reports', free: false, starter: false, pro: true, enterprise: true },
 
-  // API & Advanced
-  { category: 'API Access', name: 'REST API access', free: false, starter: false, pro: false, enterprise: true, highlight: true },
-  { category: 'API Access', name: 'API requests/hour', free: '500', starter: '2,000', pro: '5,000', enterprise: '20,000' },
-  { category: 'API Access', name: 'Webhooks', free: false, starter: false, pro: false, enterprise: true },
+  // Alerts & Monitoring
+  { category: 'Alerts & Monitoring', name: 'Active Alerts', free: false, starter: true, pro: true, enterprise: true },
+  { category: 'Alerts & Monitoring', name: 'Alert History', free: false, starter: true, pro: true, enterprise: true },
+  { category: 'Alerts & Monitoring', name: 'Advanced Alert Configuration', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Alerts & Monitoring', name: 'DORA Metrics', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Alerts & Monitoring', name: 'SLO Dashboard & Management', free: false, starter: false, pro: false, enterprise: true },
 
-  // Team & Support
-  { category: 'Team', name: 'Team members', free: '1', starter: '5', pro: '10', enterprise: 'Unlimited' },
-  { category: 'Team', name: 'Role-based access control', free: false, starter: true, pro: true, enterprise: true },
-  { category: 'Team', name: 'SSO/SAML authentication', free: false, starter: false, pro: false, enterprise: true, highlight: true },
-  { category: 'Team', name: 'Audit logs', free: false, starter: false, pro: true, enterprise: true },
+  // Remediation & Governance
+  { category: 'Remediation & Governance', name: 'Approval-Based Remediation Workflows', free: false, starter: false, pro: false, enterprise: true, highlight: true, tooltip: 'Automatically fix issues based on your defined policies' },
+
+  // Team & Access
+  { category: 'Team & Access', name: 'Team Management', free: false, starter: true, pro: true, enterprise: true },
+  { category: 'Team & Access', name: 'SAML/SSO', free: false, starter: false, pro: false, enterprise: true, highlight: true },
+
+  // Integrations & Notifications
+  { category: 'Integrations & Notifications', name: 'Email Notifications', free: false, starter: true, pro: true, enterprise: true },
+  { category: 'Integrations & Notifications', name: 'Slack Notifications', free: false, starter: true, pro: true, enterprise: true },
+  { category: 'Integrations & Notifications', name: 'Webhook Integrations', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Integrations & Notifications', name: 'Custom Integrations', free: false, starter: false, pro: false, enterprise: true },
+
+  // Reporting & Records
+  { category: 'Reporting & Records', name: 'Activity Audit Trail', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Reporting & Records', name: 'Billing & Invoices', free: false, starter: true, pro: true, enterprise: true },
+  { category: 'Reporting & Records', name: 'Scheduled Reports', free: false, starter: false, pro: false, enterprise: true },
+
+  // Platform Health
+  { category: 'Platform Health', name: 'System Health Status', free: true, starter: true, pro: true, enterprise: true },
 
   // Support
-  { category: 'Support & SLA', name: 'Email support', free: true, starter: true, pro: true, enterprise: true },
-  { category: 'Support & SLA', name: 'Priority support (4hr response)', free: false, starter: false, pro: true, enterprise: true },
-  { category: 'Support & SLA', name: 'Dedicated account manager', free: false, starter: false, pro: false, enterprise: true, highlight: true },
-  { category: 'Support & SLA', name: 'Custom SLA', free: false, starter: false, pro: false, enterprise: true },
-  { category: 'Support & SLA', name: 'Uptime guarantee', free: '99%', starter: '99.5%', pro: '99.9%', enterprise: '99.99%' },
+  { category: 'Support', name: 'Priority Support', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Support', name: 'Dedicated CSM', free: false, starter: false, pro: false, enterprise: true, highlight: true },
+  { category: 'Support', name: 'SLA', free: false, starter: false, pro: false, enterprise: true },
+
+  // Enterprise Extras
+  { category: 'Enterprise Extras', name: 'Implementation Rules', free: false, starter: false, pro: false, enterprise: true },
 ];
 
 function FeatureValue({ value, highlight, isProCol }: { value: boolean | string; highlight?: boolean; isProCol?: boolean }) {
