@@ -528,7 +528,7 @@ function InfrastructureContent() {
         <div className="mb-5 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-5 py-3">
           <p className="text-sm text-blue-800 font-medium">
             Starter plan shows 15 resource types.
-            <span className="text-slate-500 font-normal ml-1">Upgrade to Pro to unlock all 50+ resource types.</span>
+            <span className="text-slate-500 font-normal ml-1">Upgrade to Pro to unlock all 15+ resource types in your inventory.</span>
           </p>
           <Link href="/settings/billing/upgrade" className="text-xs font-semibold text-white bg-blue-600 px-4 py-1.5 rounded-lg no-underline shrink-0 ml-4">
             Upgrade →

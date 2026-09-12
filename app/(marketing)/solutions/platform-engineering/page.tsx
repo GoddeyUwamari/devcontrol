@@ -84,33 +84,6 @@ function PlatformHero() {
 }
 
 // ============================================
-// TRUST SECTION
-// ============================================
-function TrustSection() {
-  const stats = [
-    { value: '10x', label: 'Faster Onboarding' },
-    { value: '80%', label: 'Fewer Tickets' },
-    { value: '100%', label: 'Service Coverage' },
-    { value: '50+', label: 'AWS Services' },
-  ];
-
-  return (
-    <section className="py-8 border-b">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {stats.map((stat, index) => (
-            <div key={index} className="text-center p-3">
-              <div className="text-2xl font-bold text-purple-600">{stat.value}</div>
-              <div className="text-sm text-muted-foreground">{stat.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
 // METRICS SECTION
 // ============================================
 function MetricsSection() {
@@ -333,7 +306,7 @@ function ComparisonSection() {
     { feature: 'Service discovery', devcontrol: 'Automatic', others: 'Manual entry' },
     { feature: 'Dependency mapping', devcontrol: 'Auto-generated', others: 'Custom development' },
     { feature: 'Maintenance burden', devcontrol: 'Managed by DevControl', others: 'Your team' },
-    { feature: 'Integration with AWS', devcontrol: '50+ services', others: 'Build each one' },
+    { feature: 'Integration with AWS', devcontrol: '15+ resource types', others: 'Build each one' },
   ];
 
   return (
@@ -445,7 +418,6 @@ export default function PlatformEngineeringPage() {
   return (
     <div className="min-h-screen bg-background">
       <PlatformHero />
-      <TrustSection />
       <MetricsSection />
       <PlatformPillarsSection />
       <FeaturesSection />

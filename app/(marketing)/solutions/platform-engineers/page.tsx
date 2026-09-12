@@ -33,7 +33,7 @@ export default function PlatformEngineersPage() {
   const impacts = [
     { value: '80%', label: 'Reduction in manual inventory work' },
     { value: '< 1min', label: 'Time to detect drift' },
-    { value: '50+', label: 'AWS resource types governed' },
+    { value: '15+', label: 'AWS resource types discovered' },
   ]
 
   const maturityLevels = [

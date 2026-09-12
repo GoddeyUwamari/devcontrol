@@ -495,7 +495,7 @@ export default function BlogPage() {
           )}
           {subscribeStatus === 'idle' && (
             <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '12px' }}>
-              Join 500+ engineering teams. Unsubscribe anytime.
+              Unsubscribe anytime.
             </p>
           )}
         </div>

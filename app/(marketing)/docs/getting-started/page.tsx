@@ -215,7 +215,7 @@ devcontrol service create --name my-service`;
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
-                <span>SOC 2 Type II certified</span>
+                <span>SOC 2 Type II in progress</span>
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
@@ -463,28 +463,6 @@ devcontrol service create --name my-service`;
             </CardContent>
           </Card>
         )}
-
-        {/* Social Proof */}
-        <div className="text-center text-sm text-muted-foreground mb-8 pb-8 border-b">
-          <p className="mb-3">
-            Join <strong className="text-foreground">2,500+ engineering teams</strong> already using DevControl
-          </p>
-          <div className="flex items-center justify-center gap-2">
-            <div className="flex -space-x-2">
-              {[...Array(5)].map((_, i) => (
-                <div
-                  key={i}
-                  className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 border-2 border-background flex items-center justify-center text-xs font-semibold"
-                >
-                  {String.fromCharCode(65 + i)}
-                </div>
-              ))}
-            </div>
-            <span className="text-xs">
-              <strong className="text-foreground">850+ teams</strong> completed setup this month
-            </span>
-          </div>
-        </div>
 
         {/* Help & Support CTA */}
         <div className="grid sm:grid-cols-2 gap-4">

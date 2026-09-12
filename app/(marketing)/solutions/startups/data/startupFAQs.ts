@@ -5,7 +5,7 @@ export const startupFAQs = [
   },
   {
     question: 'What AWS services does DevControl support?',
-    answer: 'We support 50+ AWS services including EC2, ECS, EKS, Lambda, RDS, DynamoDB, S3, CloudFront, API Gateway, and more. Our coverage grows every month based on customer feedback.',
+    answer: 'We support core AWS services including EC2, ECS, EKS, Lambda, RDS, DynamoDB, S3, CloudFront, and API Gateway. Our coverage grows every month based on customer feedback.',
   },
   {
     question: 'Is there a startup discount or free tier?',
@@ -13,7 +13,7 @@ export const startupFAQs = [
   },
   {
     question: 'How does DevControl save us money?',
-    answer: 'Our AI analyzes your resource utilization patterns and identifies rightsizing opportunities, unused resources, and Reserved Instance recommendations. Typical startups save $2,000-5,000/month within the first 30 days.',
+    answer: 'Our AI analyzes your resource utilization patterns and identifies rightsizing opportunities, unused resources, and Reserved Instance recommendations. Illustrative example: a startup with a similar footprint could find $2,000-5,000/month in savings opportunities within the first 30 days.',
   },
   {
     question: 'Can DevControl help us pass SOC 2 compliance?',
@@ -29,7 +29,7 @@ export const startupFAQs = [
   },
   {
     question: 'How secure is DevControl?',
-    answer: 'Security is our top priority. We use read-only IAM roles by default, encrypt all data at rest and in transit, and are SOC 2 Type II certified. We never store your credentials or access your application data.',
+    answer: 'Security is our top priority. We use read-only IAM roles by default, encrypt all data at rest and in transit, and are currently pursuing SOC 2 Type II certification. We never store your credentials or access your application data.',
   },
   {
     question: 'Can I try DevControl before committing?',

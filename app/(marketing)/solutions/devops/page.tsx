@@ -29,12 +29,6 @@ export default function DevOpsPage() {
     { icon: BarChart3, title: 'Unified Observability Dashboard', desc: 'Costs, security, performance, and DORA metrics in one place. Stop switching between 6 different tools and get the full picture of your infrastructure health instantly.' },
   ]
 
-  const impacts = [
-    { value: '60%', label: 'Reduction in MTTR' },
-    { value: '4.2hrs', label: 'Average lead time improvement' },
-    { value: '15min', label: 'Setup to first insight' },
-  ]
-
   const timeline = [
     { step: '01', title: 'Connect GitHub & AWS', time: 'Day 1', desc: 'Link your repositories and AWS accounts with read-only access. DevControl immediately starts pulling deployment events, resource changes, and cost data.' },
     { step: '02', title: 'Baseline Established', time: 'Day 1', desc: 'Your DORA metrics are calculated, infrastructure inventory is complete, and security posture score is ready — all within 15 minutes of connecting.' },
@@ -168,27 +162,6 @@ export default function DevOpsPage() {
             </div>
 
           </div>
-        </div>
-      </section>
-
-      {/* BUSINESS IMPACT BAR */}
-      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
-        <div style={{
-          maxWidth: '1400px', margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
-          gap: isMobile ? '24px' : '32px', textAlign: 'center',
-        }}>
-          {impacts.map(({ value, label }) => (
-            <div key={label}>
-              <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
-                {value}
-              </div>
-              <div style={{ fontSize: '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
-                {label}
-              </div>
-            </div>
-          ))}
         </div>
       </section>
 
@@ -335,65 +308,6 @@ export default function DevOpsPage() {
                       {desc}
                     </p>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* SOCIAL PROOF */}
-      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '64px 48px', background: '#fff' }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : '1fr 2fr 1fr',
-            gap: isMobile ? '32px' : '48px',
-            alignItems: 'center',
-            background: '#faf5ff', border: '1.5px solid rgba(124,58,237,0.15)',
-            borderRadius: '20px', padding: isMobile ? '28px 20px' : '48px',
-          }}>
-            {/* Avatar + name */}
-            <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center', gap: '12px' }}>
-              <div style={{
-                width: '72px', height: '72px', borderRadius: '50%',
-                background: 'linear-gradient(135deg, #7c3aed, #a78bfa)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '1.5rem', fontWeight: 800, color: '#fff',
-                flexShrink: 0,
-              }}>
-                MK
-              </div>
-              <div style={{ textAlign: isMobile ? 'left' : 'center' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>Marcus K.</div>
-                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Staff DevOps Engineer</div>
-                <div style={{ fontSize: '0.8rem', color: '#7c3aed', fontWeight: 600 }}>Series B SaaS, 120 engineers</div>
-              </div>
-            </div>
-
-            {/* Quote */}
-            <div>
-              <div style={{ fontSize: '2rem', color: '#a78bfa', lineHeight: 1, marginBottom: '8px' }}>&ldquo;</div>
-              <p style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', color: '#1e293b', lineHeight: 1.75, fontStyle: 'italic', margin: 0 }}>
-                {'We went from 4 different dashboards — Grafana, Cost Explorer, SecurityHub, and a custom Notion doc — to one. Our MTTR dropped 60% in the first month because engineers stopped wasting time correlating incidents manually.'}
-              </p>
-              <div style={{ fontSize: '2rem', color: '#a78bfa', lineHeight: 1, textAlign: 'right', marginTop: '4px' }}>&rdquo;</div>
-            </div>
-
-            {/* Stats */}
-            <div style={{
-              display: 'flex',
-              flexDirection: isMobile ? 'row' : 'column',
-              gap: isMobile ? '16px' : '24px',
-            }}>
-              {[
-                { value: '60%', label: 'MTTR reduction' },
-                { value: '4 → 1', label: 'Dashboards consolidated' },
-                { value: '15 min', label: 'Setup to first insight' },
-              ].map(({ value, label }) => (
-                <div key={label} style={{ textAlign: 'center', flex: isMobile ? '1' : undefined }}>
-                  <div style={{ fontSize: isMobile ? '1.2rem' : '1.8rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>{value}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500, marginTop: '4px' }}>{label}</div>
                 </div>
               ))}
             </div>

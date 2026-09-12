@@ -46,7 +46,7 @@ function roleStyle(role: OrganizationMember['role']) {
 }
 
 const securityControls = [
-  { name: 'SOC 2 Type II',   status: 'active',  detail: 'Certified · Annual audit' },
+  { name: 'SOC 2 Type II',   status: 'warning', detail: 'Audit in progress' },
   { name: 'GDPR',            status: 'active',  detail: 'Compliant · DPA available' },
   { name: 'HIPAA',           status: 'active',  detail: 'Ready · BAA on request' },
   { name: 'SSO / SAML',      status: 'warning', detail: 'Not configured · Available in Enterprise' },

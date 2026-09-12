@@ -30,13 +30,6 @@ export default function FinOpsPage() {
     { icon: Users, stat: '100%', statSub: 'team cost visibility', title: 'Team-Based Cost Allocation', desc: 'Automatically attribute AWS costs to engineering teams, squads, or business units. Create accountability for cloud spend without building internal tooling.' },
   ]
 
-  const impacts = [
-    { value: '$800–$8K+', label: 'Monthly waste identified' },
-    { value: '8x', label: 'Average ROI on Pro plan' },
-    { value: '30%', label: 'Typical AWS cost reduction' },
-    { value: '95%', label: 'Budget forecast accuracy' },
-  ]
-
   const workflow = [
     {
       phase: 'Inform',
@@ -226,27 +219,6 @@ export default function FinOpsPage() {
         </div>
       </section>
 
-      {/* BUSINESS IMPACT BAR — 4 metrics */}
-      <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
-        <div style={{
-          maxWidth: '1400px', margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-          gap: isMobile ? '20px' : '32px', textAlign: 'center',
-        }}>
-          {impacts.map(({ value, label }) => (
-            <div key={label}>
-              <div style={{ fontSize: isMobile ? '1.5rem' : '2.2rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
-                {value}
-              </div>
-              <div style={{ fontSize: '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
-                {label}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* FEATURES — Cards with embedded stats */}
       <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -379,109 +351,6 @@ export default function FinOpsPage() {
         </div>
       </section>
 
-      {/* SOCIAL PROOF */}
-      <section style={{ padding: isMobile ? '40px 20px' : isTablet ? '52px 32px' : '64px 48px', background: '#fff' }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : '280px 1fr',
-            gap: isMobile ? '40px' : '64px',
-            alignItems: 'start',
-          }}>
-            {/* Left — big number */}
-            <div style={{ textAlign: 'center', paddingTop: '16px' }}>
-              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
-                Typical First Month
-              </p>
-              <p style={{ fontSize: isMobile ? '3rem' : '4rem', fontWeight: 900, color: '#7c3aed', lineHeight: 1, margin: '0 0 8px', letterSpacing: '-0.04em' }}>
-                $800–$8K+
-              </p>
-              <p style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>
-                in savings found
-              </p>
-              <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '0 0 24px' }}>
-                Average across all DevControl customers in their first 30 days
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {[
-                  { value: '8x', label: 'Average ROI on Pro plan' },
-                  { value: '30%', label: 'Typical AWS cost reduction' },
-                  { value: '15 min', label: 'Time to first savings report' },
-                ].map(({ value, label }) => (
-                  <div key={label} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.78rem', color: '#64748B' }}>{label}</span>
-                    <span style={{ fontSize: '1rem', fontWeight: 800, color: '#7c3aed' }}>{value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Right — stacked quotes */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '4px' }}>
-                FinOps Team Results
-              </p>
-              {[
-                {
-                  quote: 'We had no idea EC2 was running at 12% utilization across 40 instances. DevControl found $8,400/month we could cut immediately — without touching a single production workload.',
-                  name: 'Linda C.',
-                  title: 'Head of FinOps · Series C SaaS',
-                  outcome: 'Saved $8,400/month',
-                  initials: 'LC',
-                },
-                {
-                  quote: 'The reserved instance optimizer alone paid for 6 months of DevControl in the first recommendation. The ROI math was embarrassingly obvious.',
-                  name: 'Ryan M.',
-                  title: 'Cloud Finance Lead · Enterprise B2B',
-                  outcome: '12x ROI in month 1',
-                  initials: 'RM',
-                },
-                {
-                  quote: 'Finance used to ask me for cost reports every month. Now I just send them a link to the DevControl dashboard. That alone saved me 4 hours a week.',
-                  name: 'Priya K.',
-                  title: 'VP Engineering · Growth Startup',
-                  outcome: 'Eliminated 4hrs/week',
-                  initials: 'PK',
-                },
-              ].map(({ quote, name, title, outcome, initials }) => (
-                <div key={name} style={{
-                  background: '#F9FAFB',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '14px',
-                  padding: '24px',
-                }}>
-                  <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.7, fontStyle: 'italic', margin: '0 0 16px' }}>
-                    {'\u201C'}{quote}{'\u201D'}
-                  </p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <div style={{
-                      width: '36px', height: '36px', borderRadius: '50%',
-                      background: '#EDE9FE', color: '#7C3AED',
-                      fontWeight: 700, fontSize: '11px',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0,
-                    }}>
-                      {initials}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', margin: 0 }}>{name}</p>
-                      <p style={{ fontSize: '11px', color: '#64748B', margin: 0 }}>{title}</p>
-                    </div>
-                    <div style={{
-                      background: '#ECFDF5', color: '#059669',
-                      padding: '3px 10px', borderRadius: '999px',
-                      fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap',
-                    }}>
-                      {outcome}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* WHO IT'S FOR */}
       <section style={{ padding: isMobile ? '48px 20px' : isTablet ? '64px 32px' : '80px 48px' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -577,28 +446,6 @@ export default function FinOpsPage() {
         textAlign: 'center',
       }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-
-          {/* ROI teaser box */}
-          <div style={{
-            background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '16px', padding: isMobile ? '20px' : '24px 32px',
-            display: 'flex', gap: isMobile ? '24px' : '48px',
-            flexDirection: isMobile ? 'column' : 'row',
-            alignItems: 'center',
-            marginBottom: '40px', flexWrap: 'wrap', justifyContent: 'center',
-          }}>
-            {[
-              { label: 'DevControl Pro Cost', value: '$199/mo' },
-              { label: 'Waste Identified', value: '$800–$8K+/mo' },
-              { label: 'Your ROI', value: '8x' },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>{label}</div>
-                <div style={{ fontSize: isMobile ? '1.2rem' : '1.5rem', fontWeight: 800, color: '#fff' }}>{value}</div>
-              </div>
-            ))}
-          </div>
 
           <h2 style={{
             fontSize: isMobile ? '1.6rem' : 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: 800,

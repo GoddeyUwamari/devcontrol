@@ -16,7 +16,7 @@ interface SecurityBadgeProps {
 
 export function SecurityBadge({ className, variant = 'default' }: SecurityBadgeProps) {
   const certifications = [
-    { name: 'SOC 2 Type II', status: 'certified', icon: Check },
+    { name: 'SOC 2 Type II', status: 'in-progress', icon: Clock },
     { name: 'GDPR Compliant', status: 'compliant', icon: Check },
     { name: 'SSL/TLS Encryption', status: 'active', icon: Check },
     { name: 'Data Encryption at Rest', status: 'active', icon: Check },

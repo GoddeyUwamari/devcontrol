@@ -444,7 +444,7 @@ export default function ComplianceFrameworksPage() {
 
       {/* Security / read-only footer messaging */}
       <p className="text-xs text-slate-400 text-center">
-        DevControl evaluations use secure, read-only access — no changes are ever made to your AWS infrastructure.
+        DevControl evaluations use secure, read-only access by default — optional remediation actions require separate, explicit permission and your approval.
       </p>
 
       <CreateFrameworkModal open={createModalOpen || editingFramework !== null} onClose={() => { setCreateModalOpen(false); setEditingFramework(null); }} onSubmit={editingFramework ? (data) => handleUpdate(editingFramework.id, data as Record<string, unknown>) : handleCreate} initialData={editingFramework || undefined} isEditing={editingFramework !== null} />
