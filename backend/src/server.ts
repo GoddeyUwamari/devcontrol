@@ -38,6 +38,7 @@ import {
 } from './version';
 import { createForecastRoutes } from './routes/forecast.routes';
 import { createCustomRulesRoutes } from './routes/custom-anomaly-rules.routes';
+import { createSloRoutes } from './routes/slo.routes';
 import { createDoraBenchmarksRoutes } from './routes/dora-benchmarks.routes';
 import { createSAMLRoutes } from './routes/saml.routes';
 import { createRemediationRoutes } from './routes/remediation.routes';
@@ -186,6 +187,7 @@ app.get('/version', (req, res) => {
 app.use('/api', routes);
 app.use('/api/keys', apiKeysRouter)
 app.use('/api/anomaly-rules', createCustomRulesRoutes(pool))
+app.use('/api/slos', createSloRoutes(pool))
 // Mounted before the generic /api/webhooks router since Express matches in
 // registration order and /api/webhooks/github is the more specific path.
 app.use('/api/webhooks/github', githubWebhookRouter)

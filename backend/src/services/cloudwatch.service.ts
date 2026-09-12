@@ -486,6 +486,33 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   eks: 'deployed',
 }
 
+// SLO 3A: the subset of resourceTypeRegistry with a live_verified CloudWatch capability
+// that also produces a meaningful single-resource health signal. RDS/ECS/EKS are
+// deliberately excluded -- see CAPABILITY_VALIDATION_STATUS and evaluateEcsService/
+// evaluateEksService's doc comments -- and DynamoDB is excluded because its validation
+// level is still 'deployed', not 'live_verified' (see the audit this feature is built
+// from). Widening this set is a deliberate follow-up, not something to do here.
+export type SloResourceType = 'ec2' | 'load-balancer' | 'lambda'
+export type SloWindow = Extract<MonitoringRange, '24h' | '7d'>
+
+export interface SloResourceObservation {
+  // False only when the SLO's configured resource_id no longer exists in this org's
+  // discovered inventory (e.g. it was terminated/re-discovered under a new id) --
+  // distinct from `monitored`, which covers "the resource exists but CloudWatch has no
+  // data for it right now".
+  resourceExists: boolean
+  // Mirrors CloudWatchServiceHealth.monitored: true only if CloudWatch actually returned
+  // at least one datapoint for every metric this resource type's health rule depends on.
+  // False covers BOTH "no datapoints in this window" and "the underlying CloudWatch call
+  // itself failed" -- getMetricStat()'s catch block (below) does not distinguish those
+  // two cases today, so this honestly doesn't either, rather than fabricating a
+  // distinction the reused code can't actually make. See slo.service.ts's evaluate().
+  monitored: boolean
+  uptime: number | null
+  avgLatencyMs: number | null
+  errorRatePercent: number | null
+}
+
 export class CloudWatchService {
   private async getAccount(organizationId: string): Promise<{ account_id: string; nickname: string | null } | null> {
     const result = await pool.query(
@@ -1039,6 +1066,76 @@ export class CloudWatchService {
    */
   getCapabilityValidationStatus(): Record<CloudWatchServiceHealth['resourceType'], ValidationLevel> {
     return { ...CAPABILITY_VALIDATION_STATUS }
+  }
+
+  /**
+   * SLO 3A: evaluates ONE specific, named resource's health telemetry over a fixed
+   * 24h/7d window — deliberately NOT a second CloudWatch abstraction, just a second
+   * entry point into the exact same evaluateResource() engine and capability registry
+   * getMetrics() already uses for the full-account sweep. RANGE_CONFIG's existing
+   * '24h'/'7d' entries are reused unchanged (see the module-level comment on
+   * RANGE_CONFIG for why their periods are already CloudWatch-datapoint-safe).
+   *
+   * Returns null when the org has no active/enabled AWS connection at all — the caller
+   * (slo.service.ts) must not interpret that as "0% availability" or any other
+   * fabricated value.
+   */
+  async evaluateResourceForSlo(
+    organizationId: string,
+    resourceType: SloResourceType,
+    resourceId: string,
+    window: SloWindow
+  ): Promise<SloResourceObservation | null> {
+    let clients
+    try {
+      clients = await AWSClientFactory.createClients(organizationId)
+    } catch (err) {
+      console.error('[CloudWatch] SLO: failed to create AWS clients:', err)
+      return null
+    }
+    if (!clients.enabled) return null
+
+    const { rows } = await pool.query(
+      `SELECT resource_id, resource_name, resource_type, resource_arn, status, metadata
+       FROM aws_resources
+       WHERE organization_id = $1 AND resource_id = $2 AND resource_type = $3
+         AND status != 'terminated'
+       LIMIT 1`,
+      [organizationId, resourceId, resourceType]
+    )
+    const resource: InventoryRow | undefined = rows[0]
+    if (!resource) {
+      return { resourceExists: false, monitored: false, uptime: null, avgLatencyMs: null, errorRatePercent: null }
+    }
+
+    const { lookbackSeconds, periodSeconds } = RANGE_CONFIG[window]
+    const now = new Date()
+    const currentStart = new Date(now.getTime() - lookbackSeconds * 1000)
+    const previousStart = new Date(currentStart.getTime() - lookbackSeconds * 1000)
+
+    const capability = resourceTypeRegistry[resourceType]
+    const result = await this.evaluateResource(
+      clients.cloudWatch,
+      capability as ResourceCapability<unknown>,
+      resource,
+      currentStart,
+      previousStart,
+      now,
+      periodSeconds,
+      lookbackSeconds
+    )
+
+    if (!result) {
+      return { resourceExists: true, monitored: false, uptime: null, avgLatencyMs: null, errorRatePercent: null }
+    }
+
+    return {
+      resourceExists: true,
+      monitored: result.service.monitored,
+      uptime: result.service.uptime,
+      avgLatencyMs: result.service.responseTimeMs,
+      errorRatePercent: result.service.errorRate,
+    }
   }
 
   async hasConnectedAccount(organizationId: string): Promise<boolean> {
