@@ -22,7 +22,7 @@ export default function InfrastructureManagementPage() {
   const isTablet = width >= 640 && width < 1024
 
   const features = [
-    { icon: Search, title: 'Instant Resource Discovery', desc: 'Auto-discover every EC2, RDS, Lambda, ECS, S3, and 50+ resource types across all accounts and regions. Updated in real time.' },
+    { icon: Search, title: 'Instant Resource Discovery', desc: 'Auto-discover every EC2, RDS, Lambda, ECS, S3, and other supported resource types across all accounts and regions. Updated in real time.' },
     { icon: Layers, title: 'Visual Topology Maps', desc: 'Interactive dependency graphs show how every resource connects. Understand your architecture at a glance — no manual diagramming.' },
     { icon: RefreshCw, title: 'Drift Detection', desc: 'Know the moment your infrastructure diverges from your Terraform definitions. Catch config drift before it causes incidents.' },
     { icon: GitBranch, title: 'Change History & Audit Trail', desc: 'Full audit trail of every infrastructure change — who made it, when, and what changed. Essential for debugging and compliance.' },
@@ -31,9 +31,9 @@ export default function InfrastructureManagementPage() {
   ]
 
   const impacts = [
-    { value: '$28,800', label: 'Average annual savings found' },
+    { value: '$28,800', label: 'Illustrative annual savings potential' },
     { value: '15min', label: 'Time to full inventory' },
-    { value: '50+', label: 'AWS resource types supported' },
+    { value: '15+', label: 'AWS resource types discovered' },
   ]
 
   const steps = [
@@ -128,7 +128,7 @@ export default function InfrastructureManagementPage() {
             fontSize: '0.875rem', fontWeight: 500, color: '#1f2937',
             alignItems: 'center',
           }}>
-            {['50+ AWS resource types', 'Multi-account & multi-region', 'Real-time updates'].map(t => (
+            {['15+ AWS resource types', 'Multi-account & multi-region', 'Real-time updates'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#16a34a', fontSize: '1rem' }}>✓</span> {t}
               </span>
@@ -344,7 +344,7 @@ export default function InfrastructureManagementPage() {
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {[
-                  'Auto-discover 50+ AWS resource types instantly',
+                  'Auto-discover 15+ AWS resource types instantly',
                   'Detect Terraform drift before it causes outages',
                   'Visual dependency maps with zero setup',
                   'Tag enforcement across all accounts and regions',

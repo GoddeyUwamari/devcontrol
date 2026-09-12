@@ -396,31 +396,6 @@ export default function ContactPage() {
         </div>
       </section>
 
-      {/* SOCIAL PROOF STRIP */}
-      <section style={{
-        padding: isMobile ? '40px 16px' : '48px',
-        background: '#fafafa', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6',
-      }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
-            gap: '32px', textAlign: 'center',
-          }}>
-            {[
-              { value: '500+', label: 'Engineering teams onboarded' },
-              { value: '$800–$8K+', label: 'Monthly waste identified' },
-              { value: '2 hrs', label: 'Typical response time' },
-            ].map(({ value, label }) => (
-              <div key={label}>
-                <p style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px', lineHeight: 1 }}>{value}</p>
-                <p style={{ fontSize: '0.875rem', color: '#1f2937', margin: 0 }}>{label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* BOTTOM CTA */}
       <section style={{
         width: '100%',

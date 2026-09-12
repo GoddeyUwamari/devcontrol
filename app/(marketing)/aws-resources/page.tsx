@@ -20,7 +20,7 @@ export default function ResourceDiscoveryPage() {
   const isTablet = width >= 640 && width < 1024
 
   const features = [
-    { icon: Search, title: 'Auto-Discovery Across All Accounts', desc: 'Instantly discover every EC2, RDS, Lambda, S3, ECS, EKS, and 50+ other resource types across all your AWS accounts and regions — no manual inventory.', highlight: true },
+    { icon: Search, title: 'Auto-Discovery Across All Accounts', desc: 'Instantly discover every EC2, RDS, Lambda, S3, ECS, EKS, and other supported resource types across all your AWS accounts and regions — no manual inventory.', highlight: true },
     { icon: Globe, title: 'Multi-Region & Multi-Account', desc: 'Single unified view across every AWS account and region your organization uses. No more logging into 5 different consoles to find one resource.' },
     { icon: Tag, title: 'Smart Tag Management', desc: 'Find every untagged resource instantly. Enforce tagging policies, auto-tag by environment or team, and generate compliance reports for finance and security.' },
     { icon: Filter, title: 'Powerful Search & Filtering', desc: 'Find any resource in seconds by type, tag, region, cost, health status, or custom attribute. Natural language search powered by AI.' },
@@ -29,7 +29,7 @@ export default function ResourceDiscoveryPage() {
   ]
 
   const impacts = [
-    { value: '50+', label: 'AWS resource types discovered' },
+    { value: '15+', label: 'AWS resource types discovered' },
     { value: '< 1min', label: 'Time to full inventory' },
     { value: '100%', label: 'Resource coverage across accounts' },
   ]
@@ -124,7 +124,7 @@ export default function ResourceDiscoveryPage() {
             fontSize: '0.875rem', fontWeight: 500, color: '#1f2937',
             alignItems: 'center',
           }}>
-            {['50+ AWS resource types', 'Multi-account & multi-region', 'Real-time sync'].map(t => (
+            {['15+ AWS resource types', 'Multi-account & multi-region', 'Real-time sync'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#16a34a' }}>✓</span> {t}
               </span>

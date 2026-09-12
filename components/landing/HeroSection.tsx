@@ -1,11 +1,10 @@
 'use client'
 
-import { Play, ArrowRight, Lock, Cloud, Shield, BadgeCheck, Globe } from 'lucide-react'
+import { Play, ArrowRight, Lock, Shield, BadgeCheck, Globe } from 'lucide-react'
 import { AnimatedBackground } from './AnimatedBackground'
 
 const trustBadges = [
   { label: 'Read-only IAM', icon: Lock },
-  { label: 'AWS Partner', icon: Cloud },
   { label: 'AES-256 Encryption', icon: Shield },
   { label: 'SOC 2 In Progress', icon: BadgeCheck },
   { label: 'GDPR Ready', icon: Globe },

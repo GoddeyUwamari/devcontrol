@@ -60,7 +60,7 @@ function IAMMock() {
       }}>
         <Lock size={13} style={{ color: '#16a34a', flexShrink: 0 }} />
         <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#15803d' }}>
-          Read-Only Access — We can never modify your AWS resources
+          Read-only by default — optional remediation actions require separate, explicit permission and your approval
         </span>
       </div>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
@@ -145,7 +145,7 @@ function SecurityMock() {
     { label: 'IAM Root Access Keys', status: 'pass' },
     { label: 'MFA Enabled', status: 'pass' },
     { label: 'S3 Public Access', status: 'fail' },
-    { label: 'CloudTrail Logging', status: 'pass' },
+    { label: 'S3 Access Logging', status: 'pass' },
     { label: 'Security Groups', status: 'warn' },
     { label: 'RDS Encryption', status: 'pass' },
   ]
@@ -308,9 +308,9 @@ const steps = [
   {
     eyebrow: 'Step 1 — Setup',
     title: 'Connect your AWS account in 2 minutes',
-    description: 'Deploy a read-only IAM role with one click. We never store credentials and can never modify your infrastructure.',
+    description: 'Deploy a read-only IAM role with one click. We never store credentials, and standard onboarding requests read-only access only — optional remediation actions require separate, explicit permission and your approval.',
     highlights: [
-      'Read-only IAM role — zero write access ever',
+      'Read-only by default — no write access without your explicit approval',
       'Works across all AWS accounts and regions',
       'No agents, no code changes required',
       'AES-256 encrypted in transit and at rest',
@@ -614,7 +614,7 @@ export default function TourPage() {
           fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
           maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
         }}>
-          Join 500+ engineering teams identifying $800–$8,000+/month in waste with DevControl.
+          Connect your AWS account and find your own savings opportunities in minutes.
         </p>
         <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
           <Link href="/register" style={{

@@ -49,7 +49,6 @@ const benefits = [
 ]
 
 const stats = [
-  { value: '500+', label: 'Engineering teams' },
   { value: 'Weekly', label: 'Office hours' },
   { value: 'Free', label: 'Always' },
 ]
@@ -87,7 +86,7 @@ export default function CommunityPage() {
             lineHeight: 1.1, marginBottom: '20px',
             letterSpacing: '-0.02em', maxWidth: '800px', margin: '0 auto 20px',
           }}>
-            Join 500+ Engineers Building{' '}
+            Join Engineers Building{' '}
             <span style={{ color: '#a78bfa' }}>Smarter Cloud Infrastructure</span>
           </h1>
 
@@ -243,29 +242,21 @@ export default function CommunityPage() {
             gap: '16px', maxWidth: '900px', margin: '0 auto',
           }}>
             {[
-              { channel: '#aws-cost-optimization', desc: 'Share savings wins, ask for advice on rightsizing and Reserved Instances', members: '280+' },
-              { channel: '#security-compliance', desc: 'SOC 2, HIPAA, CIS benchmarks — real practitioner discussions', members: '190+' },
-              { channel: '#dora-metrics', desc: 'Deployment frequency, lead time, MTTR — compare notes with other teams', members: '150+' },
-              { channel: '#platform-engineering', desc: 'Internal developer platforms, service catalogs, drift detection', members: '210+' },
-              { channel: '#devcontrol-feedback', desc: 'Direct line to the product team — bug reports, feature requests, roadmap discussion', members: '500+' },
-              { channel: '#show-and-tell', desc: 'Share dashboards, architecture decisions, and AWS wins with the community', members: '320+' },
-            ].map(({ channel, desc, members }) => (
+              { channel: '#aws-cost-optimization', desc: 'Share savings wins, ask for advice on rightsizing and Reserved Instances' },
+              { channel: '#security-compliance', desc: 'SOC 2, HIPAA, CIS benchmarks — real practitioner discussions' },
+              { channel: '#dora-metrics', desc: 'Deployment frequency, lead time, MTTR — compare notes with other teams' },
+              { channel: '#platform-engineering', desc: 'Internal developer platforms, service catalogs, drift detection' },
+              { channel: '#devcontrol-feedback', desc: 'Direct line to the product team — bug reports, feature requests, roadmap discussion' },
+              { channel: '#show-and-tell', desc: 'Share dashboards, architecture decisions, and AWS wins with the community' },
+            ].map(({ channel, desc }) => (
               <div key={channel} style={{
                 background: '#fff', border: '1.5px solid #e5e7eb',
                 borderRadius: '12px', padding: isMobile ? '16px' : '20px 24px',
                 display: 'flex', flexDirection: 'column', gap: '8px',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                  <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#7c3aed', margin: 0, fontFamily: 'monospace' }}>
-                    {channel}
-                  </p>
-                  <span style={{
-                    fontSize: '11px', fontWeight: 600, color: '#059669',
-                    background: '#ECFDF5', padding: '2px 8px', borderRadius: '100px',
-                  }}>
-                    {members} members
-                  </span>
-                </div>
+                <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#7c3aed', margin: 0, fontFamily: 'monospace' }}>
+                  {channel}
+                </p>
                 <p style={{ fontSize: '0.88rem', color: '#1f2937', margin: 0, lineHeight: 1.6 }}>{desc}</p>
               </div>
             ))}
@@ -291,7 +282,7 @@ export default function CommunityPage() {
             fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
-            It's free. Always will be. Join 500+ engineers building smarter cloud infrastructure.
+            It's free. Always will be. Join engineers building smarter cloud infrastructure.
           </p>
           <a
             href="https://join.slack.com/t/devcontrolcommunity/shared_invite/zt-3ul72iy4x-EJmlkBxEP8M2mvOP8KmFBg"

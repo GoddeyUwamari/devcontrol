@@ -386,7 +386,7 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
 // ============================================
 function ResourcesSection({ isMobile, isTablet }: ResponsiveProps) {
   const resources = [
-    { title: 'Community Slack', description: 'Join 500+ DevControl users', icon: MessageCircle, href: '#',          external: true },
+    { title: 'Community Slack', description: 'Connect with the DevControl community', icon: MessageCircle, href: '#',          external: true },
     { title: 'Changelog',       description: "See what's new in DevControl", icon: FileText,    href: '/changelog', external: false },
     { title: 'Status Page',     description: 'Check system status',           icon: BarChart3,   href: '#',          external: true },
     { title: 'Contact Support', description: 'Get help from our team',        icon: HelpCircle,  href: '/contact',   external: false },

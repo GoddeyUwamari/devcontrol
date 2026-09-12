@@ -84,33 +84,6 @@ function CostHero() {
 }
 
 // ============================================
-// TRUST SECTION
-// ============================================
-function TrustSection() {
-  const stats = [
-    { value: '$2.4M+', label: 'Savings Identified' },
-    { value: '500+', label: 'Companies Optimized' },
-    { value: '1M+', label: 'Resources Analyzed' },
-    { value: '30%', label: 'Avg Cost Reduction' },
-  ];
-
-  return (
-    <section className="py-8 border-b">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {stats.map((stat, index) => (
-            <div key={index} className="text-center p-3">
-              <div className="text-2xl font-bold text-green-600">{stat.value}</div>
-              <div className="text-sm text-muted-foreground">{stat.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
 // METRICS SECTION
 // ============================================
 function MetricsSection() {
@@ -299,7 +272,7 @@ function UseCasesSection() {
             Where Teams Find Savings
           </h2>
           <p className="text-muted-foreground">
-            Real examples from DevControl customers
+            Illustrative examples of common savings opportunities
           </p>
         </div>
 
@@ -323,10 +296,10 @@ function UseCasesSection() {
                     <useCase.icon className="w-4 h-4" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs text-muted-foreground mb-0.5">DevControl Found</p>
+                    <p className="text-xs text-muted-foreground mb-0.5">DevControl Could Find</p>
                     <p className="text-sm font-medium leading-snug">{useCase.solution}</p>
                     <Badge variant="secondary" className="mt-2 bg-green-500/10 text-green-600">
-                      Saved {useCase.savings}
+                      Illustrative savings: {useCase.savings}
                     </Badge>
                   </div>
                 </div>
@@ -345,7 +318,7 @@ function UseCasesSection() {
 function ComparisonSection() {
   const comparisons = [
     { feature: 'Time to find savings', devcontrol: '5 minutes', others: 'Days/weeks' },
-    { feature: 'Coverage', devcontrol: '50+ AWS services', others: 'Manual spreadsheets' },
+    { feature: 'Coverage', devcontrol: '7 resource types (EC2, RDS, EBS, S3, Lambda, DynamoDB, EIP)', others: 'Manual spreadsheets' },
     { feature: 'Recommendations', devcontrol: 'Prioritized & actionable', others: 'Raw data only' },
     { feature: 'Continuous monitoring', devcontrol: true, others: false },
     { feature: 'Cost allocation', devcontrol: 'Automatic tagging', others: 'Manual effort' },
@@ -461,7 +434,6 @@ export default function CostOptimizationPage() {
   return (
     <div className="min-h-screen bg-background">
       <CostHero />
-      <TrustSection />
       <MetricsSection />
       <HowItWorksSection />
       <FeaturesSection />

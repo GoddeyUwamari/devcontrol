@@ -645,7 +645,7 @@ export default function MidMarketPage() {
             fontSize: '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
-            Join 500+ engineering organizations using DevControl to scale faster, stay compliant, and control costs.
+            Use DevControl to scale faster, stay compliant, and control costs.
           </p>
           <div style={{
             display: 'flex', gap: '16px', justifyContent: 'center',

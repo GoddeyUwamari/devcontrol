@@ -28,13 +28,6 @@ export default function CostOptimizationPage() {
     { icon: Zap, title: 'Reserved Instance Optimizer', desc: 'AI identifies exactly which workloads to commit to reserved or savings plans — and how much you\'ll save before you commit.' },
   ]
 
-  const impacts = [
-    { value: '$28,800', label: 'Average annual savings per team' },
-    { value: '500+', label: 'Companies Optimized' },
-    { value: '1M+', label: 'Resources Analyzed' },
-    { value: '30%', label: 'Avg Cost Reduction' },
-  ]
-
   const steps = [
     { step: '01', title: 'Connect in 15 Minutes', desc: 'Grant read-only IAM access. DevControl immediately starts analyzing your spend across all accounts and services.' },
     { step: '02', title: 'AI Finds the Waste', desc: 'Our cost intelligence engine scans for idle resources, right-sizing opportunities, and reserved instance gaps within minutes.' },
@@ -133,30 +126,6 @@ export default function CostOptimizationPage() {
           <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
             {'A fintech team cut their AWS bill by $3,100 in the first month after connecting DevControl.'}
           </p>
-        </div>
-      </section>
-
-      {/* BUSINESS IMPACT BAR */}
-      <section style={{
-        padding: isMobile ? '32px 16px' : isTablet ? '40px 32px' : '48px',
-        background: '#fafafa', borderBottom: '1px solid #f3f4f6',
-      }}>
-        <div style={{
-          maxWidth: '1400px', margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-          gap: '32px', textAlign: 'center',
-        }}>
-          {impacts.map(({ value, label }) => (
-            <div key={label}>
-              <div style={{ fontSize: isMobile ? '1.8rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
-                {value}
-              </div>
-              <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
-                {label}
-              </div>
-            </div>
-          ))}
         </div>
       </section>
 
@@ -372,7 +341,7 @@ export default function CostOptimizationPage() {
             fontSize: isMobile ? '0.95rem' : '1.1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '480px', margin: '0 auto 32px', lineHeight: 1.7,
           }}>
-            Join 500+ engineering teams identifying $800–$8,000+/month in waste with DevControl.
+            Connect your AWS account and find your own savings opportunities in minutes.
           </p>
           <div style={{
             display: 'flex',
