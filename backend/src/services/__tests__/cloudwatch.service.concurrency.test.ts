@@ -1,23 +1,30 @@
 /**
- * CloudWatch Scalability Phase 2B: coverage for computeMetrics()'s seven resource-type
+ * CloudWatch Scalability Phase 2B/2C: coverage for computeMetrics()'s seven resource-type
  * evaluation blocks (EC2, RDS, Lambda, DynamoDB, ECS, EKS, ALB) starting concurrently
- * instead of sequentially.
+ * (Phase 2B), and for EC2/Lambda/DynamoDB/ALB fetching their CloudWatch data via batched
+ * GetMetricData requests instead of one GetMetricStatistics call per metric per resource
+ * (Phase 2C).
  *
  * Same testing shape as cloudwatch.service.slo.test.ts: AWSClientFactory.createClients is
  * spied on (no real AWS SDK client construction / STS AssumeRole), AWS SDK client `.send`
  * is mocked directly, and getAccount()/getResourceInventory()'s organization-scoping runs
  * against real local Postgres, matching this repo's established convention for anything
  * that depends on real WHERE-clause semantics. awsCostService.fetchMonthlyCosts is mocked
- * directly -- it is unrelated to Phase 2B (called once, sequentially, after all seven
+ * directly -- it is unrelated to Phase 2B/2C (called once, sequentially, after all seven
  * blocks) and exercised elsewhere.
  *
- * This file proves only what Phase 2B changed: that the seven blocks run concurrently,
- * that concurrency is real (not just "the code compiles"), that an unexpected rejection
- * in one block is isolated to that block, that response shape/semantics/resourceCounts/
- * coverage are unchanged, and that final `services[]` ordering (EC2, ALB, RDS, Lambda,
- * DynamoDB, ECS, EKS) is preserved regardless of completion timing. Per-capability
- * health-rule correctness is already covered by cloudwatch.service.eks.test.ts /
- * cloudwatch.service.slo.test.ts and is not re-tested here.
+ * This file proves: the seven blocks run concurrently and that concurrency is real (Phase
+ * 2B); that an unexpected rejection in one block is isolated to that block; that response
+ * shape/semantics/resourceCounts/coverage are unchanged; that final `services[]` ordering
+ * (EC2, ALB, RDS, Lambda, DynamoDB, ECS, EKS) is preserved regardless of completion timing;
+ * that ALB's current-vs-previous windows are fetched as two independent, concurrently-
+ * dispatched GetMetricData requests that are never combined (Phase 2C); and that the new
+ * batched fetch path produces results identical to the pre-2C per-metric formula for known
+ * datapoints. Pure GetMetricData batching mechanics (query construction, Id-based mapping,
+ * StatusCode handling, NextToken, chunking) are covered in isolation in
+ * cloudwatch-metric-batch.util.test.ts and not repeated here. Per-capability health-rule
+ * correctness beyond the equivalence check below is already covered by
+ * cloudwatch.service.eks.test.ts / cloudwatch.service.slo.test.ts.
  */
 
 import { Pool } from 'pg';
@@ -44,8 +51,23 @@ function withMockedSend<T extends { send: (...args: any[]) => any }>(client: T, 
   return client;
 }
 
-function datapoint(field: 'Average' | 'Sum', value = 1) {
-  return { Datapoints: [{ [field]: value, Timestamp: new Date() }] };
+// Phase 2C: EC2/Lambda/DynamoDB/ALB now issue GetMetricDataCommand (via
+// evaluateCapabilityBatch()/fetchMetricDataBatch()) instead of one GetMetricStatisticsCommand
+// per metric per resource. A generic GetMetricData mock echoes each submitted query's Id
+// back with a single Complete datapoint, regardless of how many queries or which capability
+// -- exactly mirroring how a real GetMetricData response is structured (one MetricDataResult
+// per submitted MetricDataQuery, matched by Id).
+function metricDataEcho(value = 1) {
+  return async (command: any) => {
+    const queries = command?.input?.MetricDataQueries ?? [];
+    return {
+      MetricDataResults: queries.map((q: any) => ({ Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date()], Values: [value] })),
+    };
+  };
+}
+
+function metricDataNamespace(command: any): string | undefined {
+  return command?.input?.MetricDataQueries?.[0]?.MetricStat?.Metric?.Namespace;
 }
 
 function deferred<T>() {
@@ -153,7 +175,7 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     // synchronize on this instead of guessing a fixed number of event-loop ticks.
     onCreateClients?: () => void;
   } = {}) {
-    const cloudWatch = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), overrides.cloudWatchSend ?? jest.fn().mockResolvedValue(datapoint('Average')));
+    const cloudWatch = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), overrides.cloudWatchSend ?? jest.fn().mockImplementation(metricDataEcho()));
     const ecs = withMockedSend(new ECSClient({ region: 'us-east-1' }), overrides.ecsSend ?? jest.fn().mockResolvedValue({ services: [], failures: [] }));
     const eks = withMockedSend(new EKSClient({ region: 'us-east-1' }), overrides.eksSend ?? jest.fn().mockResolvedValue({ cluster: undefined }));
     jest.spyOn(AWSClientFactory, 'createClients').mockImplementation(async () => {
@@ -231,18 +253,21 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     ];
     orgId = await insertOrgWithAccountAndResources(resourceList);
 
-    const ec2Gate = deferred<any>();
+    const ec2Gate = deferred<void>();
     const callLog: string[] = [];
     const clientsCreated = deferred<void>();
     const inventoryFetched = deferred<void>();
 
-    const cloudWatchSend = jest.fn().mockImplementation((command: any) => {
-      const namespace = command?.input?.Namespace;
+    const cloudWatchSend = jest.fn().mockImplementation(async (command: any) => {
+      const namespace = metricDataNamespace(command);
       callLog.push(`cloudwatch:${namespace}`);
+      const queries = command?.input?.MetricDataQueries ?? [];
       if (namespace === 'AWS/EC2') {
-        return ec2Gate.promise;
+        await ec2Gate.promise; // deliberately unresolved until the test signals it
       }
-      return Promise.resolve(datapoint('Average'));
+      return {
+        MetricDataResults: queries.map((q: any) => ({ Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date()], Values: [1] })),
+      };
     });
     const ecsSend = jest.fn().mockImplementation(() => {
       callLog.push('ecs:DescribeServices');
@@ -287,7 +312,7 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     // None of this could be true under the pre-Phase-2B sequential implementation, where
     // EC2 being unresolved would mean no later block's AWS call had been dispatched yet.
 
-    ec2Gate.resolve(datapoint('Average'));
+    ec2Gate.resolve();
     const result = await resultPromise;
     expect(result.services).toHaveLength(6);
   });
@@ -305,11 +330,13 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     mockClients();
 
     // Simulate a genuinely unexpected bug -- not an ordinary AWS API error, which
-    // getMetricStat()/evaluateEcsService()/evaluateEksService() already catch and turn
-    // into safe null/'unknown' results. This bypasses those inner catches entirely by
-    // throwing directly out of evaluateResource() for the lambda capability only.
-    const original = (CloudWatchService.prototype as any).evaluateResource;
-    jest.spyOn(CloudWatchService.prototype as any, 'evaluateResource').mockImplementation(function (this: any, ...args: any[]) {
+    // fetchMetricDataBatch()/evaluateEcsService()/evaluateEksService() already catch and
+    // turn into safe null/'unknown' results. This bypasses those inner catches entirely by
+    // throwing directly out of evaluateCapabilityBatch() for the lambda capability only.
+    // (RDS's task still calls the older evaluateResource() directly, unaffected either way
+    // since this only targets 'lambda'.)
+    const original = (CloudWatchService.prototype as any).evaluateCapabilityBatch;
+    jest.spyOn(CloudWatchService.prototype as any, 'evaluateCapabilityBatch').mockImplementation(function (this: any, ...args: any[]) {
       const capability = args[1];
       if (capability?.resourceType === 'lambda') {
         throw new Error('Simulated unexpected Lambda block failure (not an AWS API error)');
@@ -347,10 +374,11 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     // control-plane types (ECS/EKS) resolve fastest of all, to prove final array order is
     // determined by the fixed concatenation in code, not by completion timing.
     const cloudWatchSend = jest.fn().mockImplementation(async (command: any) => {
-      const namespace = command?.input?.Namespace;
+      const namespace = metricDataNamespace(command);
       const delayMs = namespace === 'AWS/EC2' ? 30 : namespace === 'AWS/ApplicationELB' ? 20 : namespace === 'AWS/DynamoDB' ? 5 : 10;
       await new Promise((r) => setTimeout(r, delayMs));
-      return datapoint('Average');
+      const queries = command?.input?.MetricDataQueries ?? [];
+      return { MetricDataResults: queries.map((q: any) => ({ Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date()], Values: [1] })) };
     });
     const ecsSend = jest.fn().mockResolvedValue({ services: [], failures: [] });
     const eksSend = jest.fn().mockResolvedValue({ cluster: undefined });
@@ -404,6 +432,96 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     const result = await (service as any).computeMetrics(noAccountOrgId, '1h');
 
     expect(result).toBeNull();
+  });
+
+  it('(7) ALB fetches current and previous windows as two independent, concurrently-dispatched GetMetricData batches that are never combined, with a correct non-empty-previous trend and a folded-in response-time series', async () => {
+    orgId = await insertOrgWithAccountAndResources([
+      { id: 'alb-7', type: 'load-balancer', arn: 'arn:aws:elasticloadbalancing:us-east-1:*:loadbalancer/app/alb-7/aaa111', extraMeta: { type: 'application' } },
+    ]);
+
+    const calls: Array<{ startTime: Date; endTime: Date; queries: any[] }> = [];
+    let currentStarted = false;
+    let previousStarted = false;
+
+    const cloudWatchSend = jest.fn().mockImplementation(async (command: any) => {
+      const queries = command.input.MetricDataQueries as any[];
+      const isPreviousBatch = queries.length === 1; // only previousLatencySec (1 ALB x 1 previous-window metric)
+      calls.push({ startTime: command.input.StartTime, endTime: command.input.EndTime, queries });
+
+      if (isPreviousBatch) previousStarted = true;
+      else currentStarted = true;
+      // Yield one tick so both branches have a chance to have already marked themselves
+      // started -- proving the two requests were dispatched concurrently (both already
+      // in flight before either resolves), not one after the other.
+      await new Promise((r) => setImmediate(r));
+      expect(currentStarted && previousStarted).toBe(true);
+
+      if (isPreviousBatch) {
+        return { MetricDataResults: [{ Id: queries[0].Id, StatusCode: 'Complete', Timestamps: [command.input.StartTime], Values: [0.05] }] }; // 50ms previous latency
+      }
+      return {
+        MetricDataResults: queries.map((q) => {
+          const metricIndex = Number(q.Id.split('_')[1]); // 0=latencySec, 1=requestSum, 2=errorSum
+          if (metricIndex === 0) return { Id: q.Id, StatusCode: 'Complete', Timestamps: [command.input.StartTime, command.input.EndTime], Values: [0.08, 0.12] }; // avg 100ms
+          if (metricIndex === 1) return { Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date()], Values: [600] };
+          return { Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date()], Values: [0] };
+        }),
+      };
+    });
+
+    mockClients({ cloudWatchSend });
+
+    const result = await (service as any).computeMetrics(orgId, '1h');
+
+    // Never combined into one request -- exactly two independent calls.
+    expect(calls).toHaveLength(2);
+    const currentCall = calls.find((c) => c.queries.length === 3);
+    const previousCall = calls.find((c) => c.queries.length === 1);
+    expect(currentCall).toBeDefined();
+    expect(previousCall).toBeDefined();
+    // The previous window ends exactly where the current window begins -- adjacent, real
+    // windows, not a merged [previousStart, now] range split client-side.
+    expect(previousCall!.endTime.getTime()).toBe(currentCall!.startTime.getTime());
+    expect(previousCall!.startTime.getTime()).toBeLessThan(previousCall!.endTime.getTime());
+    // Independent query-Id spaces: previous batch's single query still uses the same
+    // resource-index-based scheme, disjoint from the current batch's three Ids by
+    // construction (different metric index suffix).
+    expect(previousCall!.queries[0].Id).not.toBe(currentCall!.queries[0].Id);
+
+    // avg 100ms now vs 50ms before => +100% trend, computed from real non-empty previous data.
+    expect(result.avgResponseTimeMs).toBe(100);
+    expect(result.trendPercent).toBe(100);
+    // Folded-in series -- came from the current-window latencySec query's own two
+    // datapoints, not a third CloudWatch request.
+    expect(result.responseTimeHistory).toHaveLength(2);
+    expect(result.responseTimeHistory.map((p: any) => p.value).sort((a: number, b: number) => a - b)).toEqual([80, 120]);
+  });
+
+  it('(8) EC2 health-rule output via the batched fetch matches the pre-2C GetMetricStatistics reduction formula for known datapoints (old-vs-new equivalence)', async () => {
+    orgId = await insertOrgWithAccountAndResources([
+      { id: 'i-8', type: 'ec2', arn: 'arn:aws:ec2:us-east-1:*:instance/i-8' },
+    ]);
+
+    // statusCheckFailed datapoints [0, 0, 1] -> old formula: mean = 1/3 -> uptime = round((1 - 1/3) * 10000) / 100
+    // cpu datapoints [40, 60] -> old formula: mean = 50
+    const cloudWatchSend = jest.fn().mockImplementation(async (command: any) => {
+      const queries = command.input.MetricDataQueries as any[];
+      return {
+        MetricDataResults: queries.map((q) => {
+          const metricIndex = Number(q.Id.split('_')[1]); // 0=statusCheckFailed, 1=cpu
+          if (metricIndex === 0) return { Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date(), new Date(), new Date()], Values: [0, 0, 1] };
+          return { Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date(), new Date()], Values: [40, 60] };
+        }),
+      };
+    });
+    mockClients({ cloudWatchSend });
+
+    const result = await (service as any).computeMetrics(orgId, '1h');
+    const ec2Service = result.services.find((s: any) => s.resourceType === 'ec2');
+
+    const expectedUptime = Math.max(0, Math.min(100, Math.round((1 - 1 / 3) * 10000) / 100));
+    expect(ec2Service.uptime).toBe(expectedUptime);
+    expect(ec2Service.metrics.find((m: any) => m.label === 'CPU').value).toBe(50);
   });
 });
 

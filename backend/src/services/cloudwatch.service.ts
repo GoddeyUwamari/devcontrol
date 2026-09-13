@@ -4,6 +4,7 @@ import { EKSClient, DescribeClusterCommand } from '@aws-sdk/client-eks'
 import { AWSClientFactory } from './aws-client-factory.service'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
+import { fetchMetricDataBatch, reduceSeriesToScalar, BatchMetricQuery, BatchSeriesResult } from './cloudwatch-metric-batch.util'
 
 export type MonitoringRange = '5m' | '15m' | '1h' | '3h' | '24h' | '7d'
 
@@ -186,6 +187,26 @@ function parseEcsClusterAndService(resourceArn: string): { cluster: string; serv
   const match = resourceArn.match(/:service\/([^/]+)\/([^/]+)$/)
   if (!match) return null
   return { cluster: match[1], service: match[2] }
+}
+
+/**
+ * CloudWatch Scalability Phase 2C: converts a raw batched TargetResponseTime series into
+ * the same ResponseTimePoint[] shape the pre-2C getResponseTimeSeries() produced (Average
+ * seconds -> rounded milliseconds, ascending by timestamp). Used to fold the primary ALB's
+ * chart series out of its already-fetched current-window latencySec query result, instead
+ * of issuing a second, duplicate GetMetricStatistics/GetMetricData call for the same
+ * namespace/metric/dimensions/window the aggregate value was already computed from.
+ */
+function seriesToResponseTimePoints(series: BatchSeriesResult | null): ResponseTimePoint[] {
+  if (!series) return []
+  const points: ResponseTimePoint[] = []
+  for (let i = 0; i < series.timestamps.length; i++) {
+    const ts = series.timestamps[i]
+    const v = series.values[i]
+    if (ts === undefined || v === undefined) continue
+    points.push({ timestamp: ts.getTime(), value: Math.round(v * 1000) })
+  }
+  return points.sort((a, b) => a.timestamp - b.timestamp)
 }
 
 interface AlbExtra {
@@ -622,34 +643,6 @@ export class CloudWatchService {
     }
   }
 
-  private async getResponseTimeSeries(
-    client: CloudWatchClient,
-    dimensions: Dimension[],
-    startTime: Date,
-    endTime: Date,
-    periodSeconds: number
-  ): Promise<ResponseTimePoint[]> {
-    try {
-      const command = new GetMetricStatisticsCommand({
-        Namespace: 'AWS/ApplicationELB',
-        MetricName: 'TargetResponseTime',
-        Dimensions: dimensions,
-        StartTime: startTime,
-        EndTime: endTime,
-        Period: periodSeconds,
-        Statistics: ['Average'],
-      })
-      const response = await client.send(command)
-      return (response.Datapoints ?? [])
-        .filter((p) => p.Timestamp && p.Average !== undefined)
-        .map((p) => ({ timestamp: p.Timestamp!.getTime(), value: Math.round(p.Average! * 1000) }))
-        .sort((a, b) => a.timestamp - b.timestamp)
-    } catch (err) {
-      console.error('[CloudWatch] TargetResponseTime series fetch failed:', err)
-      return []
-    }
-  }
-
   /**
    * Generic engine: given a resource and its registry capability definition, fetches
    * every metric the capability declares (skipping the CloudWatch call entirely for
@@ -687,6 +680,123 @@ export class CloudWatchService {
     }
 
     return capability.healthRule(resource, values, { lookbackSeconds, dims })
+  }
+
+  /**
+   * CloudWatch Scalability Phase 2C: batches every resource's CloudWatch-backed metrics
+   * for one capability into as few GetMetricData requests as possible, then runs the SAME
+   * unmodified capability.healthRule() per resource that evaluateResource() above always
+   * has -- this function only changes how the raw values are fetched, never what they
+   * mean. Used today by EC2/Lambda/DynamoDB (a single current-window batch) and ALB (a
+   * current-window batch plus a second, independent previous-window batch, dispatched
+   * concurrently -- see the two-window split below). RDS has no CloudWatch metrics wired
+   * and still goes through the unbatched evaluateResource() in its own task, since there
+   * is no AWS call to batch there either way; evaluateResourceForSlo() also still uses
+   * evaluateResource() directly for its single-named-resource lookups, unaffected by this
+   * phase.
+   *
+   * A resource whose dimension value can't be resolved (e.g. a malformed ARN) is dropped
+   * entirely, same as evaluateResource() returning null for it before.
+   *
+   * Query Ids are `${typePrefix}${resourceIndex}_${metricIndex}` -- built from array
+   * indices, never from the resource's own identifier. AWS resource identifiers (EC2
+   * instance IDs, ALB dimension values, Lambda function names, DynamoDB table names)
+   * routinely contain hyphens, slashes, or periods, none of which MetricDataQuery.Id
+   * permits (letters, digits, and underscore only, with a lowercase-leading first
+   * character) -- see the Phase 2C scoping audit. Index-based Ids sidestep this entirely
+   * and are trivially collision-safe within one capability's own batch.
+   *
+   * Returns, alongside each resource's evaluated {service, extra}, the raw current-window
+   * series per resource (keyed by metric key) that was already fetched -- so a caller
+   * needing a chart-quality series for one specific resource (only ALB's primary-ALB
+   * response-time history today) can reuse an already-fetched query's result instead of
+   * issuing a second, duplicate CloudWatch request for the same data.
+   */
+  private async evaluateCapabilityBatch<TExtra>(
+    client: CloudWatchClient,
+    capability: ResourceCapability<TExtra>,
+    resources: InventoryRow[],
+    typePrefix: string,
+    currentStart: Date,
+    previousStart: Date,
+    now: Date,
+    periodSeconds: number,
+    lookbackSeconds: number
+  ): Promise<{
+    evaluations: Array<{ service: CloudWatchServiceHealth; extra: TExtra }>
+    currentSeriesByResource: Array<Record<string, BatchSeriesResult | null>>
+  }> {
+    if (!capability.cloudwatchNamespace || !capability.dimensionKey) {
+      // No CloudWatch metrics wired for this capability (e.g. RDS) -- every resource's
+      // healthRule runs with an empty values map, exactly as evaluateResource() did
+      // before, with no AWS call at all. (Not exercised via this method in practice today
+      // -- RDS's task still calls evaluateResource() directly -- kept here only so this
+      // method stays a correct, general-purpose replacement for evaluateResource().)
+      return {
+        evaluations: resources.map((r) => capability.healthRule(r, {}, { lookbackSeconds, dims: [] })),
+        currentSeriesByResource: resources.map(() => ({})),
+      }
+    }
+
+    const namespace = capability.cloudwatchNamespace
+    const dimensionKey = capability.dimensionKey
+
+    const contexts: Array<{ resource: InventoryRow; dims: Dimension[] }> = []
+    for (const resource of resources) {
+      const dimValue = capability.getDimensionValue(resource)
+      if (dimValue === null) continue
+      contexts.push({ resource, dims: [{ Name: dimensionKey, Value: dimValue }] })
+    }
+
+    const currentQueries: BatchMetricQuery[] = []
+    const previousQueries: BatchMetricQuery[] = []
+    // resourceIndex -> metricKey -> queryId, so results can be looked up per resource
+    // without re-deriving the id format at read time.
+    const idsByResource: Array<Record<string, string>> = contexts.map(() => ({}))
+
+    contexts.forEach((ctx, resourceIndex) => {
+      capability.metrics.forEach((metric, metricIndex) => {
+        const id = `${typePrefix}${resourceIndex}_${metricIndex}`
+        idsByResource[resourceIndex][metric.key] = id
+        const query: BatchMetricQuery = {
+          id,
+          namespace,
+          metricName: metric.metricName,
+          dimensions: ctx.dims,
+          period: periodSeconds,
+          stat: metric.statistic,
+        }
+        if (metric.window === 'previous') previousQueries.push(query)
+        else currentQueries.push(query)
+      })
+    })
+
+    // GetMetricData's StartTime/EndTime are request-level, shared by every query in one
+    // call -- current-window and previous-window metrics can never be combined into a
+    // single request, so this always issues up to two independent requests. When a
+    // capability has no previous-window metric (EC2/Lambda/DynamoDB today), previousQueries
+    // is empty and fetchMetricDataBatch() returns immediately with no AWS call at all --
+    // dispatched via the same Promise.all() regardless, so the two windows are always
+    // concurrent when both are real requests (ALB today), never serialized.
+    const [currentResults, previousResults] = await Promise.all([
+      fetchMetricDataBatch(client, currentQueries, currentStart, now),
+      fetchMetricDataBatch(client, previousQueries, previousStart, currentStart),
+    ])
+
+    const currentSeriesByResource: Array<Record<string, BatchSeriesResult | null>> = contexts.map(() => ({}))
+    const evaluations = contexts.map((ctx, resourceIndex) => {
+      const values: Record<string, number | null> = {}
+      capability.metrics.forEach((metric) => {
+        const id = idsByResource[resourceIndex][metric.key]
+        const isPrevious = metric.window === 'previous'
+        const series = (isPrevious ? previousResults : currentResults).get(id) ?? null
+        if (!isPrevious) currentSeriesByResource[resourceIndex][metric.key] = series
+        values[metric.key] = reduceSeriesToScalar(series, metric.statistic)
+      })
+      return capability.healthRule(ctx.resource, values, { lookbackSeconds, dims: ctx.dims })
+    })
+
+    return { evaluations, currentSeriesByResource }
   }
 
   /**
@@ -1009,14 +1119,10 @@ export class CloudWatchService {
     // resolves values in input order, not completion order.
     const ec2Task = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        const results = (
-          await Promise.all(
-            ec2Instances.map((instance) =>
-              this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.ec2, instance, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
-            )
-          )
-        ).filter((r): r is NonNullable<typeof r> => r !== null)
-        return results.map((r) => r.service)
+        const { evaluations } = await this.evaluateCapabilityBatch(
+          clients.cloudWatch, resourceTypeRegistry.ec2, ec2Instances, 'ec2', currentStart, previousStart, now, periodSeconds, lookbackSeconds
+        )
+        return evaluations.map((r) => r.service)
       } catch (err) {
         console.error('[CloudWatch] EC2 evaluation block failed unexpectedly:', err)
         return []
@@ -1041,14 +1147,10 @@ export class CloudWatchService {
 
     const lambdaTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        const results = (
-          await Promise.all(
-            lambdaFunctions.map((fn) =>
-              this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.lambda, fn, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
-            )
-          )
-        ).filter((r): r is NonNullable<typeof r> => r !== null)
-        return results.map((r) => r.service)
+        const { evaluations } = await this.evaluateCapabilityBatch(
+          clients.cloudWatch, resourceTypeRegistry.lambda, lambdaFunctions, 'lambda', currentStart, previousStart, now, periodSeconds, lookbackSeconds
+        )
+        return evaluations.map((r) => r.service)
       } catch (err) {
         console.error('[CloudWatch] Lambda evaluation block failed unexpectedly:', err)
         return []
@@ -1057,14 +1159,10 @@ export class CloudWatchService {
 
     const dynamoTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        const results = (
-          await Promise.all(
-            dynamoTables.map((table) =>
-              this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.dynamodb, table, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
-            )
-          )
-        ).filter((r): r is NonNullable<typeof r> => r !== null)
-        return results.map((r) => r.service)
+        const { evaluations } = await this.evaluateCapabilityBatch(
+          clients.cloudWatch, resourceTypeRegistry.dynamodb, dynamoTables, 'dynamodb', currentStart, previousStart, now, periodSeconds, lookbackSeconds
+        )
+        return evaluations.map((r) => r.service)
       } catch (err) {
         console.error('[CloudWatch] DynamoDB evaluation block failed unexpectedly:', err)
         return []
@@ -1115,25 +1213,20 @@ export class CloudWatchService {
         responseTimeHistory: [],
       }
       try {
-        const albEvaluations = (
-          await Promise.all(
-            albs.map((alb) =>
-              this.evaluateResource(
-                clients.cloudWatch,
-                resourceTypeRegistry['load-balancer'],
-                alb,
-                currentStart,
-                previousStart,
-                now,
-                periodSeconds,
-                lookbackSeconds
-              )
-            )
-          )
-        ).filter((r): r is NonNullable<typeof r> => r !== null)
+        const { evaluations: albEvaluations, currentSeriesByResource } = await this.evaluateCapabilityBatch(
+          clients.cloudWatch,
+          resourceTypeRegistry['load-balancer'],
+          albs,
+          'alb',
+          currentStart,
+          previousStart,
+          now,
+          periodSeconds,
+          lookbackSeconds
+        )
 
         const albServices = albEvaluations.map((r) => r.service)
-        const albResults = albEvaluations.map((r) => ({
+        const albResults = albEvaluations.map((r, i) => ({
           service: r.service,
           avgResponseTimeMs: r.extra.avgResponseTimeMs,
           previousAvgResponseTimeMs: r.extra.previousAvgResponseTimeMs,
@@ -1141,6 +1234,7 @@ export class CloudWatchService {
           errorRate: r.extra.errorRate,
           requestSum: r.extra.requestSum,
           dims: r.extra.dims,
+          resultIndex: i,
         }))
 
         // Response time / request-rate KPIs only make sense when at least one ALB exists —
@@ -1174,7 +1268,12 @@ export class CloudWatchService {
         // across multiple load balancers, so a single representative series beats an
         // average-of-averages line.
         const primary = albResults.reduce((best, r) => (r.requestSum > best.requestSum ? r : best), albResults[0])
-        const responseTimeHistory = await this.getResponseTimeSeries(clients.cloudWatch, primary.dims, currentStart, now, periodSeconds)
+        // Phase 2C: reuses the current-window latencySec query already fetched for
+        // `primary` above -- the exact same namespace/metric/dimensions/window the old
+        // getResponseTimeSeries() call duplicated -- instead of issuing a second CloudWatch
+        // request for data already in hand.
+        const primarySeries = currentSeriesByResource[primary.resultIndex]?.['latencySec'] ?? null
+        const responseTimeHistory = seriesToResponseTimePoints(primarySeries)
 
         return { services: albServices, avgResponseTimeMs, requestsPerMinute, errorRate, trendPercent, responseTimeHistory }
       } catch (err) {
