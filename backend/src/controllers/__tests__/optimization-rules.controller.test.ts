@@ -77,4 +77,44 @@ describe('CostRecommendationsController.getOptimizationRules', () => {
     expect(json).toHaveBeenCalledTimes(1);
     expect(json.mock.calls[0][0].success).toBe(true);
   });
+
+  // Enterprise Workstream 3B, Phase E
+  it('marks ec2_idle and lambda_low_usage as configurable, with their parameter definitions -- never an organization-specific value', async () => {
+    const { req, res, json } = mockReqRes();
+
+    await controller.getOptimizationRules(req, res);
+
+    const { rules } = json.mock.calls[0][0].data;
+    const ec2Idle = rules.find((r: any) => r.id === 'ec2_idle');
+    const lambdaLowUsage = rules.find((r: any) => r.id === 'lambda_low_usage');
+
+    expect(ec2Idle.configurable).toBe(true);
+    expect(ec2Idle.parameters).toEqual([
+      { parameterId: 'cpu_threshold_percent', type: 'number', default: 5, min: 1, max: 20, unit: 'percent' },
+    ]);
+    expect(lambdaLowUsage.configurable).toBe(true);
+    expect(lambdaLowUsage.parameters).toEqual([
+      { parameterId: 'max_invocations', type: 'integer', default: 10, min: 0, max: 1000, unit: 'invocations_per_30d' },
+    ]);
+
+    // Neither parameter definition object carries a `value` or `source` key --
+    // those are organization-specific and belong only to
+    // GET /optimization-rules/configuration (Enterprise-gated), never here.
+    expect(ec2Idle.parameters[0]).not.toHaveProperty('value');
+    expect(ec2Idle.parameters[0]).not.toHaveProperty('source');
+  });
+
+  it('marks every non-configurable rule with configurable: false and an empty parameters array', async () => {
+    const { req, res, json } = mockReqRes();
+
+    await controller.getOptimizationRules(req, res);
+
+    const { rules } = json.mock.calls[0][0].data;
+    const nonConfigurable = rules.filter((r: any) => r.id !== 'ec2_idle' && r.id !== 'lambda_low_usage');
+    expect(nonConfigurable.length).toBeGreaterThan(0);
+    for (const rule of nonConfigurable) {
+      expect(rule.configurable).toBe(false);
+      expect(rule.parameters).toEqual([]);
+    }
+  });
 });
