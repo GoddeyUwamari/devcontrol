@@ -31,7 +31,23 @@ router.get('/analysis-runs', authenticateToken, (req, res) => controller.getAnal
 
 // Optimization Rule Registry catalog (implemented + planned rules, grouped
 // by service) -- also must be registered before /:id, same reason as above.
+// Not Enterprise-gated: this returns only static parameter DEFINITIONS
+// (which rules are configurable, their type/default/min/max/unit), never any
+// organization's actual configured value -- see the controller method's own
+// doc comment for why that split is safe.
 router.get('/optimization-rules', authenticateToken, (req, res) => controller.getOptimizationRules(req, res));
+
+// Enterprise Workstream 3B, Phase E: Enterprise Optimization Controls API.
+// GET returns this organization's actual effective configuration (default or
+// override) for every configurable rule/parameter -- Enterprise-gated,
+// unlike the public catalog above, since this is organization-specific data.
+// PUT/DELETE mutate that organization's override. All three are registered
+// before /:id below for the same route-ordering reason as /optimization-rules
+// itself, and organizationId is always taken from the authenticated request
+// context inside the controller -- never accepted from the URL or body.
+router.get('/optimization-rules/configuration', authenticateToken, requireEnterprise, (req, res) => controller.getOptimizationRulesConfiguration(req, res));
+router.put('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireEnterprise, (req, res) => controller.updateOptimizationRuleConfiguration(req, res));
+router.delete('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireEnterprise, (req, res) => controller.resetOptimizationRuleConfiguration(req, res));
 
 // Analyze AWS resources (create recommendations)
 router.post('/analyze', authenticateToken, (req, res) => controller.analyze(req, res));

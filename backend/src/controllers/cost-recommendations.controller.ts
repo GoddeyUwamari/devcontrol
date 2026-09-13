@@ -6,11 +6,19 @@ import { RemediationService } from '../services/remediation.service';
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
-import { ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, getOptimizationRules, getOptimizationRuleSummary } from '../config/optimization-rules';
+import {
+  ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
+  getOptimizationRules,
+  getOptimizationRuleSummary,
+  OPTIMIZATION_RULE_PARAMETERS,
+  getOptimizationRuleParameterDefinition,
+} from '../config/optimization-rules';
+import { OptimizationRuleConfigService, OptimizationRuleConfigValidationError } from '../services/optimization-rule-config.service';
 
 const repository = new CostRecommendationsRepository();
 const analysisRunsRepository = new CostAnalysisRunsRepository();
 const remediationService = new RemediationService(pool);
+const optimizationRuleConfigService = new OptimizationRuleConfigService(pool);
 
 /**
  * Maps a raw analyzeAllResources() failure into a safe, non-leaking message
@@ -138,13 +146,35 @@ export class CostRecommendationsController {
    * app/(app)/cost-optimization/page.tsx, which previously hardcoded its own
    * SCAN_CHECKS list and could silently drift from what analyzeAllResources()
    * actually runs.
+   *
+   * Enterprise Workstream 3B, Phase E: each rule entry additionally carries
+   * `configurable` and `parameters` -- static parameter DEFINITIONS only
+   * (type/default/min/max/unit), never any organization's actual effective
+   * value or override. This is why extending this existing, non-Enterprise-
+   * gated catalog is safe: "ec2_idle supports a tunable CPU threshold" is
+   * product metadata available to every tier (drives upsell messaging); an
+   * organization's actual configured value is a separate, Enterprise-gated
+   * concern -- see getOptimizationRulesConfiguration() below, never
+   * accidentally exposed here.
    */
   async getOptimizationRules(req: Request, res: Response): Promise<void> {
     try {
+      const rules = getOptimizationRules().map((rule) => {
+        const parameters = OPTIMIZATION_RULE_PARAMETERS.filter((p) => p.ruleId === rule.id).map((p) => ({
+          parameterId: p.parameterId,
+          type: p.type,
+          default: p.default,
+          min: p.min,
+          max: p.max,
+          unit: p.unit,
+        }));
+        return { ...rule, configurable: parameters.length > 0, parameters };
+      });
+
       const response: ApiResponse = {
         success: true,
         data: {
-          rules: getOptimizationRules(),
+          rules,
           summary: getOptimizationRuleSummary(),
         },
       };
@@ -154,6 +184,138 @@ export class CostRecommendationsController {
       const response: ApiResponse = {
         success: false,
         error: 'Failed to fetch optimization rule catalog',
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * GET /api/cost-recommendations/optimization-rules/configuration
+   * Enterprise Workstream 3B, Phase E. This organization's actual effective
+   * configuration (default or override, plus provenance) for every
+   * configurable rule/parameter -- the org-specific data deliberately kept
+   * out of the public catalog above. Enterprise-gated at the route level
+   * (see cost-recommendations.routes.ts); this method itself still scopes
+   * every resolution to the authenticated caller's own organizationId, never
+   * a client-supplied one.
+   */
+  async getOptimizationRulesConfiguration(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const data = await Promise.all(
+        OPTIMIZATION_RULE_PARAMETERS.map(async (definition) => {
+          const effective = await optimizationRuleConfigService.resolveEffectiveConfig(
+            organizationId,
+            definition.ruleId,
+            definition.parameterId
+          );
+          return {
+            ruleId: definition.ruleId,
+            parameterId: definition.parameterId,
+            value: effective.value,
+            source: effective.source,
+            default: definition.default,
+            min: definition.min,
+            max: definition.max,
+            unit: definition.unit,
+            type: definition.type,
+          };
+        })
+      );
+
+      const response: ApiResponse = { success: true, data };
+      res.json(response);
+    } catch (error) {
+      console.error('Error fetching optimization rule configuration:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: 'Failed to fetch optimization rule configuration',
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * PUT /api/cost-recommendations/optimization-rules/configuration/:ruleId/:parameterId
+   * Enterprise Workstream 3B, Phase E. Sets (upserts) this organization's
+   * override for one parameter. Enterprise-gated at the route level.
+   * organizationId always comes from the authenticated request context,
+   * never from the URL or body -- :ruleId/:parameterId identify WHICH
+   * parameter, not WHOSE organization.
+   */
+  async updateOptimizationRuleConfiguration(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { ruleId, parameterId } = req.params;
+      const rawValue = req.body?.value;
+      const value = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
+
+      const updated = await optimizationRuleConfigService.upsertOverride(organizationId, ruleId, parameterId, value);
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          ruleId: updated.ruleId,
+          parameterId: updated.parameterId,
+          value: updated.value,
+          source: 'organization_override',
+        },
+        message: 'Configuration updated',
+      };
+      res.json(response);
+    } catch (error: any) {
+      console.error('Error updating optimization rule configuration:', error);
+      const status = error instanceof OptimizationRuleConfigValidationError ? 400 : 500;
+      const response: ApiResponse = {
+        success: false,
+        error: error?.message || 'Failed to update optimization rule configuration',
+      };
+      res.status(status).json(response);
+    }
+  }
+
+  /**
+   * DELETE /api/cost-recommendations/optimization-rules/configuration/:ruleId/:parameterId
+   * Enterprise Workstream 3B, Phase E. Resets this organization's parameter
+   * to the registry default by deleting its override row -- never by storing
+   * the default value (see optimization-rule-config.service.ts). Enterprise-
+   * gated at the route level. Rejects an unsupported rule/parameter pair
+   * with 400 rather than silently no-op'ing, so a client can't mistake a
+   * garbage combination for a successful reset.
+   */
+  async resetOptimizationRuleConfiguration(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { ruleId, parameterId } = req.params;
+      if (!getOptimizationRuleParameterDefinition(ruleId, parameterId)) {
+        res.status(400).json({ success: false, error: `Unsupported rule/parameter combination: ${ruleId}/${parameterId}` });
+        return;
+      }
+
+      await optimizationRuleConfigService.deleteOverride(organizationId, ruleId, parameterId);
+
+      const response: ApiResponse = { success: true, message: 'Configuration reset to default' };
+      res.json(response);
+    } catch (error) {
+      console.error('Error resetting optimization rule configuration:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: 'Failed to reset optimization rule configuration',
       };
       res.status(500).json(response);
     }

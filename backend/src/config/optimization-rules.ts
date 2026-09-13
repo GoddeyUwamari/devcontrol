@@ -387,3 +387,86 @@ export function getOptimizationRuleSummary(): OptimizationRuleSummary {
     services,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Enterprise Workstream 3B: configurable-parameter definitions.
+//
+// This is product-defined default/metadata for the two rules 3B makes
+// customer-tunable -- NOT a second registry. It lives here, next to
+// OPTIMIZATION_RULES, for the same reason that array does: static,
+// AWS-call-free, DB-query-free data that both the analysis service and the
+// read-only API surface can import.
+//
+// organization_optimization_rule_configs (see its migration,
+// 202609122100_create_organization_optimization_rule_configs.sql) stores
+// only an organization's *override* of these defaults -- this table remains
+// the single source of truth for which (ruleId, parameterId) pairs exist,
+// their type, bounds, and unit. The database's CHECK constraints mirror
+// these numbers by hand for defense-in-depth; they are not an independent
+// second opinion that could disagree with this table, and must be updated
+// together with it.
+//
+// As of this commit (3B Phase C), nothing in cost-optimization.service.ts
+// reads from this table or organization_optimization_rule_configs yet --
+// detector wiring is Phase D, explicitly deferred.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type OptimizationRuleParameterType = 'number' | 'integer';
+
+export interface OptimizationRuleParameterDefinition {
+  /** Must match an id in OPTIMIZATION_RULES. */
+  ruleId: string;
+  parameterId: string;
+  type: OptimizationRuleParameterType;
+  default: number;
+  min: number;
+  max: number;
+  /** Display/provenance only -- never parsed or interpreted by a detector. */
+  unit: string;
+}
+
+/**
+ * The existing detectIdleEC2Instances() has always used a bare, unbounded
+ * `avgCPU < 5` literal -- [1, 20] is a NEW product constraint introduced by
+ * 3B, not inherited from existing code, which enforced no range at all.
+ * Comparison semantics are unchanged: qualifies when observed average CPU
+ * over the existing 7-day evidence window is strictly less than this value.
+ */
+const EC2_IDLE_CPU_THRESHOLD_PARAMETER: OptimizationRuleParameterDefinition = {
+  ruleId: 'ec2_idle',
+  parameterId: 'cpu_threshold_percent',
+  type: 'number',
+  default: 5,
+  min: 1,
+  max: 20,
+  unit: 'percent',
+};
+
+/**
+ * The existing LAMBDA_LOW_USAGE_MAX_INVOCATIONS_30D constant (=10) has never
+ * been bounded -- [0, 1000] is a NEW product constraint introduced by 3B.
+ * Comparison semantics are unchanged: qualifies when observed invocations
+ * over the existing 30-day evidence window (LAMBDA_USAGE_WINDOW_DAYS,
+ * lambda-usage.util.ts) are less than or equal to this value.
+ */
+const LAMBDA_LOW_USAGE_MAX_INVOCATIONS_PARAMETER: OptimizationRuleParameterDefinition = {
+  ruleId: 'lambda_low_usage',
+  parameterId: 'max_invocations',
+  type: 'integer',
+  default: 10,
+  min: 0,
+  max: 1000,
+  unit: 'invocations_per_30d',
+};
+
+export const OPTIMIZATION_RULE_PARAMETERS: OptimizationRuleParameterDefinition[] = [
+  EC2_IDLE_CPU_THRESHOLD_PARAMETER,
+  LAMBDA_LOW_USAGE_MAX_INVOCATIONS_PARAMETER,
+];
+
+export function getOptimizationRuleParameterDefinition(
+  ruleId: string,
+  parameterId: string
+): OptimizationRuleParameterDefinition | undefined {
+  return OPTIMIZATION_RULE_PARAMETERS.find((p) => p.ruleId === ruleId && p.parameterId === parameterId);
+}

@@ -49,6 +49,7 @@ import {
 } from '../config/aws-pricing';
 import { getBucketLifecycleStatus, hasOnlyNonExpiringRules } from './s3-lifecycle.util';
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
+import { OptimizationRuleConfigService, EffectiveOptimizationRuleConfig } from './optimization-rule-config.service';
 import { describeDynamoDBTable, DynamoDBTableConfig } from './dynamodb-table.util';
 import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
 import {
@@ -61,12 +62,15 @@ import {
   DYNAMODB_CAPACITY_PERIOD_SECONDS,
 } from './dynamodb-capacity-analysis.util';
 
-// Heuristic threshold, same convention as idle EC2's "<5% CPU over 7 days":
-// an explicit, disclosed number rather than a hidden one. 30-day window
-// (longer than idle EC2's 7-day window) because Lambda invocation patterns
-// legitimately include weekly/monthly batch jobs that a 7-day window would
-// misclassify as unused.
-const LAMBDA_LOW_USAGE_MAX_INVOCATIONS_30D = 10;
+// Enterprise Workstream 3B: the low-usage threshold (default 10, same
+// heuristic rationale this comment previously documented -- 30-day window,
+// longer than idle EC2's 7-day window, because Lambda invocation patterns
+// legitimately include weekly/monthly batch jobs a 7-day window would
+// misclassify as unused) now lives as the canonical default in
+// OPTIMIZATION_RULE_PARAMETERS (config/optimization-rules.ts), resolved
+// per-organization by analyzeAllResources() before this detector runs. No
+// hardcoded constant here anymore -- see detectLowUsageLambdaFunctions()'s
+// `config` parameter.
 
 // Phase 3E, dynamodb_capacity: locked v1 eligibility policy (see the
 // methodology checkpoints -- do not change without a new methodology
@@ -170,6 +174,13 @@ export interface DetectorObservation {
 }
 
 class CostOptimizationService {
+  // Enterprise Workstream 3B, Phase D: resolves per-organization overrides of
+  // ec2_idle/cpu_threshold_percent and lambda_low_usage/max_invocations.
+  // Instantiated once, reused across scans -- resolveEffectiveConfig() itself
+  // does no caching (see optimization-rule-config.service.ts), so this is just
+  // avoiding repeated object construction, not a data cache.
+  private readonly optimizationRuleConfigService = new OptimizationRuleConfigService(pool);
+
   /**
    * Main analysis function - detects all cost optimization opportunities
    * for the given organization's connected AWS account.
@@ -194,15 +205,44 @@ class CostOptimizationService {
       return { observations: [], riRecommendations: [] };
     }
 
+    // Enterprise Workstream 3B: resolve both configurable rules' effective
+    // thresholds ONCE per scan, before any detector runs -- never queried
+    // from inside a detector, never resolved per-resource, never cached (see
+    // optimization-rule-config.service.ts). A resolution failure (e.g. a
+    // database error) is NOT the same thing as "no override exists" --
+    // resolveEffectiveConfig() already handles "no override" internally by
+    // returning the registry default and never throws for that case. If it
+    // throws here, we genuinely do not know this organization's configured
+    // threshold, so the corresponding detector below is skipped entirely and
+    // reported as a failed category (success: false) via the existing
+    // DetectorResult convention, exactly like any other detector's AWS-call
+    // failure -- never silently run with the hardcoded default as if that
+    // were a real, confirmed answer.
+    const [ec2IdleConfigResult, lambdaLowUsageConfigResult] = await Promise.allSettled([
+      this.optimizationRuleConfigService.resolveEffectiveConfig(organizationId, 'ec2_idle', 'cpu_threshold_percent'),
+      this.optimizationRuleConfigService.resolveEffectiveConfig(organizationId, 'lambda_low_usage', 'max_invocations'),
+    ]);
+
+    if (ec2IdleConfigResult.status === 'rejected') {
+      console.error(`[CostOptimization] Failed to resolve ec2_idle configuration for org ${organizationId} -- skipping this scan's idle-EC2 detection:`, ec2IdleConfigResult.reason);
+    }
+    if (lambdaLowUsageConfigResult.status === 'rejected') {
+      console.error(`[CostOptimization] Failed to resolve lambda_low_usage configuration for org ${organizationId} -- skipping this scan's low-usage-Lambda detection:`, lambdaLowUsageConfigResult.reason);
+    }
+
     try {
       const [idleEC2, oversizedRDS, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities] = await Promise.all([
-        this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch),
+        ec2IdleConfigResult.status === 'fulfilled'
+          ? this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch, ec2IdleConfigResult.value)
+          : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
         this.detectOversizedRDSInstances(clients.rds),
         this.detectUnusedElasticIPs(clients.ec2),
         this.detectUnattachedEBSVolumes(clients.ec2),
         this.detectGp2ToGp3Migrations(clients.ec2),
         this.detectS3LifecycleOptimization(clients.s3, clients.cloudWatch),
-        this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch),
+        lambdaLowUsageConfigResult.status === 'fulfilled'
+          ? this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch, lambdaLowUsageConfigResult.value)
+          : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
         this.detectDynamoDBCapacityOptimization(organizationId, clients),
         this.detectDynamoDBOnDemandVsProvisionedOptimization(organizationId, clients),
         this.detectReservedInstanceOpportunities(clients.ec2),
@@ -243,11 +283,16 @@ class CostOptimizationService {
   }
 
   /**
-   * Detect idle EC2 instances (CPU < 5% for 7+ days)
+   * Detect idle EC2 instances (CPU below the configured threshold, default
+   * 5%, for 7+ days). Enterprise Workstream 3B: the threshold is a
+   * per-organization EffectiveOptimizationRuleConfig, resolved once by the
+   * caller (analyzeAllResources()) -- this method never queries Postgres
+   * itself and must be able to assume `config` is already valid.
    */
   private async detectIdleEC2Instances(
     ec2Client: EC2Client,
-    cloudWatchClient: CloudWatchClient
+    cloudWatchClient: CloudWatchClient,
+    config: EffectiveOptimizationRuleConfig
   ): Promise<DetectorResult> {
     try {
       const command = new DescribeInstancesCommand({
@@ -266,14 +311,27 @@ class CostOptimizationService {
         for (const instance of reservation.Instances || []) {
           if (!instance.InstanceId) continue;
 
-          // Check CPU utilization for the last 7 days
+          // Check CPU utilization for the last 7 days. null means CloudWatch
+          // returned no datapoints -- AWS/EC2's CPUUtilization publishes
+          // continuously for any running instance, so this is anomalous/
+          // unavailable telemetry, never a legitimate "genuinely 0% CPU"
+          // signal (contrast with Lambda's Invocations metric, where zero
+          // datapoints IS the documented correct signal for zero invocations
+          // -- see lambda-usage.util.ts's header comment; deliberately not
+          // copying that behavior here). A thrown CloudWatch/API error
+          // propagates out of getAverageCPUUtilization() to this method's own
+          // catch block below, failing this whole detector category via the
+          // existing DetectorResult.success:false convention, rather than
+          // being caught here and treated as "not idle."
           const avgCPU = await this.getAverageCPUUtilization(
             cloudWatchClient,
             instance.InstanceId,
             7
           );
 
-          if (avgCPU < 5) {
+          if (avgCPU === null) continue; // insufficient evidence -- never assumed idle
+
+          if (avgCPU < config.value) {
             const nameTag = instance.Tags?.find((tag) => tag.Key === 'Name');
             const monthlyCost = this.estimateEC2Cost(instance.InstanceType || '');
 
@@ -290,6 +348,11 @@ class CostOptimizationService {
                 instance_type: instance.InstanceType,
                 average_cpu: avgCPU,
                 days_analyzed: 7,
+                configuration: {
+                  parameter: 'cpu_threshold_percent',
+                  value: config.value,
+                  source: config.source,
+                },
               },
             });
           }
@@ -699,11 +762,20 @@ class CostOptimizationService {
    * getLambdaUsageOverWindow() (lambda-usage.util.ts), the same source
    * awsResourceDiscovery.ts now uses for `estimated_monthly_cost`, so
    * inventory and optimization can never disagree about a function's usage.
+   *
+   * Enterprise Workstream 3B: the qualifying threshold is a per-organization
+   * EffectiveOptimizationRuleConfig, resolved once by the caller
+   * (analyzeAllResources()) -- this method never queries Postgres itself and
+   * must be able to assume `config` is already valid. getLambdaUsageOverWindow()
+   * itself is untouched -- same shared 30-day source, same null-means-
+   * CloudWatch-call-failed semantics, same zero-datapoints-means-genuine-zero
+   * interpretation documented in its own header.
    */
   private async detectLowUsageLambdaFunctions(
     organizationId: string,
     lambdaClient: LambdaClient,
-    cloudWatchClient: CloudWatchClient
+    cloudWatchClient: CloudWatchClient,
+    config: EffectiveOptimizationRuleConfig
   ): Promise<DetectorResult> {
     try {
       const response = await lambdaClient.send(new ListFunctionsCommand({}));
@@ -716,7 +788,7 @@ class CostOptimizationService {
         if (usage === null) continue; // CloudWatch call itself failed -- never assumed zero
 
         const { invocations, avgDurationMs } = usage;
-        if (invocations > LAMBDA_LOW_USAGE_MAX_INVOCATIONS_30D) continue; // normal usage
+        if (invocations > config.value) continue; // normal usage
 
         const memoryMB = func.MemorySize || 128;
         const monthlyCost = estimateLambdaMonthlyCostFromUsage(invocations, avgDurationMs, memoryMB);
@@ -737,6 +809,11 @@ class CostOptimizationService {
             avg_duration_ms: avgDurationMs,
             memory_mb: memoryMB,
             usage_state: invocations === 0 ? 'zero_usage' : 'low_usage',
+            configuration: {
+              parameter: 'max_invocations',
+              value: config.value,
+              source: config.source,
+            },
           },
         });
       }
@@ -1777,11 +1854,35 @@ class CostOptimizationService {
   /**
    * Get average CPU utilization from CloudWatch
    */
+  /**
+   * Enterprise Workstream 3B, Phase D correction: previously returned `0` for
+   * BOTH "CloudWatch returned zero datapoints" and "the CloudWatch API call
+   * itself threw" -- silently making an idle-EC2 recommendation qualify an
+   * instance whose real CPU usage was actually unknown, not genuinely zero.
+   *
+   * Corrected semantics:
+   *   - a genuine average computed from real datapoints -> that number,
+   *     including a legitimate 0 when the datapoints themselves say so.
+   *   - zero datapoints (no exception, just nothing returned) -> `null`.
+   *     AWS/EC2's CPUUtilization publishes continuously for any running
+   *     instance, so an empty result here is anomalous/unavailable
+   *     telemetry, not a valid "genuinely idle" signal. This is the opposite
+   *     of Lambda's Invocations metric, where zero datapoints IS the
+   *     documented correct signal for zero invocations -- see
+   *     lambda-usage.util.ts's header comment for why; deliberately not
+   *     applying that same interpretation here.
+   *   - a thrown error from the API call itself -> no longer caught here.
+   *     It propagates to detectIdleEC2Instances()'s own try/catch, which
+   *     fails that whole detector category via the existing
+   *     DetectorResult.success:false convention -- the same mechanism every
+   *     other detector already uses for an AWS-call failure, rather than a
+   *     new, per-resource failure concept this change does not introduce.
+   */
   private async getAverageCPUUtilization(
     cloudWatchClient: CloudWatchClient,
     instanceId: string,
     days: number
-  ): Promise<number> {
+  ): Promise<number | null> {
     try {
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - days * 24 * 60 * 60 * 1000);
@@ -1804,7 +1905,7 @@ class CostOptimizationService {
       const response = await cloudWatchClient.send(command);
 
       if (!response.Datapoints || response.Datapoints.length === 0) {
-        return 0;
+        return null; // insufficient evidence -- never assumed 0% CPU
       }
 
       const sum = response.Datapoints.reduce(
@@ -1814,7 +1915,7 @@ class CostOptimizationService {
       return sum / response.Datapoints.length;
     } catch (error) {
       console.error(`Error getting CPU utilization for ${instanceId}:`, error);
-      return 0;
+      throw error; // propagate -- see detectIdleEC2Instances()'s try/catch
     }
   }
 
