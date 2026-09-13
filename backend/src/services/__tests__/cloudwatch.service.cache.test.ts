@@ -37,6 +37,12 @@ function metricsFixture(overrides: Partial<CloudWatchMetrics> = {}): CloudWatchM
       ecs: { shown: 0, total: 0 },
       eks: { shown: 0, total: 0 },
     },
+    // CloudWatch Scalability Phase 2D: complete-fleet aggregate fields, required on
+    // every CloudWatchMetrics -- this cache-layer test doesn't exercise their
+    // computation (that's covered by cloudwatch.service.fleet-pagination.test.ts), so
+    // an all-zero/healthy fixture is sufficient here.
+    healthSummary: { total: 0, healthy: 0, degraded: 0, critical: 0, down: 0, monitored: 0 },
+    systemStatus: 'healthy',
     services: [],
     capturedAt: new Date().toISOString(),
     ...overrides,
