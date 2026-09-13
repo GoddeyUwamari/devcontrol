@@ -25,9 +25,11 @@ export interface AWSResource {
   status: string | null;
   estimated_monthly_cost: number;
   actual_monthly_cost: number;
-  is_encrypted: boolean;
+  // null = unknown/unavailable/not evaluated -- never treat as false. See
+  // backend/src/types/aws-resources.types.ts's AWSResource for the source of truth.
+  is_encrypted: boolean | null;
   is_public: boolean;
-  has_backup: boolean;
+  has_backup: boolean | null;
   compliance_issues: ComplianceIssue[];
   last_synced_at: string | null;
   first_discovered_at: string;

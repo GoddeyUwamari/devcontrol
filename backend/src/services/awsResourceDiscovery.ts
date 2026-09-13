@@ -40,6 +40,7 @@ import {
 } from '@aws-sdk/client-cloudfront';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
+import { createAwsBackupEvidenceCache, checkEBSBackupCoverage, BackupEvidenceResult } from './aws-backup-evidence.util';
 import {
   AWSResource,
   CreateAWSResourceInput,
@@ -192,6 +193,13 @@ export class AWSResourceDiscoveryService {
       console.log(`✅ [Discovery] AWS clients created successfully`);
       console.log(`🌍 [Discovery] Target region: ${awsClients.region}`);
 
+      // Security Truthfulness #41: one shared per-run AWS Backup evidence cache, so an
+      // EC2 instance's own has_backup lookup and every attached EBS volume's
+      // parent-instance fallback lookup reuse a single AWS call per unique ARN instead of
+      // re-querying AWS Backup for the same instance multiple times. AWS Backup has no
+      // multi-ARN batch API -- this cache is the only available N+1 mitigation.
+      const checkBackupEvidence = createAwsBackupEvidenceCache(awsClients.backup!);
+
       const errors: string[] = [];
       let totalDiscovered = 0;
       let totalUpdated = 0;
@@ -202,7 +210,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('ec2', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EC2 instances...`);
         try {
-          const ec2Resources = await this.discoverEC2Instances(organizationId, awsClients.ec2!, awsClients.region);
+          const ec2Resources = await this.discoverEC2Instances(organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence);
           for (const resource of ec2Resources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -228,7 +236,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('ebs', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EBS volumes...`);
         try {
-          const ebsResources = await this.discoverEBSVolumes(organizationId, awsClients.ec2!, awsClients.region);
+          const ebsResources = await this.discoverEBSVolumes(organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence);
           for (const resource of ebsResources) {
             ebsArnsFound.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
@@ -769,7 +777,9 @@ export class AWSResourceDiscoveryService {
   private async discoverEC2Instances(
     organizationId: string,
     ec2Client: EC2Client,
-    region: string
+    region: string,
+    accountId: string | undefined,
+    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>
   ): Promise<CreateAWSResourceInput[]> {
     const instances: Instance[] = [];
     let pageCount = 0;
@@ -802,6 +812,14 @@ export class AWSResourceDiscoveryService {
         launch_time: instance.LaunchTime?.toISOString(),
       };
 
+      // Security Truthfulness #41: has_backup is real AWS Backup recovery-point evidence,
+      // never a hardcoded value. A real ARN (with the actual account ID) is required for
+      // the AWS Backup API call -- resource_arn below uses a wildcard account segment and
+      // is not usable for this lookup. Without a known account ID, the answer is
+      // genuinely unknown -- never fabricated as false, and no AWS call is even attempted.
+      const realInstanceArn = accountId ? `arn:aws:ec2:${region}:${accountId}:instance/${instance.InstanceId}` : null;
+      const hasBackup: BackupEvidenceResult = realInstanceArn ? await checkBackupEvidence(realInstanceArn) : null;
+
       resources.push({
         organization_id: organizationId,
         resource_arn: `arn:aws:ec2:${region}:*:instance/${instance.InstanceId}`,
@@ -815,7 +833,7 @@ export class AWSResourceDiscoveryService {
         estimated_monthly_cost: this.estimateEC2Cost(instance.InstanceType || 'unknown'),
         is_encrypted: this.checkEC2Encryption(instance, volumeEncryptionMap),
         is_public: !!instance.PublicIpAddress,
-        has_backup: false, // Will be determined by compliance scanner
+        has_backup: hasBackup,
       });
     }
 
@@ -832,7 +850,9 @@ export class AWSResourceDiscoveryService {
   private async discoverEBSVolumes(
     organizationId: string,
     ec2Client: EC2Client,
-    region: string
+    region: string,
+    accountId: string | undefined,
+    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>
   ): Promise<CreateAWSResourceInput[]> {
     const volumes: Volume[] = [];
     let pageCount = 0;
@@ -861,6 +881,20 @@ export class AWSResourceDiscoveryService {
         attached_instance_id: attachment?.InstanceId,
       };
 
+      // Security Truthfulness #41: same real AWS Backup evidence model as EC2, plus the
+      // parent-instance fallback -- AWS Backup can protect an EC2 instance as a whole,
+      // implicitly covering its attached volumes, without a separate per-volume
+      // protected-resource entry existing. Checking only the volume's own ARN would
+      // under-report that valid coverage. No known account ID -> unknown, no AWS call.
+      const volumeRegion = volume.AvailabilityZone?.slice(0, -1) || region;
+      const realVolumeArn = accountId ? `arn:aws:ec2:${volumeRegion}:${accountId}:volume/${volume.VolumeId}` : null;
+      const realParentInstanceArn = accountId && attachment?.InstanceId
+        ? `arn:aws:ec2:${volumeRegion}:${accountId}:instance/${attachment.InstanceId}`
+        : null;
+      const hasBackup: BackupEvidenceResult = realVolumeArn
+        ? await checkEBSBackupCoverage(checkBackupEvidence, realVolumeArn, realParentInstanceArn)
+        : null;
+
       resources.push({
         organization_id: organizationId,
         resource_arn: `arn:aws:ec2:${volume.AvailabilityZone?.slice(0, -1) || region}:*:volume/${volume.VolumeId}`,
@@ -874,7 +908,7 @@ export class AWSResourceDiscoveryService {
         estimated_monthly_cost: this.estimateEBSCost(volume.VolumeType, volume.Size || 0),
         is_encrypted: volume.Encrypted || false,
         is_public: false,
-        has_backup: false, // Determined by snapshot presence, not tracked here
+        has_backup: hasBackup,
       });
     }
 
@@ -1095,9 +1129,16 @@ export class AWSResourceDiscoveryService {
         resource.status,
         resource.estimated_monthly_cost ?? null,
         resource.actual_monthly_cost || 0,
-        resource.is_encrypted || false,
+        // Security Truthfulness #40/#41: `undefined` (this resource type never set the
+        // field at all -- e.g. Lambda/ALB/DynamoDB/ECS/EKS for has_backup) still defaults
+        // to `false`, preserving exact prior behavior for every type this PR doesn't
+        // touch. A genuine `null` (EC2/EBS's AWS Backup lookup was attempted and came
+        // back indeterminate) must be preserved as-is -- `|| false` would have silently
+        // turned that real "unknown" into a fabricated "false", exactly what the locked
+        // decision prohibits.
+        resource.is_encrypted === undefined ? false : resource.is_encrypted,
         resource.is_public || false,
-        resource.has_backup || false,
+        resource.has_backup === undefined ? false : resource.has_backup,
         JSON.stringify(resource.compliance_issues || []),
       ]
     );
@@ -1547,7 +1588,16 @@ export class AWSResourceDiscoveryService {
               : { usage_state: 'unavailable' }),
           },
           status: (func.State || 'Active') as ResourceStatus,
-          is_encrypted: !!func.Environment?.Variables,
+          // Security Truthfulness #40: Lambda is always encrypted at rest -- with an
+          // AWS-owned/AWS-managed key by default, or a customer-managed key if
+          // func.KMSKeyArn is set (see FunctionConfiguration.KMSKeyArn in the AWS SDK:
+          // "If you don't provide a customer managed key, Lambda uses an Amazon Web
+          // Services owned key or an Amazon Web Services managed key"). The presence of
+          // environment variables has no relationship to encryption and previously
+          // produced a false "not encrypted" finding for any function without them.
+          // Always true -- never a new customer-managed-KMS field; nothing in this
+          // product currently consumes that distinction for Lambda (see #40 scoping).
+          is_encrypted: true,
           // null (never 0) when CloudWatch usage couldn't be determined -- see
           // doc comment above and upsertResource's COALESCE-based merge.
           estimated_monthly_cost: usage

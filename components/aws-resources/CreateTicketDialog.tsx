@@ -45,7 +45,10 @@ export function CreateTicketDialog({
     const criticalIssues = selectedResources.filter(
       r => r.compliance_issues?.some((i: any) => i.severity === 'critical')
     );
-    const unencrypted = selectedResources.filter(r => !r.is_encrypted);
+    // Security Truthfulness #40: a remediation ticket should contain confirmed issues --
+    // is_encrypted === false only. A resource with unknown (null) encryption status is
+    // not confirmed remediation work and must not be treated as one.
+    const unencrypted = selectedResources.filter(r => r.is_encrypted === false);
     const publicResources = selectedResources.filter(r => r.is_public);
 
     let autoTitle = '';
@@ -69,7 +72,7 @@ export function CreateTicketDialog({
     selectedResources.slice(0, 10).forEach((resource) => {
       autoDescription += `• ${resource.resource_name || resource.resource_id} (${resource.resource_type})\n`;
       autoDescription += `  Region: ${resource.region}\n`;
-      if (!resource.is_encrypted) {
+      if (resource.is_encrypted === false) {
         autoDescription += `  ⚠️ Not encrypted\n`;
       }
       if (resource.is_public) {
