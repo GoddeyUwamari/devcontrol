@@ -62,6 +62,44 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
 
   let orgId: string;
   const createdOrgIds: string[] = [];
+  const fixtureTablesCreated: string[] = [];
+
+  async function tableExists(tableName: string): Promise<boolean> {
+    const { rows } = await pool.query('SELECT to_regclass($1) AS reg', [`public.${tableName}`]);
+    return rows[0].reg !== null;
+  }
+
+  /**
+   * aws_accounts is defined only in backend/migrations/ (019/020) -- this project's own
+   * documented non-canonical directory (see database/migrations/README.md), not scanned
+   * by CI's schema bootstrap (.github/scripts/ci-bootstrap-schema.js sources only
+   * database/migrations/ and database/migrations-admin/). A local dev database typically
+   * already has this table (applied out-of-band at some point), but a from-scratch CI
+   * database does not. Verbatim from aws-cost-freshness.test.ts's own already-CI-proven
+   * reconstruction, reused rather than re-derived, so there is exactly one definition of
+   * "what aws_accounts looks like when the canonical migration set doesn't provide it"
+   * in this backend.
+   */
+  async function ensureFixtureSchema(): Promise<void> {
+    if (!(await tableExists('aws_accounts'))) {
+      await pool.query(`
+        CREATE TABLE aws_accounts (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          org_id UUID NOT NULL,
+          role_arn TEXT NOT NULL,
+          account_id VARCHAR(32) NOT NULL,
+          nickname VARCHAR(255),
+          external_id VARCHAR(64),
+          region VARCHAR(32) DEFAULT 'us-east-1',
+          connected_at TIMESTAMPTZ,
+          status VARCHAR(32),
+          CONSTRAINT aws_accounts_org_id_key UNIQUE (org_id),
+          CONSTRAINT aws_accounts_account_id_key UNIQUE (account_id)
+        )
+      `);
+      fixtureTablesCreated.push('aws_accounts');
+    }
+  }
 
   async function insertOrgWithAccountAndResources(resourceTypes: Array<{ id: string; type: string; arn: string; extraMeta?: Record<string, any> }>) {
     const { rows } = await pool.query(
@@ -102,7 +140,8 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     return { cloudWatch, ecs, eks };
   }
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    await ensureFixtureSchema();
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({
       total: 0,
       byService: [],
@@ -124,6 +163,9 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
       await pool.query(`DELETE FROM aws_resources WHERE organization_id = ANY($1)`, [createdOrgIds]);
       await pool.query(`DELETE FROM aws_accounts WHERE org_id = ANY($1)`, [createdOrgIds]);
       await pool.query(`DELETE FROM organizations WHERE id = ANY($1)`, [createdOrgIds]);
+    }
+    if (fixtureTablesCreated.includes('aws_accounts')) {
+      await pool.query('DROP TABLE IF EXISTS aws_accounts');
     }
     await pool.end();
     await appPool.end();
