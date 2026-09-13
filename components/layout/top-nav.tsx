@@ -61,6 +61,7 @@ export const navItems: NavItem[] = [
     children: [
       { label: 'Cost Overview', href: '/costs', icon: DollarSign, desc: 'Real-time spend tracking' },
       { label: 'Optimization', href: '/cost-optimization', icon: TrendingDown, desc: 'AI savings recommendations' },
+      { label: 'Optimization Controls', href: '/cost-optimization/controls', icon: SlidersHorizontal, desc: 'Tune detection thresholds', badge: 'Enterprise' },
       { label: 'Forecast', href: '/forecast', icon: BarChart3, desc: 'Predictive budget forecasting' },
       { label: 'Invoices', href: '/invoices', icon: FileText, desc: 'Billing history' },
       { label: 'AI Reports', href: '/ai-reports', icon: Sparkles, desc: 'AI-generated cost reports' },
@@ -128,6 +129,7 @@ export const mobileSections = [
     items: [
       { label: 'Cost Overview', href: '/costs' },
       { label: 'Optimization', href: '/cost-optimization' },
+      { label: 'Optimization Controls', href: '/cost-optimization/controls' },
       { label: 'Forecast', href: '/forecast' },
       { label: 'Invoices', href: '/invoices' },
       { label: 'AI Reports', href: '/ai-reports' },
