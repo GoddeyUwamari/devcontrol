@@ -532,7 +532,38 @@ export interface SloResourceObservation {
   errorRatePercent: number | null
 }
 
+// CloudWatch Scalability Phase 2A: response cache for getMetrics(). 45s TTL, matching
+// the Phase 2 scoping decision (just under the frontend's existing 60s poll interval, so
+// a normal poll almost always hits a fresh entry). Mirrors the established pattern in
+// aws-cost.service.ts's monthlyCostCache/monthlyCostInFlight -- an in-process Map, not
+// Redis, because CloudWatchService (like AWSCostService) is instantiated once per
+// process (see cloudwatch.routes.ts) and PM2 runs devcontrol-api in fork_mode (a single
+// process), so no cross-instance staleness is possible today. Would need to move to a
+// shared store only if this deployment ever became multi-instance.
+const METRICS_CACHE_TTL_MS = 45 * 1000
+
+interface CachedMetricsEntry {
+  data: CloudWatchMetrics | null
+  cachedAt: number
+}
+
 export class CloudWatchService {
+  // Keyed by `${organizationId}:${resolvedRange}` -- see metricsCacheKey(). This cache is
+  // an efficiency layer only; it never widens who can see what. Every cached entry was
+  // itself produced by computeMetrics()'s own organization-scoped queries and AWS calls,
+  // so a cache hit returns exactly what a fresh call for that same org+range would have
+  // returned moments earlier -- tenant isolation is inherited from computeMetrics(), not
+  // reimplemented here.
+  private metricsCache = new Map<string, CachedMetricsEntry>()
+  // In-flight promise per cache key, so concurrent identical requests (e.g. two browser
+  // tabs polling the same org+range at once) share one upstream computation instead of
+  // each independently re-running the full AWS/CloudWatch sweep.
+  private metricsInFlight = new Map<string, Promise<CloudWatchMetrics | null>>()
+
+  private metricsCacheKey(organizationId: string, resolvedRange: MonitoringRange): string {
+    return `${organizationId}:${resolvedRange}`
+  }
+
   private async getAccount(organizationId: string): Promise<{ account_id: string; nickname: string | null } | null> {
     const result = await pool.query(
       `SELECT account_id, nickname
@@ -905,7 +936,14 @@ export class CloudWatchService {
     }
   }
 
-  async getMetrics(organizationId: string, range?: string): Promise<CloudWatchMetrics | null> {
+  /**
+   * CloudWatch Scalability Phase 2A: the actual AWS/CloudWatch sweep, unchanged from the
+   * pre-Phase-2A getMetrics() implementation (renamed only) -- no AWS API selection,
+   * batching, resource-evaluation cap, or health-evaluation semantics were touched here.
+   * Never call this directly from outside the class; getMetrics() below is the cached
+   * public entry point every caller (the /metrics route) should use.
+   */
+  private async computeMetrics(organizationId: string, range?: string): Promise<CloudWatchMetrics | null> {
     const account = await this.getAccount(organizationId)
     if (!account) return null
 
@@ -1097,6 +1135,54 @@ export class CloudWatchService {
       services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices, ...eksServices],
       capturedAt: new Date().toISOString(),
     }
+  }
+
+  /**
+   * CloudWatch Scalability Phase 2A: cached public entry point for the /metrics route.
+   * Wraps computeMetrics() with a 45s per-(organization, resolved range) response cache
+   * plus in-flight promise deduplication -- no AWS API selection, batching, resource cap,
+   * or health-evaluation semantics are touched; this method only decides *when* to call
+   * computeMetrics() versus reuse a recent result.
+   *
+   * `forceRefresh` bypasses the completed-result cache (a stored, possibly-up-to-45s-old
+   * answer) so a manual refresh always gets a genuinely fresh computeMetrics() call --
+   * but it still joins an already-in-flight computation for the same key if one exists,
+   * since an in-flight fetch is not stale data, it's a fresh one already underway.
+   *
+   * Only a *resolved* computeMetrics() result is ever cached: a rejected computation is
+   * never written to metricsCache, and its in-flight entry is removed in the `catch`
+   * below so the very next call (forced or not) starts a genuinely new attempt rather
+   * than replaying a failure or hanging on a promise that already settled.
+   */
+  async getMetrics(organizationId: string, range?: string, forceRefresh = false): Promise<CloudWatchMetrics | null> {
+    const resolvedRange = resolveRange(range)
+    const cacheKey = this.metricsCacheKey(organizationId, resolvedRange)
+
+    if (!forceRefresh) {
+      const cached = this.metricsCache.get(cacheKey)
+      if (cached && Date.now() - cached.cachedAt < METRICS_CACHE_TTL_MS) {
+        return cached.data
+      }
+    }
+
+    const existingInFlight = this.metricsInFlight.get(cacheKey)
+    if (existingInFlight) {
+      return existingInFlight
+    }
+
+    const fetchPromise = this.computeMetrics(organizationId, range)
+      .then((result) => {
+        this.metricsCache.set(cacheKey, { data: result, cachedAt: Date.now() })
+        this.metricsInFlight.delete(cacheKey)
+        return result
+      })
+      .catch((err) => {
+        this.metricsInFlight.delete(cacheKey)
+        throw err
+      })
+
+    this.metricsInFlight.set(cacheKey, fetchPromise)
+    return fetchPromise
   }
 
   /**

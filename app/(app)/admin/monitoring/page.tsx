@@ -191,8 +191,23 @@ export default function MonitoringPage() {
     }
   }, [])
 
-  const fetchCloudWatchMetrics = useCallback(async (range?: string) => {
-    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const url = `${API_URL}/api/cloudwatch/metrics${range ? `?range=${encodeURIComponent(range)}` : ''}`; const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data) { setCloudWatchMetrics(data.data); return data.data } return null } catch { return null }
+  // CloudWatch Scalability Phase 2A: `forceRefresh` maps to `?refresh=true`, the backend's
+  // explicit cache-bypass signal (CloudWatchService.getMetrics()) -- passed only from
+  // handleRefresh()/refreshAwsHealth(true) (manual refresh, error-state Retry), never
+  // from the automatic 60s poll, which should keep benefiting from the response cache.
+  const fetchCloudWatchMetrics = useCallback(async (range?: string, forceRefresh?: boolean) => {
+    try {
+      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
+      const params = new URLSearchParams()
+      if (range) params.set('range', range)
+      if (forceRefresh) params.set('refresh', 'true')
+      const query = params.toString()
+      const url = `${API_URL}/api/cloudwatch/metrics${query ? `?${query}` : ''}`
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+      const data = await res.json()
+      if (data.success && data.data) { setCloudWatchMetrics(data.data); return data.data }
+      return null
+    } catch { return null }
   }, [])
 
   // Monitoring Truthfulness Phase 1: DevControl's own platform status, sourced from
@@ -364,18 +379,23 @@ export default function MonitoringPage() {
   // state update (React state updates are not synchronous, which is what made the old
   // "call checkAwsConnection() then immediately read awsConnected" pattern racy). This is
   // strict await-ordering, not a timeout/delay.
-  const refreshAwsHealth = useCallback(async () => {
+  // `forceRefresh` (default false) is only ever true when called from handleRefresh() --
+  // the automatic mount/poll calls below always take the default, cached path.
+  const refreshAwsHealth = useCallback(async (forceRefresh = false) => {
     if (demoMode) { fetchMetrics(); return }
     const connected = await checkAwsConnection()
     if (connected) {
-      const cw = await fetchCloudWatchMetrics(timeRange)
+      const cw = await fetchCloudWatchMetrics(timeRange, forceRefresh)
       fetchMetrics(cw, true)
     } else {
       fetchMetrics(undefined, false)
     }
   }, [demoMode, checkAwsConnection, fetchCloudWatchMetrics, fetchMetrics, timeRange])
 
-  const handleRefresh = async () => { await refreshAwsHealth() }
+  // CloudWatch Scalability Phase 2A: the only call site that requests a forced refresh --
+  // the TimeRangeSelector's refresh button and the error-state Retry buttons all funnel
+  // through this, so a user explicitly asking for fresh data always bypasses the cache.
+  const handleRefresh = async () => { await refreshAwsHealth(true) }
 
   useEffect(() => {
     refreshAwsHealth()
