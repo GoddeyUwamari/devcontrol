@@ -126,17 +126,30 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     return newOrgId;
   }
 
-  function mockClients(overrides: { cloudWatchSend?: jest.Mock; ecsSend?: jest.Mock; eksSend?: jest.Mock } = {}) {
+  function mockClients(overrides: {
+    cloudWatchSend?: jest.Mock;
+    ecsSend?: jest.Mock;
+    eksSend?: jest.Mock;
+    // Fires the instant AWSClientFactory.createClients is actually invoked -- the one
+    // deterministic point at which computeMetrics() has finished getAccount() (a real,
+    // unmocked Postgres call whose latency is not controlled by this suite) and is about
+    // to hand the mocked clients to all seven blocks. Optional: only test (2) needs it, to
+    // synchronize on this instead of guessing a fixed number of event-loop ticks.
+    onCreateClients?: () => void;
+  } = {}) {
     const cloudWatch = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), overrides.cloudWatchSend ?? jest.fn().mockResolvedValue(datapoint('Average')));
     const ecs = withMockedSend(new ECSClient({ region: 'us-east-1' }), overrides.ecsSend ?? jest.fn().mockResolvedValue({ services: [], failures: [] }));
     const eks = withMockedSend(new EKSClient({ region: 'us-east-1' }), overrides.eksSend ?? jest.fn().mockResolvedValue({ cluster: undefined }));
-    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({
-      enabled: true,
-      cloudWatch,
-      ecs,
-      eks,
-      region: 'us-east-1',
-    } as any);
+    jest.spyOn(AWSClientFactory, 'createClients').mockImplementation(async () => {
+      overrides.onCreateClients?.();
+      return {
+        enabled: true,
+        cloudWatch,
+        ecs,
+        eks,
+        region: 'us-east-1',
+      } as any;
+    });
     return { cloudWatch, ecs, eks };
   }
 
@@ -203,6 +216,7 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
 
     const ec2Gate = deferred<any>();
     const callLog: string[] = [];
+    const clientsCreated = deferred<void>();
 
     const cloudWatchSend = jest.fn().mockImplementation((command: any) => {
       const namespace = command?.input?.Namespace;
@@ -220,13 +234,19 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
       callLog.push('eks:DescribeCluster');
       return Promise.resolve({ cluster: undefined });
     });
-    mockClients({ cloudWatchSend, ecsSend, eksSend });
+    mockClients({ cloudWatchSend, ecsSend, eksSend, onCreateClients: () => clientsCreated.resolve() });
 
     const resultPromise = (service as any).computeMetrics(orgId, '1h');
 
-    // Give every other block's microtasks a chance to reach their own AWS call while the
-    // EC2 block's CloudWatch call is still deliberately unresolved.
-    await new Promise((r) => setImmediate(r));
+    // Synchronize on AWSClientFactory.createClients actually being invoked, rather than a
+    // fixed number of setImmediate ticks. computeMetrics() calls the real, unmocked
+    // getAccount() (a genuine Postgres round trip) before createClients() -- its latency is
+    // not controlled by this suite, so a fixed tick count can race ahead of it and observe
+    // an empty callLog before any block has even started. Once createClients() has been
+    // invoked, its own mocked resolution is immediate (no real I/O), so only a single
+    // further tick is needed for the seven blocks' own synchronous AWS-call dispatch to
+    // actually reach client.send() -- not more guessing about real-I/O timing.
+    await clientsCreated.promise;
     await new Promise((r) => setImmediate(r));
 
     expect(callLog).toContain('cloudwatch:AWS/EC2'); // EC2's own call was dispatched...
