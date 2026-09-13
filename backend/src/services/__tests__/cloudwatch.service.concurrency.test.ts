@@ -126,6 +126,22 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     return newOrgId;
   }
 
+  // Mirrors the row shape CloudWatchService.getResourceInventory() actually selects
+  // (resource_id, resource_name, resource_type, resource_arn, status, metadata) -- built
+  // from the same fixture list a test also inserts via insertOrgWithAccountAndResources(),
+  // so a test can mock getResourceInventory() itself instead of racing its real Postgres
+  // latency, while still exercising the exact resource shape the real query would return.
+  function toInventoryRows(resourceTypes: Array<{ id: string; type: string; arn: string; extraMeta?: Record<string, any> }>) {
+    return resourceTypes.map((r) => ({
+      resource_id: r.id,
+      resource_name: r.id,
+      resource_type: r.type,
+      resource_arn: r.arn,
+      status: 'active',
+      metadata: r.extraMeta ?? null,
+    }));
+  }
+
   function mockClients(overrides: {
     cloudWatchSend?: jest.Mock;
     ecsSend?: jest.Mock;
@@ -205,18 +221,20 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
   });
 
   it('(2) type-level concurrency actually occurs -- other blocks\' AWS calls fire before a deliberately delayed block resolves', async () => {
-    orgId = await insertOrgWithAccountAndResources([
+    const resourceList = [
       { id: 'i-2', type: 'ec2', arn: 'arn:aws:ec2:us-east-1:*:instance/i-2' },
       { id: 'fn-2', type: 'lambda', arn: 'arn:aws:lambda:us-east-1:*:function:fn-2' },
       { id: 'table-2', type: 'dynamodb', arn: 'arn:aws:dynamodb:us-east-1:*:table/table-2' },
       { id: 'svc-2', type: 'ecs', arn: 'arn:aws:ecs:us-east-1:123456789012:service/cluster-2/svc-2' },
       { id: 'cluster-2', type: 'eks', arn: 'arn:aws:eks:us-east-1:*:cluster/cluster-2' },
       { id: 'alb-2', type: 'load-balancer', arn: 'arn:aws:elasticloadbalancing:us-east-1:*:loadbalancer/app/alb-2/abc123', extraMeta: { type: 'application' } },
-    ]);
+    ];
+    orgId = await insertOrgWithAccountAndResources(resourceList);
 
     const ec2Gate = deferred<any>();
     const callLog: string[] = [];
     const clientsCreated = deferred<void>();
+    const inventoryFetched = deferred<void>();
 
     const cloudWatchSend = jest.fn().mockImplementation((command: any) => {
       const namespace = command?.input?.Namespace;
@@ -236,17 +254,28 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     });
     mockClients({ cloudWatchSend, ecsSend, eksSend, onCreateClients: () => clientsCreated.resolve() });
 
+    // computeMetrics() calls getResourceInventory() -- a second real, unmocked Postgres
+    // query -- after createClients() resolves and before any of the seven blocks are even
+    // constructed. Mocking this boundary directly (rather than inserting rows and hoping a
+    // fixed tick count outlasts its real query latency, which CI run 34745678484 proved
+    // insufficient) removes that second race entirely: the mock returns the exact same
+    // fixture shape the real query would have, with no real I/O in between.
+    jest.spyOn(CloudWatchService.prototype as any, 'getResourceInventory').mockImplementation(async () => {
+      const rows = toInventoryRows(resourceList);
+      inventoryFetched.resolve();
+      return rows;
+    });
+
     const resultPromise = (service as any).computeMetrics(orgId, '1h');
 
-    // Synchronize on AWSClientFactory.createClients actually being invoked, rather than a
-    // fixed number of setImmediate ticks. computeMetrics() calls the real, unmocked
-    // getAccount() (a genuine Postgres round trip) before createClients() -- its latency is
-    // not controlled by this suite, so a fixed tick count can race ahead of it and observe
-    // an empty callLog before any block has even started. Once createClients() has been
-    // invoked, its own mocked resolution is immediate (no real I/O), so only a single
-    // further tick is needed for the seven blocks' own synchronous AWS-call dispatch to
-    // actually reach client.send() -- not more guessing about real-I/O timing.
+    // Synchronize on both real-DB boundaries computeMetrics() crosses before the seven
+    // blocks start -- createClients() being invoked (proving the also-real, unmocked
+    // getAccount() call ahead of it already resolved) and getResourceInventory() being
+    // invoked (proving createClients() already resolved) -- rather than guessing a fixed
+    // number of setImmediate ticks against real Postgres latency neither of these two
+    // sequential real queries has bounded for this suite.
     await clientsCreated.promise;
+    await inventoryFetched.promise;
     await new Promise((r) => setImmediate(r));
 
     expect(callLog).toContain('cloudwatch:AWS/EC2'); // EC2's own call was dispatched...
