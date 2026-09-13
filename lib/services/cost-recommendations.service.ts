@@ -27,6 +27,21 @@ export interface CostAnalysisRun {
 // only present for 'implemented' rules.
 export type OptimizationRuleStatus = 'implemented' | 'planned';
 
+// Enterprise Workstream 3B: static parameter DEFINITIONS only (type/default/
+// min/max/unit) -- never any organization's actual configured value. Present
+// on every rule (empty array when not configurable) since this comes from
+// the non-Enterprise-gated GET /optimization-rules catalog -- see
+// getOptimizationRuleConfiguration() below for the separate, Enterprise-
+// gated endpoint that returns an organization's real effective value.
+export interface OptimizationRuleParameterDefinition {
+  parameterId: string;
+  type: 'number' | 'integer';
+  default: number;
+  min: number;
+  max: number;
+  unit: string;
+}
+
 export interface OptimizationRule {
   id: string;
   service: string;
@@ -34,6 +49,25 @@ export interface OptimizationRule {
   detail: string;
   status: OptimizationRuleStatus;
   issue?: string;
+  configurable: boolean;
+  parameters: OptimizationRuleParameterDefinition[];
+}
+
+export type OptimizationRuleConfigSource = 'default' | 'organization_override';
+
+// One entry per configurable (ruleId, parameterId) pair, scoped to the
+// caller's own organization -- returned only by the Enterprise-gated
+// GET /optimization-rules/configuration endpoint.
+export interface EffectiveOptimizationRuleConfig {
+  ruleId: string;
+  parameterId: string;
+  value: number;
+  source: OptimizationRuleConfigSource;
+  default: number;
+  min: number;
+  max: number;
+  unit: string;
+  type: 'number' | 'integer';
 }
 
 export interface OptimizationRuleServiceCoverage {
@@ -175,6 +209,40 @@ export const costRecommendationsService = {
       '/api/cost-recommendations/optimization-rules'
     );
     return handleApiResponse(response);
+  },
+
+  // Enterprise Workstream 3B, Phase F: this organization's actual effective
+  // configuration (default or override, plus provenance) for every
+  // configurable rule/parameter. Enterprise-gated server-side
+  // (requireEnterprise on the route) -- organizationId is derived from the
+  // authenticated session on the backend, never sent from here.
+  getOptimizationRuleConfiguration: async (): Promise<EffectiveOptimizationRuleConfig[]> => {
+    const response = await api.get<ApiResponse<EffectiveOptimizationRuleConfig[]>>(
+      '/api/cost-recommendations/optimization-rules/configuration'
+    );
+    return handleApiResponse(response);
+  },
+
+  // Sets (upserts) this organization's override for one parameter. The
+  // authoritative min/max/integer validation lives server-side
+  // (OptimizationRuleConfigService) -- a rejected value surfaces here as a
+  // thrown error whose message the caller can show to the user.
+  updateOptimizationRuleConfiguration: async (
+    ruleId: string,
+    parameterId: string,
+    value: number
+  ): Promise<{ ruleId: string; parameterId: string; value: number; source: OptimizationRuleConfigSource }> => {
+    const response = await api.put<
+      ApiResponse<{ ruleId: string; parameterId: string; value: number; source: OptimizationRuleConfigSource }>
+    >(`/api/cost-recommendations/optimization-rules/configuration/${ruleId}/${parameterId}`, { value });
+    return handleApiResponse(response);
+  },
+
+  // Resets this organization's parameter back to the registry default by
+  // deleting its override row. Idempotent -- resetting an already-default
+  // parameter still returns success.
+  resetOptimizationRuleConfiguration: async (ruleId: string, parameterId: string): Promise<void> => {
+    await api.delete(`/api/cost-recommendations/optimization-rules/configuration/${ruleId}/${parameterId}`);
   },
 
   // Mark recommendation as resolved

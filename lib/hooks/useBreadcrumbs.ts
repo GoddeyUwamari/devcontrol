@@ -53,6 +53,7 @@ const routeLabels: Record<string, string> = {
   developers: 'Developers',
   'costs': 'Cost Overview',
   'cost-optimization': 'Optimization',
+  'controls': 'Optimization Controls',
   'forecast': 'Forecast',
   'invoices': 'Invoices',
   'ai-reports': 'AI Reports',
