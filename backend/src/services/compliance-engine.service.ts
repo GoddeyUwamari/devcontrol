@@ -219,11 +219,18 @@ export class ComplianceEngineService {
         `SELECT
           COUNT(*) as total_resources,
           COUNT(*) FILTER (WHERE is_encrypted = true) as encrypted_count,
-          COUNT(*) FILTER (WHERE is_encrypted = false OR is_encrypted IS NULL) as unencrypted_count,
+          -- Security Truthfulness #40/#41: verified-false only. is_encrypted/has_backup
+          -- can now be genuinely NULL (unknown/unavailable evidence, e.g. an AWS Backup
+          -- AccessDenied) -- the prior "OR IS NULL" clause silently counted every unknown
+          -- resource as a confirmed negative finding, exactly the fabrication this fix
+          -- exists to remove. is_public has no null-producing evidence source (still a
+          -- plain boolean everywhere it's set), so its own OR IS NULL is unaffected and
+          -- left as-is -- not part of this change's scope.
+          COUNT(*) FILTER (WHERE is_encrypted = false) as unencrypted_count,
           COUNT(*) FILTER (WHERE is_public = true) as public_count,
           COUNT(*) FILTER (WHERE is_public = false OR is_public IS NULL) as non_public_count,
           COUNT(*) FILTER (WHERE has_backup = true) as backup_count,
-          COUNT(*) FILTER (WHERE has_backup = false OR has_backup IS NULL) as no_backup_count,
+          COUNT(*) FILTER (WHERE has_backup = false) as no_backup_count,
           COUNT(*) FILTER (WHERE tags IS NOT NULL AND tags != '{}' AND tags != 'null') as tagged_count,
           COUNT(*) FILTER (WHERE tags IS NULL OR tags = '{}' OR tags = 'null') as untagged_count
         FROM aws_resources

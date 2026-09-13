@@ -65,9 +65,15 @@ export class AWSResourcesExportService {
       label: 'Security Status',
       field: 'is_encrypted,is_public',
       formatter: (r: any) => {
-        if (r.is_encrypted) return '✓ Encrypted';
+        // Security Truthfulness #40: is_encrypted can be null (unknown/unavailable
+        // evidence) -- a bare truthy check would fall through null to "✗ Not Encrypted",
+        // fabricating a negative claim. true/false branches and their relative
+        // precedence against is_public are otherwise unchanged from before; only the
+        // new, explicit null branch is added.
+        if (r.is_encrypted === true) return '✓ Encrypted';
         if (r.is_public) return '⚠ Public';
-        return '✗ Not Encrypted';
+        if (r.is_encrypted === false) return '✗ Not Encrypted';
+        return '❓ Encryption Unknown';
       },
     },
     compliance: {

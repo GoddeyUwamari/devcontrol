@@ -55,9 +55,13 @@ export interface AWSResource {
   // usage lookup failed on its most recent discovery) -- never coerce to 0.
   estimated_monthly_cost: number | null;
   actual_monthly_cost: number;
-  is_encrypted: boolean;
+  // null = unknown/unavailable/not evaluated (e.g. an AWS Backup lookup that hit
+  // AccessDenied or another API failure) -- never coerce to false. See
+  // awsResourceDiscovery.ts's discoverEC2Instances/discoverEBSVolumes and
+  // aws-backup-evidence.util.ts.
+  is_encrypted: boolean | null;
   is_public: boolean;
-  has_backup: boolean;
+  has_backup: boolean | null;
   compliance_issues: ComplianceIssue[];
   is_orphaned: boolean;
   orphaned_monthly_savings: number;
@@ -79,9 +83,10 @@ export interface CreateAWSResourceInput {
   status?: ResourceStatus;
   estimated_monthly_cost?: number | null;
   actual_monthly_cost?: number;
-  is_encrypted?: boolean;
+  // null = unknown/unavailable/not evaluated -- see AWSResource.is_encrypted/has_backup.
+  is_encrypted?: boolean | null;
   is_public?: boolean;
-  has_backup?: boolean;
+  has_backup?: boolean | null;
   compliance_issues?: ComplianceIssue[];
 }
 

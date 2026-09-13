@@ -22,6 +22,7 @@ import { IAMClient } from '@aws-sdk/client-iam';
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { ApplicationAutoScalingClient } from '@aws-sdk/client-application-auto-scaling';
+import { BackupClient } from '@aws-sdk/client-backup';
 import { pool } from '../config/database';
 
 export interface AWSClients {
@@ -42,6 +43,7 @@ export interface AWSClients {
   sns: SNSClient;
   iam: IAMClient;
   resourceExplorer: ResourceExplorer2Client;
+  backup: BackupClient;
   region: string;
   enabled: boolean;
   // 12-digit account ID parsed from role_arn, when available — lets account-level
@@ -163,6 +165,7 @@ export class AWSClientFactory {
       sns: new SNSClient(config),
       iam: new IAMClient({ ...config, region: 'us-east-1' }), // IAM is global
       resourceExplorer: new ResourceExplorer2Client(config),
+      backup: new BackupClient(config),
       region: awsRegion,
       enabled: true,
       accountId: parseAccountIdFromArn(role_arn),
@@ -214,6 +217,7 @@ export class AWSClientFactory {
       sns: new SNSClient(config),
       iam: new IAMClient({ ...config, region: 'us-east-1' }), // IAM is global
       resourceExplorer: new ResourceExplorer2Client(config),
+      backup: new BackupClient(config),
       region: config.region,
       enabled: true,
       getDynamoDBClientForRegion: (region: string) => new DynamoDBClient({ region, credentials: config.credentials }),
@@ -242,6 +246,7 @@ export class AWSClientFactory {
       sns: {} as SNSClient,
       iam: {} as IAMClient,
       resourceExplorer: {} as ResourceExplorer2Client,
+      backup: {} as BackupClient,
       region: 'us-east-1',
       enabled: false,
       getDynamoDBClientForRegion: () => ({} as DynamoDBClient),

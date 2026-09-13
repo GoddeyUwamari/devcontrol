@@ -78,7 +78,10 @@ export class ComplianceScannerService {
   private checkEncryption(resource: AWSResource): ComplianceIssue[] {
     const issues: ComplianceIssue[] = [];
 
-    if (!resource.is_encrypted) {
+    // Security Truthfulness #40: a specific "not encrypted" finding requires verified
+    // negative evidence. null (unknown/unavailable evidence) must never generate this
+    // finding -- that would fabricate a negative claim we can't actually support.
+    if (resource.is_encrypted === false) {
       let severity: ComplianceSeverity = 'medium';
       let issue = '';
       let recommendation = '';
@@ -175,7 +178,10 @@ export class ComplianceScannerService {
     const issues: ComplianceIssue[] = [];
 
     // Only check backups for resources that should have them
-    if (['rds', 'ec2'].includes(resource.resource_type) && !resource.has_backup) {
+    // Security Truthfulness #41: same principle as checkEncryption() -- only verified
+    // negative evidence (has_backup === false) generates the finding; null (AWS Backup
+    // lookup unavailable/indeterminate) must not.
+    if (['rds', 'ec2'].includes(resource.resource_type) && resource.has_backup === false) {
       let severity: ComplianceSeverity = 'high';
       let issue = '';
       let recommendation = '';
@@ -415,7 +421,8 @@ export class ComplianceScannerService {
     // one type in this list that the generic check doesn't cover — to avoid double-counting
     // the same missing-backup problem under two labels for rds/ec2.
     if (['rds', 'ec2', 'ebs', 's3'].includes(resource.resource_type)) {
-      if (!resource.has_backup && ['ebs'].includes(resource.resource_type)) {
+      // Security Truthfulness #41: same principle -- verified false only, never null.
+      if (resource.has_backup === false && ['ebs'].includes(resource.resource_type)) {
         issues.push({
           severity: 'critical',
           category: 'backups',
