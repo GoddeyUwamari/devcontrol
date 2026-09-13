@@ -34,19 +34,13 @@ interface ServiceHealth {
 }
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
 interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; eks: boolean }
-interface ResourceCoverageCount { shown: number; total: number }
 
-// Monitoring Truthfulness Phase 1: human labels for cloudwatch.service.ts's
-// CloudWatchMetrics.resourceCounts keys, used only for the truncation-disclosure line.
-const RESOURCE_COUNT_LABELS: Record<string, string> = {
-  ec2: 'EC2 instances',
-  loadBalancer: 'load balancers',
-  rds: 'RDS instances',
-  lambda: 'Lambda functions',
-  dynamodb: 'DynamoDB tables',
-  ecs: 'ECS services',
-  eks: 'EKS clusters',
-}
+// CloudWatch Scalability Phase 2D: complete-fleet aggregate health, computed server-side
+// from every evaluated resource (see cloudwatch.service.ts's computeMetrics()) -- never
+// derived client-side from `services` anymore, since that's now only a bounded page.
+interface HealthSummary { total: number; healthy: number; degraded: number; critical: number; down: number; monitored: number }
+type SystemStatus = 'healthy' | 'degraded' | 'critical' | 'down'
+interface PaginationMeta { shown: number; total: number; hasMore: boolean; cursor: string | null }
 
 // Shared styling for the non-healthy system-status banner — centralized here instead of
 // repeating the same 3-way ternary in multiple render spots, and so adding a future
@@ -91,7 +85,7 @@ export default function MonitoringPage() {
     return parts.length > 0 ? parts.join(', ') : 'no monitored resources yet'
   }, [coverage])
 
-  const [systemStatus, setSystemStatus] = useState<'healthy' | 'degraded' | 'critical' | 'down'>('healthy')
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>('healthy')
   const [metricsAvailable, setMetricsAvailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<MonitoringError | null>(null)
@@ -118,28 +112,22 @@ export default function MonitoringPage() {
   // status, deliberately kept in a state object separate from `services` -- it must never
   // be able to populate ServiceHealthTable, which is exclusively AWS/CloudWatch data.
   const [platformStatus, setPlatformStatus] = useState<{ checked: boolean; available: boolean; services: DevControlPlatformStatusService[] }>({ checked: false, available: false, services: [] })
-  // Monitoring Truthfulness Phase 1: shown-vs-total per resource type, from
-  // CloudWatchMetrics.resourceCounts, so a truncated list (see cloudwatch.service.ts's
-  // per-scan resource cap) can be honestly disclosed instead of presented as complete.
-  const [resourceCounts, setResourceCounts] = useState<Record<string, ResourceCoverageCount> | null>(null)
-
-  // Phase A: health-status counts derived from the existing services list — no new
-  // backend data, just aggregating what fetchMetrics() already populates per resource.
-  const healthCounts = useMemo(() => {
-    const monitoredServices = services.filter(s => s.monitored)
-    return {
-      total: monitoredServices.length,
-      healthy: monitoredServices.filter(s => s.status === 'healthy').length,
-      degraded: monitoredServices.filter(s => s.status === 'degraded').length,
-      critical: monitoredServices.filter(s => s.status === 'critical').length,
-      down: monitoredServices.filter(s => s.status === 'down').length,
-    }
-  }, [services])
+  // CloudWatch Scalability Phase 2D: complete-fleet aggregate health and pagination
+  // metadata, consumed directly from the backend response -- `services` below is now
+  // only a bounded page, so these can no longer be derived from it client-side (see the
+  // removed `healthCounts` useMemo this replaces). `healthSummary.total` is every
+  // evaluated resource regardless of monitored status; `.monitored` is the subset with a
+  // live signal; healthy/degraded/critical/down are counted only among those, matching
+  // this page's own prior client-side precedent (an unmonitored resource's status is
+  // inventory-derived, never counted in these buckets).
+  const [healthSummary, setHealthSummary] = useState<HealthSummary | null>(null)
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   const overallHealthPercent = useMemo(() => {
-    if (healthCounts.total === 0) return null
-    return Math.round((healthCounts.healthy / healthCounts.total) * 100)
-  }, [healthCounts])
+    if (!healthSummary || healthSummary.monitored === 0) return null
+    return Math.round((healthSummary.healthy / healthSummary.monitored) * 100)
+  }, [healthSummary])
 
   const generateDemoMetrics = useCallback(() => {
     setError(null)
@@ -154,6 +142,12 @@ export default function MonitoringPage() {
     ])
     setSlos([{ name: 'API Uptime', current: 99.95, target: 99.9, errorBudget: 0.05, description: 'API availability SLO' }, { name: 'Response Time', current: 98.5, target: 95.0, errorBudget: 3.5, description: '< 500ms for 95% requests' }, { name: 'Error Rate', current: 99.9, target: 99.9, errorBudget: 0.0, description: '< 0.1% error rate' }])
     setAlerts([{ id: '1', title: 'High Response Time', message: 'Order Processor response time above threshold', severity: 'warning', service: 'order-processor', triggeredAt: new Date(Date.now() - 15 * 60 * 1000) }, { id: '2', title: 'Elevated Error Rate', message: 'Order Processor error rate at 1.23%', severity: 'warning', service: 'order-processor', triggeredAt: new Date(Date.now() - 8 * 60 * 1000) }])
+    // Phase 2D: demo mode has no backend to compute healthSummary/pagination server-side
+    // -- mirror them here to match the 4 hardcoded rows above (3 healthy + 1 degraded),
+    // so the KPI cards and health-summary line render the same way they did before
+    // healthCounts moved server-side.
+    setHealthSummary({ total: 4, healthy: 3, degraded: 1, critical: 0, down: 0, monitored: 4 })
+    setPagination({ shown: 4, total: 4, hasMore: false, cursor: null })
     setSystemStatus('degraded'); setMetricsAvailable(true); setLoading(false)
   }, [])
 
@@ -291,6 +285,25 @@ export default function MonitoringPage() {
     try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/prometheus/diagnose`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success) setDiagnosticResult(data.data) } catch {} finally { setIsDiagnosing(false) }
   }, [])
 
+  // CloudWatch Scalability Phase 2D: shared mapper so the first page (fetchMetrics,
+  // below) and subsequent pages (loadMoreServices) map a raw API service row to the
+  // display shape identically, rather than duplicating this logic.
+  const mapServiceRow = (s: any): ServiceHealth => ({
+    name: s.name,
+    description: s.description,
+    status: s.status,
+    uptime: s.uptime !== null && s.uptime !== undefined ? `${s.uptime}%` : 'N/A',
+    responseTime: s.responseTimeMs !== null && s.responseTimeMs !== undefined ? `${s.responseTimeMs}ms` : 'N/A',
+    errorRate: s.errorRate ?? null,
+    critical: s.critical,
+    monitored: s.monitored,
+    // Phase B: pass through resourceType and metrics — previously dropped here even
+    // though the backend already returned resourceType, which is why filter tabs and
+    // per-resource metrics couldn't be built without this fix.
+    resourceType: s.resourceType,
+    metrics: Array.isArray(s.metrics) ? s.metrics : undefined,
+  })
+
   const fetchMetrics = useCallback(async (cwData?: any, connectedOverride?: boolean) => {
     const cw = cwData ?? cloudWatchMetrics
     if (cw && !demoMode) {
@@ -310,35 +323,16 @@ export default function MonitoringPage() {
       setTrendAvailable(hasTrend)
       setResponseTimeData(Array.isArray(data.responseTimeHistory) ? data.responseTimeHistory : [])
       setCoverage(data.coverage ?? null)
-      setResourceCounts(data.resourceCounts ?? null)
 
-      const mappedServices: ServiceHealth[] = (data.services ?? []).map((s: any) => ({
-        name: s.name,
-        description: s.description,
-        status: s.status,
-        uptime: s.uptime !== null && s.uptime !== undefined ? `${s.uptime}%` : 'N/A',
-        responseTime: s.responseTimeMs !== null && s.responseTimeMs !== undefined ? `${s.responseTimeMs}ms` : 'N/A',
-        errorRate: s.errorRate ?? null,
-        critical: s.critical,
-        monitored: s.monitored,
-        // Phase B: pass through resourceType and metrics — previously dropped here even
-        // though the backend already returned resourceType, which is why filter tabs and
-        // per-resource metrics couldn't be built without this fix.
-        resourceType: s.resourceType,
-        metrics: Array.isArray(s.metrics) ? s.metrics : undefined,
-      }))
-      setServices(mappedServices)
+      // CloudWatch Scalability Phase 2D: `services` is now only the first bounded page --
+      // `healthSummary`/`systemStatus` are server-computed from the complete evaluated
+      // fleet and must be consumed as-is, never re-derived from the page. `pagination`
+      // drives the "load more" control below the table.
+      setHealthSummary(data.healthSummary ?? null)
+      setSystemStatus(data.systemStatus ?? 'healthy')
+      setPagination(data.pagination ?? null)
+      setServices((data.services ?? []).map(mapServiceRow))
 
-      // Only resources CloudWatch is actually confirming (monitored: true) can drive the
-      // system-wide status. A resource whose "down"/"degraded"/"critical" reading comes
-      // solely from stale inventory data (no live CloudWatch signal) shouldn't be able to
-      // flip the whole system on its own — see live-test finding 2026-08-08.
-      // Ordered most-to-least severe: down > critical > degraded > healthy.
-      const monitoredServices = mappedServices.filter(s => s.monitored)
-      const anyDown = monitoredServices.some(s => s.status === 'down')
-      const anyCritical = monitoredServices.some(s => s.status === 'critical')
-      const anyDegraded = monitoredServices.some(s => s.status === 'degraded')
-      setSystemStatus(anyDown ? 'down' : anyCritical ? 'critical' : anyDegraded ? 'degraded' : 'healthy')
       setMetricsAvailable(true); setError(null); setLoading(false); setLastSynced(new Date())
       fetchAlerts()
       return
@@ -370,7 +364,8 @@ export default function MonitoringPage() {
     setLoading(false)
     setMetricsAvailable(false)
     setServices([])
-    setResourceCounts(null)
+    setHealthSummary(null)
+    setPagination(null)
   }, [timeRange, isDemoActive, generateDemoMetrics, fetchAlerts, awsConnected])
 
   // Monitoring Truthfulness Phase 1: the AWS connection check is always awaited, and its
@@ -396,6 +391,34 @@ export default function MonitoringPage() {
   // the TimeRangeSelector's refresh button and the error-state Retry buttons all funnel
   // through this, so a user explicitly asking for fresh data always bypasses the cache.
   const handleRefresh = async () => { await refreshAwsHealth(true) }
+
+  // CloudWatch Scalability Phase 2D: fetches the next page using the cursor the backend
+  // handed back and APPENDS it to `services` -- never re-fetches or replaces the pages
+  // already loaded, and never re-derives healthSummary/systemStatus from the growing
+  // `services` array (those stay server-provided and are identical across pages within
+  // the same 45s cache window; refreshed here only for consistency, not correctness).
+  const loadMoreServices = useCallback(async () => {
+    if (!pagination?.hasMore || !pagination.cursor || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
+      const params = new URLSearchParams()
+      if (timeRange) params.set('range', timeRange)
+      params.set('cursor', pagination.cursor)
+      const res = await fetch(`${API_URL}/api/cloudwatch/metrics?${params.toString()}`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const data = await res.json()
+      if (data.success && data.data) {
+        setServices(prev => [...prev, ...((data.data.services ?? []).map(mapServiceRow))])
+        setPagination(data.data.pagination ?? null)
+        if (data.data.healthSummary) setHealthSummary(data.data.healthSummary)
+        if (data.data.systemStatus) setSystemStatus(data.data.systemStatus)
+      }
+    } catch (err) {
+      console.error('Error loading more resources:', err)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [pagination, loadingMore, timeRange])
 
   useEffect(() => {
     refreshAwsHealth()
@@ -452,14 +475,14 @@ export default function MonitoringPage() {
           )}
           {/* Phase A: health-summary line, immediately visible below the header — surfaces
               status counts the page already computes rather than burying them in the table. */}
-          {metricsAvailable && healthCounts.total > 0 && (
+          {metricsAvailable && healthSummary && healthSummary.monitored > 0 && (
             <div className="flex flex-wrap items-center gap-2 mt-3">
               <span className={`w-2 h-2 rounded-full shrink-0 ${healthSummaryDotColor(systemStatus)}`} />
               <span className="text-sm font-semibold text-slate-900">
                 {systemStatus === 'healthy' ? 'Healthy' : systemStatus === 'degraded' ? 'Degraded' : systemStatus === 'critical' ? 'Critical' : 'Down'}
               </span>
               <span className="text-sm text-slate-500">
-                · {healthCounts.total} resource{healthCounts.total !== 1 ? 's' : ''} monitored · {healthCounts.healthy} healthy · {healthCounts.degraded} degraded · {healthCounts.critical} critical
+                · {healthSummary.monitored} resource{healthSummary.monitored !== 1 ? 's' : ''} monitored · {healthSummary.healthy} healthy · {healthSummary.degraded} degraded · {healthSummary.critical} critical
               </span>
             </div>
           )}
@@ -560,8 +583,8 @@ export default function MonitoringPage() {
                       ? (isDemoActive
                           ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
                           : 'One or more services may need attention. Review Service Health below for details.')
-                      : healthCounts.total > 0
-                        ? `Infrastructure is healthy. ${healthCounts.total} AWS resource${healthCounts.total !== 1 ? 's are' : ' is'} currently monitored with no active health violations. ${alerts.length === 0 ? 'No reliability anomalies were detected during the selected period.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`
+                      : (healthSummary?.monitored ?? 0) > 0
+                        ? `Infrastructure is healthy. ${healthSummary!.monitored} AWS resource${healthSummary!.monitored !== 1 ? 's are' : ' is'} currently monitored with no active health violations. ${alerts.length === 0 ? 'No reliability anomalies were detected during the selected period.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`
                         : 'No monitored resources yet. Connect AWS or run resource discovery to start tracking infrastructure health.'}
               </p>
             </div>
@@ -588,8 +611,8 @@ export default function MonitoringPage() {
               monitored resource count, active alert count, and monthly cost (unchanged). */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
             {[
-              { label: 'Overall Health', value: overallHealthPercent !== null ? `${overallHealthPercent}%` : 'N/A', sub: overallHealthPercent === null ? 'No monitored resources' : `${healthCounts.healthy}/${healthCounts.total} healthy`, color: overallHealthPercent === null ? 'text-slate-300' : overallHealthPercent >= 90 ? 'text-green-600' : overallHealthPercent >= 70 ? 'text-amber-500' : 'text-red-600' },
-              { label: 'Monitored Resources', value: healthCounts.total.toLocaleString(), sub: healthCounts.total === 0 ? 'Run discovery to add resources' : coverageLabel, color: healthCounts.total === 0 ? 'text-slate-300' : 'text-slate-900' },
+              { label: 'Overall Health', value: overallHealthPercent !== null ? `${overallHealthPercent}%` : 'N/A', sub: overallHealthPercent === null ? 'No monitored resources' : `${healthSummary?.healthy ?? 0}/${healthSummary?.monitored ?? 0} healthy`, color: overallHealthPercent === null ? 'text-slate-300' : overallHealthPercent >= 90 ? 'text-green-600' : overallHealthPercent >= 70 ? 'text-amber-500' : 'text-red-600' },
+              { label: 'Monitored Resources', value: (healthSummary?.monitored ?? 0).toLocaleString(), sub: (healthSummary?.monitored ?? 0) === 0 ? 'Run discovery to add resources' : coverageLabel, color: (healthSummary?.monitored ?? 0) === 0 ? 'text-slate-300' : 'text-slate-900' },
               { label: 'Active Alerts', value: alerts.length.toLocaleString(), sub: alerts.length === 0 ? 'No active alerts' : 'Needs attention', color: alerts.length === 0 ? 'text-slate-900' : 'text-red-600' },
               { label: 'Monthly Cost', value: monthlyCost, sub: monthlyCost === '--' ? 'Cost data unavailable' : 'Current monthly spend', color: monthlyCost === '--' ? 'text-slate-300' : 'text-slate-900' },
             ].map(({ label, value, sub, color }) => (
@@ -631,22 +654,32 @@ export default function MonitoringPage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Service Health</p>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-400">{healthCounts.healthy}/{healthCounts.total} healthy</span>
+                <span className="text-xs text-slate-400">{healthSummary?.healthy ?? 0}/{healthSummary?.monitored ?? 0} healthy</span>
                 <a href="/services" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">All services <ArrowRight size={11} /></a>
               </div>
             </div>
-            {/* Monitoring Truthfulness Phase 1: honest disclosure when cloudwatch.service.ts's
-                per-scan resource cap has hidden resources of a given type, instead of
-                presenting a partial list as if it were complete. */}
-            {resourceCounts && Object.entries(resourceCounts).some(([, c]) => c.total > c.shown) && (
-              <p className="text-[11px] text-amber-600 mb-3">
-                Showing a subset of resources for some types — {Object.entries(resourceCounts)
-                  .filter(([, c]) => c.total > c.shown)
-                  .map(([type, c]) => `${RESOURCE_COUNT_LABELS[type] ?? type}: ${c.shown} of ${c.total}`)
-                  .join(', ')}.
-              </p>
-            )}
             <ServiceHealthTable services={services} loading={loading} rangeLabel={timeRange} />
+            {/* CloudWatch Scalability Phase 2D: detail rows are a bounded, server-paginated
+                page of the complete evaluated fleet -- this is a display/pagination limit,
+                not the (now-removed) AWS evaluation cap the old truncation banner used to
+                describe. Aggregate health above already reflects every resource regardless
+                of how many rows are loaded here. */}
+            {pagination && pagination.total > 0 && (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-4 border-t border-slate-100">
+                <span className="text-xs text-slate-400">
+                  Showing {services.length.toLocaleString()} of {pagination.total.toLocaleString()} resources
+                </span>
+                {pagination.hasMore && (
+                  <button
+                    onClick={loadMoreServices}
+                    disabled={loadingMore}
+                    className="text-xs font-semibold text-violet-600 bg-transparent border-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed self-start sm:self-auto"
+                  >
+                    {loadingMore ? 'Loading…' : 'Load more resources'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* SLO dashboard */}
@@ -674,8 +707,12 @@ export default function MonitoringPage() {
           already has its own explicit "Stop Flying Blind on AWS" CTA above (rendered
           because services.length is now honestly 0 there instead of the removed
           Prometheus fallback's fabricated rows), so this block would otherwise render a
-          second, redundant "connect AWS" prompt underneath it. */}
-      {!loading && !isDemoActive && services.length === 0 && !error && awsConnected !== false && (
+          second, redundant "connect AWS" prompt underneath it.
+          CloudWatch Scalability Phase 2D: gates on the server-provided complete-fleet
+          total, not `services.length` -- `services` is now only a bounded page, so an
+          org with resources beyond the first page must never be told "no resources
+          discovered" just because a later page hasn't been loaded yet. */}
+      {!loading && !isDemoActive && (healthSummary?.total ?? 0) === 0 && !error && awsConnected !== false && (
         awsConnected === true ? (
           // AWS is connected and CloudWatch is reachable — the gap is that nothing has
           // been discovered yet, not that monitoring was never set up. Sending this org

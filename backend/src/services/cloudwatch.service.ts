@@ -68,6 +68,12 @@ export interface CloudWatchServiceHealth {
   // and returns typed values here — the shared engine and any UI consuming this never need
   // per-type branching. Omitted or empty when nothing meaningful is available yet.
   metrics?: ServiceMetric[]
+  // Phase 2D: raw DB identity threaded through from InventoryRow, used only to build the
+  // deterministic keyset-pagination cursor (type -> resourceSortName -> resourceDbId) --
+  // never a display field, resourceId/name above already serve that purpose. Populated by
+  // every capability's healthRule() and by evaluateEcsService()/evaluateEksService().
+  resourceDbId: string
+  resourceSortName: string | null
 }
 
 export interface CloudWatchMetrics {
@@ -98,7 +104,19 @@ export interface CloudWatchMetrics {
     ecs: ResourceCoverageCount
     eks: ResourceCoverageCount
   }
+  // Phase 2D: complete-fleet-derived aggregate health -- computed from every evaluated
+  // resource across all seven types, never from the (now paginated) `services` page
+  // below. See computeMetrics()'s healthSummary/systemStatus construction, which mirrors
+  // the health-status precedence the frontend used to derive client-side from a
+  // (formerly capped, now would-be-paginated) services[] array -- moved server-side
+  // because that derivation is no longer correct once services[] is only a page.
+  healthSummary: CloudWatchHealthSummary
+  systemStatus: CloudWatchSystemStatus
   services: CloudWatchServiceHealth[]
+  // Phase 2D: present only on the paginated HTTP response (added by the route layer
+  // after getMetrics() returns) -- absent on the cached CloudWatchMetrics object itself,
+  // since pagination is not part of what Phase 2A caches. See cloudwatch.routes.ts.
+  pagination?: { shown: number; total: number; hasMore: boolean; cursor: string | null }
   capturedAt: string
 }
 
@@ -107,7 +125,34 @@ export interface ResourceCoverageCount {
   total: number
 }
 
+// Phase 2D: complete-fleet aggregate health counts. `total` is every evaluated resource
+// regardless of monitored status (e.g. includes RDS, which is always monitored: false
+// today); `monitored` is the subset with a live CloudWatch/control-plane signal;
+// healthy/degraded/critical/down are computed only among monitored resources, matching
+// the pre-2D client-side derivation's own precedent (an unmonitored resource's `status`
+// is inventory-derived, not a live health verdict, so it was never counted in these
+// buckets and still isn't).
+export interface CloudWatchHealthSummary {
+  total: number
+  healthy: number
+  degraded: number
+  critical: number
+  down: number
+  monitored: number
+}
+
+// Phase 2D: same precedence the frontend used to compute client-side from `services`
+// (down > critical > degraded > healthy), now computed server-side from the complete
+// evaluated fleet's monitored resources -- see computeMetrics().
+export type CloudWatchSystemStatus = 'healthy' | 'degraded' | 'critical' | 'down'
+
 interface InventoryRow {
+  // Phase 2D: the raw aws_resources.id UUID primary key -- distinct from resource_id
+  // (the AWS-side identifier, e.g. an EC2 instance id). Used only as the deterministic
+  // keyset-pagination tiebreaker (see getResourceInventory()'s ORDER BY and
+  // cloudwatch-pagination.util.ts); never displayed. NOT populated on the separate,
+  // unmodified evaluateResourceForSlo() query path -- that path never reads it.
+  id: string
   resource_id: string
   resource_name: string | null
   resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks'
@@ -247,6 +292,8 @@ const ec2Capability: ResourceCapability = {
     return {
       service: {
         resourceId: instance.resource_id,
+        resourceDbId: instance.id,
+        resourceSortName: instance.resource_name,
         name: instance.resource_name || instance.resource_id,
         description: `EC2 · ${instance.resource_id}`,
         resourceType: 'ec2',
@@ -275,6 +322,8 @@ const rdsCapability: ResourceCapability = {
   healthRule: (r) => ({
     service: {
       resourceId: r.resource_id,
+      resourceDbId: r.id,
+      resourceSortName: r.resource_name,
       name: r.resource_name || r.resource_id,
       description: `RDS · ${r.metadata?.engine ?? 'database'}`,
       resourceType: 'rds',
@@ -319,6 +368,8 @@ const loadBalancerCapability: ResourceCapability<AlbExtra> = {
 
     const service: CloudWatchServiceHealth = {
       resourceId: alb.resource_id,
+      resourceDbId: alb.id,
+      resourceSortName: alb.resource_name,
       name: alb.resource_name || alb.resource_id,
       description: 'Application Load Balancer',
       resourceType: 'load-balancer',
@@ -378,6 +429,8 @@ const lambdaCapability: ResourceCapability = {
     return {
       service: {
         resourceId: fn.resource_id,
+        resourceDbId: fn.id,
+        resourceSortName: fn.resource_name,
         name: fn.resource_name || fn.resource_id,
         description: `Lambda · ${fn.metadata?.runtime ?? 'function'}`,
         resourceType: 'lambda',
@@ -449,6 +502,8 @@ const dynamoDbCapability: ResourceCapability = {
     return {
       service: {
         resourceId: table.resource_id,
+        resourceDbId: table.id,
+        resourceSortName: table.resource_name,
         name: table.resource_name || table.resource_id,
         description: 'DynamoDB table',
         resourceType: 'dynamodb',
@@ -598,13 +653,19 @@ export class CloudWatchService {
   }
 
   private async getResourceInventory(organizationId: string): Promise<InventoryRow[]> {
+    // Phase 2D: `id ASC` is a required tiebreaker, not cosmetic -- resource_name has no
+    // uniqueness constraint (can collide or be NULL for multiple rows), so without it
+    // this is not a strict total order. Deterministic keyset pagination (see
+    // cloudwatch-pagination.util.ts) depends on this exact order -- type bucket (fixed
+    // downstream in computeMetrics()'s services[] concatenation), then resource_name ASC
+    // NULLS LAST, then id ASC -- being stable across requests within a cache window.
     const { rows } = await pool.query(
-      `SELECT resource_id, resource_name, resource_type, resource_arn, status, metadata
+      `SELECT id, resource_id, resource_name, resource_type, resource_arn, status, metadata
        FROM aws_resources
        WHERE organization_id = $1
          AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs', 'eks')
          AND status != 'terminated'
-       ORDER BY resource_name ASC NULLS LAST`,
+       ORDER BY resource_name ASC NULLS LAST, id ASC`,
       [organizationId]
     )
     return rows
@@ -817,6 +878,8 @@ export class CloudWatchService {
     if (!parsed) {
       return {
         resourceId: resource.resource_id,
+        resourceDbId: resource.id,
+        resourceSortName: resource.resource_name,
         name: resource.resource_name || resource.resource_id,
         description: 'ECS service',
         resourceType: 'ecs',
@@ -841,6 +904,8 @@ export class CloudWatchService {
       if (!svc || hasFailure) {
         return {
           resourceId: resource.resource_id,
+          resourceDbId: resource.id,
+          resourceSortName: resource.resource_name,
           name: resource.resource_name || resource.resource_id,
           description: `ECS · ${parsed.cluster}`,
           resourceType: 'ecs',
@@ -889,6 +954,8 @@ export class CloudWatchService {
 
       return {
         resourceId: resource.resource_id,
+        resourceDbId: resource.id,
+        resourceSortName: resource.resource_name,
         name: resource.resource_name || resource.resource_id,
         description: `ECS · ${parsed.cluster}`,
         resourceType: 'ecs',
@@ -910,6 +977,8 @@ export class CloudWatchService {
       console.error(`[ECS] DescribeServices failed for ${parsed.cluster}/${parsed.service}:`, err)
       return {
         resourceId: resource.resource_id,
+        resourceDbId: resource.id,
+        resourceSortName: resource.resource_name,
         name: resource.resource_name || resource.resource_id,
         description: `ECS · ${parsed.cluster}`,
         resourceType: 'ecs',
@@ -966,6 +1035,8 @@ export class CloudWatchService {
       if (!cluster) {
         return {
           resourceId: resource.resource_id,
+          resourceDbId: resource.id,
+          resourceSortName: resource.resource_name,
           name: resource.resource_name || resource.resource_id,
           description: 'EKS cluster',
           resourceType: 'eks',
@@ -1013,6 +1084,8 @@ export class CloudWatchService {
 
       return {
         resourceId: resource.resource_id,
+        resourceDbId: resource.id,
+        resourceSortName: resource.resource_name,
         name: resource.resource_name || resource.resource_id,
         description: `EKS · Kubernetes ${cluster.version ?? 'unknown version'}`,
         resourceType: 'eks',
@@ -1032,6 +1105,8 @@ export class CloudWatchService {
       console.error(`[EKS] DescribeCluster failed for ${resource.resource_id}:`, err)
       return {
         resourceId: resource.resource_id,
+        resourceDbId: resource.id,
+        resourceSortName: resource.resource_name,
         name: resource.resource_name || resource.resource_id,
         description: 'EKS cluster',
         resourceType: 'eks',
@@ -1080,17 +1155,32 @@ export class CloudWatchService {
     const ecsServicesInventoryAll = resources.filter((r) => r.resource_type === 'ecs')
     const eksClustersInventoryAll = resources.filter((r) => r.resource_type === 'eks')
 
-    const ec2Instances = ec2InstancesAll.slice(0, 15)
-    const rdsInstances = rdsInstancesAll.slice(0, 15)
-    const albs = albsAll.slice(0, 5)
-    const lambdaFunctions = lambdaFunctionsAll.slice(0, 15)
-    const dynamoTables = dynamoTablesAll.slice(0, 15)
-    const ecsServicesInventory = ecsServicesInventoryAll.slice(0, 15)
-    const eksClustersInventory = eksClustersInventoryAll.slice(0, 15)
+    // CloudWatch Scalability Phase 2D: the per-scan evaluation cap that used to live here
+    // (slice(0, 15) / slice(0, 5), including ALB) has been removed -- aggregate health
+    // and the CloudWatch/control-plane evaluation below now run over the COMPLETE
+    // discovered fleet for every one of the seven types, not a capped subset. These are
+    // now plain aliases of the *All arrays (kept, rather than renaming every downstream
+    // reference below) so every evaluation task, `coverage`, and `resourceCounts`
+    // computation needs no further change. Bounding what the CLIENT sees is handled
+    // entirely downstream, by the pagination layer (cloudwatch-pagination.util.ts)
+    // slicing the already-evaluated `services[]` in the route handler -- never here, and
+    // never by re-capping evaluation itself.
+    const ec2Instances = ec2InstancesAll
+    const rdsInstances = rdsInstancesAll
+    const albs = albsAll
+    const lambdaFunctions = lambdaFunctionsAll
+    const dynamoTables = dynamoTablesAll
+    const ecsServicesInventory = ecsServicesInventoryAll
+    const eksClustersInventory = eksClustersInventoryAll
 
-    // Monitoring Truthfulness Phase 1: built from the *All arrays above (pre-slice), so
-    // this honestly reflects what was hidden by the caps above -- never a wasted second
-    // inventory query.
+    // Monitoring Truthfulness Phase 1, amended by Phase 2D: shown now always equals
+    // total for every type, since evaluation is no longer capped -- resourceCounts
+    // answers "how many resources were discovered" (both fields are the complete
+    // discovered inventory count), a separate question from pagination's "how many
+    // evaluated rows are being returned in this response," which is answered by the new
+    // `pagination` field the route layer adds. Kept structurally unchanged (not merged
+    // with pagination) and left in place rather than removed, even though it can no
+    // longer disclose a truncation that no longer exists.
     const resourceCounts: CloudWatchMetrics['resourceCounts'] = {
       ec2: { shown: ec2Instances.length, total: ec2InstancesAll.length },
       loadBalancer: { shown: albs.length, total: albsAll.length },
@@ -1306,6 +1396,37 @@ export class CloudWatchService {
       console.error('[CloudWatch] Monthly cost fetch failed:', err)
     }
 
+    // Ordering is an explicit preserved response contract (EC2, ALB, RDS, Lambda,
+    // DynamoDB, ECS, EKS) -- see cloudwatch.service.concurrency.test.ts's ordering test.
+    // This is now the COMPLETE evaluated fleet (Phase 2D removed the per-type evaluation
+    // cap above) -- both healthSummary/systemStatus below and the pagination layer in
+    // cloudwatch.routes.ts operate on this same array, never on a re-capped subset.
+    const allServices = [...ec2Services, ...albBlock.services, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices, ...eksServices]
+
+    // CloudWatch Scalability Phase 2D: complete-fleet aggregate health, computed here
+    // (before any pagination exists) so it is unaffected by however the response is
+    // later sliced into a page. Mirrors the precedent the frontend used to apply
+    // client-side from a (formerly capped) services[] array -- same "only monitored
+    // resources contribute a status" rule, same down > critical > degraded > healthy
+    // systemStatus precedence -- moved server-side because that derivation stops being
+    // correct once services[] is only a page rather than the whole fleet.
+    const monitoredServices = allServices.filter((s) => s.monitored)
+    const healthSummary: CloudWatchHealthSummary = {
+      total: allServices.length,
+      healthy: monitoredServices.filter((s) => s.status === 'healthy').length,
+      degraded: monitoredServices.filter((s) => s.status === 'degraded').length,
+      critical: monitoredServices.filter((s) => s.status === 'critical').length,
+      down: monitoredServices.filter((s) => s.status === 'down').length,
+      monitored: monitoredServices.length,
+    }
+    const systemStatus: CloudWatchSystemStatus = monitoredServices.some((s) => s.status === 'down')
+      ? 'down'
+      : monitoredServices.some((s) => s.status === 'critical')
+        ? 'critical'
+        : monitoredServices.some((s) => s.status === 'degraded')
+          ? 'degraded'
+          : 'healthy'
+
     return {
       accountId: account.account_id,
       nickname: account.nickname,
@@ -1326,9 +1447,9 @@ export class CloudWatchService {
         eks: eksClustersInventory.length > 0,
       },
       resourceCounts,
-      // Ordering is an explicit preserved response contract (EC2, ALB, RDS, Lambda,
-      // DynamoDB, ECS, EKS) -- see cloudwatch.service.concurrency.test.ts's ordering test.
-      services: [...ec2Services, ...albBlock.services, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices, ...eksServices],
+      healthSummary,
+      systemStatus,
+      services: allServices,
       capturedAt: new Date().toISOString(),
     }
   }

@@ -58,6 +58,14 @@ function cloudWatchMetricsFixture(overrides: Partial<Record<string, any>> = {}) 
       ec2: { shown: 1, total: 1 }, loadBalancer: { shown: 0, total: 0 }, rds: { shown: 0, total: 0 },
       lambda: { shown: 0, total: 0 }, dynamodb: { shown: 0, total: 0 }, ecs: { shown: 0, total: 0 }, eks: { shown: 0, total: 0 },
     },
+    // CloudWatch Scalability Phase 2D: complete-fleet aggregate + pagination metadata,
+    // now required on every real API response -- defaulted here to match the single
+    // ec2ServiceRow() fixture below (1 healthy, monitored resource, fully shown, no
+    // further page) so existing tests in this file get realistic values without each
+    // needing to specify them individually.
+    healthSummary: { total: 1, healthy: 1, degraded: 0, critical: 0, down: 0, monitored: 1 },
+    systemStatus: 'healthy',
+    pagination: { shown: 1, total: 1, hasMore: false, cursor: null },
     services: [ec2ServiceRow()],
     capturedAt: new Date().toISOString(),
     ...overrides,
@@ -255,7 +263,14 @@ describe('Monitoring page — truthful labels', () => {
   })
 })
 
-describe('Monitoring page — resource-count truncation disclosure', () => {
+describe('Monitoring page — Phase 2D detail pagination disclosure', () => {
+  // CloudWatch Scalability Phase 2D: the per-scan evaluation cap this page used to
+  // honestly disclose ("Showing a subset of resources for some types...", driven by
+  // resourceCounts) no longer exists -- aggregate evaluation is now always complete, so
+  // that banner was removed rather than left to silently never fire. It's replaced by a
+  // pagination disclosure driven by the new `pagination` field, which answers a
+  // different question ("how many of the evaluated resources are loaded/rendered right
+  // now", not "were some resources never evaluated at all").
   beforeEach(() => {
     mockUseDemoMode.mockReturnValue(false)
   })
@@ -263,7 +278,33 @@ describe('Monitoring page — resource-count truncation disclosure', () => {
     vi.restoreAllMocks()
   })
 
-  it('discloses when a resource type was truncated by the per-scan cap', async () => {
+  it('discloses shown-vs-total and offers "Load more" when the backend reports more pages', async () => {
+    installFetchMock({
+      connected: true,
+      metrics: cloudWatchMetricsFixture({
+        healthSummary: { total: 40, healthy: 40, degraded: 0, critical: 0, down: 0, monitored: 40 },
+        pagination: { shown: 1, total: 40, hasMore: true, cursor: 'opaque-cursor' },
+      }),
+    })
+
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText(/Showing 1 of 40 resources/)).toBeInTheDocument()
+    expect(screen.getByText('Load more resources')).toBeInTheDocument()
+  })
+
+  it('shows the shown/total line but no "Load more" control once the backend reports hasMore: false', async () => {
+    installFetchMock({ connected: true, metrics: cloudWatchMetricsFixture() })
+
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText(/Showing 1 of 1 resources/)).toBeInTheDocument()
+    expect(screen.queryByText('Load more resources')).not.toBeInTheDocument()
+    // The removed evaluation-cap banner must never reappear.
+    expect(screen.queryByText(/Showing a subset of resources/)).not.toBeInTheDocument()
+  })
+
+  it('the never-fired-again old truncation banner text is gone for good, even with a resourceCounts shape that would have triggered it pre-2D', async () => {
     installFetchMock({
       connected: true,
       metrics: cloudWatchMetricsFixture({
@@ -276,15 +317,28 @@ describe('Monitoring page — resource-count truncation disclosure', () => {
 
     render(<MonitoringPage />)
 
-    expect(await screen.findByText(/EC2 instances: 15 of 40/)).toBeInTheDocument()
+    await screen.findByText('i-123')
+    expect(screen.queryByText(/EC2 instances: 15 of 40/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Showing a subset of resources/)).not.toBeInTheDocument()
   })
 
-  it('shows no disclosure when nothing was truncated', async () => {
-    installFetchMock({ connected: true, metrics: cloudWatchMetricsFixture() })
+  it('clicking "Load more" requests the next page using the server-provided cursor', async () => {
+    installFetchMock({
+      connected: true,
+      metrics: cloudWatchMetricsFixture({
+        healthSummary: { total: 2, healthy: 2, degraded: 0, critical: 0, down: 0, monitored: 2 },
+        pagination: { shown: 1, total: 2, hasMore: true, cursor: 'next-page-cursor' },
+      }),
+    })
 
     render(<MonitoringPage />)
+    const loadMoreButton = await screen.findByText('Load more resources')
+    loadMoreButton.click()
 
-    await screen.findByText('i-123')
-    expect(screen.queryByText(/Showing a subset of resources/)).not.toBeInTheDocument()
+    await waitFor(() => {
+      const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, ...unknown[]]>
+      const secondMetricsCall = calls.filter(([url]) => url.includes('/api/cloudwatch/metrics')).at(-1)
+      expect(secondMetricsCall?.[0]).toContain('cursor=next-page-cursor')
+    })
   })
 })
