@@ -321,8 +321,10 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
 
     expect(result).not.toBeNull();
     const typesPresent = new Set(result.services.map((s: any) => s.resourceType));
-    // Lambda safely degraded to empty; every other type still produced its result.
-    expect(typesPresent).toEqual(new Set(['ec2', 'rds', 'ecs', 'eks', 'load-balancer']));
+    // Lambda safely degraded to empty; every other type still produced its result --
+    // including dynamodb, whose fixture resource (table-3) is deliberately present here
+    // and whose mocked evaluation is not the one made to fail, unlike lambda's.
+    expect(typesPresent).toEqual(new Set(['ec2', 'rds', 'dynamodb', 'ecs', 'eks', 'load-balancer']));
     expect(result.services.some((s: any) => s.resourceType === 'lambda')).toBe(false);
     // resourceCounts is built from the pre-slice inventory arrays (before any block runs),
     // so it reflects "1 lambda function was in scope for this scan", unaffected by the
