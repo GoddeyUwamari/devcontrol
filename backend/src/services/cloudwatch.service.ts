@@ -991,118 +991,213 @@ export class CloudWatchService {
       eks: { shown: eksClustersInventory.length, total: eksClustersInventoryAll.length },
     }
 
-    const ec2Results = (
-      await Promise.all(
-        ec2Instances.map((instance) =>
-          this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.ec2, instance, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
-        )
-      )
-    ).filter((r): r is NonNullable<typeof r> => r !== null)
-    const ec2Services = ec2Results.map((r) => r.service)
-    const uptimeValues = ec2Services.map((s) => s.uptime).filter((v): v is number => v !== null)
-    const uptime = uptimeValues.length > 0 ? Math.round((uptimeValues.reduce((a, b) => a + b, 0) / uptimeValues.length) * 100) / 100 : null
+    // CloudWatch Scalability Phase 2B: the seven resource-type evaluation blocks below
+    // start concurrently instead of sequentially. Each block reads only its own disjoint
+    // slice of `resources` (partitioned by resource_type above, so no resource can ever
+    // appear in two blocks) and writes no shared state -- see the Phase 2B audit for the
+    // full independence proof. Each block is wrapped in its own try/catch so an
+    // unexpected rejection (anything not already handled by that block's own internal
+    // AWS-error handling inside evaluateResource/evaluateEcsService/evaluateEksService,
+    // which already return safe 'unknown'/empty results and never throw for ordinary AWS
+    // errors) degrades that one type to its existing empty/unknown representation instead
+    // of failing the other six blocks or the whole response. This is strictly more
+    // failure-isolated than the prior sequential-await chain, where an unhandled
+    // rejection in an earlier block already prevented every later block from running at
+    // all and produced a 500 with no partial data. Final response ordering (EC2, ALB,
+    // RDS, Lambda, DynamoDB, ECS, EKS) is fixed explicitly in the `services` concatenation
+    // below and does not depend on which block's promise settles first -- Promise.all()
+    // resolves values in input order, not completion order.
+    const ec2Task = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        const results = (
+          await Promise.all(
+            ec2Instances.map((instance) =>
+              this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.ec2, instance, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
+            )
+          )
+        ).filter((r): r is NonNullable<typeof r> => r !== null)
+        return results.map((r) => r.service)
+      } catch (err) {
+        console.error('[CloudWatch] EC2 evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
 
-    const rdsResults = (
-      await Promise.all(
-        rdsInstances.map((instance) =>
-          this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.rds, instance, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
-        )
-      )
-    ).filter((r): r is NonNullable<typeof r> => r !== null)
-    const rdsServices = rdsResults.map((r) => r.service)
+    const rdsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        const results = (
+          await Promise.all(
+            rdsInstances.map((instance) =>
+              this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.rds, instance, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
+            )
+          )
+        ).filter((r): r is NonNullable<typeof r> => r !== null)
+        return results.map((r) => r.service)
+      } catch (err) {
+        console.error('[CloudWatch] RDS evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
 
-    const lambdaResults = (
-      await Promise.all(
-        lambdaFunctions.map((fn) =>
-          this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.lambda, fn, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
-        )
-      )
-    ).filter((r): r is NonNullable<typeof r> => r !== null)
-    const lambdaServices = lambdaResults.map((r) => r.service)
+    const lambdaTask = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        const results = (
+          await Promise.all(
+            lambdaFunctions.map((fn) =>
+              this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.lambda, fn, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
+            )
+          )
+        ).filter((r): r is NonNullable<typeof r> => r !== null)
+        return results.map((r) => r.service)
+      } catch (err) {
+        console.error('[CloudWatch] Lambda evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
 
-    const dynamoResults = (
-      await Promise.all(
-        dynamoTables.map((table) =>
-          this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.dynamodb, table, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
-        )
-      )
-    ).filter((r): r is NonNullable<typeof r> => r !== null)
-    const dynamoServices = dynamoResults.map((r) => r.service)
+    const dynamoTask = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        const results = (
+          await Promise.all(
+            dynamoTables.map((table) =>
+              this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.dynamodb, table, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
+            )
+          )
+        ).filter((r): r is NonNullable<typeof r> => r !== null)
+        return results.map((r) => r.service)
+      } catch (err) {
+        console.error('[CloudWatch] DynamoDB evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
 
     // ECS bypasses evaluateResource() entirely — see evaluateEcsService() doc comment.
-    const ecsServices = await Promise.all(
-      ecsServicesInventory.map((svc) => this.evaluateEcsService(clients.ecs, svc))
-    )
+    const ecsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        return await Promise.all(ecsServicesInventory.map((svc) => this.evaluateEcsService(clients.ecs, svc)))
+      } catch (err) {
+        console.error('[CloudWatch] ECS evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
 
     // EKS also bypasses evaluateResource() entirely — see evaluateEksService() doc comment.
-    const eksServices = await Promise.all(
-      eksClustersInventory.map((cluster) => this.evaluateEksService(clients.eks, cluster))
-    )
+    const eksTask = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        return await Promise.all(eksClustersInventory.map((cluster) => this.evaluateEksService(clients.eks, cluster)))
+      } catch (err) {
+        console.error('[CloudWatch] EKS evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
 
-    const albEvaluations = (
-      await Promise.all(
-        albs.map((alb) =>
-          this.evaluateResource(
-            clients.cloudWatch,
-            resourceTypeRegistry['load-balancer'],
-            alb,
-            currentStart,
-            previousStart,
-            now,
-            periodSeconds,
-            lookbackSeconds
-          )
-        )
-      )
-    ).filter((r): r is NonNullable<typeof r> => r !== null)
-
-    const albServices = albEvaluations.map((r) => r.service)
-    const albResults = albEvaluations.map((r) => ({
-      service: r.service,
-      avgResponseTimeMs: r.extra.avgResponseTimeMs,
-      previousAvgResponseTimeMs: r.extra.previousAvgResponseTimeMs,
-      requestsPerMinute: r.extra.requestsPerMinute,
-      errorRate: r.extra.errorRate,
-      requestSum: r.extra.requestSum,
-      dims: r.extra.dims,
-    }))
-
-    // Response time / request-rate KPIs only make sense when at least one ALB exists —
-    // an EC2-only or Lambda+API-Gateway account genuinely has no ALB-shaped metrics.
-    let avgResponseTimeMs: number | null = null
-    let requestsPerMinute: number | null = null
-    let errorRate: number | null = null
-    let trendPercent: number | null = null
-    let responseTimeHistory: ResponseTimePoint[] = []
-
-    if (albResults.length > 0) {
-      const measuredLatencies = albResults.filter((r) => r.avgResponseTimeMs !== null)
-      avgResponseTimeMs =
-        measuredLatencies.length > 0
-          ? Math.round(measuredLatencies.reduce((sum, r) => sum + r.avgResponseTimeMs!, 0) / measuredLatencies.length)
-          : null
-      requestsPerMinute = albResults.some((r) => r.requestsPerMinute !== null)
-        ? albResults.reduce((sum, r) => sum + (r.requestsPerMinute ?? 0), 0)
-        : null
-      const errorRates = albResults.filter((r) => r.errorRate !== null)
-      errorRate = errorRates.length > 0 ? Math.round((errorRates.reduce((sum, r) => sum + r.errorRate!, 0) / errorRates.length) * 100) / 100 : null
-
-      const previousLatencies = albResults.filter((r) => r.previousAvgResponseTimeMs !== null)
-      const previousAvg =
-        previousLatencies.length > 0
-          ? previousLatencies.reduce((sum, r) => sum + r.previousAvgResponseTimeMs!, 0) / previousLatencies.length
-          : null
-      trendPercent =
-        avgResponseTimeMs !== null && previousAvg !== null && previousAvg > 0
-          ? Math.round(((avgResponseTimeMs - previousAvg) / previousAvg) * 1000) / 10
-          : null
-
-      // Chart the highest-traffic ALB — response time isn't meaningfully additive
-      // across multiple load balancers, so a single representative series beats an
-      // average-of-averages line.
-      const primary = albResults.reduce((best, r) => (r.requestSum > best.requestSum ? r : best), albResults[0])
-      responseTimeHistory = await this.getResponseTimeSeries(clients.cloudWatch, primary.dims, currentStart, now, periodSeconds)
+    // The ALB block additionally derives account-wide response-time/request-rate KPIs
+    // from its own results (a dependency on ALB's *own* output, not on any other block --
+    // see the Phase 2B audit), so its failure boundary returns the same "no ALB data"
+    // defaults computeMetrics() has always used when there are zero ALBs, rather than a
+    // bare empty array.
+    interface AlbBlockResult {
+      services: CloudWatchServiceHealth[]
+      avgResponseTimeMs: number | null
+      requestsPerMinute: number | null
+      errorRate: number | null
+      trendPercent: number | null
+      responseTimeHistory: ResponseTimePoint[]
     }
+
+    const albTask = (async (): Promise<AlbBlockResult> => {
+      const empty: AlbBlockResult = {
+        services: [],
+        avgResponseTimeMs: null,
+        requestsPerMinute: null,
+        errorRate: null,
+        trendPercent: null,
+        responseTimeHistory: [],
+      }
+      try {
+        const albEvaluations = (
+          await Promise.all(
+            albs.map((alb) =>
+              this.evaluateResource(
+                clients.cloudWatch,
+                resourceTypeRegistry['load-balancer'],
+                alb,
+                currentStart,
+                previousStart,
+                now,
+                periodSeconds,
+                lookbackSeconds
+              )
+            )
+          )
+        ).filter((r): r is NonNullable<typeof r> => r !== null)
+
+        const albServices = albEvaluations.map((r) => r.service)
+        const albResults = albEvaluations.map((r) => ({
+          service: r.service,
+          avgResponseTimeMs: r.extra.avgResponseTimeMs,
+          previousAvgResponseTimeMs: r.extra.previousAvgResponseTimeMs,
+          requestsPerMinute: r.extra.requestsPerMinute,
+          errorRate: r.extra.errorRate,
+          requestSum: r.extra.requestSum,
+          dims: r.extra.dims,
+        }))
+
+        // Response time / request-rate KPIs only make sense when at least one ALB exists —
+        // an EC2-only or Lambda+API-Gateway account genuinely has no ALB-shaped metrics.
+        if (albResults.length === 0) {
+          return { ...empty, services: albServices }
+        }
+
+        const measuredLatencies = albResults.filter((r) => r.avgResponseTimeMs !== null)
+        const avgResponseTimeMs =
+          measuredLatencies.length > 0
+            ? Math.round(measuredLatencies.reduce((sum, r) => sum + r.avgResponseTimeMs!, 0) / measuredLatencies.length)
+            : null
+        const requestsPerMinute = albResults.some((r) => r.requestsPerMinute !== null)
+          ? albResults.reduce((sum, r) => sum + (r.requestsPerMinute ?? 0), 0)
+          : null
+        const errorRates = albResults.filter((r) => r.errorRate !== null)
+        const errorRate = errorRates.length > 0 ? Math.round((errorRates.reduce((sum, r) => sum + r.errorRate!, 0) / errorRates.length) * 100) / 100 : null
+
+        const previousLatencies = albResults.filter((r) => r.previousAvgResponseTimeMs !== null)
+        const previousAvg =
+          previousLatencies.length > 0
+            ? previousLatencies.reduce((sum, r) => sum + r.previousAvgResponseTimeMs!, 0) / previousLatencies.length
+            : null
+        const trendPercent =
+          avgResponseTimeMs !== null && previousAvg !== null && previousAvg > 0
+            ? Math.round(((avgResponseTimeMs - previousAvg) / previousAvg) * 1000) / 10
+            : null
+
+        // Chart the highest-traffic ALB — response time isn't meaningfully additive
+        // across multiple load balancers, so a single representative series beats an
+        // average-of-averages line.
+        const primary = albResults.reduce((best, r) => (r.requestSum > best.requestSum ? r : best), albResults[0])
+        const responseTimeHistory = await this.getResponseTimeSeries(clients.cloudWatch, primary.dims, currentStart, now, periodSeconds)
+
+        return { services: albServices, avgResponseTimeMs, requestsPerMinute, errorRate, trendPercent, responseTimeHistory }
+      } catch (err) {
+        console.error('[CloudWatch] ALB evaluation block failed unexpectedly:', err)
+        return empty
+      }
+    })()
+
+    // All seven tasks above have already started (each async IIFE runs synchronously up
+    // to its own first await) -- this Promise.all() only waits for them, in a fixed input
+    // order that determines the destructured order below regardless of completion timing.
+    const [ec2Services, albBlock, rdsServices, lambdaServices, dynamoServices, ecsServices, eksServices] = await Promise.all([
+      ec2Task,
+      albTask,
+      rdsTask,
+      lambdaTask,
+      dynamoTask,
+      ecsTask,
+      eksTask,
+    ])
+
+    const uptimeValues = ec2Services.map((s) => s.uptime).filter((v): v is number => v !== null)
+    const uptime = uptimeValues.length > 0 ? Math.round((uptimeValues.reduce((a, b) => a + b, 0) / uptimeValues.length) * 100) / 100 : null
 
     let monthlyCost: number | null = null
     try {
@@ -1117,22 +1212,24 @@ export class CloudWatchService {
       nickname: account.nickname,
       region: clients.region,
       uptime,
-      avgResponseTimeMs,
-      requestsPerMinute,
-      errorRate,
+      avgResponseTimeMs: albBlock.avgResponseTimeMs,
+      requestsPerMinute: albBlock.requestsPerMinute,
+      errorRate: albBlock.errorRate,
       monthlyCost,
-      trendPercent,
-      responseTimeHistory,
+      trendPercent: albBlock.trendPercent,
+      responseTimeHistory: albBlock.responseTimeHistory,
       coverage: {
         ec2: ec2Instances.length > 0,
-        loadBalancer: albResults.length > 0,
+        loadBalancer: albBlock.services.length > 0,
         rds: rdsInstances.length > 0,
         dynamodb: dynamoTables.length > 0,
         ecs: ecsServicesInventory.length > 0,
         eks: eksClustersInventory.length > 0,
       },
       resourceCounts,
-      services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices, ...eksServices],
+      // Ordering is an explicit preserved response contract (EC2, ALB, RDS, Lambda,
+      // DynamoDB, ECS, EKS) -- see cloudwatch.service.concurrency.test.ts's ordering test.
+      services: [...ec2Services, ...albBlock.services, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices, ...eksServices],
       capturedAt: new Date().toISOString(),
     }
   }
