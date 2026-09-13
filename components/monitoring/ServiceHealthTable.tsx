@@ -30,6 +30,12 @@ interface ServiceHealth {
 interface ServiceHealthTableProps {
   services: ServiceHealth[]
   loading?: boolean
+  // Monitoring Truthfulness Phase 1: the actual MonitoringRange value the caller fetched
+  // (e.g. '1h', '7d') -- previously this table hardcoded "Uptime (30d)" regardless of what
+  // window was actually queried; no 30-day window exists anywhere in cloudwatch.service.ts's
+  // RANGE_CONFIG (max is 7d). Required, not defaulted, so a caller can't silently ship a
+  // wrong label the way the old hardcoded string did.
+  rangeLabel: string
 }
 
 // Fixed, known resource types with display labels — deliberately not derived purely from
@@ -76,7 +82,7 @@ function Sparkline({ data }: { data: number[] }) {
   )
 }
 
-export function ServiceHealthTable({ services, loading = false }: ServiceHealthTableProps) {
+export function ServiceHealthTable({ services, loading = false, rangeLabel }: ServiceHealthTableProps) {
   const [activeFilter, setActiveFilter] = useState<string>('all')
 
   // Only show filter tabs when at least one row actually has a resourceType — demo-mode
@@ -207,7 +213,7 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
                     <div className="text-sm font-semibold text-gray-900">
                       {service.uptime}
                     </div>
-                    <div className="text-xs text-gray-500">Uptime (30d)</div>
+                    <div className="text-xs text-gray-500">Uptime ({rangeLabel})</div>
                   </div>
 
                   {/* Response Time */}
@@ -215,7 +221,7 @@ export function ServiceHealthTable({ services, loading = false }: ServiceHealthT
                     <div className="text-sm font-semibold text-gray-900">
                       {service.responseTime}
                     </div>
-                    <div className="text-xs text-gray-500">p95 Latency</div>
+                    <div className="text-xs text-gray-500">Avg Latency</div>
                   </div>
 
                   {/* Error Rate */}

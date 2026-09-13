@@ -10,11 +10,11 @@ import { ActiveAlertsPanel } from '@/components/monitoring/ActiveAlertsPanel'
 import { SLODashboard } from '@/components/monitoring/SLODashboard'
 import { MonitoringEmptyState } from '@/components/monitoring/MonitoringEmptyState'
 import { MonitoringErrorState, MonitoringErrorType } from '@/components/monitoring/MonitoringErrorState'
+import { DevControlPlatformStatus, DevControlPlatformStatusService } from '@/components/monitoring/DevControlPlatformStatus'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { alertHistoryService } from '@/lib/services/alert-history.service'
-import { toast } from 'sonner'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
@@ -34,6 +34,19 @@ interface ServiceHealth {
 }
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
 interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; eks: boolean }
+interface ResourceCoverageCount { shown: number; total: number }
+
+// Monitoring Truthfulness Phase 1: human labels for cloudwatch.service.ts's
+// CloudWatchMetrics.resourceCounts keys, used only for the truncation-disclosure line.
+const RESOURCE_COUNT_LABELS: Record<string, string> = {
+  ec2: 'EC2 instances',
+  loadBalancer: 'load balancers',
+  rds: 'RDS instances',
+  lambda: 'Lambda functions',
+  dynamodb: 'DynamoDB tables',
+  ecs: 'ECS services',
+  eks: 'EKS clusters',
+}
 
 // Shared styling for the non-healthy system-status banner — centralized here instead of
 // repeating the same 3-way ternary in multiple render spots, and so adding a future
@@ -101,6 +114,14 @@ export default function MonitoringPage() {
   const [cloudWatchMetrics, setCloudWatchMetrics] = useState<any>(null)
   const [requestsAvailable, setRequestsAvailable] = useState(false)
   const [trendAvailable, setTrendAvailable] = useState(false)
+  // Monitoring Truthfulness Phase 1: DevControl's own Prometheus-backed infrastructure
+  // status, deliberately kept in a state object separate from `services` -- it must never
+  // be able to populate ServiceHealthTable, which is exclusively AWS/CloudWatch data.
+  const [platformStatus, setPlatformStatus] = useState<{ checked: boolean; available: boolean; services: DevControlPlatformStatusService[] }>({ checked: false, available: false, services: [] })
+  // Monitoring Truthfulness Phase 1: shown-vs-total per resource type, from
+  // CloudWatchMetrics.resourceCounts, so a truncated list (see cloudwatch.service.ts's
+  // per-scan resource cap) can be honestly disclosed instead of presented as complete.
+  const [resourceCounts, setResourceCounts] = useState<Record<string, ResourceCoverageCount> | null>(null)
 
   // Phase A: health-status counts derived from the existing services list — no new
   // backend data, just aggregating what fetchMetrics() already populates per resource.
@@ -150,12 +171,85 @@ export default function MonitoringPage() {
     try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/prometheus/snapshot`, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data) setLastSnapshot(data.data) } catch {}
   }, [])
 
-  const checkAwsConnection = useCallback(async () => {
-    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/cloudwatch/status`, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); setAwsConnected(data.success ? data.data.connected : false) } catch { setAwsConnected(false) }
+  // Monitoring Truthfulness Phase 1: returns the resolved boolean directly (in addition to
+  // setting state for other consumers) so the caller can branch on it immediately without
+  // relying on a `setState` having already been applied -- reading `awsConnected` right
+  // after calling this without awaiting a returned value was the root cause of the
+  // AWS-connection race that could let the Prometheus fallback run before connection
+  // state was actually known. See fetchAll() below.
+  const checkAwsConnection = useCallback(async (): Promise<boolean> => {
+    try {
+      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
+      const res = await fetch(`${API_URL}/api/cloudwatch/status`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const data = await res.json()
+      const connected = data.success ? data.data.connected : false
+      setAwsConnected(connected)
+      return connected
+    } catch {
+      setAwsConnected(false)
+      return false
+    }
   }, [])
 
   const fetchCloudWatchMetrics = useCallback(async (range?: string) => {
     try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const url = `${API_URL}/api/cloudwatch/metrics${range ? `?range=${encodeURIComponent(range)}` : ''}`; const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data) { setCloudWatchMetrics(data.data); return data.data } return null } catch { return null }
+  }, [])
+
+  // Monitoring Truthfulness Phase 1: DevControl's own platform status, sourced from
+  // DevControl's own Prometheus instance. Completely independent of AWS connection
+  // state -- this is checkable (and meaningful) whether or not the customer has connected
+  // AWS. Never fabricates: a field that genuinely has no data is omitted, never defaulted
+  // to a placeholder number, and a service whose `up{}` value is neither '1' nor '0' is
+  // reported as 'unknown', not forced into 'down'.
+  const fetchPlatformStatus = useCallback(async () => {
+    try {
+      const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 5000)
+      const apiRes = await fetch(`${API_URL}/api/prometheus/health`, { signal: controller.signal }).catch(() => null)
+      clearTimeout(timeoutId)
+      const isAvailable = apiRes?.ok ?? false
+      if (!isAvailable) {
+        setPlatformStatus({ checked: true, available: false, services: [] })
+        return
+      }
+
+      let responseTimeMs: number | null = null
+      const p95Query = await queryPrometheus('histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="devcontrol-api"}[5m]))').catch(() => null)
+      if (p95Query?.result?.[0]?.value?.[1]) {
+        const raw = parseFloat(p95Query.result[0].value[1])
+        if (!isNaN(raw) && raw > 0) responseTimeMs = Math.round(raw * 1000)
+      }
+      if (responseTimeMs === null) {
+        const avgQuery = await queryPrometheus('rate(http_request_duration_seconds_sum{job="devcontrol-api"}[5m]) / rate(http_request_duration_seconds_count{job="devcontrol-api"}[5m])').catch(() => null)
+        if (avgQuery?.result?.[0]?.value?.[1]) {
+          const raw = parseFloat(avgQuery.result[0].value[1])
+          if (!isNaN(raw) && raw > 0) responseTimeMs = Math.round(raw * 1000)
+        }
+      }
+      // No fabricated fallback here -- responseTimeMs stays null if genuinely unavailable.
+
+      const [apiUp, dbUp, nodeUp] = await Promise.all([
+        queryPrometheus('up{job="devcontrol-api"}').catch(() => null),
+        queryPrometheus('up{job="postgres-exporter"}').catch(() => null),
+        queryPrometheus('up{job="node-exporter"}').catch(() => null),
+      ])
+      const statusFor = (result: any): DevControlPlatformStatusService['status'] => {
+        const value = result?.result?.[0]?.value?.[1]
+        if (value === '1') return 'healthy'
+        if (value === '0') return 'down'
+        return 'unknown'
+      }
+      setPlatformStatus({
+        checked: true,
+        available: true,
+        services: [
+          { name: 'DevControl API', status: statusFor(apiUp), responseTimeMs },
+          { name: 'PostgreSQL', status: statusFor(dbUp), responseTimeMs: null },
+          { name: 'Node Exporter', status: statusFor(nodeUp), responseTimeMs: null },
+        ],
+      })
+    } catch {
+      setPlatformStatus({ checked: true, available: false, services: [] })
+    }
   }, [])
 
   // Reuses the same alertHistoryService the /observability/alerts page is built on,
@@ -177,22 +271,12 @@ export default function MonitoringPage() {
     }
   }, [])
 
-  const saveSnapshot = useCallback(async (metrics: any) => {
-    try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); await fetch(`${API_URL}/api/prometheus/snapshot`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(metrics) }) } catch {}
-  }, [])
-
   const runDiagnostic = useCallback(async () => {
     setIsDiagnosing(true); setDiagnosticResult(null)
     try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/prometheus/diagnose`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success) setDiagnosticResult(data.data) } catch {} finally { setIsDiagnosing(false) }
   }, [])
 
-  const generateTimeSeriesData = (baseValue: number, points: number = 12) => {
-    const now = Date.now(), interval = 5 * 60 * 1000, data = []
-    for (let i = points; i >= 0; i--) { const timestamp = now - (i * interval); const variation = (Math.random() - 0.5) * baseValue * 0.3; data.push({ timestamp, value: Math.max(0, Math.round(baseValue + variation)) }) }
-    return data
-  }
-
-  const fetchMetrics = useCallback(async (cwData?: any) => {
+  const fetchMetrics = useCallback(async (cwData?: any, connectedOverride?: boolean) => {
     const cw = cwData ?? cloudWatchMetrics
     if (cw && !demoMode) {
       const data = cw
@@ -211,6 +295,7 @@ export default function MonitoringPage() {
       setTrendAvailable(hasTrend)
       setResponseTimeData(Array.isArray(data.responseTimeHistory) ? data.responseTimeHistory : [])
       setCoverage(data.coverage ?? null)
+      setResourceCounts(data.resourceCounts ?? null)
 
       const mappedServices: ServiceHealth[] = (data.services ?? []).map((s: any) => ({
         name: s.name,
@@ -244,7 +329,11 @@ export default function MonitoringPage() {
       return
     }
     if (demoMode) { generateDemoMetrics(); return }
-    if (awsConnected === true) {
+    // Monitoring Truthfulness Phase 1: prefer the caller-provided, just-resolved connection
+    // result over the `awsConnected` state closure, which may not yet reflect a check that
+    // just completed (see refreshAwsHealth()).
+    const isConnected = connectedOverride ?? awsConnected
+    if (isConnected === true) {
       // AWS is connected but this fetch couldn't get CloudWatch data — don't fall
       // through to the Prometheus path below. Prometheus isn't how this account's
       // data is sourced, and querying it here would show a misleading "can't reach
@@ -257,71 +346,67 @@ export default function MonitoringPage() {
       })
       return
     }
-    try {
-      setLoading(true); setError(null)
-      const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 5000)
-      const apiRes = await fetch(`${API_URL}/api/prometheus/health`, { signal: controller.signal }).catch(() => null)
-      clearTimeout(timeoutId)
-      const isAvailable = apiRes?.ok ?? false; setMetricsAvailable(isAvailable); setSystemStatus(isAvailable ? 'healthy' : 'down')
-      if (!isAvailable) {
-        setLoading(false)
-        setServices([{ name: 'DevControl API', description: 'Main application server', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0, critical: true, monitored: true }, { name: 'PostgreSQL', description: 'Primary database', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0, critical: true, monitored: true }, { name: 'Node Exporter', description: 'System metrics collector', status: 'down', uptime: '0%', responseTime: '--', errorRate: 0, monitored: true }])
-        setError({ type: 'connection', message: 'Unable to connect to Prometheus', action: 'Verify Prometheus is running and accessible at ' + (process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090') }); return
-      }
-      const uptimeData = await queryPrometheus('up{job="devcontrol-api"}')
-      if (uptimeData?.result?.[0]?.value?.[1]) setUptime(parseFloat(uptimeData.result[0].value[1]) === 1 ? '99.95%' : '0%')
-      let p95Value = 0
-      const responseTimeQuery = await queryPrometheus('histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="devcontrol-api"}[5m]))')
-      if (responseTimeQuery?.result?.[0]?.value?.[1]) { const raw = parseFloat(responseTimeQuery.result[0].value[1]); if (!isNaN(raw) && raw > 0) p95Value = Math.round(raw * 1000) }
-      if (p95Value === 0) { const avgQuery = await queryPrometheus('rate(http_request_duration_seconds_sum{job="devcontrol-api"}[5m]) / rate(http_request_duration_seconds_count{job="devcontrol-api"}[5m])'); if (avgQuery?.result?.[0]?.value?.[1]) { const raw = parseFloat(avgQuery.result[0].value[1]); if (!isNaN(raw) && raw > 0) p95Value = Math.round(raw * 1000) } }
-      if (p95Value === 0) p95Value = 45
-      setResponseTime(p95Value); setResponseTimeString(`${p95Value}ms`)
-      const chartData = generateTimeSeriesData(p95Value); setResponseTimeData(chartData)
-      if (chartData.length > 1) { const recent = chartData[chartData.length - 1].value; const previous = chartData[chartData.length - 2].value; setTrendPercent(previous > 0 ? ((recent - previous) / previous) * 100 : 0) }
-      const costData = await queryPrometheus('infrastructure_cost_monthly_total')
-      if (costData?.result?.[0]?.value?.[1]) { const cost = parseFloat(costData.result[0].value[1]); setMonthlyCost(!isNaN(cost) && cost > 0 ? `$${cost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '$0') } else setMonthlyCost('$0')
-      const requestRateQuery = await queryPrometheus('rate(http_requests_total{job="devcontrol-api"}[5m]) * 60')
-      if (requestRateQuery?.result?.[0]?.value?.[1]) { const rate = parseFloat(requestRateQuery.result[0].value[1]); if (!isNaN(rate)) setRequestsPerMinute(Math.round(rate)) }
-      const serviceHealthData = await Promise.all([queryPrometheus('up{job="devcontrol-api"}'), queryPrometheus('up{job="postgres-exporter"}'), queryPrometheus('up{job="node-exporter"}')])
-      const updatedServices: ServiceHealth[] = [
-        { name: 'DevControl API', description: 'Main application server', status: serviceHealthData[0]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[0]?.result?.[0]?.value?.[1] === '1' ? '99.95%' : '0%', responseTime: p95Value > 0 ? `${p95Value}ms` : '--', errorRate: 0.05, critical: true, recentIncidents: 0, uptimeHistory: [99,99.5,99.8,99.9,99.95,99.9,99.95,100], monitored: true },
-        { name: 'PostgreSQL', description: 'Primary database', status: serviceHealthData[1]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[1]?.result?.[0]?.value?.[1] === '1' ? '100%' : '0%', responseTime: '12ms', errorRate: 0.0, critical: true, recentIncidents: 0, uptimeHistory: [100,100,100,100,100,100,100,100], monitored: true },
-        { name: 'Node Exporter', description: 'System metrics collector', status: serviceHealthData[2]?.result?.[0]?.value?.[1] === '1' ? 'healthy' : 'down', uptime: serviceHealthData[2]?.result?.[0]?.value?.[1] === '1' ? '100%' : '0%', responseTime: '--', errorRate: 0.0, critical: false, recentIncidents: 0, uptimeHistory: [100,100,99.9,100,100,100,100,100], monitored: true },
-      ]
-      setServices(updatedServices); setLastSynced(new Date())
-      const parsedUptime = parseFloat(uptime)
-      const parsedMonthlyCost = parseFloat(monthlyCost.replace(/[$,]/g, ''))
-      saveSnapshot({
-        uptime: Number.isNaN(parsedUptime) ? null : parsedUptime,
-        responseTimeMs: Number.isFinite(responseTime) ? responseTime : null,
-        requestsPerMinute: Number.isFinite(requestsPerMinute) ? requestsPerMinute : null,
-        monthlyCost: Number.isNaN(parsedMonthlyCost) ? null : parsedMonthlyCost,
-        services: updatedServices, slos, systemStatus,
-      })
-      setLoading(false); toast.success('Metrics updated')
-    } catch (err: any) {
-      console.error('Error fetching metrics:', err)
-      if (err.message === 'TIMEOUT') setError({ type: 'timeout', message: 'Request timed out', action: 'The Prometheus server is taking too long to respond.' })
-      else if (err.message === 'CREDENTIALS') setError({ type: 'credentials', message: 'Authentication failed', action: 'Check your Prometheus credentials in Settings' })
-      else setError({ type: 'connection', message: 'Unable to connect to Prometheus', action: 'Verify Prometheus is running and accessible at ' + (process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090') })
-      setLoading(false); toast.error('Failed to fetch metrics')
-    }
+    // Monitoring Truthfulness Phase 1: awsConnected is confirmed false here (the `=== true`
+    // branch above already returned). This function must never substitute DevControl's own
+    // Prometheus data for AWS Service Health -- the dedicated "AWS not connected" CTA
+    // (gated on awsConnected === false, rendered below) already communicates this state.
+    // DevControl's own platform health is fetched and rendered entirely independently by
+    // fetchPlatformStatus() / <DevControlPlatformStatus>, never through `services` here.
+    setLoading(false)
+    setMetricsAvailable(false)
+    setServices([])
+    setResourceCounts(null)
   }, [timeRange, isDemoActive, generateDemoMetrics, fetchAlerts, awsConnected])
 
-  const handleRefresh = async () => { await fetchCloudWatchMetrics(timeRange).then(fetchMetrics) }
+  // Monitoring Truthfulness Phase 1: the AWS connection check is always awaited, and its
+  // resolved value is passed explicitly into fetchMetrics() as `connectedOverride` rather
+  // than relying on fetchMetrics()'s closure having already observed the `awsConnected`
+  // state update (React state updates are not synchronous, which is what made the old
+  // "call checkAwsConnection() then immediately read awsConnected" pattern racy). This is
+  // strict await-ordering, not a timeout/delay.
+  const refreshAwsHealth = useCallback(async () => {
+    if (demoMode) { fetchMetrics(); return }
+    const connected = await checkAwsConnection()
+    if (connected) {
+      const cw = await fetchCloudWatchMetrics(timeRange)
+      fetchMetrics(cw, true)
+    } else {
+      fetchMetrics(undefined, false)
+    }
+  }, [demoMode, checkAwsConnection, fetchCloudWatchMetrics, fetchMetrics, timeRange])
+
+  const handleRefresh = async () => { await refreshAwsHealth() }
 
   useEffect(() => {
-    checkAwsConnection()
-    fetchCloudWatchMetrics(timeRange).then(fetchMetrics)
+    refreshAwsHealth()
     loadSnapshot()
-    const interval = setInterval(() => fetchCloudWatchMetrics(timeRange).then(fetchMetrics), 60000)
+    const interval = setInterval(refreshAwsHealth, 60000)
     return () => clearInterval(interval)
-  }, [checkAwsConnection, fetchCloudWatchMetrics, fetchMetrics, loadSnapshot, timeRange])
+  }, [refreshAwsHealth, loadSnapshot])
 
-  if (!metricsAvailable && !isDemoActive && !loading && !error && awsConnected !== true && !cloudWatchMetrics) {
+  // Monitoring Truthfulness Phase 1: DevControl's own platform status is fetched entirely
+  // independently of the AWS-connection state machine above -- it is meaningful whether or
+  // not this organization has connected AWS, and must never share a fetch/orchestration
+  // path with the AWS Service Health data.
+  useEffect(() => {
+    fetchPlatformStatus()
+    const interval = setInterval(fetchPlatformStatus, 60000)
+    return () => clearInterval(interval)
+  }, [fetchPlatformStatus])
+
+  // Monitoring Truthfulness Phase 1: this generic empty state is for genuinely unknown
+  // connection status only (awsConnected === null) -- "confirmed not connected"
+  // (awsConnected === false) has its own explicit "Stop Flying Blind on AWS" CTA below,
+  // which must still render. Before this phase, the removed Prometheus fallback always
+  // set `metricsAvailable` or `error` as a side effect for the not-connected case, which
+  // incidentally kept this gate from ever firing then; correctly removing that fabrication
+  // meant this gate needed its own explicit `awsConnected === null` condition instead of
+  // the looser `awsConnected !== true`.
+  if (!metricsAvailable && !isDemoActive && !loading && !error && awsConnected === null && !cloudWatchMetrics) {
     return (
       <ErrorBoundary>
         <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
+          <DevControlPlatformStatus checked={platformStatus.checked} available={platformStatus.available} services={platformStatus.services} />
           <MonitoringEmptyState onSetup={() => router.push('/settings/monitoring')} />
         </div>
       </ErrorBoundary>
@@ -375,6 +460,12 @@ export default function MonitoringPage() {
           )}
         </div>
       </div>
+
+      {/* Monitoring Truthfulness Phase 1: DevControl's own platform status -- deliberately
+          its own section, its own heading, and its own data source, rendered regardless of
+          AWS connection state. Must never be confused with, or feed, AWS Service Health
+          below. */}
+      <DevControlPlatformStatus checked={platformStatus.checked} available={platformStatus.available} services={platformStatus.services} />
 
       {/* AWS not connected */}
       {!isDemoActive && awsConnected === false && (
@@ -524,7 +615,18 @@ export default function MonitoringPage() {
                 <a href="/services" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">All services <ArrowRight size={11} /></a>
               </div>
             </div>
-            <ServiceHealthTable services={services} loading={loading} />
+            {/* Monitoring Truthfulness Phase 1: honest disclosure when cloudwatch.service.ts's
+                per-scan resource cap has hidden resources of a given type, instead of
+                presenting a partial list as if it were complete. */}
+            {resourceCounts && Object.entries(resourceCounts).some(([, c]) => c.total > c.shown) && (
+              <p className="text-[11px] text-amber-600 mb-3">
+                Showing a subset of resources for some types — {Object.entries(resourceCounts)
+                  .filter(([, c]) => c.total > c.shown)
+                  .map(([type, c]) => `${RESOURCE_COUNT_LABELS[type] ?? type}: ${c.shown} of ${c.total}`)
+                  .join(', ')}.
+              </p>
+            )}
+            <ServiceHealthTable services={services} loading={loading} rangeLabel={timeRange} />
           </div>
 
           {/* SLO dashboard */}
@@ -548,7 +650,12 @@ export default function MonitoringPage() {
         </>
       )}
 
-      {!loading && !isDemoActive && services.length === 0 && !error && (
+      {/* Monitoring Truthfulness Phase 1: excludes awsConnected === false -- that case
+          already has its own explicit "Stop Flying Blind on AWS" CTA above (rendered
+          because services.length is now honestly 0 there instead of the removed
+          Prometheus fallback's fabricated rows), so this block would otherwise render a
+          second, redundant "connect AWS" prompt underneath it. */}
+      {!loading && !isDemoActive && services.length === 0 && !error && awsConnected !== false && (
         awsConnected === true ? (
           // AWS is connected and CloudWatch is reachable — the gap is that nothing has
           // been discovered yet, not that monitoring was never set up. Sending this org

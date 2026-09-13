@@ -83,8 +83,27 @@ export interface CloudWatchMetrics {
   // What this account topology actually lets us measure — drives the page's coverage
   // claim instead of a hardcoded "EC2, RDS, Lambda" string.
   coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; ecs: boolean; eks: boolean }
+  // Monitoring Truthfulness Phase 1: shown-vs-total per resource type, so the UI can
+  // honestly disclose when the per-scan cap below (ec2Instances.slice(0, 15), etc.) has
+  // silently omitted resources, instead of presenting a partial list as if it were
+  // complete. Built from the same pre-slice inventory arrays already fetched for
+  // `coverage` above — no additional AWS/CloudWatch calls.
+  resourceCounts: {
+    ec2: ResourceCoverageCount
+    loadBalancer: ResourceCoverageCount
+    rds: ResourceCoverageCount
+    lambda: ResourceCoverageCount
+    dynamodb: ResourceCoverageCount
+    ecs: ResourceCoverageCount
+    eks: ResourceCoverageCount
+  }
   services: CloudWatchServiceHealth[]
   capturedAt: string
+}
+
+export interface ResourceCoverageCount {
+  shown: number
+  total: number
 }
 
 interface InventoryRow {
@@ -905,13 +924,34 @@ export class CloudWatchService {
     const previousStart = new Date(currentStart.getTime() - lookbackSeconds * 1000)
 
     const resources = await this.getResourceInventory(organizationId)
-    const ec2Instances = resources.filter((r) => r.resource_type === 'ec2').slice(0, 15)
-    const rdsInstances = resources.filter((r) => r.resource_type === 'rds').slice(0, 15)
-    const albs = resources.filter((r) => r.resource_type === 'load-balancer' && r.metadata?.type === 'application').slice(0, 5)
-    const lambdaFunctions = resources.filter((r) => r.resource_type === 'lambda').slice(0, 15)
-    const dynamoTables = resources.filter((r) => r.resource_type === 'dynamodb').slice(0, 15)
-    const ecsServicesInventory = resources.filter((r) => r.resource_type === 'ecs').slice(0, 15)
-    const eksClustersInventory = resources.filter((r) => r.resource_type === 'eks').slice(0, 15)
+    const ec2InstancesAll = resources.filter((r) => r.resource_type === 'ec2')
+    const rdsInstancesAll = resources.filter((r) => r.resource_type === 'rds')
+    const albsAll = resources.filter((r) => r.resource_type === 'load-balancer' && r.metadata?.type === 'application')
+    const lambdaFunctionsAll = resources.filter((r) => r.resource_type === 'lambda')
+    const dynamoTablesAll = resources.filter((r) => r.resource_type === 'dynamodb')
+    const ecsServicesInventoryAll = resources.filter((r) => r.resource_type === 'ecs')
+    const eksClustersInventoryAll = resources.filter((r) => r.resource_type === 'eks')
+
+    const ec2Instances = ec2InstancesAll.slice(0, 15)
+    const rdsInstances = rdsInstancesAll.slice(0, 15)
+    const albs = albsAll.slice(0, 5)
+    const lambdaFunctions = lambdaFunctionsAll.slice(0, 15)
+    const dynamoTables = dynamoTablesAll.slice(0, 15)
+    const ecsServicesInventory = ecsServicesInventoryAll.slice(0, 15)
+    const eksClustersInventory = eksClustersInventoryAll.slice(0, 15)
+
+    // Monitoring Truthfulness Phase 1: built from the *All arrays above (pre-slice), so
+    // this honestly reflects what was hidden by the caps above -- never a wasted second
+    // inventory query.
+    const resourceCounts: CloudWatchMetrics['resourceCounts'] = {
+      ec2: { shown: ec2Instances.length, total: ec2InstancesAll.length },
+      loadBalancer: { shown: albs.length, total: albsAll.length },
+      rds: { shown: rdsInstances.length, total: rdsInstancesAll.length },
+      lambda: { shown: lambdaFunctions.length, total: lambdaFunctionsAll.length },
+      dynamodb: { shown: dynamoTables.length, total: dynamoTablesAll.length },
+      ecs: { shown: ecsServicesInventory.length, total: ecsServicesInventoryAll.length },
+      eks: { shown: eksClustersInventory.length, total: eksClustersInventoryAll.length },
+    }
 
     const ec2Results = (
       await Promise.all(
@@ -1053,6 +1093,7 @@ export class CloudWatchService {
         ecs: ecsServicesInventory.length > 0,
         eks: eksClustersInventory.length > 0,
       },
+      resourceCounts,
       services: [...ec2Services, ...albServices, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices, ...eksServices],
       capturedAt: new Date().toISOString(),
     }
