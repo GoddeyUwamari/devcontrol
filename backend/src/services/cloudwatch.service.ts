@@ -585,12 +585,16 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   // onboarding grant. Bump to 'live_verified' once a real or disposable EKS cluster has
   // been evaluated end-to-end.
   eks: 'deployed',
-  // Service Health Coverage Expansion: deployed and type-safe; ec2:DescribeVolumeStatus
-  // (see evaluateEbsVolumes()) has never been called against real AWS data — this account
-  // has zero EBS volumes. IAM permission for ec2:DescribeVolumeStatus is unconfirmed
-  // (existing discovery only uses ec2:DescribeVolumes, a distinct action). Bump to
-  // 'live_verified' once a real or disposable EBS volume has been evaluated end-to-end.
-  ebs: 'deployed',
+  // Service Health Coverage Expansion: live-verified 2026-09-14 in production (account
+  // 815931739526, us-east-1) against two real EBS volumes (vol-01f542a56c1d5e998,
+  // available; and the devcontrol-backend instance's attached root volume, in-use) —
+  // ec2:DescribeVolumeStatus succeeded (IAM permission confirmed granted, distinct from
+  // discovery's own ec2:DescribeVolumes), both resolved VolumeStatus.Status 'ok', and
+  // evaluateEbsVolumes() correctly mapped both to 'healthy' with monitored: true and a
+  // real "Status check events" signal — confirmed via the authenticated Infrastructure
+  // Intelligence page, not generic Resource Explorer inventory data (which would show
+  // status 'unknown' and a "Not monitored" pill instead).
+  ebs: 'live_verified',
   // Deployed and type-safe; the AWS/CloudFront GetMetricData call (see
   // evaluateCloudFrontDistributions()) has never been called against real distribution
   // data — this account has zero CloudFront distributions. IAM permission for
