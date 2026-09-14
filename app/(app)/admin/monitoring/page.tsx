@@ -37,7 +37,7 @@ interface MonitoringError { type: MonitoringErrorType; message: string; action?:
 // where this type never included lambda or ecs even though both have always been
 // evaluated by the backend (see cloudwatch.service.ts's coverage object) — coverageLabel
 // below silently omitted them from the summary string as a result.
-interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; lambda: boolean; dynamodb: boolean; ecs: boolean; eks: boolean; ebs: boolean; cloudfront: boolean }
+interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; lambda: boolean; dynamodb: boolean; ecs: boolean; eks: boolean; ebs: boolean; cloudfront: boolean; aurora: boolean }
 
 // CloudWatch Scalability Phase 2D: complete-fleet aggregate health, computed server-side
 // from every evaluated resource (see cloudwatch.service.ts's computeMetrics()) -- never
@@ -95,6 +95,7 @@ export default function MonitoringPage() {
       coverage.eks && 'EKS',
       coverage.ebs && 'EBS',
       coverage.cloudfront && 'CloudFront',
+      coverage.aurora && 'Aurora',
     ].filter(Boolean)
     return parts.length > 0 ? parts.join(', ') : 'no monitored resources yet'
   }, [coverage])
@@ -538,7 +539,7 @@ export default function MonitoringPage() {
               className="bg-white text-violet-600 border border-violet-200 px-7 py-3 rounded-lg text-sm font-semibold cursor-pointer hover:bg-violet-50 transition-colors">Explore Demo Data</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto">
-            {[{ icon: '📊', label: 'Real-time visibility', desc: 'Identify issues before they impact users' }, { icon: '🔔', label: 'Proactive alerts', desc: 'Get notified before incidents escalate' }, { icon: '💰', label: 'Cost leak detection', desc: 'Find wasted spend across all services' }].map(({ icon, label, desc }) => (
+            {[{ icon: '📊', label: 'Continuous visibility', desc: 'Identify issues before they impact users' }, { icon: '🔔', label: 'Proactive alerts', desc: 'Get notified before incidents escalate' }, { icon: '💰', label: 'Cost leak detection', desc: 'Find wasted spend across all services' }].map(({ icon, label, desc }) => (
               <div key={label} className="bg-white rounded-xl p-4 border border-violet-100 text-left">
                 <div className="text-2xl mb-2">{icon}</div>
                 <p className="text-xs font-semibold text-slate-900 mb-1">{label}</p>

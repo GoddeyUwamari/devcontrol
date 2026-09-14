@@ -421,6 +421,7 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
       eks: false,
       ebs: false,
       cloudfront: false,
+      aurora: false,
     });
   });
 

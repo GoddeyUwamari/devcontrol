@@ -69,6 +69,7 @@ import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../c
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
 import { describeDynamoDBTable } from './dynamodb-table.util';
 import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
+import { describeAuroraClusters } from './aurora-cluster.util';
 
 /**
  * Resource types allowed by subscription tier
@@ -416,6 +417,17 @@ export class AWSResourceDiscoveryService {
         } catch (error: any) {
           console.error(`❌ [Discovery] DynamoDB enrichment failed:`, error.message);
           errors.push(`DynamoDB enrichment: ${error.message}`);
+        }
+
+        try {
+          const auroraEntries = allowedEntries.filter((e) => e.resourceType === 'aurora');
+          if (auroraEntries.length > 0) {
+            const { confirmed, reclassified } = await this.enrichAuroraClusters(organizationId, client, awsClients.rds!, auroraEntries);
+            console.log(`✅ [Discovery] Confirmed ${confirmed} Aurora cluster(s), reclassified ${reclassified} non-Aurora DB cluster(s) out of 'aurora'`);
+          }
+        } catch (error: any) {
+          console.error(`❌ [Discovery] Aurora cluster enrichment failed:`, error.message);
+          errors.push(`Aurora cluster enrichment: ${error.message}`);
         }
 
         try {
@@ -1342,6 +1354,93 @@ export class AWSResourceDiscoveryService {
     }
 
     return enrichedCount;
+  }
+
+  /**
+   * Aurora Service Health: corrects the generic Resource Explorer
+   * classification for AWS::RDS::DBCluster rows, which cannot distinguish a
+   * real Aurora cluster from a non-Aurora RDS Multi-AZ DB cluster (both
+   * surface identically -- see resourceExplorer.service.ts's own comment on
+   * this). One unfiltered, paginated DescribeDBClusters call for the whole
+   * region (see aurora-cluster.util.ts) -- never one call per cluster.
+   *
+   * A candidate not found in this cycle's DescribeDBClusters response
+   * (transient Resource Explorer/RDS skew, a deletion in progress, or a
+   * permissions gap) is left completely untouched -- same "no data this
+   * cycle means no write at all" precedent as enrichDynamoDBTables(): never
+   * reclassified away from 'aurora' on mere absence, and never guessed at.
+   *
+   * A candidate whose real Engine is confirmed NOT an Aurora engine is
+   * reclassified into the existing 'rds' type (never a new type invented
+   * for this) and flagged in metadata + a console warning for review --
+   * approved policy. Its resource_arn/resource_id/identity are untouched;
+   * only resource_type and metadata change, so the underlying AWS inventory
+   * row is corrected, not corrupted or dropped.
+   */
+  private async enrichAuroraClusters(
+    organizationId: string,
+    client: PoolClient,
+    rdsClient: RDSClient,
+    entries: NormalizedResourceEntry[]
+  ): Promise<{ confirmed: number; reclassified: number }> {
+    const result = await describeAuroraClusters(rdsClient);
+    if (result.status === 'unavailable') {
+      console.error(`[Discovery] Aurora cluster enrichment unavailable this cycle: ${result.reason}`);
+      return { confirmed: 0, reclassified: 0 };
+    }
+
+    let confirmed = 0;
+    let reclassified = 0;
+
+    for (const entry of entries) {
+      const clusterId = this.resourceExplorer.extractResourceId(entry.arn);
+      const cluster = result.clustersById.get(clusterId);
+
+      if (!cluster) continue;
+
+      if (!cluster.isAuroraEngine) {
+        console.warn(
+          `[Discovery] Reclassifying ${entry.arn} out of 'aurora': DescribeDBClusters reports Engine=${cluster.engine || 'unknown'}, not an Aurora engine`
+        );
+        await client.query(
+          `UPDATE aws_resources
+           SET resource_type = 'rds',
+               metadata = metadata || $1::jsonb,
+               updated_at = NOW()
+           WHERE organization_id = $2 AND resource_arn = $3`,
+          [
+            JSON.stringify({
+              engine: cluster.engine || 'unknown',
+              reclassified_from: 'aurora',
+              reclassification_reason: `DescribeDBClusters reported Engine=${cluster.engine || 'unknown'}, which is not an Aurora engine`,
+            }),
+            organizationId,
+            entry.arn,
+          ]
+        );
+        reclassified++;
+        continue;
+      }
+
+      await client.query(
+        `UPDATE aws_resources
+         SET metadata = metadata || $1::jsonb, updated_at = NOW()
+         WHERE organization_id = $2 AND resource_arn = $3`,
+        [
+          JSON.stringify({
+            engine: cluster.engine,
+            engine_mode: cluster.engineMode,
+            cluster_status: cluster.status,
+            has_reader: cluster.hasReader,
+          }),
+          organizationId,
+          entry.arn,
+        ]
+      );
+      confirmed++;
+    }
+
+    return { confirmed, reclassified };
   }
 
   /**
