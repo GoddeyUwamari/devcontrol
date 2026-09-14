@@ -37,8 +37,11 @@ export interface CursorPayload {
 }
 
 // Fixed type-bucket order, matching computeMetrics()'s own services[] concatenation
-// order (EC2, ALB, RDS, Lambda, DynamoDB, ECS, EKS) -- see cloudwatch.service.ts's
-// ordering comment on that concatenation, which this must stay consistent with.
+// order (EC2, ALB, RDS, Lambda, DynamoDB, ECS, EKS, EBS, CloudFront) -- see
+// cloudwatch.service.ts's ordering comment on that concatenation, which this must stay
+// consistent with. EBS/CloudFront (Service Health Coverage Expansion) are appended after
+// the original seven rather than interleaved, so pagination cursors issued before this
+// change remain valid.
 const TYPE_ORDER: Record<CloudWatchServiceHealth['resourceType'], number> = {
   ec2: 0,
   'load-balancer': 1,
@@ -47,6 +50,8 @@ const TYPE_ORDER: Record<CloudWatchServiceHealth['resourceType'], number> = {
   dynamodb: 4,
   ecs: 5,
   eks: 6,
+  ebs: 7,
+  cloudfront: 8,
 }
 
 /**

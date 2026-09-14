@@ -27,7 +27,7 @@ function metricsFixture(overrides: Partial<CloudWatchMetrics> = {}): CloudWatchM
     monthlyCost: null,
     trendPercent: null,
     responseTimeHistory: [],
-    coverage: { ec2: true, loadBalancer: false, rds: false, dynamodb: false, ecs: false, eks: false },
+    coverage: { ec2: true, loadBalancer: false, rds: false, lambda: false, dynamodb: false, ecs: false, eks: false, ebs: false, cloudfront: false },
     resourceCounts: {
       ec2: { shown: 1, total: 1 },
       loadBalancer: { shown: 0, total: 0 },
@@ -36,6 +36,8 @@ function metricsFixture(overrides: Partial<CloudWatchMetrics> = {}): CloudWatchM
       dynamodb: { shown: 0, total: 0 },
       ecs: { shown: 0, total: 0 },
       eks: { shown: 0, total: 0 },
+      ebs: { shown: 0, total: 0 },
+      cloudfront: { shown: 0, total: 0 },
     },
     // CloudWatch Scalability Phase 2D: complete-fleet aggregate fields, required on
     // every CloudWatchMetrics -- this cache-layer test doesn't exercise their

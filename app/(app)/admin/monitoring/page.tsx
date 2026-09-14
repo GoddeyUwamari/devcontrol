@@ -33,7 +33,11 @@ interface ServiceHealth {
   resourceType?: string; metrics?: ServiceMetric[]
 }
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
-interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; eks: boolean }
+// Service Health Coverage Expansion: adds ebs/cloudfront, and fixes a pre-existing drift
+// where this type never included lambda or ecs even though both have always been
+// evaluated by the backend (see cloudwatch.service.ts's coverage object) — coverageLabel
+// below silently omitted them from the summary string as a result.
+interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; lambda: boolean; dynamodb: boolean; ecs: boolean; eks: boolean; ebs: boolean; cloudfront: boolean }
 
 // CloudWatch Scalability Phase 2D: complete-fleet aggregate health, computed server-side
 // from every evaluated resource (see cloudwatch.service.ts's computeMetrics()) -- never
@@ -81,7 +85,17 @@ export default function MonitoringPage() {
   const [coverage, setCoverage] = useState<CloudWatchCoverage | null>(null)
   const coverageLabel = useMemo(() => {
     if (!coverage) return 'EC2, Application Load Balancer'
-    const parts = [coverage.ec2 && 'EC2', coverage.loadBalancer && 'Application Load Balancer', coverage.rds && 'RDS (inventory only)', coverage.dynamodb && 'DynamoDB', coverage.eks && 'EKS'].filter(Boolean)
+    const parts = [
+      coverage.ec2 && 'EC2',
+      coverage.loadBalancer && 'Application Load Balancer',
+      coverage.rds && 'RDS (inventory only)',
+      coverage.lambda && 'Lambda',
+      coverage.dynamodb && 'DynamoDB',
+      coverage.ecs && 'ECS',
+      coverage.eks && 'EKS',
+      coverage.ebs && 'EBS',
+      coverage.cloudfront && 'CloudFront',
+    ].filter(Boolean)
     return parts.length > 0 ? parts.join(', ') : 'no monitored resources yet'
   }, [coverage])
 
@@ -464,7 +478,7 @@ export default function MonitoringPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Infrastructure Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">Real-time AWS infrastructure health, performance, cost, and risk. {coverageLabel} · {cloudWatchMetrics?.region || AWS_REGION}</p>
+          <p className="text-sm text-slate-500 leading-relaxed">AWS infrastructure health, performance, cost, and risk. {coverageLabel} · {cloudWatchMetrics?.region || AWS_REGION}</p>
           {cloudWatchMetrics && (
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium bg-green-50 border border-green-200 rounded-full px-3 py-1 text-green-600">

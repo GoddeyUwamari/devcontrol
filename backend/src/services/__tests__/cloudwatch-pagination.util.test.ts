@@ -196,6 +196,32 @@ describe('paginateServices', () => {
     expect(result.services.map((s) => s.resourceType)).toEqual(['ec2', 'load-balancer', 'rds', 'lambda', 'dynamodb', 'ecs', 'eks']);
   });
 
+  it('Service Health Coverage Expansion: ebs and cloudfront sort after the original seven types, never interleaved with them', () => {
+    // Input already reflects computeMetrics()'s fixed concatenation order -- ebs/cloudfront
+    // are appended after eks, exactly as the pagination fixture above appends nothing past
+    // eks for the original seven. This proves TYPE_ORDER was extended, not just widened to
+    // compile.
+    const fleet = [
+      fx('ec2', 'a', '1'),
+      fx('eks', 'cluster-a', '7'),
+      fx('ebs', 'vol-a', '8'),
+      fx('cloudfront', 'dist-a', '9'),
+    ];
+    const result = paginateServices(fleet, null, 100);
+    expect(result.services.map((s) => s.resourceType)).toEqual(['ec2', 'eks', 'ebs', 'cloudfront']);
+  });
+
+  it('Service Health Coverage Expansion: a cursor resumes correctly across the ebs/cloudfront type boundary', () => {
+    const fleet = [fx('eks', 'cluster-a', '7'), fx('ebs', 'vol-a', '8'), fx('ebs', 'vol-b', '9'), fx('cloudfront', 'dist-a', '10')];
+    const firstPage = paginateServices(fleet, null, 2);
+    expect(firstPage.services.map((s) => s.resourceType)).toEqual(['eks', 'ebs']);
+    expect(firstPage.pagination.cursor).not.toBeNull();
+
+    const cursor = decodeCursor(firstPage.pagination.cursor);
+    const secondPage = paginateServices(fleet, cursor, 2);
+    expect(secondPage.services.map((s) => s.resourceType)).toEqual(['ebs', 'cloudfront']);
+  });
+
   it('resuming after a cursor whose row has a duplicate resource_name finds the correct next row via the id tiebreaker', () => {
     // Two EC2 rows share the same resource_name -- exactly the case the id ASC tiebreaker
     // exists for (resource_name has no uniqueness constraint in aws_resources).
