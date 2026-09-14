@@ -415,9 +415,12 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
       ec2: true,
       loadBalancer: false,
       rds: false,
+      lambda: true,
       dynamodb: false,
       ecs: false,
       eks: false,
+      ebs: false,
+      cloudfront: false,
     });
   });
 
