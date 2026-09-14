@@ -40,3 +40,38 @@ describe('ServiceHealthTable — truthful labels', () => {
     expect(screen.getByText('Not monitored')).toBeInTheDocument()
   })
 })
+
+describe('ServiceHealthTable — Service Health Coverage Expansion (EBS/CloudFront)', () => {
+  const mixedServices = [
+    { name: 'vol-abc123', description: 'EBS · gp3', status: 'healthy' as const, uptime: 'N/A', responseTime: 'N/A', errorRate: null, monitored: true, resourceType: 'ebs' },
+    { name: 'd111.cloudfront.net', description: 'CloudFront distribution', status: 'degraded' as const, uptime: 'N/A', responseTime: 'N/A', errorRate: 8.2, monitored: true, resourceType: 'cloudfront' },
+    { name: 'i-123', description: 'EC2 · i-123', status: 'healthy' as const, uptime: '99.9%', responseTime: '120ms', errorRate: 0, monitored: true, resourceType: 'ec2' },
+  ]
+
+  it('renders EBS and CloudFront rows generically, with no special-cased branching required', () => {
+    render(<ServiceHealthTable services={mixedServices} rangeLabel="1h" />)
+    expect(screen.getByText('vol-abc123')).toBeInTheDocument()
+    expect(screen.getByText('EBS · gp3')).toBeInTheDocument()
+    expect(screen.getByText('d111.cloudfront.net')).toBeInTheDocument()
+    expect(screen.getByText('CloudFront distribution')).toBeInTheDocument()
+  })
+
+  it('shows EBS and CloudFront filter tabs with counts derived from the actual services passed in', () => {
+    render(<ServiceHealthTable services={mixedServices} rangeLabel="1h" />)
+    expect(screen.getByText('EBS (1)')).toBeInTheDocument()
+    expect(screen.getByText('CloudFront (1)')).toBeInTheDocument()
+    expect(screen.getByText('All (3)')).toBeInTheDocument()
+  })
+
+  it('an EBS/CloudFront-only fleet still shows every other known-type tab at (0), not hidden', () => {
+    render(
+      <ServiceHealthTable
+        services={[{ name: 'vol-1', status: 'healthy' as const, uptime: 'N/A', responseTime: 'N/A', errorRate: null, monitored: true, resourceType: 'ebs' }]}
+        rangeLabel="1h"
+      />
+    )
+    expect(screen.getByText('EBS (1)')).toBeInTheDocument()
+    expect(screen.getByText('CloudFront (0)')).toBeInTheDocument()
+    expect(screen.getByText('EC2 (0)')).toBeInTheDocument()
+  })
+})

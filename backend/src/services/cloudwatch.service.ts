@@ -1,6 +1,7 @@
 import { CloudWatchClient, GetMetricStatisticsCommand } from '@aws-sdk/client-cloudwatch'
 import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs'
 import { EKSClient, DescribeClusterCommand } from '@aws-sdk/client-eks'
+import { EC2Client, paginateDescribeVolumeStatus, VolumeStatusItem } from '@aws-sdk/client-ec2'
 import { AWSClientFactory } from './aws-client-factory.service'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
@@ -48,7 +49,7 @@ export interface CloudWatchServiceHealth {
   resourceId: string
   name: string
   description: string
-  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks'
+  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront'
   status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
   // null means CloudWatch genuinely has no data for this metric right now — never
   // fabricate a plausible-looking number in its place.
@@ -89,7 +90,10 @@ export interface CloudWatchMetrics {
   responseTimeHistory: ResponseTimePoint[]
   // What this account topology actually lets us measure — drives the page's coverage
   // claim instead of a hardcoded "EC2, RDS, Lambda" string.
-  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; dynamodb: boolean; ecs: boolean; eks: boolean }
+  // Service Health Coverage Expansion: adds ebs/cloudfront, and fixes a pre-existing
+  // drift where `lambda` was never included here (lambda has always been evaluated —
+  // see computeMetrics()'s lambdaTask — this field just never reflected it).
+  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; lambda: boolean; dynamodb: boolean; ecs: boolean; eks: boolean; ebs: boolean; cloudfront: boolean }
   // Monitoring Truthfulness Phase 1: shown-vs-total per resource type, so the UI can
   // honestly disclose when the per-scan cap below (ec2Instances.slice(0, 15), etc.) has
   // silently omitted resources, instead of presenting a partial list as if it were
@@ -103,6 +107,8 @@ export interface CloudWatchMetrics {
     dynamodb: ResourceCoverageCount
     ecs: ResourceCoverageCount
     eks: ResourceCoverageCount
+    ebs: ResourceCoverageCount
+    cloudfront: ResourceCoverageCount
   }
   // Phase 2D: complete-fleet-derived aggregate health -- computed from every evaluated
   // resource across all seven types, never from the (now paginated) `services` page
@@ -155,7 +161,7 @@ interface InventoryRow {
   id: string
   resource_id: string
   resource_name: string | null
-  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks'
+  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront'
   resource_arn: string
   status: string | null
   metadata: Record<string, any> | null
@@ -579,6 +585,19 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   // onboarding grant. Bump to 'live_verified' once a real or disposable EKS cluster has
   // been evaluated end-to-end.
   eks: 'deployed',
+  // Service Health Coverage Expansion: deployed and type-safe; ec2:DescribeVolumeStatus
+  // (see evaluateEbsVolumes()) has never been called against real AWS data — this account
+  // has zero EBS volumes. IAM permission for ec2:DescribeVolumeStatus is unconfirmed
+  // (existing discovery only uses ec2:DescribeVolumes, a distinct action). Bump to
+  // 'live_verified' once a real or disposable EBS volume has been evaluated end-to-end.
+  ebs: 'deployed',
+  // Deployed and type-safe; the AWS/CloudFront GetMetricData call (see
+  // evaluateCloudFrontDistributions()) has never been called against real distribution
+  // data — this account has zero CloudFront distributions. IAM permission for
+  // cloudwatch:GetMetricData in us-east-1 for the AWS/CloudFront namespace is unconfirmed.
+  // Bump to 'live_verified' once a real or disposable distribution has been evaluated
+  // end-to-end.
+  cloudfront: 'deployed',
 }
 
 // SLO 3A: the subset of resourceTypeRegistry with a live_verified CloudWatch capability
@@ -663,7 +682,7 @@ export class CloudWatchService {
       `SELECT id, resource_id, resource_name, resource_type, resource_arn, status, metadata
        FROM aws_resources
        WHERE organization_id = $1
-         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs', 'eks')
+         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs', 'eks', 'ebs', 'cloudfront')
          AND status != 'terminated'
        ORDER BY resource_name ASC NULLS LAST, id ASC`,
       [organizationId]
@@ -1122,6 +1141,259 @@ export class CloudWatchService {
   }
 
   /**
+   * Service Health Coverage Expansion: EBS volume health, evaluated separately from the
+   * CloudWatch-only registry above — same reasoning as evaluateEcsService()/
+   * evaluateEksService(): EBS's authoritative health source is not a CloudWatch namespace
+   * but ec2:DescribeVolumeStatus, the same AWS-native "volume status check" mechanism
+   * EC2's own StatusCheckFailed CloudWatch metric is itself derived from for instances (no
+   * equivalent metric is published for volumes, so the check must be called directly).
+   *
+   * Unlike ECS/EKS's one-call-per-resource pattern, DescribeVolumeStatus accepts a batch
+   * of VolumeIds in one paginated call — so, like the CloudWatch capabilities' GetMetricData
+   * batching, this fetches the whole fleet's live status in as few AWS calls as possible
+   * (chunked defensively; ID count is unbounded in practice), never one call per volume.
+   *
+   * Two independent evidence sources are combined, both already real AWS state:
+   * - `resource.status`, already stored from discovery's own DescribeVolumes call (the
+   *   volume's lifecycle State: available/in-use/creating/deleting/deleted/error) — reused
+   *   here with zero additional AWS calls, exactly as EC2's capability reuses
+   *   instance.status for its own down-state override.
+   * - The live VolumeStatus.Status from this method's own DescribeVolumeStatus call
+   *   (ok/impaired/warning/insufficient-data) — AWS's own volume-level health verdict,
+   *   analogous to EC2's status-check-derived uptime.
+   *
+   * A volume attached vs. unattached ("available") is deliberately NOT treated as a health
+   * signal here — that is orphaned-resource/cost-waste territory (see
+   * orphanedResourceDetector.ts), a different concern from "is this volume healthy."
+   */
+  private async evaluateEbsVolumes(client: EC2Client, volumes: InventoryRow[]): Promise<CloudWatchServiceHealth[]> {
+    if (volumes.length === 0) return []
+
+    const statusByVolumeId = new Map<string, VolumeStatusItem>()
+    const CHUNK_SIZE = 200
+    for (let offset = 0; offset < volumes.length; offset += CHUNK_SIZE) {
+      const chunkIds = volumes.slice(offset, offset + CHUNK_SIZE).map((v) => v.resource_id)
+      try {
+        for await (const page of paginateDescribeVolumeStatus({ client }, { VolumeIds: chunkIds })) {
+          for (const item of page.VolumeStatuses ?? []) {
+            if (item.VolumeId) statusByVolumeId.set(item.VolumeId, item)
+          }
+        }
+      } catch (err) {
+        // This chunk's volumes fall through to the no-live-status branch below (still
+        // evaluated from resource.status alone, never silently dropped) — other chunks
+        // already fetched, or not yet attempted, are unaffected, mirroring
+        // fetchMetricDataBatch's per-chunk failure isolation.
+        console.error('[EBS] DescribeVolumeStatus failed for a chunk of volumes:', err)
+      }
+    }
+
+    return volumes.map((volume) => {
+      const state = volume.status
+      const live = statusByVolumeId.get(volume.resource_id)
+      const checkStatus = live?.VolumeStatus?.Status
+      const eventCount = live?.Events?.length ?? 0
+
+      let status: CloudWatchServiceHealth['status']
+      let reason: string | null
+      let monitored: boolean
+
+      if (state === 'error') {
+        status = 'down'
+        reason = 'AWS reports this volume is in an error state'
+        monitored = true
+      } else if (state === 'deleting' || state === 'deleted') {
+        status = 'down'
+        reason = `Volume is ${state}`
+        monitored = true
+      } else if (checkStatus === 'ok') {
+        status = 'healthy'
+        reason = null
+        monitored = true
+      } else if (checkStatus === 'impaired') {
+        status = 'critical'
+        reason = 'AWS volume status check reports this volume as impaired'
+        monitored = true
+      } else if (checkStatus === 'warning') {
+        status = 'degraded'
+        reason = 'AWS volume status check reports a warning for this volume'
+        monitored = true
+      } else if (checkStatus === 'insufficient-data') {
+        status = 'unknown'
+        reason = 'AWS has insufficient data to determine this volume\'s status check'
+        monitored = true
+      } else if (state === 'creating') {
+        status = 'unknown'
+        reason = 'Volume is still being created'
+        monitored = false
+      } else {
+        status = 'unknown'
+        reason = 'No volume status check data available for this volume'
+        monitored = false
+      }
+
+      return {
+        resourceId: volume.resource_id,
+        resourceDbId: volume.id,
+        resourceSortName: volume.resource_name,
+        name: volume.resource_name || volume.resource_id,
+        description: `EBS · ${volume.metadata?.volume_type ?? 'volume'}`,
+        resourceType: 'ebs',
+        status,
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        // Supporting storage infrastructure, not a primary compute/data resource — matches
+        // ALB/Lambda/DynamoDB/ECS/EKS's judgment call, not EC2/RDS's.
+        critical: false,
+        monitored,
+        reason,
+        ...(live ? { signals: { eventCount }, metrics: [{ label: 'Status check events', value: eventCount }] } : {}),
+      }
+    })
+  }
+
+  /**
+   * Service Health Coverage Expansion: CloudFront distribution health. Bypasses the
+   * ResourceCapability registry (like EBS/ECS/EKS above) for a different reason than any
+   * of them: CloudFront's CloudWatch metrics require BOTH a DistributionId dimension AND a
+   * fixed Region="Global" dimension together, which ResourceCapability's single
+   * dimensionKey/getDimensionValue contract has no way to express without changing that
+   * shared interface (and, with it, every other capability) — see the
+   * ResourceCapability doc comment. This still reuses fetchMetricDataBatch directly (the
+   * same Phase 2C GetMetricData batching utility evaluateCapabilityBatch() itself calls
+   * internally), so the whole CloudFront fleet's metrics are still fetched in as few
+   * requests as the 500-query batch limit allows -- never one request per distribution.
+   *
+   * CloudFront metrics are published ONLY to us-east-1's CloudWatch regardless of the
+   * distribution's own configuration (a global service) -- the caller must pass a
+   * us-east-1-scoped CloudWatchClient (see AWSClientFactory.getCloudWatchClientForRegion),
+   * never the org's default-region client every other capability uses.
+   *
+   * Deployment/enabled state (dist.Status/dist.Enabled, already captured by discovery's
+   * discoverCloudFrontDistributions with zero extra AWS calls -- resource.status is
+   * 'active' only when AWS reports Status === 'Deployed') is checked BEFORE any
+   * CloudWatch-derived error rate, mirroring evaluateEcsService's lifecycle-before-metrics
+   * precedence: a distribution that AWS itself reports as disabled or still propagating
+   * shouldn't be called "healthy" just because no errors have been recorded for it yet.
+   *
+   * Thresholds below are a first-pass heuristic, not a validated SLO -- same caveat as
+   * dynamoDbCapability's DYNAMODB_MEANINGFUL_THROTTLE_THRESHOLD -- easy to retune once
+   * real production error-rate distributions are observed.
+   */
+  private async evaluateCloudFrontDistributions(
+    cloudWatchUsEast1: CloudWatchClient,
+    distributions: InventoryRow[],
+    currentStart: Date,
+    now: Date,
+    periodSeconds: number
+  ): Promise<CloudWatchServiceHealth[]> {
+    if (distributions.length === 0) return []
+
+    const metricDefs: { key: string; metricName: string }[] = [
+      { key: 'totalErrorRate', metricName: 'TotalErrorRate' },
+      { key: 'rate4xx', metricName: '4xxErrorRate' },
+      { key: 'rate5xx', metricName: '5xxErrorRate' },
+    ]
+
+    const queries: BatchMetricQuery[] = []
+    // distributionIndex -> metricKey -> queryId
+    const idsByDistribution: Array<Record<string, string>> = distributions.map(() => ({}))
+
+    distributions.forEach((dist, distIndex) => {
+      const dims: Dimension[] = [
+        { Name: 'DistributionId', Value: dist.resource_id },
+        { Name: 'Region', Value: 'Global' },
+      ]
+      metricDefs.forEach((metric, metricIndex) => {
+        const id = `cf${distIndex}_${metricIndex}`
+        idsByDistribution[distIndex][metric.key] = id
+        queries.push({
+          id,
+          namespace: 'AWS/CloudFront',
+          metricName: metric.metricName,
+          dimensions: dims,
+          period: periodSeconds,
+          stat: 'Average',
+        })
+      })
+    })
+
+    const results = await fetchMetricDataBatch(cloudWatchUsEast1, queries, currentStart, now)
+
+    return distributions.map((dist, distIndex) => {
+      const totalErrorRate = reduceSeriesToScalar(
+        results.get(idsByDistribution[distIndex].totalErrorRate) ?? null,
+        'Average'
+      )
+      const rate4xxRaw = reduceSeriesToScalar(results.get(idsByDistribution[distIndex].rate4xx) ?? null, 'Average')
+      const rate5xxRaw = reduceSeriesToScalar(results.get(idsByDistribution[distIndex].rate5xx) ?? null, 'Average')
+      // CloudFront reports error rates as fractions (0.0-1.0), not percentages — convert
+      // once here so status thresholds and displayed metrics both work in the same units
+      // every other percentage-based capability (ALB/Lambda/DynamoDB) already uses.
+      const totalErrorPct = totalErrorRate !== null ? Math.round(totalErrorRate * 10000) / 100 : null
+      const rate4xxPct = rate4xxRaw !== null ? Math.round(rate4xxRaw * 10000) / 100 : null
+      const rate5xxPct = rate5xxRaw !== null ? Math.round(rate5xxRaw * 10000) / 100 : null
+
+      const isEnabled = dist.metadata?.is_enabled
+      const isDeployed = dist.status === 'active'
+
+      let status: CloudWatchServiceHealth['status']
+      let reason: string | null
+      let monitored: boolean
+
+      if (isEnabled === false) {
+        status = 'down'
+        reason = 'Distribution is disabled'
+        monitored = true
+      } else if (!isDeployed) {
+        status = 'degraded'
+        reason = 'Distribution configuration is still propagating (not yet Deployed)'
+        monitored = true
+      } else if (totalErrorPct === null) {
+        status = 'unknown'
+        reason = 'No CloudWatch telemetry available for this distribution in the selected window'
+        monitored = false
+      } else if (totalErrorPct >= 25) {
+        status = 'critical'
+        reason = `Elevated error rate (${totalErrorPct}% of requests failing)`
+        monitored = true
+      } else if (totalErrorPct >= 5) {
+        status = 'degraded'
+        reason = `Error rate above normal (${totalErrorPct}%)`
+        monitored = true
+      } else {
+        status = 'healthy'
+        reason = null
+        monitored = true
+      }
+
+      return {
+        resourceId: dist.resource_id,
+        resourceDbId: dist.id,
+        resourceSortName: dist.resource_name,
+        name: dist.resource_name || dist.resource_id,
+        description: 'CloudFront distribution',
+        resourceType: 'cloudfront',
+        status,
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: totalErrorPct,
+        // Edge/CDN layer, not a primary compute/data resource — matches
+        // ALB/Lambda/DynamoDB/ECS/EKS/EBS's judgment call, not EC2/RDS's.
+        critical: false,
+        monitored,
+        reason,
+        signals: { totalErrorPct, rate4xxPct, rate5xxPct },
+        metrics: [
+          ...(rate4xxPct !== null ? [{ label: '4xx rate', value: rate4xxPct, unit: '%' }] : []),
+          ...(rate5xxPct !== null ? [{ label: '5xx rate', value: rate5xxPct, unit: '%' }] : []),
+        ],
+      }
+    })
+  }
+
+  /**
    * CloudWatch Scalability Phase 2A: the actual AWS/CloudWatch sweep, unchanged from the
    * pre-Phase-2A getMetrics() implementation (renamed only) -- no AWS API selection,
    * batching, resource-evaluation cap, or health-evaluation semantics were touched here.
@@ -1154,6 +1426,8 @@ export class CloudWatchService {
     const dynamoTablesAll = resources.filter((r) => r.resource_type === 'dynamodb')
     const ecsServicesInventoryAll = resources.filter((r) => r.resource_type === 'ecs')
     const eksClustersInventoryAll = resources.filter((r) => r.resource_type === 'eks')
+    const ebsVolumesAll = resources.filter((r) => r.resource_type === 'ebs')
+    const cloudfrontDistributionsAll = resources.filter((r) => r.resource_type === 'cloudfront')
 
     // CloudWatch Scalability Phase 2D: the per-scan evaluation cap that used to live here
     // (slice(0, 15) / slice(0, 5), including ALB) has been removed -- aggregate health
@@ -1172,6 +1446,8 @@ export class CloudWatchService {
     const dynamoTables = dynamoTablesAll
     const ecsServicesInventory = ecsServicesInventoryAll
     const eksClustersInventory = eksClustersInventoryAll
+    const ebsVolumes = ebsVolumesAll
+    const cloudfrontDistributions = cloudfrontDistributionsAll
 
     // Monitoring Truthfulness Phase 1, amended by Phase 2D: shown now always equals
     // total for every type, since evaluation is no longer capped -- resourceCounts
@@ -1189,6 +1465,8 @@ export class CloudWatchService {
       dynamodb: { shown: dynamoTables.length, total: dynamoTablesAll.length },
       ecs: { shown: ecsServicesInventory.length, total: ecsServicesInventoryAll.length },
       eks: { shown: eksClustersInventory.length, total: eksClustersInventoryAll.length },
+      ebs: { shown: ebsVolumes.length, total: ebsVolumesAll.length },
+      cloudfront: { shown: cloudfrontDistributions.length, total: cloudfrontDistributionsAll.length },
     }
 
     // CloudWatch Scalability Phase 2B: the seven resource-type evaluation blocks below
@@ -1275,6 +1553,31 @@ export class CloudWatchService {
         return await Promise.all(eksClustersInventory.map((cluster) => this.evaluateEksService(clients.eks, cluster)))
       } catch (err) {
         console.error('[CloudWatch] EKS evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
+
+    // Service Health Coverage Expansion: EBS also bypasses the CloudWatch registry — see
+    // evaluateEbsVolumes() doc comment. Its own batched DescribeVolumeStatus call(s) are
+    // isolated inside that method, same failure-isolation guarantee as every other block.
+    const ebsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        return await this.evaluateEbsVolumes(clients.ec2, ebsVolumes)
+      } catch (err) {
+        console.error('[CloudWatch] EBS evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
+
+    // Service Health Coverage Expansion: CloudFront metrics only exist in us-east-1's
+    // CloudWatch regardless of the org's default region — a dedicated client is required
+    // (see evaluateCloudFrontDistributions() doc comment), never clients.cloudWatch.
+    const cloudfrontTask = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        const cloudWatchUsEast1 = clients.getCloudWatchClientForRegion('us-east-1')
+        return await this.evaluateCloudFrontDistributions(cloudWatchUsEast1, cloudfrontDistributions, currentStart, now, periodSeconds)
+      } catch (err) {
+        console.error('[CloudWatch] CloudFront evaluation block failed unexpectedly:', err)
         return []
       }
     })()
@@ -1372,18 +1675,11 @@ export class CloudWatchService {
       }
     })()
 
-    // All seven tasks above have already started (each async IIFE runs synchronously up
+    // All nine tasks above have already started (each async IIFE runs synchronously up
     // to its own first await) -- this Promise.all() only waits for them, in a fixed input
     // order that determines the destructured order below regardless of completion timing.
-    const [ec2Services, albBlock, rdsServices, lambdaServices, dynamoServices, ecsServices, eksServices] = await Promise.all([
-      ec2Task,
-      albTask,
-      rdsTask,
-      lambdaTask,
-      dynamoTask,
-      ecsTask,
-      eksTask,
-    ])
+    const [ec2Services, albBlock, rdsServices, lambdaServices, dynamoServices, ecsServices, eksServices, ebsServices, cloudfrontServices] =
+      await Promise.all([ec2Task, albTask, rdsTask, lambdaTask, dynamoTask, ecsTask, eksTask, ebsTask, cloudfrontTask])
 
     const uptimeValues = ec2Services.map((s) => s.uptime).filter((v): v is number => v !== null)
     const uptime = uptimeValues.length > 0 ? Math.round((uptimeValues.reduce((a, b) => a + b, 0) / uptimeValues.length) * 100) / 100 : null
@@ -1397,11 +1693,25 @@ export class CloudWatchService {
     }
 
     // Ordering is an explicit preserved response contract (EC2, ALB, RDS, Lambda,
-    // DynamoDB, ECS, EKS) -- see cloudwatch.service.concurrency.test.ts's ordering test.
+    // DynamoDB, ECS, EKS, EBS, CloudFront) -- see cloudwatch.service.concurrency.test.ts's
+    // ordering test and cloudwatch-pagination.util.ts's TYPE_ORDER, which both must stay
+    // consistent with this exact sequence. EBS/CloudFront are appended after the original
+    // seven (Service Health Coverage Expansion) rather than interleaved, so existing
+    // pagination cursors issued before this change remain valid across the rollout.
     // This is now the COMPLETE evaluated fleet (Phase 2D removed the per-type evaluation
     // cap above) -- both healthSummary/systemStatus below and the pagination layer in
     // cloudwatch.routes.ts operate on this same array, never on a re-capped subset.
-    const allServices = [...ec2Services, ...albBlock.services, ...rdsServices, ...lambdaServices, ...dynamoServices, ...ecsServices, ...eksServices]
+    const allServices = [
+      ...ec2Services,
+      ...albBlock.services,
+      ...rdsServices,
+      ...lambdaServices,
+      ...dynamoServices,
+      ...ecsServices,
+      ...eksServices,
+      ...ebsServices,
+      ...cloudfrontServices,
+    ]
 
     // CloudWatch Scalability Phase 2D: complete-fleet aggregate health, computed here
     // (before any pagination exists) so it is unaffected by however the response is
@@ -1442,9 +1752,12 @@ export class CloudWatchService {
         ec2: ec2Instances.length > 0,
         loadBalancer: albBlock.services.length > 0,
         rds: rdsInstances.length > 0,
+        lambda: lambdaFunctions.length > 0,
         dynamodb: dynamoTables.length > 0,
         ecs: ecsServicesInventory.length > 0,
         eks: eksClustersInventory.length > 0,
+        ebs: ebsVolumes.length > 0,
+        cloudfront: cloudfrontDistributions.length > 0,
       },
       resourceCounts,
       healthSummary,

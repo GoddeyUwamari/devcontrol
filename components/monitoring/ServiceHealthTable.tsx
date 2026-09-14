@@ -50,6 +50,8 @@ const RESOURCE_TYPE_TABS: { key: string; label: string }[] = [
   { key: 'dynamodb', label: 'DynamoDB' },
   { key: 'ecs', label: 'ECS' },
   { key: 'eks', label: 'EKS' },
+  { key: 'ebs', label: 'EBS' },
+  { key: 'cloudfront', label: 'CloudFront' },
 ]
 
 function formatMetricValue(metric: ServiceMetric): string {
@@ -107,7 +109,7 @@ export function ServiceHealthTable({ services, loading = false, rangeLabel }: Se
     <div className="bg-white rounded-lg border">
       <div className="px-6 py-4 border-b">
         <h3 className="text-lg font-semibold">Service Health</h3>
-        <p className="text-sm text-gray-600">Real-time status of platform services</p>
+        <p className="text-sm text-gray-600">Infrastructure Intelligence status of platform services</p>
       </div>
 
       {hasResourceTypeData && (
