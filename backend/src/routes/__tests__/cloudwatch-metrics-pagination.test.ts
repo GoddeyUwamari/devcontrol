@@ -96,7 +96,7 @@ function fleetFixture(orgTag: string, count: number): CloudWatchMetrics {
     monthlyCost: null,
     trendPercent: null,
     responseTimeHistory: [],
-    coverage: { ec2: true, loadBalancer: false, rds: false, lambda: false, dynamodb: false, ecs: false, eks: false, ebs: false, cloudfront: false },
+    coverage: { ec2: true, loadBalancer: false, rds: false, lambda: false, dynamodb: false, ecs: false, eks: false, ebs: false, cloudfront: false, aurora: false },
     resourceCounts: {
       ec2: { shown: count, total: count },
       loadBalancer: { shown: 0, total: 0 },
@@ -107,6 +107,7 @@ function fleetFixture(orgTag: string, count: number): CloudWatchMetrics {
       eks: { shown: 0, total: 0 },
       ebs: { shown: 0, total: 0 },
       cloudfront: { shown: 0, total: 0 },
+      aurora: { shown: 0, total: 0 },
     },
     healthSummary: { total: count, healthy: count, degraded: 0, critical: 0, down: 0, monitored: count },
     systemStatus: 'healthy',

@@ -2,10 +2,12 @@ import { CloudWatchClient, GetMetricStatisticsCommand } from '@aws-sdk/client-cl
 import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs'
 import { EKSClient, DescribeClusterCommand } from '@aws-sdk/client-eks'
 import { EC2Client, paginateDescribeVolumeStatus, VolumeStatusItem } from '@aws-sdk/client-ec2'
+import { RDSClient } from '@aws-sdk/client-rds'
 import { AWSClientFactory } from './aws-client-factory.service'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
 import { fetchMetricDataBatch, reduceSeriesToScalar, BatchMetricQuery, BatchSeriesResult } from './cloudwatch-metric-batch.util'
+import { describeAuroraClusters, AuroraClusterInfo } from './aurora-cluster.util'
 
 export type MonitoringRange = '5m' | '15m' | '1h' | '3h' | '24h' | '7d'
 
@@ -49,7 +51,7 @@ export interface CloudWatchServiceHealth {
   resourceId: string
   name: string
   description: string
-  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront'
+  resourceType: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront' | 'aurora'
   status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
   // null means CloudWatch genuinely has no data for this metric right now — never
   // fabricate a plausible-looking number in its place.
@@ -93,7 +95,7 @@ export interface CloudWatchMetrics {
   // Service Health Coverage Expansion: adds ebs/cloudfront, and fixes a pre-existing
   // drift where `lambda` was never included here (lambda has always been evaluated —
   // see computeMetrics()'s lambdaTask — this field just never reflected it).
-  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; lambda: boolean; dynamodb: boolean; ecs: boolean; eks: boolean; ebs: boolean; cloudfront: boolean }
+  coverage: { ec2: boolean; loadBalancer: boolean; rds: boolean; lambda: boolean; dynamodb: boolean; ecs: boolean; eks: boolean; ebs: boolean; cloudfront: boolean; aurora: boolean }
   // Monitoring Truthfulness Phase 1: shown-vs-total per resource type, so the UI can
   // honestly disclose when the per-scan cap below (ec2Instances.slice(0, 15), etc.) has
   // silently omitted resources, instead of presenting a partial list as if it were
@@ -109,6 +111,7 @@ export interface CloudWatchMetrics {
     eks: ResourceCoverageCount
     ebs: ResourceCoverageCount
     cloudfront: ResourceCoverageCount
+    aurora: ResourceCoverageCount
   }
   // Phase 2D: complete-fleet-derived aggregate health -- computed from every evaluated
   // resource across all seven types, never from the (now paginated) `services` page
@@ -161,7 +164,7 @@ interface InventoryRow {
   id: string
   resource_id: string
   resource_name: string | null
-  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront'
+  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront' | 'aurora'
   resource_arn: string
   status: string | null
   metadata: Record<string, any> | null
@@ -602,6 +605,16 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   // Bump to 'live_verified' once a real or disposable distribution has been evaluated
   // end-to-end.
   cloudfront: 'deployed',
+  // Aurora Service Health: deployed and type-safe; rds:DescribeDBClusters (see
+  // evaluateAuroraClusters()) has never been called against real cluster data --
+  // this account has zero Aurora/RDS DB clusters. IAM permission for both
+  // rds:DescribeDBClusters and cloudwatch:GetMetricData (AWS/RDS namespace,
+  // DBClusterIdentifier+Role dimensions) was confirmed granted to the production
+  // application role via a temporary, read-only assumed-role probe (2026-09-14) --
+  // real API access, not a real cluster's health evaluated end-to-end. Bump to
+  // 'live_verified' once a real or disposable Aurora cluster has been evaluated
+  // end-to-end -- do not provision one merely to reach that status.
+  aurora: 'deployed',
 }
 
 // SLO 3A: the subset of resourceTypeRegistry with a live_verified CloudWatch capability
@@ -686,7 +699,7 @@ export class CloudWatchService {
       `SELECT id, resource_id, resource_name, resource_type, resource_arn, status, metadata
        FROM aws_resources
        WHERE organization_id = $1
-         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs', 'eks', 'ebs', 'cloudfront')
+         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs', 'eks', 'ebs', 'cloudfront', 'aurora')
          AND status != 'terminated'
        ORDER BY resource_name ASC NULLS LAST, id ASC`,
       [organizationId]
@@ -1397,6 +1410,237 @@ export class CloudWatchService {
     })
   }
 
+  // CPU thresholds are PROPOSED PRODUCT BEHAVIOR, not AWS-defined boundaries -- see the
+  // approved Aurora contract. <80 healthy, 80-90 inclusive degraded, >90 critical.
+  private static auroraCpuStatus(cpuPercent: number | null): 'healthy' | 'degraded' | 'critical' | null {
+    if (cpuPercent === null) return null
+    if (cpuPercent > 90) return 'critical'
+    if (cpuPercent >= 80) return 'degraded'
+    return 'healthy'
+  }
+
+  // Replica-lag thresholds, same PROPOSED PRODUCT BEHAVIOR caveat. <1000ms healthy,
+  // 1000-5000ms inclusive degraded, >5000ms critical. Returns null (ambiguous/transient,
+  // never forced to 'unknown' on its own) when a datapoint is genuinely missing on a
+  // cluster that has a reader, and is never called at all for a cluster with no reader --
+  // see evaluateAuroraClusters()'s hasReader branch below.
+  private static auroraLagStatus(lagMs: number | null): 'healthy' | 'degraded' | 'critical' | null {
+    if (lagMs === null) return null
+    if (lagMs > 5000) return 'critical'
+    if (lagMs >= 1000) return 'degraded'
+    return 'healthy'
+  }
+
+  /**
+   * Aurora Service Health: control-plane state (this evaluation cycle's own fresh,
+   * fleet-level describeAuroraClusters() call -- see aurora-cluster.util.ts's doc comment
+   * for why this cannot reuse discovery's last enrichment result, which can be up to 6h
+   * stale) combined with two CloudWatch signals. Both CPUUtilization and
+   * AuroraReplicaLagMaximum are AWS-documented instance-level metrics that require the
+   * DBClusterIdentifier+Role dimension pair to scope them to a cluster's writer instance
+   * without needing to know its DBInstanceIdentifier -- see the approved contract. Like
+   * EBS/CloudFront, this bypasses the single-dimensionKey ResourceCapability registry
+   * entirely (two dimensions, not one) and batches both metrics for the whole fleet in one
+   * fetchMetricDataBatch() call, never one GetMetricData per cluster.
+   *
+   * Defense in depth: even though discovery-time enrichment (see
+   * awsResourceDiscovery.ts's enrichAuroraClusters()) already reclassifies confirmed
+   * non-Aurora DBClusters out of the 'aurora' type, this evaluator re-checks Engine against
+   * this cycle's own live DescribeDBClusters result before evaluating a row as Aurora -- a
+   * row that's still 'aurora' only because discovery hasn't run again since a
+   * classification changed must never be silently evaluated and displayed as if it were
+   * Aurora.
+   */
+  private async evaluateAuroraClusters(
+    rdsClient: RDSClient,
+    cloudWatchClient: CloudWatchClient,
+    clusters: InventoryRow[],
+    currentStart: Date,
+    now: Date,
+    periodSeconds: number
+  ): Promise<CloudWatchServiceHealth[]> {
+    if (clusters.length === 0) return []
+
+    const controlPlane = await describeAuroraClusters(rdsClient)
+
+    if (controlPlane.status === 'unavailable') {
+      // Whole-fleet control-plane failure -- every Aurora row this cycle is unknown, never
+      // fabricated from stale CloudWatch data. Mirrors EBS's whole-chunk-failure isolation.
+      return clusters.map((cluster) => ({
+        resourceId: cluster.resource_id,
+        resourceDbId: cluster.id,
+        resourceSortName: cluster.resource_name,
+        name: cluster.resource_name || cluster.resource_id,
+        description: 'Aurora cluster',
+        resourceType: 'aurora',
+        status: 'unknown',
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        critical: true,
+        monitored: false,
+        reason: 'Failed to reach the RDS API for cluster status',
+      }))
+    }
+
+    // Only clusters this cycle's live DescribeDBClusters actually confirms are a real
+    // Aurora engine are queried against CloudWatch at all -- a stale/misclassified row (or
+    // one absent from this region's result entirely) never gets a fabricated health verdict.
+    const evaluable: Array<{ resource: InventoryRow; info: AuroraClusterInfo }> = []
+    const results: CloudWatchServiceHealth[] = []
+
+    for (const resource of clusters) {
+      const info = controlPlane.clustersById.get(resource.resource_id)
+      if (!info) {
+        results.push({
+          resourceId: resource.resource_id,
+          resourceDbId: resource.id,
+          resourceSortName: resource.resource_name,
+          name: resource.resource_name || resource.resource_id,
+          description: 'Aurora cluster',
+          resourceType: 'aurora',
+          status: 'unknown',
+          uptime: null,
+          responseTimeMs: null,
+          errorRate: null,
+          critical: true,
+          monitored: false,
+          reason: 'Cluster not found in this evaluation cycle\'s DescribeDBClusters result',
+        })
+        continue
+      }
+      if (!info.isAuroraEngine) {
+        results.push({
+          resourceId: resource.resource_id,
+          resourceDbId: resource.id,
+          resourceSortName: resource.resource_name,
+          name: resource.resource_name || resource.resource_id,
+          description: `Aurora cluster · ${info.engine || 'unknown engine'}`,
+          resourceType: 'aurora',
+          status: 'unknown',
+          uptime: null,
+          responseTimeMs: null,
+          errorRate: null,
+          critical: true,
+          monitored: false,
+          reason: `Engine=${info.engine || 'unknown'} is not an Aurora engine -- awaiting discovery reclassification`,
+        })
+        continue
+      }
+      evaluable.push({ resource, info })
+    }
+
+    if (evaluable.length === 0) return results
+
+    const metricDefs: { key: string; metricName: string; stat: 'Average' | 'Maximum' }[] = [
+      { key: 'cpu', metricName: 'CPUUtilization', stat: 'Average' },
+      { key: 'lag', metricName: 'AuroraReplicaLagMaximum', stat: 'Maximum' },
+    ]
+
+    const queries: BatchMetricQuery[] = []
+    const idsByCluster: Array<Record<string, string>> = evaluable.map(() => ({}))
+
+    evaluable.forEach((entry, index) => {
+      const dims = [
+        { Name: 'DBClusterIdentifier', Value: entry.resource.resource_id },
+        { Name: 'Role', Value: 'WRITER' },
+      ]
+      metricDefs.forEach((metric, metricIndex) => {
+        const id = `aur${index}_${metricIndex}`
+        idsByCluster[index][metric.key] = id
+        queries.push({
+          id,
+          namespace: 'AWS/RDS',
+          metricName: metric.metricName,
+          dimensions: dims,
+          period: periodSeconds,
+          stat: metric.stat,
+        })
+      })
+    })
+
+    const metricResults = await fetchMetricDataBatch(cloudWatchClient, queries, currentStart, now)
+
+    evaluable.forEach((entry, index) => {
+      const { resource, info } = entry
+      const cpuPercent = reduceSeriesToScalar(metricResults.get(idsByCluster[index].cpu) ?? null, 'Average')
+      const rawLagMs = reduceSeriesToScalar(metricResults.get(idsByCluster[index].lag) ?? null, 'Maximum')
+      // AuroraReplicaLagMaximum is only a real signal when the cluster actually has a
+      // reader -- a writer-only cluster publishes no datapoints for it at all, and that
+      // absence is not a failure, never treated as unknown/missing evidence.
+      const lagMs = info.hasReader ? rawLagMs : null
+
+      const controlStatus = info.status ?? null
+      let status: CloudWatchServiceHealth['status']
+      let reason: string | null
+      let monitored: boolean
+
+      if (controlStatus === 'deleting' || controlStatus === 'stopped' || controlStatus === 'stopping') {
+        status = 'down'
+        reason = `Cluster is ${controlStatus}`
+        monitored = true
+      } else if (controlStatus === 'failing-over') {
+        status = 'degraded'
+        reason = 'Cluster is failing over (in-progress AWS operation, not a failure)'
+        monitored = true
+      } else if (controlStatus !== 'available') {
+        status = 'unknown'
+        reason = `Unrecognized or unsupported DB cluster status: ${controlStatus ?? 'none'}`
+        monitored = true
+      } else {
+        const cpuState = CloudWatchService.auroraCpuStatus(cpuPercent)
+        const lagState = info.hasReader ? CloudWatchService.auroraLagStatus(lagMs) : null
+        const signals = [cpuState, lagState].filter((s): s is 'healthy' | 'degraded' | 'critical' => s !== null)
+
+        if (signals.length === 0) {
+          status = 'unknown'
+          reason = 'Cluster is available but no CloudWatch telemetry was returned for this window'
+          // Real control-plane evidence was obtained (Status: available) even though
+          // CloudWatch returned nothing -- monitored reflects that a live evaluation
+          // genuinely happened, without claiming a CloudWatch-confirmed healthy state.
+          monitored = true
+        } else if (signals.includes('critical')) {
+          status = 'critical'
+          reason = cpuState === 'critical' ? `CPU utilization is critical (${cpuPercent}%)` : `Replica lag is critical (${lagMs}ms)`
+          monitored = true
+        } else if (signals.includes('degraded')) {
+          status = 'degraded'
+          reason = cpuState === 'degraded' ? `CPU utilization is elevated (${cpuPercent}%)` : `Replica lag is elevated (${lagMs}ms)`
+          monitored = true
+        } else {
+          status = 'healthy'
+          reason = null
+          monitored = true
+        }
+      }
+
+      results.push({
+        resourceId: resource.resource_id,
+        resourceDbId: resource.id,
+        resourceSortName: resource.resource_name,
+        name: resource.resource_name || resource.resource_id,
+        description: `Aurora · ${info.engine}`,
+        resourceType: 'aurora',
+        status,
+        uptime: null,
+        responseTimeMs: null,
+        errorRate: null,
+        // Primary data resource, matching RDS's own judgment call, not the majority
+        // supporting-infrastructure types (ALB/Lambda/DynamoDB/ECS/EKS/EBS/CloudFront).
+        critical: true,
+        monitored,
+        reason,
+        signals: { cpuPercent, lagMs },
+        metrics: [
+          ...(cpuPercent !== null ? [{ label: 'CPU', value: Math.round(cpuPercent * 10) / 10, unit: '%' }] : []),
+          ...(lagMs !== null ? [{ label: 'Replica lag', value: Math.round(lagMs), unit: 'ms' }] : []),
+        ],
+      })
+    })
+
+    return results
+  }
+
   /**
    * CloudWatch Scalability Phase 2A: the actual AWS/CloudWatch sweep, unchanged from the
    * pre-Phase-2A getMetrics() implementation (renamed only) -- no AWS API selection,
@@ -1432,6 +1676,7 @@ export class CloudWatchService {
     const eksClustersInventoryAll = resources.filter((r) => r.resource_type === 'eks')
     const ebsVolumesAll = resources.filter((r) => r.resource_type === 'ebs')
     const cloudfrontDistributionsAll = resources.filter((r) => r.resource_type === 'cloudfront')
+    const auroraClustersAll = resources.filter((r) => r.resource_type === 'aurora')
 
     // CloudWatch Scalability Phase 2D: the per-scan evaluation cap that used to live here
     // (slice(0, 15) / slice(0, 5), including ALB) has been removed -- aggregate health
@@ -1452,6 +1697,7 @@ export class CloudWatchService {
     const eksClustersInventory = eksClustersInventoryAll
     const ebsVolumes = ebsVolumesAll
     const cloudfrontDistributions = cloudfrontDistributionsAll
+    const auroraClusters = auroraClustersAll
 
     // Monitoring Truthfulness Phase 1, amended by Phase 2D: shown now always equals
     // total for every type, since evaluation is no longer capped -- resourceCounts
@@ -1471,6 +1717,7 @@ export class CloudWatchService {
       eks: { shown: eksClustersInventory.length, total: eksClustersInventoryAll.length },
       ebs: { shown: ebsVolumes.length, total: ebsVolumesAll.length },
       cloudfront: { shown: cloudfrontDistributions.length, total: cloudfrontDistributionsAll.length },
+      aurora: { shown: auroraClusters.length, total: auroraClustersAll.length },
     }
 
     // CloudWatch Scalability Phase 2B: the seven resource-type evaluation blocks below
@@ -1586,6 +1833,18 @@ export class CloudWatchService {
       }
     })()
 
+    // Aurora Service Health: DBClusterIdentifier+Role-dimensioned metrics are regional,
+    // same as every other type here — clients.cloudWatch (org's default region), never a
+    // dedicated regional client the way CloudFront's global-service metrics require.
+    const auroraTask = (async (): Promise<CloudWatchServiceHealth[]> => {
+      try {
+        return await this.evaluateAuroraClusters(clients.rds, clients.cloudWatch, auroraClusters, currentStart, now, periodSeconds)
+      } catch (err) {
+        console.error('[CloudWatch] Aurora evaluation block failed unexpectedly:', err)
+        return []
+      }
+    })()
+
     // The ALB block additionally derives account-wide response-time/request-rate KPIs
     // from its own results (a dependency on ALB's *own* output, not on any other block --
     // see the Phase 2B audit), so its failure boundary returns the same "no ALB data"
@@ -1679,11 +1938,11 @@ export class CloudWatchService {
       }
     })()
 
-    // All nine tasks above have already started (each async IIFE runs synchronously up
+    // All ten tasks above have already started (each async IIFE runs synchronously up
     // to its own first await) -- this Promise.all() only waits for them, in a fixed input
     // order that determines the destructured order below regardless of completion timing.
-    const [ec2Services, albBlock, rdsServices, lambdaServices, dynamoServices, ecsServices, eksServices, ebsServices, cloudfrontServices] =
-      await Promise.all([ec2Task, albTask, rdsTask, lambdaTask, dynamoTask, ecsTask, eksTask, ebsTask, cloudfrontTask])
+    const [ec2Services, albBlock, rdsServices, lambdaServices, dynamoServices, ecsServices, eksServices, ebsServices, cloudfrontServices, auroraServices] =
+      await Promise.all([ec2Task, albTask, rdsTask, lambdaTask, dynamoTask, ecsTask, eksTask, ebsTask, cloudfrontTask, auroraTask])
 
     const uptimeValues = ec2Services.map((s) => s.uptime).filter((v): v is number => v !== null)
     const uptime = uptimeValues.length > 0 ? Math.round((uptimeValues.reduce((a, b) => a + b, 0) / uptimeValues.length) * 100) / 100 : null
@@ -1697,11 +1956,12 @@ export class CloudWatchService {
     }
 
     // Ordering is an explicit preserved response contract (EC2, ALB, RDS, Lambda,
-    // DynamoDB, ECS, EKS, EBS, CloudFront) -- see cloudwatch.service.concurrency.test.ts's
-    // ordering test and cloudwatch-pagination.util.ts's TYPE_ORDER, which both must stay
-    // consistent with this exact sequence. EBS/CloudFront are appended after the original
-    // seven (Service Health Coverage Expansion) rather than interleaved, so existing
-    // pagination cursors issued before this change remain valid across the rollout.
+    // DynamoDB, ECS, EKS, EBS, CloudFront, Aurora) -- see
+    // cloudwatch.service.concurrency.test.ts's ordering test and
+    // cloudwatch-pagination.util.ts's TYPE_ORDER, which both must stay consistent with
+    // this exact sequence. EBS/CloudFront/Aurora are appended after the original seven in
+    // the order each was added, rather than interleaved, so existing pagination cursors
+    // issued before each addition remain valid across the rollout.
     // This is now the COMPLETE evaluated fleet (Phase 2D removed the per-type evaluation
     // cap above) -- both healthSummary/systemStatus below and the pagination layer in
     // cloudwatch.routes.ts operate on this same array, never on a re-capped subset.
@@ -1715,6 +1975,7 @@ export class CloudWatchService {
       ...eksServices,
       ...ebsServices,
       ...cloudfrontServices,
+      ...auroraServices,
     ]
 
     // CloudWatch Scalability Phase 2D: complete-fleet aggregate health, computed here
@@ -1762,6 +2023,7 @@ export class CloudWatchService {
         eks: eksClustersInventory.length > 0,
         ebs: ebsVolumes.length > 0,
         cloudfront: cloudfrontDistributions.length > 0,
+        aurora: auroraClusters.length > 0,
       },
       resourceCounts,
       healthSummary,

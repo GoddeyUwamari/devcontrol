@@ -211,6 +211,15 @@ describe('paginateServices', () => {
     expect(result.services.map((s) => s.resourceType)).toEqual(['ec2', 'eks', 'ebs', 'cloudfront']);
   });
 
+  it('Aurora Service Health: aurora sorts after cloudfront, at the end of the type order', () => {
+    const fleet = [
+      fx('cloudfront', 'dist-a', '9'),
+      fx('aurora', 'cluster-a', '10'),
+    ];
+    const result = paginateServices(fleet, null, 100);
+    expect(result.services.map((s) => s.resourceType)).toEqual(['cloudfront', 'aurora']);
+  });
+
   it('Service Health Coverage Expansion: a cursor resumes correctly across the ebs/cloudfront type boundary', () => {
     const fleet = [fx('eks', 'cluster-a', '7'), fx('ebs', 'vol-a', '8'), fx('ebs', 'vol-b', '9'), fx('cloudfront', 'dist-a', '10')];
     const firstPage = paginateServices(fleet, null, 2);

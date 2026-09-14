@@ -75,3 +75,27 @@ describe('ServiceHealthTable — Service Health Coverage Expansion (EBS/CloudFro
     expect(screen.getByText('EC2 (0)')).toBeInTheDocument()
   })
 })
+
+describe('ServiceHealthTable — Aurora Service Health', () => {
+  const services = [
+    { name: 'prod-aurora-cluster', description: 'Aurora · aurora-postgresql', status: 'healthy' as const, uptime: 'N/A', responseTime: 'N/A', errorRate: null, monitored: true, resourceType: 'aurora' },
+    { name: 'i-123', description: 'EC2 · i-123', status: 'healthy' as const, uptime: '99.9%', responseTime: '120ms', errorRate: 0, monitored: true, resourceType: 'ec2' },
+  ]
+
+  it('renders an Aurora row generically and shows the Aurora filter tab with a count derived from the actual services passed in', () => {
+    render(<ServiceHealthTable services={services} rangeLabel="1h" />)
+    expect(screen.getByText('prod-aurora-cluster')).toBeInTheDocument()
+    expect(screen.getByText('Aurora · aurora-postgresql')).toBeInTheDocument()
+    expect(screen.getByText('Aurora (1)')).toBeInTheDocument()
+  })
+
+  it('renders the "Not monitored" pill for an Aurora row with monitored: false, same as every other type', () => {
+    render(
+      <ServiceHealthTable
+        services={[{ name: 'stale-cluster', status: 'unknown' as const, uptime: 'N/A', responseTime: 'N/A', errorRate: null, monitored: false, resourceType: 'aurora' }]}
+        rangeLabel="1h"
+      />
+    )
+    expect(screen.getByText('Not monitored')).toBeInTheDocument()
+  })
+})

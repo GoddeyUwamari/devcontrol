@@ -31,7 +31,11 @@ export interface BatchMetricQuery {
   metricName: string
   dimensions: BatchDimension[]
   period: number
-  stat: 'Average' | 'Sum'
+  // 'Maximum' added for Aurora's AuroraReplicaLagMaximum signal (the metric's own name
+  // already means "max across replicas" at a point in time; requesting the Maximum
+  // statistic additionally catches a lag spike within the period that Average would
+  // smooth away -- see cloudwatch.service.ts's evaluateAuroraClusters()).
+  stat: 'Average' | 'Sum' | 'Maximum'
 }
 
 export interface BatchSeriesResult {
@@ -140,10 +144,13 @@ async function fetchChunk(
  * {Sum, Average} objects. A null series, or a series with zero datapoints, is null --
  * never fabricated as 0.
  */
-export function reduceSeriesToScalar(series: BatchSeriesResult | null, stat: 'Average' | 'Sum'): number | null {
+export function reduceSeriesToScalar(series: BatchSeriesResult | null, stat: 'Average' | 'Sum' | 'Maximum'): number | null {
   if (series === null || series.values.length === 0) return null
   if (stat === 'Sum') {
     return series.values.reduce((sum, v) => sum + v, 0)
+  }
+  if (stat === 'Maximum') {
+    return Math.max(...series.values)
   }
   return series.values.reduce((sum, v) => sum + v, 0) / series.values.length
 }

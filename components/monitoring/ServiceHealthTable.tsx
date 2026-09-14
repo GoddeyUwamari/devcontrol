@@ -52,6 +52,7 @@ const RESOURCE_TYPE_TABS: { key: string; label: string }[] = [
   { key: 'eks', label: 'EKS' },
   { key: 'ebs', label: 'EBS' },
   { key: 'cloudfront', label: 'CloudFront' },
+  { key: 'aurora', label: 'Aurora' },
 ]
 
 function formatMetricValue(metric: ServiceMetric): string {
