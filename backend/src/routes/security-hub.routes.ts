@@ -90,4 +90,21 @@ router.get('/frameworks/cis', async (req: Request, res: Response): Promise<void>
   }
 });
 
+/** GET /api/security-hub/frameworks/pci — PCI DSS v4.0.1 readiness with full coverage breakdown. */
+router.get('/frameworks/pci', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const organizationId = req.organizationId;
+    if (!organizationId) {
+      res.status(401).json({ success: false, error: 'Unauthorized' });
+      return;
+    }
+
+    const result = await complianceService.evaluatePci(organizationId);
+    res.json({ success: true, result });
+  } catch (error: unknown) {
+    console.error('[SecurityHub] Error evaluating PCI DSS:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
 export default router;

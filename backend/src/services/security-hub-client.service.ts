@@ -75,6 +75,7 @@ function normalizeFinding(finding: AwsSecurityFinding): SecurityHubFindingEviden
     associatedStandardIds: (finding.Compliance?.AssociatedStandards ?? [])
       .map((s) => s.StandardsId)
       .filter((id): id is string => !!id),
+    relatedRequirements: finding.Compliance?.RelatedRequirements ?? [],
     resourceType: resource?.Type ?? null,
     resourceId: resource?.Id ?? null,
     securityHubCreatedAt: finding.CreatedAt,

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { securityHubService, SecurityHubCapability, CisReadinessResult } from '../services/security-hub.service';
+import { securityHubService, SecurityHubCapability, CisReadinessResult, PciReadinessResult } from '../services/security-hub.service';
 
 export function useSecurityHub() {
   const [capability, setCapability] = useState<SecurityHubCapability | null>(null);
   const [cis, setCis] = useState<CisReadinessResult | null>(null);
+  const [pci, setPci] = useState<PciReadinessResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -12,12 +13,14 @@ export function useSecurityHub() {
     try {
       setLoading(true);
       setError(null);
-      const [capabilityData, cisData] = await Promise.all([
+      const [capabilityData, cisData, pciData] = await Promise.all([
         securityHubService.getCapability(),
         securityHubService.getCisReadiness(),
+        securityHubService.getPciReadiness(),
       ]);
       setCapability(capabilityData);
       setCis(cisData);
+      setPci(pciData);
     } catch (err: any) {
       setError(err.message || 'Failed to load Security Hub status');
     } finally {
@@ -42,5 +45,5 @@ export function useSecurityHub() {
     }
   }, [fetchAll]);
 
-  return { capability, cis, loading, error, syncing, triggerSync, refetch: fetchAll };
+  return { capability, cis, pci, loading, error, syncing, triggerSync, refetch: fetchAll };
 }
