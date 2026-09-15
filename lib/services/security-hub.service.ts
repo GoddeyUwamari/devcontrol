@@ -1,6 +1,13 @@
 export type SecurityHubCapabilityStatus = 'NOT_GRANTED' | 'NOT_AVAILABLE' | 'ENABLED' | 'ERROR';
 export type SecurityHubSyncStatus = 'NEVER_RUN' | 'RUNNING' | 'COMPLETED' | 'PARTIAL' | 'FAILED';
-export type FoundationControlStatus = 'PASS' | 'FAIL' | 'NOT_APPLICABLE' | 'UNKNOWN' | 'NOT_EVALUATED' | 'ERROR';
+export type FoundationControlStatus =
+  | 'PASS'
+  | 'FAIL'
+  | 'NOT_APPLICABLE'
+  | 'UNKNOWN'
+  | 'NOT_EVALUATED'
+  | 'ERROR'
+  | 'NOT_ESTABLISHABLE';
 
 export interface SecurityHubCapability {
   capabilityStatus: SecurityHubCapabilityStatus | null;
@@ -18,19 +25,32 @@ export interface FrameworkCoverage {
   unknown: number;
   notEvaluated: number;
   notApplicable: number;
+  notEstablishable: number;
   errors: number;
 }
 
 export interface FrameworkControlResult {
   controlId: string;
   title: string;
-  securityHubControlId: string;
+  securityHubControlId: string | null;
   status: FoundationControlStatus;
   reason: string;
+  mappingType?: 'DIRECT' | 'ADDITIONAL_EVIDENCE';
 }
 
 export interface CisReadinessResult {
   framework: 'cis';
+  frameworkVersion: string;
+  syncStatus: SecurityHubSyncStatus;
+  capabilityStatus: SecurityHubCapabilityStatus | null;
+  standardEnabled: boolean | null;
+  evaluatedAt: string | null;
+  coverage: FrameworkCoverage;
+  controls: FrameworkControlResult[];
+}
+
+export interface PciReadinessResult {
+  framework: 'pci';
   frameworkVersion: string;
   syncStatus: SecurityHubSyncStatus;
   capabilityStatus: SecurityHubCapabilityStatus | null;
@@ -66,6 +86,16 @@ class SecurityHubService {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Failed to fetch CIS readiness' }));
       throw new Error(error.error || 'Failed to fetch CIS readiness');
+    }
+    const data = await response.json();
+    return data.result;
+  }
+
+  async getPciReadiness(): Promise<PciReadinessResult> {
+    const response = await fetch(`${this.baseUrl}/frameworks/pci`, { credentials: 'include' });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to fetch PCI DSS readiness' }));
+      throw new Error(error.error || 'Failed to fetch PCI DSS readiness');
     }
     const data = await response.json();
     return data.result;

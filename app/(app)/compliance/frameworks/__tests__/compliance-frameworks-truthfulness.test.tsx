@@ -70,9 +70,11 @@ let scansState: { scans: ComplianceScan[]; loading: boolean; error: string | nul
 }
 
 const mockTriggerSync = vi.fn()
+type ReadinessFixture = { framework: string; frameworkVersion: string; syncStatus: string; capabilityStatus: string | null; standardEnabled: boolean | null; evaluatedAt: string | null; coverage: Record<string, number>; controls: unknown[] }
 let securityHubState: {
   capability: { capabilityStatus: string | null; syncStatus: string; checkedAt: string | null; error: string | null; enabledStandards: unknown[] } | null
-  cis: { framework: 'cis'; frameworkVersion: string; syncStatus: string; capabilityStatus: string | null; standardEnabled: boolean | null; evaluatedAt: string | null; coverage: Record<string, number>; controls: unknown[] } | null
+  cis: ReadinessFixture | null
+  pci: ReadinessFixture | null
   loading: boolean
   error: string | null
   syncing: boolean
@@ -82,6 +84,7 @@ let securityHubState: {
   // from the pre-Security-Hub-integration static "not connected" behavior.
   capability: null,
   cis: null,
+  pci: null,
   loading: false,
   error: null,
   syncing: false,
@@ -91,6 +94,7 @@ vi.mock('@/lib/hooks/useSecurityHub', () => ({
   useSecurityHub: () => ({
     capability: securityHubState.capability,
     cis: securityHubState.cis,
+    pci: securityHubState.pci,
     loading: securityHubState.loading,
     error: securityHubState.error,
     syncing: securityHubState.syncing,
@@ -99,7 +103,7 @@ vi.mock('@/lib/hooks/useSecurityHub', () => ({
   }),
 }))
 
-function makeCisReadiness(overrides: Partial<NonNullable<typeof securityHubState.cis>> = {}) {
+function makeCisReadiness(overrides: Partial<ReadinessFixture> = {}) {
   return {
     framework: 'cis' as const,
     frameworkVersion: '5.0.0',
@@ -107,7 +111,21 @@ function makeCisReadiness(overrides: Partial<NonNullable<typeof securityHubState
     capabilityStatus: 'ENABLED',
     standardEnabled: true,
     evaluatedAt: new Date().toISOString(),
-    coverage: { totalControls: 40, evaluated: 2, passed: 1, failed: 1, unknown: 38, notEvaluated: 0, notApplicable: 0, errors: 0 },
+    coverage: { totalControls: 40, evaluated: 2, passed: 1, failed: 1, unknown: 38, notEvaluated: 0, notApplicable: 0, notEstablishable: 0, errors: 0 },
+    controls: [],
+    ...overrides,
+  }
+}
+
+function makePciReadiness(overrides: Partial<ReadinessFixture> = {}) {
+  return {
+    framework: 'pci' as const,
+    frameworkVersion: '4.0.1',
+    syncStatus: 'COMPLETED',
+    capabilityStatus: 'ENABLED',
+    standardEnabled: true,
+    evaluatedAt: new Date().toISOString(),
+    coverage: { totalControls: 24, evaluated: 2, passed: 1, failed: 1, unknown: 19, notEvaluated: 0, notApplicable: 0, notEstablishable: 2, errors: 0 },
     controls: [],
     ...overrides,
   }
@@ -182,7 +200,7 @@ beforeEach(() => {
   salesDemoValue = false
   frameworksState = { frameworks: [], loading: false, error: null }
   scansState = { scans: [], loading: false, error: null }
-  securityHubState = { capability: null, cis: null, loading: false, error: null, syncing: false }
+  securityHubState = { capability: null, cis: null, pci: null, loading: false, error: null, syncing: false }
 })
 
 describe('Test 1 — real mode, no completed evaluation', () => {
@@ -281,7 +299,7 @@ function getSingleFrameworkCard(name: string): HTMLElement {
 }
 
 describe('Test 3 — framework buttons are non-actionable', () => {
-  it.each(['CIS AWS Foundations', 'SOC 2 Type II', 'NIST', 'PCI-DSS'])('%s card renders a disabled control that opens no modal and calls no API on click', (name) => {
+  it.each(['CIS AWS Foundations', 'SOC 2 Type II', 'NIST', 'PCI DSS v4.0.1'])('%s card renders a disabled control that opens no modal and calls no API on click', (name) => {
     renderPage()
 
     const card = getFrameworkCard(name)
@@ -314,7 +332,7 @@ describe('Test 4 — framework attribution', () => {
 
   it('attributes PCI-DSS to AWS Security Hub', () => {
     renderPage()
-    expect(getFrameworkCard('PCI-DSS').textContent).toContain('Evaluated by AWS Security Hub')
+    expect(getFrameworkCard('PCI DSS v4.0.1').textContent).toContain('Evaluated by AWS Security Hub')
   })
 
   it('attributes SOC 2 to DevControl using cloud security data', () => {
@@ -440,6 +458,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     securityHubState = {
       capability: { capabilityStatus: 'NOT_GRANTED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: 'AccessDenied', enabledStandards: [] },
       cis: makeCisReadiness({ capabilityStatus: 'NOT_GRANTED', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
+      pci: null,
       loading: false,
       error: null,
       syncing: false,
@@ -458,6 +477,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     securityHubState = {
       capability: { capabilityStatus: 'NOT_AVAILABLE', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: makeCisReadiness({ capabilityStatus: 'NOT_AVAILABLE', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
+      pci: null,
       loading: false,
       error: null,
       syncing: false,
@@ -474,6 +494,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     securityHubState = {
       capability: { capabilityStatus: 'ERROR', syncStatus: 'FAILED', checkedAt: new Date().toISOString(), error: 'Rate exceeded', enabledStandards: [] },
       cis: makeCisReadiness({ capabilityStatus: 'ERROR', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 0, notApplicable: 0, errors: 40 } }),
+      pci: null,
       loading: false,
       error: null,
       syncing: false,
@@ -490,6 +511,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     securityHubState = {
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: makeCisReadiness({ capabilityStatus: 'ENABLED', standardEnabled: false, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
+      pci: null,
       loading: false,
       error: null,
       syncing: false,
@@ -506,6 +528,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     securityHubState = {
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: makeCisReadiness({ coverage: { totalControls: 40, evaluated: 5, passed: 3, failed: 2, unknown: 35, notEvaluated: 0, notApplicable: 0, errors: 0 } }),
+      pci: null,
       loading: false,
       error: null,
       syncing: false,
@@ -517,7 +540,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     expect(card.textContent).toContain('3 passed')
     expect(card.textContent).toContain('2 failed')
     expect(card.textContent).toContain('35 unknown')
-    expect(card.textContent).toContain('/ 40 controls')
+    expect(card.textContent).toContain('/ 40 mapped')
     // No lock affordance once real evidence exists for CIS specifically.
     expect(card.querySelector('button')).toBeNull()
     // Never a bare, context-free percentage for CIS.
@@ -528,13 +551,14 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     securityHubState = {
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: makeCisReadiness(),
+      pci: null,
       loading: false,
       error: null,
       syncing: false,
     }
     renderPage()
 
-    for (const name of ['SOC 2 Type II', 'NIST', 'PCI-DSS']) {
+    for (const name of ['SOC 2 Type II', 'NIST', 'PCI DSS v4.0.1']) {
       const card = getSingleFrameworkCard(name)
       const button = card.querySelector('button')!
       expect(button).toBeDisabled()
@@ -549,5 +573,108 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
 
     expect(mockTriggerSync).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('Create Framework')).not.toBeInTheDocument()
+  })
+})
+
+describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail or imply certification', () => {
+  it('NOT_GRANTED: PCI card stays "Not yet available", never PASS/FAIL', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'NOT_GRANTED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: 'AccessDenied', enabledStandards: [] },
+      cis: null,
+      pci: makePciReadiness({ capabilityStatus: 'NOT_GRANTED', standardEnabled: null, coverage: { totalControls: 24, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 22, notApplicable: 0, notEstablishable: 2, errors: 0 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('PCI DSS v4.0.1')
+    expect(card.textContent).toContain('Security Hub permission not granted')
+    expect(card.querySelector('button[disabled]')).toBeTruthy()
+    expect(card.textContent).not.toMatch(/\bFAIL\b/)
+  })
+
+  it('ENABLED + PCI standard enabled: shows coverage with a NOT_ESTABLISHABLE count and partial-coverage language, never a bare percentage or a compliance/certification claim', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: makePciReadiness({ coverage: { totalControls: 24, evaluated: 5, passed: 3, failed: 2, unknown: 17, notEvaluated: 0, notApplicable: 0, notEstablishable: 2, errors: 0 }, controls: [{ status: 'ADDITIONAL_EVIDENCE' }] as any }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('PCI DSS v4.0.1')
+    expect(card.querySelector('[data-testid="pci-coverage"]')).toBeTruthy()
+    expect(card.textContent).toContain('3 passed')
+    expect(card.textContent).toContain('2 failed')
+    expect(card.textContent).toContain('2 not establishable')
+    expect(card.textContent).toContain('/ 24 mapped')
+    expect(card.textContent).toContain('Partial coverage')
+    expect(card.querySelector('button')).toBeNull()
+    // No certification/compliance claim, no bare percentage.
+    expect(card.textContent).not.toMatch(/PCI\s+compliant/i)
+    expect(card.textContent).not.toMatch(/PCI\s+certified/i)
+    expect(card.textContent).not.toMatch(/100%\s*PCI/i)
+    expect(card.textContent).not.toMatch(/^\d+%$/)
+  })
+
+  it('Security Hub unavailable renders PCI as NOT_EVALUATED, never as a PCI compliance FAIL', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'NOT_AVAILABLE', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: makePciReadiness({ capabilityStatus: 'NOT_AVAILABLE', standardEnabled: null, coverage: { totalControls: 24, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 22, notApplicable: 0, notEstablishable: 2, errors: 0 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('PCI DSS v4.0.1')
+    expect(card.textContent).toContain('Security Hub is not enabled for this AWS account')
+    expect(card.textContent).not.toMatch(/\bFAIL\b/)
+    expect(card.querySelector('button[disabled]')).toBeTruthy()
+  })
+
+  it('PCI becoming evaluated does not affect the CIS, SOC2, or NIST cards', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: makePciReadiness(),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    for (const name of ['CIS AWS Foundations', 'SOC 2 Type II', 'NIST']) {
+      const card = getSingleFrameworkCard(name)
+      const button = card.querySelector('button')
+      if (name === 'SOC 2 Type II' || name === 'NIST') {
+        expect(button).toBeDisabled()
+        expect(button!.textContent).toContain('Not yet available')
+      } else {
+        // CIS remains in its own default (never-synced) placeholder state here since
+        // only `pci` was populated in this test's fixture.
+        expect(button).toBeDisabled()
+      }
+    }
+  })
+
+  it('never implies PCI DSS compliance or certification anywhere on the page', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: makePciReadiness(),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    expect(screen.queryByText(/PCI DSS compliant/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/PCI certified/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/100% PCI/i)).not.toBeInTheDocument()
   })
 })

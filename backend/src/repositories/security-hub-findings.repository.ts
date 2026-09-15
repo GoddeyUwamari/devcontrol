@@ -24,6 +24,7 @@ function mapRow(row: any): SecurityHubFindingEvidence {
     workflowStatus: row.workflow_status,
     securityControlId: row.security_control_id,
     associatedStandardIds: row.associated_standard_ids ?? [],
+    relatedRequirements: row.related_requirements ?? [],
     resourceType: row.resource_type,
     resourceId: row.resource_id,
     securityHubCreatedAt: row.security_hub_created_at,
@@ -54,9 +55,9 @@ export class SecurityHubFindingsRepository {
             `INSERT INTO security_hub_findings
               (organization_id, finding_id, product_arn, title, severity, compliance_status,
                record_state, workflow_status, security_control_id, associated_standard_ids,
-               region, resource_type, resource_id, security_hub_created_at, security_hub_updated_at,
-               last_seen_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+               related_requirements, region, resource_type, resource_id, security_hub_created_at,
+               security_hub_updated_at, last_seen_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
              ON CONFLICT (organization_id, finding_id) DO UPDATE SET
                title = EXCLUDED.title,
                severity = EXCLUDED.severity,
@@ -65,6 +66,7 @@ export class SecurityHubFindingsRepository {
                workflow_status = EXCLUDED.workflow_status,
                security_control_id = EXCLUDED.security_control_id,
                associated_standard_ids = EXCLUDED.associated_standard_ids,
+               related_requirements = EXCLUDED.related_requirements,
                region = EXCLUDED.region,
                resource_type = EXCLUDED.resource_type,
                resource_id = EXCLUDED.resource_id,
@@ -83,6 +85,7 @@ export class SecurityHubFindingsRepository {
               f.workflowStatus,
               f.securityControlId,
               JSON.stringify(f.associatedStandardIds),
+              JSON.stringify(f.relatedRequirements),
               f.region,
               f.resourceType,
               f.resourceId,

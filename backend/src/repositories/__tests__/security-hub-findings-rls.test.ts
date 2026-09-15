@@ -53,6 +53,7 @@ function fakeFinding(overrides: Partial<SecurityHubFindingEvidence> = {}): Secur
     workflowStatus: 'NEW',
     securityControlId: 'IAM.5',
     associatedStandardIds: ['cis-aws-foundations-benchmark/v/5.0.0'],
+    relatedRequirements: [],
     resourceType: 'AwsIamUser',
     resourceId: 'AIDAEXAMPLE',
     securityHubCreatedAt: now,
@@ -84,6 +85,22 @@ describe('SecurityHubFindingsRepository — upsert-only ingestion', () => {
     const second = await fetchRow(orgId, finding.findingId);
     expect(second.id).toBe(first.id);
     expect(second.compliance_status).toBe('PASSED');
+  });
+
+  it('preserves multiple Compliance.RelatedRequirements strings verbatim, and defaults to [] when AWS provides none', async () => {
+    const orgId = await insertOrg();
+    const withRequirements = fakeFinding({
+      securityControlId: 'IAM.3',
+      relatedRequirements: ['PCI DSS v4.0.1/8.3.9', 'PCI DSS v4.0.1/8.6.3', 'NIST.800-53.r5 AC-2(1)'],
+    });
+    await findingsRepo.upsertFindings(orgId, [withRequirements]);
+    const row = await fetchRow(orgId, withRequirements.findingId);
+    expect(row.related_requirements).toEqual(['PCI DSS v4.0.1/8.3.9', 'PCI DSS v4.0.1/8.6.3', 'NIST.800-53.r5 AC-2(1)']);
+
+    const withoutRequirements = fakeFinding({ securityControlId: 'IAM.5' });
+    await findingsRepo.upsertFindings(orgId, [withoutRequirements]);
+    const defaultRow = await fetchRow(orgId, withoutRequirements.findingId);
+    expect(defaultRow.related_requirements).toEqual([]);
   });
 
   it('never deletes or archives a finding on its own — absence from a later upsert batch leaves the row untouched', async () => {
