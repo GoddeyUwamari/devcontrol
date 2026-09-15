@@ -29,11 +29,7 @@
 import { SecurityHubStateRepository } from '../repositories/security-hub-state.repository';
 import { SecurityHubFindingsRepository } from '../repositories/security-hub-findings.repository';
 import { CIS_V5_CONTROL_MAPPINGS, CIS_AWS_FOUNDATIONS_VERSION } from '../config/securityHubCisMapping';
-import {
-  PCI_V4_CONTROL_MAPPINGS,
-  PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS,
-  PCI_DSS_VERSION,
-} from '../config/securityHubPciMapping';
+import { PCI_V4_CONTROL_MAPPINGS, PCI_DSS_VERSION } from '../config/securityHubPciMapping';
 import { FoundationControlStatus, FrameworkControlResult, FrameworkReadinessResult } from '../types/security-hub-foundation.types';
 
 /** Matches by ARN suffix (independent of the region prefix) -- see comment at call site. */
@@ -84,11 +80,13 @@ const PCI_CONFIG: FrameworkEvalConfig = {
     securityHubControlId: m.securityHubControlId,
     mappingType: m.mappingType,
   })),
-  notEstablishableRequirements: PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS.map((r) => ({
-    controlId: r.pciRequirementId,
-    title: r.title,
-    reason: r.reason,
-  })),
+  // No live NOT_ESTABLISHABLE entries in v1 -- see securityHubPciMapping.ts's own
+  // docblock for why the two that previously lived here were removed. The shared
+  // evaluator below still fully supports this list (a future framework, or a future
+  // PCI requirement with real justification, can populate it again); its behavior is
+  // verified with a synthetic test-only config in
+  // security-hub-compliance.service.test.ts, never by fabricating a mapping entry here.
+  notEstablishableRequirements: [],
 };
 
 export class SecurityHubComplianceService {

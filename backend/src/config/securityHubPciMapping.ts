@@ -128,49 +128,26 @@ export function getPciMappingsForSecurityControlId(securityHubControlId: string)
 }
 
 /**
- * A small, deliberately curated set of PCI DSS v4.0.1 requirements DevControl has
- * explicitly evaluated and determined CANNOT be established from any Security Hub/AWS
- * technical evidence -- structurally distinct from PCI_V4_CONTROL_MAPPINGS above, which
- * only ever contains requirements a Security Hub control DOES back.
+ * Deliberately no "NOT_ESTABLISHABLE requirements" list lives in this file.
  *
- * This is not, and must never become, an enumeration of "every PCI v4.0.1 requirement
- * DevControl doesn't currently map" -- per the product's "do not create mapping rows for
- * every PCI DSS requirement merely to label unsupported requirements NOT_ESTABLISHABLE"
- * principle, the vast majority of unmapped v4.0.1 sub-requirements are simply absent
- * from both this file and PCI_V4_CONTROL_MAPPINGS, communicated to the UI as "outside
- * current evidence scope" rather than as individual fabricated rows. The two entries
- * below exist only because their NOT_ESTABLISHABLE status is itself a meaningful,
- * durable, and genuinely justified product fact (not merely "not yet mapped") --
- * Requirement 9 concerns physical facility access, which is AWS's own responsibility
- * under the AWS shared-responsibility model and can never have an AWS API-observable
- * technical control; Requirement 12.1 concerns a published organizational security
- * policy document, which is process/documentation evidence no AWS technical API
- * evaluates. Their status is NOT_ESTABLISHABLE unconditionally, independent of Security
- * Hub capability or sync state -- see security-hub-compliance.service.ts.
+ * An earlier version of this module included two curated entries (PCI Requirement 9
+ * physical access, Requirement 12.1 security policy) with no backing Security Hub
+ * control, solely to give the NOT_ESTABLISHABLE status a live instance. A focused
+ * review determined that -- even curated to just two, and even though each was
+ * individually truthful -- this was still, literally, "an unsupported PCI requirement
+ * represented as a mapping row," which conflicts with this product's v1 boundary: "map
+ * only PCI requirements DevControl can legitimately establish or meaningfully support
+ * through current Security Hub evidence." They were removed for that reason.
+ *
+ * NOT_ESTABLISHABLE remains a real, valid FoundationControlStatus (see
+ * security-hub-foundation.types.ts) and the shared evaluator
+ * (SecurityHubComplianceService.evaluateFramework) still fully supports a
+ * `notEstablishableRequirements` list in its config -- PCI's config simply passes an
+ * empty array, identical in shape to CIS's. Its correctness is verified with a
+ * synthetic test-only config in security-hub-compliance.service.test.ts, never by
+ * fabricating a real mapping entry here. A future framework (or a future PCI
+ * requirement DevControl gains real evidence-backed context for) can legitimately
+ * populate this mechanism again -- the bar is the same one PCI_V4_CONTROL_MAPPINGS
+ * itself already meets: a real, reviewable justification, not merely "we want the
+ * status to appear somewhere."
  */
-export interface PciNotEstablishableRequirement {
-  framework: typeof PCI_DSS_FRAMEWORK;
-  frameworkVersion: typeof PCI_DSS_VERSION;
-  pciRequirementId: string;
-  title: string;
-  reason: string;
-}
-
-export const PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS: PciNotEstablishableRequirement[] = [
-  {
-    pciRequirementId: '9',
-    title: 'Restrict physical access to cardholder data',
-    reason:
-      'Physical facility access controls are AWS’s own responsibility under the AWS shared-responsibility model; no Security Hub or AWS API can observe or establish this requirement.',
-    framework: 'pci',
-    frameworkVersion: '4.0.1',
-  },
-  {
-    pciRequirementId: '12.1',
-    title: 'A comprehensive information security policy is defined, documented, and published',
-    reason:
-      'This requirement concerns an organizational policy document and its publication/maintenance process, which no AWS technical evidence source evaluates.',
-    framework: 'pci',
-    frameworkVersion: '4.0.1',
-  },
-];

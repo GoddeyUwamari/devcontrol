@@ -1,6 +1,5 @@
 import {
   PCI_V4_CONTROL_MAPPINGS,
-  PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS,
   PCI_DSS_VERSION,
   getPciMappingsForSecurityControlId,
   pciStandardsArnForRegion,
@@ -13,9 +12,20 @@ describe('PCI DSS v4.0.1 mapping', () => {
       expect(m.framework).toBe('pci');
       expect(m.frameworkVersion).toBe('4.0.1');
     }
-    for (const r of PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS) {
-      expect(r.frameworkVersion).toBe('4.0.1');
+  });
+
+  it('contains exactly the 22 legitimate Security Hub-backed entries -- no entry lacks a Security Hub control', () => {
+    expect(PCI_V4_CONTROL_MAPPINGS.length).toBe(22);
+    for (const m of PCI_V4_CONTROL_MAPPINGS) {
+      expect(typeof m.securityHubControlId).toBe('string');
+      expect(m.securityHubControlId.length).toBeGreaterThan(0);
     }
+  });
+
+  it('does not export a NOT_ESTABLISHABLE requirements list -- that mechanism is proven only via a synthetic test config in security-hub-compliance.service.test.ts', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('../securityHubPciMapping');
+    expect(mod.PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS).toBeUndefined();
   });
 
   it('contains no v3.2.1 entries anywhere in the file (source-level contamination check)', () => {
@@ -79,23 +89,5 @@ describe('PCI DSS v4.0.1 mapping', () => {
   it('pciStandardsArnForRegion builds the exact empirically-verified v4.0.1 ARN format', () => {
     expect(pciStandardsArnForRegion('us-east-1')).toBe('arn:aws:securityhub:us-east-1::standards/pci-dss/v/4.0.1');
     expect(pciStandardsArnForRegion('eu-west-1')).toBe('arn:aws:securityhub:eu-west-1::standards/pci-dss/v/4.0.1');
-  });
-
-  it('NOT_ESTABLISHABLE requirements are a small, deliberately curated set -- not an enumeration of every unmapped requirement', () => {
-    // A sanity bound, not a magic number: this must stay small and explicit, never grow
-    // into "every PCI requirement DevControl doesn't map" (see this file's docblock).
-    expect(PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS.length).toBeGreaterThan(0);
-    expect(PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS.length).toBeLessThan(10);
-    for (const r of PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS) {
-      expect(r.reason).toBeTruthy();
-      expect(r.title).toBeTruthy();
-    }
-  });
-
-  it('no PCI requirement appears in both the control-backed mapping and the NOT_ESTABLISHABLE set', () => {
-    const mappedRequirementIds = new Set(PCI_V4_CONTROL_MAPPINGS.map((m) => m.pciRequirementId));
-    for (const r of PCI_V4_NOT_ESTABLISHABLE_REQUIREMENTS) {
-      expect(mappedRequirementIds.has(r.pciRequirementId)).toBe(false);
-    }
   });
 });
