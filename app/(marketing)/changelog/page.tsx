@@ -128,10 +128,9 @@ export default function ChangelogPage() {
       title: 'Security & Compliance Updates',
       featured: false,
       changes: [
-        { type: 'security' as ChangeType, text: 'SOC 2 Type II audit initiated — continuous compliance monitoring enabled', category: 'Security' },
-        { type: 'security' as ChangeType, text: 'GDPR compliance enhancements with data export tools', category: 'Security' },
+        { type: 'security' as ChangeType, text: 'SOC 2 readiness planning initiated (not an independent audit or certification)', category: 'Security' },
         { type: 'feature' as ChangeType, text: 'Security scanning dashboard with vulnerability tracking', category: 'Security' },
-        { type: 'feature' as ChangeType, text: 'Compliance framework templates (CIS, NIST, PCI-DSS)', category: 'Security' },
+        { type: 'feature' as ChangeType, text: 'Compliance framework templates (CIS, PCI-DSS)', category: 'Security' },
         { type: 'improvement' as ChangeType, text: 'Audit log retention increased to 2 years', category: 'Security' },
         { type: 'fix' as ChangeType, text: 'Fixed false positives in security checks', category: 'Security' },
       ],

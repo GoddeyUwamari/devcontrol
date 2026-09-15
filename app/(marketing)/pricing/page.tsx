@@ -82,7 +82,7 @@ const pricingTiers: PricingTier[] = [
       'DORA Metrics',
       'Advanced Security Overview',
       'Risk Score',
-      'SOC 2, NIST, PCI DSS, CIS Compliance Readiness',
+      'PCI DSS, CIS Compliance Readiness (Security Hub-backed)',
       'Advanced Alert Configuration',
       'Webhook Integrations',
       'Up to 500 resources',
@@ -302,7 +302,7 @@ export default function PricingPage() {
               { icon: Shield,       text: 'Read-only AWS access'        },
               { icon: Sparkles,     text: 'No credit card required'     },
               { icon: Zap,          text: '14-day free trial'           },
-              { icon: CheckCircle2, text: 'SOC 2 In Progress'           },
+              { icon: CheckCircle2, text: 'SOC 2 Readiness Planned'     },
             ].map(({ icon: Icon, text }) => (
               <div key={text} className="flex items-center gap-1.5">
                 <Icon size={14} className="text-violet-700" />{text}
@@ -449,7 +449,7 @@ export default function PricingPage() {
             All paid plans include a <strong>14-day money-back guarantee</strong>
           </p>
           <div className="flex flex-wrap justify-center gap-3 sm:gap-5 text-xs text-gray-500">
-            {['Cancel anytime', 'No hidden fees', 'Instant access', 'SOC 2 In Progress'].map(item => (
+            {['Cancel anytime', 'No hidden fees', 'Instant access', 'SOC 2 Readiness Planned'].map(item => (
               <span key={item} className="flex items-center gap-1">
                 <CheckCircle2 size={12} className="text-emerald-600" />{item}
               </span>

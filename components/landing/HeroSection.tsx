@@ -1,13 +1,15 @@
 'use client'
 
-import { Play, ArrowRight, Lock, Shield, BadgeCheck, Globe } from 'lucide-react'
+import { Play, ArrowRight, Lock, Shield, BadgeCheck } from 'lucide-react'
 import { AnimatedBackground } from './AnimatedBackground'
 
+// "GDPR Ready" was removed: no dedicated GDPR program (DPA, subprocessor list, data-subject
+// tooling) exists to substantiate it — see the Phase 5 product-truthfulness audit. Do not
+// re-add a GDPR badge here without real, traceable implementation evidence behind it.
 const trustBadges = [
   { label: 'Read-only IAM', icon: Lock },
   { label: 'AES-256 Encryption', icon: Shield },
-  { label: 'SOC 2 In Progress', icon: BadgeCheck },
-  { label: 'GDPR Ready', icon: Globe },
+  { label: 'SOC 2 Readiness Planned', icon: BadgeCheck },
 ]
 
 export function HeroSection() {

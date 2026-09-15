@@ -76,7 +76,7 @@ export const navItems: NavItem[] = [
       { label: 'Security Overview', href: '/security', icon: Shield, desc: 'Security posture and score' },
       { label: 'Anomalies', href: '/anomalies', icon: AlertTriangle, desc: 'Detected threats and issues' },
       { label: 'Anomaly Rules', href: '/anomalies/rules', icon: SlidersHorizontal, desc: 'Custom detection thresholds' },
-      { label: 'Compliance', href: '/compliance/frameworks', icon: CheckSquare, desc: 'CIS, NIST, SOC 2 frameworks' },
+      { label: 'Compliance', href: '/compliance/frameworks', icon: CheckSquare, desc: 'Security Hub-backed CIS and PCI frameworks' },
       { label: 'Audit Logs', href: '/audit-logs', icon: ClipboardList, desc: 'Full activity audit trail' },
     ],
   },
