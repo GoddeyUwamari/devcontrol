@@ -45,7 +45,7 @@ const features: Feature[] = [
   { category: 'Security & Compliance', name: 'Security Findings', free: false, starter: true, pro: true, enterprise: true, tooltip: 'Automated detection of security misconfigurations' },
   { category: 'Security & Compliance', name: 'Advanced Security Overview', free: false, starter: false, pro: true, enterprise: true },
   { category: 'Security & Compliance', name: 'Risk Score', free: false, starter: false, pro: true, enterprise: true, tooltip: 'Track infrastructure health over time' },
-  { category: 'Security & Compliance', name: 'SOC 2, NIST, PCI DSS, CIS Compliance Readiness', free: false, starter: false, pro: true, enterprise: true, highlight: true, tooltip: 'Automated compliance checks against industry frameworks' },
+  { category: 'Security & Compliance', name: 'PCI DSS, CIS Compliance Readiness', free: false, starter: false, pro: true, enterprise: true, highlight: true, tooltip: 'Security Hub-backed compliance readiness checks against supported industry frameworks' },
   { category: 'Security & Compliance', name: 'Enterprise Security Command Center', free: false, starter: false, pro: false, enterprise: true, highlight: true },
   { category: 'Security & Compliance', name: 'Advanced Compliance Management', free: false, starter: false, pro: false, enterprise: true, highlight: true },
   { category: 'Security & Compliance', name: 'Full PDF Compliance Reports', free: false, starter: false, pro: false, enterprise: true },
