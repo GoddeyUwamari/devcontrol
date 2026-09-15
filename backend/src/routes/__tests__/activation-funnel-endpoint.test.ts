@@ -113,6 +113,19 @@ async function insertEvent(
   );
 }
 
+/**
+ * Fast, single-round-trip ground truth for the CURRENT total row count in
+ * `organizations` -- used ONLY as a same-instant baseline for Test 8's
+ * organizationsTotal assertion (see that test for why). This intentionally
+ * does not replace the endpoint under test: `after` below still comes from
+ * a real GET request through activationFunnelRoutes -- this helper only
+ * supplies a trustworthy "immediately before we inserted" reference point.
+ */
+async function countAllOrganizations(): Promise<number> {
+  const { rows } = await pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM organizations');
+  return rows[0].count;
+}
+
 let server: http.Server;
 let baseUrl: string;
 
@@ -279,7 +292,6 @@ describe('GET /api/admin/activation-funnel', () => {
     const before = await (await getFunnel()).json() as any;
     const stageCountBefore = (event: string) =>
       before.data.stages.find((s: any) => s.event === event).organizations;
-    const orgsTotalBefore = before.data.organizationsTotal;
     const activatedBefore = before.data.activated.organizations;
     const subscribedBefore = before.data.subscribed.organizations;
     const startedBefore = before.data.informational.awsConnectionStarted.organizations;
@@ -289,27 +301,45 @@ describe('GET /api/admin/activation-funnel', () => {
     const now = Date.now();
     const t = (hoursAfterSignup: number) => new Date(now + hoursAfterSignup * 3600_000);
 
-    // Org A: full funnel, STS connection (no `source` property), subscribes.
-    const orgA = await insertOrg('org-a');
-    await insertEvent(orgA, 'signup_completed', t(0));
-    await insertEvent(orgA, 'aws_connection_started', t(0.5));
-    await insertEvent(orgA, 'aws_connection_completed', t(1), { accountId: '111111111111' });
-    await insertEvent(orgA, 'discovery_completed', t(2), { resourcesDiscovered: 5 });
-    await insertEvent(orgA, 'first_insight_generated', t(3), { recommendationCount: 2, totalMonthlySavings: 40 });
-    await insertEvent(orgA, 'first_value_viewed', t(4), { totalMonthlySavings: 40 });
-    await insertEvent(orgA, 'subscription_activated', t(24), { tier: 'pro' });
+    // Ground-truth baseline for the organizationsTotal assertion below, taken
+    // as a single fast round-trip immediately before we insert our fixtures --
+    // see that assertion's own comment for why this replaces
+    // `before.data.organizationsTotal` as the delta's floor.
+    const orgsCountJustBeforeInsert = await countAllOrganizations();
 
+    // Org A: full funnel, STS connection (no `source` property), subscribes.
     // Org B: connects via legacy access-key path, reaches discovery, no
     // insight yet -- not activated.
-    const orgB = await insertOrg('org-b');
-    await insertEvent(orgB, 'signup_completed', t(0));
-    await insertEvent(orgB, 'aws_connection_started', t(0.5));
-    await insertEvent(orgB, 'aws_connection_completed', t(1), { source: 'legacy_access_key' });
-    await insertEvent(orgB, 'discovery_completed', t(2), { resourcesDiscovered: 1 });
-
     // Org C: just signed up.
-    const orgC = await insertOrg('org-c');
-    await insertEvent(orgC, 'signup_completed', t(0));
+    //
+    // All three organizations and every one of their events are created
+    // concurrently (not as 18 sequential awaited round-trips) deliberately:
+    // this is a live, shared local Postgres database used by 40+ other test
+    // files that each create and bulk-delete their own organizations. Each
+    // `created_at` below is an explicit parameter, not derived from real
+    // insertion order, so concurrent inserts are safe -- and minimizing this
+    // block's own wall-clock duration is what actually narrows the window in
+    // which an unrelated file's cleanup could race with this test (the
+    // previously observed failures: organizationsTotal dropped from ~37-38 to
+    // 15 between the "before" and "after" snapshots, i.e. a concurrent bulk
+    // DELETE elsewhere, not a defect in this endpoint).
+    const [orgA, orgB, orgC] = await Promise.all([insertOrg('org-a'), insertOrg('org-b'), insertOrg('org-c')]);
+    await Promise.all([
+      insertEvent(orgA, 'signup_completed', t(0)),
+      insertEvent(orgA, 'aws_connection_started', t(0.5)),
+      insertEvent(orgA, 'aws_connection_completed', t(1), { accountId: '111111111111' }),
+      insertEvent(orgA, 'discovery_completed', t(2), { resourcesDiscovered: 5 }),
+      insertEvent(orgA, 'first_insight_generated', t(3), { recommendationCount: 2, totalMonthlySavings: 40 }),
+      insertEvent(orgA, 'first_value_viewed', t(4), { totalMonthlySavings: 40 }),
+      insertEvent(orgA, 'subscription_activated', t(24), { tier: 'pro' }),
+
+      insertEvent(orgB, 'signup_completed', t(0)),
+      insertEvent(orgB, 'aws_connection_started', t(0.5)),
+      insertEvent(orgB, 'aws_connection_completed', t(1), { source: 'legacy_access_key' }),
+      insertEvent(orgB, 'discovery_completed', t(2), { resourcesDiscovered: 1 }),
+
+      insertEvent(orgC, 'signup_completed', t(0)),
+    ]);
 
     const after = await (await getFunnel()).json() as any;
     const stageCountAfter = (event: string) =>
@@ -321,9 +351,24 @@ describe('GET /api/admin/activation-funnel', () => {
     // equality would be flaky for reasons unrelated to this endpoint's
     // correctness, so assert the fixtures this test just inserted are AT
     // LEAST fully counted, rather than that nothing else in the world moved.
-    // Only +3 (A, B, C): the caller org was created BEFORE the "before"
-    // snapshot above, so it's already included in orgsTotalBefore.
-    expect(after.data.organizationsTotal).toBeGreaterThanOrEqual(orgsTotalBefore + 3);
+    //
+    // The floor is `orgsCountJustBeforeInsert`, NOT `orgsTotalBefore`
+    // (the value the "before" GET response itself carried). Both describe
+    // the same real quantity, but `orgsTotalBefore` was produced by
+    // getActivationFunnelSummary() sequentially iterating every existing
+    // organization (a BEGIN/SET LOCAL/SELECT/ROLLBACK round-trip PER
+    // organization) before that response ever reached this test -- with
+    // dozens of organizations already present mid-suite, that response alone
+    // can take long enough for another concurrently-running test file's own
+    // cleanup (also creating/bulk-deleting organizations against this same
+    // database) to land in the gap, making `orgsTotalBefore` stale by the
+    // time we actually see it. `orgsCountJustBeforeInsert` is a single
+    // COUNT(*) round-trip taken immediately before we insert org A/B/C
+    // (a few lines above), which shrinks that exposure window to a minimum
+    // and is what caused the two prior CI failures here (organizationsTotal
+    // observed at 15 against a stale ~37-38 baseline -- a concurrent DELETE
+    // elsewhere, not a bug in this endpoint).
+    expect(after.data.organizationsTotal).toBeGreaterThanOrEqual(orgsCountJustBeforeInsert + 3);
 
     expect(stageCountAfter('signup_completed')).toBeGreaterThanOrEqual(stageCountBefore('signup_completed') + 3);
     expect(stageCountAfter('aws_connection_completed')).toBeGreaterThanOrEqual(
