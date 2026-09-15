@@ -140,7 +140,7 @@ export interface FrameworkControlResult {
 }
 
 export interface FrameworkReadinessResult {
-  framework: 'cis' | 'pci';
+  framework: 'cis' | 'pci' | 'nist';
   frameworkVersion: string;
   /** NEVER_RUN means no sync has ever completed for this org -- capabilityStatus below is
    *  not yet meaningful in that case (no API call has actually been attempted). */

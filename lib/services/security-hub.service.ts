@@ -60,6 +60,17 @@ export interface PciReadinessResult {
   controls: FrameworkControlResult[];
 }
 
+export interface NistReadinessResult {
+  framework: 'nist';
+  frameworkVersion: string;
+  syncStatus: SecurityHubSyncStatus;
+  capabilityStatus: SecurityHubCapabilityStatus | null;
+  standardEnabled: boolean | null;
+  evaluatedAt: string | null;
+  coverage: FrameworkCoverage;
+  controls: FrameworkControlResult[];
+}
+
 class SecurityHubService {
   private baseUrl = process.env.NEXT_PUBLIC_API_URL
     ? `${process.env.NEXT_PUBLIC_API_URL}/api/security-hub`
@@ -96,6 +107,16 @@ class SecurityHubService {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Failed to fetch PCI DSS readiness' }));
       throw new Error(error.error || 'Failed to fetch PCI DSS readiness');
+    }
+    const data = await response.json();
+    return data.result;
+  }
+
+  async getNistReadiness(): Promise<NistReadinessResult> {
+    const response = await fetch(`${this.baseUrl}/frameworks/nist`, { credentials: 'include' });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to fetch NIST SP 800-53 Rev. 5 readiness' }));
+      throw new Error(error.error || 'Failed to fetch NIST SP 800-53 Rev. 5 readiness');
     }
     const data = await response.json();
     return data.result;

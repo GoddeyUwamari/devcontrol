@@ -1,11 +1,12 @@
 /**
  * Evaluates Security Hub-backed frameworks (CIS AWS Foundations Benchmark v5.0.0, PCI
- * DSS v4.0.1) for one org from already-persisted Security Hub state + findings (see
- * SecurityHubSyncService for how that data gets there -- this service does not call AWS
- * itself). Both frameworks share the exact same underlying evidence (one sync serves
- * both, see security-hub-sync.service.ts) and the exact same evaluation mechanics
- * (evaluateFramework below) -- only their mapping configuration and standard ARN
- * differ.
+ * DSS v4.0.1, NIST SP 800-53 Rev. 5) for one org from already-persisted Security Hub
+ * state + findings (see SecurityHubSyncService for how that data gets there -- this
+ * service does not call AWS itself). All three frameworks share the exact same
+ * underlying evidence (one sync serves all of them, see security-hub-sync.service.ts)
+ * and the exact same evaluation mechanics (evaluateFramework below) -- only their
+ * mapping configuration and standard ARN differ. NIST's standard ARN suffix is
+ * documentation-confirmed, not live-API-verified -- see securityHubNistMapping.ts.
  *
  * Status derivation rules (verified by __tests__/security-hub-compliance.service.test.ts):
  *   capability NOT_GRANTED / NOT_AVAILABLE -> every mapped control NOT_EVALUATED (never FAIL)
@@ -30,11 +31,17 @@ import { SecurityHubStateRepository } from '../repositories/security-hub-state.r
 import { SecurityHubFindingsRepository } from '../repositories/security-hub-findings.repository';
 import { CIS_V5_CONTROL_MAPPINGS, CIS_AWS_FOUNDATIONS_VERSION } from '../config/securityHubCisMapping';
 import { PCI_V4_CONTROL_MAPPINGS, PCI_DSS_VERSION } from '../config/securityHubPciMapping';
+import { NIST_800_53_CONTROL_MAPPINGS, NIST_800_53_VERSION } from '../config/securityHubNistMapping';
 import { FoundationControlStatus, FrameworkControlResult, FrameworkReadinessResult } from '../types/security-hub-foundation.types';
 
-/** Matches by ARN suffix (independent of the region prefix) -- see comment at call site. */
+/**
+ * Matches by ARN suffix (independent of the region prefix) -- see comment at call site.
+ * NIST_V5_ARN_SUFFIX is documentation-confirmed, not live-API-verified -- see
+ * securityHubNistMapping.ts's own docblock for the full verification-status statement.
+ */
 const CIS_V5_ARN_SUFFIX = '::standards/cis-aws-foundations-benchmark/v/5.0.0';
 const PCI_V4_ARN_SUFFIX = '::standards/pci-dss/v/4.0.1';
+const NIST_V5_ARN_SUFFIX = '::standards/nist-800-53/v/5.0.0';
 
 interface ControlMappingEntry {
   controlId: string;
@@ -50,7 +57,7 @@ interface NotEstablishableEntry {
 }
 
 interface FrameworkEvalConfig {
-  framework: 'cis' | 'pci';
+  framework: 'cis' | 'pci' | 'nist';
   frameworkVersion: string;
   standardArnSuffix: string;
   controlMappings: ControlMappingEntry[];
@@ -89,6 +96,23 @@ const PCI_CONFIG: FrameworkEvalConfig = {
   notEstablishableRequirements: [],
 };
 
+const NIST_CONFIG: FrameworkEvalConfig = {
+  framework: 'nist',
+  frameworkVersion: NIST_800_53_VERSION,
+  standardArnSuffix: NIST_V5_ARN_SUFFIX,
+  controlMappings: NIST_800_53_CONTROL_MAPPINGS.map((m) => ({
+    controlId: m.nistControlId,
+    title: m.title,
+    securityHubControlId: m.securityHubControlId,
+    mappingType: m.mappingType,
+  })),
+  // No NOT_ESTABLISHABLE production rows -- same discipline as PCI_CONFIG above (see
+  // securityHubNistMapping.ts's own docblock). NIST 800-53 Rev. 5 includes many manual/
+  // organizational requirements Security Hub's control catalog does not represent at
+  // all; DevControl does not curate placeholder rows for them, it simply omits them.
+  notEstablishableRequirements: [],
+};
+
 export class SecurityHubComplianceService {
   private stateRepo = new SecurityHubStateRepository();
   private findingsRepo = new SecurityHubFindingsRepository();
@@ -99,6 +123,10 @@ export class SecurityHubComplianceService {
 
   async evaluatePci(organizationId: string): Promise<FrameworkReadinessResult> {
     return this.evaluateFramework(organizationId, PCI_CONFIG);
+  }
+
+  async evaluateNist(organizationId: string): Promise<FrameworkReadinessResult> {
+    return this.evaluateFramework(organizationId, NIST_CONFIG);
   }
 
   private async evaluateFramework(organizationId: string, config: FrameworkEvalConfig): Promise<FrameworkReadinessResult> {

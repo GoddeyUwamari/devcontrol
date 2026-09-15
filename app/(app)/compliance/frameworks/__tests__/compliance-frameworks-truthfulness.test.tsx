@@ -108,6 +108,7 @@ let securityHubState: {
   capability: { capabilityStatus: string | null; syncStatus: string; checkedAt: string | null; error: string | null; enabledStandards: unknown[] } | null
   cis: ReadinessFixture | null
   pci: ReadinessFixture | null
+  nist: ReadinessFixture | null
   loading: boolean
   error: string | null
   syncing: boolean
@@ -118,6 +119,7 @@ let securityHubState: {
   capability: null,
   cis: null,
   pci: null,
+  nist: null,
   loading: false,
   error: null,
   syncing: false,
@@ -128,6 +130,7 @@ vi.mock('@/lib/hooks/useSecurityHub', () => ({
     capability: securityHubState.capability,
     cis: securityHubState.cis,
     pci: securityHubState.pci,
+    nist: securityHubState.nist,
     loading: securityHubState.loading,
     error: securityHubState.error,
     syncing: securityHubState.syncing,
@@ -159,6 +162,20 @@ function makePciReadiness(overrides: Partial<ReadinessFixture> = {}) {
     standardEnabled: true,
     evaluatedAt: new Date().toISOString(),
     coverage: { totalControls: 24, evaluated: 2, passed: 1, failed: 1, unknown: 19, notEvaluated: 0, notApplicable: 0, notEstablishable: 2, errors: 0 },
+    controls: [],
+    ...overrides,
+  }
+}
+
+function makeNistReadiness(overrides: Partial<ReadinessFixture> = {}) {
+  return {
+    framework: 'nist' as const,
+    frameworkVersion: '5.0.0',
+    syncStatus: 'COMPLETED',
+    capabilityStatus: 'ENABLED',
+    standardEnabled: true,
+    evaluatedAt: new Date().toISOString(),
+    coverage: { totalControls: 28, evaluated: 2, passed: 1, failed: 1, unknown: 26, notEvaluated: 0, notApplicable: 0, notEstablishable: 0, errors: 0 },
     controls: [],
     ...overrides,
   }
@@ -233,7 +250,7 @@ beforeEach(() => {
   salesDemoValue = false
   frameworksState = { frameworks: [], loading: false, error: null }
   scansState = { scans: [], loading: false, error: null }
-  securityHubState = { capability: null, cis: null, pci: null, loading: false, error: null, syncing: false }
+  securityHubState = { capability: null, cis: null, pci: null, nist: null, loading: false, error: null, syncing: false }
 })
 
 describe('Test 1 — real mode, no completed evaluation', () => {
@@ -360,13 +377,13 @@ describe('Test 4 — framework attribution', () => {
     expect(card.textContent).not.toContain('Evaluated by AWS Security Hub')
   })
 
-  it('identifies the NIST target framework as NIST 800-53 Rev. 5 and marks it not yet implemented', () => {
+  it('identifies NIST as "NIST 800-53 Rev. 5" and attributes it to Security Hub as a mechanism (implemented as of this PR), never claiming live evaluation while never synced', () => {
     renderPage()
     const card = getSingleFrameworkCard('NIST 800-53 Rev. 5')
-    expect(card.textContent).toContain('Not yet implemented')
     expect(card.textContent).toContain('NIST 800-53 Rev. 5')
+    expect(card.textContent).toContain('Security Hub-backed')
     expect(card.textContent).not.toContain('Evaluated by AWS Security Hub')
-    expect(card.textContent).not.toContain('Security Hub-backed')
+    expect(card.textContent).not.toContain('Not yet implemented')
   })
 
   it('attributes PCI-DSS to Security Hub as a mechanism, never claims live evaluation while never synced', () => {
@@ -393,11 +410,10 @@ describe('Test 4 — framework attribution', () => {
     expect(screen.queryByText(/NIST evaluated/i)).not.toBeInTheDocument()
   })
 
-  it('the AWS Security Hub informational panel never mentions NIST as a supported or provideable evaluation', () => {
+  it('the AWS Security Hub informational panel now correctly mentions NIST SP 800-53 Rev. 5 as a Security Hub-backed framework (implemented as of this PR)', () => {
     renderPage()
     const panel = screen.getByText('AWS Security Hub').closest('div')!.parentElement as HTMLElement
-    expect(panel.textContent).not.toMatch(/NIST/)
-    expect(panel.textContent).toContain('CIS AWS Foundations and PCI DSS v4.0.1 can be evaluated through AWS Security Hub once it is connected and synchronized.')
+    expect(panel.textContent).toContain('CIS, PCI DSS v4.0.1 and NIST SP 800-53 Rev. 5 can be evaluated through AWS Security Hub once it is connected and synchronized.')
   })
 })
 
@@ -509,6 +525,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
       capability: { capabilityStatus: 'NOT_GRANTED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: 'AccessDenied', enabledStandards: [] },
       cis: makeCisReadiness({ capabilityStatus: 'NOT_GRANTED', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
       pci: null,
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -528,6 +545,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
       capability: { capabilityStatus: 'NOT_AVAILABLE', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: makeCisReadiness({ capabilityStatus: 'NOT_AVAILABLE', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
       pci: null,
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -545,6 +563,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
       capability: { capabilityStatus: 'ERROR', syncStatus: 'FAILED', checkedAt: new Date().toISOString(), error: 'Rate exceeded', enabledStandards: [] },
       cis: makeCisReadiness({ capabilityStatus: 'ERROR', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 0, notApplicable: 0, errors: 40 } }),
       pci: null,
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -562,6 +581,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: makeCisReadiness({ capabilityStatus: 'ENABLED', standardEnabled: false, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
       pci: null,
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -579,6 +599,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: makeCisReadiness({ coverage: { totalControls: 40, evaluated: 5, passed: 3, failed: 2, unknown: 35, notEvaluated: 0, notApplicable: 0, errors: 0 } }),
       pci: null,
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -602,6 +623,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: makeCisReadiness(),
       pci: null,
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -632,6 +654,7 @@ describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail 
       capability: { capabilityStatus: 'NOT_GRANTED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: 'AccessDenied', enabledStandards: [] },
       cis: null,
       pci: makePciReadiness({ capabilityStatus: 'NOT_GRANTED', standardEnabled: null, coverage: { totalControls: 24, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 22, notApplicable: 0, notEstablishable: 2, errors: 0 } }),
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -649,6 +672,7 @@ describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail 
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: null,
       pci: makePciReadiness({ coverage: { totalControls: 24, evaluated: 5, passed: 3, failed: 2, unknown: 17, notEvaluated: 0, notApplicable: 0, notEstablishable: 2, errors: 0 }, controls: [{ status: 'ADDITIONAL_EVIDENCE' }] as any }),
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -675,6 +699,7 @@ describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail 
       capability: { capabilityStatus: 'NOT_AVAILABLE', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: null,
       pci: makePciReadiness({ capabilityStatus: 'NOT_AVAILABLE', standardEnabled: null, coverage: { totalControls: 24, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 22, notApplicable: 0, notEstablishable: 2, errors: 0 } }),
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -692,6 +717,7 @@ describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail 
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: null,
       pci: makePciReadiness(),
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -717,6 +743,7 @@ describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail 
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: null,
       pci: makePciReadiness(),
+      nist: null,
       loading: false,
       error: null,
       syncing: false,
@@ -726,5 +753,133 @@ describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail 
     expect(screen.queryByText(/PCI DSS compliant/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/PCI certified/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/100% PCI/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pass/fail or imply certification', () => {
+  it('NOT_GRANTED: NIST card stays "Not yet available", never PASS/FAIL', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'NOT_GRANTED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: 'AccessDenied', enabledStandards: [] },
+      cis: null,
+      pci: null,
+      nist: makeNistReadiness({ capabilityStatus: 'NOT_GRANTED', standardEnabled: null, coverage: { totalControls: 28, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 28, notApplicable: 0, notEstablishable: 0, errors: 0 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('NIST 800-53 Rev. 5')
+    expect(card.textContent).toContain('Security Hub permission not granted')
+    expect(card.querySelector('button[disabled]')).toBeTruthy()
+    expect(card.textContent).not.toMatch(/\bFAIL\b/)
+  })
+
+  it('ENABLED + NIST standard enabled: shows coverage with the AWS-interpretation/subset disclaimer, never a bare percentage or a compliance/certification claim', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: null,
+      nist: makeNistReadiness({ coverage: { totalControls: 28, evaluated: 5, passed: 3, failed: 2, unknown: 23, notEvaluated: 0, notApplicable: 0, notEstablishable: 0, errors: 0 }, controls: [{ mappingType: 'ADDITIONAL_EVIDENCE' }] as any }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('NIST 800-53 Rev. 5')
+    expect(card.querySelector('[data-testid="nist-coverage"]')).toBeTruthy()
+    expect(card.textContent).toContain('3 passed')
+    expect(card.textContent).toContain('2 failed')
+    expect(card.textContent).toContain('/ 28 mapped')
+    expect(card.textContent).toContain('interpretation of NIST SP 800-53 Rev. 5')
+    expect(card.textContent).toContain('~297-control catalog')
+    expect(card.querySelector('button')).toBeNull()
+    expect(card.textContent).not.toMatch(/NIST\s+compliant/i)
+    expect(card.textContent).not.toMatch(/NIST\s+certified/i)
+    expect(card.textContent).not.toMatch(/NIST\s+audited/i)
+    expect(card.textContent).not.toMatch(/meets NIST/i)
+    expect(card.textContent).not.toMatch(/100%\s*NIST/i)
+    expect(card.textContent).not.toMatch(/^\d+%$/)
+  })
+
+  it('Security Hub unavailable renders NIST as NOT_EVALUATED, never as a NIST compliance FAIL', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'NOT_AVAILABLE', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: null,
+      nist: makeNistReadiness({ capabilityStatus: 'NOT_AVAILABLE', standardEnabled: null, coverage: { totalControls: 28, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 28, notApplicable: 0, notEstablishable: 0, errors: 0 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('NIST 800-53 Rev. 5')
+    expect(card.textContent).toContain('Security Hub is not enabled for this AWS account')
+    expect(card.textContent).not.toMatch(/\bFAIL\b/)
+    expect(card.querySelector('button[disabled]')).toBeTruthy()
+  })
+
+  it('NIST becoming evaluated does not affect the CIS, PCI, or SOC2 cards', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: null,
+      nist: makeNistReadiness(),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    for (const name of ['CIS AWS Foundations', 'PCI DSS v4.0.1', 'SOC 2 Type II']) {
+      const card = getSingleFrameworkCard(name)
+      const button = card.querySelector('button')
+      expect(button).toBeDisabled()
+      if (name === 'SOC 2 Type II') {
+        expect(button!.textContent).toContain('Not yet available')
+      }
+    }
+  })
+
+  it('never implies NIST compliance, certification, audit, or accreditation anywhere on the page', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: null,
+      nist: makeNistReadiness(),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    expect(screen.queryByText(/NIST compliant/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/NIST certified/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/NIST audited/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/meets NIST/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/fully NIST compliant/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/100% NIST/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/NIST-accredited/i)).not.toBeInTheDocument()
+  })
+
+  it('the coverage denominator represents DevControl\'s verified mapping count, never the full ~297 AWS catalog, and the card explicitly distinguishes the two', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: null,
+      pci: null,
+      nist: makeNistReadiness(),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('NIST 800-53 Rev. 5')
+    expect(card.textContent).toContain('/ 28 mapped')
+    expect(card.textContent).not.toContain('/ 297')
+    expect(card.textContent).not.toMatch(/28\s*\/\s*297/)
+    expect(card.textContent).toContain('~297-control catalog')
   })
 })

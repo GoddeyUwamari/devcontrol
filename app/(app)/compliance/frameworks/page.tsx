@@ -44,7 +44,7 @@ const FRAMEWORK_STANDARDS: Array<{
 }> = [
   { key: 'cis', badge: 'CIS AWS', badgeBg: '#EEEDFE', badgeColor: '#3C3489', name: 'CIS AWS Foundations', desc: 'Industry-standard security configuration guidelines for AWS infrastructure.', attribution: 'security_hub' },
   { key: 'soc2', badge: 'SOC 2', badgeBg: '#E1F5EE', badgeColor: '#085041', name: 'SOC 2 Type II', desc: 'Security, availability, and confidentiality controls for service organizations.', attribution: 'not_implemented' },
-  { key: 'nist', badge: 'NIST 800-53', badgeBg: '#E6F1FB', badgeColor: '#0C447C', name: 'NIST 800-53 Rev. 5', desc: 'Security and privacy controls framework for federal information systems and organizations.', attribution: 'not_implemented' },
+  { key: 'nist', badge: 'NIST 800-53', badgeBg: '#E6F1FB', badgeColor: '#0C447C', name: 'NIST 800-53 Rev. 5', desc: 'Security and privacy controls framework for federal information systems and organizations — coverage reflects AWS Security Hub’s interpretation of NIST SP 800-53 Rev. 5, limited to a DevControl-verified technical subset.', attribution: 'security_hub' },
   { key: 'pci', badge: 'PCI-DSS', badgeBg: '#FAEEDA', badgeColor: '#633806', name: 'PCI DSS v4.0.1', desc: 'Payment card industry data security standards for handling cardholder data — Compliance Readiness based on partial AWS/Security Hub evidence, not certification.', attribution: 'security_hub' },
 ];
 
@@ -55,7 +55,7 @@ function frameworkNameFor(frameworkId: string, frameworks: ComplianceFramework[]
 export default function ComplianceFrameworksPage() {
   const { frameworks, loading, error, fetchFrameworks, createFramework, updateFramework, deleteFramework, executeScan } = useComplianceFrameworks();
   const { scans, loading: scansLoading, error: scansError, fetchScans } = useComplianceScans(true);
-  const { capability: shCapability, cis, pci, syncing: shSyncing, triggerSync: triggerSecurityHubSync } = useSecurityHub();
+  const { capability: shCapability, cis, pci, nist, syncing: shSyncing, triggerSync: triggerSecurityHubSync } = useSecurityHub();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingFramework, setEditingFramework] = useState<ComplianceFramework | null>(null);
   const [detailsFramework, setDetailsFramework] = useState<ComplianceFramework | null>(null);
@@ -152,6 +152,9 @@ export default function ComplianceFrameworksPage() {
   // serves both frameworks (see useSecurityHub), so the only new state here is PCI's own
   // standardEnabled/coverage, read from the same shCapability the CIS card already uses.
   const pciEvaluated = !!pci && pci.capabilityStatus === 'ENABLED' && pci.standardEnabled === true;
+  // NIST SP 800-53 Rev. 5 follows the exact same three-fact pattern as CIS/PCI — same
+  // sync, same shCapability, only its own standardEnabled/coverage is new here.
+  const nistEvaluated = !!nist && nist.capabilityStatus === 'ENABLED' && nist.standardEnabled === true;
 
   function frameworkSubtext(standardEnabled: boolean | null | undefined, standardLabel: string): string {
     return shNeverSynced
@@ -169,6 +172,7 @@ export default function ComplianceFrameworksPage() {
 
   const cisSubtext = frameworkSubtext(cis?.standardEnabled, 'CIS');
   const pciSubtext = frameworkSubtext(pci?.standardEnabled, 'PCI DSS v4.0.1');
+  const nistSubtext = frameworkSubtext(nist?.standardEnabled, 'NIST 800-53 Rev. 5');
 
   const kpiCards = [
     { label: 'Overall Compliance Score', value: evaluationState === 'completed' ? `${latestCompletedScan!.compliance_score}%` : '—', sub: evaluationSubtext },
@@ -402,11 +406,11 @@ export default function ComplianceFrameworksPage() {
         <p className="text-xs text-violet-900 leading-relaxed">
           {shNeverSynced ? (
             <>
-              <strong>CIS and PCI DSS v4.0.1</strong> can be evaluated through AWS Security Hub once it&apos;s connected and synchronized — it is not currently connected to DevControl. <strong>NIST 800-53 Rev. 5</strong> support is not yet implemented. <strong>SOC 2</strong> readiness (supporting evidence, not a full Type II audit) is a planned future capability.
+              <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub once it&apos;s connected and synchronized — it is not currently connected to DevControl. NIST coverage reflects AWS Security Hub&apos;s own interpretation of the NIST SP 800-53 Rev. 5 guidelines, limited to a DevControl-verified technical subset — not a certification. <strong>SOC 2</strong> readiness (supporting evidence, not a full Type II audit) is a planned future capability.
             </>
           ) : (
             <>
-              <strong>CIS and PCI DSS v4.0.1</strong> can be evaluated through AWS Security Hub ({shBadgeLabel.toLowerCase()}) — PCI DSS v4.0.1 coverage reflects only the AWS/Security Hub evidence DevControl currently supports and is partial, not a certification or full-compliance claim. <strong>NIST 800-53 Rev. 5</strong> support is not yet implemented. <strong>SOC 2</strong> readiness (supporting evidence, not a full Type II audit) is a planned future capability.
+              <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub ({shBadgeLabel.toLowerCase()}) — PCI DSS v4.0.1 and NIST SP 800-53 Rev. 5 coverage each reflect only the AWS/Security Hub evidence DevControl currently supports and are partial, not a certification or full-compliance claim. <strong>SOC 2</strong> readiness (supporting evidence, not a full Type II audit) is a planned future capability.
             </>
           )}
         </p>
@@ -432,12 +436,13 @@ export default function ComplianceFrameworksPage() {
         {FRAMEWORK_STANDARDS.map((fw) => {
           const isCis = fw.key === 'cis';
           const isPci = fw.key === 'pci';
-          // CIS and PCI DSS v4.0.1 only ever leave the placeholder once a real,
-          // evaluated backend result exists (capability ENABLED + that specific
-          // standard enabled) — never merely because this frontend code has shipped.
-          // SOC2/NIST cards are completely unchanged from before this feature.
-          const evaluated = isCis ? cisEvaluated : isPci ? pciEvaluated : false;
-          const readiness = isCis ? cis : isPci ? pci : null;
+          const isNist = fw.key === 'nist';
+          // CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5 only ever leave the placeholder
+          // once a real, evaluated backend result exists (capability ENABLED + that
+          // specific standard enabled) — never merely because this frontend code has
+          // shipped. SOC2's card remains completely unchanged (still not implemented).
+          const evaluated = isCis ? cisEvaluated : isPci ? pciEvaluated : isNist ? nistEvaluated : false;
+          const readiness = isCis ? cis : isPci ? pci : isNist ? nist : null;
           const additionalEvidenceCount = readiness?.controls.filter((c) => c.mappingType === 'ADDITIONAL_EVIDENCE').length ?? 0;
           const notEstablishableCount = readiness?.coverage.notEstablishable ?? 0;
           return (
@@ -451,10 +456,10 @@ export default function ComplianceFrameworksPage() {
                 {fw.attribution === 'security_hub' ? 'Security Hub-backed' : 'Not yet implemented'}
               </p>
               <p className="text-xs text-slate-400 mb-3">
-                {isCis ? cisSubtext : isPci ? pciSubtext : fw.key === 'nist' ? 'Target framework: NIST 800-53 Rev. 5 — not yet available' : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
+                {isCis ? cisSubtext : isPci ? pciSubtext : isNist ? nistSubtext : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
               </p>
               {evaluated && readiness ? (
-                <div className="text-xs text-slate-600 leading-relaxed" data-testid={isCis ? 'cis-coverage' : 'pci-coverage'}>
+                <div className="text-xs text-slate-600 leading-relaxed" data-testid={isCis ? 'cis-coverage' : isPci ? 'pci-coverage' : 'nist-coverage'}>
                   <span className="font-semibold text-emerald-600">{readiness.coverage.passed} passed</span>
                   {' · '}
                   <span className="font-semibold text-red-600">{readiness.coverage.failed} failed</span>
@@ -467,6 +472,12 @@ export default function ComplianceFrameworksPage() {
                   {isPci && (
                     <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
                       Partial coverage — supported AWS evidence only, not a full PCI DSS v4.0.1 assessment.
+                      {additionalEvidenceCount > 0 && ` ${additionalEvidenceCount} of these are supporting evidence only (not a direct technical match).`}
+                    </p>
+                  )}
+                  {isNist && (
+                    <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                      Coverage reflects AWS Security Hub&apos;s own interpretation of NIST SP 800-53 Rev. 5, limited to a DevControl-verified subset of AWS&apos;s ~297-control catalog — not a certification, audit, or full NIST 800-53 assessment. Manual and non-technical requirements are not evaluated.
                       {additionalEvidenceCount > 0 && ` ${additionalEvidenceCount} of these are supporting evidence only (not a direct technical match).`}
                     </p>
                   )}
@@ -487,13 +498,31 @@ export default function ComplianceFrameworksPage() {
           <div className="flex-1">
             <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">AWS Security Hub</p>
             <p className="text-sm font-semibold text-slate-900 mb-2">
-              {cisEvaluated && pciEvaluated
-                ? 'CIS AWS Foundations and PCI DSS v4.0.1 Compliance Readiness are evaluated through AWS Security Hub.'
-                : cisEvaluated
-                  ? 'CIS AWS Foundations is evaluated through AWS Security Hub. PCI DSS v4.0.1 can also be evaluated through AWS Security Hub.'
-                  : pciEvaluated
-                    ? 'PCI DSS v4.0.1 Compliance Readiness is evaluated through AWS Security Hub. CIS can also be evaluated through AWS Security Hub.'
-                    : 'CIS AWS Foundations and PCI DSS v4.0.1 can be evaluated through AWS Security Hub once it is connected and synchronized.'}
+              {(() => {
+                // Composed rather than hand-written per combination (2^3 branches for
+                // three frameworks) — this only changes how the sentence is generated,
+                // never which frameworks are ever named: only CIS/PCI/NIST are ever
+                // eligible, matching FRAMEWORK_STANDARDS' 'security_hub' attribution.
+                const evaluatedNames: string[] = [];
+                if (cisEvaluated) evaluatedNames.push('CIS AWS Foundations');
+                if (pciEvaluated) evaluatedNames.push('PCI DSS v4.0.1 Compliance Readiness');
+                if (nistEvaluated) evaluatedNames.push('NIST SP 800-53 Rev. 5 Compliance Readiness');
+                const pendingNames: string[] = [];
+                if (!cisEvaluated) pendingNames.push('CIS');
+                if (!pciEvaluated) pendingNames.push('PCI DSS v4.0.1');
+                if (!nistEvaluated) pendingNames.push('NIST SP 800-53 Rev. 5');
+
+                const joinNames = (names: string[]) =>
+                  names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+                if (evaluatedNames.length === 3) {
+                  return `${joinNames(evaluatedNames)} are evaluated through AWS Security Hub.`;
+                }
+                if (evaluatedNames.length > 0) {
+                  return `${joinNames(evaluatedNames)} ${evaluatedNames.length > 1 ? 'are' : 'is'} evaluated through AWS Security Hub. ${joinNames(pendingNames)} can also be evaluated through AWS Security Hub.`;
+                }
+                return `${joinNames(pendingNames)} can be evaluated through AWS Security Hub once it is connected and synchronized.`;
+              })()}
             </p>
             <p className="text-xs text-slate-500 leading-relaxed max-w-xl">AWS Security Hub continuously evaluates supported security standards and provides findings that can be used to understand your compliance posture.</p>
           </div>

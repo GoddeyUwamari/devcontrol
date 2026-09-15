@@ -2,8 +2,9 @@
  * Security Hub evidence/evaluation API -- deliberately a new, isolated namespace, not a
  * retrofit of compliance.routes.ts (hardcoded to soc2/hipaa, backed by the untouched
  * legacy ComplianceEngineService) or compliance-frameworks.routes.ts (the generic
- * user-authored custom-framework builder). Smallest surface needed for v1: capability,
- * manual sync, standards, and CIS readiness.
+ * user-authored custom-framework builder). Smallest surface needed: capability, manual
+ * sync, and Security Hub-backed framework readiness (CIS, PCI DSS v4.0.1, NIST SP
+ * 800-53 Rev. 5), all served by one parameterized route (see FRAMEWORK_EVALUATORS below).
  */
 import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
@@ -73,8 +74,20 @@ router.post('/sync', requireEnterprise, standardRateLimiter, async (req: Request
   }
 });
 
-/** GET /api/security-hub/frameworks/cis — CIS readiness with full coverage breakdown. */
-router.get('/frameworks/cis', async (req: Request, res: Response): Promise<void> => {
+/**
+ * GET /api/security-hub/frameworks/:framework — readiness with full coverage breakdown
+ * for one Security Hub-backed framework. Parameterized (not three copy-pasted handlers)
+ * so a fourth framework never repeats this boilerplate a third time -- see the dispatch
+ * table below. An unrecognized `framework` value is a 400, not a 404/500, since it's a
+ * client input-validation failure, not a missing route or server error.
+ */
+const FRAMEWORK_EVALUATORS: Record<string, (organizationId: string) => ReturnType<SecurityHubComplianceService['evaluateCis']>> = {
+  cis: (organizationId) => complianceService.evaluateCis(organizationId),
+  pci: (organizationId) => complianceService.evaluatePci(organizationId),
+  nist: (organizationId) => complianceService.evaluateNist(organizationId),
+};
+
+router.get('/frameworks/:framework', async (req: Request, res: Response): Promise<void> => {
   try {
     const organizationId = req.organizationId;
     if (!organizationId) {
@@ -82,27 +95,16 @@ router.get('/frameworks/cis', async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const result = await complianceService.evaluateCis(organizationId);
-    res.json({ success: true, result });
-  } catch (error: unknown) {
-    console.error('[SecurityHub] Error evaluating CIS:', error);
-    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
-  }
-});
-
-/** GET /api/security-hub/frameworks/pci — PCI DSS v4.0.1 readiness with full coverage breakdown. */
-router.get('/frameworks/pci', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const organizationId = req.organizationId;
-    if (!organizationId) {
-      res.status(401).json({ success: false, error: 'Unauthorized' });
+    const evaluate = FRAMEWORK_EVALUATORS[req.params.framework];
+    if (!evaluate) {
+      res.status(400).json({ success: false, error: `Unknown framework "${req.params.framework}". Supported: ${Object.keys(FRAMEWORK_EVALUATORS).join(', ')}.` });
       return;
     }
 
-    const result = await complianceService.evaluatePci(organizationId);
+    const result = await evaluate(organizationId);
     res.json({ success: true, result });
   } catch (error: unknown) {
-    console.error('[SecurityHub] Error evaluating PCI DSS:', error);
+    console.error(`[SecurityHub] Error evaluating framework "${req.params.framework}":`, error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
