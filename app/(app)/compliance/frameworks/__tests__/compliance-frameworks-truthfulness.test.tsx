@@ -175,7 +175,7 @@ function makeNistReadiness(overrides: Partial<ReadinessFixture> = {}) {
     capabilityStatus: 'ENABLED',
     standardEnabled: true,
     evaluatedAt: new Date().toISOString(),
-    coverage: { totalControls: 28, evaluated: 2, passed: 1, failed: 1, unknown: 26, notEvaluated: 0, notApplicable: 0, notEstablishable: 0, errors: 0 },
+    coverage: { totalControls: 24, evaluated: 2, passed: 1, failed: 1, unknown: 22, notEvaluated: 0, notApplicable: 0, notEstablishable: 0, errors: 0 },
     controls: [],
     ...overrides,
   }
@@ -762,7 +762,7 @@ describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pas
       capability: { capabilityStatus: 'NOT_GRANTED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: 'AccessDenied', enabledStandards: [] },
       cis: null,
       pci: null,
-      nist: makeNistReadiness({ capabilityStatus: 'NOT_GRANTED', standardEnabled: null, coverage: { totalControls: 28, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 28, notApplicable: 0, notEstablishable: 0, errors: 0 } }),
+      nist: makeNistReadiness({ capabilityStatus: 'NOT_GRANTED', standardEnabled: null, coverage: { totalControls: 24, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 24, notApplicable: 0, notEstablishable: 0, errors: 0 } }),
       loading: false,
       error: null,
       syncing: false,
@@ -780,7 +780,7 @@ describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pas
       capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: null,
       pci: null,
-      nist: makeNistReadiness({ coverage: { totalControls: 28, evaluated: 5, passed: 3, failed: 2, unknown: 23, notEvaluated: 0, notApplicable: 0, notEstablishable: 0, errors: 0 }, controls: [{ mappingType: 'ADDITIONAL_EVIDENCE' }] as any }),
+      nist: makeNistReadiness({ coverage: { totalControls: 24, evaluated: 5, passed: 3, failed: 2, unknown: 19, notEvaluated: 0, notApplicable: 0, notEstablishable: 0, errors: 0 }, controls: [{ mappingType: 'ADDITIONAL_EVIDENCE' }] as any }),
       loading: false,
       error: null,
       syncing: false,
@@ -791,7 +791,7 @@ describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pas
     expect(card.querySelector('[data-testid="nist-coverage"]')).toBeTruthy()
     expect(card.textContent).toContain('3 passed')
     expect(card.textContent).toContain('2 failed')
-    expect(card.textContent).toContain('/ 28 mapped')
+    expect(card.textContent).toContain('/ 24 mapped')
     expect(card.textContent).toContain('interpretation of NIST SP 800-53 Rev. 5')
     expect(card.textContent).toContain('~297-control catalog')
     expect(card.querySelector('button')).toBeNull()
@@ -808,7 +808,7 @@ describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pas
       capability: { capabilityStatus: 'NOT_AVAILABLE', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
       cis: null,
       pci: null,
-      nist: makeNistReadiness({ capabilityStatus: 'NOT_AVAILABLE', standardEnabled: null, coverage: { totalControls: 28, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 28, notApplicable: 0, notEstablishable: 0, errors: 0 } }),
+      nist: makeNistReadiness({ capabilityStatus: 'NOT_AVAILABLE', standardEnabled: null, coverage: { totalControls: 24, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 24, notApplicable: 0, notEstablishable: 0, errors: 0 } }),
       loading: false,
       error: null,
       syncing: false,
@@ -877,9 +877,9 @@ describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pas
     renderPage()
 
     const card = getSingleFrameworkCard('NIST 800-53 Rev. 5')
-    expect(card.textContent).toContain('/ 28 mapped')
+    expect(card.textContent).toContain('/ 24 mapped')
     expect(card.textContent).not.toContain('/ 297')
-    expect(card.textContent).not.toMatch(/28\s*\/\s*297/)
+    expect(card.textContent).not.toMatch(/24\s*\/\s*297/)
     expect(card.textContent).toContain('~297-control catalog')
   })
 })

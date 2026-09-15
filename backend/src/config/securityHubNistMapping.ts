@@ -104,18 +104,71 @@ export interface NistControlMapping {
 }
 
 /**
- * 28 individually-verified (Security Hub control, NIST 800-53 Rev. 5 control) pairs.
- * Selection strategy: started from Security Hub controls DevControl already deeply
- * understands via its existing CIS AWS Foundations Benchmark v5.0.0 and/or PCI DSS
- * v4.0.1 mappings (see securityHubCisMapping.ts / securityHubPciMapping.ts) -- but
- * every NIST relationship below was independently verified against that control's own
- * AWS documentation page; a control's presence in the CIS or PCI mapping was never
- * treated as itself establishing a NIST mapping.
+ * 24 individually-verified (Security Hub control, NIST 800-53 Rev. 5 control) pairs, as
+ * of the focused post-implementation review documented below. The original submission
+ * had 28; 4 were removed and 2 were downgraded from DIRECT to ADDITIONAL_EVIDENCE after
+ * a rigorous, control-by-control re-read of the actual NIST SP 800-53 Rev. 5 control
+ * text (not just AWS's RelatedRequirements citation, which is necessary but not
+ * sufficient evidence -- see the review notes below). Two entries were also re-pointed
+ * to a more textually precise NIST control still within AWS's own documented set for
+ * that Security Hub control (RDS.5/RDS.15: CP-10 -> SC-36; EC2.8: AC-6 -> AC-3).
+ *
+ * REMOVED (classification C -- not defensible; RelatedRequirements alone is not proof):
+ * - Account.1 -> CM-2: "has security contact info on file" does not establish "a
+ *   documented baseline configuration of the system is maintained" (CM-2 is about
+ *   system/component configuration baselines, not account contact metadata). AWS's own
+ *   listed set for this control (CM-2, CM-2(2) only) offered no better alternative.
+ * - IAM.3 -> AC-2(3): "access keys rotated every 90 days" does not establish "accounts
+ *   are disabled under specified conditions" (AC-2(3) is about account disablement on
+ *   inactivity/expiration, a different account-lifecycle action than key rotation).
+ *   AC-2(1) (Automated System Account Management) was considered and also rejected --
+ *   it's about automated tooling for account lifecycle generally, not rotation cadence
+ *   specifically. No confident match existed in AWS's listed set.
+ * - IAM.2 -> AC-6: "uses IAM groups instead of directly-attached policies" evidences
+ *   administrative/manageability practice, not the actual privilege level granted --
+ *   a grouped user can have MORE privilege than a directly-attached one. Does not
+ *   establish least privilege.
+ * - S3.20 -> CM-3: "S3 bucket has MFA delete enabled" is a narrow technical
+ *   authentication gate on one destructive action, not evidence of a formal
+ *   configuration change review/approval process (CM-3's actual subject matter). No
+ *   stronger alternative existed in AWS's listed set for this control (CA-9(1), CM-2,
+ *   CM-2(2), CM-3, SC-5(2) were all considered and rejected).
+ *
+ * DOWNGRADED DIRECT -> ADDITIONAL_EVIDENCE (classification B, kept, not removed):
+ * - EC2.7 -> SC-28: unlike the other four SC-28 entries (which check the ACTUAL
+ *   encryption state of existing resources), EC2.7 only checks an account-level DEFAULT
+ *   setting for NEW EBS volumes -- it says nothing about whether existing volumes are
+ *   encrypted. Real, meaningful evidence, but narrower than what the other SC-28
+ *   entries establish.
+ * - IAM.4 -> AC-6: removing root's access key does not reduce root's privilege level
+ *   (root remains maximally privileged) -- it reduces standing-credential exposure for
+ *   the most powerful identity. Real risk-reduction evidence, but doesn't itself
+ *   establish that access is minimized to necessary levels the way IAM.2 was
+ *   (incorrectly) claimed to.
+ *
+ * RE-POINTED to a more precise NIST control (still AWS-documented for that control):
+ * - RDS.5, RDS.15 -> SC-36 (was CP-10): CP-10 "System Recovery and Reconstitution" is
+ *   about organizational recovery process after a disruption/compromise; SC-36
+ *   "Distributed Processing and Storage" ("distribute processing and storage across
+ *   multiple physical locations") is a textually precise match for what Multi-AZ
+ *   literally does. Both were in AWS's own RelatedRequirements list for these controls;
+ *   SC-36 is the better one.
+ * - EC2.8 -> AC-3 (was AC-6): IMDSv2 enforces token-based authorization to a specific
+ *   local resource (the instance metadata service) -- AC-3 "Access Enforcement" is a
+ *   closer match than AC-6 "Least Privilege" (IMDSv2 doesn't change what privileges the
+ *   instance's role has, it changes how the metadata endpoint is accessed). AC-3 was
+ *   already in AWS's own listed set for EC2.8. Kept as ADDITIONAL_EVIDENCE since this is
+ *   still a narrow mechanism relative to AC-3's full breadth.
+ *
+ * Selection strategy for what remains: started from Security Hub controls DevControl
+ * already deeply understands via its existing CIS AWS Foundations Benchmark v5.0.0
+ * and/or PCI DSS v4.0.1 mappings (see securityHubCisMapping.ts / securityHubPciMapping.ts)
+ * -- but every NIST relationship was independently verified against that control's own
+ * AWS documentation page AND against the actual NIST SP 800-53 Rev. 5 control text; a
+ * control's presence in the CIS or PCI mapping, or in AWS's RelatedRequirements list
+ * alone, was never treated as itself establishing a NIST mapping.
  */
 export const NIST_800_53_CONTROL_MAPPINGS: NistControlMapping[] = [
-  // Account contact / baseline configuration
-  { nistControlId: 'CM-2', title: 'Baseline configuration -- account security contact on file', securityHubControlId: 'Account.1', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/account-controls.html#account-1 -- Related requirements: "...NIST.800-53.r5 CM-2, NIST.800-53.r5 CM-2(2)". CM-2 (base control) chosen over CM-2(2) as the more general, directly-applicable match.' },
-
   // Audit logging (AU-12: Audit Record Generation) -- CloudTrail and VPC Flow Logs are
   // independent, legitimately many-to-one technical sources for the same NIST control.
   { nistControlId: 'AU-12', title: 'Audit record generation -- multi-Region CloudTrail management-event logging', securityHubControlId: 'CloudTrail.1', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/cloudtrail-controls.html#cloudtrail-1 -- Related requirements includes "NIST.800-53.r5 AU-12" among AU-2/AU-3/AU-6 variants; AU-12 (Audit Record Generation) is the clearest match for "generates a record of API activity".' },
@@ -124,14 +177,16 @@ export const NIST_800_53_CONTROL_MAPPINGS: NistControlMapping[] = [
   // Audit information protection (AU-9)
   { nistControlId: 'AU-9', title: 'Protection of audit information -- CloudTrail log file validation', securityHubControlId: 'CloudTrail.4', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/cloudtrail-controls.html#cloudtrail-4 -- Related requirements: "...NIST.800-53.r5 AU-9, NIST.800-53.r5 SI-4...". AU-9 (Protection of Audit Information) is the direct match for tamper-evidence/integrity validation of log files.' },
 
-  // Encryption at rest (SC-28) -- four independent technical enforcement points for the
-  // same NIST control, all AWS-documented as such; legitimately many-to-one, mirroring
-  // PCI's own precedent (e.g. IAM.6/IAM.9/IAM.19 all independently supporting 8.4.2).
+  // Encryption at rest (SC-28) -- independent technical enforcement points for the same
+  // NIST control, all AWS-documented as such; legitimately many-to-one, mirroring PCI's
+  // own precedent (e.g. IAM.6/IAM.9/IAM.19 all independently supporting 8.4.2). EC2.7 was
+  // downgraded to ADDITIONAL_EVIDENCE on review (see file-level docblock) and moved to
+  // that section below -- it checks a default SETTING, not actual resource state, unlike
+  // these four.
   { nistControlId: 'SC-28', title: 'Protection of information at rest -- CloudTrail log encryption', securityHubControlId: 'CloudTrail.2', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/cloudtrail-controls.html#cloudtrail-2 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". SC-28 (base control) is the canonical "protection of information at rest" match.' },
-  { nistControlId: 'SC-28', title: 'Protection of information at rest -- EBS default encryption', securityHubControlId: 'EC2.7', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-7 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". Same rationale as CloudTrail.2.' },
-  { nistControlId: 'SC-28', title: 'Protection of information at rest -- EFS encryption at rest', securityHubControlId: 'EFS.1', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/efs-controls.html#efs-1 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". Same rationale as CloudTrail.2.' },
-  { nistControlId: 'SC-28', title: 'Protection of information at rest -- RDS encryption at rest', securityHubControlId: 'RDS.3', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/rds-controls.html#rds-3 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". Same rationale as CloudTrail.2.' },
-  { nistControlId: 'SC-28', title: 'Protection of information at rest -- S3 default KMS encryption', securityHubControlId: 'S3.17', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/s3-controls.html#s3-17 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". Same rationale as CloudTrail.2.' },
+  { nistControlId: 'SC-28', title: 'Protection of information at rest -- EFS encryption at rest', securityHubControlId: 'EFS.1', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/efs-controls.html#efs-1 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". Same rationale as CloudTrail.2. This control checks the actual per-file-system Encrypted attribute, not a default setting.' },
+  { nistControlId: 'SC-28', title: 'Protection of information at rest -- RDS encryption at rest', securityHubControlId: 'RDS.3', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/rds-controls.html#rds-3 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". Same rationale as CloudTrail.2. This control checks the actual per-instance StorageEncrypted attribute, not a default setting.' },
+  { nistControlId: 'SC-28', title: 'Protection of information at rest -- S3 default KMS encryption', securityHubControlId: 'S3.17', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/s3-controls.html#s3-17 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". Same rationale as CloudTrail.2. This control checks the actual per-bucket encryption configuration, not a default setting.' },
 
   // Boundary protection (SC-7) -- public-access-blocking controls across services,
   // legitimately many-to-one for the same reason as SC-28 above.
@@ -147,11 +202,6 @@ export const NIST_800_53_CONTROL_MAPPINGS: NistControlMapping[] = [
   { nistControlId: 'IA-2(2)', title: 'MFA for non-privileged accounts -- console-password IAM users', securityHubControlId: 'IAM.5', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/iam-controls.html#iam-5 -- Related requirements: "...NIST.800-53.r5 IA-2(1/2/6/8)...". IA-2(2) (MFA to non-privileged accounts) chosen since this control applies to "all IAM users" with a console password, not specifically privileged ones.' },
   { nistControlId: 'IA-2(2)', title: 'MFA for non-privileged accounts -- all IAM users', securityHubControlId: 'IAM.19', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/iam-controls.html#iam-19 -- Related requirements: "...NIST.800-53.r5 IA-2(1/2/6/8)...". Same rationale as IAM.5, broader scope (all users, not just console-password ones).' },
 
-  // Account management -- IAM.3 access-key rotation, IAM.2/IAM.4 least-privilege
-  { nistControlId: 'AC-2(3)', title: 'Disable/rotate stale accounts -- IAM access keys rotated every 90 days', securityHubControlId: 'IAM.3', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/iam-controls.html#iam-3 -- Related requirements: "...NIST.800-53.r5 AC-2(1), NIST.800-53.r5 AC-2(3), NIST.800-53.r5 AC-3(15)...". AC-2(3) (Disable Accounts) is the closest match for periodic credential rotation/invalidation.' },
-  { nistControlId: 'AC-6', title: 'Least privilege -- IAM users use group-based, not directly-attached, policies', securityHubControlId: 'IAM.2', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/iam-controls.html#iam-2 -- Related requirements: "...NIST.800-53.r5 AC-6, NIST.800-53.r5 AC-6(3)...". AC-6 (Least Privilege) matches directly-attached policies bypassing centralized group-based least-privilege management.' },
-  { nistControlId: 'AC-6', title: 'Least privilege -- no persistent root user access key', securityHubControlId: 'IAM.4', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/iam-controls.html#iam-4 -- Related requirements: "...NIST.800-53.r5 AC-6, NIST.800-53.r5 AC-6(2/10)...". AC-6 (base control) chosen; eliminating standing root API credentials is a least-privilege measure for the account\'s most powerful identity.' },
-
   // Cryptographic key management (SC-12)
   { nistControlId: 'SC-12', title: 'Cryptographic key establishment and management -- KMS key rotation', securityHubControlId: 'KMS.4', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/kms-controls.html#kms-4 -- Related requirements: "...NIST.800-53.r5 SC-12, NIST.800-53.r5 SC-12(2), NIST.800-53.r5 SC-28(3)...". SC-12 (base control) is the canonical key-management match.' },
 
@@ -161,16 +211,23 @@ export const NIST_800_53_CONTROL_MAPPINGS: NistControlMapping[] = [
   // Flaw remediation (SI-2)
   { nistControlId: 'SI-2', title: 'Flaw remediation -- RDS automatic minor version upgrades', securityHubControlId: 'RDS.13', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/rds-controls.html#rds-13 -- Related requirements: "...NIST.800-53.r5 SI-2, NIST.800-53.r5 SI-2(2/4/5)...". SI-2 (base control, Flaw Remediation) is the canonical automated-patching match.' },
 
-  // System recovery / resilience (CP-10) -- Multi-AZ for instances vs. clusters.
-  { nistControlId: 'CP-10', title: 'System recovery and reconstitution -- Multi-AZ RDS instances', securityHubControlId: 'RDS.5', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/rds-controls.html#rds-5 -- Related requirements: "...NIST.800-53.r5 CP-10, NIST.800-53.r5 CP-6(2), NIST.800-53.r5 SC-36...". CP-10 (System Recovery and Reconstitution) chosen; automatic AZ failover directly supports recovery capability.' },
-  { nistControlId: 'CP-10', title: 'System recovery and reconstitution -- Multi-AZ RDS clusters', securityHubControlId: 'RDS.15', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/rds-controls.html#rds-15 -- Related requirements: "...NIST.800-53.r5 CP-10, NIST.800-53.r5 CP-6(2), NIST.800-53.r5 SC-36...". Same rationale as RDS.5, cluster resource type.' },
+  // Distributed processing/storage (SC-36) -- Multi-AZ for instances vs. clusters.
+  // Re-pointed on review from CP-10 (System Recovery and Reconstitution, about
+  // organizational recovery process) to SC-36 (Distributed Processing and Storage,
+  // "distribute processing/storage across multiple physical locations") -- a textually
+  // precise match for what Multi-AZ literally does. Both were in AWS's own
+  // RelatedRequirements list for these controls.
+  { nistControlId: 'SC-36', title: 'Distributed processing and storage -- Multi-AZ RDS instances', securityHubControlId: 'RDS.5', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/rds-controls.html#rds-5 -- Related requirements: "...NIST.800-53.r5 CP-10, NIST.800-53.r5 CP-6(2), NIST.800-53.r5 SC-36...". SC-36 (Distributed Processing and Storage) chosen over CP-10 on review: Multi-AZ literally distributes DB storage/processing across multiple physical Availability Zones, which is SC-36\'s specific subject matter; CP-10 is about broader organizational recovery process.' },
+  { nistControlId: 'SC-36', title: 'Distributed processing and storage -- Multi-AZ RDS clusters', securityHubControlId: 'RDS.15', mappingType: 'DIRECT', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/rds-controls.html#rds-15 -- Related requirements: "...NIST.800-53.r5 CP-10, NIST.800-53.r5 CP-6(2), NIST.800-53.r5 SC-36...". Same rationale as RDS.5, cluster resource type.' },
 
   // ADDITIONAL_EVIDENCE entries: real, AWS-documented technical evidence, but each is a
   // narrower/more indirect mechanism than the NIST control's full intent -- see
   // securityHubPciMapping.ts's own docblock for the same DIRECT/ADDITIONAL_EVIDENCE
-  // distinction principle.
-  { nistControlId: 'AC-6', title: 'Least privilege (supporting evidence) -- EC2 instances require IMDSv2', securityHubControlId: 'EC2.8', mappingType: 'ADDITIONAL_EVIDENCE', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-8 -- Related requirements: "...NIST.800-53.r5 AC-3, NIST.800-53.r5 AC-3(7/15), NIST.800-53.r5 AC-6...". Classified ADDITIONAL_EVIDENCE rather than DIRECT: IMDSv2 hardening narrowly addresses SSRF-based credential theft, a specific mechanism supporting least privilege rather than a general enforcement of it.' },
-  { nistControlId: 'CM-3', title: 'Configuration change control (supporting evidence) -- S3 MFA delete', securityHubControlId: 'S3.20', mappingType: 'ADDITIONAL_EVIDENCE', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/s3-controls.html#s3-20 -- Related requirements: "...NIST.800-53.r5 CM-2, NIST.800-53.r5 CM-2(2), NIST.800-53.r5 CM-3, NIST.800-53.r5 SC-5(2)...". Classified ADDITIONAL_EVIDENCE rather than DIRECT: MFA delete is a narrow technical control on one specific destructive action (bucket-version deletion), not a comprehensive change-control mechanism.' },
+  // distinction principle. EC2.7 and IAM.4 were downgraded here from DIRECT on review
+  // (see file-level docblock); EC2.8 was re-pointed from AC-6 to AC-3 on review.
+  { nistControlId: 'SC-28', title: 'Protection of information at rest (supporting evidence) -- EBS default encryption', securityHubControlId: 'EC2.7', mappingType: 'ADDITIONAL_EVIDENCE', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-7 -- Related requirements: "...NIST.800-53.r5 SC-28, NIST.800-53.r5 SC-28(1)...". Classified ADDITIONAL_EVIDENCE, not DIRECT (downgraded on review): this control only checks the account-level DEFAULT-encryption setting for new volumes -- unlike the other SC-28 entries above, it says nothing about whether existing EBS volumes are actually encrypted.' },
+  { nistControlId: 'AC-6', title: 'Least privilege (supporting evidence) -- no persistent root user access key', securityHubControlId: 'IAM.4', mappingType: 'ADDITIONAL_EVIDENCE', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/iam-controls.html#iam-4 -- Related requirements: "...NIST.800-53.r5 AC-6, NIST.800-53.r5 AC-6(2/10)...". Classified ADDITIONAL_EVIDENCE, not DIRECT (downgraded on review): removing root\'s access key does not reduce root\'s privilege level (root remains maximally privileged) -- it reduces standing-credential exposure for the account\'s most powerful identity, real but narrower evidence than establishing least privilege is enforced.' },
+  { nistControlId: 'AC-3', title: 'Access enforcement (supporting evidence) -- EC2 instances require IMDSv2', securityHubControlId: 'EC2.8', mappingType: 'ADDITIONAL_EVIDENCE', framework: 'nist', frameworkVersion: '5.0.0', citation: 'docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-8 -- Related requirements: "...NIST.800-53.r5 AC-3, NIST.800-53.r5 AC-3(7/15), NIST.800-53.r5 AC-6...". Re-pointed on review from AC-6 to AC-3: IMDSv2 enforces token-based authorization to a specific local resource (the instance metadata service), a closer match to "Access Enforcement" (AC-3) than to "Least Privilege" (AC-6, which is about the breadth of privileges granted, not how a specific endpoint is accessed). Kept ADDITIONAL_EVIDENCE: still narrow relative to AC-3\'s full breadth (all information/system resources).' },
 ];
 
 export function getNistMappingsForSecurityControlId(securityHubControlId: string): NistControlMapping[] {
