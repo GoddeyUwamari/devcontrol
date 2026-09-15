@@ -30,6 +30,39 @@
  *    fabricated check counts; SOC 2 is attributed to DevControl instead.
  *
  * Demo mode is out of scope for this fix and must render exactly as before.
+ *
+ * --- Truthfulness follow-up (product-truth pass) -------------------------
+ *
+ * 5. The static "Evaluated by AWS Security Hub" label on the CIS/PCI cards
+ *    rendered unconditionally, even when Security Hub had never been
+ *    connected — contradicting the "Not yet available" lock button and the
+ *    stateful subtext one line below it in the same card. Fixed: the static
+ *    label is now the connection-independent "Security Hub-backed"; only the
+ *    stateful subtext claims "Evaluated by AWS Security Hub," and only once
+ *    real evidence exists.
+ * 6. NIST was labeled bare "NIST" with a description ("Cybersecurity
+ *    framework for identifying and managing security risk") that is
+ *    actually the definition of NIST CSF, and was attributed
+ *    'security_hub' — implying a Security Hub evaluation path that does not
+ *    exist for NIST. `backend/src/config/securityHubCisMapping.ts` confirms
+ *    the real target framework is NIST 800-53 Rev. 5, which is not
+ *    implemented. Fixed: card now reads "NIST 800-53 Rev. 5" with an
+ *    accurate description, attribution "Not yet implemented".
+ * 7. SOC 2 was attributed 'devcontrol', rendering "Evaluated by DevControl
+ *    using your connected cloud security data" — implying a complete, live
+ *    SOC 2 Type II evaluation, when no SOC 2 evaluation backend exists yet
+ *    (future Phase 5 scope). Fixed: attribution "Not yet implemented" with
+ *    subtext framing SOC 2 as a future readiness/supporting-evidence
+ *    capability, never a complete Type II audit.
+ * 8. The AWS Security Hub informational panel claimed, in 3 of its 4
+ *    branches, that "NIST evaluations can be provided through AWS Security
+ *    Hub" — false, since no NIST Security Hub integration exists. Fixed:
+ *    all NIST mentions removed from that panel; it now only ever describes
+ *    CIS and PCI DSS v4.0.1.
+ * 9. The top informational banner said "SOC 2 is evaluated directly by
+ *    DevControl using your connected cloud security data" and bare "NIST"
+ *    — same overclaim/mislabel as above. Fixed to match the corrected card
+ *    copy.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -299,7 +332,7 @@ function getSingleFrameworkCard(name: string): HTMLElement {
 }
 
 describe('Test 3 — framework buttons are non-actionable', () => {
-  it.each(['CIS AWS Foundations', 'SOC 2 Type II', 'NIST', 'PCI DSS v4.0.1'])('%s card renders a disabled control that opens no modal and calls no API on click', (name) => {
+  it.each(['CIS AWS Foundations', 'SOC 2 Type II', 'NIST 800-53 Rev. 5', 'PCI DSS v4.0.1'])('%s card renders a disabled control that opens no modal and calls no API on click', (name) => {
     renderPage()
 
     const card = getFrameworkCard(name)
@@ -320,26 +353,36 @@ describe('Test 3 — framework buttons are non-actionable', () => {
 })
 
 describe('Test 4 — framework attribution', () => {
-  it('attributes CIS to AWS Security Hub', () => {
+  it('attributes CIS to Security Hub as a mechanism, never claims live evaluation while never synced', () => {
     renderPage()
-    expect(getFrameworkCard('CIS AWS Foundations').textContent).toContain('Evaluated by AWS Security Hub')
+    const card = getFrameworkCard('CIS AWS Foundations')
+    expect(card.textContent).toContain('Security Hub-backed')
+    expect(card.textContent).not.toContain('Evaluated by AWS Security Hub')
   })
 
-  it('attributes NIST to AWS Security Hub', () => {
+  it('identifies the NIST target framework as NIST 800-53 Rev. 5 and marks it not yet implemented', () => {
     renderPage()
-    expect(getFrameworkCard('NIST').textContent).toContain('Evaluated by AWS Security Hub')
+    const card = getSingleFrameworkCard('NIST 800-53 Rev. 5')
+    expect(card.textContent).toContain('Not yet implemented')
+    expect(card.textContent).toContain('NIST 800-53 Rev. 5')
+    expect(card.textContent).not.toContain('Evaluated by AWS Security Hub')
+    expect(card.textContent).not.toContain('Security Hub-backed')
   })
 
-  it('attributes PCI-DSS to AWS Security Hub', () => {
+  it('attributes PCI-DSS to Security Hub as a mechanism, never claims live evaluation while never synced', () => {
     renderPage()
-    expect(getFrameworkCard('PCI DSS v4.0.1').textContent).toContain('Evaluated by AWS Security Hub')
+    const card = getFrameworkCard('PCI DSS v4.0.1')
+    expect(card.textContent).toContain('Security Hub-backed')
+    expect(card.textContent).not.toContain('Evaluated by AWS Security Hub')
   })
 
-  it('attributes SOC 2 to DevControl using cloud security data', () => {
+  it('marks SOC 2 as a not-yet-implemented future capability, never a complete DevControl evaluation', () => {
     renderPage()
     const card = getFrameworkCard('SOC 2 Type II')
-    expect(card.textContent).toContain('Evaluated by DevControl')
-    expect(card.textContent).toContain('Using cloud security data')
+    expect(card.textContent).toContain('Not yet implemented')
+    expect(card.textContent).toContain('supporting evidence and readiness')
+    expect(card.textContent).not.toContain('Evaluated by DevControl')
+    expect(card.textContent).not.toContain('Using cloud security data')
   })
 
   it('never implies CIS/NIST/PCI-DSS are currently being scanned by DevControl', () => {
@@ -348,6 +391,13 @@ describe('Test 4 — framework attribution', () => {
     expect(screen.queryByText(/CIS evaluated/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/PCI evaluated/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/NIST evaluated/i)).not.toBeInTheDocument()
+  })
+
+  it('the AWS Security Hub informational panel never mentions NIST as a supported or provideable evaluation', () => {
+    renderPage()
+    const panel = screen.getByText('AWS Security Hub').closest('div')!.parentElement as HTMLElement
+    expect(panel.textContent).not.toMatch(/NIST/)
+    expect(panel.textContent).toContain('CIS AWS Foundations and PCI DSS v4.0.1 can be evaluated through AWS Security Hub once it is connected and synchronized.')
   })
 })
 
@@ -558,7 +608,7 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     }
     renderPage()
 
-    for (const name of ['SOC 2 Type II', 'NIST', 'PCI DSS v4.0.1']) {
+    for (const name of ['SOC 2 Type II', 'NIST 800-53 Rev. 5', 'PCI DSS v4.0.1']) {
       const card = getSingleFrameworkCard(name)
       const button = card.querySelector('button')!
       expect(button).toBeDisabled()
@@ -648,10 +698,10 @@ describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail 
     }
     renderPage()
 
-    for (const name of ['CIS AWS Foundations', 'SOC 2 Type II', 'NIST']) {
+    for (const name of ['CIS AWS Foundations', 'SOC 2 Type II', 'NIST 800-53 Rev. 5']) {
       const card = getSingleFrameworkCard(name)
       const button = card.querySelector('button')
-      if (name === 'SOC 2 Type II' || name === 'NIST') {
+      if (name === 'SOC 2 Type II' || name === 'NIST 800-53 Rev. 5') {
         expect(button).toBeDisabled()
         expect(button!.textContent).toContain('Not yet available')
       } else {
