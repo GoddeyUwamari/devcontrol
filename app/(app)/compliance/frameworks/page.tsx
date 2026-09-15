@@ -36,11 +36,15 @@ const FRAMEWORK_STANDARDS: Array<{
   badgeColor: string;
   name: string;
   desc: string;
-  attribution: 'security_hub' | 'devcontrol';
+  // 'security_hub' means the framework has a real Security Hub-backed evaluation path
+  // (CIS/PCI). 'not_implemented' means no evaluation backend exists yet for it at all
+  // (SOC 2, NIST) — never label these 'security_hub', even for display consistency,
+  // since that implies an evaluation path that does not exist.
+  attribution: 'security_hub' | 'not_implemented';
 }> = [
   { key: 'cis', badge: 'CIS AWS', badgeBg: '#EEEDFE', badgeColor: '#3C3489', name: 'CIS AWS Foundations', desc: 'Industry-standard security configuration guidelines for AWS infrastructure.', attribution: 'security_hub' },
-  { key: 'soc2', badge: 'SOC 2', badgeBg: '#E1F5EE', badgeColor: '#085041', name: 'SOC 2 Type II', desc: 'Security, availability, and confidentiality controls for service organizations.', attribution: 'devcontrol' },
-  { key: 'nist', badge: 'NIST', badgeBg: '#E6F1FB', badgeColor: '#0C447C', name: 'NIST', desc: 'Cybersecurity framework for identifying and managing security risk.', attribution: 'security_hub' },
+  { key: 'soc2', badge: 'SOC 2', badgeBg: '#E1F5EE', badgeColor: '#085041', name: 'SOC 2 Type II', desc: 'Security, availability, and confidentiality controls for service organizations.', attribution: 'not_implemented' },
+  { key: 'nist', badge: 'NIST 800-53', badgeBg: '#E6F1FB', badgeColor: '#0C447C', name: 'NIST 800-53 Rev. 5', desc: 'Security and privacy controls framework for federal information systems and organizations.', attribution: 'not_implemented' },
   { key: 'pci', badge: 'PCI-DSS', badgeBg: '#FAEEDA', badgeColor: '#633806', name: 'PCI DSS v4.0.1', desc: 'Payment card industry data security standards for handling cardholder data — Compliance Readiness based on partial AWS/Security Hub evidence, not certification.', attribution: 'security_hub' },
 ];
 
@@ -398,11 +402,11 @@ export default function ComplianceFrameworksPage() {
         <p className="text-xs text-violet-900 leading-relaxed">
           {shNeverSynced ? (
             <>
-              <strong>CIS and PCI DSS v4.0.1</strong> are evaluated by AWS Security Hub, which is not currently connected to DevControl. <strong>NIST</strong> support is not yet implemented. <strong>SOC 2</strong> is evaluated directly by DevControl using your connected cloud security data.
+              <strong>CIS and PCI DSS v4.0.1</strong> can be evaluated through AWS Security Hub once it&apos;s connected and synchronized — it is not currently connected to DevControl. <strong>NIST 800-53 Rev. 5</strong> support is not yet implemented. <strong>SOC 2</strong> readiness (supporting evidence, not a full Type II audit) is a planned future capability.
             </>
           ) : (
             <>
-              <strong>CIS and PCI DSS v4.0.1</strong> are evaluated by AWS Security Hub ({shBadgeLabel.toLowerCase()}) — PCI DSS v4.0.1 coverage reflects only the AWS/Security Hub evidence DevControl currently supports and is partial, not a certification or full-compliance claim. <strong>NIST</strong> support is not yet implemented. <strong>SOC 2</strong> is evaluated directly by DevControl using your connected cloud security data.
+              <strong>CIS and PCI DSS v4.0.1</strong> can be evaluated through AWS Security Hub ({shBadgeLabel.toLowerCase()}) — PCI DSS v4.0.1 coverage reflects only the AWS/Security Hub evidence DevControl currently supports and is partial, not a certification or full-compliance claim. <strong>NIST 800-53 Rev. 5</strong> support is not yet implemented. <strong>SOC 2</strong> readiness (supporting evidence, not a full Type II audit) is a planned future capability.
             </>
           )}
         </p>
@@ -444,10 +448,10 @@ export default function ComplianceFrameworksPage() {
               <p className="text-sm font-semibold text-slate-900 mb-1">{fw.name}</p>
               <p className="text-xs text-slate-500 leading-relaxed mb-2">{fw.desc}</p>
               <p className="text-xs font-semibold text-slate-600 mb-0.5">
-                {fw.attribution === 'security_hub' ? 'Evaluated by AWS Security Hub' : 'Evaluated by DevControl'}
+                {fw.attribution === 'security_hub' ? 'Security Hub-backed' : 'Not yet implemented'}
               </p>
               <p className="text-xs text-slate-400 mb-3">
-                {isCis ? cisSubtext : isPci ? pciSubtext : fw.attribution === 'security_hub' ? 'Security Hub is not currently connected to DevControl' : 'Using cloud security data'}
+                {isCis ? cisSubtext : isPci ? pciSubtext : fw.key === 'nist' ? 'Target framework: NIST 800-53 Rev. 5 — not yet available' : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
               </p>
               {evaluated && readiness ? (
                 <div className="text-xs text-slate-600 leading-relaxed" data-testid={isCis ? 'cis-coverage' : 'pci-coverage'}>
@@ -486,10 +490,10 @@ export default function ComplianceFrameworksPage() {
               {cisEvaluated && pciEvaluated
                 ? 'CIS AWS Foundations and PCI DSS v4.0.1 Compliance Readiness are evaluated through AWS Security Hub.'
                 : cisEvaluated
-                  ? 'CIS AWS Foundations is evaluated through AWS Security Hub. PCI DSS v4.0.1 and NIST evaluations can be provided through AWS Security Hub.'
+                  ? 'CIS AWS Foundations is evaluated through AWS Security Hub. PCI DSS v4.0.1 can also be evaluated through AWS Security Hub.'
                   : pciEvaluated
-                    ? 'PCI DSS v4.0.1 Compliance Readiness is evaluated through AWS Security Hub. CIS and NIST evaluations can be provided through AWS Security Hub.'
-                    : 'CIS, PCI DSS v4.0.1, and NIST evaluations can be provided through AWS Security Hub.'}
+                    ? 'PCI DSS v4.0.1 Compliance Readiness is evaluated through AWS Security Hub. CIS can also be evaluated through AWS Security Hub.'
+                    : 'CIS AWS Foundations and PCI DSS v4.0.1 can be evaluated through AWS Security Hub once it is connected and synchronized.'}
             </p>
             <p className="text-xs text-slate-500 leading-relaxed max-w-xl">AWS Security Hub continuously evaluates supported security standards and provides findings that can be used to understand your compliance posture.</p>
           </div>
