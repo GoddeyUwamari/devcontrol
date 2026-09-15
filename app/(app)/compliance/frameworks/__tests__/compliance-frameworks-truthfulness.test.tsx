@@ -69,6 +69,50 @@ let scansState: { scans: ComplianceScan[]; loading: boolean; error: string | nul
   error: null,
 }
 
+const mockTriggerSync = vi.fn()
+let securityHubState: {
+  capability: { capabilityStatus: string | null; syncStatus: string; checkedAt: string | null; error: string | null; enabledStandards: unknown[] } | null
+  cis: { framework: 'cis'; frameworkVersion: string; syncStatus: string; capabilityStatus: string | null; standardEnabled: boolean | null; evaluatedAt: string | null; coverage: Record<string, number>; controls: unknown[] } | null
+  loading: boolean
+  error: string | null
+  syncing: boolean
+} = {
+  // Default matches today's actual production reality: no sync has ever run.
+  // Every existing test below relies on this default being indistinguishable
+  // from the pre-Security-Hub-integration static "not connected" behavior.
+  capability: null,
+  cis: null,
+  loading: false,
+  error: null,
+  syncing: false,
+}
+
+vi.mock('@/lib/hooks/useSecurityHub', () => ({
+  useSecurityHub: () => ({
+    capability: securityHubState.capability,
+    cis: securityHubState.cis,
+    loading: securityHubState.loading,
+    error: securityHubState.error,
+    syncing: securityHubState.syncing,
+    triggerSync: mockTriggerSync,
+    refetch: vi.fn(),
+  }),
+}))
+
+function makeCisReadiness(overrides: Partial<NonNullable<typeof securityHubState.cis>> = {}) {
+  return {
+    framework: 'cis' as const,
+    frameworkVersion: '5.0.0',
+    syncStatus: 'COMPLETED',
+    capabilityStatus: 'ENABLED',
+    standardEnabled: true,
+    evaluatedAt: new Date().toISOString(),
+    coverage: { totalControls: 40, evaluated: 2, passed: 1, failed: 1, unknown: 38, notEvaluated: 0, notApplicable: 0, errors: 0 },
+    controls: [],
+    ...overrides,
+  }
+}
+
 vi.mock('@/lib/hooks/useComplianceFrameworks', () => ({
   useComplianceFrameworks: () => ({
     frameworks: frameworksState.frameworks,
@@ -138,6 +182,7 @@ beforeEach(() => {
   salesDemoValue = false
   frameworksState = { frameworks: [], loading: false, error: null }
   scansState = { scans: [], loading: false, error: null }
+  securityHubState = { capability: null, cis: null, loading: false, error: null, syncing: false }
 })
 
 describe('Test 1 — real mode, no completed evaluation', () => {
@@ -220,6 +265,19 @@ describe('Test 2 — real mode, completed evaluation', () => {
 function getFrameworkCard(name: string): HTMLElement {
   const nameEl = screen.getAllByText(name).find((el) => el.tagName === 'P')!
   return nameEl.closest('div')!.parentElement as HTMLElement
+}
+
+/**
+ * getFrameworkCard above actually resolves to the shared grid container (one
+ * `.parentElement` past the true single-card boundary) — harmless for the
+ * substring/count assertions above, which never depended on exclusivity
+ * between cards. The new tests below DO need true single-card exclusivity
+ * (e.g. "no button remains in THIS card"), so this helper stops one level
+ * earlier, at the actual individual card `<div>`.
+ */
+function getSingleFrameworkCard(name: string): HTMLElement {
+  const nameEl = screen.getAllByText(name).find((el) => el.tagName === 'P')!
+  return nameEl.closest('div') as HTMLElement
 }
 
 describe('Test 3 — framework buttons are non-actionable', () => {
@@ -374,5 +432,122 @@ describe('Test 5 — demo mode is unchanged', () => {
     demoModeValue = true
     renderPage()
     expect(screen.queryByText(/Not yet available/)).not.toBeInTheDocument()
+  })
+})
+
+describe('Test 7 — Security Hub capability states never fabricate CIS pass/fail', () => {
+  it('NOT_GRANTED: CIS card stays "Not yet available", never PASS/FAIL, badge reads "Permission required"', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'NOT_GRANTED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: 'AccessDenied', enabledStandards: [] },
+      cis: makeCisReadiness({ capabilityStatus: 'NOT_GRANTED', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('CIS AWS Foundations')
+    expect(card.textContent).toContain('Security Hub permission not granted')
+    expect(card.querySelector('button[disabled]')).toBeTruthy()
+    expect(card.textContent).not.toMatch(/\bFAIL\b/)
+    expect(card.textContent).not.toContain('passed')
+    expect(screen.getByText('Permission required')).toBeInTheDocument()
+  })
+
+  it('NOT_AVAILABLE: CIS card explains Security Hub is not enabled for the account, stays non-actionable', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'NOT_AVAILABLE', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: makeCisReadiness({ capabilityStatus: 'NOT_AVAILABLE', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('CIS AWS Foundations')
+    expect(card.textContent).toContain('Security Hub is not enabled for this AWS account')
+    expect(card.querySelector('button[disabled]')).toBeTruthy()
+    expect(screen.getByText('Not enabled')).toBeInTheDocument()
+  })
+
+  it('ERROR: CIS card surfaces a check-failed message, never presented as a compliance failure', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ERROR', syncStatus: 'FAILED', checkedAt: new Date().toISOString(), error: 'Rate exceeded', enabledStandards: [] },
+      cis: makeCisReadiness({ capabilityStatus: 'ERROR', standardEnabled: null, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 0, notApplicable: 0, errors: 40 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('CIS AWS Foundations')
+    expect(card.textContent).toContain('Security Hub check failed')
+    expect(card.textContent).not.toContain('Failing')
+    expect(screen.getByText('Check failed')).toBeInTheDocument()
+  })
+
+  it('ENABLED but CIS standard disabled: shows NOT_EVALUATED reasoning, not PASS or FAIL', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: makeCisReadiness({ capabilityStatus: 'ENABLED', standardEnabled: false, coverage: { totalControls: 40, evaluated: 0, passed: 0, failed: 0, unknown: 0, notEvaluated: 40, notApplicable: 0, errors: 0 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('CIS AWS Foundations')
+    expect(card.textContent).toContain('CIS standard is not enabled')
+    expect(card.querySelector('button[disabled]')).toBeTruthy()
+    expect(screen.getByText('Connected')).toBeInTheDocument()
+  })
+
+  it('ENABLED + CIS standard enabled: shows real coverage breakdown, removes the lock button, and never shows a bare percentage', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: makeCisReadiness({ coverage: { totalControls: 40, evaluated: 5, passed: 3, failed: 2, unknown: 35, notEvaluated: 0, notApplicable: 0, errors: 0 } }),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    const card = getSingleFrameworkCard('CIS AWS Foundations')
+    expect(card.querySelector('[data-testid="cis-coverage"]')).toBeTruthy()
+    expect(card.textContent).toContain('3 passed')
+    expect(card.textContent).toContain('2 failed')
+    expect(card.textContent).toContain('35 unknown')
+    expect(card.textContent).toContain('/ 40 controls')
+    // No lock affordance once real evidence exists for CIS specifically.
+    expect(card.querySelector('button')).toBeNull()
+    // Never a bare, context-free percentage for CIS.
+    expect(card.textContent).not.toMatch(/^\d+%$/)
+  })
+
+  it('other framework cards (SOC2/NIST/PCI-DSS) are unaffected by CIS becoming evaluated', () => {
+    securityHubState = {
+      capability: { capabilityStatus: 'ENABLED', syncStatus: 'COMPLETED', checkedAt: new Date().toISOString(), error: null, enabledStandards: [] },
+      cis: makeCisReadiness(),
+      loading: false,
+      error: null,
+      syncing: false,
+    }
+    renderPage()
+
+    for (const name of ['SOC 2 Type II', 'NIST', 'PCI-DSS']) {
+      const card = getSingleFrameworkCard(name)
+      const button = card.querySelector('button')!
+      expect(button).toBeDisabled()
+      expect(button.textContent).toContain('Not yet available')
+    }
+  })
+
+  it('clicking "Sync Security Hub" calls triggerSync and never opens the framework-builder modal', () => {
+    renderPage()
+    const syncButton = screen.getByText('Sync Security Hub').closest('button')!
+    fireEvent.click(syncButton)
+
+    expect(mockTriggerSync).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Create Framework')).not.toBeInTheDocument()
   })
 })
