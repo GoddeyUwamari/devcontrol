@@ -11,6 +11,11 @@
  * Auth/subscription middleware are stubbed (pass-through) since the property
  * under test is this route's own retirement behavior, not the auth stack —
  * covered elsewhere.
+ *
+ * As of PR #94, ComplianceEngineService itself has been removed from this
+ * router entirely (it had zero frontend/job consumers) -- this route never
+ * depended on it in the first place (it validates the framework param and
+ * refuses unconditionally), so no mock for that module is needed here anymore.
  */
 import express from 'express';
 import http from 'http';
@@ -30,13 +35,6 @@ jest.mock('../../middleware/subscription.middleware', () => ({
 
 jest.mock('../../middleware/rateLimiter', () => ({
   standardRateLimiter: (_req: any, _res: any, next: any) => next(),
-}));
-
-// The route handler under test never touches the engine (it short-circuits
-// before calling it), but ComplianceEngineService is still constructed once
-// per router — stub it so this test needs no real database connection.
-jest.mock('../../services/compliance-engine.service', () => ({
-  ComplianceEngineService: jest.fn().mockImplementation(() => ({})),
 }));
 
 import { createComplianceRoutes } from '../compliance.routes';
