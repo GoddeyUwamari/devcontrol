@@ -215,15 +215,11 @@ devcontrol service create --name my-service`;
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
-                <span>SOC 2 Type II in progress</span>
+                <span>SOC 2 readiness planning underway</span>
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
                 <span>Data encrypted at rest and in transit</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
-                <span>GDPR & HIPAA compliant</span>
               </div>
             </div>
           </CardContent>

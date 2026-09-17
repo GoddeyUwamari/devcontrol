@@ -22,7 +22,7 @@ export default function StartupsPage() {
   const features = [
     { icon: DollarSign, title: 'Stop AWS Bill Shock', desc: 'Get instant visibility into every dollar of AWS spend. AI recommendations find idle resources, right-sizing opportunities, and budget leaks before your next invoice.', highlight: true },
     { icon: Zap, title: 'Ship Faster with DORA Metrics', desc: 'Automatically track deployment frequency, lead time, change failure rate, and MTTR. Show your Series A investors Elite-tier engineering velocity with real data.' },
-    { icon: Shield, title: 'SOC 2 Readiness from Day One', desc: 'Continuous compliance monitoring mapped to SOC 2 controls. Stop losing enterprise deals because you can\'t answer security questionnaires fast enough.' },
+    { icon: Shield, title: 'SOC 2 Readiness from Day One', desc: 'Technical evidence and readiness gaps for your SOC 2 program from day one. Stop losing enterprise deals because you can\'t answer security questionnaires fast enough.' },
     { icon: Clock, title: '15-Minute Setup', desc: 'Read-only IAM role, no agents, no code changes. Connect your AWS account and get your first insights in under 15 minutes — not days or weeks.' },
     { icon: BarChart3, title: 'Investor-Ready Dashboards', desc: 'Cost efficiency, security posture, and engineering performance metrics in one dashboard. Give your board and investors the visibility they demand.' },
     { icon: TrendingUp, title: 'Scale Without Surprises', desc: 'Anomaly detection catches cost spikes and security regressions as you grow. Stay in control of your infrastructure as your team and traffic scales.' },
@@ -31,7 +31,7 @@ export default function StartupsPage() {
   const impacts = [
     { value: '$800–$8K+', label: 'Monthly waste identified' },
     { value: '15min', label: 'Time to first insight' },
-    { value: '2 weeks', label: 'To establish SOC 2 compliance baseline' },
+    { value: '2 weeks', label: 'To establish a SOC 2 readiness baseline' },
   ]
 
   const steps = [
@@ -77,7 +77,7 @@ export default function StartupsPage() {
             lineHeight: 1.75, maxWidth: '620px',
             margin: '0 auto 36px',
           }}>
-            Cut AWS waste, prove engineering velocity to investors, and get SOC 2 ready —
+            Cut AWS waste, prove engineering velocity to investors, and start your SOC 2 readiness journey —
             without hiring a dedicated DevOps team or taking engineers off product work.
           </p>
 
@@ -312,7 +312,7 @@ export default function StartupsPage() {
                 color: '#7c3aed',
                 title: 'SOC 2 Baseline',
                 body: 'Compliance dashboard surfaced 12 security findings. All resolved in 4 days.',
-                outcome: 'Audit-ready posture',
+                outcome: 'SOC 2 readiness improved',
               },
               {
                 week: 'Week 6',

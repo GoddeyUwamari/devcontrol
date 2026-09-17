@@ -229,7 +229,7 @@ export function PricingPreview() {
         </div>
 
         <div className="flex flex-wrap items-center justify-center" style={{ gap: isMobile ? '12px' : '24px', fontSize: isMobile ? '13px' : '14px', color: '#6b7280' }}>
-          {['14-day free trial', 'No credit card required', 'Cancel anytime', 'No hidden fees', 'SOC 2 In Progress'].map((item) => (
+          {['14-day free trial', 'No credit card required', 'Cancel anytime', 'No hidden fees', 'SOC 2 Readiness Planned'].map((item) => (
             <div key={item} className="flex items-center gap-2">
               <Check className="h-4 w-4" style={{ color: '#16a34a' }} />
               <span>{item}</span>

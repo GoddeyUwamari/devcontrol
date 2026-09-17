@@ -20,7 +20,7 @@ export default function EnterprisePage() {
   const isTablet = width >= 640 && width < 1024
 
   const features = [
-    { icon: Shield, title: 'Custom Compliance Frameworks', desc: 'Map your infrastructure to any compliance standard — SOC 2, HIPAA, PCI-DSS, ISO 27001, or your own internal security policies. Automated evidence collection for every audit.' },
+    { icon: Shield, title: 'Custom Compliance Frameworks', desc: 'Define rules mapped to your own internal security policies, or use them toward readiness for standards like SOC 2 and PCI-DSS. You define the rules and evidence — DevControl does not certify against any standard.' },
     { icon: Lock, title: 'SSO & SAML Authentication', desc: 'Integrate with Okta, Azure AD, or any SAML 2.0 provider. Role-based access control ensures every engineer sees only what they need to see.' },
     { icon: Users, title: 'Unlimited Team Members', desc: 'No per-seat pricing surprises. Add your entire engineering org, security team, and finance stakeholders — all with customized role-based dashboards.' },
     { icon: Globe, title: 'Multi-Account & Multi-Region', desc: 'Manage hundreds of AWS accounts across every region from a single control plane. Consolidate visibility across business units, products, and geographies.' },
@@ -127,7 +127,7 @@ export default function EnterprisePage() {
             alignItems: 'center',
             fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
           }}>
-            {['SOC 2 In Progress', 'SAML / SSO', '99.99% SLA', 'Dedicated support'].map(t => (
+            {['SOC 2 Readiness Planned', 'SAML / SSO', '99.99% SLA', 'Dedicated support'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#a78bfa' }}>✓</span> {t}
               </span>

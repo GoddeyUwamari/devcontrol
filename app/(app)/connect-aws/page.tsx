@@ -202,7 +202,7 @@ export default function ConnectAwsPage() {
 
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mt-6 mb-3.5">Security</p>
               <ul className="space-y-2.5">
-                {['AES-256 encrypted at rest','SOC 2 audit underway','Role credentials never stored'].map((item) => (
+                {['AES-256 encrypted at rest','SOC 2 readiness planning underway','Role credentials never stored'].map((item) => (
                   <li key={item} className="flex items-start gap-2.5 text-sm text-slate-500 leading-snug">
                     <span className="shrink-0">🛡️</span>{item}
                   </li>

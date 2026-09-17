@@ -30,7 +30,7 @@ const problems = [
   {
     icon: Shield,
     problem: 'Compliance audit in 3 months and nothing is documented',
-    solution: 'Continuous SOC 2, HIPAA, and PCI-DSS scanning with auto-generated audit evidence packages — ready in one click.',
+    solution: 'Continuous PCI-DSS scanning via AWS Security Hub, plus SOC 2 readiness planning with exportable technical evidence for your auditor.',
   },
   {
     icon: Network,
@@ -71,7 +71,7 @@ const pricingFeatures = [
   'Unlimited team members',
   'Multi-team RBAC',
   'Cost attribution & budgets',
-  'SOC 2 / HIPAA / GDPR scanning',
+  'SOC 2 readiness / PCI-DSS scanning',
   'SAML SSO integration',
   'DORA metrics dashboard',
   'Auto-remediation workflows',
@@ -198,7 +198,7 @@ export default function MidMarketPage() {
                 flexDirection: isMobile ? 'column' : 'row',
                 fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
               }}>
-                {['No credit card required', 'Setup in 15 minutes', 'SOC 2 In Progress'].map(t => (
+                {['No credit card required', 'Setup in 15 minutes', 'SOC 2 Readiness Planned'].map(t => (
                   <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ color: '#a78bfa' }}>✓</span> {t}
                   </span>
@@ -405,7 +405,7 @@ export default function MidMarketPage() {
               {[
                 { value: '$31K', label: 'Monthly savings found' },
                 { value: '3 teams', label: 'Onboarded in one day' },
-                { value: '90 days', label: 'To SOC 2 baseline' },
+                { value: '90 days', label: 'To SOC 2 readiness baseline' },
               ].map(({ value, label }) => (
                 <div key={label}>
                   <p style={{ fontSize: isMobile ? '1.6rem' : '2rem', fontWeight: 800, color: '#fff', margin: '0 0 4px', lineHeight: 1 }}>{value}</p>

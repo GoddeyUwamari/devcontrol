@@ -68,9 +68,6 @@ export function InfrastructureSecurityBadges() {
 
       <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
         <Badge variant="outline" className="bg-white">
-          GDPR Compliant
-        </Badge>
-        <Badge variant="outline" className="bg-white">
           AES-256 Encryption
         </Badge>
         <Badge variant="outline" className="bg-white">

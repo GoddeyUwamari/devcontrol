@@ -1,6 +1,6 @@
 'use client';
 
-import { Shield, Lock, Zap, BadgeCheck } from 'lucide-react';
+import { Lock, Zap, BadgeCheck } from 'lucide-react';
 
 const badges = [
   {
@@ -10,15 +10,9 @@ const badges = [
     color: 'text-green-600 dark:text-green-400',
   },
   {
-    icon: Shield,
-    text: 'GDPR Compliant',
-    subtext: 'Data privacy guaranteed',
-    color: 'text-blue-600 dark:text-blue-400',
-  },
-  {
     icon: BadgeCheck,
     text: 'Enterprise Security',
-    subtext: 'SOC 2 certification planned',
+    subtext: 'SOC 2 readiness planned',
     color: 'text-amber-600 dark:text-amber-400',
   },
   {

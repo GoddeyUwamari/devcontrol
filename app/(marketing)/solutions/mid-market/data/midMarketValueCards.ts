@@ -18,7 +18,7 @@ export const midMarketValueCards = [
     icon: Shield,
     title: 'Compliance Automation',
     description:
-      'Continuous scanning against SOC 2, HIPAA, PCI-DSS, and GDPR frameworks. Generate audit reports in one click.',
+      'Continuous scanning against CIS, PCI-DSS, and NIST 800-53 via AWS Security Hub, plus SOC 2 readiness planning to help prepare for your independent audit.',
   },
   {
     icon: BarChart3,

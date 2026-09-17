@@ -32,7 +32,7 @@ export default function ScaleupsPage() {
 
   const features = [
     { icon: Users, title: 'Team-level Cost Attribution', desc: 'Break down AWS spend by team, product, environment, or any custom tag. Every engineer knows what they own and what it costs.' },
-    { icon: Shield, title: 'Enterprise Security Posture', desc: 'Continuous SOC 2 and CIS compliance monitoring across all accounts. Close enterprise deals without a dedicated security team.' },
+    { icon: Shield, title: 'Enterprise Security Posture', desc: 'Continuous CIS compliance monitoring and SOC 2 readiness planning across all accounts. Close enterprise deals without a dedicated security team.' },
     { icon: BarChart3, title: 'DORA Metrics at Team Level', desc: 'Track engineering performance per team, service, or squad. Identify bottlenecks and benchmark against Elite-tier standards.' },
     { icon: GitBranch, title: 'Infrastructure Drift Detection', desc: 'Catch when actual infrastructure diverges from your Terraform definitions. Prevent configuration drift from causing production incidents.' },
     { icon: DollarSign, title: 'Reserved Instance Strategy', desc: 'AI identifies exactly which workloads to commit to reserved pricing — with projected savings calculated before you commit a dollar.' },
@@ -62,7 +62,7 @@ export default function ScaleupsPage() {
     {
       role: 'For CTOs',
       title: 'Strategic Infrastructure Control',
-      points: ['Forecast AWS spend as you scale', 'SOC 2 compliance without extra headcount', 'Risk visibility before it becomes an incident', 'Data for investor and board conversations'],
+      points: ['Forecast AWS spend as you scale', 'SOC 2 readiness without extra headcount', 'Risk visibility before it becomes an incident', 'Data for investor and board conversations'],
     },
     {
       role: 'For Platform Engineers',

@@ -60,9 +60,9 @@ const valueCards: ValueCard[] = [
   {
     icon: <Activity className="h-10 w-10" />,
     title: 'Compliance Tracking',
-    description: 'Monitor compliance with industry standards and internal policies with automated reporting',
-    features: ['SOC 2 compliance', 'GDPR tracking', 'Custom policies'],
-    metric: '99.9% compliance rate',
+    description: 'Monitor technical evidence against industry standards and internal policies with automated reporting',
+    features: ['SOC 2 readiness', 'CIS / PCI-DSS monitoring', 'Custom policies'],
+    metric: 'Continuous evidence collection',
     bgColor: 'bg-orange-100 text-orange-700',
     borderColor: 'border-orange-200',
   },

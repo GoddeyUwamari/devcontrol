@@ -64,7 +64,7 @@ const faqs: FAQItem[] = [
   {
     icon: Lock,
     question: 'Is my data secure?',
-    answer: 'Yes. We use enterprise-grade encryption (AES-256) and follow AWS security best practices. Your infrastructure data is encrypted at rest and in transit with TLS 1.3. We are GDPR compliant and working toward SOC 2 Type II certification.',
+    answer: 'Yes. We use enterprise-grade encryption (AES-256) and follow AWS security best practices. Your infrastructure data is encrypted at rest and in transit with TLS 1.3. We have initiated SOC 2 readiness planning (not an independent audit or certification).',
     accentColor: 'red',
   },
   {

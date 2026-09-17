@@ -35,7 +35,6 @@ const securityFeatures = [
 
 const complianceBadges = [
   { name: 'Enterprise Security', status: 'Bank-level encryption' },
-  { name: 'GDPR', status: 'Compliant' },
   { name: 'Data Protection', status: 'AES-256 encryption' },
   { name: 'Access Control', status: 'Role-based' },
 ];
