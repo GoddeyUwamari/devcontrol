@@ -241,28 +241,41 @@ export class ComplianceScannerService {
   }
 
   /**
-   * SOC2-specific compliance checks
-   * Focuses on: Access Controls, Change Management, System Monitoring
+   * Legacy tag-inferred infrastructure checks (formerly labeled "SOC2-specific").
+   *
+   * These four checks were previously labeled with a "SOC2:" issue prefix,
+   * implying they are SOC 2 evidence. They are not: each one only checks for
+   * the *presence of a specific tag key* — none of them call an AWS API to
+   * verify the underlying condition (IAM role attachment, actual monitoring/
+   * logging configuration, or actual S3 access-logging state). Relabeled to
+   * plain infrastructure/tagging/observability signals per the SOC 2
+   * Readiness disposition decision. Findings, severities, and categories are
+   * otherwise unchanged (except signal 1's category, iam -> tagging, since
+   * this check has always been a tag-documentation check, not a real IAM
+   * security check) -- this is a relabel, not a scoring change. The final
+   * disposition of these signals (retain/upgrade/retire) is a separate,
+   * not-yet-made decision; do not reintroduce SOC2/HIPAA/compliance-framework
+   * language here.
    */
   private checkSOC2Compliance(resource: AWSResource): ComplianceIssue[] {
     const issues: ComplianceIssue[] = [];
 
-    // SOC2: Access Control - Check for IAM role/policy attachment
+    // Tagging: IAM role/owner not documented - check for IAM role/policy attachment tag
     if (['ec2', 'lambda', 'ecs'].includes(resource.resource_type)) {
       // Check if resource has proper IAM role attached
       const hasIAMRole = resource.tags?.['IAMRole'] || resource.tags?.['Role'];
       if (!hasIAMRole) {
         issues.push({
           severity: 'high',
-          category: 'iam',
-          issue: 'SOC2: Resource lacks documented IAM role for access control',
+          category: 'tagging',
+          issue: 'Tagging: IAM role/owner not documented',
           recommendation: 'Attach an IAM role with least-privilege permissions and tag the resource with "IAMRole" or "Role" for audit tracking.',
           resource_arn: resource.resource_arn,
         });
       }
     }
 
-    // SOC2: Change Management - Check for change tracking tags
+    // Tagging: Missing change-tracking tags - check for change tracking tags
     const hasChangeManagement = resource.tags?.['LastModifiedBy'] ||
                                  resource.tags?.['ChangeTicket'] ||
                                  resource.tags?.['Version'];
@@ -270,13 +283,13 @@ export class ComplianceScannerService {
       issues.push({
         severity: 'medium',
         category: 'tagging',
-        issue: 'SOC2: Resource lacks change management tracking tags',
+        issue: 'Tagging: Missing change-tracking tags',
         recommendation: 'Add tags like "LastModifiedBy", "ChangeTicket", or "Version" to track changes for audit compliance.',
         resource_arn: resource.resource_arn,
       });
     }
 
-    // SOC2: System Monitoring - Check for monitoring/logging configuration
+    // Observability: Monitoring/logging not documented via tag
     if (['ec2', 'rds', 'lambda', 's3'].includes(resource.resource_type)) {
       const hasMonitoring = resource.tags?.['MonitoringEnabled'] ||
                            resource.tags?.['LoggingEnabled'] ||
@@ -298,25 +311,25 @@ export class ComplianceScannerService {
             recommendation = 'Ensure CloudWatch Logs are enabled (default). Add CloudWatch alarms for errors and throttles.';
             break;
           default:
-            recommendation = 'Enable monitoring and logging for this resource type according to SOC2 requirements.';
+            recommendation = 'Enable monitoring and logging for this resource type and document it with the appropriate tag.';
         }
 
         issues.push({
           severity: 'high',
           category: 'networking',
-          issue: 'SOC2: Resource lacks documented monitoring/logging configuration',
+          issue: 'Observability: Monitoring/logging not documented via tag',
           recommendation,
           resource_arn: resource.resource_arn,
         });
       }
     }
 
-    // SOC2: Access logging for S3 buckets
+    // S3: Access logging not documented via tag
     if (resource.resource_type === 's3' && !resource.tags?.['AccessLogging']) {
       issues.push({
         severity: 'high',
         category: 'networking',
-        issue: 'SOC2: S3 bucket does not have access logging enabled',
+        issue: 'S3: Access logging not documented via tag',
         recommendation: 'Enable S3 server access logging to track all requests. Configure logs to be sent to a dedicated logging bucket.',
         resource_arn: resource.resource_arn,
       });
