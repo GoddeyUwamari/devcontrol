@@ -26,7 +26,7 @@ export function PlatformPreview() {
     {
       icon: Shield,
       title: 'Security & Compliance',
-      description: 'Automated security scanning and compliance monitoring. Stay compliant with SOC 2, HIPAA, and PCI standards effortlessly.',
+      description: 'Automated security scanning and compliance monitoring for CIS, PCI-DSS, and NIST 800-53, plus SOC 2 readiness planning.',
       color: 'purple' as const,
     },
     {

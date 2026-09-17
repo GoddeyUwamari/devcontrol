@@ -22,16 +22,16 @@ export default function SecurityCompliancePage() {
   const features = [
     { icon: Shield, title: 'Continuous Security Scanning', desc: 'Automated scans across all AWS resources 24/7. Every misconfiguration, exposed port, and policy violation surfaced instantly — no manual audits required.' },
     { icon: AlertTriangle, title: 'Real-time Threat Alerts', desc: 'Instant notifications when security posture changes. Catch open S3 buckets, overpermissioned IAM roles, and unencrypted resources before attackers do.' },
-    { icon: FileText, title: 'SOC 2 & HIPAA Compliance', desc: 'Automated compliance monitoring mapped to SOC 2, HIPAA, and CIS benchmarks. Know your compliance posture in real time — not just at audit time.' },
+    { icon: FileText, title: 'SOC 2 Readiness & CIS Monitoring', desc: 'Technical evidence and readiness gaps for your SOC 2 program, plus continuous CIS benchmark monitoring. Know your posture in real time — DevControl supplies evidence, an independent auditor performs your SOC 2 examination.' },
     { icon: Lock, title: 'IAM Policy Analysis', desc: 'Deep analysis of every IAM role, policy, and permission. Identify over-privileged users, unused credentials, and toxic permission combinations automatically.' },
     { icon: Eye, title: 'Risk Score & Trends', desc: 'A single security score for your entire AWS estate. Track improvement over time and benchmark against industry standards with weekly trend reports.' },
-    { icon: CheckCircle2, title: 'Audit-Ready Reports', desc: 'One-click compliance reports for your auditors, board, or enterprise customers. Export evidence packages that prove your security posture instantly.' },
+    { icon: CheckCircle2, title: 'Evidence for Your Auditor', desc: 'Export technical evidence and readiness gaps to share with your auditor, board, or enterprise customers — supporting evidence for your security posture, not a certification.' },
   ]
 
   const impacts = [
     { value: '87/100', label: 'Average security score after 30 days' },
     { value: '90%+', label: 'Reduction in manual audit prep time' },
-    { value: '2 weeks', label: 'Average time to identify all SOC 2 gaps' },
+    { value: '2 weeks', label: 'Average time to surface initial SOC 2 readiness gaps' },
   ]
 
   const steps = [
@@ -78,7 +78,7 @@ export default function SecurityCompliancePage() {
             margin: '0 auto 36px',
           }}>
             Continuous AWS security scanning, real-time compliance monitoring, and
-            audit-ready reports — so you're never caught off guard by a finding or a breach.
+            exportable readiness evidence — so you're never caught off guard by a finding or a breach.
           </p>
 
           <div style={{
@@ -123,7 +123,7 @@ export default function SecurityCompliancePage() {
             fontSize: '0.875rem', fontWeight: 500, color: '#1f2937',
             alignItems: 'center',
           }}>
-            {['SOC 2 & HIPAA monitoring', 'Continuous 24/7 scanning', 'Audit-ready in 2 weeks'].map(t => (
+            {['SOC 2 readiness planning', 'Continuous 24/7 scanning', 'Readiness gaps surfaced in 2 weeks'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#16a34a' }}>✓</span> {t}
               </span>
@@ -231,7 +231,7 @@ export default function SecurityCompliancePage() {
               fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 700,
               color: '#1e1b4b', letterSpacing: '-0.02em',
             }}>
-              Audit-Ready in 2 Weeks
+              Readiness Gaps Surfaced in 2 Weeks
             </h2>
           </div>
 
@@ -299,12 +299,12 @@ export default function SecurityCompliancePage() {
                 For CTOs & Compliance Officers
               </div>
               <h3 style={{ fontSize: isMobile ? '1.2rem' : '1.3rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '20px' }}>
-                Always Audit-Ready
+                Built for SOC 2 Readiness
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {[
-                  'Real-time SOC 2 compliance monitoring dashboard',
-                  'One-click audit evidence packages for customers',
+                  'Real-time technical evidence and readiness-gap dashboard',
+                  'Exportable readiness evidence to share with your auditor',
                   'Board-level security posture reporting',
                   'Reduce breach risk with continuous scanning',
                 ].map(point => (

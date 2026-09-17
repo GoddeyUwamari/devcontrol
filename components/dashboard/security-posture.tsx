@@ -50,7 +50,7 @@ export function SecurityPosture({ demoMode = false, realData }: SecurityPostureP
           </div>
           {data.socTwoReady && (
             <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 border-2 text-sm px-3 py-1">
-              ✅ SOC 2 Ready
+              SOC 2 Readiness Tracked
             </Badge>
           )}
         </div>
@@ -65,7 +65,7 @@ export function SecurityPosture({ demoMode = false, realData }: SecurityPostureP
           </div>
           <Progress value={data.complianceScore} className="h-3" />
           <p className="text-xs text-muted-foreground mt-1">
-            SOC 2 requirement: 90+ (You: {data.complianceScore})
+            Supporting technical evidence for your SOC 2 program — not a compliance determination
           </p>
         </div>
 
@@ -97,14 +97,14 @@ export function SecurityPosture({ demoMode = false, realData }: SecurityPostureP
                 <CheckCircle className="h-4 w-4 text-emerald-600" />
                 <span className="text-sm font-medium">{data.iamPoliciesRestricted} IAM policies restricted</span>
               </div>
-              <span className="text-xs font-semibold text-emerald-700">✅ SOC 2 requirement</span>
+              <span className="text-xs font-semibold text-emerald-700">✅ SOC 2-relevant evidence</span>
             </div>
             <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-4 w-4 text-emerald-600" />
                 <span className="text-sm font-medium">{data.nonCompliantBlocked} non-compliant resources blocked</span>
               </div>
-              <span className="text-xs font-semibold text-emerald-700">📋 Audit-ready</span>
+              <span className="text-xs font-semibold text-emerald-700">📋 Evidence logged</span>
             </div>
           </div>
         </div>

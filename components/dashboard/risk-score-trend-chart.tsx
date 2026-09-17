@@ -120,7 +120,7 @@ export function RiskScoreTrendChart({
                   Compliance Scanning
                 </div>
                 <div className="text-xs text-gray-600 dark:text-gray-400">
-                  SOC2, HIPAA, and more
+                  CIS, PCI-DSS, NIST 800-53, and SOC 2 readiness
                 </div>
               </div>
             </div>

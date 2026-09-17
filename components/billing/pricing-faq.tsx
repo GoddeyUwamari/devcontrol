@@ -94,7 +94,7 @@ const faqs: FAQItem[] = [
     icon: Shield,
     question: 'How secure is my AWS data?',
     answer:
-      "DevControl uses read-only IAM roles - we never store your AWS credentials. All data is encrypted at rest (AES-256) and in transit (TLS 1.3). We're GDPR compliant and working toward SOC 2 Type II certification. Your infrastructure data never leaves our secure environment.",
+      "DevControl uses read-only IAM roles - we never store your AWS credentials. All data is encrypted at rest (AES-256) and in transit (TLS 1.3). We have initiated SOC 2 readiness planning (not an independent audit or certification). Your infrastructure data never leaves our secure environment.",
   },
 ];
 

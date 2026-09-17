@@ -17,9 +17,9 @@ export const midMarketQuickWins = [
   },
   {
     icon: Shield,
-    value: '100%',
-    label: 'Compliance Coverage',
+    value: '3',
+    label: 'Frameworks Monitored',
     description:
-      'Automated scanning for SOC 2, HIPAA, and GDPR with audit-ready reports generated on demand.',
+      'Automated Security Hub scanning for CIS, PCI-DSS, and NIST 800-53, plus SOC 2 readiness planning.',
   },
 ];

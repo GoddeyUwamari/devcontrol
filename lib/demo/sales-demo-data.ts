@@ -286,7 +286,7 @@ export const SALES_DEMO_DATA: SalesDemoData = {
       recipients: ['CFO'],
     },
     {
-      name: 'SOC 2 Compliance Evidence',
+      name: 'SOC 2 Readiness Summary',
       lastSent: 'Dec 15',
       schedule: 'On-demand',
       recipients: ['Auditor'],

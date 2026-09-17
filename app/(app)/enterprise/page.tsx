@@ -46,9 +46,7 @@ function roleStyle(role: OrganizationMember['role']) {
 }
 
 const securityControls = [
-  { name: 'SOC 2 Type II',   status: 'warning', detail: 'Audit in progress' },
-  { name: 'GDPR',            status: 'active',  detail: 'Compliant · DPA available' },
-  { name: 'HIPAA',           status: 'active',  detail: 'Ready · BAA on request' },
+  { name: 'SOC 2 Readiness', status: 'warning', detail: 'Readiness planning underway · Not a certification or audit' },
   { name: 'SSO / SAML',      status: 'warning', detail: 'Not configured · Available in Enterprise' },
   { name: 'Audit Log',       status: 'active',  detail: '2-year retention · Live' },
   { name: 'Data Encryption', status: 'active',  detail: 'AES-256 at rest · TLS 1.3' },
@@ -151,7 +149,7 @@ export default function EnterprisePage() {
                   {!isEnterprise && <span className="text-xs font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">{isPro ? 'Current plan' : 'Most popular'}</span>}
                 </div>
                 <div className="flex flex-col gap-1 my-3">
-                  {['Unlimited AWS accounts', 'SOC 2 & automated audits', 'Unlimited AI reports', 'Priority support'].map(f => (
+                  {['Unlimited AWS accounts', 'SOC 2 readiness tools', 'Unlimited AI reports', 'Priority support'].map(f => (
                     <div key={f} className="text-xs text-slate-500 flex items-center gap-1.5"><span className="text-green-600">✓</span> {f}</div>
                   ))}
                 </div>

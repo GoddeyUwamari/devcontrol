@@ -54,7 +54,7 @@ const defaultAlertTypes: AlertType[] = [
   {
     id: 'compliance_failure',
     name: 'Compliance Violations',
-    description: 'Stay compliant with SOC2, HIPAA, and PCI-DSS requirements',
+    description: 'Get alerted on compliance findings, including SOC 2 readiness gaps and PCI-DSS issues',
     icon: FileCheck,
     enabled: true,
     severities: ['critical', 'warning', 'info'],

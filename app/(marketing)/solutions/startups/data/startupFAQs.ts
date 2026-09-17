@@ -16,8 +16,8 @@ export const startupFAQs = [
     answer: 'Our AI analyzes your resource utilization patterns and identifies rightsizing opportunities, unused resources, and Reserved Instance recommendations. Illustrative example: a startup with a similar footprint could find $2,000-5,000/month in savings opportunities within the first 30 days.',
   },
   {
-    question: 'Can DevControl help us pass SOC 2 compliance?',
-    answer: 'Absolutely. DevControl provides continuous security monitoring, audit logs, and compliance reports that map directly to SOC 2 controls. Many customers use our reports as evidence during their audits.',
+    question: 'Can DevControl help with SOC 2?',
+    answer: 'DevControl is building SOC 2 Readiness: technical evidence and readiness gaps for your SOC 2 program, drawn from continuous security monitoring of your AWS infrastructure. It is not an audit or certification — an independent CPA/auditor still performs your actual SOC 2 examination.',
   },
   {
     question: 'Do you integrate with our existing tools?',
@@ -29,7 +29,7 @@ export const startupFAQs = [
   },
   {
     question: 'How secure is DevControl?',
-    answer: 'Security is our top priority. We use read-only IAM roles by default, encrypt all data at rest and in transit, and are currently pursuing SOC 2 Type II certification. We never store your credentials or access your application data.',
+    answer: 'Security is our top priority. We use read-only IAM roles by default, encrypt all data at rest and in transit, and have initiated SOC 2 readiness planning (not an independent audit or certification). We never store your credentials or access your application data.',
   },
   {
     question: 'Can I try DevControl before committing?',

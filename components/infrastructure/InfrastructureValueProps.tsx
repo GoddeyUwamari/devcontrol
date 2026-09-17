@@ -34,7 +34,7 @@ export function InfrastructureValueProps() {
     {
       icon: <Shield className="w-6 h-6" />,
       title: 'Infrastructure Visibility for Compliance',
-      description: 'Eliminate shadow IT with 100% infrastructure visibility—required for SOC 2 compliance and security audits',
+      description: 'Eliminate shadow IT with 100% infrastructure visibility—supporting evidence for your SOC 2 readiness program and security audits',
       benefits: [
         'Complete resource inventory in real-time',
         'Automated compliance reporting',

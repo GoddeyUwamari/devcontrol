@@ -1126,7 +1126,7 @@ export default function DashboardPage() {
                 </div>
                 {isDemoActive && (
                   <div className="flex gap-1.5">
-                    {['SOC2', 'CIS AWS', 'GDPR'].map((f) => (
+                    {['CIS AWS', 'PCI-DSS', 'NIST 800-53'].map((f) => (
                       <span key={f} className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{f}</span>
                     ))}
                   </div>
@@ -1227,7 +1227,7 @@ export default function DashboardPage() {
                 </div>
                 {isDemoActive && (
                   <div className="flex gap-1.5 flex-wrap">
-                    {['SOC2', 'CIS AWS', 'GDPR'].map((framework) => (
+                    {['CIS AWS', 'PCI-DSS', 'NIST 800-53'].map((framework) => (
                       <span key={framework} className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{framework}</span>
                     ))}
                   </div>

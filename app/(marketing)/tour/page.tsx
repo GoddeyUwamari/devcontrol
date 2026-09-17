@@ -347,12 +347,12 @@ const steps = [
   {
     eyebrow: 'Step 4 — Security & Compliance',
     title: 'Know your security posture instantly',
-    description: 'Automated security scanning across all AWS resources. Track SOC 2, HIPAA, and PCI compliance posture without manual audits.',
+    description: 'Automated security scanning across all AWS resources. Track PCI DSS compliance posture and SOC 2 readiness gaps without manual audits.',
     highlights: [
       'Continuous compliance monitoring',
-      'SOC 2, HIPAA, PCI DSS frameworks',
+      'PCI DSS frameworks, plus SOC 2 readiness planning',
       'One-click remediation suggestions',
-      'Audit-ready reports on demand',
+      'Exportable evidence for your auditor',
     ],
     mockType: 'security',
     navLabel: 'Security Scan',

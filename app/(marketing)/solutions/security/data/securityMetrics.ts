@@ -10,10 +10,10 @@ export const securityMetrics = [
   },
   {
     icon: FileCheck,
-    value: '6',
+    value: '3',
     label: 'Compliance Frameworks',
     description:
-      'Built-in support for SOC 2, HIPAA, PCI-DSS, GDPR, ISO 27001, and CIS Benchmarks.',
+      'Security Hub-backed evaluation for CIS, PCI DSS, and NIST 800-53 — plus SOC 2 readiness planning underway.',
   },
   {
     icon: Clock,

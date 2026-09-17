@@ -125,7 +125,7 @@ export function UpgradeModal({
                 </li>
                 <li className="flex items-start gap-2 text-sm">
                   <Check className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
-                  <span>Compliance scanning (SOC 2, HIPAA, PCI)</span>
+                  <span>Compliance scanning (CIS, PCI-DSS, NIST 800-53) + SOC 2 readiness</span>
                 </li>
               </>
             )}

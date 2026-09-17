@@ -66,8 +66,8 @@ const securityItems = [
   },
   {
     icon: FileCheck,
-    title: 'SOC 2 Audit Underway',
-    description: 'SOC 2 Type II audit in progress, built from the ground up with compliance in mind. GDPR and HIPAA-friendly architecture.',
+    title: 'SOC 2 Readiness Planned',
+    description: 'SOC 2 readiness planning underway (not an independent audit or certification), built from the ground up with compliance in mind.',
   },
 ];
 

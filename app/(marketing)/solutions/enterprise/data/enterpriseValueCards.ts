@@ -36,7 +36,7 @@ export const enterpriseValueCards = [
     icon: FileCheck,
     title: 'Compliance Automation',
     description:
-      'Continuous compliance monitoring for SOC 2, HIPAA, PCI-DSS, FedRAMP, ISO 27001, and custom frameworks.',
+      'Continuous monitoring for CIS, PCI DSS, and NIST 800-53 via AWS Security Hub, SOC 2 readiness planning, and fully custom frameworks you define.',
   },
   {
     icon: Headphones,

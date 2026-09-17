@@ -48,7 +48,6 @@ const FALLBACK_FINDINGS: FindingDisplay[] = [
 
 const FALLBACK_FRAMEWORKS: FrameworkDisplay[] = [
   { id: '1', name: 'CIS AWS Benchmark', complianceScore: 87, status: 'passing' },
-  { id: '2', name: 'SOC 2 Type II',      complianceScore: 74, status: 'in_progress' },
   { id: '3', name: 'NIST CSF',           complianceScore: 91, status: 'passing' },
   { id: '4', name: 'PCI-DSS',            complianceScore: 68, status: 'failing' },
 ]
@@ -258,7 +257,7 @@ export default function SecurityPage() {
 
   const navCards = [
     { icon: AlertTriangle, label: 'All Anomalies', desc: criticalAnomalies > 0 ? `${criticalAnomalies} critical — investigate now` : 'Investigate and resolve threats', href: '/anomalies', color: criticalAnomalies > 0 ? '#DC2626' : '#D97706', bg: criticalAnomalies > 0 ? '#FEF2F2' : '#FFFBEB' },
-    { icon: CheckSquare,   label: 'Compliance',    desc: !hasFrameworkData ? 'Not yet evaluated' : failingFrameworks > 0 ? `${failingFrameworks} framework${failingFrameworks > 1 ? 's' : ''} failing — remediate now` : 'CIS, NIST, SOC 2, PCI-DSS', href: '/compliance/frameworks', color: !hasFrameworkData ? '#64748B' : failingFrameworks > 0 ? '#DC2626' : '#059669', bg: '#F5F3FF' },
+    { icon: CheckSquare,   label: 'Compliance',    desc: !hasFrameworkData ? 'Not yet evaluated' : failingFrameworks > 0 ? `${failingFrameworks} framework${failingFrameworks > 1 ? 's' : ''} failing — remediate now` : 'No failing frameworks', href: '/compliance/frameworks', color: !hasFrameworkData ? '#64748B' : failingFrameworks > 0 ? '#DC2626' : '#059669', bg: '#F5F3FF' },
     { icon: ClipboardList, label: 'Audit Logs',    desc: 'Full activity trail', href: '/audit-logs', color: '#7C3AED', bg: '#F5F3FF' },
   ]
 

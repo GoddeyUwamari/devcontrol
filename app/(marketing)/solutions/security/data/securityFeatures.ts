@@ -40,8 +40,8 @@ export const securityFeatures = [
   },
   {
     icon: FileText,
-    title: 'Audit-Ready Reports',
+    title: 'Compliance Evidence & Readiness',
     description:
-      'Generate compliance reports for auditors with one click. Evidence collection automated for SOC 2, HIPAA, and other frameworks.',
+      'Track technical evidence and readiness gaps across CIS, PCI DSS, and NIST 800-53 — plus SOC 2 readiness planning to help prepare for your independent audit.',
   },
 ];
