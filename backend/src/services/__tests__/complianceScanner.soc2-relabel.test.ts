@@ -1,20 +1,31 @@
 /**
- * Coverage for the SOC 2 Readiness disposition decision: the four legacy
+ * Coverage for the SOC 2 Readiness disposition decision: the legacy
  * tag-inferred checks inside ComplianceScannerService.checkSOC2Compliance
  * (formerly "SOC2:"-prefixed) are NOT valid SOC 2 evidence -- see the
- * disposition analysis this PR implements. This is a RELABEL only:
+ * disposition analysis this PR implements. This was originally a RELABEL
+ * only (issue text, category, provenance -- not severity/trigger/scoring):
  *
  *   - issue text drops the "SOC2:" prefix in favor of a truthful
  *     infrastructure/tagging/observability label
  *   - signal 1's category changes from 'iam' to 'tagging' (it has always
  *     been a tag-documentation check, not a real IAM security check)
- *   - severity, trigger conditions, and resource-type gating are unchanged
- *   - none of the four checks call an AWS API -- they remain pure
- *     tag-presence checks, exactly as before
+ *   - severity and resource-type gating are unchanged for the three
+ *     surviving signals
+ *   - none of the surviving checks call an AWS API -- they remain pure
+ *     tag-presence checks, exactly as before, now carrying
+ *     `provenance: 'SELF_ATTESTED'`
  *
- * No test existed for checkSOC2Compliance before this PR (confirmed via a
- * repo-wide search) -- every test below is new, not a modification of
- * prior coverage.
+ * A later PR (ComplianceIssue provenance foundation) retired the former
+ * "signal 2" (change-management tags: LastModifiedBy/ChangeTicket/Version)
+ * outright -- see the "signal 2 retired" describe block below. That
+ * retirement is NOT score-neutral (it removes real medium-severity findings
+ * from any org currently missing those tags); only the surviving three
+ * signals' relabel remains score-neutral, as documented in the last
+ * describe block.
+ *
+ * No test existed for checkSOC2Compliance before the original relabel PR
+ * (confirmed via a repo-wide search) -- every test below is new, not a
+ * modification of prior coverage.
  */
 import { ComplianceScannerService } from '../complianceScanner';
 import { AWSResource, ResourceType } from '../../types/aws-resources.types';
@@ -83,21 +94,16 @@ describe('checkSOC2Compliance -- signal 1: IAM role/owner tag', () => {
   });
 });
 
-describe('checkSOC2Compliance -- signal 2: change-management tags', () => {
-  it('missing LastModifiedBy/ChangeTicket/Version tag produces the new label, category, and severity, for any resource type', () => {
+describe('checkSOC2Compliance -- signal 2 (change-management tags): retired', () => {
+  it('never produces the former change-tracking finding, tagged or untagged, for any resource type', () => {
     for (const resource_type of ['ec2', 's3', 'rds', 'lambda', 'dynamodb'] as ResourceType[]) {
-      const issues = checkSOC2(resource({ resource_type, tags: {} }));
-      const finding = issues.find((i: any) => i.issue === 'Tagging: Missing change-tracking tags');
-      expect(finding).toBeDefined();
-      expect(finding.severity).toBe('medium');
-      expect(finding.category).toBe('tagging'); // unchanged
-    }
-  });
+      const untagged = checkSOC2(resource({ resource_type, tags: {} }));
+      expect(untagged.find((i: any) => i.issue === 'Tagging: Missing change-tracking tags')).toBeUndefined();
 
-  it('any one of LastModifiedBy/ChangeTicket/Version suppresses the finding (unchanged condition)', () => {
-    for (const tag of ['LastModifiedBy', 'ChangeTicket', 'Version']) {
-      const issues = checkSOC2(resource({ resource_type: 'ec2', tags: { [tag]: 'x' } }));
-      expect(issues.find((i: any) => i.issue === 'Tagging: Missing change-tracking tags')).toBeUndefined();
+      for (const tag of ['LastModifiedBy', 'ChangeTicket', 'Version']) {
+        const tagged = checkSOC2(resource({ resource_type, tags: { [tag]: 'x' } }));
+        expect(tagged.find((i: any) => i.issue === 'Tagging: Missing change-tracking tags')).toBeUndefined();
+      }
     }
   });
 });
@@ -151,9 +157,9 @@ describe('checkSOC2Compliance -- signal 4: S3 access-logging tag', () => {
 });
 
 describe('checkSOC2Compliance -- no SOC2 prefix anywhere, and remains tag-inferred only', () => {
-  it('a fully untagged s3 resource (signals 2, 3, and 4 fire) never emits "SOC2:" anywhere', () => {
+  it('a fully untagged s3 resource (signals 3 and 4 fire) never emits "SOC2:" anywhere', () => {
     const issues = checkSOC2(resource({ resource_type: 's3', tags: {} }));
-    expect(issues).toHaveLength(3);
+    expect(issues).toHaveLength(2);
     for (const i of issues) {
       expect(i.issue).not.toMatch(/SOC2/);
       expect(i.recommendation).not.toMatch(/SOC2/i);
@@ -166,12 +172,11 @@ describe('checkSOC2Compliance -- no SOC2 prefix anywhere, and remains tag-inferr
     expect(service['checkSOC2Compliance'].length).toBe(1);
   });
 
-  it('a fully tagged s3 resource produces zero findings from these four signals', () => {
+  it('a fully tagged s3 resource produces zero findings from the three surviving signals', () => {
     const issues = checkSOC2(resource({
       resource_type: 's3',
       tags: {
         IAMRole: 'x',
-        LastModifiedBy: 'x',
         MonitoringEnabled: 'true',
         AccessLogging: 'true',
       },
@@ -180,22 +185,24 @@ describe('checkSOC2Compliance -- no SOC2 prefix anywhere, and remains tag-inferr
   });
 });
 
-describe('checkSOC2Compliance -- relabel is score-neutral (uses the authoritative backend formula, not a duplicate)', () => {
-  it('feeding the exact severity multiset these four relabeled signals produce into calculateRiskScore yields the same result the pre-relabel severities would have', () => {
-    // No single resource type triggers all four signals at once (signal 1 excludes
-    // s3/rds; signal 4 is s3-only) -- a fully untagged ec2 resource triggers exactly
-    // three of them (signals 1, 2, 3) with their documented (unchanged) severities:
-    // high, medium, high.
+describe('checkSOC2Compliance -- surviving signals feed calculateRiskScore correctly; category never affects score', () => {
+  // NOTE: this documents current severity->score behavior for the three surviving
+  // signals, NOT a score-neutrality claim for this PR. Retiring the former signal 2
+  // (change-management tags) removed real medium-severity findings for any org
+  // currently missing those tags -- that is a genuine, org-dependent Risk Score
+  // change, not asserted or measured here. Production impact is measured after
+  // deploy via the standing verification workflow, not via this unit test.
+  it('feeding the exact severity multiset the two resource-type-gated signals produce into calculateRiskScore yields the documented result', () => {
+    // signal 1 excludes s3/rds; signal 4 is s3-only -- a fully untagged ec2 resource
+    // triggers exactly two of the three surviving signals (1 and 3), both 'high'.
     const issues = checkSOC2(resource({ resource_type: 'ec2', tags: {} }));
-    expect(issues).toHaveLength(3);
+    expect(issues).toHaveLength(2);
 
     const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
     for (const i of issues) {
       bySeverity[i.severity as 'critical' | 'high' | 'medium' | 'low']++;
     }
-    // This is the severity multiset that existed under the old "SOC2:" labels too --
-    // relabeling changed no severities, so this must still be {high: 2, medium: 1}.
-    expect(bySeverity).toEqual({ critical: 0, high: 2, medium: 1, low: 0 });
+    expect(bySeverity).toEqual({ critical: 0, high: 2, medium: 0, low: 0 });
 
     const result = calculateRiskScore({
       totalResources: 1,
@@ -210,15 +217,15 @@ describe('checkSOC2Compliance -- relabel is score-neutral (uses the authoritativ
     });
 
     // complianceScore = max(0, 100 - (critical*10 + high*5 + medium*2 + low*1))
-    //                 = max(0, 100 - (0 + 2*5 + 1*2 + 0)) = max(0, 100-12) = 88
-    // totalScore = publicAccess(100)*0.30 + encryption(100)*0.25 + compliance(88)*0.25
+    //                 = max(0, 100 - (0 + 2*5 + 0 + 0)) = max(0, 100-10) = 90
+    // totalScore = publicAccess(100)*0.30 + encryption(100)*0.25 + compliance(90)*0.25
     //            + backup(100)*0.15 + resourceMgmt(100)*0.05
-    //            = 30 + 25 + 22 + 15 + 5 = 97
-    expect(result.factors.compliance).toBe(88);
-    expect(result.score).toBe(97);
+    //            = 30 + 25 + 22.5 + 15 + 5 = 97.5 -> Math.round -> 98
+    expect(result.factors.compliance).toBe(90);
+    expect(result.score).toBe(98);
   });
 
-  it('category is the only structural field signal 1 changed -- category alone is not read by calculateRiskScore, so the score above is unaffected by the iam->tagging category change', () => {
+  it('category (including the new observability category, and signal 1\'s iam->tagging relabel) is not read by calculateRiskScore', () => {
     // calculateRiskScore's `complianceIssues`/`resourceComplianceCounts` inputs are
     // severity-keyed counts only (see backend/src/utils/riskScoring.ts) -- category
     // never enters the formula. This assertion documents that guarantee explicitly
@@ -227,5 +234,21 @@ describe('checkSOC2Compliance -- relabel is score-neutral (uses the authoritativ
     const issues = checkSOC2(resource({ resource_type: 'ec2', tags: {} }));
     const iamOwnerFinding = issues.find((i: any) => i.issue === 'Tagging: IAM role/owner not documented');
     expect(iamOwnerFinding.category).toBe('tagging');
+
+    const observabilityFinding = issues.find((i: any) => i.issue === 'Observability: Monitoring/logging not documented via tag');
+    expect(observabilityFinding.category).toBe('networking'); // unchanged in this PR
+
+    const result = calculateRiskScore({
+      totalResources: 1,
+      unencryptedResources: 0,
+      publicResources: 0,
+      complianceIssues: { critical: 0, high: 2, medium: 0, low: 0 },
+      accountFindingsCounts: { critical: 0, high: 0, medium: 0, low: 0 },
+      resourceComplianceCounts: { critical: 0, high: 2, medium: 0, low: 0 },
+      missingBackups: 0,
+      orphanedResources: 0,
+      scanCompleted: true,
+    });
+    expect(result.score).toBe(98);
   });
 });

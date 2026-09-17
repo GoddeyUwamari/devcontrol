@@ -117,6 +117,7 @@ export class ComplianceScannerService {
         issue,
         recommendation,
         resource_arn: resource.resource_arn,
+        provenance: 'OBSERVED',
       });
     }
 
@@ -165,6 +166,7 @@ export class ComplianceScannerService {
         issue,
         recommendation,
         resource_arn: resource.resource_arn,
+        provenance: 'OBSERVED',
       });
     }
 
@@ -206,6 +208,7 @@ export class ComplianceScannerService {
         issue,
         recommendation,
         resource_arn: resource.resource_arn,
+        provenance: 'OBSERVED',
       });
     }
 
@@ -234,6 +237,7 @@ export class ComplianceScannerService {
         issue: `Resource is missing required tags: ${missingTags.join(', ')}`,
         recommendation: `Add the following tags to this resource: ${missingTags.join(', ')}. Tags are important for cost allocation and resource management.`,
         resource_arn: resource.resource_arn,
+        provenance: 'SELF_ATTESTED',
       });
     }
 
@@ -243,19 +247,25 @@ export class ComplianceScannerService {
   /**
    * Legacy tag-inferred infrastructure checks (formerly labeled "SOC2-specific").
    *
-   * These four checks were previously labeled with a "SOC2:" issue prefix,
-   * implying they are SOC 2 evidence. They are not: each one only checks for
-   * the *presence of a specific tag key* — none of them call an AWS API to
-   * verify the underlying condition (IAM role attachment, actual monitoring/
-   * logging configuration, or actual S3 access-logging state). Relabeled to
-   * plain infrastructure/tagging/observability signals per the SOC 2
-   * Readiness disposition decision. Findings, severities, and categories are
-   * otherwise unchanged (except signal 1's category, iam -> tagging, since
-   * this check has always been a tag-documentation check, not a real IAM
-   * security check) -- this is a relabel, not a scoring change. The final
-   * disposition of these signals (retain/upgrade/retire) is a separate,
-   * not-yet-made decision; do not reintroduce SOC2/HIPAA/compliance-framework
-   * language here.
+   * These checks were previously labeled with a "SOC2:" issue prefix, implying
+   * they are SOC 2 evidence. They are not: each one only checks for the
+   * *presence of a specific tag key* — none of them call an AWS API to verify
+   * the underlying condition (IAM role attachment, actual monitoring/logging
+   * configuration, or actual S3 access-logging state). Relabeled to plain
+   * infrastructure/tagging/observability signals per the SOC 2 Readiness
+   * disposition decision, and each carries `provenance: 'SELF_ATTESTED'` for
+   * the same reason. Findings, severities, and categories are otherwise
+   * unchanged (except signal 1's category, iam -> tagging, since this check
+   * has always been a tag-documentation check, not a real IAM security check)
+   * -- this remains a relabel of the three signals below, not a scoring
+   * change to them. The former "change-management tags" signal (LastModifiedBy/
+   * ChangeTicket/Version) has been retired outright per the signal-disposition
+   * audit: it fired on nearly every resource regardless of real risk (see
+   * services.routes.ts's NEEDS_ATTENTION_FLOOR comment) and has no AWS-observed
+   * replacement -- "was there an approved change ticket" is not something any
+   * AWS API can attest to. The disposition of the three remaining signals
+   * (retain/upgrade/retire) is a separate, not-yet-made decision; do not
+   * reintroduce SOC2/HIPAA/compliance-framework language here.
    */
   private checkSOC2Compliance(resource: AWSResource): ComplianceIssue[] {
     const issues: ComplianceIssue[] = [];
@@ -271,22 +281,9 @@ export class ComplianceScannerService {
           issue: 'Tagging: IAM role/owner not documented',
           recommendation: 'Attach an IAM role with least-privilege permissions and tag the resource with "IAMRole" or "Role" for audit tracking.',
           resource_arn: resource.resource_arn,
+          provenance: 'SELF_ATTESTED',
         });
       }
-    }
-
-    // Tagging: Missing change-tracking tags - check for change tracking tags
-    const hasChangeManagement = resource.tags?.['LastModifiedBy'] ||
-                                 resource.tags?.['ChangeTicket'] ||
-                                 resource.tags?.['Version'];
-    if (!hasChangeManagement) {
-      issues.push({
-        severity: 'medium',
-        category: 'tagging',
-        issue: 'Tagging: Missing change-tracking tags',
-        recommendation: 'Add tags like "LastModifiedBy", "ChangeTicket", or "Version" to track changes for audit compliance.',
-        resource_arn: resource.resource_arn,
-      });
     }
 
     // Observability: Monitoring/logging not documented via tag
@@ -320,6 +317,7 @@ export class ComplianceScannerService {
           issue: 'Observability: Monitoring/logging not documented via tag',
           recommendation,
           resource_arn: resource.resource_arn,
+          provenance: 'SELF_ATTESTED',
         });
       }
     }
@@ -332,6 +330,7 @@ export class ComplianceScannerService {
         issue: 'S3: Access logging not documented via tag',
         recommendation: 'Enable S3 server access logging to track all requests. Configure logs to be sent to a dedicated logging bucket.',
         resource_arn: resource.resource_arn,
+        provenance: 'SELF_ATTESTED',
       });
     }
 
@@ -519,6 +518,7 @@ export class ComplianceScannerService {
       tagging: 'Tagging',
       iam: 'IAM',
       networking: 'Networking',
+      observability: 'Observability',
     };
     return names[category];
   }
@@ -551,6 +551,7 @@ export class ComplianceScannerService {
             issue: 'S3 bucket ACL allows public read access',
             recommendation: 'Remove public read permissions from bucket ACL. Use AWS S3 Block Public Access feature.',
             resource_arn: resource.resource_arn,
+            provenance: 'OBSERVED',
           });
         }
       } catch (error: any) {
@@ -574,6 +575,7 @@ export class ComplianceScannerService {
               issue: 'S3 bucket policy allows public access (wildcard principal)',
               recommendation: 'Restrict bucket policy to specific IAM principals or AWS accounts only.',
               resource_arn: resource.resource_arn,
+              provenance: 'OBSERVED',
             });
           }
         }
@@ -719,6 +721,7 @@ export class ComplianceScannerService {
       resource_arn: `arn:aws:ec2:${region}:${accountId || '*'}:security-group/${groupId}`,
       findingKey,
       evidence,
+      provenance: 'OBSERVED',
     };
   }
 
@@ -826,6 +829,7 @@ export class ComplianceScannerService {
           resource_arn: userArn,
           findingKey: computeIamFindingKey({ findingType: 'mfa_not_enabled', userArn }),
           evidence,
+          provenance: 'OBSERVED',
         });
       } else if (hasLoginProfile === 'unknown') {
         const evidence: IamMfaEvidence = {
@@ -846,6 +850,7 @@ export class ComplianceScannerService {
           resource_arn: userArn,
           findingKey: computeIamFindingKey({ findingType: 'mfa_not_enabled', userArn }),
           evidence,
+          provenance: 'OBSERVED',
         });
       }
       // hasLoginProfile === false: no console password — CIS IAM.5 doesn't
@@ -886,6 +891,7 @@ export class ComplianceScannerService {
         resource_arn: userArn,
         findingKey: computeIamFindingKey({ findingType: 'access_key_stale', userArn, accessKeyId: key.AccessKeyId }),
         evidence,
+        provenance: 'OBSERVED',
       });
     }
 
