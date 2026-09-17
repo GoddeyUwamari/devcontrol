@@ -303,6 +303,7 @@ export class AWSResourcesRepository {
       tagging: 0,
       iam: 0,
       networking: 0,
+      observability: 0,
     };
 
     allIssues.forEach(issue => {

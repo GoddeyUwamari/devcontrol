@@ -102,7 +102,30 @@ export type ComplianceCategory =
   | 'public_access'
   | 'tagging'
   | 'iam'
-  | 'networking';
+  | 'networking'
+  | 'observability';
+
+/**
+ * Where a ComplianceIssue's underlying evidence came from — NOT an evaluation
+ * outcome. This is deliberately a different axis from Security Hub's
+ * FoundationControlStatus (PASS/FAIL/UNKNOWN/NOT_EVALUATED/etc., which answers
+ * "did the check pass," not "what kind of evidence backs it") and must not be
+ * conflated with it or imported alongside it.
+ *
+ *   OBSERVED       — a real AWS API call verified the underlying condition
+ *                     (e.g. is_encrypted/has_backup, a live DescribeSecurityGroups
+ *                     or ListAccessKeys result).
+ *   DERIVED         — computed/inferred from other observed evidence, not a
+ *                      direct 1:1 API observation itself. Not yet produced by
+ *                      any current detector; reserved for future use.
+ *   SELF_ATTESTED   — inferred only from customer-provided metadata (e.g. tag
+ *                      presence/absence), with no AWS API call verifying the
+ *                      underlying condition.
+ *
+ * Optional and unpopulated on older/unclassified findings — absence must never
+ * be read as an implicit provenance value.
+ */
+export type ComplianceIssueProvenance = 'OBSERVED' | 'DERIVED' | 'SELF_ATTESTED';
 
 export interface ComplianceIssue {
   severity: ComplianceSeverity;
@@ -119,6 +142,8 @@ export interface ComplianceIssue {
   findingKey?: string;
   /** Optional narrow, versioned evidence — only set by detectors that define one. */
   evidence?: FindingEvidence;
+  /** Optional evidence-source classification — see ComplianceIssueProvenance. */
+  provenance?: ComplianceIssueProvenance;
 }
 
 /**
@@ -208,6 +233,7 @@ export interface ComplianceStats {
     tagging: number;
     iam: number;
     networking: number;
+    observability: number;
   };
 }
 

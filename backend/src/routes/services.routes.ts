@@ -120,10 +120,12 @@ function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFin
 // it just doesn't set needs_attention. Confirmed floor: high/critical only.
 // 'medium' was considered and rejected — this scanner's actual output makes
 // it too broad to use as the floor: the generic "not encrypted" fallback
-// (hits VPCs and any resource type without a specific rule) and the SOC2
-// change-management tagging checklist are both 'medium' and apply to most
-// resources regardless of real risk, which would defeat the point of
-// collapsing the boring majority.
+// (hits VPCs and any resource type without a specific rule) is 'medium' and
+// applies to most resources regardless of real risk, which would defeat the
+// point of collapsing the boring majority. (The former "change-management
+// tags" signal was the other 'medium' example that motivated this floor —
+// it has since been retired outright rather than just excluded here; see
+// complianceScanner.ts's checkSOC2Compliance doc comment.)
 //
 // This floor applies to compliance/cost findings only, not to operational
 // status — a stopped/terminated resource keeps surfacing at its existing
