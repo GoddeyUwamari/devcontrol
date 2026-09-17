@@ -123,7 +123,16 @@ describe('SOC 2 Readiness messaging — corrected customer-facing surfaces', () 
   it('the security page no longer falsely enumerates "CIS, NIST, SOC 2, PCI-DSS" as passing for any org with enabled custom frameworks', () => {
     const code = readCode('app/(app)/security/page.tsx')
     expect(code).not.toMatch(/'CIS, NIST, SOC 2, PCI-DSS'/)
-    expect(code).toMatch(/'All frameworks passing'/)
+    // "No failing frameworks" only asserts the absence of a failing status, never that every
+    // framework was actually evaluated and passed -- see the label's own rationale.
+    expect(code).toMatch(/'No failing frameworks'/)
+    expect(code).not.toMatch(/'All frameworks passing'/)
+  })
+
+  it('the security page fallback demo data no longer includes a fabricated SOC 2 entry', () => {
+    const code = readCode('app/(app)/security/page.tsx')
+    expect(code).not.toMatch(/SOC\s*2\s*Type\s*II/)
+    expect(code).not.toMatch(/FALLBACK_FRAMEWORKS[\s\S]*?SOC/i)
   })
 
   it('marketing solutions pages describe SOC 2 as readiness/planning, never a completed audit or certification', () => {
