@@ -322,7 +322,9 @@ console.log('[SAML SSO] Routes registered');
 app.use('/api/remediation', createRemediationRoutes(pool));
 console.log('[Remediation] Routes registered');
 
-// SOC 2 / HIPAA Compliance Engine (Enterprise scan, read available to all)
+// Legacy compliance report retirement stub only (HTTP 410) — the legacy
+// ComplianceEngineService scan/results API was retired in PR #94; see
+// compliance.routes.ts's own docblock for the dependency audit.
 app.use('/api/compliance', createComplianceRoutes(pool));
 console.log('[Compliance] Routes registered');
 

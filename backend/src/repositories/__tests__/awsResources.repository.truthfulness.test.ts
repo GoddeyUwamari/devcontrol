@@ -1,19 +1,21 @@
 /**
  * Security Truthfulness #40/#41: regression coverage proving unencrypted_count/
  * missing_backup_count correctly exclude a genuine SQL NULL (unknown/unavailable
- * evidence) rather than folding it into the negative count -- both via the existing
+ * evidence) rather than folding it into the negative count, via the existing
  * `= false` queries (AWSResourcesRepository.getStats, already correct by SQL's own
- * three-valued-logic semantics, verified here rather than assumed) and via
- * ComplianceEngineService.getInfraSnapshot's now-fixed queries (previously had an
- * explicit `OR is_encrypted IS NULL` / `OR has_backup IS NULL` clause that actively
- * counted unknown resources as confirmed negative findings).
+ * three-valued-logic semantics, verified here rather than assumed).
+ *
+ * This file previously also covered ComplianceEngineService.getInfraSnapshot's
+ * equivalent (now-fixed) queries directly -- removed as part of PR #94's retirement
+ * of that orphaned legacy engine (zero frontend/job consumers; see that PR's
+ * dependency audit). getStats' own coverage below is unrelated to that engine and
+ * unaffected by its removal.
  *
  * Real local Postgres, matching this repo's established convention for anything that
  * depends on real WHERE-clause/three-valued-logic semantics.
  */
 import { Pool } from 'pg';
 import { AWSResourcesRepository } from '../awsResources.repository';
-import { ComplianceEngineService } from '../../services/compliance-engine.service';
 import { pool as appPool } from '../../config/database';
 
 function dbConfig() {
@@ -29,7 +31,6 @@ function dbConfig() {
 describe('unencrypted_count / missing_backup_count correctly exclude NULL (Security Truthfulness #40/#41)', () => {
   const pool = new Pool(dbConfig());
   const repository = new AWSResourcesRepository(pool);
-  const complianceEngine = new ComplianceEngineService(pool);
 
   let orgId: string;
   const createdOrgIds: string[] = [];
@@ -75,18 +76,5 @@ describe('unencrypted_count / missing_backup_count correctly exclude NULL (Secur
   it('AWSResourcesRepository.getStats: missing_backup_count counts only the confirmed-false resource, not the unknown one', async () => {
     const stats = await repository.getStats(orgId);
     expect(stats.missing_backup_count).toBe(1);
-  });
-
-  it('ComplianceEngineService.getInfraSnapshot: unencryptedCount no longer folds NULL into the negative count (the fixed OR IS NULL bug)', async () => {
-    const snapshot = await (complianceEngine as any).getInfraSnapshot(orgId);
-    expect(snapshot.unencryptedCount).toBe(1);
-    expect(snapshot.encryptedCount).toBe(1);
-    expect(snapshot.totalResources).toBe(3);
-  });
-
-  it('ComplianceEngineService.getInfraSnapshot: noBackupCount no longer folds NULL into the negative count (the fixed OR IS NULL bug)', async () => {
-    const snapshot = await (complianceEngine as any).getInfraSnapshot(orgId);
-    expect(snapshot.noBackupCount).toBe(1);
-    expect(snapshot.backupCount).toBe(1);
   });
 });

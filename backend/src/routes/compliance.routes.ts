@@ -2,148 +2,46 @@ import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
-import { standardRateLimiter } from '../middleware/rateLimiter';
-import { ComplianceEngineService } from '../services/compliance-engine.service';
 import { ControlFramework } from '../data/compliance-controls';
 
 function isValidFramework(f: string): f is ControlFramework {
   return f === 'soc2' || f === 'hipaa';
 }
 
+/**
+ * Legacy compliance engine API surface — retired.
+ *
+ * This router previously exposed ComplianceEngineService's SOC2/HIPAA
+ * control-scan results (GET /results, GET /results/:framework,
+ * GET /history/:framework, POST /scan, POST /scan/:framework). That
+ * engine had zero frontend consumers and zero job consumers (see the
+ * PR #94 dependency audit), so those five routes -- and the
+ * ComplianceEngineService instantiation they existed to serve -- have
+ * been removed from the application runtime entirely.
+ *
+ * This is unrelated to, and does not affect:
+ *   - ComplianceScannerService.checkSOC2Compliance()/checkHIPAACompliance()
+ *     (the live, tag-inferred infrastructure signals written into
+ *     aws_resources.compliance_issues during AWS resource discovery)
+ *   - RiskTrackingService / Risk Score / risk history
+ *   - the customer-facing Compliance Frameworks product (/compliance/frameworks)
+ *   - the Security Hub CIS/PCI/NIST architecture
+ * None of those were touched by this change.
+ *
+ * compliance_scan_results (the table this engine wrote to) is left
+ * exactly as it was -- historical rows are preserved, and the table is
+ * simply no longer written to or read by any application code.
+ *
+ * Only GET /report/:framework remains, unchanged: it was already
+ * retired to HTTP 410 (see its own comment below) before this PR, and
+ * never depended on ComplianceEngineService in the first place -- it
+ * validates the framework param and refuses unconditionally.
+ */
 export function createComplianceRoutes(pool: Pool): Router {
   const router = Router();
-  const engine = new ComplianceEngineService(pool);
 
   // All routes require authentication
   router.use(authenticateToken);
-
-  /**
-   * GET /api/compliance/results
-   * Get latest scan results for all frameworks (no new scan)
-   */
-  router.get('/results', async (req: Request, res: Response): Promise<void> => {
-    try {
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        res.status(401).json({ success: false, error: 'Unauthorized' });
-        return;
-      }
-
-      const results = await engine.getAllLatestResults(organizationId);
-      res.json({ success: true, results });
-    } catch (error: any) {
-      console.error('[Compliance] Error fetching results:', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/compliance/results/:framework
-   * Get latest scan results for a specific framework
-   */
-  router.get('/results/:framework', async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { framework } = req.params;
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        res.status(401).json({ success: false, error: 'Unauthorized' });
-        return;
-      }
-      if (!isValidFramework(framework)) {
-        res.status(400).json({ success: false, error: 'Invalid framework. Use "soc2" or "hipaa".' });
-        return;
-      }
-
-      const result = await engine.getLatestResult(organizationId, framework);
-      res.json({ success: true, result });
-    } catch (error: any) {
-      console.error('[Compliance] Error fetching result:', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/compliance/history/:framework
-   * Get historical scan scores for trend chart
-   */
-  router.get('/history/:framework', async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { framework } = req.params;
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        res.status(401).json({ success: false, error: 'Unauthorized' });
-        return;
-      }
-      if (!isValidFramework(framework)) {
-        res.status(400).json({ success: false, error: 'Invalid framework.' });
-        return;
-      }
-
-      const days = Math.min(parseInt(req.query.days as string) || 90, 365);
-      const history = await engine.getScanHistory(organizationId, framework, days);
-      res.json({ success: true, history });
-    } catch (error: any) {
-      console.error('[Compliance] Error fetching history:', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * POST /api/compliance/scan
-   * Run a compliance scan for all frameworks — Enterprise only
-   */
-  router.post('/scan', requireEnterprise, standardRateLimiter, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        res.status(401).json({ success: false, error: 'Unauthorized' });
-        return;
-      }
-
-      console.log(`[Compliance] Running full scan for org ${organizationId}`);
-      const results = await engine.runAllScans(organizationId);
-
-      res.json({
-        success: true,
-        message: 'Compliance scan completed',
-        results,
-      });
-    } catch (error: any) {
-      console.error('[Compliance] Error running scan:', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * POST /api/compliance/scan/:framework
-   * Run a compliance scan for a specific framework — Enterprise only
-   */
-  router.post('/scan/:framework', requireEnterprise, standardRateLimiter, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { framework } = req.params;
-      const organizationId = req.organizationId;
-      if (!organizationId) {
-        res.status(401).json({ success: false, error: 'Unauthorized' });
-        return;
-      }
-      if (!isValidFramework(framework)) {
-        res.status(400).json({ success: false, error: 'Invalid framework. Use "soc2" or "hipaa".' });
-        return;
-      }
-
-      console.log(`[Compliance] Running ${framework} scan for org ${organizationId}`);
-      const result = await engine.runScan(organizationId, framework);
-
-      res.json({
-        success: true,
-        message: `${framework.toUpperCase()} compliance scan completed`,
-        result,
-      });
-    } catch (error: any) {
-      console.error('[Compliance] Error running scan:', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
 
   /**
    * GET /api/compliance/report/:framework
