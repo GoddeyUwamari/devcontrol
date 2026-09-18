@@ -9,7 +9,17 @@
  * This service performs NO fetch/proxy of externalReference, NEVER computes a combined
  * score, and NEVER exposes review/expire/supersede -- those are DevControl-internal
  * (requirePlatformStaff) actions with no customer-facing UI representation here.
+ *
+ * Authentication: uses the shared `api` Axios client from lib/api.ts, whose request
+ * interceptor injects `Authorization: Bearer <accessToken>` from localStorage -- the same
+ * mechanism every other authenticated frontend service uses (see risk-score.service.ts,
+ * account-security-findings.service.ts, stripe.service.ts). The backend's authenticateToken
+ * middleware only ever reads the Authorization header, never cookies, so this service must
+ * not rely on a bespoke raw-fetch / cookie-credentialed mechanism.
  */
+
+import { api } from '@/lib/api';
+import axios from 'axios';
 
 // ---- Phase 2: technical readiness ---------------------------------------
 
@@ -110,94 +120,91 @@ function apiError(message: string, statusCode?: number): Soc2ApiError {
   return err;
 }
 
+/**
+ * Adapts an Axios failure into the service's existing Soc2ApiError contract: the HTTP
+ * status (so callers can distinguish 401/402/403/404/500) and the backend's own `error`
+ * message (falling back to a per-call default), exactly as the previous raw-fetch-based
+ * implementation did with `response.status` / the parsed error body's `error` field.
+ */
+function toSoc2ApiError(error: unknown, fallbackMessage: string): Soc2ApiError {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { error?: string } | undefined;
+    return apiError(data?.error || fallbackMessage, error.response?.status);
+  }
+  return apiError(error instanceof Error ? error.message : fallbackMessage);
+}
+
 class Soc2Service {
-  private baseUrl = process.env.NEXT_PUBLIC_API_URL
-    ? `${process.env.NEXT_PUBLIC_API_URL}/api/soc2`
-    : 'http://localhost:8080/api/soc2';
+  private readonly basePath = '/api/soc2';
 
   async getReadiness(): Promise<Soc2ReadinessCriterion[]> {
-    const response = await fetch(`${this.baseUrl}/readiness`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch SOC 2 readiness' }));
-      throw apiError(error.error || 'Failed to fetch SOC 2 readiness', response.status);
+    try {
+      const response = await api.get(`${this.basePath}/readiness`);
+      return response.data.criteria ?? [];
+    } catch (error) {
+      throw toSoc2ApiError(error, 'Failed to fetch SOC 2 readiness');
     }
-    const data = await response.json();
-    return data.criteria ?? [];
   }
 
   async getReadinessDetail(criterionId: string): Promise<Soc2ReadinessDetail> {
-    const response = await fetch(`${this.baseUrl}/readiness/${encodeURIComponent(criterionId)}`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch SOC 2 criterion detail' }));
-      throw apiError(error.error || 'Failed to fetch SOC 2 criterion detail', response.status);
+    try {
+      const response = await api.get(`${this.basePath}/readiness/${encodeURIComponent(criterionId)}`);
+      return { criterion: response.data.criterion, evidence: response.data.evidence ?? [] };
+    } catch (error) {
+      throw toSoc2ApiError(error, 'Failed to fetch SOC 2 criterion detail');
     }
-    const data = await response.json();
-    return { criterion: data.criterion, evidence: data.evidence ?? [] };
   }
 
   async getEvidence(criterionId?: string): Promise<Soc2Observation[]> {
-    const qs = criterionId ? `?criterionId=${encodeURIComponent(criterionId)}` : '';
-    const response = await fetch(`${this.baseUrl}/evidence${qs}`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch AWS-observed evidence' }));
-      throw apiError(error.error || 'Failed to fetch AWS-observed evidence', response.status);
+    try {
+      const response = await api.get(`${this.basePath}/evidence`, {
+        params: criterionId ? { criterionId } : undefined,
+      });
+      return response.data.evidence ?? [];
+    } catch (error) {
+      throw toSoc2ApiError(error, 'Failed to fetch AWS-observed evidence');
     }
-    const data = await response.json();
-    return data.evidence ?? [];
   }
 
   async getCustomerEvidence(criterionId?: string): Promise<Soc2CustomerEvidence[]> {
-    const qs = criterionId ? `?criterionId=${encodeURIComponent(criterionId)}` : '';
-    const response = await fetch(`${this.baseUrl}/customer-evidence${qs}`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch customer evidence' }));
-      throw apiError(error.error || 'Failed to fetch customer evidence', response.status);
+    try {
+      const response = await api.get(`${this.basePath}/customer-evidence`, {
+        params: criterionId ? { criterionId } : undefined,
+      });
+      return response.data.customerEvidence ?? [];
+    } catch (error) {
+      throw toSoc2ApiError(error, 'Failed to fetch customer evidence');
     }
-    const data = await response.json();
-    return data.customerEvidence ?? [];
   }
 
   async getCustomerEvidenceById(evidenceId: string): Promise<Soc2CustomerEvidence> {
-    const response = await fetch(`${this.baseUrl}/customer-evidence/${encodeURIComponent(evidenceId)}`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch evidence detail' }));
-      throw apiError(error.error || 'Failed to fetch evidence detail', response.status);
+    try {
+      const response = await api.get(`${this.basePath}/customer-evidence/${encodeURIComponent(evidenceId)}`);
+      return response.data.customerEvidence;
+    } catch (error) {
+      throw toSoc2ApiError(error, 'Failed to fetch evidence detail');
     }
-    const data = await response.json();
-    return data.customerEvidence;
   }
 
   async createCustomerEvidence(request: CreateCustomerEvidenceRequest): Promise<Soc2CustomerEvidence> {
-    const response = await fetch(`${this.baseUrl}/customer-evidence`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to submit evidence' }));
-      throw apiError(error.error || 'Failed to submit evidence', response.status);
+    try {
+      const response = await api.post(`${this.basePath}/customer-evidence`, request);
+      return response.data.customerEvidence;
+    } catch (error) {
+      throw toSoc2ApiError(error, 'Failed to submit evidence');
     }
-    const data = await response.json();
-    return data.customerEvidence;
   }
 
   async updateCustomerEvidenceMetadata(
     evidenceId: string,
     request: UpdateCustomerEvidenceMetadataRequest
   ): Promise<Soc2CustomerEvidence> {
-    const response = await fetch(`${this.baseUrl}/customer-evidence/${encodeURIComponent(evidenceId)}`, {
-      method: 'PATCH',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to update evidence' }));
-      throw apiError(error.error || 'Failed to update evidence', response.status);
+    try {
+      const response = await api.patch(`${this.basePath}/customer-evidence/${encodeURIComponent(evidenceId)}`, request);
+      return response.data.customerEvidence;
+    } catch (error) {
+      throw toSoc2ApiError(error, 'Failed to update evidence');
     }
-    const data = await response.json();
-    return data.customerEvidence;
   }
 }
 

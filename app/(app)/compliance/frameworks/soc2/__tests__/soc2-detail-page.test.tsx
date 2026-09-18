@@ -371,6 +371,21 @@ describe('errors', () => {
     const { container } = renderPage()
     expect(container.querySelector('[class*="animate-pulse"]')).toBeTruthy()
   })
+
+  // Regression coverage for the SOC2 frontend authentication bug (soc2.service.ts used
+  // to call fetch() without an Authorization header, so production always surfaced this
+  // exact 401). The page must render this as a visible authentication failure -- not
+  // silently collapse into the "no criteria configured" empty state, which would make a
+  // real auth outage indistinguishable from a legitimate, evaluated-nothing-yet account.
+  it('renders a 401 authentication failure as an error, never as the empty "no criteria" state', () => {
+    const authError = new Error('No authentication token provided') as Error & { statusCode?: number }
+    authError.statusCode = 401
+    readinessState = { data: undefined, isLoading: false, error: authError }
+    renderPage()
+    expect(screen.getByText('No authentication token provided')).toBeInTheDocument()
+    expect(screen.getByText('Retry')).toBeInTheDocument()
+    expect(screen.queryByText('No SOC 2 criteria configured')).not.toBeInTheDocument()
+  })
 })
 
 describe('truthfulness', () => {
