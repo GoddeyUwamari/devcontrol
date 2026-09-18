@@ -27,6 +27,7 @@ import scheduledReportsRoutes from './scheduled-reports.routes';
 import complianceFrameworksRoutes from './compliance-frameworks.routes';
 import securityHubRoutes from './security-hub.routes';
 import soc2Routes from './soc2.routes';
+import soc2CustomerEvidenceRoutes from './soc2-customer-evidence.routes';
 import aiInsightsRoutes from './ai-insights.routes';
 import aiChatRoutes from './ai-chat.routes';
 import nlQueryRoutes from './nl-query.routes';
@@ -71,6 +72,10 @@ router.use('/scheduled-reports', scheduledReportsRoutes);
 router.use('/compliance-frameworks', complianceFrameworksRoutes);
 router.use('/security-hub', securityHubRoutes);
 router.use('/soc2', soc2Routes);
+// Separate namespace, mounted as a sibling to Phase 2's /soc2 router above -- keeps
+// GET /api/soc2/evidence (technical observations, Phase 2) completely untouched by
+// this Phase 3 customer-evidence surface. See soc2-customer-evidence.routes.ts.
+router.use('/soc2/customer-evidence', soc2CustomerEvidenceRoutes);
 router.use('/ai-insights', aiInsightsRoutes);
 router.use('/ai-chat', aiChatRoutes);
 router.use('/nl-query', nlQueryRoutes);
