@@ -9,7 +9,7 @@
  *     infrastructure/tagging/observability label
  *   - signal 1's category changes from 'iam' to 'tagging' (it has always
  *     been a tag-documentation check, not a real IAM security check)
- *   - severity and resource-type gating are unchanged for the three
+ *   - severity and resource-type gating are unchanged for the two
  *     surviving signals
  *   - none of the surviving checks call an AWS API -- they remain pure
  *     tag-presence checks, exactly as before, now carrying
@@ -19,9 +19,19 @@
  * "signal 2" (change-management tags: LastModifiedBy/ChangeTicket/Version)
  * outright -- see the "signal 2 retired" describe block below. That
  * retirement is NOT score-neutral (it removes real medium-severity findings
- * from any org currently missing those tags); only the surviving three
- * signals' relabel remains score-neutral, as documented in the last
- * describe block.
+ * from any org currently missing those tags); only the surviving signals'
+ * relabel remains score-neutral, as documented in the last describe block.
+ *
+ * A still-later production-accuracy fix retired the former "signal 4" (S3
+ * access-logging tag) outright too -- see the "signal 4 retired" describe
+ * block below. Unlike signal 2, this wasn't retired for being too broad: S3
+ * discovery never collects bucket tags at all (discoverS3Buckets() writes
+ * `tags: {}` unconditionally, every scan -- see awsResourceDiscovery.ts), so
+ * this specific tag-presence check was structurally guaranteed to fire for
+ * every S3 bucket in every organization regardless of actual AWS
+ * configuration. Not weak evidence -- a permanent false positive with no
+ * tagging-based remediation path. Also not score-neutral for the same
+ * reason signal 2's retirement isn't.
  *
  * No test existed for checkSOC2Compliance before the original relabel PR
  * (confirmed via a repo-wide search) -- every test below is new, not a
@@ -136,30 +146,30 @@ describe('checkSOC2Compliance -- signal 3: monitoring/logging tag', () => {
   });
 });
 
-describe('checkSOC2Compliance -- signal 4: S3 access-logging tag', () => {
-  it('missing AccessLogging tag on an s3 resource produces the new label, category, and severity', () => {
-    const issues = checkSOC2(resource({ resource_type: 's3', tags: {} }));
-    const finding = issues.find((i: any) => i.issue === 'S3: Access logging not documented via tag');
-    expect(finding).toBeDefined();
-    expect(finding.severity).toBe('high');
-    expect(finding.category).toBe('networking'); // unchanged in this PR
+describe('checkSOC2Compliance -- signal 4 (S3 access-logging tag): retired', () => {
+  it('never produces the former S3 access-logging finding, tagged or untagged', () => {
+    const untagged = checkSOC2(resource({ resource_type: 's3', tags: {} }));
+    expect(untagged.find((i: any) => i.issue === 'S3: Access logging not documented via tag')).toBeUndefined();
+
+    const tagged = checkSOC2(resource({ resource_type: 's3', tags: { AccessLogging: 'true' } }));
+    expect(tagged.find((i: any) => i.issue === 'S3: Access logging not documented via tag')).toBeUndefined();
   });
 
-  it('only applies to s3 (unchanged condition)', () => {
-    const issues = checkSOC2(resource({ resource_type: 'ec2', tags: {} }));
-    expect(issues.find((i: any) => i.issue === 'S3: Access logging not documented via tag')).toBeUndefined();
-  });
-
-  it('an AccessLogging tag suppresses the finding (unchanged condition)', () => {
-    const issues = checkSOC2(resource({ resource_type: 's3', tags: { AccessLogging: 'true' } }));
-    expect(issues.find((i: any) => i.issue === 'S3: Access logging not documented via tag')).toBeUndefined();
+  it('never produces any finding with "SOC2" or the retired S3 access-logging text, for any resource type', () => {
+    for (const resource_type of ['ec2', 's3', 'rds', 'lambda', 'dynamodb'] as ResourceType[]) {
+      const issues = checkSOC2(resource({ resource_type, tags: {} }));
+      for (const i of issues) {
+        expect(i.issue).not.toMatch(/^SOC2:/);
+        expect(i.issue).not.toBe('S3: Access logging not documented via tag');
+      }
+    }
   });
 });
 
 describe('checkSOC2Compliance -- no SOC2 prefix anywhere, and remains tag-inferred only', () => {
-  it('a fully untagged s3 resource (signals 3 and 4 fire) never emits "SOC2:" anywhere', () => {
+  it('a fully untagged s3 resource (only signal 3 fires -- signal 1 excludes s3, signal 4 is retired) never emits "SOC2:" anywhere', () => {
     const issues = checkSOC2(resource({ resource_type: 's3', tags: {} }));
-    expect(issues).toHaveLength(2);
+    expect(issues).toHaveLength(1);
     for (const i of issues) {
       expect(i.issue).not.toMatch(/SOC2/);
       expect(i.recommendation).not.toMatch(/SOC2/i);
@@ -172,13 +182,12 @@ describe('checkSOC2Compliance -- no SOC2 prefix anywhere, and remains tag-inferr
     expect(service['checkSOC2Compliance'].length).toBe(1);
   });
 
-  it('a fully tagged s3 resource produces zero findings from the three surviving signals', () => {
+  it('a fully tagged s3 resource produces zero findings from the surviving signals', () => {
     const issues = checkSOC2(resource({
       resource_type: 's3',
       tags: {
         IAMRole: 'x',
         MonitoringEnabled: 'true',
-        AccessLogging: 'true',
       },
     }));
     expect(issues).toHaveLength(0);
@@ -186,15 +195,15 @@ describe('checkSOC2Compliance -- no SOC2 prefix anywhere, and remains tag-inferr
 });
 
 describe('checkSOC2Compliance -- surviving signals feed calculateRiskScore correctly; category never affects score', () => {
-  // NOTE: this documents current severity->score behavior for the three surviving
-  // signals, NOT a score-neutrality claim for this PR. Retiring the former signal 2
-  // (change-management tags) removed real medium-severity findings for any org
-  // currently missing those tags -- that is a genuine, org-dependent Risk Score
-  // change, not asserted or measured here. Production impact is measured after
-  // deploy via the standing verification workflow, not via this unit test.
+  // NOTE: this documents current severity->score behavior for the surviving
+  // signals (1 and 3), NOT a score-neutrality claim for this PR. Retiring the former
+  // signal 2 (change-management tags) and signal 4 (S3 access-logging tag) each
+  // removed real findings for orgs affected by them -- genuine, org-dependent Risk
+  // Score changes, not asserted or measured here. Production impact is measured
+  // after deploy via the standing verification workflow, not via this unit test.
   it('feeding the exact severity multiset the two resource-type-gated signals produce into calculateRiskScore yields the documented result', () => {
-    // signal 1 excludes s3/rds; signal 4 is s3-only -- a fully untagged ec2 resource
-    // triggers exactly two of the three surviving signals (1 and 3), both 'high'.
+    // signal 1 excludes s3/rds -- a fully untagged ec2 resource triggers both
+    // surviving signals (1 and 3), each 'high'.
     const issues = checkSOC2(resource({ resource_type: 'ec2', tags: {} }));
     expect(issues).toHaveLength(2);
 

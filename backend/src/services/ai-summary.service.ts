@@ -228,14 +228,17 @@ export class AISummaryService {
       if (!riskScore.isPreliminary) {
         // riskScore.complianceIssueCounts is account-level findings (security groups,
         // IAM — the account_security_findings table) combined with per-resource
-        // compliance issues (encryption/backup/tagging/SOC2/HIPAA checks stored on
+        // compliance issues (encryption/backup/tagging/access-logging checks stored on
         // aws_resources) — see RiskTrackingService.combineSeverityCounts(). Reporting
         // only the combined total as "N active findings" reads as one homogeneous
         // metric when it's actually two different things from two different scanners;
         // report them separately instead. activeFindings.length is the real
         // account-level count; the resource-level count is recovered by subtracting
         // it from the combined total (combineSeverityCounts is a plain per-field sum,
-        // so this is exact, not an estimate).
+        // so this is exact, not an estimate). Described as generic infrastructure
+        // checks, not "SOC2/HIPAA checks" -- most of these findings carry no framework
+        // label at all, and even the HIPAA-labeled subset is tag-inferred, not a real
+        // HIPAA evaluation; naming SOC2/HIPAA here would overstate what was checked.
         const c = riskScore.complianceIssueCounts;
         const totalCombined = c.critical + c.high + c.medium + c.low;
         const accountLevelCount = activeFindings.length;
@@ -244,7 +247,7 @@ export class AISummaryService {
           `Security posture score: ${riskScore.score}/100 — ${accountLevelCount} account-level ` +
           `finding${accountLevelCount !== 1 ? 's' : ''} (security groups, IAM) and ` +
           `${resourceComplianceCount} resource compliance issue${resourceComplianceCount !== 1 ? 's' : ''} ` +
-          `(encryption, backups, tagging, SOC2/HIPAA checks) currently active.`
+          `(encryption, backups, tagging, and other infrastructure checks) currently active.`
         );
       }
 

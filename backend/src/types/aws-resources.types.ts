@@ -60,7 +60,10 @@ export interface AWSResource {
   // awsResourceDiscovery.ts's discoverEC2Instances/discoverEBSVolumes and
   // aws-backup-evidence.util.ts.
   is_encrypted: boolean | null;
-  is_public: boolean;
+  // null = unknown/unavailable/not evaluated (e.g. an S3 GetBucketAcl call that hit
+  // AccessDenied or another API failure) -- never coerce to false. See
+  // awsResourceDiscovery.ts's discoverS3Buckets.
+  is_public: boolean | null;
   has_backup: boolean | null;
   compliance_issues: ComplianceIssue[];
   is_orphaned: boolean;
@@ -83,9 +86,9 @@ export interface CreateAWSResourceInput {
   status?: ResourceStatus;
   estimated_monthly_cost?: number | null;
   actual_monthly_cost?: number;
-  // null = unknown/unavailable/not evaluated -- see AWSResource.is_encrypted/has_backup.
+  // null = unknown/unavailable/not evaluated -- see AWSResource.is_encrypted/is_public/has_backup.
   is_encrypted?: boolean | null;
-  is_public?: boolean;
+  is_public?: boolean | null;
   has_backup?: boolean | null;
   compliance_issues?: ComplianceIssue[];
 }

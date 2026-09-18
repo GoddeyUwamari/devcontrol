@@ -19,6 +19,12 @@
  *   - category (old or new) never affects calculateRiskScore
  *   - old JSON compliance_issues rows without a `provenance` key remain valid
  *     and are handled the same as any other issue by the stats tally
+ *
+ * A later production-accuracy fix retired the former "signal 4" (S3
+ * access-logging tag) outright -- see the "signal 4... no longer produces any
+ * finding" test below. S3 discovery never collects bucket tags at all, so
+ * this check was structurally guaranteed to fire for every S3 bucket
+ * regardless of actual AWS configuration.
  */
 import { ComplianceScannerService } from '../complianceScanner';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
@@ -130,15 +136,14 @@ describe('SELF_ATTESTED producers -- generic checkTags and the three surviving c
     expect(finding.provenance).toBe('SELF_ATTESTED');
   });
 
-  it('signal 4 (S3 access-logging tag) emits SELF_ATTESTED', () => {
-    const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 's3', tags: {} }));
-    const finding = issues.find((i: ComplianceIssue) => i.issue === 'S3: Access logging not documented via tag');
-    expect(finding.provenance).toBe('SELF_ATTESTED');
-  });
-
   it('signal 2 (change-management tags) no longer produces any finding, provenanced or otherwise', () => {
     const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 'ec2', tags: {} }));
     expect(issues.find((i: ComplianceIssue) => i.issue === 'Tagging: Missing change-tracking tags')).toBeUndefined();
+  });
+
+  it('signal 4 (S3 access-logging tag) no longer produces any finding, provenanced or otherwise -- retired as a structurally-guaranteed false positive (S3 tags are never collected by discovery)', () => {
+    const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 's3', tags: {} }));
+    expect(issues.find((i: ComplianceIssue) => i.issue === 'S3: Access logging not documented via tag')).toBeUndefined();
   });
 });
 
@@ -239,8 +244,9 @@ describe('observability category -- wired into exhaustive backend structures, no
     expect(stats.total_issues).toBe(2);
   });
 
-  it('Signal 3/4 category is unchanged (still networking) in this PR -- the new category exists but is not yet produced by these detectors', () => {
+  it('Signal 3\'s category is unchanged (still networking) -- the new category exists but is not yet produced by this detector', () => {
     const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 's3', tags: {} }));
+    expect(issues).toHaveLength(1); // signal 3 only -- signal 4 is retired, signal 1 excludes s3
     for (const i of issues) {
       expect(i.category).not.toBe('observability');
       expect(i.category).toBe('networking');

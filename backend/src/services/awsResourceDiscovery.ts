@@ -1010,8 +1010,11 @@ export class AWSResourceDiscoveryService {
       if (!bucket.Name) continue;
 
       let region = defaultRegion;
-      let isEncrypted = false;
-      let isPublic = false;
+      // Security Truthfulness #40 (extended to S3): null means unknown/unavailable
+      // evidence -- never coerce a failed AWS call into a confirmed negative. Only a
+      // verified, specific AWS signal may set these to `false`.
+      let isEncrypted: boolean | null = null;
+      let isPublic: boolean | null = null;
 
       try {
         // Get bucket region
@@ -1019,17 +1022,25 @@ export class AWSResourceDiscoveryService {
         const locationResponse = await s3Client.send(locationCommand);
         region = locationResponse.LocationConstraint || 'us-east-1';
 
-        // Check encryption
+        // Check encryption. AWS's well-known signal for "no default encryption
+        // configured" is a ServerSideEncryptionConfigurationNotFoundError -- the S3
+        // equivalent of GetBucketPolicy's NoSuchBucketPolicy (see
+        // checkS3PublicAccessEnhanced below). Only that specific, confirmed-negative
+        // error may set isEncrypted = false; any other error (AccessDenied,
+        // throttling, a transient failure) leaves it null/unknown rather than
+        // fabricating a "not encrypted" finding.
         try {
           const encryptionCommand = new GetBucketEncryptionCommand({ Bucket: bucket.Name });
           await s3Client.send(encryptionCommand);
           isEncrypted = true;
         } catch (error: any) {
-          // No encryption configured
-          isEncrypted = false;
+          isEncrypted = error.name === 'ServerSideEncryptionConfigurationNotFoundError' ? false : null;
         }
 
-        // Check public access
+        // Check public access via bucket ACL. Unlike encryption, GetBucketAcl has no
+        // "confirmed absent" error -- every bucket has an ACL, so any failure here
+        // (AccessDenied, throttling, etc.) is a genuine unknown, never a confirmed
+        // "not public".
         try {
           const aclCommand = new GetBucketAclCommand({ Bucket: bucket.Name });
           const aclResponse = await s3Client.send(aclCommand);
@@ -1037,8 +1048,7 @@ export class AWSResourceDiscoveryService {
             grant => grant.Grantee?.URI === 'http://acs.amazonaws.com/groups/global/AllUsers'
           );
         } catch (error: any) {
-          // Error checking ACL
-          isPublic = false;
+          isPublic = null;
         }
       } catch (error: any) {
         console.error(`[S3 Discovery] Error processing bucket ${bucket.Name}:`, error.message);
@@ -1141,15 +1151,18 @@ export class AWSResourceDiscoveryService {
         resource.status,
         resource.estimated_monthly_cost ?? null,
         resource.actual_monthly_cost || 0,
-        // Security Truthfulness #40/#41: `undefined` (this resource type never set the
-        // field at all -- e.g. Lambda/ALB/DynamoDB/ECS/EKS for has_backup) still defaults
-        // to `false`, preserving exact prior behavior for every type this PR doesn't
-        // touch. A genuine `null` (EC2/EBS's AWS Backup lookup was attempted and came
-        // back indeterminate) must be preserved as-is -- `|| false` would have silently
-        // turned that real "unknown" into a fabricated "false", exactly what the locked
-        // decision prohibits.
+        // Security Truthfulness #40/#41 (is_public extended to match): `undefined`
+        // (this resource type never set the field at all -- e.g. Lambda/ALB/DynamoDB/
+        // ECS/EKS for has_backup) still defaults to `false`, preserving exact prior
+        // behavior for every type this doesn't touch. A genuine `null` (e.g. EC2/EBS's
+        // AWS Backup lookup, or S3's GetBucketAcl/GetBucketEncryption call, was
+        // attempted and came back indeterminate) must be preserved as-is -- `|| false`
+        // would have silently turned that real "unknown" into a fabricated "false",
+        // exactly what the locked decision prohibits. (is_public previously used
+        // `|| false` here, which did exactly that for every S3 bucket whose ACL check
+        // failed -- fixed to match is_encrypted/has_backup's pattern.)
         resource.is_encrypted === undefined ? false : resource.is_encrypted,
-        resource.is_public || false,
+        resource.is_public === undefined ? false : resource.is_public,
         resource.has_backup === undefined ? false : resource.has_backup,
         JSON.stringify(resource.compliance_issues || []),
       ]

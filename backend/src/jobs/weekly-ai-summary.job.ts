@@ -350,8 +350,12 @@ export class WeeklyAISummaryJob {
       if (!riskScore.isPreliminary) {
         // Same split as AISummaryService's dashboard summary: complianceIssueCounts
         // combines account-level findings (security groups, IAM) with per-resource
-        // compliance issues (encryption/backup/tagging/SOC2/HIPAA) from two different
-        // scanners — report them separately instead of one undifferentiated total.
+        // compliance issues (encryption/backup/tagging/access-logging) from two
+        // different scanners — report them separately instead of one undifferentiated
+        // total. Described as generic infrastructure checks, not "SOC2/HIPAA checks" --
+        // most of these findings carry no framework label at all, and even the
+        // HIPAA-labeled subset is tag-inferred, not a real HIPAA evaluation; naming
+        // SOC2/HIPAA here would overstate what was checked.
         const c = riskScore.complianceIssueCounts;
         const totalCombined = c.critical + c.high + c.medium + c.low;
         const accountLevelCount = activeFindings.length;
@@ -360,7 +364,7 @@ export class WeeklyAISummaryJob {
           `Security posture score: ${riskScore.score}/100 — ${accountLevelCount} account-level ` +
           `finding${accountLevelCount !== 1 ? 's' : ''} (security groups, IAM) and ` +
           `${resourceComplianceCount} resource compliance issue${resourceComplianceCount !== 1 ? 's' : ''} ` +
-          `(encryption, backups, tagging, SOC2/HIPAA checks) currently active.`
+          `(encryption, backups, tagging, and other infrastructure checks) currently active.`
         );
       }
 

@@ -250,22 +250,36 @@ export class ComplianceScannerService {
    * These checks were previously labeled with a "SOC2:" issue prefix, implying
    * they are SOC 2 evidence. They are not: each one only checks for the
    * *presence of a specific tag key* — none of them call an AWS API to verify
-   * the underlying condition (IAM role attachment, actual monitoring/logging
-   * configuration, or actual S3 access-logging state). Relabeled to plain
-   * infrastructure/tagging/observability signals per the SOC 2 Readiness
-   * disposition decision, and each carries `provenance: 'SELF_ATTESTED'` for
-   * the same reason. Findings, severities, and categories are otherwise
-   * unchanged (except signal 1's category, iam -> tagging, since this check
-   * has always been a tag-documentation check, not a real IAM security check)
-   * -- this remains a relabel of the three signals below, not a scoring
-   * change to them. The former "change-management tags" signal (LastModifiedBy/
-   * ChangeTicket/Version) has been retired outright per the signal-disposition
-   * audit: it fired on nearly every resource regardless of real risk (see
-   * services.routes.ts's NEEDS_ATTENTION_FLOOR comment) and has no AWS-observed
-   * replacement -- "was there an approved change ticket" is not something any
-   * AWS API can attest to. The disposition of the three remaining signals
-   * (retain/upgrade/retire) is a separate, not-yet-made decision; do not
-   * reintroduce SOC2/HIPAA/compliance-framework language here.
+   * the underlying condition (IAM role attachment or actual monitoring/logging
+   * configuration). Relabeled to plain infrastructure/tagging/observability
+   * signals per the SOC 2 Readiness disposition decision, and each carries
+   * `provenance: 'SELF_ATTESTED'` for the same reason. Findings, severities,
+   * and categories are otherwise unchanged (except signal 1's category,
+   * iam -> tagging, since this check has always been a tag-documentation
+   * check, not a real IAM security check) -- this remains a relabel of the
+   * two signals below, not a scoring change to them. The former
+   * "change-management tags" signal (LastModifiedBy/ChangeTicket/Version) has
+   * been retired outright per the signal-disposition audit: it fired on
+   * nearly every resource regardless of real risk (see services.routes.ts's
+   * NEEDS_ATTENTION_FLOOR comment) and has no AWS-observed replacement --
+   * "was there an approved change ticket" is not something any AWS API can
+   * attest to.
+   *
+   * The former "S3: Access logging not documented via tag" signal has also
+   * been retired outright, for a different reason: S3 discovery does not
+   * collect S3 bucket tags at all (see discoverS3Buckets() in
+   * awsResourceDiscovery.ts -- `tags: {}` is written unconditionally for
+   * every bucket, on every scan, with no enrichment step that ever populates
+   * it). That made this specific tag-presence check structurally guaranteed
+   * to fire for every S3 bucket in every organization, regardless of the
+   * bucket's actual AWS configuration -- not weak self-attested evidence, but
+   * a permanent false positive with no possible customer remediation through
+   * tagging. A real AWS-observed replacement (GetBucketLoggingCommand) is a
+   * separate, later change; this removal only stops the false positive.
+   *
+   * The disposition of the two remaining signals (retain/upgrade/retire) is a
+   * separate, not-yet-made decision; do not reintroduce SOC2/HIPAA/
+   * compliance-framework language here.
    */
   private checkSOC2Compliance(resource: AWSResource): ComplianceIssue[] {
     const issues: ComplianceIssue[] = [];
@@ -320,18 +334,6 @@ export class ComplianceScannerService {
           provenance: 'SELF_ATTESTED',
         });
       }
-    }
-
-    // S3: Access logging not documented via tag
-    if (resource.resource_type === 's3' && !resource.tags?.['AccessLogging']) {
-      issues.push({
-        severity: 'high',
-        category: 'networking',
-        issue: 'S3: Access logging not documented via tag',
-        recommendation: 'Enable S3 server access logging to track all requests. Configure logs to be sent to a dedicated logging bucket.',
-        resource_arn: resource.resource_arn,
-        provenance: 'SELF_ATTESTED',
-      });
     }
 
     return issues;
