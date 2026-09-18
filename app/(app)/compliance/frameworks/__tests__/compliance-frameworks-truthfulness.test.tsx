@@ -63,6 +63,18 @@
  *    DevControl using your connected cloud security data" and bare "NIST"
  *    — same overclaim/mislabel as above. Fixed to match the corrected card
  *    copy.
+ *
+ * --- Phase 4: SOC 2 Readiness card goes live -----------------------------
+ *
+ * 10. SOC 2 now has a real, separate technical + customer evidence backend
+ *     (Phase 1-3) — no longer "not yet implemented." The card is renamed
+ *     "SOC 2 Readiness" (was "SOC 2 Type II" — imprecise now that real
+ *     infrastructure exists and is explicitly not Type II evaluation), no
+ *     longer shows the disabled "Not yet available" lock, and links to
+ *     /compliance/frameworks/soc2 instead. It still must never show the
+ *     CIS/PCI/NIST PASS/FAIL coverage block (a different, incompatible
+ *     vocabulary — see soc2-badges.tsx) and must never claim compliance,
+ *     certification, or a Type II audit.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -135,6 +147,31 @@ vi.mock('@/lib/hooks/useSecurityHub', () => ({
     error: securityHubState.error,
     syncing: securityHubState.syncing,
     triggerSync: mockTriggerSync,
+    refetch: vi.fn(),
+  }),
+}))
+
+type Soc2CriterionFixture = { criterionId: string; name: string; evidenceClaim: string; limitation: string; dispositionClass: string; evaluated: boolean; evidenceSummary: Record<string, number> | null; computedAt: string | null }
+let soc2ReadinessState: { data: Soc2CriterionFixture[] | undefined; isLoading: boolean; error: Error | null } = {
+  // Default matches today's actual production reality: six configured criteria, none
+  // evaluated yet (nothing has run computeAndPersistEvidence in production).
+  data: [
+    { criterionId: 'CC6.1', name: 'Encryption at rest', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+    { criterionId: 'CC6.6', name: 'Public network exposure', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+    { criterionId: 'CC6.2', name: 'IAM console-user MFA', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+    { criterionId: 'CC6.3', name: 'IAM access-key age', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+    { criterionId: 'CC9.1', name: 'AWS Backup recovery-point presence', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+    { criterionId: 'CC7.1', name: 'Unrestricted security-group ingress', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+  ],
+  isLoading: false,
+  error: null,
+}
+
+vi.mock('@/lib/hooks/useSoc2Readiness', () => ({
+  useSoc2Readiness: () => ({
+    data: soc2ReadinessState.data,
+    isLoading: soc2ReadinessState.isLoading,
+    error: soc2ReadinessState.error,
     refetch: vi.fn(),
   }),
 }))
@@ -251,6 +288,18 @@ beforeEach(() => {
   frameworksState = { frameworks: [], loading: false, error: null }
   scansState = { scans: [], loading: false, error: null }
   securityHubState = { capability: null, cis: null, pci: null, nist: null, loading: false, error: null, syncing: false }
+  soc2ReadinessState = {
+    data: [
+      { criterionId: 'CC6.1', name: 'Encryption at rest', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+      { criterionId: 'CC6.6', name: 'Public network exposure', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+      { criterionId: 'CC6.2', name: 'IAM console-user MFA', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+      { criterionId: 'CC6.3', name: 'IAM access-key age', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+      { criterionId: 'CC9.1', name: 'AWS Backup recovery-point presence', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+      { criterionId: 'CC7.1', name: 'Unrestricted security-group ingress', evidenceClaim: 'claim', limitation: 'limitation', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+    ],
+    isLoading: false,
+    error: null,
+  }
 })
 
 describe('Test 1 — real mode, no completed evaluation', () => {
@@ -349,7 +398,7 @@ function getSingleFrameworkCard(name: string): HTMLElement {
 }
 
 describe('Test 3 — framework buttons are non-actionable', () => {
-  it.each(['CIS AWS Foundations', 'SOC 2 Type II', 'NIST 800-53 Rev. 5', 'PCI DSS v4.0.1'])('%s card renders a disabled control that opens no modal and calls no API on click', (name) => {
+  it.each(['CIS AWS Foundations', 'NIST 800-53 Rev. 5', 'PCI DSS v4.0.1'])('%s card renders a disabled control that opens no modal and calls no API on click', (name) => {
     renderPage()
 
     const card = getFrameworkCard(name)
@@ -363,9 +412,23 @@ describe('Test 3 — framework buttons are non-actionable', () => {
     expect(screen.queryByText('Create Framework')).not.toBeInTheDocument()
   })
 
-  it('renders the literal "Not yet available" lock affordance for every framework card', () => {
+  it('renders the literal "Not yet available" lock affordance for CIS/PCI/NIST only — SOC 2 no longer uses it', () => {
     renderPage()
-    expect(screen.getAllByText(/Not yet available/).length).toBe(4)
+    expect(screen.getAllByText(/Not yet available/).length).toBe(3)
+  })
+
+  it('SOC 2 Readiness card renders an enabled "View Readiness" control that navigates to the detail route, not a disabled lock', () => {
+    renderPage()
+    const card = getSingleFrameworkCard('SOC 2 Readiness')
+    const button = card.querySelector('button')!
+    expect(button).not.toBeDisabled()
+    expect(button.textContent).toContain('View Readiness')
+
+    fireEvent.click(button)
+
+    expect(mockPush).toHaveBeenCalledWith('/compliance/frameworks/soc2')
+    expect(mockCreateFramework).not.toHaveBeenCalled()
+    expect(mockExecuteScan).not.toHaveBeenCalled()
   })
 })
 
@@ -393,13 +456,21 @@ describe('Test 4 — framework attribution', () => {
     expect(card.textContent).not.toContain('Evaluated by AWS Security Hub')
   })
 
-  it('marks SOC 2 as a not-yet-implemented future capability, never a complete DevControl evaluation', () => {
+  it('identifies SOC 2 as "SOC 2 Readiness" with a real technical + customer evidence backend, never PASS/FAIL, certification, or Type II claims', () => {
     renderPage()
-    const card = getFrameworkCard('SOC 2 Type II')
-    expect(card.textContent).toContain('Not yet implemented')
-    expect(card.textContent).toContain('supporting evidence and readiness')
-    expect(card.textContent).not.toContain('Evaluated by DevControl')
-    expect(card.textContent).not.toContain('Using cloud security data')
+    const card = getSingleFrameworkCard('SOC 2 Readiness')
+    expect(card.textContent).toContain('SOC 2 Readiness')
+    expect(card.textContent).toContain('Technical + customer evidence')
+    expect(card.textContent).toContain('0 of 6 criteria evaluated')
+    expect(card.textContent).not.toContain('Not yet implemented')
+    expect(card.textContent).not.toContain('Not yet available')
+    expect(card.textContent).not.toMatch(/\bPASS\b|\bFAIL\b/)
+    // The card's own truthful disclaimer legitimately contains "certification"/"Type
+    // II audit" in negated form ("not a certification or Type II audit") — assert no
+    // affirmative claim instead of a blanket substring ban.
+    expect(card.textContent).not.toMatch(/is certified|SOC 2 certified|fully certified|Type II certified/i)
+    expect(card.textContent).toContain('not a certification or Type II audit')
+    expect(card.textContent).not.toMatch(/audit approved|auditor approved/i)
   })
 
   it('never implies CIS/NIST/PCI-DSS are currently being scanned by DevControl', () => {
@@ -455,14 +526,16 @@ describe('REAL MODE + ZERO FRAMEWORK EVALUATIONS — no dead-code regression of 
     expect(screen.queryByText(/Start scan/)).not.toBeInTheDocument()
   })
 
-  it('renders "🔒 Not yet available" as the only replacement control, disabled, for every framework', () => {
+  it('renders "🔒 Not yet available" as the only replacement control, disabled, for CIS/PCI/NIST (SOC 2 has its own enabled "View Readiness" control instead)', () => {
     renderPage()
     const locks = screen.getAllByText(/Not yet available/)
-    expect(locks.length).toBe(4)
+    expect(locks.length).toBe(3)
     for (const label of locks) {
       const button = label.closest('button')!
       expect(button).toBeDisabled()
     }
+    const soc2Button = screen.getByText('View Readiness →').closest('button')!
+    expect(soc2Button).not.toBeDisabled()
   })
 
   it('clicking the unavailable control invokes no scan handler, opens no framework-builder modal, and makes no API request', () => {
@@ -630,12 +703,18 @@ describe('Test 7 — Security Hub capability states never fabricate CIS pass/fai
     }
     renderPage()
 
-    for (const name of ['SOC 2 Type II', 'NIST 800-53 Rev. 5', 'PCI DSS v4.0.1']) {
+    for (const name of ['NIST 800-53 Rev. 5', 'PCI DSS v4.0.1']) {
       const card = getSingleFrameworkCard(name)
       const button = card.querySelector('button')!
       expect(button).toBeDisabled()
       expect(button.textContent).toContain('Not yet available')
     }
+    // SOC 2 has its own always-enabled "View Readiness" control, independent of CIS
+    // Security Hub state entirely (a different backend) — never a disabled lock.
+    const soc2Card = getSingleFrameworkCard('SOC 2 Readiness')
+    const soc2Button = soc2Card.querySelector('button')!
+    expect(soc2Button).not.toBeDisabled()
+    expect(soc2Button.textContent).toContain('View Readiness')
   })
 
   it('clicking "Sync Security Hub" calls triggerSync and never opens the framework-builder modal', () => {
@@ -724,10 +803,15 @@ describe('Test 8 — PCI DSS v4.0.1 capability states never fabricate pass/fail 
     }
     renderPage()
 
-    for (const name of ['CIS AWS Foundations', 'SOC 2 Type II', 'NIST 800-53 Rev. 5']) {
+    const soc2Card = getSingleFrameworkCard('SOC 2 Readiness')
+    const soc2Button = soc2Card.querySelector('button')!
+    expect(soc2Button).not.toBeDisabled()
+    expect(soc2Button.textContent).toContain('View Readiness')
+
+    for (const name of ['CIS AWS Foundations', 'NIST 800-53 Rev. 5']) {
       const card = getSingleFrameworkCard(name)
       const button = card.querySelector('button')
-      if (name === 'SOC 2 Type II' || name === 'NIST 800-53 Rev. 5') {
+      if (name === 'NIST 800-53 Rev. 5') {
         expect(button).toBeDisabled()
         expect(button!.textContent).toContain('Not yet available')
       } else {
@@ -833,13 +917,15 @@ describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pas
     }
     renderPage()
 
-    for (const name of ['CIS AWS Foundations', 'PCI DSS v4.0.1', 'SOC 2 Type II']) {
+    const soc2Card = getSingleFrameworkCard('SOC 2 Readiness')
+    const soc2Button = soc2Card.querySelector('button')!
+    expect(soc2Button).not.toBeDisabled()
+    expect(soc2Button.textContent).toContain('View Readiness')
+
+    for (const name of ['CIS AWS Foundations', 'PCI DSS v4.0.1']) {
       const card = getSingleFrameworkCard(name)
       const button = card.querySelector('button')
       expect(button).toBeDisabled()
-      if (name === 'SOC 2 Type II') {
-        expect(button!.textContent).toContain('Not yet available')
-      }
     }
   })
 
@@ -881,5 +967,45 @@ describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pas
     expect(card.textContent).not.toContain('/ 297')
     expect(card.textContent).not.toMatch(/24\s*\/\s*297/)
     expect(card.textContent).toContain('~297-control catalog')
+  })
+})
+
+describe('Test 10 — demo-mode fabricated SOC 2 score cannot leak into real-mode SOC2 rendering', () => {
+  /**
+   * DEMO_FRAMEWORKS' SOC 2 entry (id '2', complianceScore 74, status
+   * 'in_progress', "7 critical violations open") is a pre-existing, out-of-scope
+   * fabrication used only by demo mode (see this file's own Test 5). It must never
+   * be readable from, or fall back into, the real-mode SOC2 Readiness card, which
+   * is now wired to the real useSoc2Readiness() hook instead.
+   */
+  it('real mode never renders the demo SOC 2 fabricated score/status text, regardless of real SOC2 data state', () => {
+    renderPage()
+    expect(screen.queryByText('74%')).not.toBeInTheDocument()
+    expect(screen.queryByText(/7 critical violations/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/SOC 2 in progress/)).not.toBeInTheDocument()
+  })
+
+  it('real mode never renders any other DEMO_FRAMEWORKS fabricated values (CIS 87%, NIST 91%, PCI 68%) on the SOC2 card or elsewhere in real mode', () => {
+    renderPage()
+    expect(screen.queryByText('87%')).not.toBeInTheDocument()
+    expect(screen.queryByText('91%')).not.toBeInTheDocument()
+    expect(screen.queryByText('68%')).not.toBeInTheDocument()
+  })
+
+  it('switching to demo mode still shows the pre-existing fabricated SOC 2 74%/in-progress text unchanged (demo mode itself is explicitly out of scope for this fix)', () => {
+    demoModeValue = true
+    renderPage()
+    expect(screen.getByText(/SOC 2 in progress — 74%/)).toBeInTheDocument()
+  })
+
+  it('the real-mode SOC2 card content is sourced only from useSoc2Readiness, never from DEMO_FRAMEWORKS, even if the demo array is present in the module', () => {
+    // soc2ReadinessState (the mocked real hook) is the sole source for "0 of 6
+    // criteria evaluated" -- if real mode were accidentally reading DEMO_FRAMEWORKS
+    // instead, it would show "74%"/"in_progress" rather than this evaluated count.
+    renderPage()
+    const card = getSingleFrameworkCard('SOC 2 Readiness')
+    expect(card.textContent).toContain('0 of 6 criteria evaluated')
+    expect(card.textContent).not.toContain('74%')
+    expect(card.textContent).not.toContain('in_progress')
   })
 })

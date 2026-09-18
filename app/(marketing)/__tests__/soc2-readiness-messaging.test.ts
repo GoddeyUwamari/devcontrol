@@ -157,8 +157,21 @@ describe('SOC 2 Readiness messaging — corrected customer-facing surfaces', () 
 })
 
 describe('/compliance/frameworks SOC 2 card — protected invariant', () => {
-  it('the real (non-demo) SOC 2 standard card remains attributed "not_implemented", unchanged by this PR', () => {
+  /**
+   * Phase 4 (SOC 2 Readiness customer-facing UI) intentionally changes this
+   * invariant: the card is now wired to the real Phase 1-3 technical + customer
+   * evidence backend (attribution 'soc2_evidence'), renamed "SOC 2 Readiness"
+   * (was "SOC 2 Type II"), and no longer uses the disabled "not yet available"
+   * lock. This is the deliberate, approved transition this file's own docblock
+   * anticipated ("PR1 of the approved SOC 2 Readiness blueprint") -- not a
+   * regression. The truthfulness discipline itself is unchanged and is covered
+   * separately by compliance-frameworks-truthfulness.test.tsx's Test 4/10: no
+   * PASS/FAIL, no certification, no Type II claim, no compliance score.
+   */
+  it('the real (non-demo) SOC 2 standard card is now wired to the real evidence backend ("soc2_evidence"), no longer "not_implemented" — the Phase 4 transition this file anticipated', () => {
     const code = readCode('app/(app)/compliance/frameworks/page.tsx')
-    expect(code).toMatch(/key:\s*'soc2'[^}]*attribution:\s*'not_implemented'/)
+    expect(code).toMatch(/key:\s*'soc2'[^}]*attribution:\s*'soc2_evidence'/)
+    expect(code).not.toMatch(/key:\s*'soc2'[^}]*attribution:\s*'not_implemented'/)
+    expect(code).toMatch(/name:\s*'SOC 2 Readiness'/)
   })
 })

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Shield, Plus, RefreshCw, FileText, Info, Lock } from 'lucide-react';
 import { useComplianceFrameworks, useComplianceScans } from '@/lib/hooks/useComplianceFrameworks';
 import { useSecurityHub } from '@/lib/hooks/useSecurityHub';
+import { useSoc2Readiness } from '@/lib/hooks/useSoc2Readiness';
 import { CreateFrameworkModal } from '@/components/compliance/CreateFrameworkModal';
 import { FrameworkDetailsModal } from '@/components/compliance/FrameworkDetailsModal';
 import { ScanResultsModal } from '@/components/compliance/ScanResultsModal';
@@ -37,13 +38,16 @@ const FRAMEWORK_STANDARDS: Array<{
   name: string;
   desc: string;
   // 'security_hub' means the framework has a real Security Hub-backed evaluation path
-  // (CIS/PCI). 'not_implemented' means no evaluation backend exists yet for it at all
-  // (SOC 2, NIST) — never label these 'security_hub', even for display consistency,
-  // since that implies an evaluation path that does not exist.
-  attribution: 'security_hub' | 'not_implemented';
+  // (CIS/PCI/NIST). 'soc2_evidence' means the framework has a real, separate technical
+  // + customer evidence backend (Phase 1-3) — never label this 'security_hub', since
+  // SOC 2 is deliberately not implemented as a Security Hub framework (see
+  // backend/src/config/soc2CriteriaConfig.ts's own docblock). 'not_implemented' is kept
+  // as a type option for a genuinely unimplemented future framework, but no current
+  // entry uses it.
+  attribution: 'security_hub' | 'not_implemented' | 'soc2_evidence';
 }> = [
   { key: 'cis', badge: 'CIS AWS', badgeBg: '#EEEDFE', badgeColor: '#3C3489', name: 'CIS AWS Foundations', desc: 'Industry-standard security configuration guidelines for AWS infrastructure.', attribution: 'security_hub' },
-  { key: 'soc2', badge: 'SOC 2', badgeBg: '#E1F5EE', badgeColor: '#085041', name: 'SOC 2 Type II', desc: 'Security, availability, and confidentiality controls for service organizations.', attribution: 'not_implemented' },
+  { key: 'soc2', badge: 'SOC 2', badgeBg: '#E1F5EE', badgeColor: '#085041', name: 'SOC 2 Readiness', desc: 'Technical and customer-provided supporting evidence for SOC 2 criteria — not a certification or Type II audit.', attribution: 'soc2_evidence' },
   { key: 'nist', badge: 'NIST 800-53', badgeBg: '#E6F1FB', badgeColor: '#0C447C', name: 'NIST 800-53 Rev. 5', desc: 'Security and privacy controls framework for federal information systems and organizations — coverage reflects AWS Security Hub’s interpretation of NIST SP 800-53 Rev. 5, limited to a DevControl-verified technical subset.', attribution: 'security_hub' },
   { key: 'pci', badge: 'PCI-DSS', badgeBg: '#FAEEDA', badgeColor: '#633806', name: 'PCI DSS v4.0.1', desc: 'Payment card industry data security standards for handling cardholder data — Compliance Readiness based on partial AWS/Security Hub evidence, not certification.', attribution: 'security_hub' },
 ];
@@ -56,6 +60,7 @@ export default function ComplianceFrameworksPage() {
   const { frameworks, loading, error, fetchFrameworks, createFramework, updateFramework, deleteFramework, executeScan } = useComplianceFrameworks();
   const { scans, loading: scansLoading, error: scansError, fetchScans } = useComplianceScans(true);
   const { capability: shCapability, cis, pci, nist, syncing: shSyncing, triggerSync: triggerSecurityHubSync } = useSecurityHub();
+  const { data: soc2Criteria, isLoading: soc2Loading, error: soc2QueryError } = useSoc2Readiness();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingFramework, setEditingFramework] = useState<ComplianceFramework | null>(null);
   const [detailsFramework, setDetailsFramework] = useState<ComplianceFramework | null>(null);
@@ -173,6 +178,20 @@ export default function ComplianceFrameworksPage() {
   const cisSubtext = frameworkSubtext(cis?.standardEnabled, 'CIS');
   const pciSubtext = frameworkSubtext(pci?.standardEnabled, 'PCI DSS v4.0.1');
   const nistSubtext = frameworkSubtext(nist?.standardEnabled, 'NIST 800-53 Rev. 5');
+
+  // --- SOC 2 Readiness card state ---------------------------------------
+  // A real, separate technical + customer evidence backend (Phase 1-3), not a
+  // Security Hub framework — never reuses cisEvaluated/readiness or the
+  // passed/failed coverage rendering below, which is Security Hub's own
+  // FoundationControlStatus (PASS/FAIL) vocabulary, a different axis of meaning
+  // than SOC 2's disposition/result vocabulary.
+  const soc2EvaluatedCount = soc2Criteria?.filter((c) => c.evaluated).length ?? 0;
+  const soc2Total = soc2Criteria?.length ?? 6;
+  const soc2Subtext = soc2Loading
+    ? 'Loading…'
+    : soc2QueryError
+      ? 'Unable to load SOC 2 readiness'
+      : `${soc2EvaluatedCount} of ${soc2Total} criteria evaluated`;
 
   const kpiCards = [
     { label: 'Overall Compliance Score', value: evaluationState === 'completed' ? `${latestCompletedScan!.compliance_score}%` : '—', sub: evaluationSubtext },
@@ -406,11 +425,11 @@ export default function ComplianceFrameworksPage() {
         <p className="text-xs text-violet-900 leading-relaxed">
           {shNeverSynced ? (
             <>
-              <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub once it&apos;s connected and synchronized — it is not currently connected to DevControl. NIST coverage reflects AWS Security Hub&apos;s own interpretation of the NIST SP 800-53 Rev. 5 guidelines, limited to a DevControl-verified technical subset — not a certification. <strong>SOC 2</strong> readiness (supporting evidence, not a full Type II audit) is a planned future capability.
+              <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub once it&apos;s connected and synchronized — it is not currently connected to DevControl. NIST coverage reflects AWS Security Hub&apos;s own interpretation of the NIST SP 800-53 Rev. 5 guidelines, limited to a DevControl-verified technical subset — not a certification. <strong>SOC 2</strong> readiness — technical evidence DevControl observes plus supporting evidence your organization provides, not a full Type II audit or certification — is available separately.
             </>
           ) : (
             <>
-              <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub ({shBadgeLabel.toLowerCase()}) — PCI DSS v4.0.1 and NIST SP 800-53 Rev. 5 coverage each reflect only the AWS/Security Hub evidence DevControl currently supports and are partial, not a certification or full-compliance claim. <strong>SOC 2</strong> readiness (supporting evidence, not a full Type II audit) is a planned future capability.
+              <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub ({shBadgeLabel.toLowerCase()}) — PCI DSS v4.0.1 and NIST SP 800-53 Rev. 5 coverage each reflect only the AWS/Security Hub evidence DevControl currently supports and are partial, not a certification or full-compliance claim. <strong>SOC 2</strong> readiness — technical evidence DevControl observes plus supporting evidence your organization provides, not a full Type II audit or certification — is available separately.
             </>
           )}
         </p>
@@ -437,6 +456,7 @@ export default function ComplianceFrameworksPage() {
           const isCis = fw.key === 'cis';
           const isPci = fw.key === 'pci';
           const isNist = fw.key === 'nist';
+          const isSoc2 = fw.key === 'soc2';
           // CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5 only ever leave the placeholder
           // once a real, evaluated backend result exists (capability ENABLED + that
           // specific standard enabled) — never merely because this frontend code has
@@ -453,12 +473,20 @@ export default function ComplianceFrameworksPage() {
               <p className="text-sm font-semibold text-slate-900 mb-1">{fw.name}</p>
               <p className="text-xs text-slate-500 leading-relaxed mb-2">{fw.desc}</p>
               <p className="text-xs font-semibold text-slate-600 mb-0.5">
-                {fw.attribution === 'security_hub' ? 'Security Hub-backed' : 'Not yet implemented'}
+                {fw.attribution === 'security_hub' ? 'Security Hub-backed' : fw.attribution === 'soc2_evidence' ? 'Technical + customer evidence' : 'Not yet implemented'}
               </p>
               <p className="text-xs text-slate-400 mb-3">
-                {isCis ? cisSubtext : isPci ? pciSubtext : isNist ? nistSubtext : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
+                {isCis ? cisSubtext : isPci ? pciSubtext : isNist ? nistSubtext : isSoc2 ? soc2Subtext : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
               </p>
-              {evaluated && readiness ? (
+              {isSoc2 ? (
+                <button
+                  type="button"
+                  onClick={() => router.push('/compliance/frameworks/soc2')}
+                  className="w-full text-xs text-violet-600 bg-violet-50 border border-violet-200 rounded-lg py-1.5 font-semibold cursor-pointer hover:bg-violet-100 transition-colors"
+                >
+                  View Readiness →
+                </button>
+              ) : evaluated && readiness ? (
                 <div className="text-xs text-slate-600 leading-relaxed" data-testid={isCis ? 'cis-coverage' : isPci ? 'pci-coverage' : 'nist-coverage'}>
                   <span className="font-semibold text-emerald-600">{readiness.coverage.passed} passed</span>
                   {' · '}
