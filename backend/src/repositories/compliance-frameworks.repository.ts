@@ -1,4 +1,13 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
+
+// A scan-path caller (CustomComplianceService.executeScan) passes its own
+// dedicated, scan-owned PoolClient here instead of relying on the default
+// (this.pool, which routes through the request-scoped AsyncLocalStorage
+// client via config/database.ts's Proxy and is released when the HTTP
+// response finishes -- unsafe for a query issued after that point). Every
+// other caller (the ordinary CRUD routes) omits it and keeps today's
+// behavior exactly.
+type Queryable = Pool | PoolClient;
 
 export interface ComplianceFramework {
   id: string;
@@ -138,23 +147,23 @@ export class ComplianceFrameworksRepository {
     return result.rows;
   }
 
-  async findFrameworkById(id: string, organizationId: string): Promise<ComplianceFramework | null> {
+  async findFrameworkById(id: string, organizationId: string, client: Queryable = this.pool): Promise<ComplianceFramework | null> {
     const query = `
       SELECT * FROM compliance_frameworks
       WHERE id = $1 AND organization_id = $2
     `;
-    const result = await this.pool.query(query, [id, organizationId]);
+    const result = await client.query(query, [id, organizationId]);
     return result.rows[0] || null;
   }
 
-  async findFrameworkWithRules(id: string, organizationId: string): Promise<{
+  async findFrameworkWithRules(id: string, organizationId: string, client: Queryable = this.pool): Promise<{
     framework: ComplianceFramework;
     rules: ComplianceFrameworkRule[];
   } | null> {
-    const framework = await this.findFrameworkById(id, organizationId);
+    const framework = await this.findFrameworkById(id, organizationId, client);
     if (!framework) return null;
 
-    const rules = await this.findRulesByFramework(id);
+    const rules = await this.findRulesByFramework(id, client);
     return { framework, rules };
   }
 
@@ -237,13 +246,13 @@ export class ComplianceFrameworksRepository {
 
   // ==================== Rules ====================
 
-  async findRulesByFramework(frameworkId: string): Promise<ComplianceFrameworkRule[]> {
+  async findRulesByFramework(frameworkId: string, client: Queryable = this.pool): Promise<ComplianceFrameworkRule[]> {
     const query = `
       SELECT * FROM compliance_framework_rules
       WHERE framework_id = $1
       ORDER BY created_at ASC
     `;
-    const result = await this.pool.query(query, [frameworkId]);
+    const result = await client.query(query, [frameworkId]);
     return result.rows;
   }
 
@@ -371,7 +380,7 @@ export class ComplianceFrameworksRepository {
     scan_type: 'manual' | 'scheduled' | 'continuous';
     resource_filters?: Record<string, any>;
     triggered_by?: string;
-  }): Promise<ComplianceScan> {
+  }, client: Queryable = this.pool): Promise<ComplianceScan> {
     const query = `
       INSERT INTO compliance_scans (
         organization_id, framework_id, scan_type, status,
@@ -388,7 +397,7 @@ export class ComplianceFrameworksRepository {
       data.triggered_by || null,
     ];
 
-    const result = await this.pool.query(query, values);
+    const result = await client.query(query, values);
     return result.rows[0];
   }
 
@@ -410,7 +419,8 @@ export class ComplianceFrameworksRepository {
       duration_seconds: number;
       error_message: string;
       results: Record<string, any>;
-    }>
+    }>,
+    client: Queryable = this.pool
   ): Promise<ComplianceScan | null> {
     const fields: string[] = [];
     const values: any[] = [];
@@ -433,13 +443,13 @@ export class ComplianceFrameworksRepository {
     `;
 
     values.push(id);
-    const result = await this.pool.query(query, values);
+    const result = await client.query(query, values);
     return result.rows[0] || null;
   }
 
-  async findScanById(id: string): Promise<ComplianceScan | null> {
+  async findScanById(id: string, client: Queryable = this.pool): Promise<ComplianceScan | null> {
     const query = `SELECT * FROM compliance_scans WHERE id = $1`;
-    const result = await this.pool.query(query, [id]);
+    const result = await client.query(query, [id]);
     return result.rows[0] || null;
   }
 
@@ -469,7 +479,7 @@ export class ComplianceFrameworksRepository {
     category: string;
     issue: string | null;
     recommendation: string | null;
-  }): Promise<ComplianceScanFinding> {
+  }, client: Queryable = this.pool): Promise<ComplianceScanFinding> {
     const query = `
       INSERT INTO compliance_scan_findings (
         scan_id, organization_id, rule_id, resource_id, resource_arn, resource_type, resource_name,
@@ -498,7 +508,7 @@ export class ComplianceFrameworksRepository {
       data.recommendation,
     ];
 
-    const result = await this.pool.query(query, values);
+    const result = await client.query(query, values);
     return result.rows[0];
   }
 

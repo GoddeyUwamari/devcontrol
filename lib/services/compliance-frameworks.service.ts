@@ -1,3 +1,13 @@
+// Authentication: uses the shared `api` Axios client from lib/api.ts, whose request
+// interceptor injects `Authorization: Bearer <accessToken>` -- the same mechanism
+// security-hub.service.ts and every other authenticated frontend service use. The
+// backend's authenticateToken middleware only ever reads the Authorization header,
+// never cookies, so this service must not rely on a bespoke or cookie-credentialed
+// request mechanism (raw fetch + credentials:'include', as this file previously did,
+// sends no Authorization header at all and 401s against the real backend).
+import { api } from '@/lib/api';
+import axios from 'axios';
+
 export interface ComplianceFramework {
   id: string;
   organization_id: string;
@@ -94,183 +104,122 @@ export interface CreateRuleRequest {
   enabled?: boolean;
 }
 
+/**
+ * Adapts an Axios failure into an Error whose `message` is the backend's own `error`
+ * string -- preserving this service's pre-existing error contract
+ * (`error.error || fallbackMessage`) exactly, just sourced from `error.response.data`
+ * instead of a manually-parsed fetch Response body. Anything without a usable string
+ * message (network failure, non-JSON body, non-Axios error) gets the fallback.
+ */
+function toComplianceFrameworksApiError(error: unknown, fallbackMessage: string): Error {
+  let message = fallbackMessage;
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { error?: unknown } | null | undefined;
+    if (typeof data?.error === 'string' && data.error.length > 0) {
+      message = data.error;
+    }
+  }
+  return new Error(message);
+}
+
 class ComplianceFrameworksService {
-  private baseUrl = process.env.NEXT_PUBLIC_API_URL
-    ? `${process.env.NEXT_PUBLIC_API_URL}/api/compliance-frameworks`
-    : 'http://localhost:8080/api/compliance-frameworks';
+  private readonly basePath = '/api/compliance-frameworks';
 
   async getFrameworks(): Promise<ComplianceFramework[]> {
-    const response = await fetch(this.baseUrl, {
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch frameworks' }));
-      throw new Error(error.error || 'Failed to fetch frameworks');
+    try {
+      const response = await api.get(this.basePath);
+      return response.data.data;
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to fetch frameworks');
     }
-
-    const data = await response.json();
-    return data.data;
   }
 
   async getFramework(id: string): Promise<{ framework: ComplianceFramework; rules: ComplianceFrameworkRule[] }> {
-    const response = await fetch(`${this.baseUrl}/${id}`, {
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch framework' }));
-      throw new Error(error.error || 'Failed to fetch framework');
+    try {
+      const response = await api.get(`${this.basePath}/${id}`);
+      return response.data.data;
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to fetch framework');
     }
-
-    const data = await response.json();
-    return data.data;
   }
 
   async createFramework(framework: CreateFrameworkRequest): Promise<ComplianceFramework> {
-    const response = await fetch(this.baseUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(framework),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to create framework' }));
-      throw new Error(error.error || 'Failed to create framework');
+    try {
+      const response = await api.post(this.basePath, framework);
+      return response.data.data;
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to create framework');
     }
-
-    const data = await response.json();
-    return data.data;
   }
 
   async updateFramework(id: string, updates: Partial<CreateFrameworkRequest & { enabled: boolean }>): Promise<ComplianceFramework> {
-    const response = await fetch(`${this.baseUrl}/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(updates),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to update framework' }));
-      throw new Error(error.error || 'Failed to update framework');
+    try {
+      const response = await api.put(`${this.basePath}/${id}`, updates);
+      return response.data.data;
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to update framework');
     }
-
-    const data = await response.json();
-    return data.data;
   }
 
   async deleteFramework(id: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to delete framework' }));
-      throw new Error(error.error || 'Failed to delete framework');
+    try {
+      await api.delete(`${this.basePath}/${id}`);
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to delete framework');
     }
   }
 
   async createRule(frameworkId: string, rule: CreateRuleRequest): Promise<ComplianceFrameworkRule> {
-    const response = await fetch(`${this.baseUrl}/${frameworkId}/rules`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(rule),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to create rule' }));
-      throw new Error(error.error || 'Failed to create rule');
+    try {
+      const response = await api.post(`${this.basePath}/${frameworkId}/rules`, rule);
+      return response.data.data;
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to create rule');
     }
-
-    const data = await response.json();
-    return data.data;
   }
 
   async updateRule(ruleId: string, updates: Partial<CreateRuleRequest>): Promise<ComplianceFrameworkRule> {
-    const response = await fetch(`${this.baseUrl}/rules/${ruleId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(updates),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to update rule' }));
-      throw new Error(error.error || 'Failed to update rule');
+    try {
+      const response = await api.put(`${this.basePath}/rules/${ruleId}`, updates);
+      return response.data.data;
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to update rule');
     }
-
-    const data = await response.json();
-    return data.data;
   }
 
   async deleteRule(ruleId: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/rules/${ruleId}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to delete rule' }));
-      throw new Error(error.error || 'Failed to delete rule');
+    try {
+      await api.delete(`${this.basePath}/rules/${ruleId}`);
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to delete rule');
     }
   }
 
   async executeScan(frameworkId: string, resourceFilters?: Record<string, any>): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/${frameworkId}/scan`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify({ resource_filters: resourceFilters }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to execute scan' }));
-      throw new Error(error.error || 'Failed to execute scan');
+    try {
+      await api.post(`${this.basePath}/${frameworkId}/scan`, { resource_filters: resourceFilters });
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to execute scan');
     }
   }
 
   async getScans(limit?: number): Promise<ComplianceScan[]> {
-    const url = `${this.baseUrl}/scans/list${limit ? `?limit=${limit}` : ''}`;
-
-    const response = await fetch(url, {
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch scans' }));
-      throw new Error(error.error || 'Failed to fetch scans');
+    const url = `${this.basePath}/scans/list${limit ? `?limit=${limit}` : ''}`;
+    try {
+      const response = await api.get(url);
+      return response.data.data;
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to fetch scans');
     }
-
-    const data = await response.json();
-    return data.data;
   }
 
   async getScanResults(scanId: string): Promise<{ scan: ComplianceScan; findings: ComplianceScanFinding[] }> {
-    const response = await fetch(`${this.baseUrl}/scans/${scanId}`, {
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch scan results' }));
-      throw new Error(error.error || 'Failed to fetch scan results');
+    try {
+      const response = await api.get(`${this.basePath}/scans/${scanId}`);
+      return response.data.data;
+    } catch (error) {
+      throw toComplianceFrameworksApiError(error, 'Failed to fetch scan results');
     }
-
-    const data = await response.json();
-    return data.data;
   }
 }
 

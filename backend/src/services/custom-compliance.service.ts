@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import {
   ComplianceFrameworksRepository,
   ComplianceFrameworkRule,
@@ -21,7 +21,21 @@ export class CustomComplianceService {
   }
 
   /**
-   * Execute a compliance scan using a custom framework
+   * Execute a compliance scan using a custom framework.
+   *
+   * Owns a dedicated PoolClient for the scan's entire lifetime instead of
+   * relying on the request-scoped AsyncLocalStorage client (this.pool, via
+   * config/database.ts's Proxy): the caller (compliance-frameworks.controller.ts)
+   * invokes this without awaiting it, so the HTTP response -- and with it,
+   * the request-scoped client's release() -- can complete while this scan is
+   * still running. A released client can be handed to a *different*,
+   * unrelated concurrent request by pg.Pool, which would then change
+   * app.current_organization_id (session-scoped, not SET LOCAL) on the exact
+   * connection this scan's remaining queries would otherwise still be using.
+   * A client this method owns exclusively, connects and releases itself, and
+   * never returns to the pool until the scan is fully done, has no such
+   * hazard: nothing else can ever be handed this connection while the scan
+   * still needs it.
    */
   async executeScan(
     frameworkId: string,
@@ -31,6 +45,31 @@ export class CustomComplianceService {
   ): Promise<ComplianceScan> {
     console.log(`[CustomCompliance] Starting scan for framework ${frameworkId}`);
 
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [organizationId]
+      );
+
+      return await this.runScan(client, frameworkId, organizationId, userId, resourceFilters);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * The scan body, run entirely on the caller's dedicated client -- every
+   * repository/query call below is passed `client` explicitly so none of
+   * them fall back to the AsyncLocalStorage-routed this.pool.
+   */
+  private async runScan(
+    client: PoolClient,
+    frameworkId: string,
+    organizationId: string,
+    userId?: string,
+    resourceFilters?: Record<string, any>
+  ): Promise<ComplianceScan> {
     // Create scan record
     const scan = await this.repository.createScan({
       organization_id: organizationId,
@@ -38,19 +77,19 @@ export class CustomComplianceService {
       scan_type: 'manual',
       resource_filters: resourceFilters,
       triggered_by: userId,
-    });
+    }, client);
 
     try {
       // Update scan to running
       await this.repository.updateScan(scan.id, {
         status: 'running',
         started_at: new Date(),
-      });
+      }, client);
 
       const startTime = Date.now();
 
       // Get framework and rules
-      const frameworkData = await this.repository.findFrameworkWithRules(frameworkId, organizationId);
+      const frameworkData = await this.repository.findFrameworkWithRules(frameworkId, organizationId, client);
       if (!frameworkData) {
         throw new Error('Framework not found');
       }
@@ -63,7 +102,7 @@ export class CustomComplianceService {
       }
 
       // Fetch resources to scan
-      const resources = await this.fetchResources(organizationId, resourceFilters);
+      const resources = await this.fetchResources(client, organizationId, resourceFilters);
 
       let totalResources = resources.length;
       let compliantResources = 0;
@@ -98,7 +137,7 @@ export class CustomComplianceService {
               category: rule.category,
               issue: null,
               recommendation: null,
-            });
+            }, client);
             continue;
           }
 
@@ -119,7 +158,7 @@ export class CustomComplianceService {
             category: rule.category,
             issue: result.issue || null,
             recommendation: result.recommendation || null,
-          });
+          }, client);
 
           if (!result.error) {
             resourceResults.push({ ruleId: rule.id, passed: result.pass });
@@ -166,13 +205,13 @@ export class CustomComplianceService {
         compliance_score: complianceScore,
         completed_at: new Date(),
         duration_seconds: durationSeconds,
-      });
+      }, client);
 
       console.log(
         `[CustomCompliance] Scan ${scan.id} completed: ${compliantResources}/${resourcesScanned} compliant (${complianceScore.toFixed(1)}%)`
       );
 
-      return (await this.repository.findScanById(scan.id))!;
+      return (await this.repository.findScanById(scan.id, client))!;
     } catch (error: any) {
       console.error(`[CustomCompliance] Scan ${scan.id} failed:`, error);
 
@@ -180,7 +219,7 @@ export class CustomComplianceService {
         status: 'failed',
         error_message: error.message,
         completed_at: new Date(),
-      });
+      }, client);
 
       throw error;
     }
@@ -420,6 +459,7 @@ export class CustomComplianceService {
    * Fetch resources for scanning
    */
   private async fetchResources(
+    client: PoolClient,
     organizationId: string,
     filters?: Record<string, any>
   ): Promise<AWSResource[]> {
@@ -453,7 +493,7 @@ export class CustomComplianceService {
       ORDER BY created_at DESC
     `;
 
-    const result = await this.pool.query(query, values);
+    const result = await client.query(query, values);
     return result.rows;
   }
 
