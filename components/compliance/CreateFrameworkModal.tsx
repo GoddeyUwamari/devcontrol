@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ComplianceFramework } from '@/lib/services/compliance-frameworks.service';
 
@@ -22,27 +21,18 @@ export function CreateFrameworkModal({ open, onClose, onSubmit, initialData, isE
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [frameworkType, setFrameworkType] = useState<'built_in' | 'custom'>('custom');
   const [isDefault, setIsDefault] = useState(false);
-  const [standardName, setStandardName] = useState('');
-  const [version, setVersion] = useState('');
 
   useEffect(() => {
     if (initialData && open) {
       setName(initialData.name);
       setDescription(initialData.description || '');
-      setFrameworkType(initialData.framework_type);
       setIsDefault(initialData.is_default);
-      setStandardName(initialData.standard_name || '');
-      setVersion(initialData.version || '');
     } else if (!open) {
       // Reset
       setName('');
       setDescription('');
-      setFrameworkType('custom');
       setIsDefault(false);
-      setStandardName('');
-      setVersion('');
     }
   }, [initialData, open]);
 
@@ -56,13 +46,17 @@ export function CreateFrameworkModal({ open, onClose, onSubmit, initialData, isE
 
     setSubmitting(true);
     try {
+      // framework_type is always 'custom' -- this modal only ever creates
+      // customer-authored frameworks. The backend independently rejects
+      // 'built_in' and any reserved/branded standard name regardless of
+      // what this client sends; the server is the actual boundary, not this
+      // UI (see checkFrameworkBrandingViolation in
+      // backend/src/controllers/compliance-frameworks.controller.ts).
       await onSubmit({
         name: name.trim(),
         description: description.trim() || undefined,
-        framework_type: frameworkType,
+        framework_type: 'custom',
         is_default: isDefault,
-        standard_name: standardName.trim() || undefined,
-        version: version.trim() || undefined,
       });
     } finally {
       setSubmitting(false);
@@ -86,9 +80,13 @@ export function CreateFrameworkModal({ open, onClose, onSubmit, initialData, isE
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., SOC 2, HIPAA, Custom Security Framework"
+              placeholder="e.g., Internal Data Handling Policy"
               className="mt-1"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Custom frameworks are your own rules -- this can&apos;t be named after an
+              officially-supported standard (e.g. SOC 2, NIST, CIS, PCI DSS, HIPAA).
+            </p>
           </div>
 
           <div>
@@ -102,48 +100,6 @@ export function CreateFrameworkModal({ open, onClose, onSubmit, initialData, isE
               rows={3}
             />
           </div>
-
-          <div>
-            <Label>Framework Type</Label>
-            <RadioGroup value={frameworkType} onValueChange={(val) => setFrameworkType(val as any)} className="mt-2">
-              <div className="flex gap-4">
-                <label className="flex items-center cursor-pointer">
-                  <RadioGroupItem value="custom" />
-                  <span className="ml-2">Custom</span>
-                </label>
-                <label className="flex items-center cursor-pointer">
-                  <RadioGroupItem value="built_in" />
-                  <span className="ml-2">Built-in</span>
-                </label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          {frameworkType === 'built_in' && (
-            <>
-              <div>
-                <Label htmlFor="standard-name">Standard Name</Label>
-                <Input
-                  id="standard-name"
-                  value={standardName}
-                  onChange={(e) => setStandardName(e.target.value)}
-                  placeholder="e.g., SOC2, HIPAA, PCI-DSS, CIS"
-                  className="mt-1"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="version">Version</Label>
-                <Input
-                  id="version"
-                  value={version}
-                  onChange={(e) => setVersion(e.target.value)}
-                  placeholder="e.g., 1.0, Type II"
-                  className="mt-1"
-                />
-              </div>
-            </>
-          )}
 
           <div className="flex items-center gap-2">
             <Checkbox id="is-default" checked={isDefault} onCheckedChange={(checked) => setIsDefault(!!checked)} />

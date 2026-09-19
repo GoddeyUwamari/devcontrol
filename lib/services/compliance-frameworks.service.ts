@@ -12,6 +12,12 @@ export interface ComplianceFramework {
   updated_at: string;
 }
 
+// V1 rule vocabulary only. 'relationship_check' (never implemented by the
+// backend evaluator) and 'custom_script' (removed as a Phase 1 security
+// foundation requirement -- it executed customer-authored JavaScript via an
+// unsandboxed `new Function(...)` server-side) are deliberately excluded.
+export type ComplianceRuleType = 'property_check' | 'tag_required' | 'tag_pattern' | 'metadata_check';
+
 export interface ComplianceFrameworkRule {
   id: string;
   framework_id: string;
@@ -20,7 +26,7 @@ export interface ComplianceFrameworkRule {
   description: string | null;
   severity: 'critical' | 'high' | 'medium' | 'low';
   category: 'encryption' | 'backups' | 'public_access' | 'tagging' | 'iam' | 'networking' | 'custom';
-  rule_type: 'property_check' | 'tag_required' | 'tag_pattern' | 'metadata_check' | 'relationship_check' | 'custom_script';
+  rule_type: ComplianceRuleType;
   conditions: Record<string, any>;
   resource_types: string[];
   recommendation: string;
@@ -67,7 +73,10 @@ export interface ComplianceScanFinding {
 export interface CreateFrameworkRequest {
   name: string;
   description?: string;
-  framework_type?: 'built_in' | 'custom';
+  // 'built_in' is not accepted through this API -- customer-authored
+  // frameworks are always custom. See checkFrameworkBrandingViolation in
+  // backend/src/controllers/compliance-frameworks.controller.ts.
+  framework_type?: 'custom';
   is_default?: boolean;
 }
 
@@ -77,7 +86,7 @@ export interface CreateRuleRequest {
   description?: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   category: 'encryption' | 'backups' | 'public_access' | 'tagging' | 'iam' | 'networking' | 'custom';
-  rule_type: 'property_check' | 'tag_required' | 'tag_pattern' | 'metadata_check' | 'relationship_check' | 'custom_script';
+  rule_type: ComplianceRuleType;
   conditions: Record<string, any>;
   resource_types?: string[];
   recommendation: string;

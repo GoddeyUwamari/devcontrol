@@ -10,7 +10,11 @@ import { Badge } from '@/components/ui/badge';
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const;
 const CATEGORIES = ['encryption', 'backups', 'public_access', 'tagging', 'iam', 'networking', 'custom'] as const;
-const RULE_TYPES = ['property_check', 'tag_required', 'tag_pattern', 'metadata_check', 'custom_script'] as const;
+// V1 rule vocabulary only. 'custom_script' is deliberately excluded -- it
+// executed customer-authored JavaScript server-side via an unsandboxed
+// `new Function(...)`, removed as a Phase 1 security foundation requirement.
+// The backend rejects it even if a direct API request bypasses this UI.
+const RULE_TYPES = ['property_check', 'tag_required', 'tag_pattern', 'metadata_check'] as const;
 const RESOURCE_TYPES = ['ec2', 'rds', 's3', 'lambda', 'ecs', 'elb'];
 
 interface CreateRuleModalProps {
@@ -103,7 +107,6 @@ export function CreateRuleModal({ open, onClose, onSubmit, initialData, isEditin
       tag_required: { tag_key: 'Environment' },
       tag_pattern: { tag_key: 'Environment', pattern: '^(prod|staging|dev)$' },
       metadata_check: { path: 'nested.field', operator: 'exists', value: null },
-      custom_script: { script: 'return resource.is_encrypted === true;' },
     };
     setConditions(JSON.stringify(examples[ruleType] || {}, null, 2));
   };

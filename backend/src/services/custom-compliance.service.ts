@@ -87,6 +87,7 @@ export class CustomComplianceService {
             // Skip - rule doesn't apply to this resource type
             await this.repository.createFinding({
               scan_id: scan.id,
+              organization_id: organizationId,
               rule_id: rule.id,
               resource_id: resource.id,
               resource_arn: resource.resource_arn,
@@ -107,6 +108,7 @@ export class CustomComplianceService {
           // Record finding
           await this.repository.createFinding({
             scan_id: scan.id,
+            organization_id: organizationId,
             rule_id: rule.id,
             resource_id: resource.id,
             resource_arn: resource.resource_arn,
@@ -217,9 +219,6 @@ export class CustomComplianceService {
 
         case 'metadata_check':
           return this.evaluateMetadataCheck(rule, resource);
-
-        case 'custom_script':
-          return this.evaluateCustomScript(rule, resource);
 
         default:
           return {
@@ -405,41 +404,17 @@ export class CustomComplianceService {
     };
   }
 
-  /**
-   * Evaluate custom_script rule
-   * Conditions: { script: string (JavaScript code) }
-   * SECURITY WARNING: This executes arbitrary JavaScript - use with caution
-   */
-  private evaluateCustomScript(
-    rule: ComplianceFrameworkRule,
-    resource: AWSResource
-  ): RuleEvaluationResult {
-    const { script } = rule.conditions;
-
-    if (!script) {
-      return { pass: false, error: 'Invalid custom_script conditions - script missing' };
-    }
-
-    try {
-      // Create a sandboxed function
-      // NOTE: In production, consider using a proper sandboxing library like vm2
-      const fn = new Function('resource', script);
-      const result = fn(resource);
-
-      const pass = Boolean(result);
-
-      return {
-        pass,
-        issue: pass ? undefined : 'Custom script check failed',
-        recommendation: rule.recommendation,
-      };
-    } catch (error: any) {
-      return {
-        pass: false,
-        error: `Script execution error: ${error.message}`,
-      };
-    }
-  }
+  // evaluateCustomScript (rule_type 'custom_script') was removed as part of
+  // the Phase 1 security foundation (2026-09): it executed customer-authored
+  // JavaScript via an unsandboxed `new Function('resource', script)`, a
+  // server-side arbitrary-code-execution risk with no sandbox implemented
+  // anywhere in this codebase. 'custom_script' is no longer in the V1 rule
+  // vocabulary (see ComplianceRuleType) and is rejected at the API boundary
+  // by compliance-frameworks.controller.ts before a rule can ever be created
+  // with it. If evaluateRule's switch above is ever reached with a legacy or
+  // otherwise-unsupported rule_type value, the `default` branch already
+  // fails safely and explicitly (`error: 'Unknown rule type: ...'`) rather
+  // than executing anything.
 
   /**
    * Fetch resources for scanning

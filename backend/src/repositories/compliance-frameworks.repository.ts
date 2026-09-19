@@ -15,15 +15,28 @@ export interface ComplianceFramework {
   updated_at: Date;
 }
 
+// V1 rule vocabulary only -- 'relationship_check' (never implemented by the
+// evaluator) and 'custom_script' (unsandboxed arbitrary JS execution, removed
+// as a security foundation requirement) are deliberately excluded from this
+// type. See backend/src/controllers/compliance-frameworks.controller.ts's
+// V1_RULE_TYPES for the enforcement boundary and
+// backend/src/services/custom-compliance.service.ts for the evaluator.
+export type ComplianceRuleType = 'property_check' | 'tag_required' | 'tag_pattern' | 'metadata_check';
+
 export interface ComplianceFrameworkRule {
   id: string;
   framework_id: string;
+  // Denormalized from the parent framework, DB-enforced equal to it via a
+  // composite FK (framework_id, organization_id) -> compliance_frameworks(id,
+  // organization_id) -- see the Phase 1 security-foundation migration. Exists
+  // so this table can carry its own RLS isolation policy.
+  organization_id: string;
   rule_code: string;
   title: string;
   description: string | null;
   severity: 'critical' | 'high' | 'medium' | 'low';
   category: 'encryption' | 'backups' | 'public_access' | 'tagging' | 'iam' | 'networking' | 'custom';
-  rule_type: 'property_check' | 'tag_required' | 'tag_pattern' | 'metadata_check' | 'relationship_check' | 'custom_script';
+  rule_type: ComplianceRuleType;
   conditions: Record<string, any>;
   resource_types: string[];
   recommendation: string;
@@ -61,6 +74,10 @@ export interface ComplianceScan {
 export interface ComplianceScanFinding {
   id: string;
   scan_id: string;
+  // Denormalized from the parent scan, DB-enforced equal to it via a
+  // composite FK (scan_id, organization_id) -> compliance_scans(id,
+  // organization_id) -- see the Phase 1 security-foundation migration.
+  organization_id: string;
   rule_id: string;
   resource_id: string;
   resource_arn: string;
@@ -92,12 +109,13 @@ export interface CreateFrameworkData {
 
 export interface CreateRuleData {
   framework_id: string;
+  organization_id: string;
   rule_code: string;
   title: string;
   description?: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   category: 'encryption' | 'backups' | 'public_access' | 'tagging' | 'iam' | 'networking' | 'custom';
-  rule_type: 'property_check' | 'tag_required' | 'tag_pattern' | 'metadata_check' | 'relationship_check' | 'custom_script';
+  rule_type: ComplianceRuleType;
   conditions: Record<string, any>;
   resource_types?: string[];
   recommendation: string;
@@ -244,14 +262,15 @@ export class ComplianceFrameworksRepository {
   async createRule(data: CreateRuleData): Promise<ComplianceFrameworkRule> {
     const query = `
       INSERT INTO compliance_framework_rules (
-        framework_id, rule_code, title, description, severity, category,
+        framework_id, organization_id, rule_code, title, description, severity, category,
         rule_type, conditions, resource_types, recommendation, remediation_url, enabled
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `;
 
     const values = [
       data.framework_id,
+      data.organization_id,
       data.rule_code,
       data.title,
       data.description || null,
@@ -439,6 +458,7 @@ export class ComplianceFrameworksRepository {
 
   async createFinding(data: {
     scan_id: string;
+    organization_id: string;
     rule_id: string;
     resource_id: string;
     resource_arn: string;
@@ -452,9 +472,9 @@ export class ComplianceFrameworksRepository {
   }): Promise<ComplianceScanFinding> {
     const query = `
       INSERT INTO compliance_scan_findings (
-        scan_id, rule_id, resource_id, resource_arn, resource_type, resource_name,
+        scan_id, organization_id, rule_id, resource_id, resource_arn, resource_type, resource_name,
         status, severity, category, issue, recommendation
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT (scan_id, resource_id, rule_id)
       DO UPDATE SET
         status = EXCLUDED.status,
@@ -465,6 +485,7 @@ export class ComplianceFrameworksRepository {
 
     const values = [
       data.scan_id,
+      data.organization_id,
       data.rule_id,
       data.resource_id,
       data.resource_arn,
@@ -491,21 +512,11 @@ export class ComplianceFrameworksRepository {
     return result.rows;
   }
 
-  async markFindingAsRemediated(
-    id: string,
-    remediatedBy: string,
-    notes?: string
-  ): Promise<ComplianceScanFinding | null> {
-    const query = `
-      UPDATE compliance_scan_findings
-      SET remediated = true,
-          remediated_at = NOW(),
-          remediated_by = $1,
-          remediation_notes = $2
-      WHERE id = $3
-      RETURNING *
-    `;
-    const result = await this.pool.query(query, [remediatedBy, notes || null, id]);
-    return result.rows[0] || null;
-  }
+  // markFindingAsRemediated was removed as part of the Phase 1 security
+  // foundation (2026-09): it took no organization_id and was reachable by no
+  // route (confirmed unreferenced repo-wide) -- a tenant-unsafe primitive
+  // waiting to be wired into a future route rather than a currently
+  // exploitable path. Remediation tracking for a real V1 remediation workflow
+  // should be reintroduced with an organization_id parameter, scoped exactly
+  // like every other write in this repository, when that workflow is built.
 }
