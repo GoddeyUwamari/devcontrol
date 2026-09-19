@@ -24,18 +24,38 @@ const RESERVED_ALIASES = [
   'HIPAA',
 ] as const;
 
+// Digit/letter lookalikes seen in real-world evasion attempts (e.g. "S0C2"
+// for "SOC2"). Each target letter is distinct, so this never collapses two
+// different digit sequences into the same output -- "NIST 800-53" and
+// "NIST 801-53" still normalize to different strings; it just also catches
+// the disguised spelling of an already-reserved name. Digits with no common
+// letter lookalike (2, 6, 9) are left as-is.
+const LEET_SUBSTITUTIONS: Record<string, string> = {
+  '0': 'o',
+  '1': 'i',
+  '3': 'e',
+  '4': 'a',
+  '5': 's',
+  '7': 't',
+  '8': 'b',
+};
+
 /**
- * Deterministic normalization: trim, case-fold, collapse separator forms
- * (hyphen/underscore/slash treated as whitespace, matching how these aliases
- * are written interchangeably in practice, e.g. "PCI-DSS" vs "PCI DSS"), then
- * collapse repeated whitespace.
+ * Deterministic normalization: case-fold, replace digit/letter lookalikes,
+ * then strip every character that isn't a letter or digit. Stripping
+ * (rather than collapsing to a single space) means separator choice
+ * (hyphen/underscore/slash/space) and even spacing every letter out
+ * ("S O C 2") can't change the result. This is still an exact-match
+ * comparison key, not a substring/fuzzy one -- isReservedFrameworkName below
+ * only ever does a Set.has() equality check against the *entire* normalized
+ * name, so "PCI compliance helper notes" normalizes to something other than
+ * "pci" and is still never blocked for merely mentioning a standard.
  */
 export function normalizeFrameworkName(name: string): string {
   return name
-    .trim()
     .toLowerCase()
-    .replace(/[-_/]+/g, ' ')
-    .replace(/\s+/g, ' ');
+    .replace(/[0-9]/g, (d) => LEET_SUBSTITUTIONS[d] ?? d)
+    .replace(/[^a-z0-9]/g, '');
 }
 
 const RESERVED_NORMALIZED = new Set(RESERVED_ALIASES.map(normalizeFrameworkName));
