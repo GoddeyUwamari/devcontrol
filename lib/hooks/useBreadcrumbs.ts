@@ -80,10 +80,24 @@ export const parentPaths: Record<string, { label: string; href?: string }[]> = {
   '/ai-reports':        [{ label: 'Costs', href: '/costs' }],
   '/monitoring':      [{ label: 'Observability', href: '/monitoring' }],
   '/monitoring/slos': [{ label: 'Observability', href: '/monitoring' }],
-  '/anomalies':             [{ label: 'Security', href: '/security' }],
-  '/compliance/frameworks': [{ label: 'Security', href: '/security' }],
-  '/audit-logs':            [{ label: 'Security', href: '/security' }],
+  '/anomalies':                  [{ label: 'Security', href: '/security' }],
+  '/compliance/frameworks':      [{ label: 'Security', href: '/security' }],
+  '/compliance/frameworks/soc2': [{ label: 'Security', href: '/security' }],
+  '/audit-logs':                 [{ label: 'Security', href: '/security' }],
 };
+
+/**
+ * Real path segments that must remain part of currentPath's href reconstruction
+ * (so a link built from a later segment, e.g. 'frameworks', still points at the real
+ * URL '/compliance/frameworks') but that must never become their own visible
+ * breadcrumb entry -- 'compliance' is folded into the 'Compliance' label already
+ * carried by its child segment ('frameworks'), not shown a second time on its own.
+ *
+ * This must never be used to filter the segments array itself (that was the bug: once
+ * 'compliance' is removed from the array, currentPath is rebuilt from 'frameworks'
+ * alone and produces '/frameworks' instead of '/compliance/frameworks').
+ */
+const HIDDEN_FROM_BREADCRUMB_DISPLAY = new Set(['compliance']);
 
 /**
  * Hook to generate breadcrumbs from current pathname
@@ -96,8 +110,12 @@ export function useBreadcrumbs(
   const pathname = usePathname();
 
   return useMemo(() => {
-    // Remove leading/trailing slashes and split path
-    const segments = pathname.split('/').filter((s) => Boolean(s) && s !== 'app' && s !== 'compliance');
+    // Every real path segment, unfiltered ('app' is defensive-only -- Next.js route
+    // groups like (app) never appear in a real pathname). currentPath is always built
+    // from THIS array, never from a shortened one, so a segment hidden from display
+    // (see HIDDEN_FROM_BREADCRUMB_DISPLAY) still contributes to the real URL of every
+    // segment that follows it.
+    const segments = pathname.split('/').filter((s) => Boolean(s) && s !== 'app');
 
     // If we're on root or login, don't show breadcrumbs
     if (segments.length === 0 || segments[0] === 'login') {
@@ -132,6 +150,12 @@ export function useBreadcrumbs(
           breadcrumbs[0].current = true;
           breadcrumbs[0].href = undefined;
         }
+        return;
+      }
+
+      // currentPath already includes this segment (see above) so hrefs built from
+      // later segments stay correct -- it just never gets a visible crumb of its own.
+      if (HIDDEN_FROM_BREADCRUMB_DISPLAY.has(segment)) {
         return;
       }
 
