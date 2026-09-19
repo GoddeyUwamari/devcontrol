@@ -1,3 +1,14 @@
+/**
+ * Authentication: uses the shared `api` Axios client from lib/api.ts, whose request
+ * interceptor injects `Authorization: Bearer <accessToken>` -- the same mechanism
+ * soc2.service.ts and every other authenticated frontend service use. The backend's
+ * authenticateToken middleware only ever reads the Authorization header, never cookies,
+ * so this service must not rely on a bespoke or cookie-credentialed request mechanism.
+ */
+
+import { api } from '@/lib/api';
+import axios from 'axios';
+
 export type SecurityHubCapabilityStatus = 'NOT_GRANTED' | 'NOT_AVAILABLE' | 'ENABLED' | 'ERROR';
 export type SecurityHubSyncStatus = 'NEVER_RUN' | 'RUNNING' | 'COMPLETED' | 'PARTIAL' | 'FAILED';
 export type FoundationControlStatus =
@@ -71,65 +82,87 @@ export interface NistReadinessResult {
   controls: FrameworkControlResult[];
 }
 
+/** A thrown Error augmented with the HTTP status, so callers can distinguish 401 (not
+ * authenticated) from 402 (tier) or 5xx without a new error-handling abstraction. */
+export interface SecurityHubApiError extends Error {
+  statusCode?: number;
+}
+
+/**
+ * Adapts an Axios failure into an Error whose `message` is the backend's own `error`
+ * string (what the hook and page have always surfaced) rather than Axios's generic
+ * "Request failed with status code N", and whose `statusCode` is the HTTP status. Anything
+ * without a usable string message -- a network failure, a non-JSON body, a non-Axios
+ * error -- gets the caller's stable fallback; no response internals are ever exposed.
+ */
+function toSecurityHubApiError(error: unknown, fallbackMessage: string): SecurityHubApiError {
+  let message = fallbackMessage;
+  let statusCode: number | undefined;
+
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { error?: unknown } | null | undefined;
+    if (typeof data?.error === 'string' && data.error.length > 0) {
+      message = data.error;
+    }
+    statusCode = error.response?.status;
+  }
+
+  const apiError = new Error(message) as SecurityHubApiError;
+  apiError.statusCode = statusCode;
+  return apiError;
+}
+
 class SecurityHubService {
-  private baseUrl = process.env.NEXT_PUBLIC_API_URL
-    ? `${process.env.NEXT_PUBLIC_API_URL}/api/security-hub`
-    : 'http://localhost:8080/api/security-hub';
+  private readonly basePath = '/api/security-hub';
 
   async getCapability(): Promise<SecurityHubCapability> {
-    const response = await fetch(`${this.baseUrl}/capability`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch Security Hub capability' }));
-      throw new Error(error.error || 'Failed to fetch Security Hub capability');
+    try {
+      const response = await api.get(`${this.basePath}/capability`);
+      const data = response.data;
+      return {
+        capabilityStatus: data.capabilityStatus,
+        syncStatus: data.syncStatus,
+        checkedAt: data.checkedAt,
+        error: data.error,
+        enabledStandards: data.enabledStandards ?? [],
+      };
+    } catch (error) {
+      throw toSecurityHubApiError(error, 'Failed to fetch Security Hub capability');
     }
-    const data = await response.json();
-    return {
-      capabilityStatus: data.capabilityStatus,
-      syncStatus: data.syncStatus,
-      checkedAt: data.checkedAt,
-      error: data.error,
-      enabledStandards: data.enabledStandards ?? [],
-    };
   }
 
   async getCisReadiness(): Promise<CisReadinessResult> {
-    const response = await fetch(`${this.baseUrl}/frameworks/cis`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch CIS readiness' }));
-      throw new Error(error.error || 'Failed to fetch CIS readiness');
+    try {
+      const response = await api.get(`${this.basePath}/frameworks/cis`);
+      return response.data.result;
+    } catch (error) {
+      throw toSecurityHubApiError(error, 'Failed to fetch CIS readiness');
     }
-    const data = await response.json();
-    return data.result;
   }
 
   async getPciReadiness(): Promise<PciReadinessResult> {
-    const response = await fetch(`${this.baseUrl}/frameworks/pci`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch PCI DSS readiness' }));
-      throw new Error(error.error || 'Failed to fetch PCI DSS readiness');
+    try {
+      const response = await api.get(`${this.basePath}/frameworks/pci`);
+      return response.data.result;
+    } catch (error) {
+      throw toSecurityHubApiError(error, 'Failed to fetch PCI DSS readiness');
     }
-    const data = await response.json();
-    return data.result;
   }
 
   async getNistReadiness(): Promise<NistReadinessResult> {
-    const response = await fetch(`${this.baseUrl}/frameworks/nist`, { credentials: 'include' });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to fetch NIST SP 800-53 Rev. 5 readiness' }));
-      throw new Error(error.error || 'Failed to fetch NIST SP 800-53 Rev. 5 readiness');
+    try {
+      const response = await api.get(`${this.basePath}/frameworks/nist`);
+      return response.data.result;
+    } catch (error) {
+      throw toSecurityHubApiError(error, 'Failed to fetch NIST SP 800-53 Rev. 5 readiness');
     }
-    const data = await response.json();
-    return data.result;
   }
 
   async triggerSync(): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/sync`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to trigger Security Hub sync' }));
-      throw new Error(error.error || 'Failed to trigger Security Hub sync');
+    try {
+      await api.post(`${this.basePath}/sync`);
+    } catch (error) {
+      throw toSecurityHubApiError(error, 'Failed to trigger Security Hub sync');
     }
   }
 }
