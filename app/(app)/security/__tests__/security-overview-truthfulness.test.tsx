@@ -41,6 +41,10 @@ vi.mock('@/lib/services/demo-mode.service', () => ({
 
 vi.mock('@/lib/hooks/useComplianceFrameworks', () => ({
   useComplianceFrameworks: () => ({ frameworks: [], loading: false }),
+  // Added solely because SecurityPage now also calls useComplianceScans() (see
+  // the security-overview compliance-framework truthfulness fix) — this file's
+  // own test intent (findings/gaps/anomalies/trend) is unrelated and unchanged.
+  useComplianceScans: () => ({ scans: [], loading: false }),
 }))
 
 const mockUseCurrentRiskScore = vi.fn()

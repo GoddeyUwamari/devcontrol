@@ -13,7 +13,7 @@ import {
   TrendingUp, TrendingDown, Check, ShieldCheck, EyeOff, ShieldAlert,
 } from 'lucide-react'
 import { useCurrentRiskScore, useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
-import { useComplianceFrameworks } from '@/lib/hooks/useComplianceFrameworks'
+import { useComplianceFrameworks, useComplianceScans } from '@/lib/hooks/useComplianceFrameworks'
 import { useAccountSecurityFindings } from '@/lib/hooks/useAccountSecurityFindings'
 import { anomalyService } from '@/lib/services/anomaly.service'
 import awsServicesService from '@/lib/services/aws-services.service'
@@ -27,6 +27,21 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 
 type FrameworkDisplay = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing' }
+
+/**
+ * Real-mode framework evaluation state — derived only from `compliance_scans`
+ * rows for that framework, never from `framework.enabled` (see the
+ * security-overview-truthfulness audit: `enabled` is a user-set toggle with
+ * no backend relationship to any scan outcome). 'completed' is the only
+ * variant carrying scan-derived numbers; the others are purely factual
+ * (no scan ever run / a scan is running or pending / the latest scan errored)
+ * and must never render a score or a passing/failing judgment.
+ */
+type FrameworkEvaluation =
+  | { id: string; name: string; evaluationState: 'no_evaluation' }
+  | { id: string; name: string; evaluationState: 'in_progress' }
+  | { id: string; name: string; evaluationState: 'failed' }
+  | { id: string; name: string; evaluationState: 'completed'; complianceScore: number; criticalIssues: number; highIssues: number; evaluatedAt: string }
 type FindingDisplay = {
   id: string
   severity: 'critical' | 'high' | 'medium' | 'low'
@@ -117,6 +132,7 @@ export default function SecurityPage() {
   const { data: riskScore, isLoading: riskLoading } = useCurrentRiskScore(!demoMode)
   const { data: riskTrend, isLoading: trendLoading } = useRiskScoreTrend('30d', !demoMode)
   const { frameworks, loading: frameworksLoading } = useComplianceFrameworks()
+  const { scans, loading: scansLoading } = useComplianceScans()
 
   const { data: anomalyData, isLoading: anomalyLoading, refetch: refetchAnomalies } = useQuery({
     queryKey: ['anomalies', 'active'],
@@ -154,13 +170,53 @@ export default function SecurityPage() {
   // Demo mode is the only case where that fallback is legitimate — same principle already
   // applied to `findings` and `score` above.
   const hasFrameworkData = demoMode || frameworks.length > 0
-  const displayFrameworks: FrameworkDisplay[] = demoMode
-    ? FALLBACK_FRAMEWORKS
-    : frameworks.slice(0, 4).map((f) => ({ id: f.id, name: f.name, complianceScore: f.enabled ? 80 : 55, status: f.enabled ? 'passing' : 'failing' }))
-
+  // Demo mode keeps its own static, pre-scored fixture unchanged (see
+  // FALLBACK_FRAMEWORKS above) — this array is never populated in real mode
+  // any more, so passingFrameworks/failingFrameworks below are demo-only.
+  const displayFrameworks: FrameworkDisplay[] = demoMode ? FALLBACK_FRAMEWORKS : []
   const passingFrameworks = displayFrameworks.filter((f) => f.status === 'passing').length
   const failingFrameworks = displayFrameworks.filter((f) => f.status === 'failing').length
   const totalFrameworks = displayFrameworks.length
+
+  // Real-mode evaluation, sourced from compliance_scans — never from
+  // framework.enabled. Precedence: for each framework, the single
+  // most-recently-CREATED scan (compliance_scans.created_at, always present
+  // regardless of status — unlike completed_at, which is null until a scan
+  // finishes) decides what's shown. This means a newly-started re-scan
+  // correctly takes over from an older completed result (shown as
+  // "Evaluation in progress" rather than a stale score sitting next to a
+  // scan that's already superseding it), while an old completed scan is
+  // still shown correctly when it *is* the framework's most recent scan.
+  // A 'completed' scan with a null compliance_score (shouldn't happen in
+  // practice — CustomComplianceService.executeScan always sets a numeric
+  // score on completion — but the type allows it) is treated the same as
+  // no evaluation at all, mirroring the identical defensive check already
+  // used by /compliance/frameworks/page.tsx's evaluationState derivation.
+  const realFrameworkEvaluations: FrameworkEvaluation[] = frameworks.slice(0, 4).map((f) => {
+    const frameworkScans = scans.filter((s) => s.framework_id === f.id)
+    const latestScan = [...frameworkScans].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+
+    if (!latestScan) return { id: f.id, name: f.name, evaluationState: 'no_evaluation' as const }
+    if (latestScan.status === 'pending' || latestScan.status === 'running') {
+      return { id: f.id, name: f.name, evaluationState: 'in_progress' as const }
+    }
+    if (latestScan.status === 'failed') return { id: f.id, name: f.name, evaluationState: 'failed' as const }
+    if (latestScan.status === 'completed' && latestScan.compliance_score != null) {
+      return {
+        id: f.id,
+        name: f.name,
+        evaluationState: 'completed' as const,
+        complianceScore: latestScan.compliance_score,
+        criticalIssues: latestScan.critical_issues,
+        highIssues: latestScan.high_issues,
+        evaluatedAt: latestScan.completed_at ?? latestScan.created_at,
+      }
+    }
+    return { id: f.id, name: f.name, evaluationState: 'no_evaluation' as const }
+  })
+  const evaluatedFrameworksCount = realFrameworkEvaluations.filter((f) => f.evaluationState === 'completed').length
 
   // Real accounts: while riskTrend hasn't loaded yet (or errored), there is no
   // real trend to report — `riskTrend` itself (not a defaulted direction/pct)
@@ -257,7 +313,19 @@ export default function SecurityPage() {
 
   const navCards = [
     { icon: AlertTriangle, label: 'All Anomalies', desc: criticalAnomalies > 0 ? `${criticalAnomalies} critical — investigate now` : 'Investigate and resolve threats', href: '/anomalies', color: criticalAnomalies > 0 ? '#DC2626' : '#D97706', bg: criticalAnomalies > 0 ? '#FEF2F2' : '#FFFBEB' },
-    { icon: CheckSquare,   label: 'Compliance',    desc: !hasFrameworkData ? 'Not yet evaluated' : failingFrameworks > 0 ? `${failingFrameworks} framework${failingFrameworks > 1 ? 's' : ''} failing — remediate now` : 'No failing frameworks', href: '/compliance/frameworks', color: !hasFrameworkData ? '#64748B' : failingFrameworks > 0 ? '#DC2626' : '#059669', bg: '#F5F3FF' },
+    {
+      icon: CheckSquare, label: 'Compliance', href: '/compliance/frameworks', bg: '#F5F3FF',
+      desc: !hasFrameworkData
+        ? 'Not yet evaluated'
+        : demoMode
+          ? (failingFrameworks > 0 ? `${failingFrameworks} framework${failingFrameworks > 1 ? 's' : ''} failing — remediate now` : 'No failing frameworks')
+          : (evaluatedFrameworksCount > 0 ? `${evaluatedFrameworksCount} framework${evaluatedFrameworksCount > 1 ? 's' : ''} evaluated` : 'Not yet evaluated'),
+      color: !hasFrameworkData
+        ? '#64748B'
+        : demoMode
+          ? (failingFrameworks > 0 ? '#DC2626' : '#059669')
+          : '#7C3AED',
+    },
     { icon: ClipboardList, label: 'Audit Logs',    desc: 'Full activity trail', href: '/audit-logs', color: '#7C3AED', bg: '#F5F3FF' },
   ]
 
@@ -430,14 +498,14 @@ export default function SecurityPage() {
         </div>
         <div className="bg-white rounded-xl p-5 border border-slate-100">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Compliance Status</p>
-          {frameworksLoading ? <Loader2 size={18} className="text-slate-300" /> : !hasFrameworkData ? (
+          {(demoMode ? frameworksLoading : frameworksLoading || scansLoading) ? <Loader2 size={18} className="text-slate-300" /> : !hasFrameworkData ? (
             <>
               <div className="flex items-end gap-1 mb-2">
                 <span className="text-3xl font-bold text-slate-900 tracking-tight leading-none">—</span>
               </div>
               <span className="text-xs text-slate-400">Not yet evaluated</span>
             </>
-          ) : (
+          ) : demoMode ? (
             <>
               <div className="flex items-end gap-1 mb-2">
                 <span className="text-3xl font-bold text-slate-900 tracking-tight leading-none">{passingFrameworks}</span>
@@ -448,6 +516,14 @@ export default function SecurityPage() {
                   ? <><AlertTriangle size={12} className="text-red-600" /><span className="text-xs text-red-600 font-semibold">{failingFrameworks} framework{failingFrameworks > 1 ? 's' : ''} failing</span></>
                   : <><CheckSquare size={12} className="text-green-600" /><span className="text-xs text-slate-400">All frameworks passing</span></>}
               </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-end gap-1 mb-2">
+                <span className="text-3xl font-bold text-slate-900 tracking-tight leading-none">{evaluatedFrameworksCount}</span>
+                <span className="text-lg text-slate-400 mb-0.5">/{realFrameworkEvaluations.length}</span>
+              </div>
+              <span className="text-xs text-slate-400">{evaluatedFrameworksCount > 0 ? `${evaluatedFrameworksCount} evaluated` : 'Not yet evaluated'}</span>
             </>
           )}
         </div>
@@ -585,7 +661,7 @@ export default function SecurityPage() {
                 <p className="text-sm font-medium text-slate-500 mb-1">Risk Visibility: Not Established</p>
                 <p className="text-xs text-slate-400">Run a baseline scan to see your compliance posture.</p>
               </div>
-            ) : displayFrameworks.map((f) => {
+            ) : demoMode ? displayFrameworks.map((f) => {
               const pct = f.complianceScore
               const passing = f.status === 'passing', failing = f.status === 'failing'
               const statusColor = passing ? '#059669' : failing ? '#DC2626' : '#D97706'
@@ -606,7 +682,28 @@ export default function SecurityPage() {
                   </div>
                 </div>
               )
-            })}
+            }) : realFrameworkEvaluations.map((f) => (
+              <div key={f.id} className="rounded-xl p-3.5 border bg-slate-50 border-slate-100">
+                {f.evaluationState === 'completed' ? (
+                  <>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-semibold text-slate-900">{f.name}</span>
+                      <span className="text-xs font-bold text-slate-700">{f.complianceScore}%</span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {f.criticalIssues} critical · {f.highIssues} high · last evaluated {new Date(f.evaluatedAt).toLocaleDateString()}
+                    </p>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-900">{f.name}</span>
+                    <span className={`text-xs font-semibold ${f.evaluationState === 'in_progress' ? 'text-amber-600' : f.evaluationState === 'failed' ? 'text-slate-500' : 'text-slate-400'}`}>
+                      {f.evaluationState === 'in_progress' ? 'Evaluation in progress' : f.evaluationState === 'failed' ? 'Evaluation failed' : 'Not yet evaluated'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
