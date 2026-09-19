@@ -611,6 +611,199 @@ describe('Soc2EvidenceService — evaluation rollup', () => {
   });
 });
 
+describe('Soc2EvidenceService — Phase 5 observation reconciliation (stale rows)', () => {
+  it('RUN 1: resource A + resource B both present -> RUN 2: resource B deleted -> A remains/updates, B is removed, no stale row left behind', async () => {
+    const orgId = await insertOrg();
+    const arnA = await insertResource(orgId, { resource_type: 'ec2', is_encrypted: true });
+    const arnB = await insertResource(orgId, { resource_type: 'ec2', is_encrypted: true });
+
+    await service.computeAndPersistEvidence(orgId);
+    const afterRun1 = await observationsFor(orgId, 'CC6.1');
+    expect(afterRun1.find((o) => o.resource_arn === arnA)).toBeDefined();
+    expect(afterRun1.find((o) => o.resource_arn === arnB)).toBeDefined();
+
+    // Simulate discovery's own reconcile() marking B genuinely gone (deleted from AWS) --
+    // the exact mechanism awsResourceDiscovery.ts uses, which readResources() already
+    // filters on (status != 'terminated').
+    await pool.query(`UPDATE aws_resources SET status = 'terminated' WHERE resource_arn = $1`, [arnB]);
+
+    await service.computeAndPersistEvidence(orgId);
+    const afterRun2 = await observationsFor(orgId, 'CC6.1');
+
+    expect(afterRun2.find((o) => o.resource_arn === arnA)).toBeDefined();
+    expect(afterRun2.find((o) => o.resource_arn === arnB)).toBeUndefined();
+  });
+
+  it('an organization that goes from having resources of a type to having zero clears every previously-stored per-resource row for that (criterion, resource_type)', async () => {
+    const orgId = await insertOrg();
+    const arn = await insertResource(orgId, { resource_type: 's3', is_encrypted: true });
+
+    await service.computeAndPersistEvidence(orgId);
+    expect((await observationsFor(orgId, 'CC6.1')).find((o) => o.resource_arn === arn)).toBeDefined();
+
+    await pool.query(`UPDATE aws_resources SET status = 'terminated' WHERE resource_arn = $1`, [arn]);
+
+    await service.computeAndPersistEvidence(orgId);
+    const observations = await observationsFor(orgId, 'CC6.1');
+    expect(observations.find((o) => o.resource_type === 's3')).toBeUndefined();
+  });
+
+  it('a resolved (no-longer-active) finding is reconciled away for CC6.2, and the org-level aggregate is never deleted by per-resource reconciliation', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, true);
+    const userArn = 'arn:aws:iam::1:user/reconcile-mfa-user';
+    await insertFinding(orgId, {
+      category: 'iam',
+      resource_identifier: userArn,
+      evidence: { schema_version: 1, resource_type: 'iam_user', finding_type: 'mfa_not_enabled', relevant_aws_attributes: { has_login_profile: true, mfa_device_count: 0 } },
+    });
+
+    await service.computeAndPersistEvidence(orgId);
+    const afterRun1 = await observationsFor(orgId, 'CC6.2');
+    expect(afterRun1.find((o) => o.resource_arn === userArn)?.result).toBe('CONTRADICTS');
+    expect(afterRun1.find((o) => o.resource_arn === null)).toBeDefined();
+
+    // The finding is genuinely resolved (discovery's own reconcileScan mechanism) --
+    // readActiveFindings() no longer returns it.
+    await pool.query(`UPDATE account_security_findings SET status = 'resolved' WHERE resource_identifier = $1`, [userArn]);
+
+    await service.computeAndPersistEvidence(orgId);
+    const afterRun2 = await observationsFor(orgId, 'CC6.2');
+
+    expect(afterRun2.find((o) => o.resource_arn === userArn)).toBeUndefined();
+    // The org-level aggregate row (resource_arn IS NULL) survives -- it is re-upserted
+    // fresh every run, never a reconciliation target -- and correctly flips to SUPPORTS
+    // now that zero active findings remain and the scan is complete.
+    const aggregate = afterRun2.find((o) => o.resource_arn === null);
+    expect(aggregate).toBeDefined();
+    expect(aggregate?.result).toBe('SUPPORTS');
+  });
+
+  it('partial/incomplete discovery (an unrelated resource type failing) never deletes a legitimate prior observation for a resource that is still present and still active', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, true);
+    const sgArn = 'arn:aws:ec2:us-east-1:1:security-group/sg-still-open';
+    await insertFinding(orgId, { category: 'networking', resource_identifier: sgArn, evidence: unrestrictedIngressEvidence() });
+
+    await service.computeAndPersistEvidence(orgId);
+    expect((await observationsFor(orgId, 'CC7.1')).find((o) => o.resource_arn === sgArn)?.result).toBe('CONTRADICTS');
+
+    // Nothing about this finding changed -- exactly what a run where EC2/S3/etc.
+    // discovery failed but left account_security_findings completely untouched looks
+    // like from this service's point of view (see buildReconciliationScopes()'s own
+    // docblock: a failed scan never touches the source tables, so this run's read is
+    // identical to the last one). Recomputing must not treat that as disappearance.
+    await service.computeAndPersistEvidence(orgId);
+    const observations = await observationsFor(orgId, 'CC7.1');
+
+    expect(observations.find((o) => o.resource_arn === sgArn)?.result).toBe('CONTRADICTS');
+  });
+});
+
+describe('Soc2EvidenceService — Phase 5 idempotency after resource disappearance', () => {
+  it('the final current state converges deterministically regardless of how many times computation is repeated after a resource disappears', async () => {
+    const orgId = await insertOrg();
+    const arnA = await insertResource(orgId, { resource_type: 'ec2', is_encrypted: true });
+    const arnB = await insertResource(orgId, { resource_type: 'ec2', is_encrypted: false });
+
+    await service.computeAndPersistEvidence(orgId);
+    await pool.query(`UPDATE aws_resources SET status = 'terminated' WHERE resource_arn = $1`, [arnB]);
+
+    // Repeated scheduled trigger: run several times in a row after the disappearance.
+    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId);
+
+    const observations = await observationsFor(orgId, 'CC6.1');
+    expect(observations.filter((o) => o.resource_type === 'ec2')).toHaveLength(1);
+    expect(observations.find((o) => o.resource_arn === arnA)).toBeDefined();
+
+    const evaluations = await repository.getControlEvaluations(orgId);
+    const cc61 = evaluations.find((e) => e.criterion_id === 'CC6.1')!;
+    expect(cc61.evidence_summary.supports).toBe(1);
+  });
+});
+
+describe('Soc2EvidenceService — Phase 5 concurrency guard', () => {
+  it('two overlapping computeAndPersistEvidence() calls for the SAME organization both complete and leave a single, internally-consistent result (never a partial/duplicated set)', async () => {
+    const orgId = await insertOrg();
+    await insertResource(orgId, { resource_type: 's3', is_encrypted: true });
+
+    await Promise.all([
+      service.computeAndPersistEvidence(orgId),
+      service.computeAndPersistEvidence(orgId),
+    ]);
+
+    const observations = await observationsFor(orgId, 'CC6.1');
+    // Exactly one row for the one real resource -- no duplication from the two
+    // overlapping runs racing each other.
+    expect(observations.filter((o) => o.resource_type === 's3')).toHaveLength(1);
+
+    const evaluations = await repository.getControlEvaluations(orgId);
+    expect(evaluations.map((e) => e.criterion_id).sort()).toEqual(['CC6.1', 'CC6.2', 'CC6.3', 'CC6.6', 'CC7.1', 'CC9.1']);
+  });
+
+  it('two overlapping computations for DIFFERENT organizations do not block each other', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    await insertResource(orgA, { resource_type: 's3', is_encrypted: true });
+    await insertResource(orgB, { resource_type: 's3', is_encrypted: false });
+
+    await expect(
+      Promise.all([
+        service.computeAndPersistEvidence(orgA),
+        service.computeAndPersistEvidence(orgB),
+      ])
+    ).resolves.toBeDefined();
+
+    const evalsA = await repository.getControlEvaluations(orgA);
+    const evalsB = await repository.getControlEvaluations(orgB);
+    expect(evalsA.find((e) => e.criterion_id === 'CC6.1')?.evidence_summary.supports).toBe(1);
+    expect(evalsB.find((e) => e.criterion_id === 'CC6.1')?.evidence_summary.contradicts).toBe(1);
+  });
+});
+
+describe('Soc2EvidenceService — Phase 5 evaluation atomicity', () => {
+  it('a failure during evaluation persistence leaves no half-written six-criterion set, and a retry succeeds cleanly', async () => {
+    const orgId = await insertOrg();
+    await insertResource(orgId, { resource_type: 's3', is_encrypted: true });
+
+    // Establish a real, valid prior evaluation state to prove it survives a failed
+    // recompute untouched.
+    await service.computeAndPersistEvidence(orgId);
+    const before = await repository.getControlEvaluations(orgId);
+    expect(before).toHaveLength(6);
+
+    // Force a failure inside the same transaction persistComputation() uses, on the
+    // evaluation-upsert side specifically -- an evaluation whose organization_id does
+    // not match the scoped organizationId trips persistComputation()'s own guard clause
+    // (the same defensive check upsertControlEvaluation() already had), after some
+    // observations/evaluations from this call may already have been written to the
+    // transaction buffer but before COMMIT.
+    const freshObservations = await repository.getObservations(orgId);
+    const validEvaluation = before[0];
+    const brokenEvaluations = [
+      { ...validEvaluation, computed_at: new Date() },
+      { ...before[1], organization_id: 'not-a-real-org-id', computed_at: new Date() },
+      ...before.slice(2),
+    ];
+
+    await expect(
+      repository.persistComputation(orgId, freshObservations, [], brokenEvaluations)
+    ).rejects.toThrow();
+
+    const afterFailedAttempt = await repository.getControlEvaluations(orgId);
+    // Every evaluation is byte-for-byte the pre-attempt state -- not "the first one
+    // updated, the rest untouched".
+    expect(afterFailedAttempt).toEqual(before);
+
+    // Retry with the real (valid) computation succeeds and produces a full, correct set.
+    await service.computeAndPersistEvidence(orgId);
+    const afterRetry = await repository.getControlEvaluations(orgId);
+    expect(afterRetry).toHaveLength(6);
+  });
+});
+
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);

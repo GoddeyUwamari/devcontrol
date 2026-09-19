@@ -100,6 +100,25 @@ export interface Soc2EvidenceSummary {
   unknown: number;
 }
 
+/**
+ * Phase 5 -- one reconciliation scope per (criterion, resource_type) pairing a single
+ * computeAndPersistEvidence() run is capable of producing (see soc2CriteriaConfig.ts's
+ * own `scope` field, which this is built from directly, so the two can never silently
+ * drift apart). currentResourceArns is exactly the set of non-null resource_arn values
+ * that run actually computed for that pairing -- itself already scoped to
+ * aws_resources rows with status != 'terminated' / account_security_findings rows with
+ * status = 'active', i.e. discovery's own currency signal for "this resource still
+ * exists" / "this finding is still open". Any existing observation row for this
+ * (organization, criterion, resource_type) whose resource_arn is not in this set is
+ * eligible for deletion -- the org-level aggregate row (resource_arn IS NULL) is never
+ * affected. See Soc2EvidenceRepository.reconcileObservationScope().
+ */
+export interface Soc2ObservationReconciliationScope {
+  criterionId: string;
+  resourceType: string;
+  currentResourceArns: string[];
+}
+
 /** One row of soc2_control_evaluations -- a recomputable read-through cache, never a
  * second source of truth, never a percentage/score/pass-fail certification. */
 export interface Soc2ControlEvaluation {

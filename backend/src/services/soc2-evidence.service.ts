@@ -17,6 +17,18 @@
  * ComplianceIssue.provenance (dropped on the account_security_findings conversion --
  * see the migration's docblock) or fabricates DERIVED/SELF_ATTESTED evidence.
  *
+ * PHASE 5 (production computation trigger, called only from
+ * jobs/resourceDiscovery.job.ts's scheduled sweep, after each organization's discovery
+ * attempt for that cycle -- never from a synchronous or fire-and-forget on-demand
+ * discovery path): computeAndPersistEvidence() is now also responsible for
+ * reconciliation (deleting a per-resource observation whose resource/finding is no
+ * longer present in the current, trustworthy source data -- see
+ * buildReconciliationScopes()) and for committing its entire write -- reconciliation +
+ * observation upserts + all six evaluation upserts -- as one atomic transaction guarded
+ * by a per-organization Postgres advisory lock (see
+ * Soc2EvidenceRepository.persistComputation()). Neither of these is a semantics change
+ * to any of the six criteria themselves.
+ *
  * FOUR MATERIAL DISCREPANCIES FOUND DURING IMPLEMENTATION AUDIT, resolved here (see the
  * accompanying implementation report for full reasoning):
  *
@@ -87,6 +99,7 @@ import {
   Soc2EvidenceResult,
   Soc2EvidenceSource,
   Soc2EvidenceSummary,
+  Soc2ObservationReconciliationScope,
 } from '../types/soc2-evidence.types';
 
 /** The exact issue text checkS3PublicAccessEnhanced() emits -- read here, never
@@ -166,8 +179,13 @@ export class Soc2EvidenceService {
   }
 
   /**
-   * Computes fresh observations from currently-persisted source data and upserts them,
-   * then recomputes the control-evaluation rollup. Zero AWS calls -- reads only.
+   * Computes fresh observations from currently-persisted source data and persists
+   * them -- reconciling away any stale per-resource observation whose resource/finding
+   * is no longer part of the current, trustworthy source data -- then recomputes and
+   * persists the control-evaluation rollup for all six criteria. Zero AWS calls --
+   * reads only. The entire persist step (reconciliation + observation upserts + all
+   * six evaluation upserts) is one atomic transaction guarded by a per-organization
+   * advisory lock -- see Soc2EvidenceRepository.persistComputation().
    */
   async computeAndPersistEvidence(organizationId: string): Promise<void> {
     const collectedAt = new Date();
@@ -187,12 +205,56 @@ export class Soc2EvidenceService {
       ...this.computeSecurityGroupObservations(organizationId, activeFindings, collectedAt, discoveryComplete),
     ];
 
-    await this.repository.upsertObservations(organizationId, observations);
+    const evaluations = SOC2_V1_CRITERIA.map((criterion) =>
+      this.computeControlEvaluation(organizationId, criterion, observations, collectedAt)
+    );
 
+    const reconciliationScopes = this.buildReconciliationScopes(observations);
+
+    await this.repository.persistComputation(organizationId, observations, reconciliationScopes, evaluations);
+  }
+
+  /**
+   * One reconciliation scope per (criterion, resource_type) pairing this service is
+   * capable of producing, reusing soc2CriteriaConfig.ts's own `scope` field directly
+   * rather than a second hardcoded list -- scope can never silently drift between what
+   * computeAndPersistEvidence() actually computes and what reconciliation reconciles
+   * against.
+   *
+   * currentResourceArns is exactly the set of non-null resource_arn values THIS RUN
+   * produced for that pairing -- which is itself already scoped to aws_resources rows
+   * with status != 'terminated' / account_security_findings rows with status =
+   * 'active' (see readResources() / readActiveFindings()), i.e. discovery's OWN
+   * currency signal for "this resource still exists" / "this finding is still open".
+   *
+   * CRITICAL: a resource_type whose AWS discovery step fails entirely on a given run is
+   * NOT reflected here as "gone". Discovery never marks a resource terminated, or a
+   * finding resolved, without that specific check/category having itself completed
+   * (see awsResourceDiscovery.ts's own reconcile()/reconcileScan() calls) -- a failed
+   * scan simply leaves aws_resources/account_security_findings untouched, so this run's
+   * read (and therefore this set) is identical to the last successful run's. Only a
+   * resource/finding genuinely absent from the current, already-reconciled source data
+   * is ever eligible for deletion here. Partial or failed discovery is never itself
+   * interpreted as resource disappearance.
+   */
+  private buildReconciliationScopes(
+    observations: Soc2EvidenceObservation[]
+  ): Soc2ObservationReconciliationScope[] {
+    const scopes: Soc2ObservationReconciliationScope[] = [];
     for (const criterion of SOC2_V1_CRITERIA) {
-      const evaluation = this.computeControlEvaluation(organizationId, criterion, observations, collectedAt);
-      await this.repository.upsertControlEvaluation(organizationId, evaluation);
+      for (const resourceType of criterion.scope) {
+        const currentResourceArns = observations
+          .filter(
+            (o) =>
+              o.criterion_id === criterion.criterionId &&
+              o.resource_type === resourceType &&
+              o.resource_arn !== null
+          )
+          .map((o) => o.resource_arn as string);
+        scopes.push({ criterionId: criterion.criterionId, resourceType, currentResourceArns });
+      }
     }
+    return scopes;
   }
 
   // ── CC6.1 — Encryption at rest ──────────────────────────────────────────
