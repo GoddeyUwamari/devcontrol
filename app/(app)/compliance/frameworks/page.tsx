@@ -11,14 +11,17 @@ import { FrameworkDetailsModal } from '@/components/compliance/FrameworkDetailsM
 import { ScanResultsModal } from '@/components/compliance/ScanResultsModal';
 import { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service';
 import { useToast } from '@/components/ui/use-toast';
-import { demoModeService } from '@/lib/services/demo-mode.service';
+import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 
 type DemoFramework = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing'; rulesCount: number; lastScanAt: Date; isCustom?: boolean };
 
+// SOC 2 is deliberately NOT included here -- it has its own real evidence/customer
+// system (Phase 1-3), so its demo card below is sourced from the demo-aware
+// useSoc2Readiness() hook (lib/demo-data/soc2-demo-data.ts), never a fabricated
+// complianceScore/status pair like the generic Security Hub-backed frameworks below.
 const DEMO_FRAMEWORKS: DemoFramework[] = [
   { id: '1', name: 'CIS AWS Benchmark', complianceScore: 87, status: 'passing',     rulesCount: 43, lastScanAt: new Date(Date.now() - 1000 * 60 * 30) },
-  { id: '2', name: 'SOC 2 Type II',     complianceScore: 74, status: 'in_progress', rulesCount: 28, lastScanAt: new Date(Date.now() - 1000 * 60 * 60 * 2) },
   { id: '3', name: 'NIST CSF',          complianceScore: 91, status: 'passing',     rulesCount: 56, lastScanAt: new Date(Date.now() - 1000 * 60 * 45) },
   { id: '4', name: 'PCI-DSS',           complianceScore: 68, status: 'failing',     rulesCount: 31, lastScanAt: new Date(Date.now() - 1000 * 60 * 60 * 5) },
 ];
@@ -89,7 +92,7 @@ export default function ComplianceFrameworksPage() {
     catch (err: unknown) { toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to execute scan' }); }
   };
 
-  const demoMode = demoModeService.isEnabled();
+  const demoMode = useDemoMode();
   const { enabled: salesDemoMode } = useSalesDemo();
   const isDemoActive = demoMode || salesDemoMode;
   const displayFrameworks: any[] = isDemoActive ? DEMO_FRAMEWORKS : (frameworks || []);
@@ -254,7 +257,7 @@ export default function ComplianceFrameworksPage() {
                   {isDemoActive ? (
                     <>
                       <p className="text-xs text-red-600 font-semibold">● PCI-DSS failing at 68% — audit risk active</p>
-                      <p className="text-xs text-amber-500 font-medium">● SOC 2 in progress — 74% · 7 critical violations open</p>
+                      <p className="text-xs text-amber-500 font-medium">● SOC 2 sample evidence available — see Compliance → SOC 2 Readiness</p>
                       <p className="text-xs text-green-600 font-medium">● CIS (87%) and NIST (91%) passing</p>
                     </>
                   ) : (
@@ -285,7 +288,7 @@ export default function ComplianceFrameworksPage() {
             <div className="flex-1">
               <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
               <p className="text-sm text-slate-700 leading-relaxed">
-                <strong className="text-red-600">PCI-DSS is failing at 68%</strong> — payment card data security standards not met. Audit risk is active. SOC 2 at 74% with 7 critical violations open. CIS AWS (87%) and NIST CSF (91%) are passing.<span className="block mt-1 text-xs text-slate-500">Recommended: resolve PCI-DSS critical controls before next audit cycle · address SOC 2 availability gaps.</span>
+                <strong className="text-red-600">PCI-DSS is failing at 68%</strong> — payment card data security standards not met. Audit risk is active. Sample SOC 2 technical and customer-provided evidence is available for review — not a certification or Type II audit. CIS AWS (87%) and NIST CSF (91%) are passing.<span className="block mt-1 text-xs text-slate-500">Recommended: resolve PCI-DSS critical controls before next audit cycle · review SOC 2 sample evidence.</span>
               </p>
             </div>
             <button onClick={() => handleRunScan(displayFrameworks.find((f: any) => f.status === 'failing')?.id ?? displayFrameworks[0]?.id)}
@@ -328,9 +331,13 @@ export default function ComplianceFrameworksPage() {
             <div className="flex flex-col gap-2.5">
               {[
                 { priority: 1, color: 'red', bg: 'bg-red-50', border: 'border-red-200', title: 'PCI-DSS', titleSub: 'failing at 68% · audit risk active', titleColor: 'text-red-600', desc: 'Payment card data security · 31 rules · critical control failures · immediate remediation required', badge: 'Critical', badgeCls: 'bg-red-600 text-white', btnText: 'Resolve →', btnCls: 'bg-red-600 hover:bg-red-700 text-white border-transparent', fw: 'PCI' },
-                { priority: 2, color: 'amber', bg: 'bg-amber-50', border: 'border-amber-200', title: 'SOC 2 Type II', titleSub: 'in progress · 7 critical violations open', titleColor: 'text-amber-500', desc: 'Security, availability, confidentiality · 28 rules · 74% · gaps in availability controls', badge: 'High', badgeCls: 'bg-amber-100 text-amber-800', btnText: 'Review →', btnCls: 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200', fw: 'SOC' },
+                // SOC 2's own route is fixed (/compliance/frameworks/soc2, not a generic
+                // displayFrameworks id) and its copy must never claim a score, "Type II",
+                // or an "in progress" audit -- see the real SOC2 card's own truthful
+                // 'Technical + customer evidence' framing this mirrors.
+                { priority: 2, color: 'amber', bg: 'bg-amber-50', border: 'border-amber-200', title: 'SOC 2 Readiness', titleSub: 'sample evidence available', titleColor: 'text-amber-500', desc: 'Technical + customer-provided evidence — sample data for demonstration, not a certification or Type II audit.', badge: 'High', badgeCls: 'bg-amber-100 text-amber-800', btnText: 'Review →', btnCls: 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200', href: '/compliance/frameworks/soc2' },
                 { priority: 3, color: 'slate', bg: 'bg-slate-50', border: 'border-slate-100', title: 'Maintain CIS AWS (87%) + NIST CSF (91%)', titleSub: 'passing', titleColor: 'text-green-600', desc: 'Schedule next scan to maintain compliance standing · no immediate action required', badge: 'Monitor', badgeCls: 'bg-slate-100 text-slate-500', btnText: 'Schedule →', btnCls: 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200', fw: '' },
-              ].map(({ priority, bg, border, title, titleSub, titleColor, desc, badge, badgeCls, btnText, btnCls, fw }) => (
+              ].map(({ priority, bg, border, title, titleSub, titleColor, desc, badge, badgeCls, btnText, btnCls, fw, href }) => (
                 <div key={priority} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between ${bg} rounded-xl border ${border} px-4 py-3 gap-3`}>
                   <div className="flex items-start gap-3.5">
                     <div className="text-center min-w-[36px] shrink-0">
@@ -345,7 +352,7 @@ export default function ComplianceFrameworksPage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
                     <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold uppercase ${badgeCls}`}>{badge}</span>
-                    <button onClick={() => handleViewDetails(displayFrameworks.find((f: any) => fw ? f.name?.includes(fw) : true)?.id ?? '')}
+                    <button onClick={() => href ? router.push(href) : handleViewDetails(displayFrameworks.find((f: any) => fw ? f.name?.includes(fw) : true)?.id ?? '')}
                       className={`border rounded-lg px-3 py-1.5 text-xs font-bold cursor-pointer transition-colors ${btnCls}`}>{btnText}</button>
                   </div>
                 </div>
@@ -400,6 +407,31 @@ export default function ComplianceFrameworksPage() {
             })}
           </div>
         )}
+
+        {/* SOC 2 Readiness -- deliberately its own card, not part of displayFrameworks'
+            generic progress-bar template above: SOC 2 has a real, separate technical +
+            customer evidence system (Phase 1-3) with no composite score, so it must
+            never render a percentage/progress-bar/pass-fail badge like the Security
+            Hub-backed frameworks do. soc2Subtext is sourced from the same demo-aware
+            useSoc2Readiness() the real card below uses -- "sample data" is a fact about
+            the source (this page is in demo mode), not a fabricated narrative. */}
+        <div className="bg-white rounded-xl border border-slate-100 p-5 sm:p-7 mt-3 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-center hover:border-slate-300 transition-colors">
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-sm font-semibold text-slate-900">SOC 2 Readiness</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Sample data</span>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed mb-2">Technical and customer-provided supporting evidence for SOC 2 criteria — not a certification or Type II audit.</p>
+            <p className="text-xs text-slate-400">{soc2Subtext}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push('/compliance/frameworks/soc2')}
+            className="text-xs text-violet-600 bg-violet-50 border border-violet-200 rounded-lg px-3.5 py-2 font-semibold cursor-pointer hover:bg-violet-100 transition-colors whitespace-nowrap"
+          >
+            View Readiness →
+          </button>
+        </div>
 
         <CreateFrameworkModal open={createModalOpen || editingFramework !== null} onClose={() => { setCreateModalOpen(false); setEditingFramework(null); }} onSubmit={editingFramework ? (data) => handleUpdate(editingFramework.id, data as Record<string, unknown>) : handleCreate} initialData={editingFramework || undefined} isEditing={editingFramework !== null} />
         <FrameworkDetailsModal open={detailsFramework !== null} onClose={() => setDetailsFramework(null)} framework={detailsFramework} />

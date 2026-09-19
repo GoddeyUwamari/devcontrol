@@ -12,6 +12,8 @@ import { useSoc2Readiness } from '@/lib/hooks/useSoc2Readiness';
 import { DispositionBadge } from '@/components/compliance/soc2-badges';
 import { Soc2ObservedEvidenceList } from '@/components/compliance/Soc2ObservedEvidenceList';
 import { Soc2CustomerEvidenceSection } from '@/components/compliance/Soc2CustomerEvidenceSection';
+import { useDemoMode } from '@/components/demo/demo-mode-toggle';
+import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 
 /**
  * SOC 2 Readiness detail page. Uses GET /api/soc2/readiness (all six criteria) and
@@ -32,6 +34,13 @@ export default function Soc2ReadinessDetailPage() {
   const { data: criteria, isLoading, error, refetch } = useSoc2Readiness();
   const { isEnterprise, isLoading: subscriptionLoading } = useSubscription();
   const [activeCriterionId, setActiveCriterionId] = useState<string | null>(null);
+  const demoMode = useDemoMode();
+  const { enabled: salesDemoMode } = useSalesDemo();
+  // Same composed signal useSoc2Readiness()/useSoc2Evidence()/useCustomerEvidenceList()
+  // already use internally -- demoMode and salesDemoMode are two independently
+  // persisted signals (see those hooks' own docblocks), so the disclosure must react to
+  // either one, not useDemoMode() alone.
+  const isDemoActive = demoMode || salesDemoMode;
 
   const selected = criteria?.find((c) => c.criterionId === (activeCriterionId ?? criteria?.[0]?.criterionId));
 
@@ -53,6 +62,11 @@ export default function Soc2ReadinessDetailPage() {
           organization provides. This is supplementary readiness evidence — not a SOC 2 certification, Type II audit,
           or auditor approval.
         </p>
+        {isDemoActive && (
+          <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 max-w-2xl">
+            Sample data for demonstration — not evidence from a real AWS account.
+          </p>
+        )}
       </div>
 
       {isLoading ? (

@@ -87,8 +87,8 @@ vi.mock('next/navigation', () => ({
 }))
 
 let demoModeValue = false
-vi.mock('@/lib/services/demo-mode.service', () => ({
-  demoModeService: { isEnabled: () => demoModeValue },
+vi.mock('@/components/demo/demo-mode-toggle', () => ({
+  useDemoMode: () => demoModeValue,
 }))
 
 let salesDemoValue = false
@@ -970,19 +970,21 @@ describe('Test 9 — NIST SP 800-53 Rev. 5 capability states never fabricate pas
   })
 })
 
-describe('Test 10 — demo-mode fabricated SOC 2 score cannot leak into real-mode SOC2 rendering', () => {
+describe('Test 10 — SOC 2 demo mode: no fabricated score, one coherent representation (SOC2 demo mode implementation)', () => {
   /**
    * DEMO_FRAMEWORKS' SOC 2 entry (id '2', complianceScore 74, status
-   * 'in_progress', "7 critical violations open") is a pre-existing, out-of-scope
-   * fabrication used only by demo mode (see this file's own Test 5). It must never
-   * be readable from, or fall back into, the real-mode SOC2 Readiness card, which
-   * is now wired to the real useSoc2Readiness() hook instead.
+   * 'in_progress', "7 critical violations open") was a pre-existing fabrication.
+   * It has been removed from DEMO_FRAMEWORKS entirely -- SOC 2's demo card is now
+   * sourced from the same demo-aware useSoc2Readiness() hook real mode uses (see
+   * lib/demo-data/soc2-demo-data.ts), never a fabricated complianceScore/status pair,
+   * in EITHER mode.
    */
-  it('real mode never renders the demo SOC 2 fabricated score/status text, regardless of real SOC2 data state', () => {
+  it('real mode never renders the old fabricated SOC 2 score/status text, regardless of real SOC2 data state', () => {
     renderPage()
     expect(screen.queryByText('74%')).not.toBeInTheDocument()
     expect(screen.queryByText(/7 critical violations/)).not.toBeInTheDocument()
     expect(screen.queryByText(/SOC 2 in progress/)).not.toBeInTheDocument()
+    expect(screen.queryByText('SOC 2 Type II')).not.toBeInTheDocument()
   })
 
   it('real mode never renders any other DEMO_FRAMEWORKS fabricated values (CIS 87%, NIST 91%, PCI 68%) on the SOC2 card or elsewhere in real mode', () => {
@@ -992,10 +994,33 @@ describe('Test 10 — demo-mode fabricated SOC 2 score cannot leak into real-mod
     expect(screen.queryByText('68%')).not.toBeInTheDocument()
   })
 
-  it('switching to demo mode still shows the pre-existing fabricated SOC 2 74%/in-progress text unchanged (demo mode itself is explicitly out of scope for this fix)', () => {
+  it('demo mode no longer shows the old fabricated SOC 2 74%/in-progress/Type II text anywhere on the page', () => {
     demoModeValue = true
     renderPage()
-    expect(screen.getByText(/SOC 2 in progress — 74%/)).toBeInTheDocument()
+    expect(screen.queryByText(/SOC 2 in progress — 74%/)).not.toBeInTheDocument()
+    expect(screen.queryByText('SOC 2 Type II')).not.toBeInTheDocument()
+    expect(screen.queryByText(/74%/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/SOC 2 at 74%/)).not.toBeInTheDocument()
+  })
+
+  it('demo mode renders exactly one SOC 2 card, labeled "Sample data", linking to the real detail route', () => {
+    demoModeValue = true
+    renderPage()
+    expect(screen.getAllByText('SOC 2 Readiness').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Sample data')).toBeInTheDocument()
+
+    const viewReadinessButtons = screen.getAllByText('View Readiness →')
+    expect(viewReadinessButtons.length).toBe(1)
+    fireEvent.click(viewReadinessButtons[0])
+    expect(mockPush).toHaveBeenCalledWith('/compliance/frameworks/soc2')
+  })
+
+  it('demo mode SOC2 messaging never claims a certification, Type II audit, or auditor approval', () => {
+    demoModeValue = true
+    renderPage()
+    expect(screen.queryByText(/is certified|SOC 2 certified|fully certified|Type II certified/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/audit approved|auditor approved/i)).not.toBeInTheDocument()
+    expect(screen.getAllByText(/not a certification or Type II audit/).length).toBeGreaterThanOrEqual(1)
   })
 
   it('the real-mode SOC2 card content is sourced only from useSoc2Readiness, never from DEMO_FRAMEWORKS, even if the demo array is present in the module', () => {

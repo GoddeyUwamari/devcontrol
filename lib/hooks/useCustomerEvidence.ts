@@ -5,6 +5,9 @@ import {
   Soc2CustomerEvidence,
   UpdateCustomerEvidenceMetadataRequest,
 } from '@/lib/services/soc2.service';
+import { useDemoMode } from '@/components/demo/demo-mode-toggle';
+import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+import { DEMO_SOC2_CUSTOMER_EVIDENCE } from '@/lib/demo-data/soc2-demo-data';
 
 /**
  * Customer-provided evidence (Phase 3) -- a deliberately separate query-key namespace
@@ -13,16 +16,35 @@ import {
  * or soc2_control_evaluations (proven by a live-DB isolation test in the backend), so a
  * customer-evidence mutation must never invalidate or refetch technical evidence -- doing
  * so would imply a data dependency that does not exist.
+ *
+ * Demo mode: composes the app-wide reactive useDemoMode() together with useSalesDemo()
+ * (see useSoc2Readiness.ts's own docblock for why these are two independent signals that
+ * must both be checked). Real authorization semantics for real mode are unchanged -- the
+ * caller-supplied `enabled` (real mode: the Enterprise/canManage gate) still governs
+ * whether the real query runs; demo mode only ever short-circuits to the sample dataset
+ * and never writes it into the real ['soc2-customer-evidence', ...] query cache entry.
  */
 export function useCustomerEvidenceList(criterionId?: string, enabled = true) {
-  return useQuery<Soc2CustomerEvidence[]>({
+  const demoMode = useDemoMode();
+  const { enabled: salesDemoMode } = useSalesDemo();
+  const isDemoActive = demoMode || salesDemoMode;
+  const query = useQuery<Soc2CustomerEvidence[]>({
     queryKey: ['soc2-customer-evidence', criterionId ?? null],
     queryFn: () => soc2Service.getCustomerEvidence(criterionId),
     staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: false,
-    enabled,
+    enabled: enabled && !isDemoActive,
   });
+
+  if (isDemoActive) {
+    const data = criterionId
+      ? DEMO_SOC2_CUSTOMER_EVIDENCE.filter((e) => e.criterionId === criterionId)
+      : DEMO_SOC2_CUSTOMER_EVIDENCE;
+    return { data, isLoading: false, error: null, refetch: () => {} };
+  }
+
+  return query;
 }
 
 export function useCustomerEvidenceDetail(evidenceId: string, enabled = true) {

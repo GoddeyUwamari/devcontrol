@@ -116,6 +116,19 @@ vi.mock('@/lib/hooks/useSubscription', () => ({
   useSubscription: () => subscriptionState,
 }))
 
+let demoModeValue = false
+vi.mock('@/components/demo/demo-mode-toggle', () => ({
+  useDemoMode: () => demoModeValue,
+}))
+
+// Mirrors compliance-frameworks-truthfulness.test.tsx's own useSalesDemo mock -- demoMode
+// and salesDemoMode are two independently-persisted signals (see useSoc2Readiness.ts's
+// docblock), so the page's demo disclosure must react to either one.
+let salesDemoValue = false
+vi.mock('@/lib/demo/sales-demo-data', () => ({
+  useSalesDemo: () => ({ enabled: salesDemoValue }),
+}))
+
 function renderPage() {
   return render(<Soc2ReadinessDetailPage />)
 }
@@ -126,6 +139,8 @@ beforeEach(() => {
   evidenceState = { data: [], isLoading: false, error: null }
   customerEvidenceState = { data: [], isLoading: false, error: null }
   subscriptionState = { isEnterprise: true, isLoading: false }
+  demoModeValue = false
+  salesDemoValue = false
 })
 
 describe('routing', () => {
@@ -441,5 +456,56 @@ describe('source separation', () => {
     // customer evidence row carries 'Self-Attested' -- never the reverse.
     const policyRow = screen.getByText('A policy').closest('div')!.parentElement!
     expect(policyRow.textContent).not.toContain('AWS-Observed')
+  })
+})
+
+describe('demo mode disclosure', () => {
+  const DISCLOSURE_TEXT = 'Sample data for demonstration — not evidence from a real AWS account.'
+
+  it('is absent in normal real mode', () => {
+    demoModeValue = false
+    renderPage()
+    expect(screen.queryByText(DISCLOSURE_TEXT)).not.toBeInTheDocument()
+  })
+
+  it('is present when demo mode is active', () => {
+    demoModeValue = true
+    renderPage()
+    expect(screen.getByText(DISCLOSURE_TEXT)).toBeInTheDocument()
+  })
+
+  it('never implies certification, auditor review, Type II completion, or a real AWS evaluation, even in demo mode', () => {
+    demoModeValue = true
+    renderPage()
+    const text = document.body.textContent ?? ''
+    expect(text).not.toMatch(/is certified|SOC 2 certified|fully certified|Type II certified/i)
+    expect(text).not.toMatch(/audit approved|auditor approved/i)
+    expect(text).not.toMatch(/Type II (completed|complete)/i)
+    // The page's own existing disclaimer plus the new demo-only line both legitimately
+    // say "not a ... Type II audit" / "not evidence from a real AWS account" -- assert
+    // no affirmative claim, not a blanket substring ban.
+    expect(text).toContain('not a SOC 2 certification, Type II audit')
+    expect(text).toContain(DISCLOSURE_TEXT)
+  })
+
+  it('is present for Sales Demo mode alone (demoMode=false, salesDemoMode=true) -- the confirmed gap this fix closes', () => {
+    demoModeValue = false
+    salesDemoValue = true
+    renderPage()
+    expect(screen.getByText(DISCLOSURE_TEXT)).toBeInTheDocument()
+  })
+
+  it('is absent when both demoMode and salesDemoMode are false', () => {
+    demoModeValue = false
+    salesDemoValue = false
+    renderPage()
+    expect(screen.queryByText(DISCLOSURE_TEXT)).not.toBeInTheDocument()
+  })
+
+  it('is present when both demoMode and salesDemoMode are true', () => {
+    demoModeValue = true
+    salesDemoValue = true
+    renderPage()
+    expect(screen.getByText(DISCLOSURE_TEXT)).toBeInTheDocument()
   })
 })
