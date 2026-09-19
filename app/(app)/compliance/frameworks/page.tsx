@@ -490,6 +490,38 @@ export default function ComplianceFrameworksPage() {
         ))}
       </div>
 
+      {/* Your Custom Frameworks -- the real `frameworks` array (fetched via
+          useComplianceFrameworks/GET /api/compliance-frameworks) was already
+          being loaded into state but never rendered anywhere in real mode.
+          Reuses the existing handleViewDetails -> FrameworkDetailsModal ->
+          CreateRuleModal chain, already fully implemented and already
+          mounted below -- no new modal, hook, or API call. */}
+      {frameworks.length > 0 && (
+        <>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Your Custom Frameworks</p>
+          <div className="flex flex-col gap-3 mb-6">
+            {frameworks.map((f) => (
+              <div key={f.id} className="bg-white rounded-xl border border-slate-100 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="text-sm font-semibold text-slate-900">{f.name}</span>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Custom</span>
+                    {f.is_default && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Default</span>}
+                  </div>
+                  {f.description && <p className="text-xs text-slate-500">{f.description}</p>}
+                </div>
+                <button
+                  onClick={() => handleViewDetails(f.id)}
+                  className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                >
+                  <FileText size={11} /> View / Manage Rules
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {/* Compliance Frameworks */}
       <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Compliance Frameworks</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
