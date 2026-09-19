@@ -445,10 +445,19 @@ export default function ComplianceFrameworksPage() {
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
 
       {/* Breadcrumb + header */}
-      <div className="mb-6">
-        <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Security / Compliance</p>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Compliance</h1>
-        <p className="text-xs text-slate-500 font-medium leading-relaxed">Track your compliance posture across industry standards and frameworks.</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+        <div>
+          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Security / Compliance</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Compliance</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Track your compliance posture across industry standards and frameworks.</p>
+        </div>
+        {/* The only real-mode entry point for CreateFrameworkModal -- same
+            state (createModalOpen), same modal, same handler as demo mode's
+            equivalent button below. Without this, an authenticated real
+            customer has no way to open framework creation at all. */}
+        <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-4 py-2.5 text-xs font-bold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0">
+          <Plus size={12} /> Add Framework
+        </button>
       </div>
 
       {/* AWS Security Hub attribution banner */}
