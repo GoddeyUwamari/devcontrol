@@ -510,12 +510,20 @@ export default function ComplianceFrameworksPage() {
                   </div>
                   {f.description && <p className="text-xs text-slate-500">{f.description}</p>}
                 </div>
-                <button
-                  onClick={() => handleViewDetails(f.id)}
-                  className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
-                >
-                  <FileText size={11} /> View / Manage Rules
-                </button>
+                <div className="flex gap-2 flex-wrap shrink-0">
+                  <button
+                    onClick={() => handleRunScan(f.id)}
+                    className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2 text-xs font-semibold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap"
+                  >
+                    <RefreshCw size={11} /> Run Scan
+                  </button>
+                  <button
+                    onClick={() => handleViewDetails(f.id)}
+                    className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap"
+                  >
+                    <FileText size={11} /> View / Manage Rules
+                  </button>
+                </div>
               </div>
             ))}
           </div>
