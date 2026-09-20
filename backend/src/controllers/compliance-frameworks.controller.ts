@@ -536,15 +536,26 @@ export class ComplianceFrameworksController {
         return;
       }
 
-      // Execute scan (async - don't wait for completion)
-      this.complianceService.executeScan(frameworkId, organizationId, userId, resource_filters)
-        .catch(error => {
-          console.error('[ComplianceFrameworks] Scan execution failed:', error);
+      // Fast, awaited claim: acquires the framework-scoped advisory lock and
+      // creates the pending scan row, or reports that a scan is already
+      // active -- bounded by one lock attempt + one INSERT, not by the
+      // scan's total duration. The long-running scan work itself remains
+      // asynchronous (see CustomComplianceService.startScan).
+      const result = await this.complianceService.startScan(frameworkId, organizationId, userId, resource_filters);
+
+      if (result.status === 'already_in_progress') {
+        res.status(409).json({
+          success: false,
+          error: 'SCAN_IN_PROGRESS',
+          message: 'A scan is already in progress for this framework.',
         });
+        return;
+      }
 
       res.json({
         success: true,
         message: 'Compliance scan initiated. Check scan history for results.',
+        data: { scanId: result.scanId },
       });
     } catch (error: any) {
       console.error('[ComplianceFrameworks] Execute scan error:', error);

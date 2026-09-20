@@ -13,6 +13,31 @@ interface RuleEvaluationResult {
   error?: string;
 }
 
+/**
+ * Distinct from cost-recommendations.repository.ts's RECONCILIATION_LOCK_SALT
+ * (1) and soc2-evidence.repository.ts's SOC2_COMPUTATION_LOCK_SALT (2) --
+ * same hashtextextended(key, salt) convention, new salt so this lock's key
+ * space can never collide with either of those.
+ */
+const SCAN_CONCURRENCY_LOCK_SALT = 3;
+
+/**
+ * Thrown by executeScan() when another scan is already active (pending or
+ * running) for this framework. No scan row is created when this is thrown.
+ */
+export class ScanInProgressError extends Error {
+  constructor() {
+    super('A scan is already in progress for this framework.');
+    this.name = 'ScanInProgressError';
+  }
+}
+
+export type ScanStartResult =
+  | { status: 'started'; scanId: string }
+  | { status: 'already_in_progress' };
+
+type ScanClaim = { client: PoolClient; scan: ComplianceScan; lockKey: string };
+
 export class CustomComplianceService {
   private repository: ComplianceFrameworksRepository;
 
@@ -21,21 +46,11 @@ export class CustomComplianceService {
   }
 
   /**
-   * Execute a compliance scan using a custom framework.
-   *
-   * Owns a dedicated PoolClient for the scan's entire lifetime instead of
-   * relying on the request-scoped AsyncLocalStorage client (this.pool, via
-   * config/database.ts's Proxy): the caller (compliance-frameworks.controller.ts)
-   * invokes this without awaiting it, so the HTTP response -- and with it,
-   * the request-scoped client's release() -- can complete while this scan is
-   * still running. A released client can be handed to a *different*,
-   * unrelated concurrent request by pg.Pool, which would then change
-   * app.current_organization_id (session-scoped, not SET LOCAL) on the exact
-   * connection this scan's remaining queries would otherwise still be using.
-   * A client this method owns exclusively, connects and releases itself, and
-   * never returns to the pool until the scan is fully done, has no such
-   * hazard: nothing else can ever be handed this connection while the scan
-   * still needs it.
+   * Execute a compliance scan and resolve/reject once it reaches a terminal
+   * state. Preserves the original blocking contract relied on by existing
+   * callers/tests. Rejects with ScanInProgressError (no scan row created) if
+   * a scan is already active for this framework -- see startScan() for the
+   * non-blocking variant the HTTP controller uses instead.
    */
   async executeScan(
     frameworkId: string,
@@ -45,40 +60,155 @@ export class CustomComplianceService {
   ): Promise<ComplianceScan> {
     console.log(`[CustomCompliance] Starting scan for framework ${frameworkId}`);
 
+    const claim = await this.acquireLockAndCreateScan(frameworkId, organizationId, userId, resourceFilters);
+    if (!claim) {
+      throw new ScanInProgressError();
+    }
+
+    return this.handOffToLongRunningScan(claim, frameworkId, organizationId, resourceFilters);
+  }
+
+  /**
+   * Non-blocking start used by the HTTP controller. Resolves as soon as the
+   * concurrency claim (advisory lock + pending scan row) is settled --
+   * bounded by one lock attempt plus one INSERT, not by the scan's total
+   * duration. The actual scan work continues in the background on the same
+   * dedicated client; this service owns that client end-to-end from here, so
+   * callers never receive it and never need to remember to release/unlock
+   * anything themselves.
+   */
+  async startScan(
+    frameworkId: string,
+    organizationId: string,
+    userId?: string,
+    resourceFilters?: Record<string, any>
+  ): Promise<ScanStartResult> {
+    console.log(`[CustomCompliance] Starting scan for framework ${frameworkId}`);
+
+    const claim = await this.acquireLockAndCreateScan(frameworkId, organizationId, userId, resourceFilters);
+    if (!claim) {
+      return { status: 'already_in_progress' };
+    }
+
+    // Intentionally not awaited -- handOffToLongRunningScan takes exclusive
+    // ownership of unlocking and releasing `claim.client` for every
+    // remaining path (scan success, scan failure, or a synchronous throw
+    // during the handoff itself) from this point on.
+    this.handOffToLongRunningScan(claim, frameworkId, organizationId, resourceFilters).catch((error) => {
+      console.error(`[CustomCompliance] Scan ${claim.scan.id} failed after start:`, error);
+    });
+
+    return { status: 'started', scanId: claim.scan.id };
+  }
+
+  /**
+   * Acquire the framework-scoped session advisory lock and, only if
+   * acquired, create the pending scan row -- both on one dedicated client.
+   * Every exit path leaves the client in exactly one of two states: released
+   * here (lock not acquired, or acquired but createScan failed), or handed
+   * back to the caller for immediate, synchronous handoff into
+   * handOffToLongRunningScan (lock acquired, scan row created). There is no
+   * path that both keeps and releases the client, and no path that does
+   * neither.
+   *
+   * Lock key is `${organizationId}:${frameworkId}` -- deterministic per
+   * framework and inherently org-scoped (framework_id is unique per org via
+   * compliance_frameworks_id_org_unique), so this never serializes unrelated
+   * frameworks or unrelated organizations against each other.
+   */
+  private async acquireLockAndCreateScan(
+    frameworkId: string,
+    organizationId: string,
+    userId?: string,
+    resourceFilters?: Record<string, any>
+  ): Promise<ScanClaim | null> {
     const client = await this.pool.connect();
+    const lockKey = `${organizationId}:${frameworkId}`;
+    let lockAcquired = false;
+
     try {
       await client.query(
         "SELECT set_config('app.current_organization_id', $1, false)",
         [organizationId]
       );
 
-      return await this.runScan(client, frameworkId, organizationId, userId, resourceFilters);
-    } finally {
+      const { rows } = await client.query(
+        `SELECT pg_try_advisory_lock(hashtextextended($1, ${SCAN_CONCURRENCY_LOCK_SALT})) AS locked`,
+        [lockKey]
+      );
+
+      if (!rows[0].locked) {
+        client.release();
+        return null;
+      }
+      lockAcquired = true;
+
+      const scan = await this.repository.createScan({
+        organization_id: organizationId,
+        framework_id: frameworkId,
+        scan_type: 'manual',
+        resource_filters: resourceFilters,
+        triggered_by: userId,
+      }, client);
+
+      return { client, scan, lockKey };
+    } catch (error) {
+      if (lockAcquired) {
+        await this.unlockQuietly(client, lockKey);
+      }
       client.release();
+      throw error;
+    }
+  }
+
+  /**
+   * The boundary between the fast "claim this framework" phase and the
+   * long-running scan body. Kept as its own method -- rather than inlined at
+   * each call site -- specifically so the handoff itself (not just
+   * runScanBody's own try/catch) is covered by one place that guarantees
+   * `claim.client` is unlocked and released on every path, including a
+   * synchronous throw at this call boundary before runScanBody's own try
+   * block ever starts.
+   */
+  private async handOffToLongRunningScan(
+    claim: ScanClaim,
+    frameworkId: string,
+    organizationId: string,
+    resourceFilters?: Record<string, any>
+  ): Promise<ComplianceScan> {
+    try {
+      return await this.runScanBody(claim.client, claim.scan, frameworkId, organizationId, resourceFilters);
+    } finally {
+      await this.unlockQuietly(claim.client, claim.lockKey);
+      claim.client.release();
+    }
+  }
+
+  private async unlockQuietly(client: PoolClient, lockKey: string): Promise<void> {
+    try {
+      await client.query(
+        `SELECT pg_advisory_unlock(hashtextextended($1, ${SCAN_CONCURRENCY_LOCK_SALT}))`,
+        [lockKey]
+      );
+    } catch (error) {
+      console.error(`[CustomCompliance] Failed to release advisory lock for ${lockKey}:`, error);
     }
   }
 
   /**
    * The scan body, run entirely on the caller's dedicated client -- every
    * repository/query call below is passed `client` explicitly so none of
-   * them fall back to the AsyncLocalStorage-routed this.pool.
+   * them fall back to the AsyncLocalStorage-routed this.pool. The scan row
+   * already exists (created by acquireLockAndCreateScan) by the time this
+   * runs.
    */
-  private async runScan(
+  private async runScanBody(
     client: PoolClient,
+    scan: ComplianceScan,
     frameworkId: string,
     organizationId: string,
-    userId?: string,
     resourceFilters?: Record<string, any>
   ): Promise<ComplianceScan> {
-    // Create scan record
-    const scan = await this.repository.createScan({
-      organization_id: organizationId,
-      framework_id: frameworkId,
-      scan_type: 'manual',
-      resource_filters: resourceFilters,
-      triggered_by: userId,
-    }, client);
-
     try {
       // Update scan to running
       await this.repository.updateScan(scan.id, {
