@@ -1,43 +1,26 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
-import { OnboardingProgress } from '@/components/onboarding/progress-indicator'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
-import { LastSynced } from '@/components/ui/last-synced'
-import { SyncStatusBanner } from '@/components/ui/sync-status-banner'
 import { DEMO_LAST_SYNCED } from '@/lib/demo/demo-timestamps'
-import { EngineeringVelocity } from '@/components/dashboard/engineering-velocity'
-import { TimeSaved } from '@/components/dashboard/time-saved'
-import { SecurityPosture } from '@/components/dashboard/security-posture'
-import { BeforeAfterTransformation } from '@/components/dashboard/before-after-transformation'
-import { CompetitiveBenchmarking } from '@/components/dashboard/competitive-benchmarking'
-import { HeroMetricCard } from '@/components/dashboard/hero-metric-card'
-import { CostTrendChart } from '@/components/dashboard/cost-trend-chart'
-import { CostBreakdownBarList } from '@/components/dashboard/cost-breakdown-barlist'
-import { RiskScoreTrendChart } from '@/components/dashboard/risk-score-trend-chart'
+import { DashboardHero } from '@/components/dashboard/dashboard-hero'
+import { RecommendedActionCard } from '@/components/dashboard/recommended-action-card'
+import { DashboardMetricCard } from '@/components/dashboard/dashboard-metric-card'
+import { InfrastructureIntelligence } from '@/components/dashboard/infrastructure-intelligence'
+import { SecurityComplianceSummary } from '@/components/dashboard/security-compliance-summary'
+import { CostTrendsCard } from '@/components/dashboard/cost-trends-card'
+import { SavingsOpportunities } from '@/components/dashboard/savings-opportunities'
+import { ExecutiveRoiCard } from '@/components/dashboard/executive-roi-card'
+import { EngineeringHealthCard } from '@/components/dashboard/engineering-health-card'
+import { RecentActivityCard } from '@/components/dashboard/recent-activity-card'
 import { useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
-import { useAccountSecurityFindingStats } from '@/lib/hooks/useAccountSecurityFindings'
-import type { DateRange } from '@/lib/services/risk-score.service'
-import { QuickInsights, generateDemoInsights } from '@/components/dashboard/quick-insights'
-import { ActivityFeed, generateDemoActivities } from '@/components/dashboard/activity-feed'
-import { ServiceHealthGrid, generateDemoServices } from '@/components/dashboard/service-health-grid'
-import { DORAMetricsMini } from '@/components/dashboard/dora-metrics-mini'
-import { ResourceDistributionChart } from '@/components/dashboard/resource-distribution-chart'
-import { QuickActions } from '@/components/dashboard/quick-actions'
-import { AIInsightCard } from '@/components/ai/AIInsightCard'
-import { useAIInsights } from '@/lib/hooks/useAIInsights'
+import { useSoc2Readiness } from '@/lib/hooks/useSoc2Readiness'
+import { useComplianceFrameworks } from '@/lib/hooks/useComplianceFrameworks'
 import { useAISummary } from '@/lib/hooks/useAISummary'
 import { useActivityFeed } from '@/lib/hooks/useActivityFeed'
-import type { ActivityEventType } from '@/lib/services/activity-feed.service'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import type { DateRange } from '@/lib/services/risk-score.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
@@ -45,20 +28,16 @@ import { computeDashboardAwsGates } from './dashboardAwsGates'
 import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
-import { formatDistanceToNow } from 'date-fns'
 import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/auth-context'
-import { DemoModeBanner } from '@/components/demo/DemoModeBanner'
-import { demoModeService } from '@/lib/services/demo-mode.service'
-import { DEMO_STATS } from '@/lib/demo-data/demo-generator'
+import { DollarSign, ShieldCheck, HeartPulse, Wifi, WifiOff } from 'lucide-react'
+
+type CostRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
 
 const DEMO_DASHBOARD_STATS = {
   monthlyAwsCost: 12847,
   costChange: 8,
-  criticalAlerts: 2,
-  activeDeployments: 5,
-  securityScore: 87,
 }
 
 const SERVICE_COLORS: Record<string, string> = {
@@ -117,90 +96,32 @@ function computeMonthOverMonthCostChange(
   return Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10
 }
 
-// Bolds dollar amounts, percentages, and X/100 scores embedded in AI summary text
-// for visual scanning, without touching surrounding words. Split on a single
-// capturing group so matches land at odd indices in the result array.
-const KEY_NUMBER_PATTERN = /(\$\d{1,3}(?:,\d{3})*(?:\.\d+)?(?:\/(?:month|mo|year|yr))?|\d+(?:\.\d+)?%|\b\d{1,3}\/100\b)/g
-
-function boldKeyNumbers(text: string): ReactNode {
-  return text.split(KEY_NUMBER_PATTERN).map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part))
-}
-
-const INTELLIGENCE_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
-
-async function fetchSystemIntelligence() {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-  if (!token) return null
-  const res = await fetch(`${INTELLIGENCE_API}/api/observability/intelligence`, { headers: { 'Authorization': `Bearer ${token}` } })
-  if (!res.ok) return null
-  const data = await res.json()
-  return data.success ? data.data : null
-}
-
-const DEMO_INTELLIGENCE = {
-  system_score: 81, status: 'Stable',
-  components: {
-    cost: { score: 72, label: 'Cost Efficiency', detail: '$1,922/mo savings identified · 7 opportunities', severity: 'medium', status: 'warning' },
-    security: { score: 87, label: 'Security Posture', detail: 'Score 87/100 · No critical issues', severity: 'healthy', status: 'good' },
-    observability: { score: 72, label: 'Observability', detail: 'Partially Ready · 1 gap identified', severity: 'medium', status: 'warning' },
-  },
-  top_action: { message: '$1,922/mo savings identified · 7 opportunities', consequence: 'Cost inefficiency is reducing system score and budget runway', path: '/costs/cost-optimization', severity: 'medium' },
-  top_drivers: [
-    { id: 'cost-efficiency', type: 'cost', severity: 'medium', message: '$1,922/mo savings identified · 7 opportunities', consequence: 'Cost inefficiency is reducing system score and budget runway', impact_score: 8, action: { label: 'Review savings', path: '/costs/cost-optimization' } },
-    { id: 'observability-readiness', type: 'observability', severity: 'medium', message: 'Alert destinations not configured', consequence: 'Incidents will not notify your team', impact_score: 8, action: { label: 'Fix coverage gaps', path: '/observability/alert-history' } },
-  ],
-}
-
-// Shared score chip helper
-const scoreChip = (score: number) => ({
-  color: score >= 80 ? '#065F46' : '#92400E',
-  bg: score >= 80 ? '#D1FAE5' : '#FEF3C7',
-})
+const DEMO_TOP_RISK = 'Lambda invocation spike on payment-processor (+178%) — review before it affects downstream services.'
+const DEMO_OVERALL_HEALTH_CONTEXT = 'Blended score across cost efficiency, security posture, and observability readiness.'
 
 export default function DashboardPage() {
-  const { user, organization, isLoading: authLoading } = useAuth()
+  const { organization } = useAuth()
   const { socket, isConnected } = useWebSocket()
   const queryClient = useQueryClient()
   const demoMode = useDemoMode()
   const { enabled: salesDemoMode } = useSalesDemo()
   const router = useRouter()
+  const isDemoActive = demoMode || salesDemoMode
 
   const lastWsUpdateRef = useRef<Record<string, number>>({})
+  const [costDateRange, setCostDateRange] = useState<CostRange>('7d')
+  const [riskScoreDateRange] = useState<DateRange>('30d')
 
-  const [dismissedInsights, setDismissedInsights] = useState<string[]>([])
-  const [costDateRange, setCostDateRange] = useState<'7d' | '30d' | '90d' | '6mo' | '1yr'>('7d')
-  const [riskScoreDateRange, setRiskScoreDateRange] = useState<DateRange>('30d')
-  const [lastSynced] = useState<Date>(demoMode ? DEMO_LAST_SYNCED : new Date())
-  const [insightDismissed, setInsightDismissed] = useState(false)
+  const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange, !isDemoActive)
 
-  const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange, !demoMode && !salesDemoMode)
-
-  // Same backend source (GET /api/security/account-findings/stats) the Security
-  // Overview page uses — no second calculation path for "how many active risks."
-  const { data: accountFindingStats } = useAccountSecurityFindingStats(!demoMode && !salesDemoMode)
-
-  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<PlatformDashboardStats>({
+  const { data: stats, isLoading: statsLoading } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
     queryFn: platformStatsService.getDashboardStats,
     // AWS cost data changes slowly — long staleTime/gcTime avoids re-hitting Cost Explorer
     // (billed per API call) on every render/tab-switch.
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !demoMode && !salesDemoMode,
-  })
-
-  const costAnalysisData = stats ? {
-    previousCost: stats.monthlyAwsCost * 0.95,
-    currentCost: stats.monthlyAwsCost,
-    percentageIncrease: stats.costChange ?? 0,
-    topSpenders: demoMode ? generateCostBreakdownData().slice(0, 3).map(item => ({ service: item.name, cost: item.value, change: item.change })) : [],
-    timeRange: 'last 30 days',
-  } : null
-
-  const { data: aiInsight, isLoading: aiInsightLoading } = useAIInsights(costAnalysisData, {
-    enabled: !demoMode && !!stats,
-    onSuccess: (data) => console.log('[Dashboard] AI Insights loaded:', data.cached ? 'from cache' : 'fresh'),
-    onError: (error) => console.error('[Dashboard] AI Insights error:', error),
+    enabled: !isDemoActive,
   })
 
   const { data: systemHealth } = useQuery({
@@ -208,7 +129,7 @@ export default function DashboardPage() {
     queryFn: () => monitoringService.getSystemHealth(),
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !demoMode && !salesDemoMode,
+    enabled: !isDemoActive,
   })
 
   // Same authoritative cost_recommendations boundary /costs and /cost-optimization
@@ -218,7 +139,7 @@ export default function DashboardPage() {
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !demoMode && !salesDemoMode,
+    enabled: !isDemoActive,
   })
 
   // Server-computed aggregate (same SUM /costs and /costs/efficiency use via
@@ -228,7 +149,7 @@ export default function DashboardPage() {
     queryFn: costRecommendationsService.getStats,
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !demoMode && !salesDemoMode,
+    enabled: !isDemoActive,
   })
 
   useEffect(() => {
@@ -240,48 +161,36 @@ export default function DashboardPage() {
       lastWsUpdateRef.current[key] = now
       return true
     }
-    socket.on('metrics:costs', (data) => {
-      if (!shouldUpdate('metrics:costs')) return
-      if (data.totalCost > 0) {
-        toast.info('AWS costs updated', { description: `New total: $${data.totalCost.toFixed(2)}` })
-      }
+    const invalidateAll = () => {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
-      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
+    }
+    socket.on('metrics:costs', (data) => {
+      if (!shouldUpdate('metrics:costs')) return
+      if (data.totalCost > 0) toast.info('AWS costs updated', { description: `New total: $${data.totalCost.toFixed(2)}` })
+      invalidateAll()
     })
     socket.on('alert:created', (data) => {
       if (!shouldUpdate('alert:created')) return
       toast.error(`New ${data.severity} Alert`, { description: data.message })
-      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
-      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
-      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
-      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
+      invalidateAll()
     })
     socket.on('deployment:started', (data) => {
       if (!shouldUpdate('deployment:started')) return
       toast.info(`Deployment started: ${data.serviceName}`, { description: `Environment: ${data.environment} | By: ${data.deployedBy}` })
-      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
-      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
-      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
-      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
+      invalidateAll()
     })
     socket.on('deployment:completed', (data) => {
       if (!shouldUpdate('deployment:completed')) return
       const isSuccess = data.status === 'success'
       toast[isSuccess ? 'success' : 'error'](`Deployment ${isSuccess ? 'succeeded' : 'failed'}: ${data.serviceName}`, { description: isSuccess ? `Duration: ${data.duration}` : 'Check logs for details' })
-      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
-      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
-      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
-      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
+      invalidateAll()
     })
     socket.on('service:health', (data) => {
       if (!shouldUpdate('service:health')) return
       if (data.status !== 'healthy') toast.warning(`Service ${data.serviceName} is ${data.status}`, { description: `Health score: ${data.healthScore}%` })
-      queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
-      queryClient.invalidateQueries({ queryKey: ['system-intelligence'] })
-      queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
-      queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
+      invalidateAll()
     })
     return () => {
       socket.off('metrics:costs'); socket.off('alert:created')
@@ -289,25 +198,18 @@ export default function DashboardPage() {
     }
   }, [socket, queryClient])
 
-  const insightMessage = demoMode
-    ? 'Lambda function costs increased 23% due to higher invocation count — enable reserved concurrency and consider Graviton2 for up to $540/year savings.'
-    : (aiInsight?.rootCause || aiInsight?.recommendation || null)
-
-  const currentSpend    = demoMode ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0)
-  const costChange      = demoMode ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0)
-  const securityScore   = demoMode ? 87 : (riskScoreData?.current.score ?? null)
+  const currentSpend    = isDemoActive ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0)
+  const costChange      = isDemoActive ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0)
+  const securityScore   = isDemoActive ? 87 : (riskScoreData?.current.score ?? null)
   // Raw (unrounded) monthly waste — kept separately so the annual projection can
   // round once after multiplying, matching costs/page.tsx and cost-optimization/page.tsx,
   // instead of rounding the monthly figure first and compounding the rounding error.
-  const wasteAmountRaw  = demoMode ? 1922 : (costRecStats?.totalPotentialSavings ?? 0)
-  // Deliberately NOT Math.round()'d: a genuine sub-$1 saving (e.g. $0.16) would
-  // round to 0 here, which then falsifies every `wasteAmount > 0` gate below
-  // (hiding "High ROI available" badges and showing the empty "No opportunities
-  // identified yet" state for a real, active recommendation). Display call
-  // sites format this via formatSavingsCurrency(), which handles the same
-  // sub-$1 case correctly instead of collapsing it to "$0".
+  const wasteAmountRaw  = isDemoActive ? 1922 : (costRecStats?.totalPotentialSavings ?? 0)
+  // Deliberately NOT Math.round()'d: a genuine sub-$1 saving would round to 0 here,
+  // falsifying every `wasteAmount > 0` gate below. Display sites use
+  // formatSavingsCurrency(), which handles the sub-$1 case correctly.
   const wasteAmount     = wasteAmountRaw
-  const efficiencyRatio = demoMode
+  const efficiencyRatio = isDemoActive
     ? Math.round(((12847 - wasteAmount) / 12847) * 100)
     : currentSpend > 0 ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100) : null
 
@@ -324,7 +226,7 @@ export default function DashboardPage() {
     staleTime: 30000,
   })
 
-  const isDemoActive    = demoMode || salesDemoMode
+  const isAwsConnected = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
   // Real accounts: compliance + orphaned-resource scanning haven't run yet (backend stub),
   // so the score can't be presented as a confident, final tier. Demo data is always final.
   const securityIsPreliminary = !isDemoActive && (riskScoreData?.current?.isPreliminary ?? true)
@@ -335,18 +237,16 @@ export default function DashboardPage() {
     : securityScore >= 80 ? 'Elite Tier'
     : securityScore >= 60 ? 'Above baseline'
     : 'Needs attention'
-  const securityTierColor = isDemoActive ? '#059669'
-    : securityScore === null ? '#94A3B8'
-    : securityIsPreliminary ? '#D97706'
-    : securityScore >= 80 ? '#059669'
-    : securityScore >= 60 ? '#D97706'
-    : '#DC2626'
-  const securityShowEliteBadge = isDemoActive || (!securityIsPreliminary && securityScore !== null && securityScore >= 85)
-  // Compact severity breakdowns for the Security Posture card — only render when the
-  // backend has real counts to show; never fabricate a value when data is absent.
-  // Account-level findings (open security groups, IAM) and per-resource compliance
-  // issues (encryption/backup/tagging/SOC2/HIPAA) come from two different scanners —
-  // reported separately rather than silently summed into one blended severity count.
+  const securityTierColor = isDemoActive ? 'var(--text-success)'
+    : securityScore === null ? 'var(--text-secondary)'
+    : securityIsPreliminary ? 'var(--text-warning)'
+    : securityScore >= 80 ? 'var(--text-success)'
+    : securityScore >= 60 ? 'var(--text-warning)'
+    : 'var(--text-danger)'
+  // Compact severity breakdown for resource compliance — only rendered when the
+  // backend has real counts to show; never fabricated when data is absent.
+  // Account-level findings now render as individual severity rows in
+  // SecurityComplianceSummary instead of one joined string (see findingCounts below).
   const formatSeverityCounts = (counts?: { critical: number; high: number; medium: number; low: number } | null) => {
     if (!counts) return null
     const parts: string[] = []
@@ -356,26 +256,16 @@ export default function DashboardPage() {
     if (counts.low > 0) parts.push(`${counts.low} Low`)
     return parts.length > 0 ? parts.join(' · ') : null
   }
-  const accountFindingsBreakdown = formatSeverityCounts(riskScoreData?.current?.accountFindingsCounts)
   const resourceComplianceBreakdown = formatSeverityCounts(riskScoreData?.current?.resourceComplianceCounts)
-  const isAwsConnected  = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
+
   const { hasBillingData, hasServicesOnly, isBillingSyncing, showRecommendationSections } =
     computeDashboardAwsGates({ isDemoActive, isAwsConnected, statsLoading, stats })
 
   useEffect(() => {
-  if (!isDemoActive && !statsLoading && !isAwsConnected && awsAccounts !== undefined) {
-    router.replace('/connect-aws')
-  }
-}, [isDemoActive, statsLoading, isAwsConnected, awsAccounts, router])
-
-  const { data: systemIntelligence } = useQuery({
-    queryKey: ['system-intelligence'],
-    queryFn: fetchSystemIntelligence,
-    refetchInterval: 120000, staleTime: 60000,
-    enabled: !isDemoActive && isAwsConnected,
-  })
-
-  const displayIntelligence = isDemoActive ? DEMO_INTELLIGENCE : systemIntelligence ?? null
+    if (!isDemoActive && !statsLoading && !isAwsConnected && awsAccounts !== undefined) {
+      router.replace('/connect-aws')
+    }
+  }, [isDemoActive, statsLoading, isAwsConnected, awsAccounts, router])
 
   const { data: costTrend = [], isLoading: costTrendLoading } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
     queryKey: ['cost-trend', costDateRange],
@@ -390,8 +280,7 @@ export default function DashboardPage() {
       return json.data ?? []
     },
     // Cost Explorer is billed per API call and this data doesn't change minute-to-minute —
-    // cache aggressively per range so switching 7d/30d/90d/6mo/1yr tabs reuses prior fetches
-    // instead of re-hitting AWS each time.
+    // cache aggressively per range so switching 7d/30d/90d/6mo/1yr tabs reuses prior fetches.
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && hasBillingData,
@@ -399,1094 +288,268 @@ export default function DashboardPage() {
 
   const monthOverMonthCostChange = isDemoActive ? null : computeMonthOverMonthCostChange(costTrend)
   const mtdCostDeltaColor = monthOverMonthCostChange !== null
-    ? (monthOverMonthCostChange > 0 ? (currentSpend >= 100 ? '#DC2626' : '#D97706') : monthOverMonthCostChange < 0 ? '#059669' : '#D97706')
-    : '#D97706'
-  const MtdCostDeltaIcon = monthOverMonthCostChange !== null
-    ? (monthOverMonthCostChange > 0 ? TrendingUp : monthOverMonthCostChange < 0 ? TrendingDown : Minus)
-    : Minus
+    ? (monthOverMonthCostChange > 0 ? (currentSpend >= 100 ? 'var(--text-danger)' : 'var(--text-warning)') : monthOverMonthCostChange < 0 ? 'var(--text-success)' : 'var(--text-warning)')
+    : 'var(--text-warning)'
 
   // Real-data-only, like every other computed-metric feature on this dashboard — no
-  // demo-mode fabrication. costDeltaPct reuses the already-computed value above so the
-  // backend doesn't need a second, separately-billed Cost Explorer call to reference spend trend.
-  const { data: aiSummaryData, isLoading: aiSummaryLoading, isError: aiSummaryError } = useAISummary(
-    organization?.id,
-    monthOverMonthCostChange,
-    !isDemoActive && hasBillingData
-  )
+  // demo-mode fabrication. Reuses the already-computed cost delta above so the backend
+  // doesn't need a second, separately-billed Cost Explorer call to reference spend trend.
+  const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, monthOverMonthCostChange, !isDemoActive && hasBillingData)
 
   // Real-data-only, hidden in demo mode — same pattern as AI Summary.
-  const { data: activityFeedData, isLoading: activityFeedLoading, isError: activityFeedError } = useActivityFeed(
-    organization?.id,
-    !isDemoActive
-  )
+  const { data: activityFeedData, isLoading: activityFeedLoading, isError: activityFeedError } = useActivityFeed(organization?.id, !isDemoActive)
 
-  const activityDotColor = (type: ActivityEventType): string => {
-    switch (type) {
-      case 'sync': return '#059669'
-      case 'optimization': return '#D97706'
-      case 'security':
-      case 'anomaly': return '#DC2626'
-      case 'score': return '#2563EB'
-      default: return '#94A3B8'
-    }
-  }
+  // SOC 2 readiness and custom compliance frameworks — same hooks the Security /
+  // Compliance pages themselves use, so this card never runs a second, divergent
+  // calculation of either.
+  const { data: soc2Criteria, isLoading: soc2Loading } = useSoc2Readiness(isAwsConnected)
+  const { frameworks: customFrameworks, loading: customFrameworksLoading } = useComplianceFrameworks()
 
-  // Reusable Recent Activity card — reconstructed from real data (sync, cost
-  // optimization, security findings, score changes, anomalies), not deployments.
-  // Hidden in demo mode; used at both Recent Activity render sites in this file.
-  const RecentActivityCard = () => {
-    if (isDemoActive) return null
-    const severityBadge = (severity?: string) => {
-      const s = severity?.toLowerCase()
-      if (s === 'high') return { color: 'var(--text-danger)', bg: 'var(--bg-danger)', label: 'High' }
-      if (s === 'medium') return { color: 'var(--text-warning)', bg: 'var(--bg-warning)', label: 'Medium' }
-      if (s === 'low') return { color: 'var(--text-secondary)', bg: 'var(--surface-1)', label: 'Low' }
-      return null
-    }
-    return (
-      <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-sm font-semibold text-foreground">Recent activity</p>
-        </div>
-        {activityFeedLoading ? (
-          <div className="flex flex-col gap-3 py-2">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-        ) : activityFeedError || !activityFeedData || activityFeedData.length === 0 ? (
-          <div className="text-center py-10 flex flex-col items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-[var(--surface-1)] flex items-center justify-center mb-1"><i className="ti ti-activity text-[18px] text-[var(--text-secondary)]" /></div>
-            <p className="text-sm font-semibold text-foreground">No activity yet</p>
-            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">Activity will appear here once resources sync, findings are detected, or scores update</p>
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Category</TableHead>
-                <TableHead className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Finding</TableHead>
-                <TableHead className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Severity</TableHead>
-                <TableHead className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider text-right">Time</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {activityFeedData.map((event, i) => {
-                const badge = severityBadge(event.severity)
-                return (
-                  <TableRow key={`${event.type}-${event.timestamp}-${i}`}>
-                    <TableCell className="whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: activityDotColor(event.type) }} />
-                        <span className="text-xs font-medium text-[var(--text-secondary)] capitalize">{event.type}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="max-w-0 w-full">
-                      <div className="line-clamp-2 text-sm text-foreground leading-snug" title={event.message}>{event.message}</div>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {badge ? (
-                        <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
-                      ) : (
-                        <span className="text-xs text-[var(--text-secondary)]">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-[var(--text-secondary)] whitespace-nowrap text-right">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-    )
-  }
+  const soc2EvaluatedCount = soc2Criteria?.filter((c) => c.evaluated).length ?? 0
+  const soc2Total = soc2Criteria?.length ?? 6
+  const soc2Subtext = isAwsConnected ? `${soc2EvaluatedCount} of ${soc2Total} criteria evaluated` : 'Not yet evaluated'
+  const customFrameworksSubtext = isDemoActive
+    ? '4 frameworks · Security Hub-backed'
+    : customFrameworks.length > 0
+      ? `${customFrameworks.length} framework${customFrameworks.length !== 1 ? 's' : ''} configured`
+      : 'No custom frameworks yet'
 
-  const costDeltaColor  = costChange > 0 ? '#DC2626' : costChange < 0 ? '#059669' : '#D97706'
-  const CostDeltaIcon   = costChange > 0 ? TrendingUp : costChange < 0 ? TrendingDown : Minus
-  const SecurityDeltaIcon  = isDemoActive ? TrendingUp : securityIsPreliminary ? Minus : (securityScore !== null && securityScore > 0) ? (securityScore >= 80 ? TrendingUp : TrendingDown) : Minus
-  const efficiencyDeltaColor = efficiencyRatio !== null ? efficiencyRatio >= 90 ? '#059669' : efficiencyRatio >= 75 ? '#D97706' : '#DC2626' : '#D97706'
-  const EfficiencyDeltaIcon  = efficiencyRatio !== null ? efficiencyRatio >= 90 ? TrendingUp : efficiencyRatio >= 75 ? Minus : TrendingDown : Minus
+  const costDeltaColor = costChange > 0 ? 'var(--text-danger)' : costChange < 0 ? 'var(--text-success)' : 'var(--text-warning)'
 
-  const costScore           = isDemoActive ? 82 : (efficiencyRatio ?? null)
-  const securityScore_health = isDemoActive ? 87 : (securityScore ?? null)
-  const reliabilityScore    = isDemoActive ? 91 : (systemHealth?.healthPercentage ?? (stats ? null : 0))
-  const systemStatusLabel   = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'unknown'
-  const avgServiceResponseTime = systemHealth?.services?.length
-    ? Math.round(systemHealth.services.reduce((sum, s) => sum + s.responseTime, 0) / systemHealth.services.length)
-    : null
-  const systemResponseTime  = isDemoActive ? '145ms' : (avgServiceResponseTime != null ? `${avgServiceResponseTime}ms` : '—')
-  const systemAlertCount    = isDemoActive ? 2 : 0
-  const systemUptimeAvg     = isDemoActive ? '99.4%' : (systemHealth?.healthPercentage != null ? `${systemHealth.healthPercentage}%` : '—')
+  const reliabilityScore = isDemoActive ? 91 : (systemHealth?.healthPercentage ?? null)
+  const systemStatusLabel = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'unknown'
 
   const systemStatusConfig = {
-    healthy:  { color: 'var(--text-success)', bg: 'var(--bg-success)', border: 'var(--border-success)', dot: 'var(--fill-success)', label: 'All systems operational' },
-    degraded: { color: 'var(--text-warning)', bg: 'var(--bg-warning)', border: 'var(--border-warning)', dot: 'var(--fill-warning)', label: 'Degraded performance detected' },
-    down:     { color: 'var(--text-danger)', bg: 'var(--bg-danger)', border: 'var(--border-danger)', dot: 'var(--fill-danger)', label: 'System outage detected' },
-    unknown:  { color: 'var(--text-secondary)', bg: 'var(--surface-1)', border: 'var(--border)', dot: 'var(--text-secondary)', label: 'Status pending' },
-  }
+    healthy:  { color: 'var(--text-success)', background: 'var(--bg-success)', border: 'var(--border-success)', dot: 'var(--fill-success)', label: 'All systems operational' },
+    degraded: { color: 'var(--text-warning)', background: 'var(--bg-warning)', border: 'var(--border-warning)', dot: 'var(--fill-warning)', label: 'Degraded performance detected' },
+    down:     { color: 'var(--text-danger)', background: 'var(--bg-danger)', border: 'var(--border-danger)', dot: 'var(--fill-danger)', label: 'System outage detected' },
+    unknown:  { color: 'var(--text-secondary)', background: 'var(--surface-1)', border: 'var(--border)', dot: 'var(--text-secondary)', label: 'Status pending' },
+  } as const
   const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.unknown
 
-  const _healthComponents = ([costScore, securityScore_health, reliabilityScore] as (number | null)[]).filter((s): s is number => s !== null)
+  const costScore = isDemoActive ? 82 : (efficiencyRatio ?? null)
+  const securityHealthScore = isDemoActive ? 87 : (securityScore ?? null)
+  const _healthComponents = ([costScore, securityHealthScore, reliabilityScore] as (number | null)[]).filter((s): s is number => s !== null)
   const cloudHealthScore = _healthComponents.length > 0 ? Math.round(_healthComponents.reduce((a, b) => a + b, 0) / _healthComponents.length) : null
-  const topRecs: { label: string; savings: string; effort?: string; time?: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH' }[] = isDemoActive
+
+  const topRecs: { label: string; savings: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH' }[] = isDemoActive
     ? [
-        { label: 'Right-size 3 EC2 instances',        savings: '$720/mo', effort: 'Low',    time: '~15 min' },
-        { label: 'Delete unattached EBS volumes',     savings: '$210/mo', effort: 'Low',    time: '~5 min'  },
-        { label: 'Enable S3 Intelligent-Tiering',     savings: '$340/mo', effort: 'Medium', time: '~10 min' },
+        { label: 'Right-size 3 EC2 instances',    savings: '$720/mo' },
+        { label: 'Delete unattached EBS volumes', savings: '$210/mo' },
+        { label: 'Enable S3 Intelligent-Tiering',  savings: '$340/mo' },
       ]
     : costRecsRaw.slice(0, 5).map(r => ({
         label:    r.issue || 'Can reduce monthly AWS spend',
         savings:  r.potentialSavings != null ? `${formatSavingsCurrency(r.potentialSavings)}/mo` : '',
         severity: r.severity,
       }))
-  // ROI badge for the Savings Actions KPI card: High if the aggregate opportunity is
-  // sizeable or the top recommendation is flagged high-severity — both already-computed
-  // fields, no new data source.
-  const savingsROI = wasteAmount > 50 || topRecs[0]?.severity === 'HIGH' ? 'High' : 'Medium'
-  const criticalAlerts = demoMode ? DEMO_DASHBOARD_STATS.criticalAlerts : 0
 
-  // Cost-saving opportunity counts, grouped by resource type from the already-fetched
-  // cost recommendations — no new fetch. The real /api/cost-recommendations data only
-  // ever tags resource_type as EC2/RDS/EIP today; EBS detection isn't wired to this
-  // endpoint yet, so that bucket is honestly 0 for real orgs until it is.
-  const idleEC2Count = isDemoActive ? 3 : costRecsRaw.filter(r => r.resourceType === 'EC2').length
-  const unattachedEBSCount = isDemoActive ? 2 : costRecsRaw.filter(r => r.resourceType === 'EBS').length
-  const overprovisionedRDSCount = isDemoActive ? 1 : costRecsRaw.filter(r => r.resourceType === 'RDS').length
-
-  const doraRows: { label: string; value: string; tier: 'Elite' | 'High'; showTier?: boolean }[] = [
-    { label: 'Deployment Frequency',  value: demoMode ? '4.2/day' : '—', tier: 'Elite', showTier: demoMode },
-    { label: 'Lead Time for Changes', value: isDemoActive ? '2.4 hours' : '—', tier: 'Elite', showTier: isDemoActive },
-    { label: 'Change Failure Rate',   value: isDemoActive ? '8.3%' : '—',      tier: 'High',  showTier: isDemoActive },
-    { label: 'Mean Time to Recovery', value: isDemoActive ? '36 min' : '—',    tier: 'Elite', showTier: isDemoActive },
-  ]
-
-  const activeRisksCount = isDemoActive ? 3 : (accountFindingStats?.total ?? null)
-
-  const securityRows: { label: string; value: string | number; status: 'good' | 'warn' | 'neutral' }[] = [
-    { label: 'May expose production resources to unauthorized access', value: isDemoActive ? 0 : '—',                          status: isDemoActive ? 'good' : 'neutral' },
-    { label: 'Compliance Frameworks',    value: isDemoActive ? '4/4' : '—',                    status: 'good' },
-    { label: 'Active Risks',             value: activeRisksCount ?? '—',                       status: activeRisksCount === null ? 'neutral' : activeRisksCount > 0 ? 'warn' : 'good' },
-  ]
-
-  // Reusable inline component for intelligence score bars
-  const IntelScoreBars = ({ intel }: { intel: typeof DEMO_INTELLIGENCE | null }) => (
-    <div className="flex flex-col gap-1.5">
-      {intel
-        ? Object.values(intel.components).map((comp: any) => (
-            <div key={comp.label} className="flex items-center gap-1.5 mb-0.5">
-              <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-1)]">
-                <div className="h-full rounded-full transition-all" style={{ width: `${comp.score}%`, background: comp.score >= 80 ? 'var(--fill-success)' : comp.score >= 60 ? 'var(--fill-warning)' : 'var(--fill-danger)' }} />
-              </div>
-              <span className="text-xs text-[var(--text-secondary)] w-24 text-right whitespace-nowrap shrink-0 font-medium">{comp.label.split(' ')[0]} {comp.score}</span>
-            </div>
-          ))
-        : [{ label: 'Cost', score: costScore }, { label: 'Security', score: securityScore_health }, { label: 'Observability', score: reliabilityScore }].map(({ label, score }) => (
-            <div key={label} className="flex items-center gap-1.5 mb-0.5">
-              <div className="flex-1 h-1.5 rounded-full bg-[var(--surface-1)]">
-                <div className="h-full rounded-full" style={{ width: `${score ?? 0}%`, background: (score ?? 0) >= 80 ? 'var(--fill-success)' : (score ?? 0) >= 60 ? 'var(--fill-warning)' : 'var(--fill-danger)' }} />
-              </div>
-              <span className="text-xs text-[var(--text-secondary)] w-24 text-right shrink-0 font-medium">{label} {score ?? '—'}</span>
-            </div>
-          ))
-      }
-    </div>
-  )
-
-  // Reusable System Intelligence KPI card content
-  const IntelKPICard = ({ hero = false }: { hero?: boolean } = {}) => {
-    const notReady = !isDemoActive && (displayIntelligence == null || displayIntelligence.system_score == null)
-    const intelLabelClass = hero
-      ? 'text-sm font-semibold text-foreground mb-3'
-      : 'text-xs text-[var(--text-secondary)] font-medium mb-3'
-    if (notReady) {
-      return (
-        <>
-          <p className={intelLabelClass}>System intelligence</p>
-          <div className="text-base font-medium text-foreground leading-none mb-2">Calculating...</div>
-        </>
-      )
-    }
-    const score = displayIntelligence?.system_score ?? cloudHealthScore ?? 0
-    const chipLabel = score < 50 ? 'Poor — needs optimization' : score >= 85 ? 'Elite tier' : 'Needs optimization'
-    const chipTextVar = score < 50 || (score < 85 && score > 0) ? 'var(--text-warning)' : 'var(--text-success)'
-    const chipBgVar = score < 50 || (score < 85 && score > 0) ? 'var(--bg-warning)' : 'var(--bg-success)'
-    return (
-      <>
-        <p className={intelLabelClass}>System intelligence</p>
-        <div className="text-3xl font-semibold leading-none mb-2" style={{ color: score < 50 ? 'var(--text-danger)' : 'var(--foreground)' }}>
-          {score || '—'}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
-        </div>
-        <span className="text-xs font-semibold px-1.5 py-0.5 rounded inline-block mt-1.5" style={{ color: chipTextVar, background: chipBgVar }}>{chipLabel}</span>
-        <div className="my-2">
-          <span className="text-sm font-semibold" style={{ color: (displayIntelligence?.system_score ?? 0) >= 85 ? 'var(--text-success)' : 'var(--text-warning)' }}>
-            {displayIntelligence?.status ?? 'Computing...'}
-          </span>
-          {displayIntelligence?.system_score && displayIntelligence.system_score < 85 && (
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-snug">Top teams: 85+ · Improve to unlock full efficiency</p>
-          )}
-        </div>
-        <IntelScoreBars intel={displayIntelligence} />
-      </>
-    )
+  // Cost-saving opportunities, grouped by resource type from the already-fetched cost
+  // recommendations — no new fetch. The real /api/cost-recommendations data only ever
+  // tags resource_type as EC2/RDS today; EBS detection isn't wired to this endpoint
+  // yet, so that bucket is honestly "not currently evaluated" rather than a fabricated
+  // dollar figure or "0 detected" that would imply active EBS coverage.
+  const priorityBadgeFor = (severity?: 'LOW' | 'MEDIUM' | 'HIGH') =>
+    severity === 'HIGH' ? { label: 'High priority', color: 'var(--text-danger)', background: 'var(--bg-danger)' }
+    : severity === 'MEDIUM' ? { label: 'Medium priority', color: 'var(--text-warning)', background: 'var(--bg-warning)' }
+    : severity === 'LOW' ? { label: 'Low priority', color: 'var(--text-secondary)', background: 'var(--surface-2)' }
+    : undefined
+  const opportunitiesByType = (type: string) => {
+    const matches = costRecsRaw.filter(r => r.resourceType === type)
+    const total = matches.reduce((sum, r) => sum + (r.potentialSavings ?? 0), 0)
+    return { count: matches.length, savingsLabel: matches.length > 0 ? `${formatSavingsCurrency(total)}/month` : null, badge: priorityBadgeFor(matches[0]?.severity) }
   }
+  const ec2Opportunities = isDemoActive
+    ? { count: 2, savingsLabel: '$0.48/month', badge: priorityBadgeFor('LOW') }
+    : opportunitiesByType('EC2')
+  const rdsOpportunities = isDemoActive
+    ? { count: 1, savingsLabel: '$0.16/month', badge: priorityBadgeFor('MEDIUM') }
+    : opportunitiesByType('RDS')
+  const ebsOpportunities = isDemoActive
+    ? { count: 3, savingsLabel: '$0.32/month', badge: priorityBadgeFor('LOW') }
+    : { count: null, savingsLabel: null, badge: undefined }
+
+  // DORA metrics (industry-standard: deployment frequency, lead time, change
+  // failure rate, MTTR — the same 4 metrics /app/dora-metrics reports on),
+  // not the mockup's generic ops-metric names — this page has no authority
+  // to rename what a DORA metric actually is. Demo-only decorative deltas.
+  const doraRows: { label: string; value: string; delta?: { direction: 'up' | 'down'; label: string; good: boolean } }[] = [
+    { label: 'Deployment Frequency',  value: isDemoActive ? '4.2/day' : '—', delta: isDemoActive ? { direction: 'up', label: '12%', good: true } : undefined },
+    { label: 'Lead Time for Changes', value: isDemoActive ? '2.4 hours' : '—', delta: isDemoActive ? { direction: 'down', label: '18%', good: true } : undefined },
+    { label: 'Change Failure Rate',   value: isDemoActive ? '8.3%' : '—', delta: isDemoActive ? { direction: 'down', label: '3%', good: true } : undefined },
+    { label: 'Mean Time to Recovery', value: isDemoActive ? '36 min' : '—', delta: isDemoActive ? { direction: 'down', label: '22%', good: true } : undefined },
+  ]
+
+  const overallHealthContext = isDemoActive ? DEMO_OVERALL_HEALTH_CONTEXT : (aiSummaryData?.overallHealth?.context ?? null)
+  const topRisk = isDemoActive ? DEMO_TOP_RISK : (aiSummaryData?.topRisk ?? null)
+
+  const infraHealthBadge = cloudHealthScore === null ? undefined
+    : cloudHealthScore >= 80 ? { label: 'Healthy', color: 'var(--text-success)', background: 'var(--bg-success)' }
+    : cloudHealthScore >= 60 ? { label: 'Monitor', color: 'var(--text-warning)', background: 'var(--bg-warning)' }
+    : { label: 'Needs attention', color: 'var(--text-danger)', background: 'var(--bg-danger)' }
+
+  const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
 
   return (
     <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen bg-[var(--surface-1)]">
 
-      {/* ── HEADER ROW ── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-10">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight leading-snug mb-1">
-            AI-Powered Cloud Operations & Infrastructure Intelligence
-          </h1>
-          <p className="text-xs text-[var(--text-secondary)] font-medium leading-relaxed mb-1">
-            Unified visibility across cloud costs, security, observability, and infrastructure efficiency — in real time.
-          </p>
-          <p className="text-xs text-[var(--text-secondary)] font-medium leading-relaxed">
-            {isAwsConnected
-              ? `${isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'Your organization')} · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}`
-              : 'Connect your AWS account to get started · Setup takes 2 minutes'}
-          </p>
-        </div>
-      </div>
+      <DashboardHero
+        isAwsConnected={isAwsConnected}
+        orgName={orgName}
+        lastSynced={isDemoActive ? DEMO_LAST_SYNCED : null}
+      />
 
-      {/* ── RISK ALERT BANNER ── */}
-      {(demoMode || salesDemoMode || criticalAlerts > 0) && (
-        <div className="flex items-center gap-3.5 bg-[var(--bg-warning)] border border-[var(--border-warning)] rounded-xl px-5 py-3.5 mb-7">
-          <div className="w-8 h-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center shrink-0">
-            <i className="ti ti-alert-circle text-[16px]" style={{ color: 'var(--text-warning)' }} />
-          </div>
-          <div className="flex-1">
-            <span className="text-sm font-semibold" style={{ color: 'var(--text-warning)' }}>
-              {criticalAlerts} critical alert{criticalAlerts !== 1 ? 's' : ''} require your attention
-            </span>
-            <span className="text-[13px] ml-2" style={{ color: 'var(--text-warning)' }}>
-              · Lambda invocation spike on payment-processor (+178%), CPU overload on production-worker
-            </span>
-          </div>
-          <a href="/observability/alerts" className="text-xs font-semibold no-underline flex items-center gap-1 shrink-0" style={{ color: 'var(--text-warning)' }}>
-            View alerts <i className="ti ti-arrow-right text-[12px]" />
-          </a>
-        </div>
-      )}
+      {statsLoading ? null : isAwsConnected && (
+        <>
+          {showRecommendationSections && (
+            <RecommendedActionCard
+              opportunityCount={topRecs.length}
+              savingsLabel={wasteAmount > 0 ? `${formatSavingsCurrency(wasteAmount)}/month` : null}
+              ctaHref="/cost-optimization"
+              isDemoActive={isDemoActive}
+            />
+          )}
 
-      {/* ── RECOMMENDED ACTION BANNER ── */}
-      {isAwsConnected && topRecs.length > 0 && (
-        <div className="bg-[var(--bg-accent)] border-2 border-[var(--border-accent)] rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
-          <div>
-            <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
-            <div className="text-base font-semibold text-foreground mb-2">
-              {isDemoActive
-                ? '$800–$2,400/month in identified savings · 3 optimizations to review'
-                : `${formatSavingsCurrency(wasteAmount)}/month in identified savings · ${topRecs.length} optimization${topRecs.length !== 1 ? 's' : ''} to review`}
-            </div>
-            {isDemoActive && (
-              <div className="flex gap-1.5 flex-wrap">
-                {['Zero downtime', 'Fully reversible', 'Takes < 5 min'].map((pill) => (
-                  <span key={pill} className="bg-[var(--surface-2)] border border-border rounded-full px-2.5 py-0.5 text-xs text-[var(--text-secondary)]">{pill}</span>
-                ))}
-              </div>
-            )}
-          </div>
-          <a href="/cost-optimization" className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap shrink-0">
-            Review all
-          </a>
-        </div>
-      )}
-      {isAwsConnected && topRecs.length > 0 && (
-        <div className="flex justify-end mb-3">
-          <a href="/cost-optimization" className="inline-flex items-center gap-1.5 bg-[var(--text-accent)] text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap shrink-0">
-            {isBillingSyncing ? `Review Savings (${topRecs.length}) →` : `Review Savings (${topRecs.length}) →`}
-          </a>
-        </div>
-      )}
-      {isAwsConnected && topRecs.length === 0 && !isDemoActive && (
-        <div className="bg-[var(--bg-accent)] border-2 border-[var(--border-accent)] rounded-2xl px-5 py-4 mb-3">
-          <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>Recommended action</div>
-          <div className="text-base font-semibold text-[var(--text-secondary)]">
-            No active cost-saving opportunities identified
-          </div>
-        </div>
-      )}
-
-      {/* ── MAIN CONTENT ── */}
-      {statsLoading ? null : isAwsConnected ? (
-        isBillingSyncing ? (
-          <>
-            {/* Billing sync strip */}
-            <div className="bg-[var(--surface-2)] border border-border rounded-xl px-4 py-2.5 flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--fill-warning)' }} />
-                <span className="text-[13px] text-foreground font-medium">
-                  Billing sync in progress (24–48h) · {topRecs.length > 0 ? 'Savings opportunities already identified:' : 'Scanning for savings opportunities…'}
-                </span>
-                {topRecs.length > 0 && (
-                  <span className="font-semibold text-[13px]" style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(wasteAmount)}/month</span>
-                )}
-              </div>
-              <span className="text-xs text-[var(--text-secondary)] font-medium">Infrastructure + security ready</span>
-            </div>
-
-            {/* KPI placeholder row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
-              {/* Monthly spend */}
-              <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Monthly spend</p>
-                <div className="text-base font-medium text-foreground leading-none mb-1">Syncing...</div>
-                <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">Full data in 24–48h</div>
-                {wasteAmount > 0 && (
-                  <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
-                )}
-              </div>
-              {/* Urgent actions */}
-              <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Urgent actions</p>
-                {topRecs.length > 0 ? (
-                  <>
-                    <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>{topRecs.length}</div>
-                    <span className="text-xs font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
-                  </>
-                ) : (
-                  <div className="text-base font-medium text-foreground leading-none mb-1">Scanning...</div>
-                )}
-              </div>
-              {/* Security health */}
-              <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Security health</p>
-                {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                  <>
-                    <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-2xl font-medium text-foreground leading-none mb-2">
-                      {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
-                    </div>
-                    {securityShowEliteBadge && (
-                      <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
-                    )}
-                    {securityScore !== null && securityIsPreliminary && (
-                      <span className="text-xs font-semibold bg-[var(--bg-warning)] text-[var(--text-warning)] px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
-                    )}
-                  </>
-                )}
-              </div>
-              {/* System Intelligence */}
-              <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <IntelKPICard />
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            {hasServicesOnly && (
-              <>
-                <div className="bg-[var(--bg-warning)] border border-[var(--border-warning)] rounded-xl px-5 py-3 mb-5 flex items-center gap-3">
-                  <i className="ti ti-alert-circle text-[16px]" style={{ color: 'var(--text-warning)' }} />
-                  <span className="text-[13px]" style={{ color: 'var(--text-warning)' }}>
-                    Historical billing data is still syncing. Infrastructure scanning and security analysis are fully operational — cost totals will be available within 24–48 hours.
-                  </span>
-                </div>
-                <div className="bg-[var(--surface-2)] border border-border rounded-2xl p-8 mb-8">
-                  <p className="text-xs text-[var(--text-secondary)] font-medium uppercase tracking-widest mb-5">Data status</p>
-                  <div className="flex flex-col gap-3.5">
-                    {[
-                      { label: 'AWS account connected',               done: true  },
-                      { label: 'Infrastructure inventory mapped',      done: true  },
-                      { label: 'Security posture scanned',             done: true  },
-                      { label: 'Savings opportunities identified',     done: true  },
-                      { label: 'Historical billing data syncing',      done: false },
-                      { label: 'Cost insights and forecasts',          done: false },
-                    ].map(({ label, done }) => (
-                      <div key={label} className="flex items-center gap-3">
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: done ? 'var(--bg-success)' : 'var(--surface-1)', border: `1px solid ${done ? 'var(--border-success)' : 'var(--border)'}` }}>
-                          {done ? (
-                            <i className="ti ti-check text-xs" style={{ color: 'var(--text-success)' }} />
-                          ) : (
-                            <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--fill-warning)' }} />
-                          )}
-                        </div>
-                        <span className={`text-sm ${done ? 'text-foreground font-medium' : 'text-[var(--text-secondary)]'}`}>{label}</span>
-                        {!done && <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--text-warning)', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)' }}>Syncing</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* KPI grid — gated on data state */}
-            {(isDemoActive || hasBillingData) ? (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                  {/* Monthly spend */}
-                  <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Monthly spend</p>
-                    {(statsLoading && !demoMode) || (currentSpend === 0 && !demoMode) ? (
-                      <>
-                        <div className="text-base font-medium text-foreground leading-none mb-1">Syncing...</div>
-                        <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">Full data in 24–48h</div>
-                      </>
-                    ) : (
-                      <div className="text-2xl font-medium text-foreground leading-none mb-2">${currentSpend.toLocaleString()}</div>
-                    )}
-                    {wasteAmount > 0 && (
-                      <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">High ROI available</span>
-                    )}
-                    {isDemoActive && (
-                      <div className="flex items-center gap-1.5 mt-2">
-                        <i className={`ti ti-${CostDeltaIcon === TrendingUp ? 'trending-up' : CostDeltaIcon === TrendingDown ? 'trending-down' : 'minus'} text-[14px]`} style={{ color: costDeltaColor }} />
-                        <span className="text-[13px] font-semibold" style={{ color: costDeltaColor }}>{costChange > 0 ? '+' : ''}{Math.abs(costChange)}%</span>
-                        <span className="text-[13px] text-[var(--text-secondary)]">vs last month</span>
-                      </div>
-                    )}
-                    {!isDemoActive && monthOverMonthCostChange !== null && (
-                      <div className="flex items-center gap-1.5 mt-2">
-                        <i className={`ti ti-${MtdCostDeltaIcon === TrendingUp ? 'trending-up' : MtdCostDeltaIcon === TrendingDown ? 'trending-down' : 'minus'} text-[14px]`} style={{ color: mtdCostDeltaColor }} />
-                        <span className="text-[13px] font-semibold" style={{ color: mtdCostDeltaColor }}>{monthOverMonthCostChange > 0 ? '+' : ''}{monthOverMonthCostChange}%</span>
-                        <span className="text-[13px] text-[var(--text-secondary)]">vs last month</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Security health */}
-                  <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Security health</p>
-                    {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                      <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
-                    ) : (
-                      <div className="text-2xl font-medium text-foreground leading-none mb-2">
-                        {securityScore ?? (isDemoActive ? 87 : '—')}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
-                      </div>
-                    )}
-                    {securityShowEliteBadge && (
-                      <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
-                    )}
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <i className={`ti ti-${SecurityDeltaIcon === TrendingUp ? 'trending-up' : SecurityDeltaIcon === TrendingDown ? 'trending-down' : 'minus'} text-[12px]`} style={{ color: securityTierColor }} />
-                      <span className="text-xs font-semibold" style={{ color: securityTierColor }}>
-                        {securityTierLabel}
-                      </span>
-                    </div>
-                    {accountFindingsBreakdown && (
-                      <p className="text-xs text-[var(--text-secondary)] mt-1">Findings: {accountFindingsBreakdown}</p>
-                    )}
-                    {resourceComplianceBreakdown && (
-                      <p className="text-xs text-[var(--text-secondary)] mt-1">Compliance: {resourceComplianceBreakdown}</p>
-                    )}
-                  </div>
-
-                  {/* Urgent actions */}
-                  <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Urgent actions</p>
-                    <div className="text-2xl font-medium leading-none mb-2" style={{ color: 'var(--text-success)' }}>
-                      {topRecs.length > 0 ? `${topRecs.length} Opportunit${topRecs.length !== 1 ? 'ies' : 'y'}` : '0'}
-                    </div>
-                    {wasteAmount <= 0 && (
-                      <div className="text-xs text-[var(--text-secondary)] font-medium mb-2">No opportunities identified yet</div>
-                    )}
-                    {topRecs.length > 0 && (
-                      <>
-                        <span className="text-xs font-semibold bg-[var(--bg-danger)] text-[var(--text-danger)] px-1.5 py-0.5 rounded inline-block mt-1.5">Awaiting approval</span>
-                        <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5 ml-1.5">ROI: {savingsROI}</span>
-                      </>
-                    )}
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <i className="ti ti-trending-up text-[14px]" style={{ color: 'var(--text-success)' }} />
-                      <span className="text-[13px] font-semibold" style={{ color: 'var(--text-success)' }}>Potential savings: {formatSavingsCurrency(wasteAmount)}/month</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* System summary — 4-part scannable breakdown of the real numbers above,
-                    generated server-side as structured fields (not parsed from prose).
-                    Skeleton while generating; renders nothing on error or when there's no
-                    real data to summarize (never a fabricated placeholder or an error state). */}
-                {!aiSummaryError && (aiSummaryLoading || (
-                  aiSummaryData && (
-                    aiSummaryData.overallHealth?.score != null ||
-                    aiSummaryData.overallHealth?.context ||
-                    aiSummaryData.topRisk ||
-                    aiSummaryData.cloudSpend ||
-                    aiSummaryData.systemStatus
-                  )
-                )) && (
-                  <div className="bg-[var(--surface-1)] rounded-xl p-6 border border-border mb-4">
-                    <p className="text-base text-[var(--text-accent)] font-bold mb-3">Infrastructure Intelligence Summary</p>
-                    {aiSummaryLoading ? (
-                      <div className="flex flex-col gap-2">
-                        <Skeleton className="h-3.5 w-full" />
-                        <Skeleton className="h-3.5 w-5/6" />
-                        <Skeleton className="h-3.5 w-2/3" />
-                      </div>
-                    ) : (
-                      <ul className="flex flex-col gap-2 text-sm text-foreground leading-relaxed break-words list-none">
-                        <li>
-                          <strong>Overall Health:</strong>{' '}
-                          {aiSummaryData?.overallHealth?.score != null ? (
-                            <>
-                              <strong>{aiSummaryData.overallHealth.score}/100</strong>
-                              {aiSummaryData.overallHealth.context ? <> — {boldKeyNumbers(aiSummaryData.overallHealth.context)}</> : null}
-                            </>
-                          ) : aiSummaryData?.overallHealth?.context ? (
-                            boldKeyNumbers(aiSummaryData.overallHealth.context)
-                          ) : (
-                            'Not yet available'
-                          )}
-                        </li>
-                        <li>
-                          <strong>Top Risk:</strong>{' '}
-                          {aiSummaryData?.topRisk ? boldKeyNumbers(aiSummaryData.topRisk) : 'No urgent risks identified'}
-                        </li>
-                        <li>
-                          <strong>Cloud Spend:</strong>{' '}
-                          {aiSummaryData?.cloudSpend ? boldKeyNumbers(aiSummaryData.cloudSpend) : 'No spend data available'}
-                        </li>
-                        <li>
-                          <strong>System Status:</strong>{' '}
-                          {aiSummaryData?.systemStatus ? boldKeyNumbers(aiSummaryData.systemStatus) : 'Nominal — 0 active outages'}
-                        </li>
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : isAwsConnected && (isBillingSyncing || hasServicesOnly) ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border border-l-[3px]" style={{ borderLeftColor: 'var(--border-accent)' }}>
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Monthly spend</p>
-                  <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Calculating...</div>
-                  <p className="text-xs text-[var(--text-secondary)]">Available once billing syncs</p>
-                </div>
-                <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">Savings opportunity</p>
-                  {topRecs.length > 0 ? (
-                    <>
-                      <div className="text-lg font-semibold leading-snug mb-2" style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(wasteAmount)}/mo</div>
-                      <p className="text-xs text-[var(--text-secondary)]">{topRecs.length} opportunit{topRecs.length !== 1 ? 'ies' : 'y'} identified</p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-lg font-medium text-[var(--text-secondary)] leading-snug mb-2">Analyzing...</div>
-                      <p className="text-xs text-[var(--text-secondary)]">Infrastructure scan in progress</p>
-                    </>
-                  )}
-                </div>
-                <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-3">Security health</p>
-                  {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                    <div className="text-base font-medium text-foreground leading-none mb-2">Scanning...</div>
-                  ) : (
-                    <>
-                      <div className="text-2xl font-medium text-foreground leading-none mb-2">
-                        {securityScore ?? '—'}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span>
-                      </div>
-                      {securityShowEliteBadge && (
-                        <span className="text-xs font-semibold bg-[var(--bg-success)] text-[var(--text-success)] px-1.5 py-0.5 rounded inline-block mt-1.5">Elite tier</span>
-                      )}
-                      {securityScore !== null && securityIsPreliminary && (
-                        <span className="text-xs font-semibold bg-[var(--bg-warning)] text-[var(--text-warning)] px-1.5 py-0.5 rounded inline-block mt-1.5">Preliminary</span>
-                      )}
-                    </>
-                  )}
-                </div>
-                <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                  <IntelKPICard />
-                </div>
-              </div>
-            ) : null}
-          </>
-        )
-      ) : null}
-
-      {/* ── SYSTEM INTELLIGENCE + HIGHEST PRIORITY ACTION ── */}
-      {displayIntelligence && isAwsConnected && !isBillingSyncing && !hasServicesOnly && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* System Intelligence */}
-          <div className="bg-[var(--surface-2)] rounded-xl p-6 border border-border">
-            <IntelKPICard hero />
-          </div>
-
-          {/* Highest Priority Action */}
-          {displayIntelligence.top_action && (
-            <div
-              className="flex flex-col gap-4 px-5 py-5 rounded-xl"
-              style={{
-                background: displayIntelligence.top_action.severity === 'critical' ? 'var(--bg-danger)' : 'var(--bg-warning)',
-                border: `1px solid ${displayIntelligence.top_action.severity === 'critical' ? 'var(--border-danger)' : 'var(--border-warning)'}`,
-              }}
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold uppercase tracking-wider mb-0.5" style={{ color: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)' }}>Highest priority action</p>
-                <p className="text-sm font-semibold text-foreground mb-0.5">{displayIntelligence.top_drivers?.[0]?.action?.label ?? displayIntelligence.top_action.message}</p>
-                <p className="text-xs font-medium" style={{ color: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)' }}>{displayIntelligence.top_action.consequence}</p>
-                <p className="text-xs font-semibold text-[var(--text-secondary)] mt-1">
-                  Business risk: {displayIntelligence.top_action.severity === 'critical' || displayIntelligence.top_action.severity === 'high' ? 'High' : displayIntelligence.top_action.severity === 'medium' ? 'Medium' : 'Low'}
-                </p>
-              </div>
-              <a href={displayIntelligence.top_action.path} className="text-white px-4 py-2 rounded-lg text-xs font-bold no-underline whitespace-nowrap shrink-0 self-start" style={{ background: displayIntelligence.top_action.severity === 'critical' ? 'var(--text-danger)' : 'var(--text-accent)' }}>
-                Review →
-              </a>
+          {(hasServicesOnly || isBillingSyncing) && (
+            <div className="bg-[var(--bg-warning)] border border-[var(--border-warning)] rounded-xl px-5 py-3 mb-6 flex items-center gap-3">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--fill-warning)' }} />
+              <span className="text-[13px]" style={{ color: 'var(--text-warning)' }}>
+                {hasServicesOnly
+                  ? 'Historical billing data is still syncing. Infrastructure scanning and security analysis are fully operational — cost totals will be available within 24–48 hours.'
+                  : 'Billing sync in progress (24–48h) — infrastructure and security data are ready now.'}
+              </span>
             </div>
           )}
-        </div>
-      )}
 
-      {/* ── EXECUTIVE INSIGHTS ── */}
-      {!insightDismissed && isAwsConnected && !isBillingSyncing && !hasServicesOnly && (demoMode || insightMessage) && (
-        <div className="bg-[var(--surface-1)] border border-border border-l-2 rounded-lg px-4 py-3.5 mb-8 relative" style={{ borderLeftColor: 'var(--border-accent)' }}>
-          <div className="flex items-start gap-4">
-            <div className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center" style={{ background: 'var(--bg-accent)' }}>
-              <i className="ti ti-sparkles text-[13px]" style={{ color: 'var(--text-accent)' }} />
-            </div>
-            <div className="flex-1">
-              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-accent)' }}>Executive insights</p>
-              <p className="text-sm text-foreground leading-relaxed">
-                {demoMode
-                  ? <>Compute costs are driving spend ($5,200, +12%).{' '}<a href="/cost-optimization" className="font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>Review optimization opportunities →</a></>
-                  : (insightMessage || `Your infrastructure is being actively analyzed. ${displayIntelligence?.top_drivers?.[0]?.message ? displayIntelligence.top_drivers[0].message + ' — ' + displayIntelligence.top_drivers[0].consequence : topRecs.length > 0 ? `${topRecs.length} optimization opportunit${topRecs.length !== 1 ? 'ies' : 'y'} identified.` : 'No insights available yet.'}`)}
-              </p>
-            </div>
-            <button onClick={() => setInsightDismissed(true)} className="bg-transparent border-none cursor-pointer text-[var(--text-secondary)] p-1 shrink-0 leading-none">
-              <i className="ti ti-x text-[16px]" />
-            </button>
+          {/* ── PRIMARY KPI ROW ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-6">
+            <DashboardMetricCard
+              icon={DollarSign}
+              iconColor="var(--text-success)"
+              iconBackground="var(--bg-success)"
+              label="Monthly Spend"
+              value={(statsLoading && !isDemoActive) || (currentSpend === 0 && !isDemoActive) ? 'Syncing…' : `$${currentSpend.toLocaleString()}`}
+              trend={
+                isDemoActive
+                  ? { direction: costChange > 0 ? 'up' : costChange < 0 ? 'down' : 'flat', label: `${costChange > 0 ? '+' : ''}${Math.abs(costChange)}% vs last 30 days`, color: costDeltaColor }
+                  : monthOverMonthCostChange !== null
+                    ? { direction: monthOverMonthCostChange > 0 ? 'up' : monthOverMonthCostChange < 0 ? 'down' : 'flat', label: `${monthOverMonthCostChange > 0 ? '+' : ''}${monthOverMonthCostChange}% vs last month`, color: mtdCostDeltaColor }
+                    : undefined
+              }
+              sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.map(d => ({ value: d.total }))) : undefined}
+            />
+
+            <DashboardMetricCard
+              icon={ShieldCheck}
+              iconColor="var(--text-accent)"
+              iconBackground="var(--bg-accent)"
+              label="Security Health"
+              value={(securityScore === null || securityScore === 0) && !isDemoActive ? 'Scanning…' : String(securityScore ?? (isDemoActive ? 87 : '—'))}
+              valueSuffix={(securityScore === null || securityScore === 0) && !isDemoActive ? undefined : '/100'}
+              valueColor={securityScore !== null ? securityTierColor : undefined}
+              trend={{ direction: securityTierColor === 'var(--text-success)' ? 'up' : securityTierColor === 'var(--text-danger)' ? 'down' : 'flat', label: securityTierLabel, color: securityTierColor }}
+              href="/security"
+            />
+
+            <DashboardMetricCard
+              icon={HeartPulse}
+              iconColor="var(--text-accent)"
+              iconBackground="var(--bg-accent)"
+              label="Infrastructure Health"
+              value={cloudHealthScore === null ? 'Calculating…' : String(cloudHealthScore)}
+              valueSuffix={cloudHealthScore === null ? undefined : '/100'}
+              trend={infraHealthBadge ? { direction: infraHealthBadge.label === 'Healthy' ? 'up' : infraHealthBadge.label === 'Needs attention' ? 'down' : 'flat', label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
+            />
           </div>
-        </div>
-      )}
 
-      {/* ── AWS COST TRENDS + SECURITY SCORE DRIVERS ── */}
-      {isAwsConnected && (
-        isBillingSyncing ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
-            {/* AI Advisor */}
-            {topRecs.length > 0 ? <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">AI advisor</p>
-                  <p className="text-sm font-semibold text-foreground">Actions ready for approval</p>
-                </div>
-                <a href="/cost-optimization" className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>All →</a>
-              </div>
-              {/* Concise summary, not a per-item list -- the full recommendation
-                  feed with per-resource detail lives on /cost-optimization. */}
-              <div className="flex flex-col items-center justify-center py-8 gap-3 text-center">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--bg-accent)' }}>
-                  <i className="ti ti-sparkles text-[18px]" style={{ color: 'var(--text-accent)' }} />
-                </div>
-                <p className="text-sm font-semibold text-foreground">
-                  {topRecs.length} optimization opportunit{topRecs.length !== 1 ? 'ies' : 'y'} ready for review
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] max-w-[220px]">Savings estimate available once billing sync completes</p>
-                <a href="/cost-optimization" className="mt-1 text-white rounded-lg px-4 py-2 text-xs font-semibold no-underline whitespace-nowrap" style={{ background: 'var(--text-accent)' }}>Approve actions ({topRecs.length}) →</a>
-              </div>
-            </div> : <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">AI advisor</p>
-                  <p className="text-sm font-semibold text-foreground">Infrastructure analysis in progress</p>
-                </div>
-                <a href="/cost-optimization" className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>All →</a>
-              </div>
-              <div className="flex flex-col items-center justify-center py-8 gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--bg-accent)' }}>
-                  <i className="ti ti-sparkles text-[18px]" style={{ color: 'var(--text-accent)' }} />
-                </div>
-                <p className="text-sm font-semibold text-foreground text-center">Scanning your AWS environment</p>
-                <p className="text-xs text-[var(--text-secondary)] text-center leading-relaxed max-w-[220px]">Cost optimization opportunities will appear here once billing sync completes in 24–48h</p>
-                <a href="/infrastructure" className="mt-1 text-[13px] font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>View infrastructure →</a>
-              </div>
-            </div>}
+          <InfrastructureIntelligence
+            overallHealth={{ score: cloudHealthScore, context: overallHealthContext }}
+            topRisk={topRisk}
+            aiSummaryLoading={!isDemoActive && aiSummaryLoading}
+            cloudSpend={{ amount: hasBillingData || isDemoActive ? currentSpend : null, periodLabel: hasBillingData || isDemoActive ? 'Monthly spend across all accounts' : 'Available once billing syncs' }}
+            systemStatus={{ label: statusConf.label, color: statusConf.color, background: statusConf.background, dotColor: statusConf.dot }}
+            isLive={isConnected}
+          />
 
-            {/* Security Score Drivers */}
-            <div className="bg-[var(--surface-2)] rounded-2xl p-8 border border-border">
-              <p className="text-sm font-semibold text-foreground mb-4">Security score drivers</p>
-              <div className="text-center py-3 border-b border-border mb-3.5">
-                {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                  <div className="text-base font-semibold text-foreground leading-none">Scanning...</div>
-                ) : (
-                  <div className="text-4xl font-semibold text-foreground tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}<span className="text-base text-[var(--text-secondary)] font-normal">/100</span></div>
-                )}
-                {securityScore !== null && (
-                  <div className="text-xs font-semibold mt-1" style={{ color: securityTierColor }}>{securityTierLabel}</div>
-                )}
-              </div>
-              {securityRows.map(({ label, value, status }) => (
-                <div key={label} className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-[12px] text-[var(--text-secondary)]">{label}</span>
-                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? 'var(--text-success)' : status === 'neutral' ? 'var(--text-secondary)' : 'var(--text-warning)' }}>{value}</span>
-                </div>
-              ))}
-              <div className="py-2 border-b border-border">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12px] text-[var(--text-secondary)]">Compliance status</span>
-                  {isDemoActive
-                    ? <span className="text-xs font-bold" style={{ color: 'var(--text-success)' }}>3 / 3 passing</span>
-                    : <span className="text-xs font-medium text-[var(--text-secondary)]">Run compliance scan</span>}
-                </div>
-                {isDemoActive && (
-                  <div className="flex gap-1.5">
-                    {['CIS AWS', 'PCI-DSS', 'NIST 800-53'].map((f) => (
-                      <span key={f} className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{f}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <a href="/security" className="flex items-center justify-center gap-1.5 mt-3.5 text-[13px] font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>View security report →</a>
+          {/* ── AWS COST TRENDS + SECURITY KEY FINDINGS ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+            <div className="lg:col-span-3">
+              <CostTrendsCard
+                isDemoActive={isDemoActive}
+                hasBillingData={hasBillingData}
+                costTrend={costTrend}
+                costTrendLoading={costTrendLoading}
+                demoBreakdownData={generateCostBreakdownData()}
+                demoTotalCost={DEMO_DASHBOARD_STATS.monthlyAwsCost}
+                dateRange={costDateRange}
+                onDateRangeChange={setCostDateRange}
+                onExport={() => { toast.success('Exporting cost data...') }}
+              />
+            </div>
+            <div className="lg:col-span-2">
+              <SecurityComplianceSummary
+                findingCounts={isDemoActive ? { critical: 1, high: 3, medium: 5, low: 0 } : (riskScoreData?.current?.accountFindingsCounts ?? null)}
+                riskDataLoading={!isDemoActive && riskScoreLoading}
+                complianceBreakdown={resourceComplianceBreakdown}
+                soc2Subtext={soc2Subtext}
+                soc2Loading={!isDemoActive && soc2Loading}
+                customFrameworksSubtext={customFrameworksSubtext}
+                customFrameworksLoading={!isDemoActive && customFrameworksLoading}
+              />
             </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-            {/* AWS Cost Trends — 3fr */}
-            <div className="lg:col-span-3 bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-              {/* CostBreakdownBarList (demo) has no title of its own, so it still needs
-                  this label; CostTrendChart (live) and the syncing placeholder below
-                  both render their own heading, so the label would just duplicate it. */}
-              <div className={`flex items-start justify-between ${isDemoActive ? 'mb-6' : 'mb-2 justify-end'}`}>
-                {isDemoActive && (
-                  <div>
-                    <p className="text-sm font-semibold text-foreground mb-1">AWS cost trends</p>
-                    <p className="text-sm font-semibold text-foreground">Infrastructure cost over time</p>
-                  </div>
-                )}
-                <a href="/costs" className="text-[var(--text-secondary)]"><i className="ti ti-dots text-[16px]" /></a>
-              </div>
-              {isDemoActive ? (
-                <CostBreakdownBarList
-                  data={generateCostBreakdownData()}
-                  totalCost={DEMO_DASHBOARD_STATS.monthlyAwsCost}
-                  isLoading={false}
-                  dateRange={costDateRange}
-                  onDateRangeChange={setCostDateRange}
-                  onExport={() => { toast.success('Exporting cost data...') }}
+
+          {/* ── COST-SAVING OPPORTUNITIES + EXECUTIVE ROI ── */}
+          {/* Derived from cost_recommendations, not AWS billing data -- shown as soon as
+              the initial discovery scan has run once, independent of hasBillingData/
+              hasServicesOnly (the separate, much slower 24-48h Cost Explorer billing
+              sync). */}
+          {showRecommendationSections && (
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+              <div className="lg:col-span-3">
+                <SavingsOpportunities
+                  items={[
+                    { title: 'Right-size EC2 instances', description: 'Instances with sustained low utilization', savingsLabel: ec2Opportunities.savingsLabel, count: ec2Opportunities.count, priorityBadge: ec2Opportunities.badge },
+                    { title: 'Remove idle EBS volumes', description: 'Volumes not attached to any instance', savingsLabel: ebsOpportunities.savingsLabel, count: ebsOpportunities.count, priorityBadge: ebsOpportunities.badge },
+                    { title: 'Optimize RDS storage', description: 'Database instances sized above actual load', savingsLabel: rdsOpportunities.savingsLabel, count: rdsOpportunities.count, priorityBadge: rdsOpportunities.badge },
+                  ]}
                 />
-              ) : hasBillingData ? (
-                <CostTrendChart
-                  data={costTrend}
-                  isLoading={costTrendLoading}
-                  dateRange={costDateRange}
-                  onDateRangeChange={setCostDateRange}
-                  onExport={() => { toast.success('Exporting cost data...') }}
+              </div>
+              <div className="lg:col-span-2">
+                <ExecutiveRoiCard
+                  monthlySavingsLabel={wasteAmount > 0 ? formatSavingsCurrency(wasteAmount) : null}
+                  annualSavingsLabel={wasteAmount > 0 ? formatSavingsCurrency(annualizeMonthly(wasteAmountRaw)) : null}
+                  isDemoActive={isDemoActive}
                 />
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[var(--surface-1)]">
-                    <i className="ti ti-currency-dollar text-[18px] text-[var(--text-secondary)]" />
-                  </div>
-                  <p className="text-sm font-semibold text-foreground">Cost data syncing</p>
-                  <p className="text-xs text-[var(--text-secondary)] text-center leading-relaxed max-w-[220px]">Billing data available within 24–48h of connecting your AWS account</p>
-                </div>
-              )}
-            </div>
-
-            {/* Security Score Drivers — 2fr */}
-            <div className="lg:col-span-2 bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-              <p className="text-sm font-semibold text-foreground mb-4">Security score drivers</p>
-              {displayIntelligence?.top_drivers?.length > 0 && (
-                <div className="flex flex-col gap-2 mb-4">
-                  {displayIntelligence.top_drivers.map((driver: any, i: number) => (
-                    <div key={driver.id} className="flex items-start gap-2.5 px-3 py-2.5 bg-[var(--surface-1)] rounded-lg border border-border">
-                      <span className="text-xs font-bold text-[var(--text-secondary)] w-4 shrink-0 mt-0.5">#{i + 1}</span>
-                      <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: driver.severity === 'critical' ? 'var(--text-danger)' : driver.severity === 'high' ? 'var(--text-warning)' : 'var(--fill-warning)' }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-semibold text-foreground mb-0.5">{driver.message}</p>
-                        <p className="text-xs text-[var(--text-secondary)]">{driver.consequence}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs font-bold whitespace-nowrap" style={{ color: 'var(--text-success)' }}>+{driver.impact_score}pts</span>
-                          <a href={driver.action.path} className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>{driver.action.label} →</a>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="text-center py-5 border-y border-border mb-5">
-                {(securityScore === null || securityScore === 0) && !isDemoActive ? (
-                  <div className="text-base font-semibold text-foreground leading-none">Scanning...</div>
-                ) : (
-                  <>
-                    <div className="text-4xl font-semibold text-foreground tracking-tight leading-none">{securityScore ?? (isDemoActive ? '87' : '—')}</div>
-                    <div className="text-sm font-semibold mt-2" style={{ color: securityTierColor }}>
-                      {securityTierLabel}
-                    </div>
-                  </>
-                )}
               </div>
-              {securityRows.map(({ label, value, status }) => (
-                <div key={label} className="flex items-center justify-between py-2.5 border-b border-border">
-                  <span className="text-[12px] text-[var(--text-secondary)]">{label}</span>
-                  <span className="text-[13px] font-bold" style={{ color: status === 'good' ? 'var(--text-success)' : status === 'neutral' ? 'var(--text-secondary)' : 'var(--text-warning)' }}>{value}</span>
-                </div>
-              ))}
-              <div className="py-3 border-b border-border">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12px] text-[var(--text-secondary)]">Compliance status</span>
-                  {isDemoActive
-                    ? <span className="text-xs font-bold" style={{ color: 'var(--text-success)' }}>3 / 3 passing</span>
-                    : <span className="text-xs font-medium text-[var(--text-secondary)]">Run compliance scan</span>}
-                </div>
-                {isDemoActive && (
-                  <div className="flex gap-1.5 flex-wrap">
-                    {['CIS AWS', 'PCI-DSS', 'NIST 800-53'].map((framework) => (
-                      <span key={framework} className="text-xs font-semibold text-[var(--text-success)] bg-[var(--bg-success)] border border-[var(--border-success)] px-2 py-0.5 rounded">{framework}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <a href="/security" className="flex items-center justify-center gap-1.5 mt-5 text-[13px] font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>
-                View security report <i className="ti ti-arrow-right text-[13px]" />
-              </a>
             </div>
-          </div>
-        )
-      )}
+          )}
 
-      {/* ── COST-SAVING OPPORTUNITIES ── */}
-      {/* Derived entirely from cost_recommendations (idle EC2/EBS/RDS counts), not AWS
-          billing data -- shown as soon as the initial discovery scan has run at least
-          once, independent of hasBillingData/hasServicesOnly, which track the separate,
-          much slower (24-48h) Cost Explorer billing sync. */}
-      {showRecommendationSections && (
-        <div className="mb-8">
-          <p className="text-sm font-semibold text-foreground mb-4">Cost-saving opportunities</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            {[
-              { title: 'Idle EC2', description: 'Instances with sustained low utilization', count: idleEC2Count },
-              { title: 'Unattached EBS', description: 'Volumes not attached to any instance', count: unattachedEBSCount },
-              { title: 'Overprovisioned RDS', description: 'Database instances sized above actual load', count: overprovisionedRDSCount },
-            ].map(({ title, description, count }) => (
-              <div key={title} className="bg-[var(--surface-2)] rounded-xl p-4 border border-border">
-                <div className="flex items-start justify-between mb-3">
-                  <p className="text-xs text-[var(--text-secondary)] font-medium">{title}</p>
-                  <span
-                    className="text-xs font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
-                    style={{
-                      color: count === 0 ? 'var(--text-success)' : 'var(--text-warning)',
-                      background: count === 0 ? 'var(--bg-success)' : 'var(--bg-warning)',
-                    }}
-                  >
-                    {count} detected
-                  </span>
-                </div>
-                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── EXECUTIVE ROI SUMMARY ── */}
-      {/* Same reasoning as Cost-saving opportunities above -- wasteAmount/topRecs come
-          from cost_recommendations, not billing data, so this doesn't wait on hasBillingData. */}
-      {showRecommendationSections && (
-        <div className="bg-[var(--surface-2)] rounded-xl p-4 border border-border mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
-            <div>
-              <p className="text-sm font-semibold text-foreground mb-1">Executive ROI summary</p>
-              <p className="text-lg font-semibold text-foreground">
-                {isDemoActive ? (
-                  <>
-                    DEVCONTROL has saved WayUP Technology{' '}
-                    <span style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(annualizeMonthly(wasteAmountRaw))}</span> annualised
-                  </>
-                ) : wasteAmount > 0 ? (
-                  <>
-                    DevControl has identified{' '}
-                    <span style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(annualizeMonthly(wasteAmountRaw))}</span> in estimated annual savings for {organization?.displayName || organization?.name || 'your organization'}
-                  </>
-                ) : (
-                  <>No active cost-saving opportunities detected for {organization?.displayName || organization?.name || 'your organization'}</>
-                )}
-              </p>
+          {/* ── ENGINEERING HEALTH + RECENT ACTIVITY ── */}
+          {/* RecentActivityCard is legitimately absent in demo mode (real-data-only,
+              matching every other real-data-only feature on this dashboard) -- so
+              Engineering Health spans the full row there instead of leaving an empty
+              second column. Real mode keeps the two-column layout. */}
+          {isDemoActive ? (
+            <div className="mb-6">
+              <EngineeringHealthCard isDemoActive={isDemoActive} doraRows={doraRows} />
             </div>
-            <div className="flex gap-2.5 shrink-0">
-              {(isDemoActive || wasteAmount > 0) && (
-                <a href="/cost-optimization" className="text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline whitespace-nowrap" style={{ background: 'var(--text-accent)' }}>Review savings</a>
-              )}
-              <a href="/costs" className="bg-transparent text-[var(--text-secondary)] px-4 py-2.5 rounded-lg text-sm font-medium no-underline border border-border whitespace-nowrap">View full report</a>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <EngineeringHealthCard isDemoActive={isDemoActive} doraRows={doraRows} />
+              <RecentActivityCard isDemoActive={isDemoActive} data={activityFeedData} isLoading={activityFeedLoading} isError={activityFeedError} />
             </div>
+          )}
+
+          {/* ── OPTIONAL LIVE STATUS ── */}
+          <div className="flex items-center gap-2 mt-2 mb-2">
+            {isConnected ? <Wifi size={13} className="text-[var(--text-secondary)]" /> : <WifiOff size={13} className="text-[var(--text-secondary)]" />}
+            <span className="text-xs text-[var(--text-secondary)]">
+              {isConnected ? 'Real-time monitoring active' : 'Reconnecting…'} · data updates based on source availability
+            </span>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-            {[
-              { label: 'Monthly savings',         value: wasteAmount > 0 ? formatSavingsCurrency(wasteAmount) : '—',            sub: wasteAmount > 0 ? 'AI-identified waste' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
-              { label: 'Annual projection',        value: wasteAmount > 0 ? formatSavingsCurrency(annualizeMonthly(wasteAmountRaw)) : '—',     sub: wasteAmount > 0 ? 'At current run rate' : 'No opportunities identified yet',    color: wasteAmount > 0 ? 'var(--text-success)' : 'var(--text-secondary)' },
-              { label: 'Avg. ROI payback',         value: isDemoActive ? '< 15 min' : '—',                                      sub: isDemoActive ? 'Zero-risk changes only' : 'Not yet available',                  color: isDemoActive ? 'var(--text-accent)' : 'var(--text-secondary)' },
-              { label: 'Can reduce monthly spend',     value: `${topRecs.length}`,                                                 sub: 'Ready to action',                                                               color: 'var(--text-warning)' },
-            ].map(({ label, value, sub, color }) => (
-              <div key={label} className="px-4 py-4 bg-[var(--surface-1)] rounded-xl border border-border">
-                <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)] mb-2">{label}</p>
-                <div className="text-2xl font-semibold tracking-tight leading-none mb-1" style={{ color }}>{value}</div>
-                <div className="text-xs text-[var(--text-secondary)]">{sub}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        </>
       )}
-
-      {/* ── SYSTEM STATUS BAR ── */}
-      {isAwsConnected && (
-        <div
-          className="rounded-xl px-4 py-3.5 flex items-center justify-between mb-5 border"
-          style={{ background: statusConf.bg, borderColor: statusConf.border }}
-        >
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: systemAlertCount > 0 ? 'var(--fill-warning)' : statusConf.dot }} />
-            <span className="text-[13px] font-semibold" style={{ color: statusConf.color }}>{systemAlertCount > 0 ? `${systemAlertCount} active alert${systemAlertCount !== 1 ? 's' : ''}` : statusConf.label}</span>
-            <div className="hidden sm:block w-px h-3.5 bg-border" />
-            <span className="hidden sm:block text-xs font-medium" style={{ color: statusConf.color }}>{systemUptimeAvg !== '—' && systemUptimeAvg !== '0%' ? `${systemUptimeAvg} uptime this month` : systemUptimeAvg === '0%' ? 'Pending data' : isDemoActive ? '99.9% uptime this month' : 'Uptime data pending'}</span>
-            <div className="hidden sm:block w-px h-3.5 bg-border" />
-            {isDemoActive && systemStatusLabel !== 'down' && <span className="hidden sm:block text-xs font-medium" style={{ color: statusConf.color }}>No incidents in 30 days</span>}
-            <div className="hidden sm:block w-px h-3.5 bg-border" />
-            <span className="hidden sm:block text-xs font-medium" style={{ color: statusConf.color }}>{systemResponseTime !== '—' ? `Avg response ${systemResponseTime}` : isDemoActive ? '3 services monitored' : (systemHealth?.totalServices ? `${systemHealth.totalServices} services monitored` : 'Monitoring pending')}</span>
-          </div>
-          <a href="/monitoring" className="font-semibold text-xs no-underline" style={{ color: statusConf.color }}>View observability →</a>
-        </div>
-      )}
-
-      {/* ── ENGINEERING HEALTH + AI ADVISOR ── */}
-      {isAwsConnected && (
-        isBillingSyncing ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* Engineering Health */}
-            <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="text-sm font-semibold text-foreground mb-1.5">Engineering health</p>
-                  <span className="text-xl font-semibold text-foreground">{isDemoActive ? 'Elite' : '—'}</span>
-                </div>
-                <a href="/app/dora-metrics" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Full report <i className="ti ti-arrow-right text-[12px]" /></a>
-              </div>
-              {isDemoActive ? (
-                doraRows.filter(r => ['Lead Time for Changes', 'Change Failure Rate', 'Mean Time to Recovery'].includes(r.label)).map(({ label, value }) => (
-                  <div key={label} className="flex items-center justify-between py-2.5 border-b border-border">
-                    <span className="text-[13px] text-[var(--text-secondary)] font-medium">{label}</span>
-                    <span className="text-[13px] font-semibold" style={{ color: label === 'Change Failure Rate' ? 'var(--text-warning)' : 'var(--foreground)' }}>{value}</span>
-                  </div>
-                ))
-              ) : (
-                <div className="py-2">
-                  <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">Connect CI/CD pipeline to see DORA metrics</p>
-                  <a href="/deployments" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Connect CI/CD <i className="ti ti-arrow-right text-[12px]" /></a>
-                </div>
-              )}
-            </div>
-
-            {/* What You Can Do Now */}
-            <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
-              <p className="text-xs text-[var(--text-secondary)] font-medium mb-4">What you can do now</p>
-              <a href="/cost-optimization" className="flex items-center gap-3 px-4 py-3.5 border rounded-xl mb-2 no-underline" style={{ background: 'var(--text-accent)', borderColor: 'var(--border-accent)' }}>
-                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0"><i className="ti ti-circle-check text-[14px] text-white" /></div>
-                <div>
-                  <div className="text-sm font-bold text-white mb-0.5">Approve actions ({topRecs.length})</div>
-                  <div className="text-xs text-white/80 font-medium">Zero downtime · fully reversible · &lt; 5 min</div>
-                </div>
-                <span className="ml-auto text-sm text-white font-bold">→</span>
-              </a>
-              {[
-                { href: '/security',    tokenBg: 'var(--bg-success)', tokenColor: 'var(--text-success)', title: 'Explore security report',   sub: securityScore !== null ? `${securityScore} score` : 'Run security scan'          },
-                { href: '/deployments', tokenBg: 'var(--surface-1)', tokenColor: 'var(--text-secondary)', title: 'Connect CI/CD pipeline',     sub: 'Track deployments · velocity'   },
-                { href: '/costs',       tokenBg: 'var(--bg-warning)', tokenColor: 'var(--text-warning)', title: 'Monitor billing sync',       sub: 'Cost data within 24–48h'         },
-              ].map(({ href, tokenBg, tokenColor, title, sub }) => (
-                <a key={href} href={href} className="flex items-center gap-3 border border-border rounded-xl px-3 py-2.5 mb-1.5 no-underline">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: tokenBg }}><i className="ti ti-arrow-right text-[13px]" style={{ color: tokenColor }} /></div>
-                  <div>
-                    <div className="text-[13px] font-semibold text-foreground mb-0.5">{title}</div>
-                    <div className="text-xs text-[var(--text-secondary)]">{sub}</div>
-                  </div>
-                  <span className="ml-auto text-sm font-semibold" style={{ color: 'var(--text-accent)' }}>→</span>
-                </a>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* Engineering Health */}
-            <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="text-sm font-semibold text-foreground mb-1.5">Engineering health</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl font-semibold text-foreground">{isDemoActive ? 'Elite' : '—'}</span>
-                    {isDemoActive && <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ background: 'var(--bg-success)', color: 'var(--text-success)' }}>Top 10%</span>}
-                  </div>
-                </div>
-                <a href="/app/dora-metrics" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Full report <i className="ti ti-arrow-right text-[12px]" /></a>
-              </div>
-              <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">{isDemoActive ? 'Elite performance across all 4 DORA metrics' : 'Connect CI/CD pipeline to see DORA metrics'}</p>
-              {isDemoActive ? (
-                doraRows.map(({ label, value, tier, showTier }) => (
-                  <div key={label} className="flex items-center justify-between py-2.5 border-b border-border">
-                    <span className="text-[13px] text-[var(--text-secondary)]">{label}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold" style={{ color: label === 'Change Failure Rate' ? 'var(--text-warning)' : 'var(--foreground)' }}>{value}</span>
-                      {(showTier === undefined || showTier) && (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: tier === 'Elite' ? 'var(--text-success)' : 'var(--text-warning)', background: tier === 'Elite' ? 'var(--bg-success)' : 'var(--bg-warning)' }}>{tier}</span>
-                      )}
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <a href="/deployments" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>Connect CI/CD <i className="ti ti-arrow-right text-[12px]" /></a>
-              )}
-            </div>
-
-            {/* AI Advisor Feed */}
-            {(() => {
-              const showSavingsDollars = isDemoActive || hasBillingData
-              return (
-                <div className="bg-[var(--surface-2)] border border-border rounded-xl p-4">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">What you can do now</p>
-                      <p className="text-sm font-semibold text-foreground">Top recommendations</p>
-                    </div>
-                    <a href="/cost-optimization" className="text-xs font-semibold no-underline flex items-center gap-1" style={{ color: 'var(--text-accent)' }}>All <i className="ti ti-arrow-right text-[12px]" /></a>
-                  </div>
-                  {/* Concise summary + single CTA, not a per-item list -- the full
-                      recommendation feed with per-resource detail lives on
-                      /cost-optimization. */}
-                  <a href="/cost-optimization" className="flex items-center gap-3 px-4 py-3.5 border rounded-xl mb-2 no-underline" style={{ background: 'var(--text-accent)', borderColor: 'var(--border-accent)' }}>
-                    <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0"><i className="ti ti-sparkles text-[14px] text-white" /></div>
-                    <div>
-                      <div className="text-sm font-bold text-white mb-0.5">{topRecs.length} optimization opportunit{topRecs.length !== 1 ? 'ies' : 'y'} ready</div>
-                      <div className="text-xs text-white/80 font-medium">
-                        {isDemoActive
-                          ? 'Reduce AWS waste immediately — zero downtime, fully reversible'
-                          : 'May reduce AWS waste — review each recommendation'}
-                      </div>
-                    </div>
-                    <span className="ml-auto text-sm text-white font-bold">→</span>
-                  </a>
-                  <div className="mt-2 p-3 bg-[var(--surface-1)] rounded-lg border border-border">
-                    <div className="text-xs font-semibold text-[var(--text-secondary)] mb-0.5">Total potential</div>
-                    {showSavingsDollars
-                      ? (wasteAmount > 0
-                          ? <div className="text-lg font-bold tracking-tight" style={{ color: 'var(--text-success)' }}>{formatSavingsCurrency(wasteAmount)}/mo</div>
-                          : <div className="text-[13px] text-[var(--text-secondary)] italic">{isDemoActive ? 'Calculating...' : 'No savings opportunities identified yet'}</div>)
-                      : <div className="text-[13px] text-[var(--text-secondary)] italic">Calculated once billing syncs</div>}
-                  </div>
-                </div>
-              )
-            })()}
-          </div>
-        )
-      )}
-
-      {/* ── RECENT ACTIVITY ── */}
-      {isAwsConnected && <RecentActivityCard />}
-
-      {/* ── FOOTER CONNECTION STATUS ── */}
-      {isAwsConnected && (
-        <div className="flex items-center gap-2 mt-6 mb-2">
-          <div className="h-2 w-2 rounded-full" style={{ background: isConnected ? 'var(--fill-success)' : 'var(--fill-danger)' }} />
-          <span className="text-xs text-[var(--text-secondary)]">{isConnected ? 'Connected' : 'Reconnecting...'}</span>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
-      `}</style>
     </div>
   )
 }
