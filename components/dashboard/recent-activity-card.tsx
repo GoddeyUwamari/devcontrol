@@ -59,7 +59,16 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-foreground leading-snug line-clamp-1" title={event.message}>{event.message}</p>
-                  <p className="text-xs text-[var(--text-secondary)] capitalize">{event.type}{event.severity ? ` · ${event.severity}` : ''}</p>
+                  {/* 'score' events are periodic historical snapshots (risk_score_history),
+                      not the live current score shown in the Security Health KPI -- the two
+                      can legitimately differ. Label this explicitly rather than the generic
+                      type name, so the timestamp reads as "this was the score then", not an
+                      implicit claim that it's still current. Message/timestamp are untouched
+                      real values from the API. */}
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    {event.type === 'score' ? 'Historical snapshot' : <span className="capitalize">{event.type}</span>}
+                    {event.severity ? ` · ${event.severity}` : ''}
+                  </p>
                 </div>
                 <span className="text-xs text-[var(--text-secondary)] whitespace-nowrap shrink-0">
                   {formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}

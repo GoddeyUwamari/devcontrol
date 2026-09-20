@@ -35,6 +35,14 @@ import { DollarSign, ShieldCheck, HeartPulse, Wifi, WifiOff } from 'lucide-react
 
 type CostRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
 
+// Precise (always-2-decimal) currency display for exact dollar figures like
+// current spend -- same Intl.NumberFormat convention already used for money
+// elsewhere in this app (e.g. app/(app)/invoices/page.tsx's formatCurrency).
+// Distinct from formatSavingsCurrency, which is deliberately whole-dollar
+// above $1 -- appropriate for describing savings opportunities loosely, not
+// for a precise "this is your bill" figure.
+const currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
 const DEMO_DASHBOARD_STATS = {
   monthlyAwsCost: 12847,
   costChange: 8,
@@ -147,6 +155,20 @@ export default function DashboardPage() {
   const { data: costRecStats } = useQuery({
     queryKey: ['cost-recommendations-stats'],
     queryFn: costRecommendationsService.getStats,
+    staleTime: 60_000, refetchInterval: 300_000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !isDemoActive,
+  })
+
+  // Real evaluation-state signal: every wired cost-optimization detector
+  // (EC2/EBS/RDS/S3/...) runs together inside one scan pass, tracked here --
+  // so "has any scan completed" is sufficient to know every category has
+  // actually been evaluated at least once, distinguishing a genuine zero
+  // result from "never scanned." Same existing endpoint already exposed via
+  // costRecommendationsService.getAnalysisRuns(), no backend change.
+  const { data: analysisRuns } = useQuery({
+    queryKey: ['cost-analysis-runs'],
+    queryFn: () => costRecommendationsService.getAnalysisRuns(5),
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive,
@@ -345,29 +367,58 @@ export default function DashboardPage() {
       }))
 
   // Cost-saving opportunities, grouped by resource type from the already-fetched cost
-  // recommendations — no new fetch. The real /api/cost-recommendations data only ever
-  // tags resource_type as EC2/RDS today; EBS detection isn't wired to this endpoint
-  // yet, so that bucket is honestly "not currently evaluated" rather than a fabricated
-  // dollar figure or "0 detected" that would imply active EBS coverage.
+  // recommendations — no new fetch. Structured as a list (not one variable per type)
+  // so a newly-supported resource type only ever needs one new entry here, never a
+  // UI restructure. All four types below ARE real, wired, currently-running detectors
+  // in cost-optimization.service.ts (verified directly against the backend source,
+  // not assumed) — none is hardcoded as unsupported.
   const priorityBadgeFor = (severity?: 'LOW' | 'MEDIUM' | 'HIGH') =>
     severity === 'HIGH' ? { label: 'High priority', color: 'var(--text-danger)', background: 'var(--bg-danger)' }
     : severity === 'MEDIUM' ? { label: 'Medium priority', color: 'var(--text-warning)', background: 'var(--bg-warning)' }
     : severity === 'LOW' ? { label: 'Low priority', color: 'var(--text-secondary)', background: 'var(--surface-2)' }
     : undefined
-  const opportunitiesByType = (type: string) => {
-    const matches = costRecsRaw.filter(r => r.resourceType === type)
-    const total = matches.reduce((sum, r) => sum + (r.potentialSavings ?? 0), 0)
-    return { count: matches.length, savingsLabel: matches.length > 0 ? `${formatSavingsCurrency(total)}/month` : null, badge: priorityBadgeFor(matches[0]?.severity) }
-  }
-  const ec2Opportunities = isDemoActive
-    ? { count: 2, savingsLabel: '$0.48/month', badge: priorityBadgeFor('LOW') }
-    : opportunitiesByType('EC2')
-  const rdsOpportunities = isDemoActive
-    ? { count: 1, savingsLabel: '$0.16/month', badge: priorityBadgeFor('MEDIUM') }
-    : opportunitiesByType('RDS')
-  const ebsOpportunities = isDemoActive
-    ? { count: 3, savingsLabel: '$0.32/month', badge: priorityBadgeFor('LOW') }
-    : { count: null, savingsLabel: null, badge: undefined }
+  const OPPORTUNITY_CATEGORIES: { type: string; title: string; description: string }[] = [
+    { type: 'EC2', title: 'Right-size EC2 instances', description: 'Instances with sustained low utilization' },
+    { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities' },
+    { type: 'RDS', title: 'Optimize RDS storage', description: 'Database instances sized above actual load' },
+    { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities' },
+  ]
+  const opportunityCategories = isDemoActive
+    ? [
+        { type: 'EC2', title: 'Right-size EC2 instances', description: 'Instances with sustained low utilization', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
+        { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities', count: 3, savingsLabel: '$0.32/mo', priorityBadge: priorityBadgeFor('LOW') },
+        { type: 'RDS', title: 'Optimize RDS storage', description: 'Database instances sized above actual load', count: 1, savingsLabel: '$0.16/mo', priorityBadge: priorityBadgeFor('MEDIUM') },
+        { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities', count: 0, savingsLabel: '$0/mo', priorityBadge: undefined },
+      ]
+    : OPPORTUNITY_CATEGORIES.map((cat) => {
+        const matches = costRecsRaw.filter((r) => r.resourceType === cat.type)
+        const total = matches.reduce((sum, r) => sum + (r.potentialSavings ?? 0), 0)
+        return {
+          ...cat,
+          count: matches.length,
+          savingsLabel: matches.length > 0 ? `${formatSavingsCurrency(total)}/mo` : '$0/mo',
+          priorityBadge: priorityBadgeFor(matches[0]?.severity),
+        }
+      })
+
+  // One evaluation-state signal for all categories: every wired detector runs inside
+  // the same optimization scan (cost_analysis_runs), so there is no scenario where
+  // one type is evaluated and another isn't. A completed run means a genuine zero
+  // count is a real "nothing found", not "never scanned".
+  const latestAnalysisRun = analysisRuns?.[0] ?? null
+  const opportunityEvaluationState: 'evaluated' | 'not_evaluated' | 'in_progress' = isDemoActive
+    ? 'evaluated'
+    : latestAnalysisRun?.status === 'running'
+      ? 'in_progress'
+      : (analysisRuns?.some((r) => r.status === 'completed') ?? false)
+        ? 'evaluated'
+        : 'not_evaluated'
+
+  // Single authoritative active-opportunity count, shared by the Recommended Action
+  // CTA, its "Review Savings (N)" button, and Cost-Saving Opportunities' "View all (N)"
+  // -- the server-computed aggregate (costRecStats.activeRecommendations), never
+  // topRecs.length (a display-only slice capped at 5) used as a population proxy.
+  const activeOpportunityCount = isDemoActive ? topRecs.length : (costRecStats?.activeRecommendations ?? topRecs.length)
 
   // DORA metrics (industry-standard: deployment frequency, lead time, change
   // failure rate, MTTR — the same 4 metrics /app/dora-metrics reports on),
@@ -380,12 +431,34 @@ export default function DashboardPage() {
     { label: 'Mean Time to Recovery', value: isDemoActive ? '36 min' : '—', delta: isDemoActive ? { direction: 'down', label: '22%', good: true } : undefined },
   ]
 
-  const overallHealthContext = isDemoActive ? DEMO_OVERALL_HEALTH_CONTEXT : (aiSummaryData?.overallHealth?.context ?? null)
   const topRisk = isDemoActive ? DEMO_TOP_RISK : (aiSummaryData?.topRisk ?? null)
 
-  const infraHealthBadge = cloudHealthScore === null ? undefined
-    : cloudHealthScore >= 80 ? { label: 'Healthy', color: 'var(--text-success)', background: 'var(--bg-success)' }
-    : cloudHealthScore >= 60 ? { label: 'Monitor', color: 'var(--text-warning)', background: 'var(--bg-warning)' }
+  // Overall Health / Infrastructure Health must show ONE consistent
+  // number+explanation pair. There are genuinely two independent scoring
+  // models in this codebase: this page's own simple average of
+  // cost/security/observability sub-scores (cloudHealthScore), and the
+  // backend's already-established, properly-weighted System Intelligence
+  // score (aiSummaryData.overallHealth.score -- see ai-summary.service.ts /
+  // system-intelligence.service.ts's 30/40/30 weighting), which is also
+  // exactly what aiSummaryData.overallHealth.context's generated prose
+  // describes. Previously this page paired the backend's context text with
+  // its OWN unrelated cloudHealthScore number, producing a mismatched
+  // "83, driven by 94/57/55" narrative whose components don't average to 83
+  // under either model. Preferring the backend's score (when available) and
+  // pairing it only with its own context -- falling back to cloudHealthScore
+  // with a generic, model-agnostic description otherwise -- keeps the
+  // number and its explanation always describing the same calculation.
+  const backendHealthScore = !isDemoActive ? (aiSummaryData?.overallHealth?.score ?? null) : null
+  const displayedHealthScore = isDemoActive ? cloudHealthScore : (backendHealthScore ?? cloudHealthScore)
+  const displayedHealthContext = isDemoActive
+    ? DEMO_OVERALL_HEALTH_CONTEXT
+    : backendHealthScore !== null
+      ? (aiSummaryData?.overallHealth?.context ?? null)
+      : (displayedHealthScore === null ? null : 'Blended cost, security, and observability score.')
+
+  const infraHealthBadge = displayedHealthScore === null ? undefined
+    : displayedHealthScore >= 80 ? { label: 'Healthy', color: 'var(--text-success)', background: 'var(--bg-success)' }
+    : displayedHealthScore >= 60 ? { label: 'Monitor', color: 'var(--text-warning)', background: 'var(--bg-warning)' }
     : { label: 'Needs attention', color: 'var(--text-danger)', background: 'var(--bg-danger)' }
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
@@ -403,7 +476,7 @@ export default function DashboardPage() {
         <>
           {showRecommendationSections && (
             <RecommendedActionCard
-              opportunityCount={topRecs.length}
+              opportunityCount={activeOpportunityCount}
               savingsLabel={wasteAmount > 0 ? `${formatSavingsCurrency(wasteAmount)}/month` : null}
               ctaHref="/cost-optimization"
               isDemoActive={isDemoActive}
@@ -428,7 +501,7 @@ export default function DashboardPage() {
               iconColor="var(--text-success)"
               iconBackground="var(--bg-success)"
               label="Monthly Spend"
-              value={(statsLoading && !isDemoActive) || (currentSpend === 0 && !isDemoActive) ? 'Syncing…' : `$${currentSpend.toLocaleString()}`}
+              value={(statsLoading && !isDemoActive) || (currentSpend === 0 && !isDemoActive) ? 'Syncing…' : currencyFormatter.format(currentSpend)}
               trend={
                 isDemoActive
                   ? { direction: costChange > 0 ? 'up' : costChange < 0 ? 'down' : 'flat', label: `${costChange > 0 ? '+' : ''}${Math.abs(costChange)}% vs last 30 days`, color: costDeltaColor }
@@ -456,14 +529,14 @@ export default function DashboardPage() {
               iconColor="var(--text-accent)"
               iconBackground="var(--bg-accent)"
               label="Infrastructure Health"
-              value={cloudHealthScore === null ? 'Calculating…' : String(cloudHealthScore)}
-              valueSuffix={cloudHealthScore === null ? undefined : '/100'}
+              value={displayedHealthScore === null ? 'Calculating…' : String(displayedHealthScore)}
+              valueSuffix={displayedHealthScore === null ? undefined : '/100'}
               trend={infraHealthBadge ? { direction: infraHealthBadge.label === 'Healthy' ? 'up' : infraHealthBadge.label === 'Needs attention' ? 'down' : 'flat', label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
             />
           </div>
 
           <InfrastructureIntelligence
-            overallHealth={{ score: cloudHealthScore, context: overallHealthContext }}
+            overallHealth={{ score: displayedHealthScore, context: displayedHealthContext }}
             topRisk={topRisk}
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
             cloudSpend={{ amount: hasBillingData || isDemoActive ? currentSpend : null, periodLabel: hasBillingData || isDemoActive ? 'Monthly spend across all accounts' : 'Available once billing syncs' }}
@@ -508,11 +581,9 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
               <div className="lg:col-span-3">
                 <SavingsOpportunities
-                  items={[
-                    { title: 'Right-size EC2 instances', description: 'Instances with sustained low utilization', savingsLabel: ec2Opportunities.savingsLabel, count: ec2Opportunities.count, priorityBadge: ec2Opportunities.badge },
-                    { title: 'Remove idle EBS volumes', description: 'Volumes not attached to any instance', savingsLabel: ebsOpportunities.savingsLabel, count: ebsOpportunities.count, priorityBadge: ebsOpportunities.badge },
-                    { title: 'Optimize RDS storage', description: 'Database instances sized above actual load', savingsLabel: rdsOpportunities.savingsLabel, count: rdsOpportunities.count, priorityBadge: rdsOpportunities.badge },
-                  ]}
+                  items={opportunityCategories}
+                  evaluationState={opportunityEvaluationState}
+                  totalActiveCount={activeOpportunityCount}
                 />
               </div>
               <div className="lg:col-span-2">

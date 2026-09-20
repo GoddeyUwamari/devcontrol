@@ -1,11 +1,43 @@
-type ProviderState = 'connected' | 'not_connected' | 'coming_soon'
+import { CheckCircle2 } from 'lucide-react'
+
+type TileVariant = 'connected' | 'unavailable'
 
 interface Provider {
   name: string
   short: string
-  state: ProviderState
-  tileColor: string
-  tileBackground: string
+  variant: TileVariant
+}
+
+/**
+ * Two reusable visual treatments, not one-off AWS-specific styling --
+ * "connected" reuses the app's existing success visual language (same
+ * tokens the "AWS Account Connected" hero pill uses); "unavailable" is a
+ * flat, muted, grayscale treatment. Both use dark/near-black or
+ * --text-secondary label text (never colored text on a pale tint) so
+ * contrast holds regardless of which brand color a future provider adds --
+ * only the icon and border carry color, which only needs the lower 3:1
+ * non-text contrast WCAG requires for meaningful graphics, not the 4.5:1
+ * normal-text minimum.
+ *
+ * Calculated contrast (WCAG relative-luminance formula, light theme):
+ *   connected label (--foreground on --bg-success):      ~15.6:1 (AA normal text needs 4.5:1)
+ *   connected icon  (--text-success on --bg-success):     ~3.3:1 (AA non-text needs 3:1)
+ *   unavailable label/icon (--text-secondary on --surface-1): ~7.2:1
+ *   "Coming soon" caption (--text-secondary on page bg):  ~7.6:1
+ */
+const TILE_VARIANTS: Record<TileVariant, { background: string; border: string; iconColor: string; labelColor: string }> = {
+  connected: {
+    background: 'var(--bg-success)',
+    border: 'var(--border-success)',
+    iconColor: 'var(--text-success)',
+    labelColor: 'var(--foreground)',
+  },
+  unavailable: {
+    background: 'var(--surface-1)',
+    border: 'var(--border)',
+    iconColor: 'var(--text-secondary)',
+    labelColor: 'var(--text-secondary)',
+  },
 }
 
 /**
@@ -16,26 +48,29 @@ interface Provider {
  */
 export function CloudProviderStatus({ awsConnected }: { awsConnected: boolean }) {
   const providers: Provider[] = [
-    { name: 'AWS', short: 'aws', state: awsConnected ? 'connected' : 'not_connected', tileColor: '#F59E0B', tileBackground: '#FFF7ED' },
-    { name: 'Google Cloud', short: 'GCP', state: 'coming_soon', tileColor: '#2563EB', tileBackground: '#EFF6FF' },
-    { name: 'Azure', short: 'Azure', state: 'coming_soon', tileColor: '#0EA5E9', tileBackground: '#F0F9FF' },
+    { name: 'AWS', short: 'AWS', variant: awsConnected ? 'connected' : 'unavailable' },
+    { name: 'Google Cloud', short: 'GCP', variant: 'unavailable' },
+    { name: 'Azure', short: 'Azure', variant: 'unavailable' },
   ]
 
   return (
     <div className="flex gap-2.5">
-      {providers.map((provider) => (
-        <div key={provider.name} className="flex flex-col items-center gap-1" title={provider.state === 'coming_soon' ? `${provider.name} — Coming soon` : `${provider.name} — ${provider.state === 'connected' ? 'Connected' : 'Not connected'}`}>
-          <div
-            className="w-11 h-11 rounded-xl flex items-center justify-center border border-border shrink-0"
-            style={{ background: provider.tileBackground }}
-          >
-            <span className="text-[11px] font-bold" style={{ color: provider.tileColor }}>{provider.short}</span>
+      {providers.map((provider) => {
+        const style = TILE_VARIANTS[provider.variant]
+        const caption = provider.variant === 'connected' ? 'Connected' : provider.name === 'AWS' ? 'Not connected' : 'Coming soon'
+        return (
+          <div key={provider.name} className="flex flex-col items-center gap-1" title={`${provider.name} — ${caption}`}>
+            <div
+              className="w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 border shrink-0"
+              style={{ background: style.background, borderColor: style.border }}
+            >
+              {provider.variant === 'connected' && <CheckCircle2 size={11} style={{ color: style.iconColor }} />}
+              <span className="text-[10px] font-bold leading-none" style={{ color: style.labelColor }}>{provider.short}</span>
+            </div>
+            <span className="text-[10px] whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{caption}</span>
           </div>
-          {provider.state === 'coming_soon' && (
-            <span className="text-[10px] text-[var(--text-secondary)] whitespace-nowrap">Coming soon</span>
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

@@ -2,9 +2,7 @@
  * Focused coverage for the Cost Intelligence IA cleanup, translated to the
  * post-redesign component structure: the dashboard must never render a
  * second, per-item copy of /cost-optimization's own recommendation feed —
- * only a concise summary + single CTA. Also guards the EBS truthfulness
- * fix: since the real cost-recommendations backend doesn't tag EBS
- * resources yet, real mode must never claim active EBS detection coverage.
+ * only a concise summary + single CTA.
  *
  * Dashboard is wired to many hooks/services -- rendering it in a unit test
  * would require mocking all of that, disproportionate to what this fix
@@ -48,12 +46,13 @@ describe('Dashboard recommendation-list duplication removal', () => {
   })
 })
 
-describe('Dashboard: truthful EBS detection state (real mode)', () => {
-  it('real-mode EBS opportunities have no savingsLabel/count (not a fabricated dollar figure or 0), since the recommendation backend does not tag EBS resources yet', () => {
-    expect(pageSource).toMatch(/const ebsOpportunities = isDemoActive[^]*?: \{ count: null, savingsLabel: null, badge: undefined \}/)
-  })
-
-  it('SavingsOpportunities renders "Not currently evaluated" rather than a fabricated figure when savingsLabel is null', () => {
-    expect(savingsOpportunitiesSource).toMatch(/\{savingsLabel \?\? 'Not currently evaluated'\}/)
+describe('Dashboard: EBS is a real, filtered category (not hardcoded unsupported)', () => {
+  // Superseded by dashboard-production-fixes.test.ts's "cost-saving opportunity
+  // reconciliation" suite, which covers this in depth (EC2/EBS/RDS/S3 all
+  // derived from costRecsRaw, evaluation-state-driven wording). This one
+  // guard stays here as a quick structural regression check.
+  it('EBS is filtered from costRecsRaw like every other category, not a hardcoded null/unsupported stub', () => {
+    expect(pageSource).not.toMatch(/count:\s*null,\s*savingsLabel:\s*null,\s*badge:\s*undefined/)
+    expect(pageSource).toMatch(/OPPORTUNITY_CATEGORIES[^]*?type:\s*'EBS'/)
   })
 })
