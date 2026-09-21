@@ -105,7 +105,6 @@ function computeMonthOverMonthCostChange(
 }
 
 const DEMO_TOP_RISK = 'Lambda invocation spike on payment-processor (+178%) — review before it affects downstream services.'
-const DEMO_OVERALL_HEALTH_CONTEXT = 'Blended score across cost efficiency, security posture, and observability readiness.'
 
 export default function DashboardPage() {
   const { organization } = useAuth()
@@ -420,6 +419,24 @@ export default function DashboardPage() {
   // topRecs.length (a display-only slice capped at 5) used as a population proxy.
   const activeOpportunityCount = isDemoActive ? topRecs.length : (costRecStats?.activeRecommendations ?? topRecs.length)
 
+  // Dashboard SUMMARY only: show signal, not every category. "Real signal" is an
+  // active recommendation existing for that category (count > 0) -- deliberately
+  // NOT potential_savings > 0, so a genuine $0-savings active recommendation (e.g.
+  // today's S3 case) still counts and still shows. Categories with zero active
+  // recommendations are only hidden here; opportunityCategories itself (all 4,
+  // full "0 detected"/"Not currently evaluated" states) is untouched and remains
+  // the source for the dedicated Cost Optimization page. Only filtered once a scan
+  // has actually completed (evaluationState === 'evaluated') -- before that, every
+  // category legitimately has count 0 for the unrelated reason that nothing has
+  // run yet, which is a "not evaluated" state, not "zero signal", so the full
+  // per-category list (each showing its own not-evaluated/in-progress label) is
+  // kept instead of collapsing to the empty state below. Capped at 3 so this
+  // summary scales with however many categories currently have signal rather than
+  // always rendering a fixed grid.
+  const dashboardOpportunityCategories = opportunityEvaluationState === 'evaluated'
+    ? [...opportunityCategories].filter((cat) => cat.count > 0).sort((a, b) => b.count - a.count).slice(0, 3)
+    : opportunityCategories
+
   // DORA metrics (industry-standard: deployment frequency, lead time, change
   // failure rate, MTTR — the same 4 metrics /app/dora-metrics reports on),
   // not the mockup's generic ops-metric names — this page has no authority
@@ -433,28 +450,17 @@ export default function DashboardPage() {
 
   const topRisk = isDemoActive ? DEMO_TOP_RISK : (aiSummaryData?.topRisk ?? null)
 
-  // Overall Health / Infrastructure Health must show ONE consistent
-  // number+explanation pair. There are genuinely two independent scoring
-  // models in this codebase: this page's own simple average of
-  // cost/security/observability sub-scores (cloudHealthScore), and the
-  // backend's already-established, properly-weighted System Intelligence
-  // score (aiSummaryData.overallHealth.score -- see ai-summary.service.ts /
-  // system-intelligence.service.ts's 30/40/30 weighting), which is also
-  // exactly what aiSummaryData.overallHealth.context's generated prose
-  // describes. Previously this page paired the backend's context text with
-  // its OWN unrelated cloudHealthScore number, producing a mismatched
-  // "83, driven by 94/57/55" narrative whose components don't average to 83
-  // under either model. Preferring the backend's score (when available) and
-  // pairing it only with its own context -- falling back to cloudHealthScore
-  // with a generic, model-agnostic description otherwise -- keeps the
-  // number and its explanation always describing the same calculation.
+  // Infrastructure Health must show ONE consistent number. There are
+  // genuinely two independent scoring models in this codebase: this page's
+  // own simple average of cost/security/observability sub-scores
+  // (cloudHealthScore), and the backend's already-established, properly-
+  // weighted System Intelligence score (aiSummaryData.overallHealth.score --
+  // see ai-summary.service.ts / system-intelligence.service.ts's 30/40/30
+  // weighting). Preferring the backend's score when available, falling back
+  // to cloudHealthScore otherwise, avoids the KPI value silently
+  // disagreeing with the backend's own established calculation.
   const backendHealthScore = !isDemoActive ? (aiSummaryData?.overallHealth?.score ?? null) : null
   const displayedHealthScore = isDemoActive ? cloudHealthScore : (backendHealthScore ?? cloudHealthScore)
-  const displayedHealthContext = isDemoActive
-    ? DEMO_OVERALL_HEALTH_CONTEXT
-    : backendHealthScore !== null
-      ? (aiSummaryData?.overallHealth?.context ?? null)
-      : (displayedHealthScore === null ? null : 'Blended cost, security, and observability score.')
 
   const infraHealthBadge = displayedHealthScore === null ? undefined
     : displayedHealthScore >= 80 ? { label: 'Healthy', color: 'var(--text-success)', background: 'var(--bg-success)' }
@@ -510,6 +516,7 @@ export default function DashboardPage() {
                     : undefined
               }
               sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.map(d => ({ value: d.total }))) : undefined}
+              href="/costs"
             />
 
             <DashboardMetricCard
@@ -532,14 +539,13 @@ export default function DashboardPage() {
               value={displayedHealthScore === null ? 'Calculating…' : String(displayedHealthScore)}
               valueSuffix={displayedHealthScore === null ? undefined : '/100'}
               trend={infraHealthBadge ? { direction: infraHealthBadge.label === 'Healthy' ? 'up' : infraHealthBadge.label === 'Needs attention' ? 'down' : 'flat', label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
+              href="/infrastructure"
             />
           </div>
 
           <InfrastructureIntelligence
-            overallHealth={{ score: displayedHealthScore, context: displayedHealthContext }}
             topRisk={topRisk}
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
-            cloudSpend={{ amount: hasBillingData || isDemoActive ? currentSpend : null, periodLabel: hasBillingData || isDemoActive ? 'Monthly spend across all accounts' : 'Available once billing syncs' }}
             systemStatus={{ label: statusConf.label, color: statusConf.color, background: statusConf.background, dotColor: statusConf.dot }}
             isLive={isConnected}
           />
@@ -581,7 +587,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
               <div className="lg:col-span-3">
                 <SavingsOpportunities
-                  items={opportunityCategories}
+                  items={dashboardOpportunityCategories}
                   evaluationState={opportunityEvaluationState}
                   totalActiveCount={activeOpportunityCount}
                 />

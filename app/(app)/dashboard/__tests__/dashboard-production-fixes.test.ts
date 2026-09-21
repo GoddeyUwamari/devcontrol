@@ -82,43 +82,53 @@ describe('Security score: historical activity framing', () => {
   })
 })
 
-describe('Overall Health / Infrastructure Health: one consistent score+explanation pair', () => {
+describe('Overall Health / Infrastructure Health: one consistent score, shown once', () => {
   it('prefers the backend\'s own weighted System Intelligence score (aiSummaryData.overallHealth.score) over the page\'s simple average when available', () => {
     expect(pageSource).toMatch(/const backendHealthScore = !isDemoActive \? \(aiSummaryData\?\.overallHealth\?\.score \?\? null\) : null/)
     expect(pageSource).toMatch(/const displayedHealthScore = isDemoActive \? cloudHealthScore : \(backendHealthScore \?\? cloudHealthScore\)/)
   })
 
-  it('never pairs the backend context text with the page\'s own unrelated cloudHealthScore number', () => {
-    expect(pageSource).toMatch(/backendHealthScore !== null\s*\?\s*\(aiSummaryData\?\.overallHealth\?\.context \?\? null\)\s*:\s*\(displayedHealthScore === null \? null : 'Blended cost, security, and observability score\.'\)/)
+  it('the Infrastructure Health primary KPI card is the only consumer of displayedHealthScore -- Infrastructure Intelligence no longer duplicates it in its own "Overall Health" card', () => {
+    const kpiMatch = pageSource.match(/label="Infrastructure Health"[^]*?value=\{displayedHealthScore === null/)
+    expect(kpiMatch).not.toBeNull()
+    expect(pageSource).not.toMatch(/overallHealth=\{\{ score: displayedHealthScore/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/label="Overall Health"/)
+  })
+})
+
+describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication removed, System Status links to Observability', () => {
+  it('no longer renders Overall Health or Cloud Spend cards (they duplicated the primary KPI row above)', () => {
+    expect(infrastructureIntelligenceSource).not.toMatch(/label="Overall Health"/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/label="Cloud Spend"/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/overallHealth:/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/cloudSpend:/)
   })
 
-  it('the Infrastructure Health KPI and Infrastructure Intelligence\'s Overall Health card use the identical displayedHealthScore source', () => {
-    const kpiMatch = pageSource.match(/label="Infrastructure Health"[^]*?value=\{displayedHealthScore === null/)
-    const intelMatch = pageSource.match(/overallHealth=\{\{ score: displayedHealthScore, context: displayedHealthContext \}\}/)
-    expect(kpiMatch).not.toBeNull()
-    expect(intelMatch).not.toBeNull()
+  it('keeps Top Risk and System Status', () => {
+    expect(infrastructureIntelligenceSource).toMatch(/label="Top Risk"/)
+    expect(infrastructureIntelligenceSource).toMatch(/label="System Status"/)
+  })
+
+  it('System Status routes to Observability via next/link (not a bare <a>, not an unrelated destination), independent of any other card\'s data', () => {
+    expect(infrastructureIntelligenceSource).toMatch(/import Link from 'next\/link'/)
+    expect(infrastructureIntelligenceSource).toMatch(/label="System Status"[^]*?href="\/observability"/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/<a\b/)
+  })
+
+  it('the section header still has no "View details" link -- Top Risk (AI-derived, cross-cutting) + System Status still has no single representative page', () => {
+    expect(infrastructureIntelligenceSource).not.toMatch(/detailsHref\??:/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/href=\{?["'`]\/observability\/alerts/)
   })
 })
 
 describe('Currency formatting: precise 2-decimal display', () => {
-  it('Monthly Spend and Cloud Spend both use the precise Intl.NumberFormat currency formatter, not a rounding .toLocaleString()', () => {
+  it('Monthly Spend uses the precise Intl.NumberFormat currency formatter, not a rounding .toLocaleString()', () => {
     expect(pageSource).toMatch(/const currencyFormatter = new Intl\.NumberFormat\('en-US', \{ style: 'currency', currency: 'USD' \}\)/)
     expect(pageSource).toMatch(/currencyFormatter\.format\(currentSpend\)/)
-    expect(infrastructureIntelligenceSource).toMatch(/const currencyFormatter = new Intl\.NumberFormat\('en-US', \{ style: 'currency', currency: 'USD' \}\)/)
-    expect(infrastructureIntelligenceSource).toMatch(/currencyFormatter\.format\(cloudSpend\.amount\)/)
   })
 
-  it('no longer uses a bare toLocaleString() for these currency displays (which drops cents/rounds)', () => {
+  it('no longer uses a bare toLocaleString() for the currency display (which drops cents/rounds)', () => {
     expect(pageSource).not.toMatch(/\$\{currentSpend\.toLocaleString\(\)\}/)
-    expect(infrastructureIntelligenceSource).not.toMatch(/\$\{cloudSpend\.amount\.toLocaleString\(\)\}/)
-  })
-})
-
-describe('Infrastructure Intelligence "View details": no misleading destination', () => {
-  it('does not link to the narrower /observability/alerts page as if it represented the whole section', () => {
-    expect(infrastructureIntelligenceSource).not.toMatch(/detailsHref\??:/)
-    expect(infrastructureIntelligenceSource).not.toMatch(/href=\{?["'`]\/observability\/alerts/)
-    expect(infrastructureIntelligenceSource).not.toMatch(/<a\b/)
   })
 })
 
@@ -144,5 +154,44 @@ describe('Cloud provider tiles: reusable connected/unavailable variants', () => 
   it('label text uses solid --foreground/--text-secondary colors, never a colored label directly on a pale tint (the prior low-contrast treatment)', () => {
     expect(cloudProviderStatusSource).not.toMatch(/tileColor:\s*'#F59E0B'/)
     expect(cloudProviderStatusSource).toMatch(/labelColor: 'var\(--foreground\)'/)
+  })
+
+  it('does not render the "Connected" caption text under the AWS tile (the hero pill is the single source of truth for that text)', () => {
+    expect(cloudProviderStatusSource).toMatch(/const visibleCaption = provider\.variant === 'connected' \? '' : caption/)
+  })
+})
+
+describe('Primary KPI row: all three cards link to their detail pages', () => {
+  it('Monthly Spend links to /costs, Security Health links to /security, Infrastructure Health links to /infrastructure', () => {
+    expect(pageSource).toMatch(/label="Monthly Spend"[^]*?href="\/costs"/)
+    expect(pageSource).toMatch(/label="Security Health"[^]*?href="\/security"/)
+    expect(pageSource).toMatch(/label="Infrastructure Health"[^]*?href="\/infrastructure"/)
+  })
+})
+
+describe('Cost-Saving Opportunities dashboard summary: signal-only, capped, with a real empty state', () => {
+  it('once evaluated, only shows categories with an active recommendation (count > 0), capped at 3, never re-defining "real signal" as potential_savings > 0', () => {
+    expect(pageSource).toMatch(/opportunityEvaluationState === 'evaluated'\s*\?\s*\[\.\.\.opportunityCategories\]\.filter\(\(cat\) => cat\.count > 0\)/)
+    expect(pageSource).toMatch(/\.slice\(0, 3\)/)
+    expect(pageSource).not.toMatch(/filter\(\(cat\) => cat\.savingsLabel/)
+  })
+
+  it('before a scan completes, the full unfiltered category list is kept (not collapsed to zero cards)', () => {
+    expect(pageSource).toMatch(/const dashboardOpportunityCategories = opportunityEvaluationState === 'evaluated'[^]*?: opportunityCategories/)
+  })
+
+  it('SavingsOpportunities renders a truthful empty state only when evaluated AND zero categories have signal -- never merely because the visible list is short', () => {
+    expect(savingsOpportunitiesSource).toMatch(/const showEmptyState = evaluationState === 'evaluated' && items\.length === 0/)
+    expect(savingsOpportunitiesSource).toMatch(/No active cost-saving opportunities identified/)
+  })
+
+  it('the summary grid scales its column count with however many cards are actually shown, instead of always reserving a fixed 4-wide layout', () => {
+    expect(savingsOpportunitiesSource).toMatch(/GRID_COLS_BY_COUNT/)
+    expect(savingsOpportunitiesSource).not.toMatch(/grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4/)
+  })
+
+  it('"View all (N)" is never re-derived from the (possibly filtered) visible items -- it stays wired to the page\'s single authoritative totalActiveCount prop', () => {
+    expect(pageSource).toMatch(/<SavingsOpportunities[^]*?items=\{dashboardOpportunityCategories\}/)
+    expect(pageSource).toMatch(/<SavingsOpportunities[^]*?totalActiveCount=\{activeOpportunityCount\}/)
   })
 })
