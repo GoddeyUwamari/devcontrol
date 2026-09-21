@@ -47,6 +47,11 @@ const TILE_VARIANTS: Record<TileVariant, { background: string; border: string; i
  * this codebase, so this must never read "Connected" for either.
  */
 export function CloudProviderStatus({ awsConnected }: { awsConnected: boolean }) {
+  // TODO: replace these short-text badges with official AWS/GCP/Azure SVG brand
+  // marks (per each vendor's brand guidelines) once licensed assets or an icon
+  // library that includes them is added to this codebase -- none currently
+  // exist here (verified: no svg/png assets, no react-icons/simple-icons/
+  // devicon dependency), so a hand-drawn wordmark is deliberately avoided.
   const providers: Provider[] = [
     { name: 'AWS', short: 'AWS', variant: awsConnected ? 'connected' : 'unavailable' },
     { name: 'Google Cloud', short: 'GCP', variant: 'unavailable' },
@@ -58,6 +63,15 @@ export function CloudProviderStatus({ awsConnected }: { awsConnected: boolean })
       {providers.map((provider) => {
         const style = TILE_VARIANTS[provider.variant]
         const caption = provider.variant === 'connected' ? 'Connected' : provider.name === 'AWS' ? 'Not connected' : 'Coming soon'
+        // The "Connected" caption is deliberately not rendered below the AWS tile --
+        // the "AWS Account Connected" hero pill is the single source of truth for
+        // that text, and repeating it here duplicated the same information in the
+        // same visual cluster. The tile's own solid/saturated background + checkmark
+        // badge carries the connected state visually instead. "Coming soon" (GCP/
+        // Azure) and "Not connected" (AWS, when disconnected) are kept -- they are
+        // the only signal distinguishing "not available" from "available" for those
+        // tiles and are not otherwise stated anywhere else on the page.
+        const visibleCaption = provider.variant === 'connected' ? '' : caption
         return (
           <div key={provider.name} className="flex flex-col items-center gap-1" title={`${provider.name} — ${caption}`}>
             <div
@@ -67,7 +81,7 @@ export function CloudProviderStatus({ awsConnected }: { awsConnected: boolean })
               {provider.variant === 'connected' && <CheckCircle2 size={11} style={{ color: style.iconColor }} />}
               <span className="text-[10px] font-bold leading-none" style={{ color: style.labelColor }}>{provider.short}</span>
             </div>
-            <span className="text-[10px] whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{caption}</span>
+            <span className="text-[10px] whitespace-nowrap min-h-[12px]" style={{ color: 'var(--text-secondary)' }}>{visibleCaption}</span>
           </div>
         )
       })}
