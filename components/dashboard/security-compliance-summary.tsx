@@ -92,7 +92,7 @@ export function SecurityComplianceSummary({
 
   return (
     <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center flex-wrap justify-between gap-x-3 gap-y-1 mb-2">
         <div className="flex items-center gap-2.5">
           <ShieldCheck size={17} style={{ color: 'var(--text-accent)' }} />
           <h3 className="text-base font-bold text-foreground">Security Key Findings</h3>

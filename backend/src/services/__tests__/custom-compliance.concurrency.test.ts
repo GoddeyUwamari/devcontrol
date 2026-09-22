@@ -14,8 +14,8 @@
  * ../../routes/__tests__/compliance-frameworks-scan-concurrency.test.ts.
  */
 import { Pool, PoolClient } from 'pg';
-import { CustomComplianceService, ScanInProgressError } from '../custom-compliance.service';
-import { ComplianceFrameworksRepository } from '../../repositories/compliance-frameworks.repository';
+import { CustomComplianceService, ScanInProgressError, ScanStartResult } from '../custom-compliance.service';
+import { ComplianceFrameworksRepository, ComplianceScan } from '../../repositories/compliance-frameworks.repository';
 
 // Must match custom-compliance.service.ts's SCAN_CONCURRENCY_LOCK_SALT --
 // kept as a locally redeclared literal in the test rather than exported from
@@ -109,6 +109,38 @@ async function retryUntilStarted(
   }
 }
 
+function requireScanId(result: ScanStartResult): string {
+  if (result.status !== 'started') {
+    throw new Error(`Expected scan to have started, got status=${result.status}`);
+  }
+  return result.scanId;
+}
+
+/**
+ * startScan() returns as soon as the lock+scan row are claimed -- the actual
+ * scan body keeps running in the background on its own client (see
+ * handOffToLongRunningScan() in custom-compliance.service.ts). Tests that
+ * assert on a 'started' result must wait for that background scan to reach a
+ * terminal state before returning, otherwise afterAll's organization
+ * hard-delete can race the still-running scan's createFinding() calls and
+ * deadlock (40P01) against Postgres's implicit organization FK check.
+ */
+async function waitForScanTerminal(scanId: string, timeoutMs = 5000): Promise<ComplianceScan> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const scan = await repository.findScanById(scanId);
+    if (scan && (scan.status === 'completed' || scan.status === 'failed')) {
+      return scan;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Scan ${scanId} did not reach a terminal state within ${timeoutMs}ms (last status: ${scan?.status ?? 'not found'})`
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
@@ -136,7 +168,13 @@ describe('CustomComplianceService -- duplicate/concurrent scan prevention', () =
 
     // Only the winner's scan row was created -- the loser never inserted one.
     expect(await countScans(frameworkId)).toBe(1);
-  });
+
+    // The winner's scan body is still running in the background at this
+    // point (see waitForScanTerminal) -- wait for it to finish before this
+    // test (and eventually afterAll) can delete orgId out from under it.
+    const winner = resultA.status === 'started' ? resultA : resultB;
+    await waitForScanTerminal(requireScanId(winner));
+  }, 10000);
 
   // ---------------------------------------------------------------------
   // B. Two simultaneous attempts, different frameworks -- no global lock
@@ -158,7 +196,15 @@ describe('CustomComplianceService -- duplicate/concurrent scan prevention', () =
 
     expect(resultA.status).toBe('started');
     expect(resultB.status).toBe('started');
-  });
+
+    // Both are legitimate background scans (different orgs) -- wait for
+    // each to finish before teardown can delete orgA/orgB out from under
+    // them.
+    await Promise.all([
+      waitForScanTerminal(requireScanId(resultA)),
+      waitForScanTerminal(requireScanId(resultB)),
+    ]);
+  }, 10000);
 
   // ---------------------------------------------------------------------
   // C. Completed scan releases the lock
