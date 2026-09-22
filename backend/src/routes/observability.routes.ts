@@ -4,15 +4,12 @@ import { authenticateToken }
 import {
   ObservabilityReadinessService,
 } from '../services/observability-readiness.service'
-import {
-  SystemIntelligenceService,
-} from '../services/system-intelligence.service'
+import intelligenceService
+  from '../services/system-intelligence.service'
 
 const router = Router()
 const readinessService =
   new ObservabilityReadinessService()
-const intelligenceService =
-  new SystemIntelligenceService()
 
 // GET /api/observability/readiness
 router.get(

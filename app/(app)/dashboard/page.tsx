@@ -19,6 +19,7 @@ import { useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
 import { useSoc2Readiness } from '@/lib/hooks/useSoc2Readiness'
 import { useComplianceFrameworks } from '@/lib/hooks/useComplianceFrameworks'
 import { useAISummary } from '@/lib/hooks/useAISummary'
+import { useSystemIntelligence } from '@/lib/hooks/useSystemIntelligence'
 import { useActivityFeed } from '@/lib/hooks/useActivityFeed'
 import type { DateRange } from '@/lib/services/risk-score.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
@@ -230,9 +231,6 @@ export default function DashboardPage() {
   // falsifying every `wasteAmount > 0` gate below. Display sites use
   // formatSavingsCurrency(), which handles the sub-$1 case correctly.
   const wasteAmount     = wasteAmountRaw
-  const efficiencyRatio = isDemoActive
-    ? Math.round(((12847 - wasteAmount) / 12847) * 100)
-    : currentSpend > 0 ? Math.round(((currentSpend - wasteAmount) / currentSpend) * 100) : null
 
   const { data: awsAccounts } = useQuery({
     queryKey: ['aws-accounts'],
@@ -317,6 +315,11 @@ export default function DashboardPage() {
   // doesn't need a second, separately-billed Cost Explorer call to reference spend trend.
   const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, monthOverMonthCostChange, !isDemoActive && hasBillingData)
 
+  // Canonical System Intelligence score for the Infrastructure Health KPI --
+  // same endpoint/cache the Infrastructure page reads, independent of
+  // useAISummary's own narrative pipeline (still used above for Top Risk).
+  const { data: systemIntelligence } = useSystemIntelligence(organization?.id, !isDemoActive)
+
   // Real-data-only, hidden in demo mode — same pattern as AI Summary.
   const { data: activityFeedData, isLoading: activityFeedLoading, isError: activityFeedError } = useActivityFeed(organization?.id, !isDemoActive)
 
@@ -337,7 +340,6 @@ export default function DashboardPage() {
 
   const costDeltaColor = costChange > 0 ? 'var(--text-danger)' : costChange < 0 ? 'var(--text-success)' : 'var(--text-warning)'
 
-  const reliabilityScore = isDemoActive ? 91 : (systemHealth?.healthPercentage ?? null)
   const systemStatusLabel = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'unknown'
 
   const systemStatusConfig = {
@@ -347,11 +349,6 @@ export default function DashboardPage() {
     unknown:  { color: 'var(--text-secondary)', background: 'var(--surface-1)', border: 'var(--border)', dot: 'var(--text-secondary)', label: 'Status pending' },
   } as const
   const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.unknown
-
-  const costScore = isDemoActive ? 82 : (efficiencyRatio ?? null)
-  const securityHealthScore = isDemoActive ? 87 : (securityScore ?? null)
-  const _healthComponents = ([costScore, securityHealthScore, reliabilityScore] as (number | null)[]).filter((s): s is number => s !== null)
-  const cloudHealthScore = _healthComponents.length > 0 ? Math.round(_healthComponents.reduce((a, b) => a + b, 0) / _healthComponents.length) : null
 
   const topRecs: { label: string; savings: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH' }[] = isDemoActive
     ? [
@@ -450,17 +447,15 @@ export default function DashboardPage() {
 
   const topRisk = isDemoActive ? DEMO_TOP_RISK : (aiSummaryData?.topRisk ?? null)
 
-  // Infrastructure Health must show ONE consistent number. There are
-  // genuinely two independent scoring models in this codebase: this page's
-  // own simple average of cost/security/observability sub-scores
-  // (cloudHealthScore), and the backend's already-established, properly-
-  // weighted System Intelligence score (aiSummaryData.overallHealth.score --
-  // see ai-summary.service.ts / system-intelligence.service.ts's 30/40/30
-  // weighting). Preferring the backend's score when available, falling back
-  // to cloudHealthScore otherwise, avoids the KPI value silently
-  // disagreeing with the backend's own established calculation.
-  const backendHealthScore = !isDemoActive ? (aiSummaryData?.overallHealth?.score ?? null) : null
-  const displayedHealthScore = isDemoActive ? cloudHealthScore : (backendHealthScore ?? cloudHealthScore)
+  // Infrastructure Health reads the canonical System Intelligence score
+  // directly (same computation, same shared 2-minute cache the Infrastructure
+  // page reads via GET /api/observability/intelligence -- see
+  // useSystemIntelligence / system-intelligence.service.ts's 30/40/30
+  // weighting) instead of an LLM-generated copy of it (aiSummaryData.
+  // overallHealth.score), and never falls back to a locally-computed
+  // approximation. When the canonical score isn't ready yet, this shows the
+  // same "Calculating…" state below as before -- never an invented number.
+  const displayedHealthScore = isDemoActive ? 87 : (systemIntelligence?.system_score ?? null)
 
   const infraHealthBadge = displayedHealthScore === null ? undefined
     : displayedHealthScore >= 80 ? { label: 'Healthy', color: 'var(--text-success)', background: 'var(--bg-success)' }

@@ -45,30 +45,11 @@ export class StatsController {
         deploymentsRepo.findRecentByLimit(organizationId, 5),
       ]);
 
-      // Try live Cost Explorer first; fall back to DB estimate on error or no data.
-      let totalCost: number;
-      let costSource: 'actual' | 'estimated';
-      try {
-        const liveCost = await awsCostService.fetchMonthlyCosts(organizationId);
-        if (liveCost.total > 0) {
-          totalCost = liveCost.total;
-          costSource = 'actual';
-        } else {
-          const estimateResult = await pool.query(
-            `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
-            [organizationId]
-          );
-          totalCost = parseFloat(estimateResult.rows[0].total);
-          costSource = 'estimated';
-        }
-      } catch (_err) {
-        const estimateResult = await pool.query(
-          `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
-          [organizationId]
-        );
-        totalCost = parseFloat(estimateResult.rows[0].total);
-        costSource = 'estimated';
-      }
+      // Live Cost Explorer, falling back to the DB estimate — see
+      // AWSCostService.getMonthlySpendWithFallback (the single canonical
+      // implementation of this decision, shared with system-intelligence.service.ts).
+      const { amount: totalCost, source: costSource } =
+        await awsCostService.getMonthlySpendWithFallback(organizationId);
 
       const totalResources = parseInt(resourceCountResult.rows[0].total, 10);
       const healthyResources = parseInt(healthyCountResult.rows[0].healthy, 10);

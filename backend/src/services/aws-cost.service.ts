@@ -532,6 +532,37 @@ class AWSCostService {
   }
 
   /**
+   * Canonical "live Cost Explorer spend, or DB estimate if unavailable" decision —
+   * previously duplicated independently in stats.controller.ts and
+   * system-intelligence.service.ts. Reuses fetchMonthlyCosts()'s own per-org cache/
+   * in-flight dedup above, so calling this doesn't add any Cost Explorer traffic
+   * beyond what that cache already governs. The DB estimate query and its
+   * organization/status filtering are unchanged from both prior call sites.
+   */
+  async getMonthlySpendWithFallback(
+    organizationId: string
+  ): Promise<{ amount: number; source: 'actual' | 'estimated' }> {
+    let liveTotal = 0
+    try {
+      const liveCost = await this.fetchMonthlyCosts(organizationId)
+      liveTotal = liveCost.total
+    } catch (_err) {
+      // Live fetch failed — fall through to the DB estimate below, same as
+      // both call sites this consolidates.
+    }
+
+    if (liveTotal > 0) {
+      return { amount: liveTotal, source: 'actual' }
+    }
+
+    const estimateResult = await (this.dbPool || pool).query(
+      `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
+      [organizationId]
+    )
+    return { amount: parseFloat(estimateResult.rows[0].total), source: 'estimated' }
+  }
+
+  /**
    * Compute the TimePeriod + Granularity for a given trend range.
    * Short ranges use DAILY granularity; 6mo/1yr use MONTHLY (calendar-month aligned,
    * current partial month included).

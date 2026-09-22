@@ -22,7 +22,7 @@
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { AIInsightsService, StructuredDashboardSummary } from './ai-insights.service';
-import { SystemIntelligenceService, SystemIntelligenceResult } from './system-intelligence.service';
+import systemIntelligenceService, { SystemIntelligenceResult } from './system-intelligence.service';
 import { RiskTrackingService } from './risk-tracking.service';
 import { RiskScore } from '../utils/riskScoring';
 import { AccountSecurityFindingsRepository, AccountSecurityFinding } from '../repositories/account-security-findings.repository';
@@ -57,7 +57,6 @@ interface DashboardFacts {
 
 export class AISummaryService {
   private aiInsightsService = new AIInsightsService(pool);
-  private systemIntelligenceService = new SystemIntelligenceService();
   private riskTrackingService = new RiskTrackingService(pool);
   private accountFindingsRepository = new AccountSecurityFindingsRepository();
   private costRecommendationsRepository = new CostRecommendationsRepository();
@@ -121,7 +120,7 @@ export class AISummaryService {
 
     try {
       const [intelligence, riskScore, activeFindings, costStats, criticalAnomalies] = await Promise.all([
-        this.systemIntelligenceService.getSystemIntelligence(organizationId),
+        systemIntelligenceService.getSystemIntelligence(organizationId),
         this.riskTrackingService.getCurrentRiskScore(organizationId),
         this.accountFindingsRepository.getActive(organizationId),
         this.costRecommendationsRepository.getStats(organizationId),
@@ -186,6 +185,10 @@ export class AISummaryService {
       monthlySpendRounded: intelligence.components.cost.monthlySpend != null
         ? Math.round(intelligence.components.cost.monthlySpend)
         : null,
+      // Included so a source flip (e.g. AWS connects mid-cache-window and the
+      // spend figure switches from estimated to actual) invalidates the cached
+      // prose even if the rounded dollar amount happens to stay the same.
+      costSource: intelligence.components.cost.costSource ?? null,
       costDeltaPct,
       riskScore: riskScore.isPreliminary ? null : riskScore.score,
       accountLevelCount,
@@ -209,6 +212,7 @@ export class AISummaryService {
       // Explorer, falling back to the DB estimate) instead of independently
       // re-calling Cost Explorer for the same org.
       const monthlySpend = intelligence.components.cost.monthlySpend;
+      const costSource = intelligence.components.cost.costSource;
 
       // Highest-severity active finding — AccountSecurityFindingsRepository.getActive()
       // (unfiltered, no limit) already sorts the full result set by severity in JS, so
@@ -270,11 +274,18 @@ export class AISummaryService {
       );
 
       if (monthlySpend != null && monthlySpend > 0) {
+        // Estimated (DB cost-estimate fallback, no live billing data) must read
+        // differently from actual (live Cost Explorer) -- otherwise this line
+        // states an estimate as if it were an observed fact. See ComponentScore.
+        // costSource / AWSCostService.getMonthlySpendWithFallback.
+        const spendClause = costSource === 'estimated'
+          ? `Estimated current monthly cloud spend is approximately $${Math.round(monthlySpend).toLocaleString()} ` +
+            `(based on discovered resource pricing, not live billing data)`
+          : `Current monthly cloud spend is $${Math.round(monthlySpend).toLocaleString()}`;
         factLines.push(
           costDeltaPct != null
-            ? `Current monthly cloud spend is $${Math.round(monthlySpend).toLocaleString()}, ` +
-              `${costDeltaPct > 0 ? 'up' : costDeltaPct < 0 ? 'down' : 'unchanged'} ${Math.abs(costDeltaPct)}% vs last month.`
-            : `Current monthly cloud spend is $${Math.round(monthlySpend).toLocaleString()}.`
+            ? `${spendClause}, ${costDeltaPct > 0 ? 'up' : costDeltaPct < 0 ? 'down' : 'unchanged'} ${Math.abs(costDeltaPct)}% vs last month.`
+            : `${spendClause}.`
         );
       }
 
@@ -284,10 +295,11 @@ export class AISummaryService {
         `You are populating a scannable, 4-part executive summary for a cloud infrastructure ` +
         `dashboard: Overall Health, Top Risk, Cloud Spend, and System Status.\n\n` +
         `Use ONLY the facts below. Do not invent, estimate, or assume anything not explicitly ` +
-        `stated — reproduce any scores or dollar amounts exactly as given. Do not add generic ` +
-        `advice or filler. Each field should be a short, plain-English clause or sentence, not ` +
-        `a list. If a fact needed for a field is not present below, leave that field null rather ` +
-        `than guessing.\n\n` +
+        `stated — reproduce any scores or dollar amounts exactly as given, including any ` +
+        `"estimated"/"approximately" qualifier on a figure — never drop it or state an ` +
+        `estimated figure as if it were confirmed. Do not add generic advice or filler. Each ` +
+        `field should be a short, plain-English clause or sentence, not a list. If a fact needed ` +
+        `for a field is not present below, leave that field null rather than guessing.\n\n` +
         `Fields to populate:\n` +
         `- overallHealth: the composite System Intelligence score (if present) plus a brief ` +
         `clause of context on what's driving it.\n` +
