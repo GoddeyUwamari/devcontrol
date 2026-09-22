@@ -18,6 +18,15 @@
  * the module level, same pattern as aws-cost-freshness.test.ts; aws_accounts,
  * aws_resources, cost_recommendations, and resource_discovery_jobs are real
  * Postgres rows.
+ *
+ * aws_accounts is defined only in backend/migrations/ (019/020) -- not
+ * scanned by CI's schema bootstrap (.github/scripts/ci-bootstrap-schema.js
+ * sources only database/migrations/ and database/migrations-admin/). A local
+ * dev database typically already has this table; a from-scratch CI database
+ * does not. ensureFixtureSchema() below reuses aws-cost-freshness.test.ts's
+ * own already-CI-proven reconstruction verbatim, creating the table only if
+ * it's missing and dropping only what this suite itself created -- never a
+ * table a local dev database already had.
  */
 import { Pool } from 'pg';
 
@@ -57,6 +66,7 @@ function dbConfig() {
 
 const pool = new Pool(dbConfig());
 const createdOrgIds: string[] = [];
+const fixtureTablesCreated: string[] = [];
 
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -64,6 +74,39 @@ function uniqueSuffix(): string {
 
 function randomAccountId(): string {
   return Math.floor(Math.random() * 1e12).toString().padStart(12, '0');
+}
+
+async function tableExists(tableName: string): Promise<boolean> {
+  const { rows } = await pool.query('SELECT to_regclass($1) AS reg', [`public.${tableName}`]);
+  return rows[0].reg !== null;
+}
+
+/**
+ * Verbatim from aws-cost-freshness.test.ts's own already-CI-proven
+ * reconstruction (see that file's ensureFixtureSchema() for the full
+ * provenance of every column/constraint) -- reused rather than re-derived,
+ * so there is exactly one definition of "what aws_accounts looks like when
+ * the canonical migration set doesn't provide it" in this backend.
+ */
+async function ensureFixtureSchema(): Promise<void> {
+  if (!(await tableExists('aws_accounts'))) {
+    await pool.query(`
+      CREATE TABLE aws_accounts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id UUID NOT NULL,
+        role_arn TEXT NOT NULL,
+        account_id VARCHAR(32) NOT NULL,
+        nickname VARCHAR(255),
+        external_id VARCHAR(64),
+        region VARCHAR(32) DEFAULT 'us-east-1',
+        connected_at TIMESTAMPTZ,
+        status VARCHAR(32),
+        CONSTRAINT aws_accounts_org_id_key UNIQUE (org_id),
+        CONSTRAINT aws_accounts_account_id_key UNIQUE (account_id)
+      )
+    `);
+    fixtureTablesCreated.push('aws_accounts');
+  }
 }
 
 function costExplorerResponse(service: string, amount: string) {
@@ -121,6 +164,10 @@ function stubSecurityAndObservability(service: SystemIntelligenceService) {
   });
 }
 
+beforeAll(async () => {
+  await ensureFixtureSchema();
+});
+
 beforeEach(() => {
   mockSend.mockReset();
 });
@@ -132,6 +179,9 @@ afterAll(async () => {
     await pool.query('DELETE FROM resource_discovery_jobs WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM aws_accounts WHERE org_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
+  }
+  if (fixtureTablesCreated.includes('aws_accounts')) {
+    await pool.query('DROP TABLE IF EXISTS aws_accounts');
   }
   await pool.end();
 });
