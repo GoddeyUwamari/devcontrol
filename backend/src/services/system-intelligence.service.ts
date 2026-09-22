@@ -8,6 +8,8 @@ import { CloudWatchService }
 import awsCostService from './aws-cost.service'
 import { RiskTrackingService }
   from './risk-tracking.service'
+import { CostRecommendationsRepository }
+  from '../repositories/cost-recommendations.repository'
 
 // ── Types ────────────────────────────────
 
@@ -30,6 +32,12 @@ export interface ComponentScore {
   // component, so other callers (e.g. ai-summary.service.ts) can reuse this
   // already-fetched figure instead of re-calling Cost Explorer themselves.
   monthlySpend?: number
+  // Which path produced monthlySpend above -- 'actual' for a live Cost Explorer
+  // read, 'estimated' for the DB cost-estimate fallback (see AWSCostService.
+  // getMonthlySpendWithFallback). Only populated on the cost component, so
+  // callers that narrate monthlySpend (e.g. ai-summary.service.ts) can say so
+  // truthfully instead of presenting an estimate as an observed fact.
+  costSource?: 'actual' | 'estimated'
 }
 
 export interface SystemDriver {
@@ -78,6 +86,16 @@ export class SystemIntelligenceService {
     new CloudWatchService()
   private riskTrackingService =
     new RiskTrackingService(pool)
+  private costRecommendationsRepository =
+    new CostRecommendationsRepository()
+
+  // getSystemIntelligence() result cache -- see the public method below for
+  // full cache-semantics rationale. Single-process (PM2 fork_mode) in-memory
+  // Map, same pattern as AWSCostService.monthlyCostCache/monthlyCostInFlight
+  // and CloudWatchService's metricsCache.
+  private intelligenceCache: Map<string, { result: SystemIntelligenceResult; timestamp: number }> = new Map()
+  private static readonly INTELLIGENCE_CACHE_TTL = 2 * 60 * 1000
+  private intelligenceInFlight: Map<string, Promise<SystemIntelligenceResult>> = new Map()
 
   // ── Cost Score ───────────────────────
 
@@ -85,18 +103,14 @@ export class SystemIntelligenceService {
     organizationId: string
   ): Promise<ComponentScore> {
     try {
-      // Get savings from active cost recommendations (the table the Dashboard's
-      // Savings Actions card also reads — see cost-recommendations.repository.ts).
-      const savingsResult = await pool.query(
-        `SELECT
-           COUNT(*) as total_opps,
-           COALESCE(SUM(potential_savings), 0)
-             as total_savings
-         FROM cost_recommendations
-         WHERE organization_id = $1
-           AND status = 'ACTIVE'`,
-        [organizationId]
-      )
+      // Savings aggregate and active-opportunity count -- reused from the same
+      // canonical source the Dashboard's Savings Actions card and the cost-
+      // recommendations API read (cost-recommendations.repository.ts::getStats()),
+      // instead of this service independently re-running the same
+      // SUM(potential_savings) WHERE status='ACTIVE' query.
+      const recommendationStats = await this.costRecommendationsRepository.getStats(organizationId)
+      const totalSavings = recommendationStats.total_potential_savings
+      const totalOpps = recommendationStats.active_recommendations
 
       // Has a cost analysis ever completed for this org? cost_recommendations row
       // count alone can't distinguish "never analyzed" from "analyzed, found
@@ -119,14 +133,6 @@ export class SystemIntelligenceService {
         [organizationId]
       )
 
-      const totalSavings = parseFloat(
-        savingsResult.rows[0]
-          ?.total_savings ?? '0'
-      )
-      const totalOpps = parseInt(
-        savingsResult.rows[0]
-          ?.total_opps ?? '0'
-      )
       const anomalyCount = parseInt(
         anomalyResult.rows[0]
           ?.count ?? '0'
@@ -134,25 +140,13 @@ export class SystemIntelligenceService {
 
       const costAnalysisRan = (scanResult.rowCount ?? 0) > 0
 
-      // Real monthly spend: try live Cost Explorer first,
-      // fall back to the DB cost estimate — same pattern as
-      // stats.controller.ts's dashboard stats endpoint.
-      let monthlySpend = 0
-      try {
-        const liveCost = await awsCostService.fetchMonthlyCosts(organizationId)
-        monthlySpend = liveCost.total
-      } catch (costErr) {
-        console.error('[Intelligence] Live cost fetch failed, falling back to estimate:', costErr)
-      }
-      if (monthlySpend <= 0) {
-        const estimateResult = await pool.query(
-          `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total
-           FROM aws_resources
-           WHERE organization_id = $1 AND status != 'terminated'`,
-          [organizationId]
-        )
-        monthlySpend = parseFloat(estimateResult.rows[0]?.total ?? '0')
-      }
+      // Real monthly spend: canonical live-Cost-Explorer-or-DB-estimate decision,
+      // shared with stats.controller.ts's dashboard stats endpoint (see
+      // AWSCostService.getMonthlySpendWithFallback) -- also carries which path
+      // produced it (costSource), so callers like ai-summary.service.ts can tell
+      // an observed spend from an estimate instead of losing that distinction here.
+      const { amount: monthlySpend, source: costSource } =
+        await awsCostService.getMonthlySpendWithFallback(organizationId)
 
       // Scoring model — continuous weighted-coverage-ratio, same shape as
       // Security's riskScoring.ts and Observability's computeReadinessScore:
@@ -223,6 +217,7 @@ export class SystemIntelligenceService {
           : 'risk',
         ready: costAnalysisRan,
         monthlySpend,
+        costSource,
       }
     } catch (err) {
       console.error(
@@ -514,7 +509,58 @@ export class SystemIntelligenceService {
 
   // ── Public method ────────────────────
 
+  /**
+   * Canonical, cached entry point -- the single computation both
+   * observability.routes.ts (Infrastructure page) and ai-summary.service.ts
+   * (Dashboard) call through, so they read the same number within the same
+   * short window instead of two independently-computed values on different
+   * staleness windows (previously: Infrastructure page always fresh,
+   * Dashboard bound to ai-summary's own 4h cache).
+   *
+   * 2-minute TTL, keyed by organizationId only -- see intelligenceCache above.
+   * Only a fully-ready result (system_score != null) is cached as a normal
+   * positive entry: a null/Pending result means at least one component isn't
+   * ready yet (still scanning, or that component's own error-fallback), which
+   * can resolve within seconds, so caching it for the full TTL would make a
+   * freshly-completed scan invisible until a stale "Pending" entry expired.
+   * A rejected computation (e.g. computeObservabilityScore throwing) is never
+   * cached either, and propagates to the caller exactly as it did before this
+   * cache existed.
+   *
+   * The cached result object is shared by reference across cache hits for the
+   * same org (never cloned per read) -- the same convention already used by
+   * AWSCostService.monthlyCostCache/CloudWatchService.metricsCache elsewhere
+   * in this codebase. No current consumer mutates the result it receives.
+   */
   async getSystemIntelligence(
+    organizationId: string
+  ): Promise<SystemIntelligenceResult> {
+    const cached = this.intelligenceCache.get(organizationId)
+    if (cached && Date.now() - cached.timestamp < SystemIntelligenceService.INTELLIGENCE_CACHE_TTL) {
+      return cached.result
+    }
+
+    const inFlight = this.intelligenceInFlight.get(organizationId)
+    if (inFlight) {
+      return inFlight
+    }
+
+    const computePromise = this.computeSystemIntelligenceUncached(organizationId)
+      .then((result) => {
+        if (result.system_score !== null) {
+          this.intelligenceCache.set(organizationId, { result, timestamp: Date.now() })
+        }
+        return result
+      })
+      .finally(() => {
+        this.intelligenceInFlight.delete(organizationId)
+      })
+
+    this.intelligenceInFlight.set(organizationId, computePromise)
+    return computePromise
+  }
+
+  private async computeSystemIntelligenceUncached(
     organizationId: string
   ): Promise<SystemIntelligenceResult> {
     const [cost, security, observability] =
@@ -572,3 +618,9 @@ export class SystemIntelligenceService {
     }
   }
 }
+
+// Canonical shared instance -- observability.routes.ts and ai-summary.service.ts
+// both import this singleton (instead of each instantiating their own) so the
+// intelligenceCache above is actually shared between them. Same pattern as
+// aws-cost.service.ts's `export default new AWSCostService()`.
+export default new SystemIntelligenceService()

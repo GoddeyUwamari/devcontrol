@@ -82,21 +82,31 @@ describe('Security score: historical activity framing', () => {
   })
 })
 
-describe('Overall Health / Infrastructure Health: one consistent score+explanation pair', () => {
-  it('prefers the backend\'s own weighted System Intelligence score (aiSummaryData.overallHealth.score) over the page\'s simple average when available', () => {
-    expect(pageSource).toMatch(/const backendHealthScore = !isDemoActive \? \(aiSummaryData\?\.overallHealth\?\.score \?\? null\) : null/)
-    expect(pageSource).toMatch(/const displayedHealthScore = isDemoActive \? cloudHealthScore : \(backendHealthScore \?\? cloudHealthScore\)/)
+describe('Overall Health / Infrastructure Health: canonical System Intelligence source, no client-side alternate scoring', () => {
+  it('sources the KPI from useSystemIntelligence (the same canonical, cached System Intelligence result the Infrastructure page reads), not from the AI-summary narrative', () => {
+    expect(pageSource).toMatch(/import \{ useSystemIntelligence \} from '@\/lib\/hooks\/useSystemIntelligence'/)
+    expect(pageSource).toMatch(/const \{ data: systemIntelligence \} = useSystemIntelligence\(organization\?\.id, !isDemoActive\)/)
+    expect(pageSource).toMatch(/const displayedHealthScore = isDemoActive \? 87 : \(systemIntelligence\?\.system_score \?\? null\)/)
   })
 
-  it('never pairs the backend context text with the page\'s own unrelated cloudHealthScore number', () => {
-    expect(pageSource).toMatch(/backendHealthScore !== null\s*\?\s*\(aiSummaryData\?\.overallHealth\?\.context \?\? null\)\s*:\s*\(displayedHealthScore === null \? null : 'Blended cost, security, and observability score\.'\)/)
+  it('never reads the LLM-mediated aiSummaryData.overallHealth.score as the KPI value', () => {
+    expect(pageSource).not.toMatch(/displayedHealthScore[^\n]*aiSummaryData\?\.overallHealth/)
+    expect(pageSource).not.toMatch(/const backendHealthScore/)
   })
 
-  it('the Infrastructure Health KPI and Infrastructure Intelligence\'s Overall Health card use the identical displayedHealthScore source', () => {
-    const kpiMatch = pageSource.match(/label="Infrastructure Health"[^]*?value=\{displayedHealthScore === null/)
-    const intelMatch = pageSource.match(/overallHealth=\{\{ score: displayedHealthScore, context: displayedHealthContext \}\}/)
-    expect(kpiMatch).not.toBeNull()
-    expect(intelMatch).not.toBeNull()
+  it('no client-side health averaging remains (cloudHealthScore / _healthComponents and their cost/security/reliability sub-score inputs are gone)', () => {
+    expect(pageSource).not.toMatch(/cloudHealthScore/)
+    expect(pageSource).not.toMatch(/_healthComponents/)
+    expect(pageSource).not.toMatch(/const reliabilityScore/)
+  })
+
+  it('shows "Calculating…" rather than an invented score when the canonical System Intelligence result is unavailable', () => {
+    expect(pageSource).toMatch(/value=\{displayedHealthScore === null \? 'Calculating…'/)
+  })
+
+  it('InfrastructureIntelligence.overallHealth (a required prop on that component, unmodified in this commit) still receives the canonical displayedHealthScore, with context explicitly null rather than a revived displayedHealthContext narrative', () => {
+    expect(pageSource).toMatch(/overallHealth=\{\{ score: displayedHealthScore, context: null \}\}/)
+    expect(pageSource).not.toMatch(/displayedHealthContext/)
   })
 })
 
