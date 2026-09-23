@@ -15,6 +15,13 @@ import { useSoc2Readiness, useSoc2Evidence } from '../useSoc2Readiness'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { DEMO_SOC2_READINESS, DEMO_SOC2_OBSERVATIONS } from '@/lib/demo-data/soc2-demo-data'
 
+// useSoc2Readiness keys its query by the current organization and waits for it, so
+// these hook-level tests supply one (no AuthProvider/network needed).
+const TEST_ORG_ID = 'org-test'
+vi.mock('@/lib/contexts/auth-context', () => ({
+  useAuth: () => ({ organization: { id: 'org-test' } }),
+}))
+
 const DEMO_MODE_KEY = 'devcontrol_demo_mode'
 
 function setDemoMode(enabled: boolean) {
@@ -61,11 +68,12 @@ describe('useSoc2Readiness — demo mode (A: demo readiness)', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 
-  it('demo sample data is never written into the real ["soc2-readiness"] query cache entry', async () => {
+  it('demo sample data is never written into the real ["soc2-readiness", orgId] query cache entry', async () => {
     setDemoMode(true)
     renderHook(() => useSoc2Readiness(), { wrapper })
     await waitFor(() => {
-      expect(queryClient.getQueryData(['soc2-readiness'])).toBeUndefined()
+      expect(queryClient.getQueryData(['soc2-readiness', TEST_ORG_ID])).toBeUndefined()
+      expect(queryClient.getQueriesData({ queryKey: ['soc2-readiness'] }).filter(([, data]) => data !== undefined)).toEqual([])
     })
   })
 })

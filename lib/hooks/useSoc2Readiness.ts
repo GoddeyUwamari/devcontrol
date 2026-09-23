@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { soc2Service, Soc2Observation, Soc2ReadinessCriterion, Soc2ReadinessDetail } from '@/lib/services/soc2.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+import { useAuth } from '@/lib/contexts/auth-context';
 import { DEMO_SOC2_READINESS, DEMO_SOC2_OBSERVATIONS } from '@/lib/demo-data/soc2-demo-data';
 
 /**
@@ -22,22 +23,26 @@ import { DEMO_SOC2_READINESS, DEMO_SOC2_OBSERVATIONS } from '@/lib/demo-data/soc
  * with no stale rows.
  *
  * The real query's `enabled` flag is set to false while demo mode is active, so the
- * real endpoint is never called and the real ['soc2-readiness'] query cache entry is
- * never written to with demo data -- this hook simply returns the sample dataset
- * directly, bypassing the query cache entirely, so it can never later be served back
- * as if it were real customer data.
+ * real endpoint is never called and the real ['soc2-readiness', organizationId] query
+ * cache entry is never written to with demo data -- this hook simply returns the sample
+ * dataset directly, bypassing the query cache entirely, so it can never later be served
+ * back as if it were real customer data.
+ *
+ * Keyed by organization (and disabled until it's known) so one organization's readiness
+ * can never be served from cache to another's session.
  */
 export function useSoc2Readiness(enabled = true) {
   const demoMode = useDemoMode();
   const { enabled: salesDemoMode } = useSalesDemo();
+  const { organization } = useAuth();
   const isDemoActive = demoMode || salesDemoMode;
   const query = useQuery<Soc2ReadinessCriterion[]>({
-    queryKey: ['soc2-readiness'],
+    queryKey: ['soc2-readiness', organization?.id],
     queryFn: () => soc2Service.getReadiness(),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: false,
-    enabled: enabled && !isDemoActive,
+    enabled: enabled && !isDemoActive && !!organization?.id,
   });
 
   if (isDemoActive) {
