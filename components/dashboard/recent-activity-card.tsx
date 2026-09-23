@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { Clock, CheckCircle2, TrendingUp, ShieldAlert, Gauge, Activity as ActivityIcon } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -18,13 +19,28 @@ const EVENT_CONFIG: Record<ActivityEventType, { icon: typeof CheckCircle2; color
   score: { icon: Gauge, color: '#1D4ED8', background: '#EFF6FF' },
 }
 
+const DEFAULT_VISIBLE_COUNT = 6
+
 /**
  * Reconstructed from real signals (sync, cost optimization, security
  * findings, score changes, anomalies) — never shown in demo mode, matching
  * every other real-data-only feature on this dashboard.
+ *
+ * Shows the newest 6 events; "Show all N" reveals the rest of the events the
+ * feed already returned (the backend caps it at 15). It's an in-card toggle,
+ * not a link -- there is no dedicated activity page -- and never fetches.
  */
 export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: RecentActivityCardProps) {
+  // Expansion belongs to the specific feed it was requested for: when a refetch
+  // replaces the data with a different array, the card falls back to 6 rows.
+  const [expandedFor, setExpandedFor] = useState<ActivityEvent[] | null>(null)
+
   if (isDemoActive) return null
+
+  const totalActivityCount = data?.length ?? 0
+  const hasMoreActivities = totalActivityCount > DEFAULT_VISIBLE_COUNT
+  const expanded = hasMoreActivities && expandedFor === data
+  const visibleActivities = expanded ? data ?? [] : (data ?? []).slice(0, DEFAULT_VISIBLE_COUNT)
 
   return (
     <div className="bg-[var(--surface-2)] border border-border rounded-2xl p-5 h-full">
@@ -49,7 +65,7 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
         </div>
       ) : (
         <div>
-          {data.slice(0, 6).map((event, i) => {
+          {visibleActivities.map((event, i) => {
             const conf = EVENT_CONFIG[event.type] ?? EVENT_CONFIG.score
             const Icon = conf.icon
             return (
@@ -76,6 +92,17 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
               </div>
             )
           })}
+          {hasMoreActivities && (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpandedFor(expanded ? null : data)}
+              className="mt-3 text-xs font-semibold bg-transparent border-0 p-0 cursor-pointer hover:underline"
+              style={{ color: 'var(--text-accent)' }}
+            >
+              {expanded ? 'Show less' : `Show all ${totalActivityCount}`}
+            </button>
+          )}
         </div>
       )}
     </div>
