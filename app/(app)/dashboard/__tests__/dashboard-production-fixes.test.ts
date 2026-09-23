@@ -112,7 +112,7 @@ describe('Overall Health / Infrastructure Health: canonical System Intelligence 
   })
 })
 
-describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication removed, System Status links to Observability', () => {
+describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication removed, System Status links to Monitoring', () => {
   it('no longer renders Overall Health or Cloud Spend cards (they duplicated the primary KPI row above)', () => {
     expect(infrastructureIntelligenceSource).not.toMatch(/label="Overall Health"/)
     expect(infrastructureIntelligenceSource).not.toMatch(/label="Cloud Spend"/)
@@ -125,10 +125,14 @@ describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication 
     expect(infrastructureIntelligenceSource).toMatch(/label="System Status"/)
   })
 
-  it('System Status routes to Observability via next/link (not a bare <a>, not an unrelated destination), independent of any other card\'s data', () => {
+  it('System Status routes to /admin/monitoring via next/link (not a bare <a>, not an unrelated destination), independent of any other card\'s data', () => {
     expect(infrastructureIntelligenceSource).toMatch(/import Link from 'next\/link'/)
-    expect(infrastructureIntelligenceSource).toMatch(/label="System Status"[^]*?href="\/observability"/)
+    expect(infrastructureIntelligenceSource).toMatch(/label="System Status"[^]*?href="\/admin\/monitoring"/)
     expect(infrastructureIntelligenceSource).not.toMatch(/<a\b/)
+  })
+
+  it('System Status no longer targets /observability -- no page exists there (live 404); /observability/* only has alerts and alert-history', () => {
+    expect(infrastructureIntelligenceSource).not.toMatch(/href=["'`]\/observability["'`]/)
   })
 
   it('the section header still has no "View details" link -- Top Risk (AI-derived, cross-cutting) + System Status still has no single representative page', () => {
