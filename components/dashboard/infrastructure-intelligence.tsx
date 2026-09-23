@@ -79,7 +79,8 @@ function IntelCard({ icon: Icon, iconColor, iconBackground, label, valueNode, de
  * No "View details" link on the section header: even after trimming to two
  * cards, there's still no single page that represents "Top Risk (AI-derived,
  * cross-cutting) + System Status" together -- System Status links to its own
- * real destination (Observability) below instead of the header pointing
+ * real destination (/admin/monitoring, the same page the top nav's
+ * "Monitoring Overview" reaches via /monitoring) below instead of the header pointing
  * everywhere at once.
  */
 export function InfrastructureIntelligence({ topRisk, aiSummaryLoading, systemStatus, isLive }: InfrastructureIntelligenceProps) {
@@ -133,7 +134,7 @@ export function InfrastructureIntelligence({ topRisk, aiSummaryLoading, systemSt
             </div>
           }
           description={systemStatus.label}
-          href="/observability"
+          href="/admin/monitoring"
         />
       </div>
     </div>
