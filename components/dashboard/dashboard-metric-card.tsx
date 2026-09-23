@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { TrendingUp, TrendingDown, Minus, ChevronRight } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, ArrowRight } from 'lucide-react'
 
 interface SparklinePoint {
   value: number
@@ -55,7 +55,7 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
           </div>
           <p className="text-sm font-semibold text-foreground">{label}</p>
         </div>
-        {href && <ChevronRight size={16} className="text-[var(--text-secondary)]" />}
+        {href && <ArrowRight size={14} strokeWidth={1.75} className="text-[var(--text-secondary)] shrink-0" />}
       </div>
       <div className="text-[30px] font-bold leading-none tracking-tight mb-2" style={{ color: valueColor ?? 'var(--foreground)' }}>
         {value}

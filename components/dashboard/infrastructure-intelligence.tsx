@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
-import { BarChart3, AlertTriangle, Activity, ChevronRight } from 'lucide-react'
+import { BarChart3, AlertTriangle, Activity, ArrowRight } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 
 interface InfrastructureIntelligenceProps {
@@ -51,7 +51,7 @@ function IntelCard({ icon: Icon, iconColor, iconBackground, label, valueNode, de
           </div>
           <p className="text-sm font-semibold text-foreground">{label}</p>
         </div>
-        {href && <ChevronRight size={16} className="text-[var(--text-secondary)]" />}
+        {href && <ArrowRight size={14} strokeWidth={1.75} className="text-[var(--text-secondary)] shrink-0" />}
       </div>
       <div className="mb-1.5">{valueNode}</div>
       <div className="text-xs text-[var(--text-secondary)] leading-relaxed line-clamp-3">{description}</div>
