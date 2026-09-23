@@ -19,6 +19,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
+import { formatDistanceToNow } from 'date-fns'
 
 const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
   ec2:        { icon: Server,    color: '#3B82F6', bg: '#EFF6FF' },
@@ -32,6 +33,15 @@ const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string 
 }
 
 const CANONICAL_SYSTEM_STATUSES: readonly string[] = ['Healthy', 'Stable', 'Degraded', 'At Risk']
+
+// User-facing names for the three System Intelligence components, keyed by the
+// canonical component/driver type -- the same labels the component-score tiles
+// on this page show.
+const COMPONENT_LABELS: Record<string, string> = {
+  cost: 'Cost',
+  security: 'Security',
+  observability: 'Observability',
+}
 
 const DROPDOWN_PILLS: { key: string; label: string; items: { value: string | null; label: string }[] }[] = [
   {
@@ -380,10 +390,25 @@ function InfrastructureContent() {
   const intelCostScore   = intelComponents.cost.score
   const intelSecScore    = intelComponents.security.score
   const intelObsScore    = intelComponents.observability.score
-  const intelScoreDelta  = isDemoActive ? 18 : (intelScore > 0 ? Math.min(Math.round((100 - intelScore) * 0.55), 25) : 0)
+  // Score impact is the backend's own top_drivers[0].impact_score --
+  // round((100 - component score) x that component's 30/40/30 weight): the
+  // most the System Score can gain if that component reaches 100. A calculated
+  // maximum, not a forecast, so no time window is attached, and nothing is
+  // recomputed here. top_drivers[0] is the same driver top_action (the
+  // "Primary Issue") is built from. Hidden when there's no valid driver --
+  // including demo mode, whose demo object has no drivers.
+  const topDriver        = intelReady ? intel?.top_drivers?.[0] : undefined
+  const topDriverLabel   = topDriver ? COMPONENT_LABELS[topDriver.type] : undefined
+  const topDriverImpact  = topDriverLabel && typeof topDriver?.impact_score === 'number' && Number.isFinite(topDriver.impact_score) && topDriver.impact_score > 0
+    ? topDriver.impact_score
+    : null
+  // When this System Intelligence result was calculated (the backend's
+  // computed_at). Omitted when absent or unparseable -- never a placeholder.
+  const intelComputedAt  = intelReady && typeof intel?.computed_at === 'string' ? new Date(intel.computed_at) : null
+  const intelCalculatedAgo = intelComputedAt && !Number.isNaN(intelComputedAt.getTime())
+    ? formatDistanceToNow(intelComputedAt, { addSuffix: true })
+    : null
   const intelWaste       = isDemoActive ? 1060 : (recommendationStats?.totalPotentialSavings ?? 0)
-  const intelAnalyzed    = isDemoActive ? 19 : allResources.length
-  const intelTotal       = isDemoActive ? 20 : ((totalResources as number) || intelAnalyzed)
   const scoreCirc        = 144.5
   const scoreOffset      = intelScore > 0 ? scoreCirc - (intelScore / 100) * scoreCirc : scoreCirc
   const scoreChip        = (score: number) => ({ color: score >= 80 ? '#065F46' : '#92400E', bg: score >= 80 ? '#D1FAE5' : '#FEF3C7' })
@@ -564,7 +589,7 @@ function InfrastructureContent() {
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
               <p className="text-base font-bold text-slate-900 mb-0.5">{intelStatus}</p>
-              <p className="text-xs text-slate-500">{intelAnalyzed}/{intelTotal} resources analyzed · High confidence</p>
+              {intelCalculatedAgo && <p className="text-xs text-slate-500">Calculated {intelCalculatedAgo}</p>}
             </div>
           </div>
 
@@ -577,23 +602,27 @@ function InfrastructureContent() {
             <p className="text-xs font-bold text-red-600">{formatSavingsCurrency(intelWaste)}/mo active waste</p>
           </div>
 
-          <div className="hidden lg:block w-px h-11 bg-slate-200 shrink-0" />
+          {topDriverImpact !== null && (
+            <>
+              <div className="hidden lg:block w-px h-11 bg-slate-200 shrink-0" />
 
-          {/* Score Impact */}
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Score Impact if Resolved</p>
-            <p className="text-base font-bold text-violet-700 mb-0.5">+{intelScoreDelta} pts</p>
-            <p className="text-xs text-slate-500">Within 24–48h after fixes applied</p>
-          </div>
+              {/* Score Impact -- calculated maximum from the canonical top driver */}
+              <div data-testid="score-impact">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Score Impact</p>
+                <p className="text-base font-bold text-violet-700 mb-0.5">Up to +{topDriverImpact} pts</p>
+                <p className="text-xs text-slate-500">if {topDriverLabel} reaches 100</p>
+              </div>
+            </>
+          )}
 
           <div className="hidden lg:block w-px h-11 bg-slate-200 shrink-0" />
 
           {/* Component scores */}
           <div className="grid grid-cols-3 gap-2.5">
             {[
-              { label: 'Cost',          score: intelCostScore, chip: scoreChip(intelCostScore) },
-              { label: 'Security',      score: intelSecScore,  chip: scoreChip(intelSecScore)  },
-              { label: 'Observability', score: intelObsScore,  chip: scoreChip(intelObsScore)  },
+              { label: COMPONENT_LABELS.cost,          score: intelCostScore, chip: scoreChip(intelCostScore) },
+              { label: COMPONENT_LABELS.security,      score: intelSecScore,  chip: scoreChip(intelSecScore)  },
+              { label: COMPONENT_LABELS.observability, score: intelObsScore,  chip: scoreChip(intelObsScore)  },
             ].map(({ label, score, chip }) => (
               <div key={label} className="text-center">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
