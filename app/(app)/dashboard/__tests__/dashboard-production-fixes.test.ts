@@ -85,7 +85,7 @@ describe('Security score: historical activity framing', () => {
 describe('Overall Health / Infrastructure Health: canonical System Intelligence source, no client-side alternate scoring', () => {
   it('sources the KPI from useSystemIntelligence (the same canonical, cached System Intelligence result the Infrastructure page reads), not from the AI-summary narrative', () => {
     expect(pageSource).toMatch(/import \{ useSystemIntelligence \} from '@\/lib\/hooks\/useSystemIntelligence'/)
-    expect(pageSource).toMatch(/const \{ data: systemIntelligence \} = useSystemIntelligence\(organization\?\.id, !isDemoActive\)/)
+    expect(pageSource).toMatch(/const \{ data: systemIntelligence(, isLoading: systemIntelligenceLoading)? \} = useSystemIntelligence\(organization\?\.id, !isDemoActive\)/)
     expect(pageSource).toMatch(/const displayedHealthScore = isDemoActive \? 87 : \(systemIntelligence\?\.system_score \?\? null\)/)
   })
 

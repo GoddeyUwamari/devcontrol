@@ -15,17 +15,18 @@ import { SavingsOpportunities } from '@/components/dashboard/savings-opportuniti
 import { ExecutiveRoiCard } from '@/components/dashboard/executive-roi-card'
 import { EngineeringHealthCard } from '@/components/dashboard/engineering-health-card'
 import { RecentActivityCard } from '@/components/dashboard/recent-activity-card'
-import { useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
 import { useSoc2Readiness } from '@/lib/hooks/useSoc2Readiness'
 import { useComplianceFrameworks } from '@/lib/hooks/useComplianceFrameworks'
 import { useAISummary } from '@/lib/hooks/useAISummary'
 import { useSystemIntelligence } from '@/lib/hooks/useSystemIntelligence'
 import { useActivityFeed } from '@/lib/hooks/useActivityFeed'
-import type { DateRange } from '@/lib/services/risk-score.service'
+import { accountSecurityFindingsService } from '@/lib/services/account-security-findings.service'
+import { awsResourcesService } from '@/lib/services/aws-resources.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
+import { computeSecurityHealthKpi } from './securityHealthKpi'
 import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
@@ -118,9 +119,35 @@ export default function DashboardPage() {
 
   const lastWsUpdateRef = useRef<Record<string, number>>({})
   const [costDateRange, setCostDateRange] = useState<CostRange>('7d')
-  const [riskScoreDateRange] = useState<DateRange>('30d')
 
-  const { data: riskScoreData, isLoading: riskScoreLoading } = useRiskScoreTrend(riskScoreDateRange, !isDemoActive)
+  // Security Key Findings counts come from the same two repository reads the
+  // risk score itself is built from (accountFindingsRepository.getStats and
+  // resourcesRepository.getStats) via their own org-scoped endpoints, which
+  // every plan can read -- not the Pro-gated /api/risk-score/trend, whose 402
+  // made lower plans see a false "No open account-level findings" state.
+  // Keyed by organization so an in-session org switch (router.refresh() only)
+  // can never show the previous organization's cached counts.
+  const { data: accountFindingStats, isLoading: accountFindingStatsLoading } = useQuery({
+    queryKey: ['account-security-findings-stats', organization?.id],
+    queryFn: () => accountSecurityFindingsService.getStats(),
+    enabled: !isDemoActive && !!organization?.id,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+  const { data: resourceStats, isLoading: resourceStatsLoading } = useQuery({
+    queryKey: ['aws-resources-stats', organization?.id],
+    queryFn: () => awsResourcesService.getStats(),
+    enabled: !isDemoActive && !!organization?.id,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+  // A disabled query (no organization yet) isn't "loading" to TanStack Query --
+  // count that as loading too, so the card never flashes a false empty state.
+  const securityFindingsLoading = !isDemoActive && (!organization?.id || accountFindingStatsLoading || resourceStatsLoading)
 
   const { data: stats, isLoading: statsLoading } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
@@ -222,7 +249,6 @@ export default function DashboardPage() {
 
   const currentSpend    = isDemoActive ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0)
   const costChange      = isDemoActive ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0)
-  const securityScore   = isDemoActive ? 87 : (riskScoreData?.current.score ?? null)
   // Raw (unrounded) monthly waste — kept separately so the annual projection can
   // round once after multiplying, matching costs/page.tsx and cost-optimization/page.tsx,
   // instead of rounding the monthly figure first and compounding the rounding error.
@@ -246,22 +272,6 @@ export default function DashboardPage() {
   })
 
   const isAwsConnected = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
-  // Real accounts: compliance + orphaned-resource scanning haven't run yet (backend stub),
-  // so the score can't be presented as a confident, final tier. Demo data is always final.
-  const securityIsPreliminary = !isDemoActive && (riskScoreData?.current?.isPreliminary ?? true)
-  const securityTierLabel = isDemoActive
-    ? 'Elite Tier'
-    : securityScore === null ? 'Scan in progress'
-    : securityIsPreliminary ? 'Preliminary — full scan pending'
-    : securityScore >= 80 ? 'Elite Tier'
-    : securityScore >= 60 ? 'Above baseline'
-    : 'Needs attention'
-  const securityTierColor = isDemoActive ? 'var(--text-success)'
-    : securityScore === null ? 'var(--text-secondary)'
-    : securityIsPreliminary ? 'var(--text-warning)'
-    : securityScore >= 80 ? 'var(--text-success)'
-    : securityScore >= 60 ? 'var(--text-warning)'
-    : 'var(--text-danger)'
   // Compact severity breakdown for resource compliance — only rendered when the
   // backend has real counts to show; never fabricated when data is absent.
   // Account-level findings now render as individual severity rows in
@@ -275,7 +285,7 @@ export default function DashboardPage() {
     if (counts.low > 0) parts.push(`${counts.low} Low`)
     return parts.length > 0 ? parts.join(' · ') : null
   }
-  const resourceComplianceBreakdown = formatSeverityCounts(riskScoreData?.current?.resourceComplianceCounts)
+  const resourceComplianceBreakdown = formatSeverityCounts(resourceStats?.compliance_stats?.by_severity)
 
   const { hasBillingData, hasServicesOnly, isBillingSyncing, showRecommendationSections } =
     computeDashboardAwsGates({ isDemoActive, isAwsConnected, statsLoading, stats })
@@ -318,7 +328,17 @@ export default function DashboardPage() {
   // Canonical System Intelligence score for the Infrastructure Health KPI --
   // same endpoint/cache the Infrastructure page reads, independent of
   // useAISummary's own narrative pipeline (still used above for Top Risk).
-  const { data: systemIntelligence } = useSystemIntelligence(organization?.id, !isDemoActive)
+  const { data: systemIntelligence, isLoading: systemIntelligenceLoading } = useSystemIntelligence(organization?.id, !isDemoActive)
+
+  // Security Health: the canonical System Intelligence security component's
+  // own score + status (see computeSecurityHealthKpi) -- not the overall
+  // status, and not the Pro-gated /api/risk-score/trend.
+  const securityKpi = computeSecurityHealthKpi({
+    isDemoActive,
+    hasOrganization: !!organization?.id,
+    isLoading: systemIntelligenceLoading,
+    securityComponent: systemIntelligence?.components?.security,
+  })
 
   // Real-data-only, hidden in demo mode — same pattern as AI Summary.
   const { data: activityFeedData, isLoading: activityFeedLoading, isError: activityFeedError } = useActivityFeed(organization?.id, !isDemoActive)
@@ -528,10 +548,10 @@ export default function DashboardPage() {
               iconColor="var(--text-accent)"
               iconBackground="var(--bg-accent)"
               label="Security Health"
-              value={(securityScore === null || securityScore === 0) && !isDemoActive ? 'Scanning…' : String(securityScore ?? (isDemoActive ? 87 : '—'))}
-              valueSuffix={(securityScore === null || securityScore === 0) && !isDemoActive ? undefined : '/100'}
-              valueColor={securityScore !== null ? securityTierColor : undefined}
-              trend={{ direction: securityTierColor === 'var(--text-success)' ? 'up' : securityTierColor === 'var(--text-danger)' ? 'down' : 'flat', label: securityTierLabel, color: securityTierColor }}
+              value={securityKpi.value}
+              valueSuffix={securityKpi.score === null ? undefined : '/100'}
+              valueColor={securityKpi.score === null ? undefined : securityKpi.badge?.color}
+              trend={securityKpi.badge ? { direction: securityKpi.badge.direction, label: securityKpi.badge.label, color: securityKpi.badge.color } : undefined}
               href="/security"
             />
 
@@ -571,8 +591,8 @@ export default function DashboardPage() {
             </div>
             <div className="lg:col-span-2">
               <SecurityComplianceSummary
-                findingCounts={isDemoActive ? { critical: 1, high: 3, medium: 5, low: 0 } : (riskScoreData?.current?.accountFindingsCounts ?? null)}
-                riskDataLoading={!isDemoActive && riskScoreLoading}
+                findingCounts={isDemoActive ? { critical: 1, high: 3, medium: 5, low: 0 } : (accountFindingStats?.bySeverity ?? null)}
+                riskDataLoading={securityFindingsLoading}
                 complianceBreakdown={resourceComplianceBreakdown}
                 soc2Subtext={soc2Subtext}
                 soc2Loading={!isDemoActive && soc2Loading}
