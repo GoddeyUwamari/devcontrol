@@ -17,6 +17,15 @@ interface SecurityComplianceSummaryProps {
   soc2Loading: boolean
   customFrameworksSubtext: string
   customFrameworksLoading: boolean
+  /**
+   * Per-fact "the request failed and there is no data to show" flags. Each one
+   * renders "Unavailable" in place of that fact's empty/not-evaluated text, so a
+   * failed request is never presented as a real zero or empty result.
+   */
+  findingsError?: boolean
+  resourceComplianceError?: boolean
+  soc2Error?: boolean
+  customFrameworksError?: boolean
   detailsHref?: string
 }
 
@@ -28,6 +37,9 @@ const SEVERITY_CONFIG = {
 } as const
 
 const INFO_BADGE = { label: 'Info', color: '#1D4ED8', background: '#EFF6FF' }
+
+// Shown in place of a fact whose request failed -- never that fact's empty text.
+const UNAVAILABLE = 'Unavailable'
 
 // Destinations are existing pages over the same data each row summarizes.
 // Resource compliance has none (no page shows per-resource compliance_issues),
@@ -80,6 +92,10 @@ function RowSkeleton() {
  * Each fact is loading-aware: a query still in flight renders a skeleton,
  * never the "nothing found" empty-state text -- null is only ever read as
  * "confirmed empty" once its own query has actually settled.
+ *
+ * Each fact is also error-aware: a request that failed renders "Unavailable",
+ * checked before the empty-state branch, since "we checked and found nothing"
+ * and "we couldn't check" are different claims.
  */
 export function SecurityComplianceSummary({
   findingCounts,
@@ -89,6 +105,10 @@ export function SecurityComplianceSummary({
   soc2Loading,
   customFrameworksSubtext,
   customFrameworksLoading,
+  findingsError = false,
+  resourceComplianceError = false,
+  soc2Error = false,
+  customFrameworksError = false,
   detailsHref = FINDINGS_HREF,
 }: SecurityComplianceSummaryProps) {
   const severityRows = findingCounts
@@ -120,6 +140,8 @@ export function SecurityComplianceSummary({
             <RowSkeleton />
             <RowSkeleton />
           </>
+        ) : findingsError ? (
+          <div className="py-4 text-xs text-[var(--text-secondary)]">Account-level findings: Unavailable</div>
         ) : severityRows.length > 0 ? (
           severityRows.map((row) => <Row key={row.badge.label} {...row} />)
         ) : (
@@ -129,19 +151,19 @@ export function SecurityComplianceSummary({
         {riskDataLoading ? (
           <RowSkeleton />
         ) : (
-          <Row badge={INFO_BADGE} headline="Resource compliance" sub={complianceBreakdown ?? 'Not yet evaluated'} />
+          <Row badge={INFO_BADGE} headline="Resource compliance" sub={resourceComplianceError ? UNAVAILABLE : (complianceBreakdown ?? 'Not yet evaluated')} />
         )}
 
         {soc2Loading ? (
           <RowSkeleton />
         ) : (
-          <Row badge={INFO_BADGE} headline="SOC 2 readiness" sub={soc2Subtext} href={SOC2_HREF} />
+          <Row badge={INFO_BADGE} headline="SOC 2 readiness" sub={soc2Error ? UNAVAILABLE : soc2Subtext} href={SOC2_HREF} />
         )}
 
         {customFrameworksLoading ? (
           <RowSkeleton />
         ) : (
-          <Row badge={INFO_BADGE} headline="Custom frameworks" sub={customFrameworksSubtext} href={CUSTOM_FRAMEWORKS_HREF} />
+          <Row badge={INFO_BADGE} headline="Custom frameworks" sub={customFrameworksError ? UNAVAILABLE : customFrameworksSubtext} href={CUSTOM_FRAMEWORKS_HREF} />
         )}
       </div>
     </div>
