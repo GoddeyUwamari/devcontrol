@@ -127,7 +127,7 @@ export default function DashboardPage() {
   // made lower plans see a false "No open account-level findings" state.
   // Keyed by organization so an in-session org switch (router.refresh() only)
   // can never show the previous organization's cached counts.
-  const { data: accountFindingStats, isLoading: accountFindingStatsLoading } = useQuery({
+  const { data: accountFindingStats, isLoading: accountFindingStatsLoading, isError: accountFindingStatsFailed } = useQuery({
     queryKey: ['account-security-findings-stats', organization?.id],
     queryFn: () => accountSecurityFindingsService.getStats(),
     enabled: !isDemoActive && !!organization?.id,
@@ -136,7 +136,7 @@ export default function DashboardPage() {
     refetchOnWindowFocus: false,
     retry: false,
   })
-  const { data: resourceStats, isLoading: resourceStatsLoading } = useQuery({
+  const { data: resourceStats, isLoading: resourceStatsLoading, isError: resourceStatsFailed } = useQuery({
     queryKey: ['aws-resources-stats', organization?.id],
     queryFn: () => awsResourcesService.getStats(),
     enabled: !isDemoActive && !!organization?.id,
@@ -148,6 +148,10 @@ export default function DashboardPage() {
   // A disabled query (no organization yet) isn't "loading" to TanStack Query --
   // count that as loading too, so the card never flashes a false empty state.
   const securityFindingsLoading = !isDemoActive && (!organization?.id || accountFindingStatsLoading || resourceStatsLoading)
+  // A failed request with nothing to show renders "Unavailable", never the empty
+  // state. (A failed background refetch keeps showing the last successful data.)
+  const findingsError = !isDemoActive && accountFindingStatsFailed && accountFindingStats === undefined
+  const resourceComplianceError = !isDemoActive && resourceStatsFailed && resourceStats === undefined
 
   // Every tenant-data query below is keyed by organization (same pattern as the
   // two queries above) so one organization's cache entry can never be served to
@@ -354,8 +358,13 @@ export default function DashboardPage() {
   // SOC 2 readiness and custom compliance frameworks — same hooks the Security /
   // Compliance pages themselves use, so this card never runs a second, divergent
   // calculation of either.
-  const { data: soc2Criteria, isLoading: soc2Loading } = useSoc2Readiness(isAwsConnected)
-  const { frameworks: customFrameworks, loading: customFrameworksLoading } = useComplianceFrameworks()
+  const { data: soc2Criteria, isLoading: soc2Loading, error: soc2QueryError } = useSoc2Readiness(isAwsConnected)
+  const { frameworks: customFrameworks, loading: customFrameworksLoading, error: customFrameworksFetchError } = useComplianceFrameworks()
+  // Same rule as findingsError: without it a failed SOC 2 request reads as
+  // "0 of 6 criteria evaluated" and a failed frameworks request as "No custom
+  // frameworks yet". (useComplianceFrameworks only reports non-404 HTTP errors.)
+  const soc2Error = !isDemoActive && !!soc2QueryError && soc2Criteria === undefined
+  const customFrameworksError = !isDemoActive && !!customFrameworksFetchError && customFrameworks.length === 0
 
   const soc2EvaluatedCount = soc2Criteria?.filter((c) => c.evaluated).length ?? 0
   const soc2Total = soc2Criteria?.length ?? 6
@@ -606,6 +615,10 @@ export default function DashboardPage() {
                 soc2Loading={!isDemoActive && soc2Loading}
                 customFrameworksSubtext={customFrameworksSubtext}
                 customFrameworksLoading={!isDemoActive && customFrameworksLoading}
+                findingsError={findingsError}
+                resourceComplianceError={resourceComplianceError}
+                soc2Error={soc2Error}
+                customFrameworksError={customFrameworksError}
               />
             </div>
           </div>
