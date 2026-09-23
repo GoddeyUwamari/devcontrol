@@ -94,8 +94,8 @@ describe('Engineering Health', () => {
   })
 })
 
-describe('System Status chevron', () => {
-  it('is 16px, matching the KPI card chevrons', () => {
+describe('System Status arrow', () => {
+  it('is a 14px ArrowRight, matching the KPI card arrows', () => {
     render(
       <InfrastructureIntelligence
         topRisk={null}
@@ -104,9 +104,11 @@ describe('System Status chevron', () => {
         isLive
       />
     )
-    const chevrons = chevronsIn(screen.getByText('System Status').closest('a')!)
-    expect(chevrons).toHaveLength(1)
-    expect(chevrons[0].getAttribute('width')).toBe('16')
+    const card = screen.getByText('System Status').closest('a')!
+    const arrows = card.querySelectorAll('svg.lucide-arrow-right')
+    expect(arrows).toHaveLength(1)
+    expect(arrows[0].getAttribute('width')).toBe('14')
+    expect(chevronsIn(card)).toHaveLength(0)
   })
 })
 
