@@ -210,9 +210,15 @@ describe('Infrastructure Health badge: canonical System Intelligence status, not
   })
 })
 
-describe('Recent Activity: unchanged -- no destination exists for "View more"', () => {
-  it('has no link, "View more", or "View all" affordance', () => {
-    expect(recentActivityCardSource).not.toMatch(/<a\b|href=|View more|View all/)
+describe('Recent Activity: no destination exists for "View more" -- only an in-card toggle', () => {
+  it('has no link, no href, and no "View more"/"View all" navigation affordance', () => {
+    expect(recentActivityCardSource).not.toMatch(/<a\b|<Link\b|href=|View more|View all|router\.push/)
+  })
+
+  it('its only control is an in-card <button type="button"> that expands already-fetched events', () => {
+    expect(recentActivityCardSource).toMatch(/<button\s+type="button"/)
+    expect(recentActivityCardSource).toMatch(/Show all \$\{totalActivityCount\}/)
+    expect(recentActivityCardSource).toMatch(/'Show less'/)
   })
 })
 
