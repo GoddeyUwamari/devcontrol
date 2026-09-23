@@ -18,7 +18,7 @@ export interface SecurityKpi {
 // backend derives at the component's 80/60 thresholds (good/warning/risk).
 // Deliberately not benchmark language ("Elite Tier", "Above baseline"): no
 // external benchmark exists behind this score.
-const SECURITY_STATUS_BADGE: Record<SystemIntelligenceComponentScore['status'], SecurityKpiBadge> = {
+export const SECURITY_STATUS_BADGE: Record<SystemIntelligenceComponentScore['status'], SecurityKpiBadge> = {
   good: { label: 'Strong', direction: 'up', color: 'var(--text-success)' },
   warning: { label: 'Needs attention', direction: 'flat', color: 'var(--text-warning)' },
   risk: { label: 'At risk', direction: 'down', color: 'var(--text-danger)' },

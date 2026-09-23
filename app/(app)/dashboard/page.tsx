@@ -9,6 +9,7 @@ import { DashboardHero } from '@/components/dashboard/dashboard-hero'
 import { RecommendedActionCard } from '@/components/dashboard/recommended-action-card'
 import { DashboardMetricCard } from '@/components/dashboard/dashboard-metric-card'
 import { InfrastructureIntelligence } from '@/components/dashboard/infrastructure-intelligence'
+import { SystemIntelligenceCard } from '@/components/dashboard/system-intelligence-card'
 import { SecurityComplianceSummary } from '@/components/dashboard/security-compliance-summary'
 import { CostTrendsCard } from '@/components/dashboard/cost-trends-card'
 import { SavingsOpportunities } from '@/components/dashboard/savings-opportunities'
@@ -26,7 +27,7 @@ import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
-import { computeSecurityHealthKpi } from './securityHealthKpi'
+import { computeSecurityHealthKpi, SECURITY_STATUS_BADGE } from './securityHealthKpi'
 import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
@@ -589,6 +590,15 @@ export default function DashboardPage() {
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
             systemStatus={{ label: statusConf.label, color: statusConf.color, background: statusConf.background, dotColor: statusConf.dot }}
             isLive={isConnected}
+          />
+
+          {/* ── SYSTEM INTELLIGENCE BREAKDOWN ── */}
+          {/* Same already-fetched systemIntelligence as the Infrastructure Health KPI -- no second query. */}
+          <SystemIntelligenceCard
+            isDemoActive={isDemoActive}
+            components={systemIntelligence?.components}
+            isLoading={!isDemoActive && (systemIntelligenceLoading || !organization?.id)}
+            statusBadge={SECURITY_STATUS_BADGE}
           />
 
           {/* ── AWS COST TRENDS + SECURITY KEY FINDINGS ── */}
