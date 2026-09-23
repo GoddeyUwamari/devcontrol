@@ -31,6 +31,8 @@ const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string 
   default:    { icon: Server,    color: '#64748B', bg: '#F8FAFC' },
 }
 
+const CANONICAL_SYSTEM_STATUSES: readonly string[] = ['Healthy', 'Stable', 'Degraded', 'At Risk']
+
 const DROPDOWN_PILLS: { key: string; label: string; items: { value: string | null; label: string }[] }[] = [
   {
     key: 'all', label: 'All',
@@ -344,7 +346,9 @@ function InfrastructureContent() {
   const warningCount     = isDemoActive ? demoWarning    : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
 
   const DEMO_INTELLIGENCE = {
-    system_score: 73, status: 'warning',
+    // 73 is 'Stable' under the canonical overall thresholds (scoreToStatus:
+    // >=85 Healthy, >=70 Stable, >=50 Degraded, else At Risk).
+    system_score: 73, status: 'Stable',
     top_action: { message: 'Over-provisioned compute + unused storage', consequence: '', path: '/costs/cost-optimization', severity: 'high' },
     top_drivers: [],
     components: {
@@ -366,7 +370,12 @@ function InfrastructureContent() {
   }
   const intelComponents  = intel?.components ?? EMPTY_INTEL_COMPONENTS
   const intelScore       = intel?.system_score ?? 0
-  const intelStatus      = intel?.status === 'good' ? 'Healthy' : intel?.status === 'warning' ? 'Partially Optimized' : intel?.status === 'critical' ? 'At Risk' : 'Calculating'
+  // The overall System Intelligence status, shown as-is. The backend's values
+  // are Healthy/Stable/Degraded/At Risk/Pending -- not the component-level
+  // good/warning/risk this line used to compare against, which never matched
+  // and left every ready score labelled "Calculating". Only a genuinely
+  // not-ready result (Pending, or no ready score) reads "Calculating".
+  const intelStatus      = intelReady && CANONICAL_SYSTEM_STATUSES.includes(intel?.status) ? intel.status : 'Calculating'
   const intelTopAction   = typeof intel?.top_action === 'string' ? intel.top_action : intel?.top_action?.message ?? 'Analyzing your infrastructure…'
   const intelCostScore   = intelComponents.cost.score
   const intelSecScore    = intelComponents.security.score
