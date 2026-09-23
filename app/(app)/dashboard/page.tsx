@@ -149,15 +149,22 @@ export default function DashboardPage() {
   // count that as loading too, so the card never flashes a false empty state.
   const securityFindingsLoading = !isDemoActive && (!organization?.id || accountFindingStatsLoading || resourceStatsLoading)
 
-  const { data: stats, isLoading: statsLoading } = useQuery<PlatformDashboardStats>({
-    queryKey: ['platform-dashboard-stats'],
+  // Every tenant-data query below is keyed by organization (same pattern as the
+  // two queries above) so one organization's cache entry can never be served to
+  // another, and disabled until the organization is known.
+  const { data: stats, isLoading: statsQueryLoading } = useQuery<PlatformDashboardStats>({
+    queryKey: ['platform-dashboard-stats', organization?.id],
     queryFn: platformStatsService.getDashboardStats,
     // AWS cost data changes slowly — long staleTime/gcTime avoids re-hitting Cost Explorer
     // (billed per API call) on every render/tab-switch.
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && !!organization?.id,
   })
+  // Same reasoning as securityFindingsLoading: a query disabled only because the
+  // organization isn't known yet still counts as loading, so the AWS gates and the
+  // /connect-aws redirect never act on "no stats" before the stats could be fetched.
+  const statsLoading = statsQueryLoading || (!isDemoActive && !organization?.id)
 
   const { data: systemHealth } = useQuery({
     queryKey: ['system-health'],
@@ -170,21 +177,21 @@ export default function DashboardPage() {
   // Same authoritative cost_recommendations boundary /costs and /cost-optimization
   // already consume, via costRecommendationsService -- no independent fetch/transform.
   const { data: costRecsRaw = [] } = useQuery<CostRecommendation[]>({
-    queryKey: ['cost-recommendations'],
+    queryKey: ['cost-recommendations', organization?.id],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && !!organization?.id,
   })
 
   // Server-computed aggregate (same SUM /costs and /costs/efficiency use via
   // getStats()) rather than a client-side reduce over costRecsRaw.
   const { data: costRecStats } = useQuery({
-    queryKey: ['cost-recommendations-stats'],
+    queryKey: ['cost-recommendations-stats', organization?.id],
     queryFn: costRecommendationsService.getStats,
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && !!organization?.id,
   })
 
   // Real evaluation-state signal: every wired cost-optimization detector
@@ -194,11 +201,11 @@ export default function DashboardPage() {
   // result from "never scanned." Same existing endpoint already exposed via
   // costRecommendationsService.getAnalysisRuns(), no backend change.
   const { data: analysisRuns } = useQuery({
-    queryKey: ['cost-analysis-runs'],
+    queryKey: ['cost-analysis-runs', organization?.id],
     queryFn: () => costRecommendationsService.getAnalysisRuns(5),
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && !!organization?.id,
   })
 
   useEffect(() => {
@@ -259,7 +266,7 @@ export default function DashboardPage() {
   const wasteAmount     = wasteAmountRaw
 
   const { data: awsAccounts } = useQuery({
-    queryKey: ['aws-accounts'],
+    queryKey: ['aws-accounts', organization?.id],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/aws/accounts`, {
@@ -269,6 +276,7 @@ export default function DashboardPage() {
       const json = await res.json(); return json.data ?? []
     },
     staleTime: 30000,
+    enabled: !!organization?.id,
   })
 
   const isAwsConnected = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
@@ -297,7 +305,7 @@ export default function DashboardPage() {
   }, [isDemoActive, statsLoading, isAwsConnected, awsAccounts, router])
 
   const { data: costTrend = [], isLoading: costTrendLoading } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
-    queryKey: ['cost-trend', costDateRange],
+    queryKey: ['cost-trend', costDateRange, organization?.id],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=${costDateRange}`, {
@@ -312,7 +320,7 @@ export default function DashboardPage() {
     // cache aggressively per range so switching 7d/30d/90d/6mo/1yr tabs reuses prior fetches.
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive && hasBillingData,
+    enabled: !isDemoActive && hasBillingData && !!organization?.id,
   })
 
   const monthOverMonthCostChange = isDemoActive ? null : computeMonthOverMonthCostChange(costTrend)

@@ -9,7 +9,9 @@ import React, {
   useMemo,
 } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { resetQueryClientForIdentityChange } from "../query-client";
 import type { User } from "../types";
 import { authService, tokenManager } from "../services/auth.service";
 import {
@@ -59,6 +61,10 @@ interface AuthProviderProps {
  */
 export function AuthProvider({ children }: AuthProviderProps) {
   const router = useRouter();
+  // The app's single QueryClient (app/providers.tsx wraps AuthProvider in
+  // QueryClientProvider with the lib/query-client singleton). Every identity
+  // transition below resets it -- see resetQueryClientForIdentityChange.
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -148,6 +154,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const user = payload?.user;
         const organization = payload?.organization;
 
+        // New identity: drop any previous identity's cached queries before the
+        // new session's tokens exist, so no query can run as (or be served
+        // from) the old identity once this user lands on /dashboard.
+        await resetQueryClientForIdentityChange(queryClient);
+
         // Store tokens
         tokenManager.setAccessToken(accessToken);
         tokenManager.setRefreshToken(refreshToken);
@@ -198,7 +209,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
     },
-    [router, refreshOrganizations]
+    [router, refreshOrganizations, queryClient]
   );
 
   /**
@@ -216,6 +227,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Backend returns tokens on registration, so we can log user in immediately
         // Check if tokens are in response
         if (response.data.accessToken && response.data.refreshToken) {
+          // New identity -- same reset as login().
+          await resetQueryClientForIdentityChange(queryClient);
+
           // Store tokens
           tokenManager.setAccessToken(response.data.accessToken);
           tokenManager.setRefreshToken(response.data.refreshToken);
@@ -270,7 +284,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
     },
-    [router]
+    [router, queryClient]
   );
 
   /**
@@ -290,6 +304,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setOrganization(null);
       setOrganizations([]);
 
+      // Identity ended: drop its cached queries before navigating away, so a
+      // later login in this same tab starts from an empty cache.
+      await resetQueryClientForIdentityChange(queryClient);
+
       toast.success("Logged out successfully");
 
       // Only redirect if not already on login/signup page
@@ -299,7 +317,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         router.push("/login");
       }
     }
-  }, [router]);
+  }, [router, queryClient]);
 
   /**
    * Refresh user data
@@ -348,6 +366,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(null);
         setOrganization(null);
         setOrganizations([]);
+        // Same identity-ended reset as logout() -- this path doesn't call it.
+        await resetQueryClientForIdentityChange(queryClient);
         router.push("/login");
       } else {
         // Non-401 error (network down, 5xx, etc.) — don't clear the session,
@@ -355,7 +375,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.error("Failed to refresh user:", error);
       }
     }
-  }, [router]);
+  }, [router, queryClient]);
 
   /**
    * Create organization
