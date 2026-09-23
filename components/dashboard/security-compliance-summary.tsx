@@ -29,9 +29,19 @@ const SEVERITY_CONFIG = {
 
 const INFO_BADGE = { label: 'Info', color: '#1D4ED8', background: '#EFF6FF' }
 
-function Row({ badge, headline, sub }: { badge: { label: string; color: string; background: string }; headline: string; sub: string }) {
-  return (
-    <div className="flex items-center gap-3 py-3 border-b border-border last:border-b-0">
+// Destinations are existing pages over the same data each row summarizes.
+// Resource compliance has none (no page shows per-resource compliance_issues),
+// so it gets no href -- and the chevron only renders when a row really links.
+const FINDINGS_HREF = '/security#findings'
+const SOC2_HREF = '/compliance/frameworks/soc2'
+const CUSTOM_FRAMEWORKS_HREF = '/compliance/frameworks'
+
+function Row({ badge, headline, sub, href }: { badge: { label: string; color: string; background: string }; headline: string; sub: string; href?: string }) {
+  // The divider belongs on whichever element is the list's direct child --
+  // on the inner div, a wrapping <a> would make every row :last-child.
+  const divider = 'border-b border-border last:border-b-0'
+  const content = (
+    <div className={`flex items-center gap-3 py-3${href ? '' : ` ${divider}`}`}>
       <span
         className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
         style={{ color: badge.color, background: badge.background }}
@@ -42,9 +52,10 @@ function Row({ badge, headline, sub }: { badge: { label: string; color: string; 
         <p className="text-[13px] font-semibold text-foreground leading-snug truncate">{headline}</p>
         <p className="text-xs text-[var(--text-secondary)] leading-snug truncate">{sub}</p>
       </div>
-      <ChevronRight size={14} className="text-[var(--text-secondary)] shrink-0" />
+      {href && <ChevronRight size={14} className="text-[var(--text-secondary)] shrink-0" />}
     </div>
   )
+  return href ? <a href={href} className={`no-underline block ${divider}`}>{content}</a> : content
 }
 
 function RowSkeleton() {
@@ -78,7 +89,7 @@ export function SecurityComplianceSummary({
   soc2Loading,
   customFrameworksSubtext,
   customFrameworksLoading,
-  detailsHref = '/security',
+  detailsHref = FINDINGS_HREF,
 }: SecurityComplianceSummaryProps) {
   const severityRows = findingCounts
     ? (['critical', 'high', 'medium', 'low'] as const)
@@ -87,6 +98,7 @@ export function SecurityComplianceSummary({
           badge: SEVERITY_CONFIG[tier],
           headline: `${findingCounts[tier]} ${SEVERITY_CONFIG[tier].label.toLowerCase()} finding${findingCounts[tier] !== 1 ? 's' : ''}`,
           sub: 'Account-level security finding',
+          href: FINDINGS_HREF,
         }))
     : []
 
@@ -123,13 +135,13 @@ export function SecurityComplianceSummary({
         {soc2Loading ? (
           <RowSkeleton />
         ) : (
-          <Row badge={INFO_BADGE} headline="SOC 2 readiness" sub={soc2Subtext} />
+          <Row badge={INFO_BADGE} headline="SOC 2 readiness" sub={soc2Subtext} href={SOC2_HREF} />
         )}
 
         {customFrameworksLoading ? (
           <RowSkeleton />
         ) : (
-          <Row badge={INFO_BADGE} headline="Custom frameworks" sub={customFrameworksSubtext} />
+          <Row badge={INFO_BADGE} headline="Custom frameworks" sub={customFrameworksSubtext} href={CUSTOM_FRAMEWORKS_HREF} />
         )}
       </div>
     </div>

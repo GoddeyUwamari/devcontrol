@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from 'date-fns'
-import { CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
+import { CheckCircle2, XCircle } from 'lucide-react'
 import { CloudProviderStatus } from './cloud-provider-status'
 
 interface DashboardHeroProps {
@@ -47,7 +47,6 @@ export function DashboardHero({ isAwsConnected, orgName, lastSynced }: Dashboard
           <span className="text-xs font-semibold" style={{ color: isAwsConnected ? 'var(--text-success)' : 'var(--text-secondary)' }}>
             {isAwsConnected ? 'AWS Account Connected' : 'AWS Account Not Connected'}
           </span>
-          <ChevronRight size={13} style={{ color: isAwsConnected ? 'var(--text-success)' : 'var(--text-secondary)' }} />
         </div>
         <CloudProviderStatus awsConnected={isAwsConnected} />
       </div>

@@ -1,4 +1,4 @@
-import { Code2, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
+import { Code2, TrendingUp, TrendingDown } from 'lucide-react'
 
 interface DoraRow {
   label: string
@@ -27,7 +27,7 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
           <h3 className="text-base font-bold text-foreground">Engineering Health</h3>
         </div>
         <a href="/app/dora-metrics" className="text-xs font-semibold no-underline flex items-center gap-1 whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
-          View details <ArrowRight size={12} />
+          View details →
         </a>
       </div>
 
@@ -53,7 +53,7 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
         <div className="flex flex-col items-start gap-3 py-4">
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed">Connect CI/CD pipeline to see DORA metrics</p>
           <a href="/deployments" className="inline-flex items-center gap-1.5 text-xs font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>
-            Connect CI/CD <ArrowRight size={12} />
+            Connect CI/CD →
           </a>
         </div>
       )}
