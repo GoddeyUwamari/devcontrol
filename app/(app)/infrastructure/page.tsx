@@ -19,7 +19,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
-import { formatDistanceToNow } from 'date-fns'
+import { formatCalculatedAgo } from './calculatedAgo'
 
 const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
   ec2:        { icon: Server,    color: '#3B82F6', bg: '#EFF6FF' },
@@ -180,6 +180,18 @@ function InfrastructureContent() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const targetResourceId = searchParams.get('resource')
+
+  // Re-render once a minute so the "Calculated … ago" text doesn't go stale
+  // while the page stays open -- same 60s cadence as components/ui/
+  // last-synced.tsx. Only forces a render: no refetch, no cache invalidation.
+  // The tick carries no time itself; each render passes a fresh `new Date()`
+  // to formatCalculatedAgo, so a newly fetched computed_at is never compared
+  // against a stale "now".
+  const [, setRelativeTimeTick] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => setRelativeTimeTick((tick) => tick + 1), 60_000)
+    return () => clearInterval(interval)
+  }, [])
 
   const [selectedType,  setSelectedType]  = useState<string | null>(null)
   const [openDropdown,  setOpenDropdown]  = useState<string | null>(null)
@@ -403,11 +415,9 @@ function InfrastructureContent() {
     ? topDriver.impact_score
     : null
   // When this System Intelligence result was calculated (the backend's
-  // computed_at). Omitted when absent or unparseable -- never a placeholder.
-  const intelComputedAt  = intelReady && typeof intel?.computed_at === 'string' ? new Date(intel.computed_at) : null
-  const intelCalculatedAgo = intelComputedAt && !Number.isNaN(intelComputedAt.getTime())
-    ? formatDistanceToNow(intelComputedAt, { addSuffix: true })
-    : null
+  // computed_at), relative to now -- see formatCalculatedAgo for the clock-skew
+  // handling. Omitted when absent, unparseable, or implausibly in the future.
+  const intelCalculatedAgo = intelReady ? formatCalculatedAgo(intel?.computed_at, new Date()) : null
   const intelWaste       = isDemoActive ? 1060 : (recommendationStats?.totalPotentialSavings ?? 0)
   const scoreCirc        = 144.5
   const scoreOffset      = intelScore > 0 ? scoreCirc - (intelScore / 100) * scoreCirc : scoreCirc
