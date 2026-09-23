@@ -8,7 +8,7 @@
  * Same mocking harness as infrastructure-demo-fallback.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -185,6 +185,65 @@ describe('Infrastructure page -- System Score provenance (no unsupported confide
   })
 })
 
+describe('Infrastructure page -- calculated-at clock skew and refresh', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('devcontrol_demo_mode', 'false')
+    localStorage.setItem('accessToken', 'fake-token')
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('a computed_at slightly ahead of the browser clock (normal skew) reads as just calculated, never future tense', async () => {
+    // Production case: server clock ~275ms ahead of the browser.
+    mockIntelligence(68, 'Degraded', { top_drivers: [SECURITY_DRIVER], computed_at: new Date(Date.now() + 300).toISOString() })
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('Calculated less than a minute ago')).toBeInTheDocument())
+    expect(screen.queryByText(/Calculated in /)).not.toBeInTheDocument()
+  })
+
+  it('a computed_at implausibly far in the future renders no calculated-at line', async () => {
+    mockIntelligence(68, 'Degraded', { top_drivers: [SECURITY_DRIVER], computed_at: new Date(Date.now() + 2 * 60_000).toISOString() })
+    renderPage()
+
+    await waitFor(() => expect(screen.queryByTestId('intel-not-ready')).not.toBeInTheDocument())
+    expect(screen.queryByText(/^Calculated /)).not.toBeInTheDocument()
+    // Only the timestamp line is affected -- the rest of the ready strip renders.
+    expect(statusLine()).toBe('Degraded')
+    expect(screen.getByTestId('score-impact').textContent).toContain('Up to +17 pts')
+  })
+
+  it('re-renders the relative time every 60s without refetching, with one interval cleared on unmount', async () => {
+    // Fake only the interval clock and Date -- setTimeout stays real so
+    // React Query and waitFor behave normally. No real waiting.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(new Date('2026-09-23T08:12:00.000Z'))
+    mockIntelligence(68, 'Degraded', { top_drivers: [SECURITY_DRIVER], computed_at: new Date(Date.now() + 300).toISOString() })
+    const { unmount } = renderPage()
+
+    await waitFor(() => expect(screen.getByText('Calculated less than a minute ago')).toBeInTheDocument())
+    const fetchCallsBefore = (global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length
+    expect(vi.getTimerCount()).toBe(1)
+
+    await act(async () => {
+      vi.advanceTimersByTime(60_000)
+    })
+
+    expect(screen.getByText('Calculated 1 minute ago')).toBeInTheDocument()
+    expect(screen.queryByText('Calculated less than a minute ago')).not.toBeInTheDocument()
+    // Only the display changed: no API request came from the tick.
+    expect((global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(fetchCallsBefore)
+    expect(statusLine()).toBe('Degraded')
+    expect(screen.getByTestId('score-impact').textContent).toContain('Up to +17 pts')
+
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
 describe('Infrastructure page -- Score Impact is the canonical top driver impact_score', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -259,5 +318,11 @@ describe('Infrastructure page -- Score Impact is the canonical top driver impact
     expect(source).not.toMatch(/High confidence/)
     expect(source).not.toMatch(/resources analyzed/)
     expect(source).toMatch(/intel\?\.top_drivers\?\.\[0\]/)
+  })
+
+  it('the calculated-at line has a single interpretation path (the pure helper), not a direct formatDistanceToNow', () => {
+    const source = readFileSync(join(__dirname, '../page.tsx'), 'utf-8')
+    expect(source).not.toMatch(/formatDistanceToNow/)
+    expect(source.match(/formatCalculatedAgo\(/g)).toHaveLength(1)
   })
 })
