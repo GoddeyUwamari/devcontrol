@@ -457,10 +457,19 @@ export default function DashboardPage() {
   // same "Calculating…" state below as before -- never an invented number.
   const displayedHealthScore = isDemoActive ? 87 : (systemIntelligence?.system_score ?? null)
 
+  // Badge label is the canonical status from the same System Intelligence
+  // response (scoreToStatus: >=85 Healthy, >=70 Stable, >=50 Degraded, else At
+  // Risk) -- not a second, locally-invented tier with its own thresholds and
+  // wording, which previously showed "Monitor" where the API said "Degraded".
+  // 'Pending' (not ready) and a null score render no badge. Demo keeps its
+  // fixed 87, which is 'Healthy' under the same thresholds.
+  const displayedHealthStatus = isDemoActive ? 'Healthy' : (systemIntelligence?.status ?? null)
   const infraHealthBadge = displayedHealthScore === null ? undefined
-    : displayedHealthScore >= 80 ? { label: 'Healthy', color: 'var(--text-success)', background: 'var(--bg-success)' }
-    : displayedHealthScore >= 60 ? { label: 'Monitor', color: 'var(--text-warning)', background: 'var(--bg-warning)' }
-    : { label: 'Needs attention', color: 'var(--text-danger)', background: 'var(--bg-danger)' }
+    : displayedHealthStatus === 'Healthy' ? { label: 'Healthy', direction: 'up' as const, color: 'var(--text-success)' }
+    : displayedHealthStatus === 'Stable' ? { label: 'Stable', direction: 'flat' as const, color: 'var(--text-success)' }
+    : displayedHealthStatus === 'Degraded' ? { label: 'Degraded', direction: 'flat' as const, color: 'var(--text-warning)' }
+    : displayedHealthStatus === 'At Risk' ? { label: 'At Risk', direction: 'down' as const, color: 'var(--text-danger)' }
+    : undefined
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
 
@@ -533,7 +542,7 @@ export default function DashboardPage() {
               label="Infrastructure Health"
               value={displayedHealthScore === null ? 'Calculating…' : String(displayedHealthScore)}
               valueSuffix={displayedHealthScore === null ? undefined : '/100'}
-              trend={infraHealthBadge ? { direction: infraHealthBadge.label === 'Healthy' ? 'up' : infraHealthBadge.label === 'Needs attention' ? 'down' : 'flat', label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
+              trend={infraHealthBadge ? { direction: infraHealthBadge.direction, label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
               href="/infrastructure"
             />
           </div>

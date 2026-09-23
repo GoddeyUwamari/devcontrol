@@ -1,10 +1,8 @@
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { TrendingUp, TrendingDown, Download, ChevronRight } from 'lucide-react'
+import { TrendingUp, TrendingDown, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
 
 interface CostCategory {
   name: string
@@ -30,27 +28,6 @@ export function CostBreakdownBarList({
   onDateRangeChange,
   onExport,
 }: CostBreakdownBarListProps) {
-  const router = useRouter()
-
-  // Helper to extract category slug from name
-  const getCategorySlug = (name: string): string => {
-    const categoryMap: Record<string, string> = {
-      'Compute (EC2, Lambda, ECS)': 'compute',
-      'Storage (S3, EBS)': 'storage',
-      'Database (RDS, DynamoDB)': 'database',
-      'Network (Data Transfer)': 'network',
-      'Other Services': 'other',
-    }
-    return categoryMap[name] || 'all'
-  }
-
-  // Handle category click for drill-down
-  const handleCategoryClick = (categoryName: string) => {
-    const slug = getCategorySlug(categoryName)
-    toast.info(`Viewing ${categoryName.split(' (')[0]} details...`)
-    router.push(`/app/infrastructure?category=${slug}`)
-  }
-
   // Calculate percentages
   const dataWithPercentage = data.map(item => ({
     name: item.name,
@@ -177,12 +154,13 @@ export function CostBreakdownBarList({
         })}
       </div>
 
-      {/* Detailed Breakdown with Changes — clickable rows */}
+      {/* Detailed Breakdown with Changes. Not a drill-down: rows are spend
+          categories, and no existing page filters by them (/infrastructure only
+          reads ?resource=), so there is nothing truthful to navigate to. */}
       <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
         {dataWithPercentage.map((item) => (
-          <button
+          <div
             key={item.name}
-            onClick={() => handleCategoryClick(item.name)}
             style={{
               width: '100%',
               display: 'flex',
@@ -192,17 +170,7 @@ export function CostBreakdownBarList({
               borderRadius: '8px',
               border: '1px solid transparent',
               background: 'transparent',
-              cursor: 'pointer',
               textAlign: 'left',
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.background = '#F8FAFC'
-              ;(e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0'
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.background = 'transparent'
-              ;(e.currentTarget as HTMLElement).style.borderColor = 'transparent'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -234,16 +202,15 @@ export function CostBreakdownBarList({
                   {Math.abs(item.change)}%
                 </span>
               </div>
-              <ChevronRight size={14} style={{ color: '#CBD5E1' }} />
             </div>
-          </button>
+          </div>
         ))}
       </div>
 
       {/* Footer Note */}
       <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #F1F5F9' }}>
         <p style={{ fontSize: '0.72rem', color: '#64748B', margin: 0 }}>
-          💡 Click any category to view detailed resource breakdown. Trends show change vs previous period.
+          💡 Trends show change vs previous period.
         </p>
       </div>
     </div>

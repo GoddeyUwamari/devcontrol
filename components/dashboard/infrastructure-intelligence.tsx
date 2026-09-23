@@ -51,7 +51,7 @@ function IntelCard({ icon: Icon, iconColor, iconBackground, label, valueNode, de
           </div>
           <p className="text-sm font-semibold text-foreground">{label}</p>
         </div>
-        {href && <ChevronRight size={15} className="text-[var(--text-secondary)]" />}
+        {href && <ChevronRight size={16} className="text-[var(--text-secondary)]" />}
       </div>
       <div className="mb-1.5">{valueNode}</div>
       <div className="text-xs text-[var(--text-secondary)] leading-relaxed line-clamp-3">{description}</div>

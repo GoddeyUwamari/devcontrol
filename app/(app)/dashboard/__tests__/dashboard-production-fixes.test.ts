@@ -189,6 +189,33 @@ describe('Primary KPI row: all three cards link to their detail pages', () => {
   })
 })
 
+describe('Infrastructure Health badge: canonical System Intelligence status, not a local tier', () => {
+  it('reads the badge label from systemIntelligence.status (demo keeps its fixed Healthy)', () => {
+    expect(pageSource).toMatch(/const displayedHealthStatus = isDemoActive \? 'Healthy' : \(systemIntelligence\?\.status \?\? null\)/)
+    for (const status of ['Healthy', 'Stable', 'Degraded', 'At Risk']) {
+      expect(pageSource).toMatch(new RegExp(`displayedHealthStatus === '${status}' \\? \\{ label: '${status}'`))
+    }
+  })
+
+  it('the old locally-invented thresholds and "Monitor" / "Needs attention" wording are gone', () => {
+    expect(pageSource).not.toMatch(/displayedHealthScore >= 80/)
+    expect(pageSource).not.toMatch(/displayedHealthScore >= 60/)
+    expect(pageSource).not.toMatch(/label: 'Monitor'/)
+    expect(pageSource).not.toMatch(/label: 'Needs attention'/)
+  })
+
+  it('the KPI value itself is still the canonical system_score (Tier 0 source unchanged)', () => {
+    expect(pageSource).toMatch(/const displayedHealthScore = isDemoActive \? 87 : \(systemIntelligence\?\.system_score \?\? null\)/)
+    expect(pageSource).toMatch(/trend=\{infraHealthBadge \? \{ direction: infraHealthBadge\.direction, label: infraHealthBadge\.label, color: infraHealthBadge\.color \} : undefined\}/)
+  })
+})
+
+describe('Recent Activity: unchanged -- no destination exists for "View more"', () => {
+  it('has no link, "View more", or "View all" affordance', () => {
+    expect(recentActivityCardSource).not.toMatch(/<a\b|href=|View more|View all/)
+  })
+})
+
 describe('Cost-Saving Opportunities dashboard summary: signal-only, capped, with a real empty state', () => {
   it('once evaluated, only shows categories with an active recommendation (count > 0), capped at 3, never re-defining "real signal" as potential_savings > 0', () => {
     expect(pageSource).toMatch(/opportunityEvaluationState === 'evaluated'\s*\?\s*\[\.\.\.opportunityCategories\]\.filter\(\(cat\) => cat\.count > 0\)/)
