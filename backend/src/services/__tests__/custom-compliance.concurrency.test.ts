@@ -158,22 +158,52 @@ describe('CustomComplianceService -- duplicate/concurrent scan prevention', () =
     await insertRule(frameworkId, orgId);
     await insertResource(orgId);
 
-    const [resultA, resultB] = await Promise.all([
-      service.startScan(frameworkId, orgId),
-      service.startScan(frameworkId, orgId),
-    ]);
+    // Promise.all alone doesn't guarantee the two calls contest the lock at
+    // the same time: the second call may need a fresh pool connection, and
+    // this one-rule/one-resource scan can claim, finish, and unlock before
+    // that call reaches pg_try_advisory_lock -- a legitimate sequential
+    // start, not a lock failure. Hold the winner inside runScanBody (after
+    // lock + scan row, before the finally that unlocks) until both calls have
+    // returned, so the overlap is guaranteed rather than timing-dependent.
+    // Same spy point as F3 below. mockImplementation (not ...Once) because
+    // either call may win.
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const realRunScanBody = (service as any).runScanBody.bind(service);
+    const runScanBodySpy = jest
+      .spyOn(service as any, 'runScanBody')
+      .mockImplementation(async (...args: any[]) => {
+        await gate;
+        return realRunScanBody(...args);
+      });
 
-    const statuses = [resultA.status, resultB.status].sort();
-    expect(statuses).toEqual(['already_in_progress', 'started']);
+    let winner: ScanStartResult | undefined;
+    try {
+      const [resultA, resultB] = await Promise.all([
+        service.startScan(frameworkId, orgId),
+        service.startScan(frameworkId, orgId),
+      ]);
 
-    // Only the winner's scan row was created -- the loser never inserted one.
-    expect(await countScans(frameworkId)).toBe(1);
+      const statuses = [resultA.status, resultB.status].sort();
+      winner =
+        resultA.status === 'started' ? resultA : resultB.status === 'started' ? resultB : undefined;
+      expect(statuses).toEqual(['already_in_progress', 'started']);
 
-    // The winner's scan body is still running in the background at this
-    // point (see waitForScanTerminal) -- wait for it to finish before this
-    // test (and eventually afterAll) can delete orgId out from under it.
-    const winner = resultA.status === 'started' ? resultA : resultB;
-    await waitForScanTerminal(requireScanId(winner));
+      // Only the winner's scan row was created -- the loser never inserted one.
+      expect(await countScans(frameworkId)).toBe(1);
+    } finally {
+      // Always open the gate -- even on assertion failure -- so the held scan
+      // runs, unlocks, and releases its client; then wait for it to finish
+      // before this test (and eventually afterAll) can delete orgId out from
+      // under it (see waitForScanTerminal).
+      releaseGate();
+      runScanBodySpy.mockRestore();
+      if (winner) {
+        await waitForScanTerminal(requireScanId(winner));
+      }
+    }
   }, 10000);
 
   // ---------------------------------------------------------------------
