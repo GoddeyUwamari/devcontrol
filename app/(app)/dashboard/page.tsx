@@ -343,7 +343,7 @@ export default function DashboardPage() {
   // useAISummary's own narrative pipeline (still used above for Top Risk).
   const { data: systemIntelligence, isLoading: systemIntelligenceLoading } = useSystemIntelligence(organization?.id, !isDemoActive)
 
-  // Security Health: the canonical System Intelligence security component's
+  // Security Posture KPI: the canonical System Intelligence security component's
   // own score + status (see computeSecurityHealthKpi) -- not the overall
   // status, and not the Pro-gated /api/risk-score/trend.
   const securityKpi = computeSecurityHealthKpi({
@@ -565,7 +565,7 @@ export default function DashboardPage() {
               icon={ShieldCheck}
               iconColor="var(--text-accent)"
               iconBackground="var(--bg-accent)"
-              label="Security Health"
+              label="Security Posture"
               value={securityKpi.value}
               valueSuffix={securityKpi.score === null ? undefined : '/100'}
               valueColor={securityKpi.score === null ? undefined : securityKpi.badge?.color}

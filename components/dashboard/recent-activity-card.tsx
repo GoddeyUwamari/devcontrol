@@ -76,7 +76,7 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-foreground leading-snug line-clamp-1" title={event.message}>{event.message}</p>
                   {/* 'score' events are periodic historical snapshots (risk_score_history),
-                      not the live current score shown in the Security Health KPI -- the two
+                      not the live current score shown in the Security Posture KPI -- the two
                       can legitimately differ. Label this explicitly rather than the generic
                       type name, so the timestamp reads as "this was the score then", not an
                       implicit claim that it's still current. Message/timestamp are untouched
