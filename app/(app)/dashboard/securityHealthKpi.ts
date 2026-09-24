@@ -25,7 +25,7 @@ export const SECURITY_STATUS_BADGE: Record<SystemIntelligenceComponentScore['sta
 }
 
 /**
- * Pure, extracted-for-testability Security Health KPI state.
+ * Pure, extracted-for-testability Security Posture KPI state.
  *
  * Reads the canonical System Intelligence *security component* -- the same
  * RiskTrackingService.calculateCurrentRiskScore the Pro-gated

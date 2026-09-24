@@ -1,5 +1,5 @@
 /**
- * Dashboard Security Health KPI + Security Key Findings sources.
+ * Dashboard Security Posture KPI + Security Key Findings sources.
  *
  * The KPI used to read the Pro-gated /api/risk-score/trend: lower plans got a
  * 402, which rendered as a false "Scanning…" / "Scan in progress", and it used
@@ -78,7 +78,7 @@ describe('computeSecurityHealthKpi -- canonical security component', () => {
 })
 
 describe('Dashboard page wiring', () => {
-  it('the Security Health KPI reads systemIntelligence.components.security, not the overall status', () => {
+  it('the Security Posture KPI reads systemIntelligence.components.security, not the overall status', () => {
     expect(pageSource).toMatch(/computeSecurityHealthKpi\(\{[^]*?securityComponent: systemIntelligence\?\.components\?\.security,[^]*?\}\)/)
     expect(pageSource).toMatch(/value=\{securityKpi\.value\}/)
     // The overall status stays confined to the Infrastructure Health badge.

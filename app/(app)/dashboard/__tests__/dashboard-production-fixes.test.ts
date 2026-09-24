@@ -182,9 +182,9 @@ describe('Cloud provider tiles: reusable connected/unavailable variants', () => 
 })
 
 describe('Primary KPI row: all three cards link to their detail pages', () => {
-  it('Monthly Spend links to /costs, Security Health links to /security, Infrastructure Health links to /infrastructure', () => {
+  it('Monthly Spend links to /costs, Security Posture links to /security, Infrastructure Health links to /infrastructure', () => {
     expect(pageSource).toMatch(/label="Monthly Spend"[^]*?href="\/costs"/)
-    expect(pageSource).toMatch(/label="Security Health"[^]*?href="\/security"/)
+    expect(pageSource).toMatch(/label="Security Posture"[^]*?href="\/security"/)
     expect(pageSource).toMatch(/label="Infrastructure Health"[^]*?href="\/infrastructure"/)
   })
 })
