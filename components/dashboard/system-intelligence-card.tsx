@@ -77,7 +77,7 @@ export function SystemIntelligenceCard({ isDemoActive, components, isLoading, st
     <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 mb-6">
       <div className="flex items-center gap-2.5 mb-4">
         <Gauge size={17} style={{ color: 'var(--text-accent)' }} />
-        <h3 className="text-base font-bold text-foreground">System Intelligence</h3>
+        <h3 className="text-base font-bold text-foreground">Platform Efficiency Breakdown</h3>
       </div>
 
       {isLoading ? (

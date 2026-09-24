@@ -1,5 +1,5 @@
 /**
- * System Intelligence card placement, through the real DashboardPage:
+ * Platform Efficiency Breakdown card placement, through the real DashboardPage:
  * a standalone full-width card directly below Infrastructure Intelligence and
  * above AWS Cost Trends / Security Key Findings, fed by the page's existing
  * System Intelligence query (one request, no second fetch), and absent in demo
@@ -76,10 +76,10 @@ afterEach(() => {
 const renderDashboard = () => render(<QueryClientProvider client={client}><DashboardPage /></QueryClientProvider>)
 const precedes = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
-describe('System Intelligence card on the real Dashboard page', () => {
+describe('Platform Efficiency Breakdown card on the real Dashboard page', () => {
   it('sits between Infrastructure Intelligence and AWS Cost Trends / Security Key Findings', async () => {
     renderDashboard()
-    const card = await screen.findByText('System Intelligence')
+    const card = await screen.findByText('Platform Efficiency Breakdown')
     await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Cost Efficiency score' })).toBeInTheDocument())
 
     const infraIntel = screen.getByRole('heading', { name: 'Infrastructure Intelligence' })
@@ -92,7 +92,7 @@ describe('System Intelligence card on the real Dashboard page', () => {
 
   it('is its own full-width block, not inside the Infrastructure Intelligence section or its 2-card grid', async () => {
     renderDashboard()
-    const heading = await screen.findByText('System Intelligence')
+    const heading = await screen.findByText('Platform Efficiency Breakdown')
     const cardRoot = heading.closest('div.rounded-2xl') as HTMLElement
     const infraSection = screen.getByRole('heading', { name: 'Infrastructure Intelligence' }).closest('div.mb-6') as HTMLElement
     expect(infraSection.contains(cardRoot)).toBe(false)
@@ -113,7 +113,7 @@ describe('System Intelligence card on the real Dashboard page', () => {
   it('a failed System Intelligence request fabricates nothing: no component labels, scores, status words, or bars', async () => {
     intelligenceSpy.mockRejectedValue(Object.assign(new Error('HTTP 500'), { response: { status: 500 } }))
     renderDashboard()
-    const heading = await screen.findByText('System Intelligence')
+    const heading = await screen.findByText('Platform Efficiency Breakdown')
     const card = heading.closest('div.rounded-2xl') as HTMLElement
     await waitFor(() => expect(card).toHaveTextContent('— · Unavailable'))
 
@@ -128,7 +128,7 @@ describe('System Intelligence card on the real Dashboard page', () => {
     localStorage.setItem('devcontrol_demo_mode', 'true')
     renderDashboard()
     await screen.findByText('Infrastructure Intelligence')
-    expect(screen.queryByText('System Intelligence')).not.toBeInTheDocument()
+    expect(screen.queryByText('Platform Efficiency Breakdown')).not.toBeInTheDocument()
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     expect(intelligenceSpy).not.toHaveBeenCalled()
   })
