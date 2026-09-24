@@ -7,32 +7,115 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
 
+/**
+ * State of one AI-context dataset, decided by the context builder before the
+ * model ever sees it -- so the model never has to guess whether a 0, an empty
+ * list, or a missing section means "measured", "not collected", or "failed".
+ *   available     = collected, complete for its stated scope
+ *   partial       = collected, but only some of its stated scope is covered
+ *                   (the dataset's own coverage field says how much)
+ *   unavailable   = nothing to collect (e.g. no connected account, no rows,
+ *                   not enough history) -- not an error, and not a zero
+ *   error         = collection was attempted and failed
+ *   not_supported = DevControl has no source for this data
+ */
+export type ContextDataState = 'available' | 'partial' | 'unavailable' | 'error' | 'not_supported';
+
+/**
+ * Scope of a Cost Explorer figure, exactly as the current query establishes
+ * it (aws-cost.service.ts fetchMonthlyCosts()/fetchCostTrend(): one
+ * GetCostAndUsage call under the connected IAM role, grouped by SERVICE, with
+ * no Filter). Deliberately does NOT claim the figure covers one AWS account:
+ * with no LINKED_ACCOUNT filter the result is the role account's whole
+ * billing scope, and DevControl does not detect whether that account is a
+ * management/payer account whose billing scope spans linked accounts.
+ */
+export interface CostExplorerScope {
+  kind: 'cost_explorer';
+  /** aws_accounts.account_id of the connected role the call runs under; null if it couldn't be read. */
+  connectedAccountId: string | null;
+  /** The query is never narrowed to a single linked account. */
+  linkedAccountFilter: 'none';
+  /** Whether the billing scope is consolidated across linked accounts -- not detected. */
+  consolidatedBilling: 'unknown';
+  /** The query has no region filter. */
+  regions: 'all';
+}
+
+/**
+ * Scope of DevControl's resource inventory (aws_resources), and so of any
+ * figure derived from it: discovery runs under the connected role, in the
+ * single region stored on aws_accounts (AWSClientFactory.createClients()),
+ * plus services listed account-wide (e.g. S3). Never the same scope as
+ * CostExplorerScope.
+ */
+export interface InventoryScope {
+  kind: 'resource_inventory';
+  /** aws_accounts.account_id of the connected role; null if it couldn't be read. */
+  connectedAccountId: string | null;
+  /** aws_accounts.region -- the one region discovery runs in; null if it couldn't be read. */
+  discoveryRegion: string | null;
+}
+
+/**
+ * Month-to-date vs the same days of the previous month, from Cost Explorer's
+ * daily trend (the Dashboard's computeMonthOverMonthCostChange() algorithm).
+ * Its own state: a comparison is never fabricated from the current figure.
+ */
+export interface CostComparison {
+  state: ContextDataState;
+  /** Why the comparison is not (fully) available, or a caveat on an available one. */
+  note: string | null;
+  currentWindow: { start: string; end: string } | null;
+  previousWindow: { start: string; end: string } | null;
+  currentWindowTotal: number | null;
+  previousWindowTotal: number | null;
+  changeAmount: number | null;
+  /** null when the previous window total is 0 (a percentage is undefined). */
+  changePercent: number | null;
+  /** Days of daily trend data found in each window vs the days each window spans. */
+  coverage: { currentDays: number; previousDays: number; expectedCurrentDays: number; expectedPreviousDays: number } | null;
+}
+
 export interface ChatContext {
   services: string[];
   costs: {
-    current: number;
-    previous: number;
-    changePercent: number | null;
+    /** State of `current` (the figure the model is given), whichever source produced it. */
+    state: ContextDataState;
+    // Provenance -- mirrors the Dashboard's actual-vs-estimated distinction
+    // (stats.controller.ts's getDashboardStats()).
+    // 'actual'      = a real AWS Cost Explorer result (fresh or served from
+    //                 awsCostService's own short-lived cache -- `asOf` says which),
+    //                 including a real $0 or a net-negative (credit) total.
+    // 'estimated'   = Cost Explorer was unavailable or failed; derived from
+    //                 aws_resources' estimated_monthly_cost (list-price estimates
+    //                 of discovered resources) -- not AWS billing data.
+    // 'unavailable' = neither exists; `current` is null, never 0.
+    source: 'actual' | 'estimated' | 'unavailable';
+    /** null whenever no figure exists -- never 0 standing in for "unknown". */
+    current: number | null;
+    // ISO timestamp this cost figure was actually obtained -- for 'actual',
+    // awsCostService's own fetch/cache timestamp; for 'estimated', the
+    // discovery job's completion time (resourceDataAsOf); null otherwise.
+    asOf: string | null;
+    /** The Cost Explorer query period (month-to-date; end is exclusive). null for estimates, which are a monthly run-rate, not a billed period. */
+    period: { start: string; endExclusive: string } | null;
+    scope: CostExplorerScope | InventoryScope | null;
+    /** Cost Explorer SERVICE categories; null when no per-service breakdown exists (estimate/unavailable). [] is a real, empty breakdown. */
     topSpenders: Array<{
       service: string;
       cost: number;
-      percentage: number;
-    }>;
-    // Provenance -- mirrors the Dashboard's actual-vs-estimated distinction
-    // (stats.controller.ts's getDashboardStats()), plus a third state this
-    // service didn't previously distinguish: genuinely no data at all.
-    // 'actual'      = a real AWS Cost Explorer result (fresh or served from
-    //                 awsCostService's own short-lived cache -- `asOf` says which).
-    // 'estimated'   = Cost Explorer was unavailable; derived from aws_resources'
-    //                 estimated_monthly_cost instead (same fallback the Dashboard uses).
-    // 'unavailable' = neither exists. `current`/`previous` are 0 in this case,
-    //                 but that 0 must never be presented as confirmed spend.
-    source: 'actual' | 'estimated' | 'unavailable';
-    // ISO timestamp this cost figure was actually obtained -- for 'actual',
-    // awsCostService's own fetch/cache timestamp; for 'estimated', the
-    // discovery job's completion time (resourceDataAsOf); null for 'unavailable'.
-    asOf: string | null;
+      /** Share of the total; null when the total is $0 or net-negative, where a share is meaningless. */
+      percentage: number | null;
+    }> | null;
+    /** Outcome of the Cost Explorer attempt itself -- kept even when an estimate was used instead. */
+    costExplorer: { state: ContextDataState; reason: string | null };
+    /** For 'estimated': how many discovered (non-terminated) resources actually carry an estimate. */
+    estimateCoverage: { estimatedResources: number; totalResources: number } | null;
+    comparison: CostComparison;
   };
+  /** Scope of the resource inventory section (and of every figure derived from it). */
+  inventoryScope: InventoryScope;
   resources: {
     ec2?: { count: number; underutilized: number };
     rds?: { count: number; storageCost: number };
@@ -107,10 +190,20 @@ You receive structured context about the user's AWS environment, including:
 
 This context is NOT a live feed. Each section carries its own real provenance and
 freshness, which you must respect exactly as labeled:
-- Cost data has a "Source" (AWS Cost Explorer, or a database estimate used when
-  Cost Explorer is unavailable, or unavailable entirely) and an "As of" timestamp
+- Cost data has a "state", a "source" (AWS Cost Explorer, a DevControl inventory
+  estimate used when Cost Explorer is unavailable, or none), an "as_of" timestamp
   -- the moment that figure was actually obtained, which may be several hours old
-  even when the source is Cost Explorer, since it is served from a short-lived cache.
+  even when the source is Cost Explorer, since it is served from a short-lived cache
+  -- and a "scope" (which AWS account/billing scope and which regions it covers).
+  Cost Explorer figures cover the connected IAM role's billing scope across all
+  regions; whether that includes other linked accounts is stated as unknown unless
+  the scope says otherwise. Resource inventory covers only the regions its scope lists.
+  Never describe a Cost Explorer figure as covering exactly one AWS account, and
+  never compare it to inventory as if the two had the same scope.
+- Datasets carry a state: "available" (complete for its scope), "partial" (only
+  part of its scope -- say which part), "unavailable" (no data), "error" (collection
+  failed), or "not_supported". Only report figures that are actually present;
+  never treat "unavailable" or "error" as $0, none, or unchanged.
 - Resource inventory (services, EC2/RDS/Lambda counts, anomalies) is synchronized
   periodically by a background discovery process, not queried live -- its "As of"
   timestamp is the last time that process completed successfully for this account.
@@ -135,18 +228,19 @@ RULES:
 2. CONTEXT FORMAT
 You receive context in this structure:
 - Services: {AWS services in use}
-- Costs: {source, as-of timestamp, current spend, trends, top spenders}
-- Resources: {source, as-of timestamp, EC2, RDS, Lambda details}
+- Costs: {state, source, as-of timestamp, scope, period, month-to-date spend or estimate, top services}
+- Period comparison: {its own state, the two windows compared, their totals, change}
+- Resources: {source, as-of timestamp, scope, EC2, RDS, Lambda details}
 - Alerts: {active alerts, incidents}
 - Anomalies: {cost spikes, performance issues, detected patterns}
 - DORA: {deployment frequency, lead time, MTTR}
-- Time Range: {the query window this data covers, e.g. "last 30 days" -- not
-  the same thing as the as-of freshness timestamps above}
+Each section states its own period or window -- not the same thing as the
+as-of freshness timestamps above.
 
 If context is empty, state clearly what's missing.
 
 3. BE OPINIONATED AND ACTIONABLE
-- Explain what's happening in THIS AWS account
+- Explain what's happening in the AWS environment represented by the provided context
 - Quantify impact (cost, risk, reliability)
 - Recommend clear, safe, practical next steps
 - Never give generic AWS explanations
@@ -194,9 +288,10 @@ If context is empty, state clearly what's missing.
   spend. State each fact on its own terms; if you connect them, frame it
   explicitly as an inference ("likely," "this may indicate") — never as a
   confirmed fact.
-- Billing-category totals are account-wide AWS spend categories, not
-  per-resource costs. Don't attribute a category's cost to a specific
-  resource unless the context states that resource's own cost directly.
+- Billing-category totals are Cost Explorer service categories for the
+  stated billing scope, not per-resource costs. Don't attribute a category's
+  cost to a specific resource unless the context states that resource's own
+  cost directly.
 - When context directly states a fact, state it with full confidence — don't
   add hedging to facts that are actually in the context.
 
@@ -206,15 +301,112 @@ If context is empty, state clearly what's missing.
 - Build on prior recommendations
 
 11. AUTOMATIC DATA ACCESS
-- ALL AWS data is automatically provided in your context
+- All the AWS data DevControl has provided in this context is supplied
+  automatically -- some of it may be unavailable, partial, or out of scope
 - NEVER ask users to "share data", "provide details", or "pull information"
-- Users CANNOT manually provide technical data - you already have it
-- If critical data is missing from context, state:
+- Users CANNOT manually provide technical data - you already have what exists
+- If critical data is missing from context, or its state is not "available", state:
   "I don't have [specific metric] available in the current data"
-- Then provide best analysis possible with available data
+- Then provide best analysis possible with the data that is actually present,
+  without inferring the missing values
 - NEVER say: "Can you share...", "Please provide...", "If your platform surfaces..."
 
 Your goal: Help users understand their AWS environment, reduce cost, improve reliability, and make confident infrastructure decisions.`;
+  }
+
+  /** Cents precision, so a real sub-dollar bill never rounds to a "$0" that reads as no spend. */
+  private formatMoney(amount: number): string {
+    const abs = Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return amount < 0 ? `-$${abs}` : `$${abs}`;
+  }
+
+  /**
+   * Scope lines for a cost or inventory figure. Cost Explorer scope is stated
+   * as the connected role's billing scope with consolidation unknown -- never
+   * as "this one account" -- and inventory scope as one discovery region.
+   */
+  private formatScope(scope: CostExplorerScope | InventoryScope): string[] {
+    const account = scope.connectedAccountId ?? 'unknown';
+    if (scope.kind === 'cost_explorer') {
+      return [
+        `- scope.kind: cost_explorer_billing_scope (the AWS Cost Explorer billing scope of the connected IAM role)`,
+        `- scope.connected_account_id: ${account}`,
+        `- scope.linked_account_filter: none (the query is not narrowed to the connected account)`,
+        `- scope.consolidated_billing: unknown (DevControl does not detect whether the connected account is a management/payer account, so this figure may or may not include other linked accounts)`,
+        `- scope.regions: all (the query is not region-filtered)`,
+      ];
+    }
+    return [
+      `- scope.kind: resource_inventory (resources DevControl discovered under the connected IAM role)`,
+      `- scope.connected_account_id: ${account}`,
+      `- scope.regions: ${scope.discoveryRegion ?? 'unknown'} only (resources in other regions are not discovered, except services listed account-wide such as S3)`,
+    ];
+  }
+
+  private formatCostSection(costs: ChatContext['costs']): string {
+    const sourceLabel = {
+      actual: 'AWS Cost Explorer (actual billing data)',
+      estimated: 'DevControl inventory estimate (list-price estimates for discovered resources; NOT AWS billing data)',
+      unavailable: 'none',
+    }[costs.source];
+
+    const lines = [
+      'Cost data:',
+      `- state: ${costs.state}`,
+      `- source: ${sourceLabel}`,
+      `- as_of: ${costs.asOf ?? 'unknown'}`,
+      `- cost_explorer.state: ${costs.costExplorer.state}${costs.costExplorer.reason ? ` (${costs.costExplorer.reason})` : ''}`,
+      ...(costs.scope ? this.formatScope(costs.scope) : []),
+    ];
+
+    if (costs.current === null) {
+      lines.push('- spend: not available (no Cost Explorer result and no inventory estimate) -- this is missing data, not a zero amount');
+    } else if (costs.source === 'actual') {
+      if (costs.period) {
+        lines.push(`- period: month-to-date, ${costs.period.start} up to ${costs.period.endExclusive} (end exclusive)`);
+      }
+      lines.push(`- month_to_date_spend: ${this.formatMoney(costs.current)}${costs.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''}`);
+      lines.push('Top services by month-to-date spend (Cost Explorer SERVICE categories for the scope above, NOT per-resource costs. A category like "EC2" can include EBS volumes, data transfer, Elastic IPs, and other non-instance charges, so its total is not proof that any one resource caused that spend):');
+      if (costs.topSpenders && costs.topSpenders.length > 0) {
+        lines.push(...costs.topSpenders.map(s => `- ${s.service}: ${this.formatMoney(s.cost)}${s.percentage !== null ? ` (${s.percentage.toFixed(1)}%)` : ''}`));
+      } else {
+        lines.push('- Cost Explorer returned no billed service line items for this period');
+      }
+    } else {
+      lines.push('- basis: monthly run-rate estimate for currently discovered resources -- not billed spend for any period');
+      if (costs.estimateCoverage) {
+        lines.push(`- coverage: ${costs.estimateCoverage.estimatedResources} of ${costs.estimateCoverage.totalResources} discovered resources have a cost estimate`);
+      }
+      lines.push(`- estimated_monthly_cost: ${this.formatMoney(costs.current)}`);
+      lines.push('- per-service breakdown: not available for estimates');
+    }
+
+    return lines.join('\n');
+  }
+
+  private formatComparisonSection(comparison: CostComparison): string {
+    const lines = [
+      'Period comparison (month-to-date vs the same days of the previous month; source: AWS Cost Explorer daily trend, same scope as the cost data above. Window totals come from the daily trend and can differ from month_to_date_spend, e.g. when credits apply):',
+      `- state: ${comparison.state}`,
+    ];
+    if (comparison.note) lines.push(`- note: ${comparison.note}`);
+
+    const { currentWindow, previousWindow, currentWindowTotal, previousWindowTotal, coverage } = comparison;
+    if (!currentWindow || !previousWindow || currentWindowTotal === null || previousWindowTotal === null || !coverage) {
+      lines.push('- previous period: not available -- do not assume spend was unchanged, and do not derive a change from the current figure alone');
+      return lines.join('\n');
+    }
+
+    lines.push(`- current_window: ${currentWindow.start} to ${currentWindow.end}, total ${this.formatMoney(currentWindowTotal)} (${coverage.currentDays} of ${coverage.expectedCurrentDays} days of data)`);
+    lines.push(`- previous_window: ${previousWindow.start} to ${previousWindow.end}, total ${this.formatMoney(previousWindowTotal)} (${coverage.previousDays} of ${coverage.expectedPreviousDays} days of data)`);
+    if (comparison.changeAmount !== null) {
+      const sign = comparison.changeAmount > 0 ? '+' : '';
+      const percent = comparison.changePercent !== null
+        ? ` (${comparison.changePercent > 0 ? '+' : ''}${comparison.changePercent.toFixed(1)}%)`
+        : ' (percentage undefined: previous window total is $0.00)';
+      lines.push(`- change: ${sign}${this.formatMoney(comparison.changeAmount)}${percent}`);
+    }
+    return lines.join('\n');
   }
 
   /**
@@ -242,13 +434,6 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       }
     }
 
-    const costSourceLabel = {
-      actual: 'AWS Cost Explorer',
-      estimated: 'DevControl database estimate (Cost Explorer unavailable at fetch time)',
-      unavailable: 'unavailable — no live/cached Cost Explorer result and no database estimate could be computed',
-    }[context.costs.source];
-    const costAsOfLabel = context.costs.asOf ?? 'unknown';
-
     const resourceAsOfLabel = context.resourceDataAsOf ?? 'no completed discovery run yet for this account';
 
     return `
@@ -256,22 +441,13 @@ CURRENT AWS ENVIRONMENT CONTEXT:
 
 Services in use: ${context.services.length > 0 ? context.services.join(', ') : 'No services detected'}
 
-Cost data (query window: ${context.timeRange}):
-- Source: ${costSourceLabel}
-- As of: ${costAsOfLabel}
-${context.costs.source === 'unavailable' ? '- No cost data available for this organization right now.' : `- Current spend: $${context.costs.current.toLocaleString()}/month
-- Previous period: $${context.costs.previous.toLocaleString()}/month
-- Change: ${context.costs.changePercent != null ? `${context.costs.changePercent > 0 ? '+' : ''}${context.costs.changePercent.toFixed(1)}%` : 'Not enough historical data yet to compare'}`}
+${this.formatCostSection(context.costs)}
 
-Top cost drivers (source: AWS Cost Explorer billing categories — account-wide spend per service, NOT tied to any specific resource below. A category like "EC2" can include EBS volumes, data transfer, elastic IPs, and other non-instance charges, so its total is not proof that any one instance caused that spend):
-${context.costs.source === 'unavailable'
-  ? '- Not available'
-  : context.costs.topSpenders.length > 0
-    ? context.costs.topSpenders.map(s => `- ${s.service}: $${s.cost.toLocaleString()} (${s.percentage.toFixed(1)}%)`).join('\n')
-    : '- No cost data available'}
+${this.formatComparisonSection(context.costs.comparison)}
 
-Resource inventory (source: DevControl AWS discovery — synchronized periodically, not queried live; independent of the billing data above; do not assume a resource count here explains a cost driver above unless this context explicitly states that connection):
+Resource inventory (source: DevControl AWS discovery — synchronized periodically, not queried live; independent of the billing data above, and a different scope from it; do not assume a resource count here explains a cost driver above unless this context explicitly states that connection):
 - As of: ${resourceAsOfLabel}
+${this.formatScope(context.inventoryScope).join('\n')}
 ${resourceLines.length > 0 ? resourceLines.join('\n') : '- No resource data available'}
 
 Alerts & Incidents:
@@ -355,12 +531,26 @@ DORA Metrics:
   private getFallbackResponse(messages: ChatMessage[], context: ChatContext): string {
     const lastMessage = messages[messages.length - 1]?.content.toLowerCase() || '';
 
+    const costs = context.costs;
+    // A spend figure with its own provenance, or null when none exists --
+    // shared by the cost and generic branches so neither can print an
+    // unqualified number.
+    const spendPhrase = costs.current === null
+      ? null
+      : costs.source === 'estimated'
+        ? `an estimated ${this.formatMoney(costs.current)}/month (estimated from your last synced resource inventory as of ${costs.asOf ?? 'unknown'}, not a Cost Explorer billing figure)`
+        : `${this.formatMoney(costs.current)} month-to-date (AWS Cost Explorer${costs.asOf ? `, as of ${costs.asOf}` : ''}; covers your connected role's billing scope across all regions)`;
+    const change = costs.comparison.changePercent;
+    const changePhrase = change === null
+      ? null
+      : `${change > 0 ? 'up' : change < 0 ? 'down' : 'flat'} ${Math.abs(change).toFixed(1)}% vs the same days of last month`;
+
     // Basic pattern matching for common questions
     if (lastMessage.includes('cost') || lastMessage.includes('spend') || lastMessage.includes('bill')) {
-      if (context.costs.source === 'unavailable') {
+      if (spendPhrase === null) {
         return `**🔍 What's happening**
 
-I don't have cost data available for this account right now — there's no live/cached AWS Cost Explorer result and no database estimate could be computed.
+I don't have cost data available for this account right now — ${costs.costExplorer.state === 'error' ? 'the AWS Cost Explorer request failed' : 'there\'s no AWS Cost Explorer result'} and no resource-inventory estimate could be computed.
 
 **✅ Recommended actions**
 
@@ -370,20 +560,15 @@ I don't have cost data available for this account right now — there's no live/
 *Note: AI service temporarily unavailable - this is a simplified analysis.*`;
       }
 
-      const change = context.costs.changePercent;
-      const direction = change == null ? null : change > 0 ? 'increased' : change < 0 ? 'decreased' : 'remained stable';
-      const topSpender = context.costs.topSpenders[0];
-      const sourceNote = context.costs.source === 'estimated'
-        ? ` (estimated from your last synced resource inventory as of ${context.costs.asOf ?? 'unknown'}, not a live Cost Explorer figure)`
-        : context.costs.asOf ? ` (as of ${context.costs.asOf})` : '';
+      const topSpender = costs.topSpenders?.[0];
 
       return `**🔍 What's happening**
 
-Your AWS spend is $${context.costs.current.toLocaleString()}/month${sourceNote}${direction ? `, which has ${direction} by ${Math.abs(change as number).toFixed(1)}% compared to last period` : ' (not enough historical data yet to compare against last period)'}.
+Your AWS spend is ${spendPhrase}${changePhrase ? `, ${changePhrase}` : ' (no comparison with last month is available)'}.
 
 **💰 Cost / impact**
 
-${topSpender ? `Your top cost driver is ${topSpender.service} at $${topSpender.cost.toLocaleString()}/month (${topSpender.percentage.toFixed(1)}% of total spend).` : 'Cost breakdown data is limited.'}
+${topSpender ? `Your top cost category is ${topSpender.service} at ${this.formatMoney(topSpender.cost)} month-to-date${topSpender.percentage !== null ? ` (${topSpender.percentage.toFixed(1)}% of total spend)` : ''}.` : 'A per-service breakdown is not available.'}
 
 **✅ Recommended actions**
 
@@ -416,18 +601,14 @@ Underutilized resources typically represent 20-40% potential savings when rights
     }
 
     // Generic response
-    const costLine = context.costs.source === 'unavailable'
-      ? 'Cost data is not available for this account right now.'
-      : `$${context.costs.current.toLocaleString()}/month in spend${context.costs.source === 'estimated' ? ' (estimated, not a live Cost Explorer figure)' : ''}`;
-
     return `**🔍 What's happening**
 
-I can see your AWS environment with ${costLine} across ${context.services.length} services.
+I can see ${context.services.length} discovered service types in your AWS environment${spendPhrase ? `, with spend of ${spendPhrase}` : '; cost data is not available right now'}.
 
 **💰 Cost / impact**
 
-- Current spend: ${context.costs.source === 'unavailable' ? 'not available' : `$${context.costs.current.toLocaleString()}/month`}
-- Change: ${context.costs.changePercent != null ? `${context.costs.changePercent > 0 ? '+' : ''}${context.costs.changePercent.toFixed(1)}%` : 'Not enough historical data yet to compare'}
+- Spend: ${spendPhrase ?? 'not available'}
+- Change: ${changePhrase ?? 'no comparison with last month is available'}
 - Active alerts: ${context.alerts.total} (${context.alerts.critical} critical)
 
 **✅ Recommended actions**

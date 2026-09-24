@@ -4,12 +4,38 @@
  */
 
 import { Pool } from 'pg';
-import { ChatContext } from '../services/ai-chat.service';
+import type {
+  ChatContext,
+  ContextDataState,
+  CostComparison,
+  CostExplorerScope,
+  InventoryScope,
+} from '../services/ai-chat.service';
 import awsCostService, { MonthlyCost } from '../services/aws-cost.service';
 import { AlertHistoryRepository } from './alert-history.repository';
 import { DORAMetricsRepository } from './dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { AWSResourcesRepository } from './awsResources.repository';
+
+/** Cents precision -- never whole-dollar rounding, which turns a real sub-dollar figure into a "$0". */
+function roundCents(amount: number): number {
+  return Math.round(amount * 100) / 100;
+}
+
+/** A comparison with no figures -- its state and note say why. */
+function emptyComparison(state: ContextDataState, note: string): CostComparison {
+  return {
+    state,
+    note,
+    currentWindow: null,
+    previousWindow: null,
+    currentWindowTotal: null,
+    previousWindowTotal: null,
+    changeAmount: null,
+    changePercent: null,
+    coverage: null,
+  };
+}
 
 export class AIChatContextRepository {
   private alertHistoryRepository: AlertHistoryRepository;
@@ -29,12 +55,24 @@ export class AIChatContextRepository {
     console.log(`[AI Chat Context] Gathering context for org: ${organizationId}`);
 
     // Fetched up front (not inside the Promise.all below) because getCostData's
-    // estimated-fallback branch needs it too -- one query, reused, rather than
-    // a second identical lookup.
-    const resourceDataAsOf = await this.getDiscoveryFreshness(organizationId);
+    // estimated-fallback branch needs them too -- one query each, reused,
+    // rather than a second identical lookup.
+    const [resourceDataAsOf, connectedAccount] = await Promise.all([
+      this.getDiscoveryFreshness(organizationId),
+      this.getConnectedAccount(organizationId),
+    ]);
+
+    // Discovery's real scope: AWSClientFactory.createClients() reads this same
+    // row and falls back to 'us-east-1' when region is null. No connected
+    // account row (or a failed lookup) means the scope is unknown -- not a guess.
+    const inventoryScope: InventoryScope = {
+      kind: 'resource_inventory',
+      connectedAccountId: connectedAccount?.accountId ?? null,
+      discoveryRegion: connectedAccount ? (connectedAccount.region ?? 'us-east-1') : null,
+    };
 
     const [costs, resources, alerts, services, anomalies, dora] = await Promise.all([
-      this.getCostData(organizationId, resourceDataAsOf),
+      this.getCostData(organizationId, resourceDataAsOf, connectedAccount?.accountId ?? null, inventoryScope),
       this.getResourceData(organizationId),
       this.getAlertData(organizationId),
       this.getServices(organizationId),
@@ -42,11 +80,12 @@ export class AIChatContextRepository {
       this.getDORAMetrics(organizationId),
     ]);
 
-    console.log(`[AI Chat Context] Context gathered: ${services.length} services, $${costs.current} spend (source: ${costs.source})`);
+    console.log(`[AI Chat Context] Context gathered: ${services.length} services, cost state ${costs.state} (source: ${costs.source})`);
 
     return {
       services,
       costs,
+      inventoryScope,
       resources,
       alerts,
       anomalies,
@@ -83,6 +122,30 @@ export class AIChatContextRepository {
   }
 
   /**
+   * The org's connected AWS account row -- the same row (org_id is UNIQUE on
+   * aws_accounts, and this query mirrors AWSClientFactory.createClients()'s
+   * own lookup) that both discovery and Cost Explorer assume a role from.
+   * Carries no account-type metadata: aws_accounts stores none, and DevControl
+   * does not detect management/payer/member status. Returns null -- never a
+   * fabricated ID or region -- when there is no row or the lookup fails.
+   */
+  private async getConnectedAccount(
+    organizationId: string
+  ): Promise<{ accountId: string | null; region: string | null } | null> {
+    try {
+      const { rows } = await this.pool.query(
+        `SELECT account_id, region FROM aws_accounts WHERE org_id = $1 LIMIT 1`,
+        [organizationId]
+      );
+      if (rows.length === 0) return null;
+      return { accountId: rows[0].account_id ?? null, region: rows[0].region ?? null };
+    } catch (error: any) {
+      console.error('[AI Chat Context] Error getting connected AWS account:', error.message);
+      return null;
+    }
+  }
+
+  /**
    * Real month-over-month spend comparison — same algorithm and same underlying
    * data (awsCostService.fetchCostTrend) as the Dashboard's
    * computeMonthOverMonthCostChange() in app/(app)/dashboard/page.tsx. That
@@ -91,25 +154,36 @@ export class AIChatContextRepository {
    * separate tsconfig rootDir (backend/src) with no shared package boundary to
    * the frontend app/ tree — so it's ported here verbatim against the same real
    * Cost Explorer trend data both surfaces already read from, rather than
-   * re-derived independently. Returns null — never a fabricated 0 — when there
-   * isn't enough real daily coverage in either window to trust the comparison.
+   * re-derived independently.
+   *
+   * Returns the comparison with its own state rather than a bare number: the
+   * same 80%-of-days coverage threshold decides 'unavailable' (never a
+   * fabricated previous figure or 0% change), fewer days than the windows span
+   * is 'partial', and a previous window totalling $0 is still a real
+   * comparison whose percentage is undefined (null), not 0.
    */
-  private computeMonthOverMonthChange(
+  private computeMonthOverMonthComparison(
     costTrend: Array<{ date: string; total: number }>
-  ): { changePercent: number; previousTotal: number } | null {
-    if (!costTrend || costTrend.length === 0) return null;
-
+  ): CostComparison {
     const now = new Date();
     const curYear = now.getFullYear();
     const curMonth = now.getMonth();
     const dayOfMonth = now.getDate();
     const lastMonth = curMonth === 0 ? 11 : curMonth - 1;
     const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear;
+    const daysInLastMonth = new Date(curYear, curMonth, 0).getDate();
+
+    const isoDate = (year: number, monthIndex: number, day: number) =>
+      `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const expectedCurrentDays = dayOfMonth;
+    const expectedPreviousDays = Math.min(dayOfMonth, daysInLastMonth);
+    const currentWindow = { start: isoDate(curYear, curMonth, 1), end: isoDate(curYear, curMonth, dayOfMonth) };
+    const previousWindow = { start: isoDate(lastMonthYear, lastMonth, 1), end: isoDate(lastMonthYear, lastMonth, expectedPreviousDays) };
 
     let currentSum = 0, currentDays = 0;
     let lastSum = 0, lastDays = 0;
 
-    for (const entry of costTrend) {
+    for (const entry of costTrend ?? []) {
       const [y, m, d] = entry.date.split('-').map(Number);
       const month = m - 1;
       if (y === curYear && month === curMonth && d <= dayOfMonth) {
@@ -121,12 +195,28 @@ export class AIChatContextRepository {
       }
     }
 
+    const coverage = { currentDays, previousDays: lastDays, expectedCurrentDays, expectedPreviousDays };
     const minDays = Math.max(1, Math.floor(dayOfMonth * 0.8));
-    if (currentDays < minDays || lastDays < minDays || lastSum <= 0) return null;
+    if (currentDays < minDays || lastDays < minDays) {
+      return {
+        ...emptyComparison('unavailable', `not enough daily Cost Explorer data to compare (at least ${minDays} days needed in each window)`),
+        currentWindow,
+        previousWindow,
+        coverage,
+      };
+    }
 
+    const partial = currentDays < expectedCurrentDays || lastDays < expectedPreviousDays;
     return {
-      changePercent: Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10,
-      previousTotal: lastSum,
+      state: partial ? 'partial' : 'available',
+      note: partial ? 'some days in the compared windows have no daily Cost Explorer data' : null,
+      currentWindow,
+      previousWindow,
+      currentWindowTotal: roundCents(currentSum),
+      previousWindowTotal: roundCents(lastSum),
+      changeAmount: roundCents(currentSum - lastSum),
+      changePercent: lastSum > 0 ? Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10 : null,
+      coverage,
     };
   }
 
@@ -137,97 +227,135 @@ export class AIChatContextRepository {
    * re-deriving spend from aws_resources with a second, independently-maintained
    * query. The previous-period comparison reuses awsCostService.fetchCostTrend()
    * at the same '90d' range the Dashboard requests, via
-   * computeMonthOverMonthChange() above.
+   * computeMonthOverMonthComparison() above.
    *
-   * Distinguishes three states, mirroring stats.controller.ts's
-   * getDashboardStats() actual-vs-estimated logic exactly (same threshold,
-   * same fallback query) rather than inventing a new definition:
-   *   - 'actual': a real Cost Explorer result (fresh or served from
-   *     awsCostService's own cache — monthlyCost.fetchedAt says which, see
-   *     aws-cost.service.ts).
-   *   - 'estimated': Cost Explorer returned nothing/failed, but aws_resources
-   *     has a usable estimated_monthly_cost sum — the same DB fallback the
-   *     Dashboard already uses. Its "as of" is the discovery job's freshness
-   *     (discoveryAsOf), since that's what populated estimated_monthly_cost.
-   *   - 'unavailable': neither exists. current/previous are 0 here, but that
-   *     0 must never be read as confirmed spend — see formatContext() and
-   *     getFallbackResponse() in ai-chat.service.ts, both of which branch on
-   *     `source` before printing a dollar figure.
+   * Every outcome carries an explicit state, and a failure is never a number:
+   *   - Cost Explorer succeeded: 'actual', including a real $0 or a
+   *     net-negative (credit) total -- a successful result is billing data
+   *     whatever its value. Scope is the connected role's billing scope,
+   *     not-region-filtered, consolidation unknown (see CostExplorerScope).
+   *   - Cost Explorer unavailable/failed, but aws_resources carries estimates:
+   *     'estimated', with inventory scope and coverage -- the same DB fallback
+   *     the Dashboard uses. costExplorer.state still records why Cost Explorer
+   *     wasn't used.
+   *   - Neither: current is null, state 'error' if either attempt failed,
+   *     'unavailable' otherwise.
    */
   private async getCostData(
     organizationId: string,
-    discoveryAsOf: string | null
+    discoveryAsOf: string | null,
+    connectedAccountId: string | null,
+    inventoryScope: InventoryScope
   ): Promise<ChatContext['costs']> {
     let monthlyCost: MonthlyCost | null = null;
+    let costExplorer: ChatContext['costs']['costExplorer'];
     try {
       monthlyCost = await awsCostService.fetchMonthlyCosts(organizationId);
+      costExplorer = Number.isFinite(monthlyCost?.total)
+        ? { state: 'available', reason: null }
+        : { state: 'error', reason: 'Cost Explorer returned no usable total' };
     } catch (error: any) {
       console.error('[AI Chat Context] Error getting live cost data:', error.message);
+      // AWSCostService.createForOrg() throws AWS_NOT_CONNECTED when the org has
+      // no active aws_accounts row -- nothing to query, not a failed query.
+      costExplorer = String(error?.message ?? '').startsWith('AWS_NOT_CONNECTED')
+        ? { state: 'unavailable', reason: 'no connected AWS account' }
+        : { state: 'error', reason: 'the Cost Explorer request failed' };
     }
 
-    if (monthlyCost && monthlyCost.total > 0) {
-      const costTrend = await awsCostService.fetchCostTrend(organizationId, '90d').catch((error: any) => {
+    if (monthlyCost && costExplorer.state === 'available') {
+      let comparison: CostComparison;
+      try {
+        const costTrend = await awsCostService.fetchCostTrend(organizationId, '90d');
+        comparison = this.computeMonthOverMonthComparison(costTrend);
+      } catch (error: any) {
         console.error('[AI Chat Context] Error getting cost trend:', error.message);
-        return [];
-      });
+        comparison = emptyComparison('error', 'the Cost Explorer daily trend request failed');
+      }
 
+      const total = monthlyCost.total;
       const topSpenders = [...monthlyCost.byService]
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 5)
         .map(item => ({
           service: item.service,
-          cost: Math.round(item.amount),
-          percentage: monthlyCost!.total > 0 ? (item.amount / monthlyCost!.total) * 100 : 0,
+          cost: roundCents(item.amount),
+          // A share of a zero or net-negative total is meaningless -- null, not 0.
+          percentage: total > 0 ? (item.amount / total) * 100 : null,
         }));
 
-      const monthOverMonth = this.computeMonthOverMonthChange(costTrend);
+      const scope: CostExplorerScope = {
+        kind: 'cost_explorer',
+        connectedAccountId,
+        linkedAccountFilter: 'none',
+        consolidatedBilling: 'unknown',
+        regions: 'all',
+      };
 
       return {
-        current: Math.round(monthlyCost.total),
-        previous: monthOverMonth ? Math.round(monthOverMonth.previousTotal) : Math.round(monthlyCost.total),
-        changePercent: monthOverMonth ? monthOverMonth.changePercent : null,
-        topSpenders,
+        state: 'available',
         source: 'actual',
+        current: roundCents(total),
         asOf: monthlyCost.fetchedAt ?? null,
+        period: { start: monthlyCost.period.start, endExclusive: monthlyCost.period.end },
+        scope,
+        topSpenders,
+        costExplorer,
+        estimateCoverage: null,
+        comparison,
       };
     }
 
-    // Cost Explorer returned nothing (or threw) -- fall back to the same
-    // DB estimate stats.controller.ts's getDashboardStats() already uses,
-    // rather than silently reporting a bare $0 as if it were confirmed spend.
+    const noCurrentPeriod = emptyComparison('unavailable', 'no Cost Explorer data for the current period, so there is nothing to compare');
+
+    // Cost Explorer unavailable or failed -- fall back to the same DB estimate
+    // stats.controller.ts's getDashboardStats() already uses, labeled as an
+    // estimate with its own inventory scope and coverage.
+    let estimateState: ContextDataState;
     try {
-      const estimateResult = await this.pool.query(
-        `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
+      const { rows } = await this.pool.query(
+        `SELECT COUNT(*) AS total_resources,
+                COUNT(estimated_monthly_cost) AS estimated_resources,
+                SUM(estimated_monthly_cost) AS total
+         FROM aws_resources
+         WHERE organization_id = $1 AND status != 'terminated'`,
         [organizationId]
       );
-      const estimateTotal = parseFloat(estimateResult.rows[0]?.total || 0);
+      const totalResources = parseInt(rows[0]?.total_resources ?? '0', 10);
+      const estimatedResources = parseInt(rows[0]?.estimated_resources ?? '0', 10);
 
-      if (estimateTotal > 0) {
+      if (estimatedResources > 0) {
         return {
-          current: Math.round(estimateTotal),
-          previous: Math.round(estimateTotal),
-          changePercent: null,
-          topSpenders: [],
+          state: estimatedResources < totalResources ? 'partial' : 'available',
           source: 'estimated',
+          current: roundCents(parseFloat(rows[0].total)),
           asOf: discoveryAsOf,
+          period: null,
+          scope: inventoryScope,
+          topSpenders: null,
+          costExplorer,
+          estimateCoverage: { estimatedResources, totalResources },
+          comparison: noCurrentPeriod,
         };
       }
+      estimateState = 'unavailable';
     } catch (error: any) {
       console.error('[AI Chat Context] Error getting cost estimate fallback:', error.message);
+      estimateState = 'error';
     }
 
-    // Neither a live/cached Cost Explorer result nor a DB estimate exists --
-    // genuinely no cost data. current/previous are 0 by necessity of the
-    // ChatContext shape, but `source: 'unavailable'` is what formatContext()
-    // and getFallbackResponse() actually check before ever printing a dollar
-    // amount, so this 0 can never surface as a confirmed figure.
+    // Neither a Cost Explorer result nor a DB estimate exists -- no figure at all.
     return {
-      current: 0,
-      previous: 0,
-      changePercent: null,
-      topSpenders: [],
+      state: costExplorer.state === 'error' || estimateState === 'error' ? 'error' : 'unavailable',
       source: 'unavailable',
+      current: null,
       asOf: null,
+      period: null,
+      scope: null,
+      topSpenders: null,
+      costExplorer,
+      estimateCoverage: null,
+      comparison: noCurrentPeriod,
     };
   }
 
