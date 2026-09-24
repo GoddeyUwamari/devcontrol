@@ -1,5 +1,5 @@
 /**
- * System Intelligence card: Cost / Security / Observability breakdown of the
+ * Platform Efficiency Breakdown card: Cost / Security / Observability breakdown of the
  * canonical System Intelligence result.
  *
  * The contract under test: labels are the backend's component.label verbatim;
@@ -122,7 +122,7 @@ describe('ready gating: each component independently', () => {
   it('all three not ready: the card still renders, with three placeholders and no bars', () => {
     const notReady = (label: string) => component({ label, score: 50, status: 'good', ready: false })
     const { container } = renderCard({ components: { cost: notReady('Cost Efficiency'), security: notReady('Security Posture'), observability: notReady('Observability') } })
-    expect(screen.getByText('System Intelligence')).toBeInTheDocument()
+    expect(screen.getByText('Platform Efficiency Breakdown')).toBeInTheDocument()
     expect(screen.getAllByText('Not yet available')).toHaveLength(3)
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0)
     expect(screen.queryByText('50')).not.toBeInTheDocument()
@@ -133,14 +133,14 @@ describe('demo mode', () => {
   it('the entire card is absent -- no heading, labels, bars, or values', () => {
     const { container } = renderCard({ isDemoActive: true })
     expect(container).toBeEmptyDOMElement()
-    expect(screen.queryByText('System Intelligence')).not.toBeInTheDocument()
+    expect(screen.queryByText('Platform Efficiency Breakdown')).not.toBeInTheDocument()
   })
 })
 
 describe('loading and unavailable', () => {
   it('loading: skeletons only, no labels, scores, or bars', () => {
     const { container } = renderCard({ isLoading: true })
-    expect(screen.getByText('System Intelligence')).toBeInTheDocument()
+    expect(screen.getByText('Platform Efficiency Breakdown')).toBeInTheDocument()
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
     expect(screen.queryByText('Cost Efficiency')).not.toBeInTheDocument()
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0)

@@ -592,7 +592,7 @@ export default function DashboardPage() {
             isLive={isConnected}
           />
 
-          {/* ── SYSTEM INTELLIGENCE BREAKDOWN ── */}
+          {/* ── PLATFORM EFFICIENCY BREAKDOWN ── */}
           {/* Same already-fetched systemIntelligence as the Infrastructure Health KPI -- no second query. */}
           <SystemIntelligenceCard
             isDemoActive={isDemoActive}
