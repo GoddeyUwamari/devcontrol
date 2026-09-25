@@ -9,7 +9,7 @@ import { Pool } from 'pg';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
 import { remediationExecuteRateLimiter } from '../middleware/rateLimiter';
-import { RemediationService } from '../services/remediation.service';
+import { RemediationService, ACTION_UNAVAILABLE_PREFIX } from '../services/remediation.service';
 
 function orgId(req: Request): string {
   return (req as any).organizationId || (req as any).user?.organizationId;
@@ -92,6 +92,10 @@ export function createRemediationRoutes(pool: Pool): Router {
       res.status(201).json({ success: true, data: workflow });
     } catch (err: any) {
       console.error('[Remediation] create error:', err);
+      if (err.message?.startsWith(ACTION_UNAVAILABLE_PREFIX)) {
+        res.status(400).json({ success: false, error: err.message });
+        return;
+      }
       res.status(500).json({ success: false, error: 'Failed to create workflow' });
     }
   });
@@ -171,7 +175,8 @@ export function createRemediationRoutes(pool: Pool): Router {
         console.error('[Remediation] execute error:', err);
         const status =
           err.message.includes('not found') ? 404 :
-          err.message.includes('must be approved') ? 400 : 500;
+          err.message.includes('must be approved') ? 400 :
+          err.message.startsWith(ACTION_UNAVAILABLE_PREFIX) ? 400 : 500;
         res.status(status).json({ success: false, error: err.message });
       }
     }
