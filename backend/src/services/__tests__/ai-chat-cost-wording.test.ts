@@ -8,7 +8,8 @@
  *   - "EC2 - Compute" described as including EBS/Elastic IP/data-transfer
  *     charges that Cost Explorer bills separately under "EC2 - Other";
  *   - the AWS Cost Explorer line item blamed on the user's own scripts, when
- *     DevControl itself queries Cost Explorer for the account;
+ *     which tool made the billed Cost Explorer requests is unknown (DevControl
+ *     itself queries Cost Explorer for the account);
  *   - DORA figures volunteered in a cost answer, with "lead time" standing in
  *     for what DevControl actually measures (time between deployments).
  *
@@ -154,18 +155,38 @@ describe('Cost Explorer category attribution', () => {
 });
 
 describe('the AWS Cost Explorer line item', () => {
-  it('notes that DevControl\'s own Cost Explorer requests may cause it, when that line item is present', () => {
-    expect(format(productionLikeContext())).toMatch(/AWS Cost Explorer line item may be partly or wholly caused by DevControl/);
+  // Caller attribution for Cost Explorer API requests is unproven (no
+  // CloudTrail evidence), so the wording separates observed spend, possible
+  // API-request spend, and an unknown caller -- blaming no one either way.
+  const causalClaims = /caused by (DevControl|the user|your)|DevControl caused|your (own )?(scripts|automation|tools) (caused|made|generated)|wholly/i;
+
+  it('when present, is described as observed spend that may include API-request charges from an unknown caller', () => {
+    const formatted = format(productionLikeContext());
+
+    expect(formatted).toMatch(/the AWS Cost Explorer line item is observed spend for the period above/);
+    expect(formatted).toMatch(/may include charges for Cost Explorer API requests, which any cost-monitoring tool querying this billing scope can generate, including DevControl/);
+    expect(formatted).toMatch(/Which callers made those requests is unknown -- attribute the charge to no one/);
   });
 
-  it('adds no such note when there is no Cost Explorer line item', () => {
+  it('makes no causal claim about the user or about DevControl', () => {
+    const formatted = format(productionLikeContext());
+    const costSection = formatted.slice(formatted.indexOf('Cost data:'), formatted.indexOf('Period comparison'));
+
+    expect(costSection).not.toMatch(causalClaims);
+  });
+
+  it('adds no Cost Explorer note when there is no Cost Explorer line item', () => {
     const formatted = format(productionLikeContext({ topSpenders: [{ service: 'Amazon Elastic Compute Cloud - Compute', cost: 6.6, percentage: 100 }] }));
 
-    expect(formatted).not.toMatch(/caused by DevControl/);
+    expect(formatted).not.toMatch(/Cost Explorer API requests/);
   });
 
-  it('the system prompt forbids blaming the user\'s own scripts for it', () => {
-    expect(systemPrompt()).toMatch(/never attribute it to the\s+user's own scripts or automation/);
+  it('the system prompt keeps the caller unknown and forbids blaming either the user or DevControl', () => {
+    const prompt = systemPrompt();
+
+    expect(prompt).toMatch(/Which callers made those requests is\s+unknown: never state or imply that the user's scripts or automation, or\s+DevControl, caused the charge/);
+    expect(prompt).toMatch(/never tell the user to reduce their own\s+Cost Explorer calls because of it/);
+    expect(prompt).not.toMatch(/may be partly or wholly caused by DevControl/);
   });
 });
 

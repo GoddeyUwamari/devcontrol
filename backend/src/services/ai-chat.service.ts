@@ -330,10 +330,12 @@ If context is empty, state clearly what's missing.
 - Each listed category is separate and categories do not contain one another
   (e.g. "EC2 - Other" is not part of "Amazon Elastic Compute Cloud - Compute").
   Never describe a category as including charges AWS bills under another one.
-- DevControl itself calls the AWS Cost Explorer API for this account to build
-  this context, and AWS bills those requests. An "AWS Cost Explorer" line item
-  may be partly or wholly caused by DevControl: never attribute it to the
-  user's own scripts or automation, or tell the user to reduce their own
+- An "AWS Cost Explorer" line item is observed spend. It may include charges
+  for Cost Explorer API requests, which any cost-monitoring tool querying this
+  billing scope can generate -- DevControl included, since it queries Cost
+  Explorer to build this context. Which callers made those requests is
+  unknown: never state or imply that the user's scripts or automation, or
+  DevControl, caused the charge, and never tell the user to reduce their own
   Cost Explorer calls because of it.
 - DORA metrics come from DevControl's deployment records, not from AWS billing
   or the cost data. Mention them only when the user asks about deployments,
@@ -424,7 +426,7 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       if (costs.topSpenders && costs.topSpenders.length > 0) {
         lines.push(...costs.topSpenders.map(s => `- ${s.service}: ${this.formatMoney(s.cost)}${s.percentage !== null ? ` (${s.percentage.toFixed(1)}%)` : ''}`));
         if (costs.topSpenders.some(s => /cost explorer/i.test(s.service))) {
-          lines.push('- note: DevControl calls the AWS Cost Explorer API for this account to build this cost data, so the AWS Cost Explorer line item may be partly or wholly caused by DevControl -- not necessarily by the user\'s own tools');
+          lines.push('- note: the AWS Cost Explorer line item is observed spend for the period above. It may include charges for Cost Explorer API requests, which any cost-monitoring tool querying this billing scope can generate, including DevControl (it queries Cost Explorer to build this cost data). Which callers made those requests is unknown -- attribute the charge to no one.');
         }
       } else {
         lines.push('- Cost Explorer returned no billed service line items for this period');
