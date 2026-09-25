@@ -5,7 +5,7 @@ import { anomalyService } from '@/lib/services/anomaly.service';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
 import {
-  AlertTriangle, AlertCircle, CheckCircle2, RefreshCw, Brain,
+  AlertTriangle, AlertCircle, RefreshCw, Brain,
   CheckCheck, Flag, ChevronDown, MoreHorizontal, Plus, Trash2,
   ToggleLeft, ToggleRight, Settings, Lock,
 } from 'lucide-react';
@@ -131,11 +131,13 @@ export default function AnomaliesPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Detect Cost, Security, and Infrastructure Anomalies in Real Time</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">AI continuously analyzes your AWS activity · scans run every 15 minutes</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Anomaly Detection</h1>
+          {/* No detector evaluates measured AWS data (backend AnomalyDetectionService /
+              CustomAnomalyRulesService return nothing), so the page must not claim monitoring. */}
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Anomaly detection on measured data isn&apos;t currently active. An empty list here doesn&apos;t mean no issues exist.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {lastScanResult && <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">{lastScanResult}</span>}
+          {lastScanResult && <span className="text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">{lastScanResult}</span>}
           <button onClick={triggerScan} disabled={isScanning}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border-none whitespace-nowrap transition-colors ${isScanning ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-700 text-white cursor-pointer'}`}>
             <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} /> {isScanning ? 'Scanning...' : 'Run Scan'}
@@ -162,15 +164,15 @@ export default function AnomaliesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-white rounded-xl border border-slate-200 px-4 py-2.5 mb-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-            <span className="text-sm font-semibold text-slate-900">Monitoring active</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+            <span className="text-sm font-semibold text-slate-900">Anomaly detection not active</span>
           </div>
           <span className="text-slate-200">|</span>
           <span className="text-xs text-slate-500">
-            {isScanning ? 'Scan in progress…' : lastScanTime ? <>Last scan: <strong className="text-slate-700">{lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong></> : 'Initial scan in progress'} · next scan <strong className="text-slate-700">~15 min</strong>
+            {isScanning ? 'Scan in progress…' : lastScanTime ? <>Last scan: <strong className="text-slate-700">{lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong></> : 'No scan recorded yet'}
           </span>
         </div>
-        <span className="text-xs text-slate-500">EC2, S3, RDS, IAM, Lambda</span>
+        <span className="text-xs text-slate-500">No detector evaluates measured AWS data yet</span>
       </div>
 
       {/* 4 KPI cards */}
@@ -191,10 +193,10 @@ export default function AnomaliesPage() {
         ))}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2.5">Estimated Impact</p>
-          <div className={`text-xl font-bold tracking-tight leading-none mb-1.5 ${activeCount === 0 ? 'text-green-600' : criticalCount > 0 ? 'text-red-600' : 'text-amber-500'}`}>
-            {activeCount === 0 ? 'None' : criticalCount > 0 ? `${criticalCount} service${criticalCount > 1 ? 's' : ''} degraded` : 'Monitoring'}
+          <div className={`text-xl font-bold tracking-tight leading-none mb-1.5 ${activeCount === 0 ? 'text-slate-500' : criticalCount > 0 ? 'text-red-600' : 'text-amber-500'}`}>
+            {activeCount === 0 ? 'Not assessed' : criticalCount > 0 ? `${criticalCount} service${criticalCount > 1 ? 's' : ''} degraded` : 'Monitoring'}
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed">{activeCount === 0 ? 'No active issues detected' : criticalCount > 0 ? `${criticalCount} user-facing service${criticalCount > 1 ? 's' : ''} — act now` : 'No critical issues active'}</p>
+          <p className="text-xs text-slate-400 leading-relaxed">{activeCount === 0 ? 'Anomaly detection on measured data isn’t active' : criticalCount > 0 ? `${criticalCount} user-facing service${criticalCount > 1 ? 's' : ''} — act now` : 'No critical issues active'}</p>
         </div>
       </div>
 
@@ -252,27 +254,20 @@ export default function AnomaliesPage() {
         ) : !lastScanLoading && !lastScanTime ? (
           <div className="bg-white rounded-2xl border border-slate-100 p-6 sm:p-12">
             <div className="flex flex-col sm:flex-row items-start gap-5">
-              <div className="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center shrink-0"><RefreshCw size={20} className="text-violet-600 animate-spin" /></div>
+              <div className="w-11 h-11 rounded-xl bg-slate-50 flex items-center justify-center shrink-0"><AlertCircle size={20} className="text-slate-400" /></div>
               <div className="flex-1">
-                <p className="text-sm font-semibold text-slate-900 mb-1.5">Analyzing your infrastructure...</p>
-                <p className="text-sm text-slate-500 leading-relaxed">Initial scan in progress. Results will appear here once the first scan completes.</p>
+                <p className="text-sm font-semibold text-slate-900 mb-1.5">No scan recorded yet</p>
+                <p className="text-sm text-slate-500 leading-relaxed">Anomaly detection on measured data isn&apos;t currently active.</p>
               </div>
             </div>
           </div>
         ) : lastScanTime !== null && anomalies.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 p-6 sm:p-12">
             <div className="flex flex-col sm:flex-row items-start gap-5">
-              <div className="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center shrink-0"><CheckCircle2 size={20} className="text-green-600" /></div>
+              <div className="w-11 h-11 rounded-xl bg-slate-50 flex items-center justify-center shrink-0"><AlertCircle size={20} className="text-slate-400" /></div>
               <div className="flex-1">
-                <p className="text-sm font-semibold text-slate-900 mb-1.5">No anomalies detected — your infrastructure looks healthy</p>
-                <p className="text-sm text-slate-500 mb-4 leading-relaxed">We continuously monitor for:</p>
-                <ul className="list-none p-0 m-0 flex flex-col gap-1.5 mb-5">
-                  {['Unusual cost spikes and budget overruns', 'Suspicious access patterns and IAM changes', 'Security misconfigurations and open ports', 'Infrastructure performance anomalies'].map(item => (
-                    <li key={item} className="flex items-center gap-2 text-sm text-slate-600">
-                      <span className="w-1.5 h-1.5 rounded-full bg-violet-600 shrink-0" />{item}
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-sm font-semibold text-slate-900 mb-1.5">No anomalies recorded</p>
+                <p className="text-sm text-slate-500 mb-5 leading-relaxed">Anomaly detection on measured data isn&apos;t currently active, so this doesn&apos;t mean no issues exist.</p>
                 <div className="flex flex-wrap items-center gap-4">
                   <p className="text-xs text-slate-500">Last scan: <span className="font-semibold text-slate-600">{lastScanLoading ? 'Checking…' : lastScanTime ? lastScanTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pending first scan'}</span></p>
                 </div>
@@ -466,12 +461,7 @@ export default function AnomaliesPage() {
           <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl px-5 py-6 text-center">
             <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center mx-auto mb-2.5"><Settings size={15} className="text-violet-600" /></div>
             <p className="text-sm font-semibold text-slate-900 mb-1.5">No custom rules yet</p>
-            <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-sm mx-auto">No custom rules active — only default AI detection running. Add rules to detect issues specific to your infrastructure thresholds.</p>
-            <div className="flex flex-wrap gap-2 mb-4 justify-center">
-              {['Detect unusual cost spikes', 'Flag security misconfigurations', 'Monitor abnormal traffic patterns'].map(example => (
-                <span key={example} className="text-xs text-slate-500 bg-slate-50 border border-dashed border-slate-200 rounded-lg px-2.5 py-1">{example}</span>
-              ))}
-            </div>
+            <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-sm mx-auto">Custom rules aren&apos;t currently evaluated, and no default detection is running. Rules you create are saved but not run.</p>
             <button onClick={() => setShowCreateRule(true)} className="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors">
               <Plus size={12} /> Create First Rule
             </button>
