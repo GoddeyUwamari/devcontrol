@@ -418,9 +418,13 @@ describe('Connected account and discovery prerequisites', () => {
     await expect((repo as any).getConnectedAccount('org-id')).resolves.toMatchObject({ state: 'error', data: null });
     await expect((repo as any).getDiscoveryFreshness('org-id')).resolves.toMatchObject({ state: 'error', data: null });
 
-    const orgId = await insertOrg();
-    await expect((contextRepo as any).getConnectedAccount(orgId)).resolves.toMatchObject({ state: 'unavailable', data: null, reason: 'no AWS account is connected' });
-    await expect((contextRepo as any).getDiscoveryFreshness(orgId)).resolves.toMatchObject({ state: 'unavailable', data: null });
+    // A lookup that succeeds with no rows. Stubbed rather than using the real
+    // aws_accounts table, which the CI test schema does not create (see
+    // stubConnectedAccount in ai-chat-cost-context-contract.test.ts).
+    const emptyPool = { query: jest.fn().mockResolvedValue({ rows: [] }) } as unknown as Pool;
+    const emptyRepo = new AIChatContextRepository(emptyPool);
+    await expect((emptyRepo as any).getConnectedAccount('org-id')).resolves.toMatchObject({ state: 'unavailable', data: null, reason: 'no AWS account is connected' });
+    await expect((emptyRepo as any).getDiscoveryFreshness('org-id')).resolves.toMatchObject({ state: 'unavailable', data: null, reason: 'no discovery run has ever run for this account' });
   });
 });
 
