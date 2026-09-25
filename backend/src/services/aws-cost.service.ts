@@ -587,6 +587,15 @@ class AWSCostService {
   }
 
   /**
+   * When the cached fetchCostTrend() result for this org and range was actually
+   * fetched from Cost Explorer (ISO timestamp), or null if nothing is cached.
+   */
+  getCostTrendFetchedAt(organizationId: string, range: CostTrendRange): string | null {
+    const cached = this.costTrendCache.get(`${organizationId}:${range}`)
+    return cached ? new Date(cached.timestamp).toISOString() : null
+  }
+
+  /**
    * Fetch a cost time-series broken down by category (compute/storage/database/network/other)
    * for the given range, from AWS Cost Explorer. Each point also carries the raw
    * per-service breakdown (byService) that the category buckets were derived from, and

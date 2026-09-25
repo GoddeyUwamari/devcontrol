@@ -128,14 +128,18 @@ export class AIChatController {
         success: true,
         data: {
           response,
+          // Counts are null (never 0) whenever their section isn't 'available';
+          // the matching *State field says why.
           context: {
-            services: context.services.length,
+            services: context.services.state === 'available' ? context.services.data?.length ?? null : null,
+            servicesState: context.services.state,
             currentCost: context.costs.current,
             costState: context.costs.state,
             costSource: context.costs.source,
             costDataAsOf: context.costs.asOf,
-            resourceDataAsOf: context.resourceDataAsOf,
-            alertCount: context.alerts.total,
+            resourceDataAsOf: context.discovery.data?.completedAt ?? null,
+            alertCount: context.alerts.state === 'available' ? context.alerts.data?.total ?? null : null,
+            alertState: context.alerts.state,
           },
         },
       });
@@ -170,10 +174,11 @@ export class AIChatController {
         data: context,
       });
     } catch (error: any) {
+      // The raw message can carry database/infrastructure detail: log it, don't return it.
       console.error('[AI Chat Controller] Context error:', error.message);
       res.status(500).json({
         success: false,
-        error: error.message,
+        error: 'Failed to load AI context',
       });
     }
   };
