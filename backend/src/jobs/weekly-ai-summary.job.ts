@@ -371,7 +371,7 @@ export class WeeklyAISummaryJob {
       if (costStats.active_recommendations > 0) {
         facts.push(
           `${costStats.active_recommendations} active cost optimization` +
-          `${costStats.active_recommendations !== 1 ? 's' : ''} could save approximately ` +
+          `${costStats.active_recommendations !== 1 ? 's have' : ' has'} estimated potential savings of approximately ` +
           `$${Math.round(costStats.total_potential_savings).toLocaleString()}/month.`
         );
       }

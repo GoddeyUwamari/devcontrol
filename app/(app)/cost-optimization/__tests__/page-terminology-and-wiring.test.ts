@@ -53,8 +53,10 @@ describe('Cost Optimization page: required terminology', () => {
     expect(source).toMatch(/Last Analysis/)
   })
 
-  it('uses the exact required empty-state copy for a clean scan', () => {
-    expect(source).toMatch(/No active cost-saving opportunities detected/)
+  it('a completed scan with nothing active draws no "no opportunities" conclusion -- per-check outcomes are not recorded yet', () => {
+    expect(source).not.toMatch(/No active cost-saving opportunities detected/)
+    expect(source).not.toMatch(/No active opportunities identified/)
+    expect(source).toMatch(/This list does not confirm that nothing can be saved/)
   })
 
   it('discloses when the visible list is a subset of the true active count', () => {

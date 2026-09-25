@@ -380,7 +380,7 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
               {
                 title: 'Optimize Unused Resources',
                 impact: 'high' as const,
-                description: `Remove or rightsize ${data.resources.unusedResources.length} unused resources.`,
+                description: `Review ${data.resources.unusedResources.length} idle or unused resources (estimated savings).`,
                 estimatedSavings: data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0),
                 effort: 'low' as const,
               },
@@ -401,9 +401,11 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
         data.dataUnavailable
           ? 'Cost data is currently unavailable, so optimization opportunities could not be assessed this period.'
           : data.resources.unusedResources.length > 0
-            ? `Opportunity to save $${data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0)}/month by optimizing unused resources.`
-            : 'No cost-optimization opportunities identified this period.'
-      }`,
+            ? `Estimated potential savings of $${data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0)}/month from idle or unused resources (a DevControl estimate, not billed savings).`
+            // An empty list is not evidence that nothing can be saved: a check
+            // may have failed or lacked data, and that is not recorded yet.
+            : ''
+      }`.trimEnd(),
     };
   }
 

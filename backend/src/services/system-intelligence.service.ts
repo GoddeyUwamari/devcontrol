@@ -194,9 +194,13 @@ export class SystemIntelligenceService {
           : totalSavings > 0
             ? `$${Math.round(
                 totalSavings
-              ).toLocaleString()}/mo savings identified · ${totalOpps} opportunities`
+              ).toLocaleString()}/mo estimated savings identified · ${totalOpps} opportunities`
+            // A completed scan with nothing active is not evidence of no savings:
+            // a check may have failed or lacked data, and that is not recorded yet.
             : costAnalysisRan
-              ? 'Last scan found no savings opportunities'
+              ? totalOpps > 0
+                ? `${totalOpps} active opportunit${totalOpps !== 1 ? 'ies' : 'y'} · no estimated savings figure`
+                : 'Cost scan ran · per-check results are not yet recorded'
               : 'No cost scan run yet'
 
       const severity =

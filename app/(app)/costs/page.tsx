@@ -725,9 +725,9 @@ export default function CostsPage() {
                 const savingsFlag = amount === 0 ? null : isDemoActive
                   ? (isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null)
                   : (isCompute && categorySavings!.compute.total > 0
-                      ? `⚠ ${formatSavingsCurrency(categorySavings!.compute.total)}/mo savings available · ${categorySavings!.compute.issue}`
+                      ? `⚠ ${formatSavingsCurrency(categorySavings!.compute.total)}/mo estimated savings available · ${categorySavings!.compute.issue}`
                       : isDatabase && categorySavings!.database.total > 0
-                        ? `⚠ ${formatSavingsCurrency(categorySavings!.database.total)}/mo savings available · ${categorySavings!.database.issue}`
+                        ? `⚠ ${formatSavingsCurrency(categorySavings!.database.total)}/mo estimated savings available · ${categorySavings!.database.issue}`
                         : null)
                 return (
                   <div key={name}>

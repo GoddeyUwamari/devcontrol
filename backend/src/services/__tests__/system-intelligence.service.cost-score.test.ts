@@ -235,7 +235,7 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
     // this proves the two sources agree rather than merely that both equal 100.
     expect(statsFromRepository.total_potential_savings).toBeCloseTo(100, 2);
     expect(statsFromRepository.active_recommendations).toBe(2);
-    expect(result.components.cost.detail).toContain('$100/mo savings identified');
+    expect(result.components.cost.detail).toContain('$100/mo estimated savings identified');
     expect(result.components.cost.detail).toContain('2 opportunities');
   });
 
@@ -255,7 +255,7 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
 
     const result = await service.getSystemIntelligence(orgId);
 
-    expect(result.components.cost.detail).toContain('$40/mo savings identified');
+    expect(result.components.cost.detail).toContain('$40/mo estimated savings identified');
     expect(result.components.cost.detail).toContain('1 opportunities');
     expect(result.components.cost.detail).not.toContain('999');
   });

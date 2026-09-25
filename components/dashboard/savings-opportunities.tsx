@@ -58,11 +58,10 @@ const GRID_COLS_BY_COUNT: Record<number, string> = {
  * "$0/mo"), not a false "not evaluated" claim.
  */
 export function SavingsOpportunities({ items, evaluationState, totalActiveCount, detailsHref = '/cost-optimization' }: SavingsOpportunitiesProps) {
-  // Only a genuinely completed scan that found nothing across every category
-  // renders this truthful "no signal" empty state -- not_evaluated/in_progress
-  // keep their own per-category cards (each showing its own status) instead,
-  // since "no active opportunities" is a specific, falsifiable claim that
-  // isn't true yet if scanning hasn't finished.
+  // A completed scan with nothing active shows no conclusion -- a completed
+  // run does not record whether each check succeeded or had enough data, so
+  // "no opportunities" would be unsupported. not_evaluated/in_progress keep
+  // their own per-category cards (each showing its own status) instead.
   const showEmptyState = evaluationState === 'evaluated' && items.length === 0
   const gridColsClass = GRID_COLS_BY_COUNT[Math.min(items.length, 4)] ?? 'lg:grid-cols-1'
 
@@ -82,7 +81,7 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
           <div className="w-10 h-10 rounded-xl bg-[var(--surface-1)] flex items-center justify-center mb-1">
             <Sparkles size={18} className="text-[var(--text-secondary)]" />
           </div>
-          <p className="text-sm font-semibold text-foreground">No active cost-saving opportunities identified</p>
+          <p className="text-sm text-[var(--text-secondary)]">Scan results by check are on the Cost Optimization page.</p>
         </div>
       ) : (
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${gridColsClass} gap-4`}>

@@ -412,14 +412,16 @@ export default function DashboardPage() {
     : severity === 'LOW' ? { label: 'Low priority', color: 'var(--text-secondary)', background: 'var(--surface-2)' }
     : undefined
   const OPPORTUNITY_CATEGORIES: { type: string; title: string; description: string }[] = [
-    { type: 'EC2', title: 'Right-size EC2 instances', description: 'Instances with sustained low utilization' },
+    // Idle-instance candidates (low 7-day average CPU) and Reserved Instance
+    // coverage estimates -- not rightsizing, which DevControl does not do yet.
+    { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage estimates' },
     { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities' },
     { type: 'RDS', title: 'Optimize RDS storage', description: 'Database instances sized above actual load' },
     { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities' },
   ]
   const opportunityCategories = isDemoActive
     ? [
-        { type: 'EC2', title: 'Right-size EC2 instances', description: 'Instances with sustained low utilization', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
+        { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage estimates', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
         { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities', count: 3, savingsLabel: '$0.32/mo', priorityBadge: priorityBadgeFor('LOW') },
         { type: 'RDS', title: 'Optimize RDS storage', description: 'Database instances sized above actual load', count: 1, savingsLabel: '$0.16/mo', priorityBadge: priorityBadgeFor('MEDIUM') },
         { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities', count: 0, savingsLabel: '$0/mo', priorityBadge: undefined },
@@ -437,10 +439,10 @@ export default function DashboardPage() {
         }
       })
 
-  // One evaluation-state signal for all categories: every wired detector runs inside
-  // the same optimization scan (cost_analysis_runs), so there is no scenario where
-  // one type is evaluated and another isn't. A completed run means a genuine zero
-  // count is a real "nothing found", not "never scanned".
+  // One evaluation-state signal for all categories. A completed run does NOT
+  // mean every detector succeeded -- per-detector outcomes are not persisted
+  // yet -- so a zero count is never presented as "nothing found"; the
+  // components render no conclusion for it.
   const latestAnalysisRun = analysisRuns?.[0] ?? null
   const opportunityEvaluationState: 'evaluated' | 'not_evaluated' | 'in_progress' = isDemoActive
     ? 'evaluated'
