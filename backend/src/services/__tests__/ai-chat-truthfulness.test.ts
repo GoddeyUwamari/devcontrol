@@ -18,6 +18,7 @@ const pool = {} as Pool; // AIChatService's constructor stores it but never quer
 const NO_COMPARISON: ChatContext['costs']['comparison'] = {
   state: 'unavailable', note: null, currentWindow: null, previousWindow: null,
   currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null,
+  currentWindowIncludesToday: false,
 };
 
 const INVENTORY_SCOPE: ChatContext['inventoryScope'] = {
@@ -59,6 +60,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
         currentWindow: { start: '2026-09-01', end: '2026-09-06' }, previousWindow: { start: '2026-08-01', end: '2026-08-06' },
         currentWindowTotal: 1000, previousWindowTotal: 900, changeAmount: 100, changePercent: 11.1,
         coverage: { currentDays: 6, previousDays: 6, expectedCurrentDays: 6, expectedPreviousDays: 6 },
+        currentWindowIncludesToday: true,
       },
     },
     inventoryScope: INVENTORY_SCOPE,

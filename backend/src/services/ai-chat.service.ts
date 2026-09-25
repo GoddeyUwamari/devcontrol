@@ -75,6 +75,32 @@ export interface CostComparison {
   changePercent: number | null;
   /** Days of daily trend data found in each window vs the days each window spans. */
   coverage: { currentDays: number; previousDays: number; expectedCurrentDays: number; expectedPreviousDays: number } | null;
+  /**
+   * The current window's last day is today -- still being billed -- while the
+   * previous window's days are complete, so the windows are not like-for-like.
+   */
+  currentWindowIncludesToday: boolean;
+}
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The inclusive last day of an exclusive YYYY-MM-DD end boundary (calendar dates, no timezone shift). */
+export function lastIncludedDay(endExclusive: string): string {
+  const [y, m, d] = endExclusive.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * An inclusive YYYY-MM-DD..YYYY-MM-DD range as a reader would write it:
+ * "September 1–25, 2026", "August 30 – September 2, 2026", or one day alone.
+ */
+export function formatInclusiveRange(start: string, endInclusive: string): string {
+  const [sy, sm, sd] = start.split('-').map(Number);
+  const [ey, em, ed] = endInclusive.split('-').map(Number);
+  if (start === endInclusive) return `${MONTH_NAMES[sm - 1]} ${sd}, ${sy}`;
+  if (sy === ey && sm === em) return `${MONTH_NAMES[sm - 1]} ${sd}–${ed}, ${sy}`;
+  if (sy === ey) return `${MONTH_NAMES[sm - 1]} ${sd} – ${MONTH_NAMES[em - 1]} ${ed}, ${sy}`;
+  return `${MONTH_NAMES[sm - 1]} ${sd}, ${sy} – ${MONTH_NAMES[em - 1]} ${ed}, ${ey}`;
 }
 
 export interface ChatContext {
@@ -207,6 +233,11 @@ freshness, which you must respect exactly as labeled:
 - Resource inventory (services, EC2/RDS/Lambda counts, anomalies) is synchronized
   periodically by a background discovery process, not queried live -- its "As of"
   timestamp is the last time that process completed successfully for this account.
+- Cost periods and comparison windows are given as inclusive date ranges. State
+  dates exactly as those inclusive ranges; never present an exclusive end
+  boundary as a day that is included. When the context says a period's last day
+  was still in progress, say that day's spend is incomplete, and do not present
+  a window ending on it as like-for-like with a window of complete days.
 
 RULES:
 
@@ -253,11 +284,15 @@ If context is empty, state clearly what's missing.
 📌 Notes / assumptions (only if needed)
 
 5. COST RECOMMENDATIONS
-- Show monthly AND annual savings
 - Prioritize by ROI (savings vs effort)
 - Flag one-time vs recurring savings
 - Consider Reserved Instances and Savings Plans
-- Always quantify: "Save $X/month" not "reduce costs"
+- Always quantify in dollars, not just "reduce costs"
+- Month-to-date and comparison-window amounts are observed spend for a partial
+  period. Never label them "/month" or "/year", and never extrapolate them into
+  a monthly or annual figure unless the user asks for a projection -- then call
+  it a projection and state the days it is based on. Use "/month" (and an annual
+  equivalent) only for figures the context itself states as a monthly rate.
 
 6. RESPONSE LENGTH
 - Short questions: 3-5 sentences per section
@@ -292,6 +327,20 @@ If context is empty, state clearly what's missing.
   stated billing scope, not per-resource costs. Don't attribute a category's
   cost to a specific resource unless the context states that resource's own
   cost directly.
+- Each listed category is separate and categories do not contain one another
+  (e.g. "EC2 - Other" is not part of "Amazon Elastic Compute Cloud - Compute").
+  Never describe a category as including charges AWS bills under another one.
+- An "AWS Cost Explorer" line item is observed spend. It may include charges
+  for Cost Explorer API requests, which any cost-monitoring tool querying this
+  billing scope can generate -- DevControl included, since it queries Cost
+  Explorer to build this context. Which callers made those requests is
+  unknown: never state or imply that the user's scripts or automation, or
+  DevControl, caused the charge, and never tell the user to reduce their own
+  Cost Explorer calls because of it.
+- DORA metrics come from DevControl's deployment records, not from AWS billing
+  or the cost data. Mention them only when the user asks about deployments,
+  delivery, or reliability -- not in answers about cost or spend -- and state
+  each metric exactly as labeled, including its description.
 - When context directly states a fact, state it with full confidence — don't
   add hedging to facts that are actually in the context.
 
@@ -363,12 +412,22 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       lines.push('- spend: not available (no Cost Explorer result and no inventory estimate) -- this is missing data, not a zero amount');
     } else if (costs.source === 'actual') {
       if (costs.period) {
-        lines.push(`- period: month-to-date, ${costs.period.start} up to ${costs.period.endExclusive} (end exclusive)`);
+        // The query's End is exclusive; the reader is only ever shown the
+        // inclusive last day, never the boundary as if it were billed.
+        const { start } = costs.period;
+        const last = lastIncludedDay(costs.period.endExclusive);
+        if (last >= start) {
+          const lastDayInProgress = costs.asOf !== null && costs.asOf.slice(0, 10) === last;
+          lines.push(`- period: month-to-date, ${start} through ${last} inclusive (${formatInclusiveRange(start, last)})${lastDayInProgress ? `; ${last} was still in progress when this figure was obtained, so that day's spend is incomplete` : ''}`);
+        }
       }
-      lines.push(`- month_to_date_spend: ${this.formatMoney(costs.current)}${costs.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''}`);
-      lines.push('Top services by month-to-date spend (Cost Explorer SERVICE categories for the scope above, NOT per-resource costs. A category like "EC2" can include EBS volumes, data transfer, Elastic IPs, and other non-instance charges, so its total is not proof that any one resource caused that spend):');
+      lines.push(`- month_to_date_spend: ${this.formatMoney(costs.current)}${costs.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''} (observed spend for the period above -- not a full-month amount or a monthly rate)`);
+      lines.push('Top services by month-to-date spend (observed amounts for the period above, not monthly rates. Cost Explorer SERVICE categories for the scope above, NOT per-resource costs: each line is its own category and does not include charges billed under another listed category, and a category total is not proof that any one resource caused that spend):');
       if (costs.topSpenders && costs.topSpenders.length > 0) {
         lines.push(...costs.topSpenders.map(s => `- ${s.service}: ${this.formatMoney(s.cost)}${s.percentage !== null ? ` (${s.percentage.toFixed(1)}%)` : ''}`));
+        if (costs.topSpenders.some(s => /cost explorer/i.test(s.service))) {
+          lines.push('- note: the AWS Cost Explorer line item is observed spend for the period above. It may include charges for Cost Explorer API requests, which any cost-monitoring tool querying this billing scope can generate, including DevControl (it queries Cost Explorer to build this cost data). Which callers made those requests is unknown -- attribute the charge to no one.');
+        }
       } else {
         lines.push('- Cost Explorer returned no billed service line items for this period');
       }
@@ -397,8 +456,11 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       return lines.join('\n');
     }
 
-    lines.push(`- current_window: ${currentWindow.start} to ${currentWindow.end}, total ${this.formatMoney(currentWindowTotal)} (${coverage.currentDays} of ${coverage.expectedCurrentDays} days of data)`);
-    lines.push(`- previous_window: ${previousWindow.start} to ${previousWindow.end}, total ${this.formatMoney(previousWindowTotal)} (${coverage.previousDays} of ${coverage.expectedPreviousDays} days of data)`);
+    lines.push(`- current_window: ${currentWindow.start} through ${currentWindow.end} inclusive (${formatInclusiveRange(currentWindow.start, currentWindow.end)}), total ${this.formatMoney(currentWindowTotal)} (${coverage.currentDays} of ${coverage.expectedCurrentDays} days of data)`);
+    lines.push(`- previous_window: ${previousWindow.start} through ${previousWindow.end} inclusive (${formatInclusiveRange(previousWindow.start, previousWindow.end)}), total ${this.formatMoney(previousWindowTotal)} (${coverage.previousDays} of ${coverage.expectedPreviousDays} days of data)`);
+    if (comparison.currentWindowIncludesToday) {
+      lines.push(`- partial_day: the current window's last day (${currentWindow.end}) is today and still in progress, while every previous-window day is complete -- the change compares a partial day against a full one`);
+    }
     if (comparison.changeAmount !== null) {
       const sign = comparison.changeAmount > 0 ? '+' : '';
       const percent = comparison.changePercent !== null
@@ -461,9 +523,9 @@ ${context.anomalies.map(a => `- ${a.service} ${a.type}: ${a.description} (${a.im
 ` : ''}
 
 ${context.dora ? `
-DORA Metrics:
+DORA Metrics (source: DevControl deployment records, last 30 days -- not AWS billing data and unrelated to the cost data above; only relevant to questions about deployments, delivery, or reliability):
 - Deployment frequency: ${context.dora.deploymentFrequency}
-- Lead time for changes: ${context.dora.leadTime}
+- Lead time: ${context.dora.leadTime}
 - Mean time to recover: ${context.dora.mttr}
 ` : ''}
 `;

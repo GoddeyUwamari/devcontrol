@@ -17,9 +17,14 @@ import { DORAMetricsRepository } from './dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { AWSResourcesRepository } from './awsResources.repository';
 
+/** Whole cents -- the unit every displayed money figure (and any arithmetic between them) is done in. */
+function toCents(amount: number): number {
+  return Math.round(amount * 100);
+}
+
 /** Cents precision -- never whole-dollar rounding, which turns a real sub-dollar figure into a "$0". */
 function roundCents(amount: number): number {
-  return Math.round(amount * 100) / 100;
+  return toCents(amount) / 100;
 }
 
 /** A comparison with no figures -- its state and note say why. */
@@ -34,6 +39,7 @@ function emptyComparison(state: ContextDataState, note: string): CostComparison 
     changeAmount: null,
     changePercent: null,
     coverage: null,
+    currentWindowIncludesToday: false,
   };
 }
 
@@ -161,6 +167,15 @@ export class AIChatContextRepository {
    * fabricated previous figure or 0% change), fewer days than the windows span
    * is 'partial', and a previous window totalling $0 is still a real
    * comparison whose percentage is undefined (null), not 0.
+   *
+   * The change is derived from the two window totals as displayed (whole
+   * cents), not from the unrounded sums -- otherwise e.g. $14.83 vs $14.33
+   * could report a $0.51 change the reader can't reproduce from the figures.
+   *
+   * Like the Dashboard, the current window runs through today, which Cost
+   * Explorer has not finished billing, while the previous window's days are
+   * complete. That is kept (so both surfaces agree) but flagged via
+   * currentWindowIncludesToday rather than presented as like-for-like days.
    */
   private computeMonthOverMonthComparison(
     costTrend: Array<{ date: string; total: number }>
@@ -203,20 +218,25 @@ export class AIChatContextRepository {
         currentWindow,
         previousWindow,
         coverage,
+        currentWindowIncludesToday: true,
       };
     }
 
+    const currentCents = toCents(currentSum);
+    const previousCents = toCents(lastSum);
+    const changeCents = currentCents - previousCents;
     const partial = currentDays < expectedCurrentDays || lastDays < expectedPreviousDays;
     return {
       state: partial ? 'partial' : 'available',
       note: partial ? 'some days in the compared windows have no daily Cost Explorer data' : null,
       currentWindow,
       previousWindow,
-      currentWindowTotal: roundCents(currentSum),
-      previousWindowTotal: roundCents(lastSum),
-      changeAmount: roundCents(currentSum - lastSum),
-      changePercent: lastSum > 0 ? Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10 : null,
+      currentWindowTotal: currentCents / 100,
+      previousWindowTotal: previousCents / 100,
+      changeAmount: changeCents / 100,
+      changePercent: previousCents > 0 ? Math.round((changeCents / previousCents) * 1000) / 10 : null,
       coverage,
+      currentWindowIncludesToday: true,
     };
   }
 
@@ -569,7 +589,10 @@ export class AIChatContextRepository {
       return {
         deploymentFrequency: metrics.deploymentFrequency.description
           ?? `${metrics.deploymentFrequency.value} ${metrics.deploymentFrequency.unit}`,
-        leadTime: `${metrics.leadTime.value} ${metrics.leadTime.unit}`,
+        // Carries the metric's own description: DORAMetricsService measures the
+        // average gap between consecutive deployments, not commit-to-deploy time,
+        // and the model must not restate it as the latter.
+        leadTime: `${metrics.leadTime.value} ${metrics.leadTime.unit}${metrics.leadTime.description ? ` (${metrics.leadTime.description})` : ''}`,
         mttr: `${metrics.mttr.value} ${metrics.mttr.unit}${metrics.mttr.description ? ` (${metrics.mttr.description})` : ''}`,
       };
     } catch (error: any) {
