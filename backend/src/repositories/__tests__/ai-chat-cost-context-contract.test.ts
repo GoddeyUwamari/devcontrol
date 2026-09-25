@@ -440,3 +440,121 @@ describe('Inventory scope', () => {
     expect(format(context)).toMatch(/scope\.connected_account_id: unknown/);
   });
 });
+
+/**
+ * A full-coverage daily trend whose windows sum to exactly the given totals:
+ * the whole amount on each window's first day, $0 on the rest (a $0 day is
+ * still a day of data, so coverage stays complete).
+ */
+function trendWithTotals(currentTotal: number, previousTotal: number) {
+  const { points } = dailyTrend(0, 0);
+  const now = new Date();
+  const currentPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-`;
+  const firstCurrent = points.find((p: any) => p.date.startsWith(currentPrefix));
+  const firstPrevious = points.find((p: any) => !p.date.startsWith(currentPrefix));
+  firstCurrent.total = currentTotal;
+  firstPrevious.total = previousTotal;
+  return points;
+}
+
+function compare(currentTotal: number, previousTotal: number) {
+  return (contextRepo as any).computeMonthOverMonthComparison(trendWithTotals(currentTotal, previousTotal));
+}
+
+describe('Comparison arithmetic is done on the displayed cents', () => {
+  it('$14.83 vs $14.33 is a $0.50 change, even when the unrounded sums differ by $0.508', () => {
+    // Production 2026-09-25: sums like these produced "$14.83 vs $14.33, +$0.51".
+    const comparison = compare(14.834, 14.326);
+
+    expect(comparison.currentWindowTotal).toBe(14.83);
+    expect(comparison.previousWindowTotal).toBe(14.33);
+    expect(comparison.changeAmount).toBe(0.5);
+    expect(comparison.changePercent).toBe(3.5); // 50 / 1433 cents
+  });
+
+  it('the change always equals the difference of the two displayed totals', () => {
+    for (const [current, previous] of [[15.074, 14.326], [0.3, 0.1], [100.005, 99.994], [7.777, 3.333]]) {
+      const comparison = compare(current, previous);
+      expect(Math.round(comparison.changeAmount * 100))
+        .toBe(Math.round(comparison.currentWindowTotal * 100) - Math.round(comparison.previousWindowTotal * 100));
+    }
+  });
+
+  it('a zero difference is $0.00 and 0% -- a real, measured "unchanged"', () => {
+    const comparison = compare(12.34, 12.34);
+
+    expect(comparison.changeAmount).toBe(0);
+    expect(comparison.changePercent).toBe(0);
+  });
+
+  it('a decrease keeps its negative sign and cents', () => {
+    const comparison = compare(9.99, 12.5);
+
+    expect(comparison.changeAmount).toBe(-2.51);
+    expect(comparison.changePercent).toBe(-20.1);
+    const formatted = (chatService as any).formatComparisonSection(comparison);
+    expect(formatted).toMatch(/- change: -\$2\.51 \(-20\.1%\)/);
+  });
+
+  it('sub-dollar windows keep their cents rather than rounding to $0', () => {
+    const comparison = compare(0.07, 0.03);
+
+    expect(comparison.currentWindowTotal).toBe(0.07);
+    expect(comparison.previousWindowTotal).toBe(0.03);
+    expect(comparison.changeAmount).toBe(0.04);
+    expect(comparison.changePercent).toBe(133.3);
+  });
+
+  it('a previous window that displays as $0.00 has no percentage, even if its unrounded sum is a fraction of a cent', () => {
+    const comparison = compare(0.42, 0.004);
+
+    expect(comparison.previousWindowTotal).toBe(0);
+    expect(comparison.changeAmount).toBe(0.42);
+    expect(comparison.changePercent).toBeNull();
+  });
+
+  it('a net-negative previous window gets no percentage rather than a sign-flipped one', () => {
+    const comparison = compare(5, -1);
+
+    expect(comparison.changeAmount).toBe(6);
+    expect(comparison.changePercent).toBeNull();
+  });
+});
+
+describe('Comparison partial-day semantics', () => {
+  it('flags that the current window ends on today, which is still in progress, and says so in the formatted context', () => {
+    const comparison = compare(14.83, 14.33);
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    expect(comparison.currentWindow.end).toBe(today);
+    expect(comparison.currentWindowIncludesToday).toBe(true);
+    const formatted = (chatService as any).formatComparisonSection(comparison);
+    expect(formatted).toMatch(new RegExp(`partial_day: the current window's last day \\(${today}\\) is today and still in progress`));
+  });
+
+  it('a comparison with no windows makes no partial-day claim', () => {
+    const comparison = (contextRepo as any).computeMonthOverMonthComparison([]);
+
+    expect(comparison.state).toBe('unavailable');
+    expect((chatService as any).formatComparisonSection(comparison)).not.toMatch(/partial_day/);
+  });
+});
+
+describe('DORA context labeling', () => {
+  it('lead time carries the metric\'s own description (time between deployments), not an implied commit-to-deploy time', async () => {
+    jest.spyOn((contextRepo as any).doraMetricsService, 'getComprehensiveMetrics').mockResolvedValue({
+      deploymentFrequency: { value: 3.8, unit: 'per day', description: '114 deployments in 30 days' },
+      leadTime: { value: 6.12, unit: 'hours', description: 'Average time between consecutive deployments' },
+      mttr: { value: 71.35, unit: 'minutes', description: '1 incidents recovered' },
+    });
+
+    const dora = await (contextRepo as any).getDORAMetrics('org-id');
+
+    expect(dora).toEqual({
+      deploymentFrequency: '114 deployments in 30 days',
+      leadTime: '6.12 hours (Average time between consecutive deployments)',
+      mttr: '71.35 minutes (1 incidents recovered)',
+    });
+  });
+});
