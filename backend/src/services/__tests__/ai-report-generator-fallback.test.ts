@@ -93,12 +93,13 @@ describe('AIReportGeneratorService fallback report truthfulness', () => {
     expect(report.executiveSummary).toContain('unavailable');
   });
 
-  it('reports genuinely zero opportunities honestly, not as "well-optimized"', async () => {
+  it('an empty opportunity list draws no "none found" conclusion -- a check may have failed or lacked data', async () => {
     const data = baseReportData({ dataUnavailable: false, resources: { ...baseReportData().resources, unusedResources: [] } });
     const report = await service.generateWeeklyReport(data);
 
     expect(report.executiveSummary).not.toContain('well-optimized');
-    expect(report.executiveSummary).toContain('No cost-optimization opportunities identified this period.');
+    expect(report.executiveSummary).not.toMatch(/no (cost[- ])?(optimi[sz]ation|saving)s? (opportunit|found|identified)/i);
+    expect(report.executiveSummary).not.toMatch(/nothing to optimi|no savings/i);
   });
 
   it('still reports real savings opportunities when they genuinely exist', async () => {
@@ -111,7 +112,7 @@ describe('AIReportGeneratorService fallback report truthfulness', () => {
     });
     const report = await service.generateWeeklyReport(data);
 
-    expect(report.executiveSummary).toContain('Opportunity to save $42/month by optimizing unused resources.');
+    expect(report.executiveSummary).toContain('Estimated potential savings of $42/month from idle or unused resources (a DevControl estimate, not billed savings).');
     expect(report.executiveSummary).not.toContain('well-optimized');
     expect(report.executiveSummary).not.toContain('unavailable');
   });

@@ -242,7 +242,9 @@ anomalyRouter.post('/scan', async (req, res) => {
       count: anomalies.length,
       message: anomalies.length > 0
         ? `Found ${anomalies.length} anomalies`
-        : 'No anomalies detected - infrastructure is healthy',
+        // Not "healthy": no measured-data anomaly detectors run (see
+        // AnomalyDetectionService), so an empty scan is not evidence of health.
+        : 'No anomalies recorded. Anomaly detection on measured data is not currently active.',
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

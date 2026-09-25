@@ -124,17 +124,19 @@ function AnalysisStatusBanner({
       label: 'Analysis complete',
       description: `${activeCount} active opportunit${activeCount !== 1 ? 'ies' : 'y'} identified.`,
     },
+    // A completed run does not record whether each check succeeded or had
+    // enough data, so an empty list is shown without a "none found" conclusion.
     completed_clean: {
       icon: CheckCircle2,
-      tone: 'bg-green-50 border-green-200 text-green-700',
+      tone: 'bg-slate-50 border-slate-200 text-slate-600',
       label: 'Analysis complete',
-      description: 'No active opportunities identified.',
+      description: 'Per-check results are not yet recorded.',
     },
     completed_all_resolved: {
       icon: CheckCircle2,
-      tone: 'bg-green-50 border-green-200 text-green-700',
+      tone: 'bg-slate-50 border-slate-200 text-slate-600',
       label: 'Analysis complete',
-      description: 'No active opportunities — previously identified items have been resolved or dismissed.',
+      description: 'Previously identified items have been resolved or dismissed. Per-check results are not yet recorded.',
     },
   };
 
@@ -426,23 +428,23 @@ export default function CostOptimizationPage() {
                   </p>
                   <p className="text-sm text-slate-500 mb-6">{latestAnalysis?.errorMessage || 'Something interrupted the scan before it finished.'}</p>
                 </>
-              ) : analysisStatus === 'completed_all_resolved' ? (
-                <>
-                  <CheckCircle2 size={32} className="text-green-600 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-slate-900 mb-2">No active cost-saving opportunities detected</p>
-                  <p className="text-sm text-slate-500 mb-6">Previously identified opportunities have all been resolved or dismissed.</p>
-                </>
               ) : (
+                // Completed with nothing active: no "none found" conclusion --
+                // a check may have failed or lacked data, and per-check
+                // outcomes are not recorded yet.
                 <>
-                  <CheckCircle2 size={32} className="text-green-600 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-slate-900 mb-2">No active cost-saving opportunities detected</p>
-                  <p className="text-sm text-slate-500 mb-6">Run a scan to check for new savings opportunities.</p>
+                  <Clock size={32} className="text-slate-400 mx-auto mb-3" />
+                  <p className="text-sm font-semibold text-slate-900 mb-2">No active recommendations to review</p>
+                  <p className="text-sm text-slate-500 mb-6">
+                    {analysisStatus === 'completed_all_resolved' ? 'Previously identified items have been resolved or dismissed. ' : ''}
+                    This list does not confirm that nothing can be saved: DevControl does not yet record whether each check below completed with enough data.
+                  </p>
                 </>
               )}
               <div className="flex flex-col items-center gap-1.5 mb-2">
                 {implementedRules.map((rule) => (
                   <span key={rule.id} className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-                    <CheckCircle2 size={12} className="text-green-600 shrink-0" /> {rule.name}
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" /> {rule.name}
                   </span>
                 ))}
               </div>

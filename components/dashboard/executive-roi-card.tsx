@@ -31,9 +31,13 @@ export function ExecutiveRoiCard({ monthlySavingsLabel, annualSavingsLabel, isDe
       <div className="text-3xl font-bold tracking-tight leading-none mb-1.5" style={{ color: 'var(--text-success)' }}>
         {monthlySavingsLabel ?? '—'}
       </div>
-      <p className="text-xs text-[var(--text-secondary)] mb-4">
-        {monthlySavingsLabel ? 'Based on current optimization opportunities' : 'No active cost-saving opportunities identified'}
-      </p>
+      {/* No label means no active recommendation carries a figure -- not
+          evidence that nothing can be saved, so no conclusion is shown. */}
+      {monthlySavingsLabel && (
+        <p className="text-xs text-[var(--text-secondary)] mb-4">
+          Based on current optimization opportunities
+        </p>
+      )}
 
       {annualSavingsLabel && (
         <div className="bg-[var(--bg-accent)] border border-[var(--border-accent)] rounded-xl px-4 py-3 mt-auto">

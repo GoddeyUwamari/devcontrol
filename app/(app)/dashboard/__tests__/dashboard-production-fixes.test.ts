@@ -233,9 +233,9 @@ describe('Cost-Saving Opportunities dashboard summary: signal-only, capped, with
     expect(pageSource).toMatch(/const dashboardOpportunityCategories = opportunityEvaluationState === 'evaluated'[^]*?: opportunityCategories/)
   })
 
-  it('SavingsOpportunities renders a truthful empty state only when evaluated AND zero categories have signal -- never merely because the visible list is short', () => {
+  it('SavingsOpportunities renders its empty state only when evaluated AND zero categories have signal, and that state draws no "no opportunities" conclusion', () => {
     expect(savingsOpportunitiesSource).toMatch(/const showEmptyState = evaluationState === 'evaluated' && items\.length === 0/)
-    expect(savingsOpportunitiesSource).toMatch(/No active cost-saving opportunities identified/)
+    expect(savingsOpportunitiesSource).not.toMatch(/No active cost-saving opportunities identified/)
   })
 
   it('the summary grid scales its column count with however many cards are actually shown, instead of always reserving a fixed 4-wide layout', () => {

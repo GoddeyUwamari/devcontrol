@@ -48,11 +48,9 @@ describe('Dashboard: "Review savings" CTA — single instance, zero-state hidden
     expect(matches).toHaveLength(1)
   })
 
-  it('RecommendedActionCard renders no CTA when opportunityCount is 0 (truthful empty state, not a dead link)', () => {
-    expect(recommendedActionSource).toMatch(/No active cost-saving opportunities identified/)
-    // The CTA anchor is only emitted inside the hasOpportunities branch.
-    const ctaBlock = recommendedActionSource.slice(recommendedActionSource.indexOf('{hasOpportunities && ('))
-    expect(ctaBlock).toMatch(/Review Savings/)
+  it('RecommendedActionCard renders nothing when opportunityCount is 0 -- no CTA, and no unsupported "no opportunities" claim', () => {
+    expect(recommendedActionSource).toMatch(/if \(!hasOpportunities\) return null/)
+    expect(recommendedActionSource).not.toMatch(/No active cost-saving opportunities identified/)
   })
 
   it('leaves the CTA label for the opportunityCount > 0 case intact, including the live count', () => {

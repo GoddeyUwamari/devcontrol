@@ -118,6 +118,23 @@ const DYNAMODB_MODE_COMPARISON_UTILIZATION_REFERENCE_PERCENT = 35;
 const DYNAMODB_MODE_COMPARISON_VARIABILITY_PEAK_FRACTION = 0.3;
 const DYNAMODB_MODE_COMPARISON_MIN_PERCENT_INTERVALS_BELOW_PEAK_FRACTION = 40;
 
+// ec2_idle evaluation window: 7 days of hourly CPUUtilization averages, so
+// 168 expected datapoints. An instance only becomes an idle candidate when at
+// least 80% of them actually exist -- the same data-completeness floor
+// DevControl already applies to DynamoDB's CloudWatch analysis above (DevControl
+// policy, not an AWS rule). Anything less is insufficient evidence, never a
+// "7-day average".
+const EC2_IDLE_WINDOW_DAYS = 7;
+const EC2_IDLE_PERIOD_SECONDS = 3600;
+const EC2_IDLE_EXPECTED_DATAPOINTS = (EC2_IDLE_WINDOW_DAYS * 24 * 60 * 60) / EC2_IDLE_PERIOD_SECONDS; // 168
+const EC2_IDLE_MIN_DATAPOINTS = Math.round(EC2_IDLE_EXPECTED_DATAPOINTS * 0.8); // 134
+
+/** A CPU average together with how much of the requested window actually backs it. */
+interface CPUUtilizationEvidence {
+  average: number;
+  datapoints: number;
+}
+
 // DevControl policy -- NOT AWS guidance. Both must hold before a modeled
 // cost difference becomes an actual recommendation, to avoid a
 // "switch modes to save $1.80/month"-shaped result: percentage guards
@@ -283,8 +300,12 @@ class CostOptimizationService {
   }
 
   /**
-   * Detect idle EC2 instances (CPU below the configured threshold, default
-   * 5%, for 7+ days). Enterprise Workstream 3B: the threshold is a
+   * Detect idle EC2 instance candidates (average CPU below the configured
+   * threshold, default 5%, over a 7-day window with at least
+   * EC2_IDLE_MIN_DATAPOINTS hourly datapoints). A candidate is an instance
+   * worth reviewing, not a rightsizing recommendation -- average CPU alone
+   * says nothing about peaks, memory, or what size it should be.
+   * Enterprise Workstream 3B: the threshold is a
    * per-organization EffectiveOptimizationRuleConfig, resolved once by the
    * caller (analyzeAllResources()) -- this method never queries Postgres
    * itself and must be able to assume `config` is already valid.
@@ -323,15 +344,28 @@ class CostOptimizationService {
           // catch block below, failing this whole detector category via the
           // existing DetectorResult.success:false convention, rather than
           // being caught here and treated as "not idle."
-          const avgCPU = await this.getAverageCPUUtilization(
+          //
+          // LaunchTime is when the instance was LAST launched (AWS: "The time
+          // that the instance was last launched"; the first launch is the
+          // primary network interface's attachment time), so a stop/start
+          // resets it. A LaunchTime inside the window means the instance has
+          // not run continuously for the whole window -- not a full-window
+          // evaluation. A missing LaunchTime is insufficient evidence.
+          const windowEnd = new Date();
+          const windowStart = new Date(windowEnd.getTime() - EC2_IDLE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+          if (!instance.LaunchTime || instance.LaunchTime.getTime() > windowStart.getTime()) continue;
+
+          const cpu = await this.getAverageCPUUtilization(
             cloudWatchClient,
             instance.InstanceId,
-            7
+            windowStart,
+            windowEnd
           );
 
-          if (avgCPU === null) continue; // insufficient evidence -- never assumed idle
+          // Missing or incomplete telemetry is insufficient evidence -- never assumed idle.
+          if (cpu === null || cpu.datapoints < EC2_IDLE_MIN_DATAPOINTS) continue;
 
-          if (avgCPU < config.value) {
+          if (cpu.average < config.value) {
             const nameTag = instance.Tags?.find((tag) => tag.Key === 'Name');
             const monthlyCost = this.estimateEC2Cost(instance.InstanceType || '');
 
@@ -340,14 +374,25 @@ class CostOptimizationService {
               resourceName: nameTag?.Value || instance.InstanceId,
               resourceType: 'EC2',
               issue: ISSUE_EC2_IDLE_INSTANCE,
-              description: `This EC2 instance has averaged ${avgCPU.toFixed(2)}% CPU utilization over the past 7 days. Consider stopping or downsizing it.`,
+              description: `This EC2 instance averaged ${cpu.average.toFixed(2)}% CPU utilization over the past ${EC2_IDLE_WINDOW_DAYS} days (${cpu.datapoints} of ${EC2_IDLE_EXPECTED_DATAPOINTS} hourly CloudWatch datapoints). It is an idle candidate: review whether it is still needed. Average CPU alone does not show peak load or memory use, so this is not a rightsizing recommendation.`,
               potentialSavings: monthlyCost,
               severity: this.calculateSeverity(monthlyCost),
               awsRegion: instance.Placement?.AvailabilityZone?.slice(0, -1) || process.env.AWS_REGION || 'us-east-1',
               metadata: {
                 instance_type: instance.InstanceType,
-                average_cpu: avgCPU,
-                days_analyzed: 7,
+                average_cpu: cpu.average,
+                days_analyzed: EC2_IDLE_WINDOW_DAYS,
+                cpu_evidence: {
+                  source: 'CloudWatch AWS/EC2 CPUUtilization (Average)',
+                  period_seconds: EC2_IDLE_PERIOD_SECONDS,
+                  window_start: windowStart.toISOString(),
+                  window_end: windowEnd.toISOString(),
+                  datapoints_observed: cpu.datapoints,
+                  datapoints_expected: EC2_IDLE_EXPECTED_DATAPOINTS,
+                  datapoints_required: EC2_IDLE_MIN_DATAPOINTS,
+                },
+                savings_basis: 'estimated: compute cost from DevControl\'s list-price table (a default estimate for unlisted instance types); not billed cost or guaranteed savings',
+                savings_claim: { kind: 'full_resource_cost', resource_ids: [instance.InstanceId] },
                 configuration: {
                   parameter: 'cpu_threshold_percent',
                   value: config.value,
@@ -1797,12 +1842,15 @@ class CostOptimizationService {
       });
       const riResponse = await ec2Client.send(riCommand);
 
-      // Count instances by type
+      // Count instances by type, keeping their IDs so the savings claim below
+      // names the pool it draws on (see estimated-savings.ts).
       const instanceCounts: Record<string, number> = {};
+      const instanceIdsByType: Record<string, string[]> = {};
       for (const reservation of instancesResponse.Reservations || []) {
         for (const instance of reservation.Instances || []) {
           const type = instance.InstanceType || 'unknown';
           instanceCounts[type] = (instanceCounts[type] || 0) + 1;
+          if (instance.InstanceId) (instanceIdsByType[type] ??= []).push(instance.InstanceId);
         }
       }
 
@@ -1839,6 +1887,14 @@ class CostOptimizationService {
               instance_type: instanceType,
               uncovered_count: unconveredCount,
               estimated_discount: '35%',
+              // Which of the type's instances are uncovered is undefined (RIs
+              // float across a type), so the claim is on the whole pool.
+              savings_claim: {
+                kind: 'fleet_discount',
+                resource_ids: instanceIdsByType[instanceType] ?? [],
+                per_resource_savings: onDemandCost - riCost,
+                counted_resources: unconveredCount,
+              },
             },
           });
         }
@@ -1878,15 +1934,17 @@ class CostOptimizationService {
    *     other detector already uses for an AWS-call failure, rather than a
    *     new, per-resource failure concept this change does not introduce.
    */
+  //
+  // Returns the average together with the number of datapoints behind it, so
+  // the caller can judge completeness against the window it asked for.
+  // Datapoints without a numeric Average are not counted -- never read as 0%.
   private async getAverageCPUUtilization(
     cloudWatchClient: CloudWatchClient,
     instanceId: string,
-    days: number
-  ): Promise<number | null> {
+    startTime: Date,
+    endTime: Date
+  ): Promise<CPUUtilizationEvidence | null> {
     try {
-      const endTime = new Date();
-      const startTime = new Date(endTime.getTime() - days * 24 * 60 * 60 * 1000);
-
       const command = new GetMetricStatisticsCommand({
         Namespace: 'AWS/EC2',
         MetricName: 'CPUUtilization',
@@ -1898,21 +1956,22 @@ class CostOptimizationService {
         ],
         StartTime: startTime,
         EndTime: endTime,
-        Period: 3600, // 1 hour
+        Period: EC2_IDLE_PERIOD_SECONDS,
         Statistics: [Statistic.Average],
       });
 
       const response = await cloudWatchClient.send(command);
 
-      if (!response.Datapoints || response.Datapoints.length === 0) {
+      const averages = (response.Datapoints ?? [])
+        .map((dp) => dp.Average)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+      if (averages.length === 0) {
         return null; // insufficient evidence -- never assumed 0% CPU
       }
 
-      const sum = response.Datapoints.reduce(
-        (acc, dp) => acc + (dp.Average || 0),
-        0
-      );
-      return sum / response.Datapoints.length;
+      const sum = averages.reduce((acc, value) => acc + value, 0);
+      return { average: sum / averages.length, datapoints: averages.length };
     } catch (error) {
       console.error(`Error getting CPU utilization for ${instanceId}:`, error);
       throw error; // propagate -- see detectIdleEC2Instances()'s try/catch

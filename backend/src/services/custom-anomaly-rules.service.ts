@@ -1,6 +1,5 @@
 import { Pool, PoolClient } from 'pg';
-import { v4 as uuidv4 } from 'uuid';
-import { AnomalyDetection, AnomalyType, AnomalySeverity } from '../types/anomaly.types';
+import { AnomalyDetection, AnomalySeverity } from '../types/anomaly.types';
 
 export interface CustomAnomalyRule {
   id: string;
@@ -107,122 +106,14 @@ export class CustomAnomalyRulesService {
   // ── Rule Engine ───────────────────────────────────────────────────────────
 
   /**
-   * Run all enabled custom rules for an org against current AWS metrics.
-   * Returns AnomalyDetection[] in the same shape as the statistical detectors
-   * so the AI enrichment layer treats them identically.
+   * Custom rules are not evaluated. Every rule metric ("EC2 CPU Usage",
+   * "Total AWS Cost", ...) used to be read from aws_resources.tags -- the
+   * resource's own AWS tags, not a measurement -- so a rule either silently
+   * never fired or fired on customer-set text. Rules are still stored and
+   * managed; evaluation returns only once backed by real measured data.
    */
-  async evaluateRules(organizationId: string, client?: PoolClient): Promise<AnomalyDetection[]> {
-    const rules = await this.getRules(organizationId, client);
-    const enabled = rules.filter(r => r.enabled);
-    if (enabled.length === 0) return [];
-
-    const anomalies: AnomalyDetection[] = [];
-
-    for (const rule of enabled) {
-      try {
-        const result = await this.evaluateSingleRule(organizationId, rule, client);
-        if (result) anomalies.push(result);
-      } catch (err) {
-        console.error(`[Custom Rules] Error evaluating rule ${rule.id}:`, err);
-      }
-    }
-
-    return anomalies;
-  }
-
-  private async evaluateSingleRule(
-    organizationId: string,
-    rule: CustomAnomalyRule,
-    client?: PoolClient
-  ): Promise<AnomalyDetection | null> {
-    const runner = client ?? this.pool;
-    // Fetch current metric value from aws_resources tags — excludes soft-terminated
-    // resources; the historicalResult baseline below is left as-is (genuine 30-day
-    // trend baseline, same reasoning as anomaly-detection.service.ts).
-    const currentResult = await runner.query(
-      `SELECT AVG((tags->$1)::numeric) as current_value
-       FROM aws_resources
-       WHERE organization_id = $2
-         AND status != 'terminated'
-         AND tags ? $1
-         AND (tags->$1) ~ '^[0-9]+(\.[0-9]+)?`,
-      [rule.metric, organizationId]
-    );
-
-    const currentValue = parseFloat(currentResult.rows[0]?.current_value ?? '0');
-    if (currentValue === 0) return null;
-
-    // Fetch historical average for the time window
-    const historicalResult = await runner.query(
-      `SELECT AVG((tags->$1)::numeric) as historical_avg,
-              STDDEV((tags->$1)::numeric) as historical_std
-       FROM aws_resources
-       WHERE organization_id = $2
-         AND tags ? $1
-         AND (tags->$1) ~ '^[0-9]+(\.[0-9]+)?
-         AND created_at > NOW() - INTERVAL '30 days'`,
-      [rule.metric, organizationId]
-    );
-
-    const historicalAvg = parseFloat(historicalResult.rows[0]?.historical_avg ?? '0');
-    const historicalStd = parseFloat(historicalResult.rows[0]?.historical_std ?? '0');
-
-    // Evaluate condition
-    let triggered = false;
-    let deviation = 0;
-
-    switch (rule.condition) {
-      case 'greater_than':
-        triggered = currentValue > rule.threshold;
-        deviation = historicalAvg > 0 ? ((currentValue - historicalAvg) / historicalAvg) * 100 : 0;
-        break;
-      case 'less_than':
-        triggered = currentValue < rule.threshold;
-        deviation = historicalAvg > 0 ? ((historicalAvg - currentValue) / historicalAvg) * 100 : 0;
-        break;
-      case 'percent_change_up':
-        deviation = historicalAvg > 0 ? ((currentValue - historicalAvg) / historicalAvg) * 100 : 0;
-        triggered = deviation > rule.threshold;
-        break;
-      case 'percent_change_down':
-        deviation = historicalAvg > 0 ? ((historicalAvg - currentValue) / historicalAvg) * 100 : 0;
-        triggered = deviation > rule.threshold;
-        break;
-    }
-
-    if (!triggered) return null;
-
-    // Map metric to anomaly type
-    const typeMap: Record<string, AnomalyType> = {
-      cost:         'cost_spike',
-      cpu:          'cpu_spike',
-      memory:       'memory_spike',
-      error_rate:   'error_rate_spike',
-      invocations:  'invocation_spike',
-    };
-    const anomalyType: AnomalyType = typeMap[rule.metric] ?? 'cost_spike';
-
-    return {
-      id:               uuidv4(),
-      organizationId,
-      type:             anomalyType,
-      severity:         rule.severity,
-      metric:           rule.metric,
-      currentValue,
-      expectedValue:    rule.threshold,
-      deviation,
-      historicalAverage: historicalAvg,
-      historicalStdDev:  historicalStd,
-      confidence:       75,
-      title:            `Custom Rule: ${rule.name}`,
-      description:      `${rule.metric} ${rule.condition.replace(/_/g, ' ')} threshold of ${rule.threshold}`,
-      aiExplanation:    '',
-      impact:           '',
-      recommendation:   '',
-      detectedAt:       new Date(),
-      timeWindow:       rule.timeWindow,
-      status:           'active',
-    };
+  async evaluateRules(_organizationId: string, _client?: PoolClient): Promise<AnomalyDetection[]> {
+    return [];
   }
 
   private mapRow(row: any): CustomAnomalyRule {

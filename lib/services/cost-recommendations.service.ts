@@ -141,6 +141,7 @@ export const costRecommendationsService = {
       totalRecommendations: result.total_recommendations || 0,
       activeRecommendations: result.active_recommendations || 0,
       totalPotentialSavings: parseFloat(result.total_potential_savings) || 0,
+      potentialSavingsByResourceType: result.potential_savings_by_resource_type ?? {},
       bySeverity: {
         high: result.by_severity?.high || 0,
         medium: result.by_severity?.medium || 0,

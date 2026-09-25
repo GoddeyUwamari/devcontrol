@@ -262,7 +262,7 @@ export class AISummaryService {
       if (costStats.active_recommendations > 0) {
         factLines.push(
           `${costStats.active_recommendations} active cost optimization` +
-          `${costStats.active_recommendations !== 1 ? 's' : ''} could save approximately ` +
+          `${costStats.active_recommendations !== 1 ? 's have' : ' has'} estimated potential savings of approximately ` +
           `${formatSavingsCurrency(costStats.total_potential_savings)}/month.`
         );
       }

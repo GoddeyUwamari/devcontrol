@@ -237,17 +237,19 @@ export default function CostsPage() {
   // (source C) already fetched above — no fabricated per-category dollar figure.
   const categorySavings = useMemo(() => {
     if (isDemoActive) return null
-    const byType = (type: string) => activeRecs.filter(r => r.resourceType === type)
-    const summarize = (recs: CostRecommendation[]) => {
-      const total = recs.reduce((sum, r) => sum + (r.potentialSavings || 0), 0)
+    // The total is the server's de-duplicated per-type figure (two
+    // recommendations can draw on the same instance's cost), not a client sum.
+    const summarize = (type: string) => {
+      const recs = activeRecs.filter(r => r.resourceType === type)
+      const total = recStats?.potentialSavingsByResourceType?.[type] ?? 0
       const top = [...recs].sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))[0]
       return { total, issue: top?.issue ?? null }
     }
     return {
-      compute: summarize(byType('EC2')),
-      database: summarize(byType('RDS')),
+      compute: summarize('EC2'),
+      database: summarize('RDS'),
     }
-  }, [isDemoActive, activeRecs])
+  }, [isDemoActive, activeRecs, recStats])
 
   const costAnomalyDetected = !isDemoActive && growthRate > 20
 
@@ -723,9 +725,9 @@ export default function CostsPage() {
                 const savingsFlag = amount === 0 ? null : isDemoActive
                   ? (isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null)
                   : (isCompute && categorySavings!.compute.total > 0
-                      ? `⚠ ${formatSavingsCurrency(categorySavings!.compute.total)}/mo savings available · ${categorySavings!.compute.issue}`
+                      ? `⚠ ${formatSavingsCurrency(categorySavings!.compute.total)}/mo estimated savings available · ${categorySavings!.compute.issue}`
                       : isDatabase && categorySavings!.database.total > 0
-                        ? `⚠ ${formatSavingsCurrency(categorySavings!.database.total)}/mo savings available · ${categorySavings!.database.issue}`
+                        ? `⚠ ${formatSavingsCurrency(categorySavings!.database.total)}/mo estimated savings available · ${categorySavings!.database.issue}`
                         : null)
                 return (
                   <div key={name}>

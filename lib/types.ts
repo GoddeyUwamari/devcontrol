@@ -575,6 +575,8 @@ export interface RecommendationStats {
   totalRecommendations: number;
   activeRecommendations: number;
   totalPotentialSavings: number;
+  /** Estimated potential savings per resource type, de-duplicated server-side like the total. */
+  potentialSavingsByResourceType: Record<string, number>;
   bySeverity: {
     high: number;
     medium: number;

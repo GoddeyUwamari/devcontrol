@@ -418,6 +418,8 @@ export default function AnomalyRulesPage() {
                     {!rule.enabled && (
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Disabled</span>
                     )}
+                    {/* Custom rules are stored but not evaluated: their metrics were read from AWS tags, not measured data. */}
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Not currently evaluated</span>
                   </div>
                   {rule.description && (
                     <p className="text-xs text-slate-500 mb-1">{rule.description}</p>

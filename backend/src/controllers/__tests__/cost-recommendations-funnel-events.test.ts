@@ -92,6 +92,7 @@ function fakeStats(totalPotentialSavings: number): RecommendationStats {
     total_recommendations: totalPotentialSavings > 0 ? 1 : 0,
     active_recommendations: totalPotentialSavings > 0 ? 1 : 0,
     total_potential_savings: totalPotentialSavings,
+    potential_savings_by_resource_type: {},
     by_severity: { high: 0, medium: 0, low: totalPotentialSavings > 0 ? 1 : 0 },
   };
 }
