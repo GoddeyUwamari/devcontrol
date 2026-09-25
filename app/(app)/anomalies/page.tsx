@@ -488,6 +488,8 @@ export default function AnomaliesPage() {
                       <span className="text-sm font-semibold text-slate-900">{rule.name}</span>
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full uppercase tracking-widest" style={{ background: sb, color: sc }}>{rule.severity}</span>
                       {!rule.enabled && <span className="text-xs font-semibold text-slate-500">Disabled</span>}
+                      {/* Custom rules are stored but not evaluated: their metrics were read from AWS tags, not measured data. */}
+                      <span className="text-xs font-semibold text-slate-500">Not currently evaluated</span>
                     </div>
                     <p className="text-xs text-slate-500">{rule.metric} {rule.condition.replace(/_/g, ' ')} {rule.threshold} · {rule.timeWindow} window</p>
                   </div>

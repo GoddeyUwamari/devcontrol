@@ -64,7 +64,7 @@ export class AnomalyController {
         count: anomalies.length,
         message: anomalies.length > 0
           ? `Found ${anomalies.length} anomalies`
-          : 'No anomalies detected - infrastructure is healthy',
+          : 'No anomalies recorded. Anomaly detection on measured data is not currently active.',
       });
     } catch (error: any) {
       console.error('[Anomaly Controller] Scan error:', error);
