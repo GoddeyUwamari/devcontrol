@@ -128,14 +128,18 @@ export class AIChatController {
         success: true,
         data: {
           response,
+          // Counts are null (never 0) whenever their section isn't 'available';
+          // the matching *State field says why.
           context: {
-            services: context.services.length,
+            services: context.services.state === 'available' ? context.services.data?.length ?? null : null,
+            servicesState: context.services.state,
             currentCost: context.costs.current,
             costState: context.costs.state,
             costSource: context.costs.source,
             costDataAsOf: context.costs.asOf,
-            resourceDataAsOf: context.resourceDataAsOf,
-            alertCount: context.alerts.total,
+            resourceDataAsOf: context.discovery.data?.completedAt ?? null,
+            alertCount: context.alerts.state === 'available' ? context.alerts.data?.total ?? null : null,
+            alertState: context.alerts.state,
           },
         },
       });

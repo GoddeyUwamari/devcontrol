@@ -6,20 +6,10 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
+import type { ContextDataState, ContextScope, ContextSection } from './ai-context-contract';
 
-/**
- * State of one AI-context dataset, decided by the context builder before the
- * model ever sees it -- so the model never has to guess whether a 0, an empty
- * list, or a missing section means "measured", "not collected", or "failed".
- *   available     = collected, complete for its stated scope
- *   partial       = collected, but only some of its stated scope is covered
- *                   (the dataset's own coverage field says how much)
- *   unavailable   = nothing to collect (e.g. no connected account, no rows,
- *                   not enough history) -- not an error, and not a zero
- *   error         = collection was attempted and failed
- *   not_supported = DevControl has no source for this data
- */
-export type ContextDataState = 'available' | 'partial' | 'unavailable' | 'error' | 'not_supported';
+// Defined in ai-context-contract.ts; re-exported so existing imports keep working.
+export type { ContextDataState, ContextSection } from './ai-context-contract';
 
 /**
  * Scope of a Cost Explorer figure, exactly as the current query establishes
@@ -80,7 +70,18 @@ export interface CostComparison {
    * previous window's days are complete, so the windows are not like-for-like.
    */
   currentWindowIncludesToday: boolean;
+  /** When the daily trend behind this comparison was fetched from Cost Explorer; null if unknown. */
+  asOf: string | null;
+  /** How the window totals are calculated -- stated so the model can't read them as net billed spend. */
+  basis: string;
 }
+
+/**
+ * What the comparison windows sum: fetchCostTrend()'s daily category totals,
+ * each floored at $0 (the Dashboard's comparison uses the same figures).
+ */
+export const COMPARISON_BASIS =
+  'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month_to_date_spend';
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -103,8 +104,33 @@ export function formatInclusiveRange(start: string, endInclusive: string): strin
   return `${MONTH_NAMES[sm - 1]} ${sd}, ${sy} – ${MONTH_NAMES[em - 1]} ${ed}, ${ey}`;
 }
 
+/** Counts from DevControl's resource inventory. Every count is explicit, including a real 0. */
+export interface InventoryResources {
+  // utilization: no source writes a CPU figure into aws_resources, so this is
+  // not_supported -- never a measured "0 underutilized".
+  ec2: { count: number; utilization: ContextSection<{ underutilized: number }> };
+  // estimatedMonthlyCost: SUM of estimated_monthly_cost (DevControl list-price
+  // estimates for the whole RDS resource -- not AWS billed spend, not storage
+  // alone) over the estimatedForCount databases that carry one; null when none do.
+  rds: { count: number; estimatedMonthlyCost: number | null; estimatedForCount: number };
+  // invocations is a real, usage-based figure -- SUM of each function's
+  // real 30-day CloudWatch Invocations (see awsResourceDiscovery.ts's
+  // discoverLambdaFunctions()/lambda-usage.util.ts), read back from
+  // aws_resources.metadata->>'invocations_30d'. invocationsKnownForCount
+  // is how many of `count` functions actually have a known usage figure
+  // (a per-function CloudWatch failure leaves that one function's usage
+  // unknown, not zero) -- callers must not present `invocations` as a
+  // complete total when invocationsKnownForCount < count.
+  lambda: { count: number; invocations: number; invocationsKnownForCount: number };
+}
+
 export interface ChatContext {
-  services: string[];
+  /** Latest completed resource discovery run -- the freshness of `services` and `resources`. */
+  discovery: ContextSection<{ completedAt: string }>;
+  /** The connected AWS account row (aws_accounts) both discovery and Cost Explorer run under. */
+  account: ContextSection<{ accountId: string | null; region: string | null }>;
+  /** Distinct discovered resource types in the inventory. */
+  services: ContextSection<string[]>;
   costs: {
     /** State of `current` (the figure the model is given), whichever source produced it. */
     state: ContextDataState;
@@ -122,7 +148,7 @@ export interface ChatContext {
     current: number | null;
     // ISO timestamp this cost figure was actually obtained -- for 'actual',
     // awsCostService's own fetch/cache timestamp; for 'estimated', the
-    // discovery job's completion time (resourceDataAsOf); null otherwise.
+    // discovery job's completion time (discovery.data.completedAt); null otherwise.
     asOf: string | null;
     /** The Cost Explorer query period (month-to-date; end is exclusive). null for estimates, which are a monthly run-rate, not a billed period. */
     period: { start: string; endExclusive: string } | null;
@@ -142,43 +168,10 @@ export interface ChatContext {
   };
   /** Scope of the resource inventory section (and of every figure derived from it). */
   inventoryScope: InventoryScope;
-  resources: {
-    ec2?: { count: number; underutilized: number };
-    rds?: { count: number; storageCost: number };
-    // invocations is a real, usage-based figure -- SUM of each function's
-    // real 30-day CloudWatch Invocations (see awsResourceDiscovery.ts's
-    // discoverLambdaFunctions()/lambda-usage.util.ts), read back from
-    // aws_resources.metadata->>'invocations_30d'. It replaces a prior
-    // implementation that summed a `tags->>'invocations'` value nothing
-    // ever wrote, and so always silently reported 0. invocationsKnownForCount
-    // is how many of `count` functions actually have a known usage figure
-    // (a per-function CloudWatch failure leaves that one function's usage
-    // unknown, not zero) -- callers must not present `invocations` as a
-    // complete total when invocationsKnownForCount < count.
-    lambda?: { count: number; invocations: number; invocationsKnownForCount: number };
-  };
-  alerts: {
-    total: number;
-    critical: number;
-    recent: string[];
-  };
-  anomalies?: Array<{
-    type: string;
-    service: string;
-    description: string;
-    impact: string;
-  }>;
-  dora?: {
-    deploymentFrequency: string;
-    leadTime: string;
-    mttr: string;
-  };
-  timeRange: string;
-  // ISO timestamp of the latest successful (status='completed') AWS resource
-  // discovery run for this org -- the actual freshness of `services`,
-  // `resources`, and `anomalies` below, all of which read aws_resources.
-  // Null if no discovery run has ever completed for this org.
-  resourceDataAsOf: string | null;
+  resources: ContextSection<InventoryResources>;
+  alerts: ContextSection<{ total: number; critical: number; recent: string[] }>;
+  anomalies: ContextSection<Array<{ type: string; service: string; description: string; impact: string }>>;
+  dora: ContextSection<{ deploymentFrequency: string; leadTime: string; mttr: string }>;
 }
 
 export interface ChatMessage {
@@ -229,8 +222,9 @@ freshness, which you must respect exactly as labeled:
 - Datasets carry a state: "available" (complete for its scope), "partial" (only
   part of its scope -- say which part), "unavailable" (no data), "error" (collection
   failed), or "not_supported". Only report figures that are actually present;
-  never treat "unavailable" or "error" as $0, none, or unchanged.
-- Resource inventory (services, EC2/RDS/Lambda counts, anomalies) is synchronized
+  never treat "unavailable", "error", or "not_supported" as $0, zero, none,
+  empty, unchanged, or "no findings" -- say that data is not available and why.
+- Resource inventory (services, EC2/RDS/Lambda counts) is synchronized
   periodically by a background discovery process, not queried live -- its "As of"
   timestamp is the last time that process completed successfully for this account.
 - Cost periods and comparison windows are given as inclusive date ranges. State
@@ -257,13 +251,14 @@ RULES:
 - If data is missing, state what's unavailable and why
 
 2. CONTEXT FORMAT
-You receive context in this structure:
-- Services: {AWS services in use}
+You receive context in these sections, each with its own state, source,
+as-of timestamp, and (where they apply) scope and coverage:
+- Services: {discovered resource types}
 - Costs: {state, source, as-of timestamp, scope, period, month-to-date spend or estimate, top services}
-- Period comparison: {its own state, the two windows compared, their totals, change}
-- Resources: {source, as-of timestamp, scope, EC2, RDS, Lambda details}
+- Period comparison: {its own state, the two windows compared, their totals, change, basis}
+- Resources: {EC2, RDS, Lambda counts and details}
 - Alerts: {active alerts, incidents}
-- Anomalies: {cost spikes, performance issues, detected patterns}
+- Anomalies: {detected anomalies}
 - DORA: {deployment frequency, lead time, MTTR}
 Each section states its own period or window -- not the same thing as the
 as-of freshness timestamps above.
@@ -374,7 +369,10 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
    * as the connected role's billing scope with consolidation unknown -- never
    * as "this one account" -- and inventory scope as one discovery region.
    */
-  private formatScope(scope: CostExplorerScope | InventoryScope): string[] {
+  private formatScope(scope: ContextScope): string[] {
+    if (scope.kind === 'organization') {
+      return [`- scope: this DevControl organization, ${scope.window}`];
+    }
     const account = scope.connectedAccountId ?? 'unknown';
     if (scope.kind === 'cost_explorer') {
       return [
@@ -390,6 +388,44 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       `- scope.connected_account_id: ${account}`,
       `- scope.regions: ${scope.discoveryRegion ?? 'unknown'} only (resources in other regions are not discovered, except services listed account-wide such as S3)`,
     ];
+  }
+
+  /**
+   * The lines every non-cost section starts with -- state, source, as-of,
+   * scope, coverage -- and what its state means. showData is true only for
+   * 'available'/'partial' sections that actually carry data: an 'error',
+   * 'not_supported', or 'unavailable' section never has figures printed as
+   * though they exist. An error's raw reason stays out of the prompt.
+   */
+  private formatSectionHeader(title: string, section: ContextSection<unknown>): { lines: string[]; showData: boolean } {
+    const lines = [
+      `${title}:`,
+      `- state: ${section.state}`,
+      `- source: ${section.source}`,
+      `- as_of: ${section.asOf ?? 'unknown'}`,
+      ...(section.scope ? this.formatScope(section.scope) : []),
+    ];
+    if (section.coverage) lines.push(`- coverage: ${section.coverage}`);
+
+    switch (section.state) {
+      case 'error':
+        lines.push('- data: could not be retrieved -- this is missing data, not an empty result or a zero');
+        break;
+      case 'not_supported':
+        lines.push(`- data: not supported -- ${section.reason ?? 'DevControl has no source for this data'} This is not a zero, "none", or "no findings".`);
+        break;
+      case 'unavailable':
+        lines.push(`- data: not available -- ${section.reason ?? 'no data exists for this section'}. Do not treat this as zero or none.`);
+        break;
+      case 'partial':
+        lines.push(`- limitation: ${section.reason ?? 'only part of the stated scope is covered'}`);
+        break;
+      default:
+        if (section.reason) lines.push(`- note: ${section.reason}`);
+    }
+
+    const showData = (section.state === 'available' || section.state === 'partial') && section.data !== null;
+    return { lines, showData };
   }
 
   private formatCostSection(costs: ChatContext['costs']): string {
@@ -445,8 +481,10 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
 
   private formatComparisonSection(comparison: CostComparison): string {
     const lines = [
-      'Period comparison (month-to-date vs the same days of the previous month; source: AWS Cost Explorer daily trend, same scope as the cost data above. Window totals come from the daily trend and can differ from month_to_date_spend, e.g. when credits apply):',
+      'Period comparison (month-to-date vs the same days of the previous month; source: AWS Cost Explorer daily trend, same scope as the cost data above):',
       `- state: ${comparison.state}`,
+      `- as_of: ${comparison.asOf ?? 'unknown'}`,
+      `- basis: ${comparison.basis}`,
     ];
     if (comparison.note) lines.push(`- note: ${comparison.note}`);
 
@@ -474,60 +512,100 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
   /**
    * Format context for AI
    */
+  private formatResourceLines(resources: InventoryResources): string[] {
+    const lines: string[] = [];
+    const { ec2, rds, lambda } = resources;
+
+    lines.push(`- EC2: ${ec2.count} instances`);
+    const utilization = ec2.utilization;
+    lines.push(utilization.state === 'available' && utilization.data
+      ? `- EC2 underutilized: ${utilization.data.underutilized} of ${ec2.count}`
+      : `- EC2 utilization: ${utilization.state} -- ${utilization.reason ?? 'no utilization data'} Do not describe any instance as underutilized or as not underutilized.`);
+
+    const rdsEstimate = rds.estimatedMonthlyCost !== null
+      ? `; DevControl estimated monthly cost ${this.formatMoney(rds.estimatedMonthlyCost)} for ${rds.estimatedForCount} of ${rds.count} (list-price estimate for the whole database -- not AWS billed spend)`
+      : rds.count > 0 ? '; no cost estimate available' : '';
+    lines.push(`- RDS: ${rds.count} databases${rdsEstimate}`);
+
+    if (lambda.count === 0) {
+      lines.push('- Lambda: 0 functions');
+    } else if (lambda.invocationsKnownForCount === 0) {
+      // No function's real 30-day usage could be determined (CloudWatch
+      // unavailable for all of them) -- state that plainly rather than
+      // asserting a specific invocation count we don't actually have.
+      lines.push(`- Lambda: ${lambda.count} functions, 30-day invocation data unavailable`);
+    } else if (lambda.invocationsKnownForCount < lambda.count) {
+      lines.push(`- Lambda: ${lambda.count} functions, ${lambda.invocations.toLocaleString()} invocations over the last 30 days (usage known for ${lambda.invocationsKnownForCount} of ${lambda.count} functions; the rest are unavailable, not zero)`);
+    } else {
+      lines.push(`- Lambda: ${lambda.count} functions, ${lambda.invocations.toLocaleString()} invocations over the last 30 days`);
+    }
+    return lines;
+  }
+
+  /**
+   * Format context for AI
+   */
   private formatContext(context: ChatContext): string {
-    const resourceLines: string[] = [];
-    if (context.resources.ec2) {
-      resourceLines.push(`- EC2: ${context.resources.ec2.count} instances, ${context.resources.ec2.underutilized} underutilized`);
-    }
-    if (context.resources.rds) {
-      resourceLines.push(`- RDS: ${context.resources.rds.count} databases, storage cost $${context.resources.rds.storageCost}/month`);
-    }
-    if (context.resources.lambda) {
-      const { count, invocations, invocationsKnownForCount } = context.resources.lambda;
-      if (invocationsKnownForCount === 0) {
-        // No function's real 30-day usage could be determined (CloudWatch
-        // unavailable for all of them) -- state that plainly rather than
-        // asserting a specific invocation count we don't actually have.
-        resourceLines.push(`- Lambda: ${count} functions, 30-day invocation data unavailable`);
-      } else if (invocationsKnownForCount < count) {
-        resourceLines.push(`- Lambda: ${count} functions, ${invocations.toLocaleString()} invocations over the last 30 days (usage known for ${invocationsKnownForCount} of ${count} functions; the rest are unavailable, not zero)`);
-      } else {
-        resourceLines.push(`- Lambda: ${count} functions, ${invocations.toLocaleString()} invocations over the last 30 days`);
-      }
+    const services = this.formatSectionHeader('Services in use (discovered resource types)', context.services);
+    if (services.showData && context.services.data) {
+      services.lines.push(`- types: ${context.services.data.length > 0 ? context.services.data.join(', ') : 'none -- discovery completed and found no resources'}`);
     }
 
-    const resourceAsOfLabel = context.resourceDataAsOf ?? 'no completed discovery run yet for this account';
+    const resources = this.formatSectionHeader(
+      'Resource inventory (synchronized periodically by DevControl AWS discovery, not queried live; independent of the billing data above, and a different scope from it; do not assume a resource count here explains a cost driver above unless this context explicitly states that connection)',
+      context.resources
+    );
+    if (context.account.state === 'error') {
+      resources.lines.push('- connected account lookup: could not be retrieved -- the account and discovery region are unknown, not absent');
+    } else if (context.account.state === 'unavailable') {
+      resources.lines.push('- connected account: none connected');
+    }
+    if (resources.showData && context.resources.data) {
+      resources.lines.push(...this.formatResourceLines(context.resources.data));
+    }
+
+    const alerts = this.formatSectionHeader('Alerts & incidents', context.alerts);
+    if (alerts.showData && context.alerts.data) {
+      const { total, critical, recent } = context.alerts.data;
+      alerts.lines.push(`- active alerts: ${total}`, `- critical alerts: ${critical}`);
+      alerts.lines.push(recent.length > 0 ? `- recent: ${recent.join(', ')}` : '- recent: none firing');
+    }
+
+    const anomalies = this.formatSectionHeader('Anomalies', context.anomalies);
+    if (anomalies.showData && context.anomalies.data) {
+      anomalies.lines.push(...(context.anomalies.data.length > 0
+        ? context.anomalies.data.map(a => `- ${a.service} ${a.type}: ${a.description} (${a.impact})`)
+        : ['- none detected']));
+    }
+
+    const dora = this.formatSectionHeader(
+      'DORA metrics (not AWS billing data and unrelated to the cost data above; only relevant to questions about deployments, delivery, or reliability)',
+      context.dora
+    );
+    if (dora.showData && context.dora.data) {
+      dora.lines.push(
+        `- Deployment frequency: ${context.dora.data.deploymentFrequency}`,
+        `- Lead time: ${context.dora.data.leadTime}`,
+        `- Mean time to recover: ${context.dora.data.mttr}`,
+      );
+    }
 
     return `
 CURRENT AWS ENVIRONMENT CONTEXT:
 
-Services in use: ${context.services.length > 0 ? context.services.join(', ') : 'No services detected'}
+${services.lines.join('\n')}
 
 ${this.formatCostSection(context.costs)}
 
 ${this.formatComparisonSection(context.costs.comparison)}
 
-Resource inventory (source: DevControl AWS discovery — synchronized periodically, not queried live; independent of the billing data above, and a different scope from it; do not assume a resource count here explains a cost driver above unless this context explicitly states that connection):
-- As of: ${resourceAsOfLabel}
-${this.formatScope(context.inventoryScope).join('\n')}
-${resourceLines.length > 0 ? resourceLines.join('\n') : '- No resource data available'}
+${resources.lines.join('\n')}
 
-Alerts & Incidents:
-- Total active alerts: ${context.alerts.total}
-- Critical alerts: ${context.alerts.critical}
-${context.alerts.recent.length > 0 ? `- Recent: ${context.alerts.recent.join(', ')}` : '- No recent incidents'}
+${alerts.lines.join('\n')}
 
-${context.anomalies && context.anomalies.length > 0 ? `
-Detected Anomalies (source: DevControl resource inventory estimate -- the same estimated_monthly_cost basis as the resource inventory above, not a confirmed AWS Cost Explorer billing event):
-${context.anomalies.map(a => `- ${a.service} ${a.type}: ${a.description} (${a.impact})`).join('\n')}
-` : ''}
+${anomalies.lines.join('\n')}
 
-${context.dora ? `
-DORA Metrics (source: DevControl deployment records, last 30 days -- not AWS billing data and unrelated to the cost data above; only relevant to questions about deployments, delivery, or reliability):
-- Deployment frequency: ${context.dora.deploymentFrequency}
-- Lead time: ${context.dora.leadTime}
-- Mean time to recover: ${context.dora.mttr}
-` : ''}
+${dora.lines.join('\n')}
 `;
   }
 
@@ -642,12 +720,16 @@ ${topSpender ? `Your top cost category is ${topSpender.service} at ${this.format
     }
 
     if (lastMessage.includes('underutilized') || lastMessage.includes('optimize') || lastMessage.includes('saving')) {
-      const ec2 = context.resources.ec2;
+      // Only a section that is actually 'available' can say how many are (or
+      // aren't) underutilized -- anything else is stated as missing data.
+      const ec2 = context.resources.data?.ec2;
+      const utilization = ec2?.utilization;
+      const utilizationPhrase = ec2 && utilization?.state === 'available' && utilization.data
+        ? `${utilization.data.underutilized} of your ${ec2.count} EC2 instances are flagged as underutilized.`
+        : `I don't have EC2 utilization data for this account${utilization?.reason ? ` (${utilization.reason.replace(/\.$/, '')})` : ''}, so I can't say which instances are underutilized.`;
       return `**🔍 What's happening**
 
-${ec2 && ec2.underutilized > 0
-  ? `You have ${ec2.underutilized} underutilized EC2 instances out of ${ec2.count} total.`
-  : 'Resource utilization data is being gathered.'}
+${utilizationPhrase}
 
 **💰 Cost / impact**
 
@@ -662,16 +744,25 @@ Underutilized resources typically represent 20-40% potential savings when rights
 *Note: AI service temporarily unavailable - this is a simplified analysis.*`;
     }
 
-    // Generic response
+    // Generic response. Counts are stated only from 'available' sections.
+    const services = context.services;
+    const inventoryPhrase = services.state === 'available' && services.data
+      ? `I can see ${services.data.length} discovered resource types in your AWS environment`
+      : `I don't have a resource inventory for this account right now`;
+    const alerts = context.alerts;
+    const alertsPhrase = alerts.state === 'available' && alerts.data
+      ? `${alerts.data.total} (${alerts.data.critical} critical)`
+      : `not available${alerts.reason ? ` -- ${alerts.reason.replace(/\.$/, '')}` : ''}`;
+
     return `**🔍 What's happening**
 
-I can see ${context.services.length} discovered service types in your AWS environment${spendPhrase ? `, with spend of ${spendPhrase}` : '; cost data is not available right now'}.
+${inventoryPhrase}${spendPhrase ? `, with spend of ${spendPhrase}` : '; cost data is not available right now'}.
 
 **💰 Cost / impact**
 
 - Spend: ${spendPhrase ?? 'not available'}
 - Change: ${changePhrase ?? 'no comparison with last month is available'}
-- Active alerts: ${context.alerts.total} (${context.alerts.critical} critical)
+- Active alerts: ${alertsPhrase}
 
 **✅ Recommended actions**
 

@@ -150,30 +150,43 @@ describe('AWSResourcesRepository — operational vs. historical lifecycle bounda
 });
 
 describe('AI Chat context — current infrastructure must exclude terminated resources', () => {
+  // The inventory sections are read as they are after a completed discovery
+  // run -- the state in which their counts (including a real 0) are confirmed.
+  const completedAt = '2026-09-06T05:00:00.000Z';
+  const discovery = { state: 'available', source: 'DevControl resource discovery runs', asOf: completedAt, scope: null, coverage: null, reason: null, data: { completedAt } };
+  const inventoryScope = { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: 'us-east-1' };
+
+  async function resourceData() {
+    const section = await (aiChatRepo as any).getResourceData(orgId, discovery, inventoryScope);
+    expect(section.state).toBe('available');
+    return section.data;
+  }
+
   it('(6) getResourceData does not count a terminated resource as active infrastructure', async () => {
     await insertRow({ resource_arn: 'arn:aws:ec2:us-east-1:*:instance/ai-active', resource_type: 'ec2', status: 'running' });
     await insertRow({ resource_arn: 'arn:aws:ec2:us-east-1:*:instance/ai-gone', resource_type: 'ec2', status: 'terminated' });
 
-    const resources = await (aiChatRepo as any).getResourceData(orgId);
+    const resources = await resourceData();
 
     expect(resources.ec2.count).toBe(1);
   });
 
-  it('(6) getResourceData omits a resource type whose only rows are terminated', async () => {
+  it('(6) getResourceData counts a resource type whose only rows are terminated as an explicit 0', async () => {
     await insertRow({ resource_arn: 'arn:aws:rds:us-east-1:*:db:ai-gone-rds', resource_type: 'rds', status: 'terminated' });
 
-    const resources = await (aiChatRepo as any).getResourceData(orgId);
+    const resources = await resourceData();
 
-    expect(resources.rds).toBeUndefined();
+    expect(resources.rds).toEqual({ count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 });
   });
 
   it('(6) getServices does not list a resource_type whose only instances are terminated', async () => {
     await insertRow({ resource_arn: 'arn:aws:sns:us-east-1:*:topic/ai-gone-sns', resource_type: 'sns', status: 'terminated' });
     await insertRow({ resource_arn: 'arn:aws:sqs:us-east-1:*:queue/ai-active-sqs', resource_type: 'sqs', status: 'active' });
 
-    const services = await (aiChatRepo as any).getServices(orgId);
+    const services = await (aiChatRepo as any).getServices(orgId, discovery, inventoryScope);
 
-    expect(services).toContain('sqs');
-    expect(services).not.toContain('sns');
+    expect(services.state).toBe('available');
+    expect(services.data).toContain('sqs');
+    expect(services.data).not.toContain('sns');
   });
 });

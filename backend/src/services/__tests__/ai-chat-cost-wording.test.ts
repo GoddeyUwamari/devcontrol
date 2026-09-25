@@ -18,7 +18,13 @@
  *
  * No DB needed: formatContext()/getSystemPrompt() never touch the pool.
  */
-import { AIChatService, ChatContext, formatInclusiveRange, lastIncludedDay } from '../ai-chat.service';
+import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection, formatInclusiveRange, lastIncludedDay } from '../ai-chat.service';
+
+function noData(state: ContextSection<never>['state'], extra: Partial<ContextSection<never>> = {}): ContextSection<never> {
+  return { state, source: 'test source', asOf: null, scope: null, coverage: null, reason: null, data: null, ...extra };
+}
+
+const NO_DEPLOYMENTS = noData('unavailable', { source: 'DevControl deployment records', reason: 'no deployments were recorded for this organization in the last 30 days' });
 
 const service = new AIChatService({} as any);
 
@@ -31,9 +37,13 @@ function systemPrompt(): string {
 }
 
 /** The real production context shape observed 2026-09-25 (figures as returned by /api/ai-chat/context). */
-function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, dora?: ChatContext['dora']): ChatContext {
+function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, dora: ChatContext['dora'] = NO_DEPLOYMENTS): ChatContext {
+  const inventoryScope: ChatContext['inventoryScope'] = { kind: 'resource_inventory', connectedAccountId: '815931739526', discoveryRegion: 'us-east-1' };
+  const inventory = { source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-25T06:00:03.693Z', scope: inventoryScope, reason: null };
   return {
-    services: ['ec2', 's3', 'sns', 'vpc'],
+    discovery: { state: 'available', source: 'DevControl resource discovery runs', asOf: '2026-09-25T06:00:03.693Z', scope: null, coverage: null, reason: null, data: { completedAt: '2026-09-25T06:00:03.693Z' } },
+    account: { state: 'available', source: 'DevControl connected AWS account record', asOf: null, scope: null, coverage: null, reason: null, data: { accountId: '815931739526', region: 'us-east-1' } },
+    services: { state: 'available', ...inventory, coverage: null, data: ['ec2', 's3', 'sns', 'vpc'] },
     costs: {
       state: 'available',
       source: 'actual',
@@ -56,16 +66,22 @@ function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, do
         previousWindow: { start: '2026-08-01', end: '2026-08-25' },
         currentWindowTotal: 14.83, previousWindowTotal: 14.33, changeAmount: 0.5, changePercent: 3.5,
         coverage: { currentDays: 25, previousDays: 25, expectedCurrentDays: 25, expectedPreviousDays: 25 },
-        currentWindowIncludesToday: true,
+        currentWindowIncludesToday: true, asOf: '2026-09-25T08:57:16.538Z', basis: COMPARISON_BASIS,
       },
       ...overrides,
     },
-    inventoryScope: { kind: 'resource_inventory', connectedAccountId: '815931739526', discoveryRegion: 'us-east-1' },
-    resources: { ec2: { count: 1, underutilized: 0 } },
-    alerts: { total: 0, critical: 0, recent: [] },
+    inventoryScope,
+    resources: {
+      state: 'available', ...inventory, coverage: 'EC2, RDS, and Lambda resources only',
+      data: {
+        ec2: { count: 1, utilization: noData('not_supported', { reason: 'DevControl does not collect EC2 CPU utilization into the resource inventory.' }) },
+        rds: { count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 },
+        lambda: { count: 0, invocations: 0, invocationsKnownForCount: 0 },
+      },
+    },
+    alerts: noData('not_supported', { source: 'DevControl alert history', reason: "Organization-scoped alert data is not connected to the assistant: DevControl's alert sync does not yet associate alerts with an organization, so this account's alert counts cannot be determined." }),
+    anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
     dora,
-    timeRange: 'Last 30 days',
-    resourceDataAsOf: '2026-09-25T06:00:03.693Z',
   };
 }
 
@@ -191,25 +207,38 @@ describe('the AWS Cost Explorer line item', () => {
 });
 
 describe('DORA metrics in the cost context', () => {
-  const dora = {
-    deploymentFrequency: '114 deployments in 30 days',
-    leadTime: '6.12 hours (Average time between consecutive deployments)',
-    mttr: '71.35 minutes (1 incidents recovered)',
+  const dora: ChatContext['dora'] = {
+    state: 'available',
+    source: 'DevControl deployment records',
+    asOf: '2026-09-25T08:57:16.538Z',
+    scope: { kind: 'organization', window: 'last 30 days' },
+    coverage: 'deployments and incidents recorded in DevControl for this organization; deployments made outside DevControl are not included',
+    reason: null,
+    data: {
+      deploymentFrequency: '114 deployments in 30 days',
+      leadTime: '6.12 hours (Average time between consecutive deployments)',
+      mttr: '71.35 minutes (1 incidents recovered)',
+    },
   };
 
-  it('when present, are labeled as deployment-record data unrelated to cost, with lead time\'s own description', () => {
+  it('when available, are labeled as deployment-record data unrelated to cost, with their scope and lead time\'s own description', () => {
     const formatted = format(productionLikeContext({}, dora));
 
-    expect(formatted).toMatch(/DORA Metrics \(source: DevControl deployment records, last 30 days -- not AWS billing data and unrelated to the cost data above/);
+    expect(formatted).toMatch(/DORA metrics \(not AWS billing data and unrelated to the cost data above/);
+    expect(formatted).toMatch(/source: DevControl deployment records/);
+    expect(formatted).toMatch(/scope: this DevControl organization, last 30 days/);
     expect(formatted).toMatch(/- Lead time: 6\.12 hours \(Average time between consecutive deployments\)/);
     expect(formatted).not.toMatch(/Lead time for changes/);
   });
 
-  it('when absent, no DORA section or figure is invented', () => {
+  it('when unavailable, no DORA figure is invented and the section says why', () => {
     const formatted = format(productionLikeContext());
+    const doraSection = formatted.slice(formatted.indexOf('DORA metrics'));
 
-    expect(formatted).not.toMatch(/DORA/);
+    expect(doraSection).toMatch(/state: unavailable/);
+    expect(doraSection).toMatch(/data: not available -- no deployments were recorded for this organization in the last 30 days/);
     expect(formatted).not.toMatch(/deployments in/);
+    expect(formatted).not.toMatch(/Lead time:/);
   });
 
   it('the system prompt keeps DORA out of cost answers unless asked', () => {

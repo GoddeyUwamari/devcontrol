@@ -11,14 +11,30 @@
  * private methods without exposing them on the public class surface.
  */
 import { Pool } from 'pg';
-import { AIChatService, ChatContext } from '../ai-chat.service';
+import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection, InventoryResources } from '../ai-chat.service';
 
 const pool = {} as Pool; // AIChatService's constructor stores it but never queries it directly
 
 const NO_COMPARISON: ChatContext['costs']['comparison'] = {
   state: 'unavailable', note: null, currentWindow: null, previousWindow: null,
   currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null,
-  currentWindowIncludesToday: false,
+  currentWindowIncludesToday: false, asOf: null, basis: COMPARISON_BASIS,
+};
+
+/** A section in a given state -- data only when available/partial, as the repository builds them. */
+function section<T>(state: ContextSection<T>['state'], data: T | null, extra: Partial<ContextSection<T>> = {}): ContextSection<T> {
+  return { state, source: 'test source', asOf: null, scope: null, coverage: null, reason: null, data, ...extra };
+}
+
+/** A section with no data (error / not_supported / unavailable). */
+function noData(state: ContextSection<never>['state'], extra: Partial<ContextSection<never>> = {}): ContextSection<never> {
+  return section<never>(state, null, extra);
+}
+
+const RESOURCES: InventoryResources = {
+  ec2: { count: 3, utilization: noData('not_supported', { reason: 'DevControl does not collect EC2 CPU utilization into the resource inventory.' }) },
+  rds: { count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 },
+  lambda: { count: 0, invocations: 0, invocationsKnownForCount: 0 },
 };
 
 const INVENTORY_SCOPE: ChatContext['inventoryScope'] = {
@@ -44,7 +60,9 @@ function unavailableCosts(): ChatContext['costs'] {
 
 function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
   return {
-    services: ['ec2', 'rds'],
+    discovery: section('available', { completedAt: '2026-09-06T06:00:00.000Z' }, { asOf: '2026-09-06T06:00:00.000Z' }),
+    account: section('available', { accountId: '123456789012', region: 'us-east-1' }),
+    services: section('available', ['ec2', 'rds'], { source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-06T06:00:00.000Z', scope: INVENTORY_SCOPE }),
     costs: {
       state: 'available',
       source: 'actual',
@@ -60,14 +78,14 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
         currentWindow: { start: '2026-09-01', end: '2026-09-06' }, previousWindow: { start: '2026-08-01', end: '2026-08-06' },
         currentWindowTotal: 1000, previousWindowTotal: 900, changeAmount: 100, changePercent: 11.1,
         coverage: { currentDays: 6, previousDays: 6, expectedCurrentDays: 6, expectedPreviousDays: 6 },
-        currentWindowIncludesToday: true,
+        currentWindowIncludesToday: true, asOf: '2026-09-06T10:00:00.000Z', basis: COMPARISON_BASIS,
       },
     },
     inventoryScope: INVENTORY_SCOPE,
-    resources: { ec2: { count: 3, underutilized: 1 } },
-    alerts: { total: 0, critical: 0, recent: [] },
-    timeRange: 'Last 30 days',
-    resourceDataAsOf: '2026-09-06T06:00:00.000Z',
+    resources: section('available', RESOURCES, { source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-06T06:00:00.000Z', scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only' }),
+    alerts: noData('not_supported', { source: 'DevControl alert history', reason: "Organization-scoped alert data is not connected to the assistant: DevControl's alert sync does not yet associate alerts with an organization, so this account's alert counts cannot be determined." }),
+    anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
+    dora: noData('unavailable', { source: 'DevControl deployment records', reason: 'no deployments were recorded for this organization in the last 30 days' }),
     ...overrides,
   };
 }
@@ -116,16 +134,24 @@ describe('AIChatService formatContext (private, provenance-aware)', () => {
     const service = new AIChatService(pool);
     const formatted: string = (service as any).formatContext(baseContext());
 
-    expect(formatted).toMatch(/Resource inventory \(source: DevControl AWS discovery/);
-    expect(formatted).toMatch(/As of: 2026-09-06T06:00:00\.000Z/);
+    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts & incidents'));
+    expect(inventory).toMatch(/Resource inventory \(synchronized periodically by DevControl AWS discovery/);
+    expect(inventory).toMatch(/source: DevControl resource inventory \(periodic AWS discovery\)/);
+    expect(inventory).toMatch(/as_of: 2026-09-06T06:00:00\.000Z/);
   });
 
   it('resource inventory with no completed discovery run states that plainly rather than fabricating a timestamp', () => {
     const service = new AIChatService(pool);
-    const context = baseContext({ resourceDataAsOf: null });
+    const context = baseContext({
+      discovery: noData('unavailable', { reason: 'no discovery run has ever run for this account' }),
+      resources: noData('unavailable', { reason: 'no resource discovery run has completed as the latest run, so an empty inventory is not a confirmed zero' }),
+    });
     const formatted: string = (service as any).formatContext(context);
+    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts & incidents'));
 
-    expect(formatted).toMatch(/no completed discovery run yet for this account/);
+    expect(inventory).toMatch(/as_of: unknown/);
+    expect(inventory).toMatch(/data: not available -- no resource discovery run has completed/);
+    expect(inventory).not.toMatch(/EC2: \d/);
   });
 });
 
@@ -174,5 +200,115 @@ describe('AIChatService getFallbackResponse (non-LLM degraded path)', () => {
 
     expect(response).toMatch(/\$1,000/);
     expect(response).not.toMatch(/don't have cost data/i);
+  });
+});
+
+describe('AIChatService formatContext -- section states (PR A contract)', () => {
+  const service = new AIChatService(pool);
+  const format = (context: ChatContext): string => (service as any).formatContext(context);
+  const sectionOf = (formatted: string, title: string, next: string) => formatted.slice(formatted.indexOf(title), formatted.indexOf(next));
+
+  it('"error" says the data could not be retrieved, prints no data, and keeps the raw error out of the prompt', () => {
+    const formatted = format(baseContext({ services: noData('error', { reason: 'could not be retrieved: relation "aws_resources" does not exist' }) }));
+    const services = sectionOf(formatted, 'Services in use', 'Cost data:');
+
+    expect(services).toMatch(/state: error/);
+    expect(services).toMatch(/data: could not be retrieved -- this is missing data, not an empty result or a zero/);
+    expect(services).not.toMatch(/types:/);
+    expect(formatted).not.toMatch(/No services detected/);
+    expect(formatted).not.toMatch(/relation "aws_resources"/);
+  });
+
+  it('"not_supported" states its reason and never prints a zero or "none"', () => {
+    const formatted = format(baseContext());
+    const alerts = sectionOf(formatted, 'Alerts & incidents', 'Anomalies:');
+
+    expect(alerts).toMatch(/state: not_supported/);
+    expect(alerts).toMatch(/does not yet associate alerts with an organization/);
+    expect(alerts).toMatch(/This is not a zero, "none", or "no findings"/);
+    expect(formatted).not.toMatch(/active alerts: 0|Total active alerts|No recent incidents|recent: none/i);
+  });
+
+  it('"unavailable" prints no figure, only why', () => {
+    const formatted = format(baseContext());
+    const dora = formatted.slice(formatted.indexOf('DORA metrics'));
+
+    expect(dora).toMatch(/data: not available -- no deployments were recorded/);
+    expect(dora).not.toMatch(/Deployment frequency|Lead time|Mean time/);
+  });
+
+  it('an "available" genuine zero is printed as a zero', () => {
+    const formatted = format(baseContext({ alerts: section('available', { total: 0, critical: 0, recent: [] }, { source: 'DevControl alert history' }) }));
+    const alerts = sectionOf(formatted, 'Alerts & incidents', 'Anomalies:');
+
+    expect(alerts).toMatch(/- active alerts: 0/);
+    expect(alerts).toMatch(/- critical alerts: 0/);
+    expect(alerts).toMatch(/- recent: none firing/);
+  });
+
+  it('"partial" makes its limitation explicit alongside its data', () => {
+    const formatted = format(baseContext({
+      services: section('partial', ['ec2'], { reason: 'only us-east-1 was discovered', coverage: '1 of 2 regions' }),
+    }));
+    const services = sectionOf(formatted, 'Services in use', 'Cost data:');
+
+    expect(services).toMatch(/state: partial/);
+    expect(services).toMatch(/coverage: 1 of 2 regions/);
+    expect(services).toMatch(/limitation: only us-east-1 was discovered/);
+    expect(services).toMatch(/types: ec2/);
+  });
+
+  it('an unsupported EC2 utilization is never stated as "0 underutilized"', () => {
+    const formatted = format(baseContext());
+
+    expect(formatted).toMatch(/- EC2: 3 instances/);
+    expect(formatted).toMatch(/EC2 utilization: not_supported -- DevControl does not collect EC2 CPU utilization/);
+    expect(formatted).not.toMatch(/\d+ underutilized|underutilized: \d/);
+  });
+
+  it('the system prompt forbids reading error / not_supported / unavailable as none or zero', () => {
+    const prompt: string = (service as any).getSystemPrompt();
+
+    expect(prompt).toMatch(/never treat "unavailable", "error", or "not_supported" as \$0, zero, none,\s+empty, unchanged, or "no findings"/);
+  });
+});
+
+describe('AIChatService getFallbackResponse -- section states', () => {
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  beforeAll(() => { delete process.env.ANTHROPIC_API_KEY; });
+  afterAll(() => { if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey; });
+
+  async function fallbackFor(question: string, context: ChatContext): Promise<string> {
+    const chunks: string[] = [];
+    for await (const chunk of new AIChatService(pool).chat([{ role: 'user', content: question }], context)) chunks.push(chunk);
+    return chunks.join('');
+  }
+
+  it('never claims "0 underutilized" (or that utilization is "being gathered") when utilization is not_supported', async () => {
+    const response = await fallbackFor('Which instances are underutilized?', baseContext());
+
+    expect(response).toMatch(/I don't have EC2 utilization data for this account \(DevControl does not collect EC2 CPU utilization into the resource inventory\)/);
+    expect(response).not.toMatch(/\d+ of your \d+ EC2 instances|being gathered/);
+  });
+
+  it('never claims "0 active alerts" or "No recent incidents" when alerts are not_supported', async () => {
+    const response = await fallbackFor('Give me an overview', baseContext());
+
+    expect(response).toMatch(/Active alerts: not available -- Organization-scoped alert data is not connected/);
+    expect(response).not.toMatch(/Active alerts: 0|No recent incidents/);
+  });
+
+  it('never states a resource-type count from an errored inventory', async () => {
+    const response = await fallbackFor('Give me an overview', baseContext({ services: noData('error') }));
+
+    expect(response).toMatch(/I don't have a resource inventory for this account right now/);
+    expect(response).not.toMatch(/I can see \d+ discovered/);
+  });
+
+  it('states real counts when the sections are genuinely available', async () => {
+    const response = await fallbackFor('Give me an overview', baseContext({ alerts: section('available', { total: 2, critical: 1, recent: ['HighCPU'] }) }));
+
+    expect(response).toMatch(/I can see 2 discovered resource types/);
+    expect(response).toMatch(/Active alerts: 2 \(1 critical\)/);
   });
 });

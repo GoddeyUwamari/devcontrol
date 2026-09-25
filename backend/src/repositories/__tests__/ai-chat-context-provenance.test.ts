@@ -13,6 +13,7 @@
 import { Pool } from 'pg';
 import { AIChatContextRepository } from '../ai-chat-context.repository';
 import awsCostService from '../../services/aws-cost.service';
+import { AIChatService, ChatContext } from '../../services/ai-chat.service';
 
 function dbConfig() {
   return {
@@ -77,7 +78,7 @@ afterEach(() => {
 });
 
 describe('AIChatContextRepository -- discovery freshness', () => {
-  it('a completed discovery job\'s completed_at is surfaced as resourceDataAsOf', async () => {
+  it('a completed discovery job\'s completed_at is surfaced as the discovery section\'s data and asOf', async () => {
     const orgId = await insertOrg();
     const completedAt = new Date('2026-09-06T05:00:00.000Z');
     await insertDiscoveryJob(orgId, 'completed', completedAt);
@@ -86,10 +87,12 @@ describe('AIChatContextRepository -- discovery freshness', () => {
 
     const context = await contextRepo.gatherContext(orgId);
 
-    expect(context.resourceDataAsOf).toBe(completedAt.toISOString());
+    expect(context.discovery.state).toBe('available');
+    expect(context.discovery.data?.completedAt).toBe(completedAt.toISOString());
+    expect(context.discovery.asOf).toBe(completedAt.toISOString());
   });
 
-  it('a still-running (not yet completed) job does not produce a resourceDataAsOf timestamp', async () => {
+  it('a still-running (not yet completed) job is "unavailable" with no timestamp', async () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, 'running', null);
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AWS_NOT_CONNECTED'));
@@ -97,10 +100,12 @@ describe('AIChatContextRepository -- discovery freshness', () => {
 
     const context = await contextRepo.gatherContext(orgId);
 
-    expect(context.resourceDataAsOf).toBeNull();
+    expect(context.discovery.state).toBe('unavailable');
+    expect(context.discovery.data).toBeNull();
+    expect(context.discovery.asOf).toBeNull();
   });
 
-  it('a failed job does not produce a resourceDataAsOf timestamp', async () => {
+  it('a failed job is "unavailable" with no timestamp', async () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, 'failed', null);
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AWS_NOT_CONNECTED'));
@@ -108,17 +113,21 @@ describe('AIChatContextRepository -- discovery freshness', () => {
 
     const context = await contextRepo.gatherContext(orgId);
 
-    expect(context.resourceDataAsOf).toBeNull();
+    expect(context.discovery.state).toBe('unavailable');
+    expect(context.discovery.data).toBeNull();
+    expect(context.discovery.asOf).toBeNull();
   });
 
-  it('no discovery job at all yields null, never a fabricated timestamp', async () => {
+  it('no discovery job at all is "unavailable", never a fabricated timestamp', async () => {
     const orgId = await insertOrg();
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AWS_NOT_CONNECTED'));
     jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue([]);
 
     const context = await contextRepo.gatherContext(orgId);
 
-    expect(context.resourceDataAsOf).toBeNull();
+    expect(context.discovery.state).toBe('unavailable');
+    expect(context.discovery.data).toBeNull();
+    expect(context.discovery.asOf).toBeNull();
   });
 });
 
@@ -193,5 +202,254 @@ describe('AIChatContextRepository -- cost provenance (actual / estimated / unava
     expect(context.costs.state).toBe('available');
     expect(context.costs.source).toBe('actual');
     expect(context.costs.current).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR A: every non-cost section is a ContextSection whose state -- not an
+// empty list, a 0, or a missing key -- says whether data was measured, is
+// absent, failed, or has no source (services/ai-context-contract.ts).
+// ---------------------------------------------------------------------------
+
+const chatService = new AIChatService({} as Pool);
+const INVENTORY_SCOPE = { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: 'us-east-1' };
+const COMPLETED_AT = '2026-09-06T05:00:00.000Z';
+const COMPLETED_DISCOVERY = {
+  state: 'available', source: 'DevControl resource discovery runs', asOf: COMPLETED_AT,
+  scope: null, coverage: null, reason: null, data: { completedAt: COMPLETED_AT },
+};
+
+async function insertResource(
+  organizationId: string,
+  resourceType: 'ec2' | 'rds',
+  estimatedMonthlyCost: number | null,
+  tags: Record<string, string> = {}
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status, estimated_monthly_cost, tags)
+     VALUES ($1, $2, $3, $4, 'us-east-1', 'running', $5, $6)`,
+    [organizationId, `arn:aws:${resourceType}:us-east-1:123456789012:r-${uniqueSuffix()}`, `r-${uniqueSuffix()}`, resourceType, estimatedMonthlyCost, JSON.stringify(tags)]
+  );
+}
+
+/** gatherContext() with Cost Explorer not connected -- these tests are about the other sections. */
+async function contextFor(orgId: string) {
+  jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AWS_NOT_CONNECTED'));
+  jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue([]);
+  return contextRepo.gatherContext(orgId);
+}
+
+function format(context: ChatContext): string {
+  return (chatService as any).formatContext(context);
+}
+
+describe('Services section', () => {
+  it('a completed discovery that found nothing is "available" with a real empty list', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
+
+    const context = await contextFor(orgId);
+
+    expect(context.services).toMatchObject({ state: 'available', data: [], asOf: COMPLETED_AT, source: 'DevControl resource inventory (periodic AWS discovery)' });
+    expect(format(context)).toMatch(/types: none -- discovery completed and found no resources/);
+  });
+
+  it('with no completed discovery, an empty inventory is "unavailable" -- not a confirmed "none"', async () => {
+    const orgId = await insertOrg();
+
+    const context = await contextFor(orgId);
+
+    expect(context.services).toMatchObject({ state: 'unavailable', data: null });
+    expect(format(context)).not.toMatch(/No services detected|types: none/);
+  });
+
+  it('a failed query is "error" with data null -- never [] or "No services detected"', async () => {
+    jest.spyOn(pool, 'query').mockRejectedValueOnce(new Error('relation "aws_resources" does not exist') as never);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const services = await (contextRepo as any).getServices('org-id', COMPLETED_DISCOVERY, INVENTORY_SCOPE);
+
+    expect(services).toMatchObject({ state: 'error', data: null });
+    expect(services.data).not.toEqual([]);
+  });
+});
+
+describe('Resources section', () => {
+  it('a genuine zero after a completed discovery is "available" with every count explicitly 0', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
+
+    const context = await contextFor(orgId);
+    const data = context.resources.data!;
+
+    expect(context.resources.state).toBe('available');
+    expect(data.ec2.count).toBe(0);
+    expect(data.rds).toEqual({ count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 });
+    expect(data.lambda).toEqual({ count: 0, invocations: 0, invocationsKnownForCount: 0 });
+    const formatted = format(context);
+    expect(formatted).toMatch(/- EC2: 0 instances/);
+    expect(formatted).toMatch(/- RDS: 0 databases/);
+    expect(formatted).toMatch(/- Lambda: 0 functions/);
+  });
+
+  it('a failed query is "error" with data null -- never {} or "No resource data"', async () => {
+    jest.spyOn(pool, 'query').mockRejectedValue(new Error('connection terminated') as never);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const resources = await (contextRepo as any).getResourceData('org-id', COMPLETED_DISCOVERY, INVENTORY_SCOPE);
+
+    expect(resources).toMatchObject({ state: 'error', data: null });
+    expect(resources.data).not.toEqual({});
+  });
+
+  it('EC2 utilization is "not_supported" -- a cpu_utilization tag is never read as a measurement, and "0 underutilized" is never stated', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
+    await insertResource(orgId, 'ec2', null, { cpu_utilization: '5' });
+
+    const context = await contextFor(orgId);
+    const ec2 = context.resources.data!.ec2;
+
+    expect(ec2.count).toBe(1);
+    expect(ec2.utilization).toMatchObject({ state: 'not_supported', data: null });
+    expect(ec2.utilization.reason).toMatch(/does not collect EC2 CPU utilization/);
+    const formatted = format(context);
+    expect(formatted).toMatch(/EC2 utilization: not_supported/);
+    expect(formatted).not.toMatch(/\d+ underutilized|underutilized: \d/);
+  });
+
+  it('RDS cost is an explicitly estimated figure in cents over only the databases that carry an estimate -- not "storage cost"', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
+    await insertResource(orgId, 'rds', 12.34);
+    await insertResource(orgId, 'rds', 0.5);
+    await insertResource(orgId, 'rds', null);
+
+    const context = await contextFor(orgId);
+
+    expect(context.resources.data!.rds).toEqual({ count: 3, estimatedMonthlyCost: 12.84, estimatedForCount: 2 });
+    const formatted = format(context);
+    expect(formatted).toMatch(/- RDS: 3 databases; DevControl estimated monthly cost \$12\.84 for 2 of 3 \(list-price estimate for the whole database -- not AWS billed spend\)/);
+    expect(formatted).not.toMatch(/storage cost/);
+  });
+});
+
+describe('Alerts section', () => {
+  it('is "not_supported" with a reason -- never a fabricated "0 active alerts" or "No recent incidents"', async () => {
+    const orgId = await insertOrg();
+
+    const context = await contextFor(orgId);
+
+    expect(context.alerts).toMatchObject({ state: 'not_supported', data: null, source: 'DevControl alert history' });
+    expect(context.alerts.reason).toMatch(/does not yet associate alerts with an organization/);
+    const formatted = format(context);
+    expect(formatted).not.toMatch(/active alerts: 0|Total active alerts|No recent incidents/i);
+  });
+});
+
+describe('Anomalies section', () => {
+  it('is "not_supported" even when resources meet the old cost_spike threshold -- those rows are never shown as anomalies', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
+    // Two EC2 resources at $300 each: >$100 per resource and >$500 per type --
+    // exactly what the former fixed-threshold query reported as a "cost_spike".
+    await insertResource(orgId, 'ec2', 300);
+    await insertResource(orgId, 'ec2', 300);
+
+    const context = await contextFor(orgId);
+
+    expect(context.anomalies).toEqual({
+      state: 'not_supported', source: 'DevControl anomaly detection', asOf: null, scope: null,
+      coverage: null, reason: "No anomaly detection is connected to the assistant's context.", data: null,
+    });
+    const formatted = format(context);
+    expect(formatted).not.toMatch(/cost_spike|Detected Anomalies|resources with high spend/);
+  });
+});
+
+describe('DORA section', () => {
+  const METRICS = {
+    deploymentFrequency: { value: 3.8, unit: 'per day', description: '114 deployments in 30 days' },
+    leadTime: { value: 6.12, unit: 'hours', description: 'Average time between consecutive deployments' },
+    mttr: { value: 71.35, unit: 'minutes', description: '1 incidents recovered' },
+  };
+
+  it('success is "available" with deployment-record provenance, a computed-at asOf, and an explicit 30-day organization scope', async () => {
+    jest.spyOn((contextRepo as any).doraMetricsService, 'getComprehensiveMetrics').mockResolvedValue(METRICS);
+    const before = Date.now();
+
+    const dora = await (contextRepo as any).getDORAMetrics('org-id');
+
+    expect(dora.state).toBe('available');
+    expect(dora.source).toBe('DevControl deployment records');
+    expect(dora.scope).toEqual({ kind: 'organization', window: 'last 30 days' });
+    expect(dora.coverage).toMatch(/recorded in DevControl for this organization/);
+    expect(Date.parse(dora.asOf)).toBeGreaterThanOrEqual(before - 1000);
+    expect(dora.data.leadTime).toBe('6.12 hours (Average time between consecutive deployments)');
+  });
+
+  it('no deployments in the window is "unavailable" -- not an omitted section', async () => {
+    jest.spyOn((contextRepo as any).doraMetricsService, 'getComprehensiveMetrics').mockResolvedValue({
+      ...METRICS, deploymentFrequency: { value: 0, unit: 'per day', description: '0 deployments in 30 days' },
+    });
+
+    const dora = await (contextRepo as any).getDORAMetrics('org-id');
+
+    expect(dora).toMatchObject({ state: 'unavailable', data: null, reason: 'no deployments were recorded for this organization in the last 30 days' });
+  });
+
+  it('a failed computation is "error" with data null -- not undefined', async () => {
+    jest.spyOn((contextRepo as any).doraMetricsService, 'getComprehensiveMetrics').mockRejectedValue(new Error('deployments query failed'));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const dora = await (contextRepo as any).getDORAMetrics('org-id');
+
+    expect(dora).toBeDefined();
+    expect(dora).toMatchObject({ state: 'error', data: null });
+  });
+});
+
+describe('Connected account and discovery prerequisites', () => {
+  it('a failed lookup is "error", distinguishable from "no account" / "never ran" ("unavailable")', async () => {
+    const throwingPool = { query: jest.fn().mockRejectedValue(new Error('connection refused')) } as unknown as Pool;
+    const repo = new AIChatContextRepository(throwingPool);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect((repo as any).getConnectedAccount('org-id')).resolves.toMatchObject({ state: 'error', data: null });
+    await expect((repo as any).getDiscoveryFreshness('org-id')).resolves.toMatchObject({ state: 'error', data: null });
+
+    const orgId = await insertOrg();
+    await expect((contextRepo as any).getConnectedAccount(orgId)).resolves.toMatchObject({ state: 'unavailable', data: null, reason: 'no AWS account is connected' });
+    await expect((contextRepo as any).getDiscoveryFreshness(orgId)).resolves.toMatchObject({ state: 'unavailable', data: null });
+  });
+});
+
+describe('gatherContext() negative control: every getter throws', () => {
+  it('every queried section is "error" with data null; nothing silently becomes zero, empty, or an estimate', async () => {
+    const throwingPool = { query: jest.fn().mockRejectedValue(new Error('database unavailable')) } as unknown as Pool;
+    const repo = new AIChatContextRepository(throwingPool);
+    jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('ThrottlingException'));
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockRejectedValue(new Error('ThrottlingException'));
+    // DORA is not mocked: the real DORAMetricsService runs against the failing pool.
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const context = await repo.gatherContext('org-id');
+
+    for (const name of ['discovery', 'account', 'services', 'resources', 'dora'] as const) {
+      expect({ name, state: context[name].state, data: context[name].data }).toEqual({ name, state: 'error', data: null });
+    }
+    // Alerts/anomalies have no source to fail -- not_supported, still no data.
+    expect(context.alerts).toMatchObject({ state: 'not_supported', data: null });
+    expect(context.anomalies).toMatchObject({ state: 'not_supported', data: null });
+    // Cost stays an error: no Cost Explorer figure and no estimate -- never $0.
+    expect(context.costs).toMatchObject({ state: 'error', source: 'unavailable', current: null, topSpenders: null });
+    expect(context.costs.costExplorer.state).toBe('error');
+    expect(context.costs.comparison.currentWindowTotal).toBeNull();
+
+    const formatted = format(context);
+    expect(formatted).not.toMatch(/\$0\.00|No services detected|active alerts: 0|No recent incidents|underutilized: \d|types: none|- EC2: 0/);
+    expect(formatted.match(/data: could not be retrieved/g)?.length).toBe(3); // services, resources, DORA
+    expect(formatted).not.toMatch(/database unavailable/); // raw error text stays out of the prompt
   });
 });

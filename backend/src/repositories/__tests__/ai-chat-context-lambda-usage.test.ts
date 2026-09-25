@@ -71,13 +71,26 @@ afterAll(async () => {
   await pool.end();
 });
 
+/**
+ * The resources section's data after a completed discovery run -- the state in
+ * which inventory counts (including a real 0) are confirmed.
+ */
+async function resourcesFor(orgId: string) {
+  const completedAt = '2026-09-06T05:00:00.000Z';
+  const discovery = { state: 'available', source: 'DevControl resource discovery runs', asOf: completedAt, scope: null, coverage: null, reason: null, data: { completedAt } };
+  const scope = { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: 'us-east-1' };
+  const section = await (contextRepo as any).getResourceData(orgId, discovery, scope);
+  expect(section.state).toBe('available');
+  return section.data;
+}
+
 describe('AIChatContextRepository -- Lambda invocation figure (real usage, not the broken tags path)', () => {
   it('sums real usage from metadata.invocations_30d, all functions known', async () => {
     const orgId = await insertOrg();
     await insertLambdaResource(orgId, { invocations_30d: 100, usage_state: 'normal_usage' });
     await insertLambdaResource(orgId, { invocations_30d: 50, usage_state: 'normal_usage' });
 
-    const resources = await (contextRepo as any).getResourceData(orgId);
+    const resources = await resourcesFor(orgId);
 
     expect(resources.lambda).toEqual({ count: 2, invocations: 150, invocationsKnownForCount: 2 });
   });
@@ -87,7 +100,7 @@ describe('AIChatContextRepository -- Lambda invocation figure (real usage, not t
     await insertLambdaResource(orgId, { invocations_30d: 100, usage_state: 'normal_usage' });
     await insertLambdaResource(orgId, { usage_state: 'unavailable' }); // no invocations_30d key at all
 
-    const resources = await (contextRepo as any).getResourceData(orgId);
+    const resources = await resourcesFor(orgId);
 
     expect(resources.lambda.count).toBe(2);
     expect(resources.lambda.invocations).toBe(100); // only the known function's real usage
@@ -100,7 +113,7 @@ describe('AIChatContextRepository -- Lambda invocation figure (real usage, not t
     // fix must not read it -- only metadata.invocations_30d is authoritative.
     await insertLambdaResource(orgId, { usage_state: 'unavailable' }, { invocations: '999999' });
 
-    const resources = await (contextRepo as any).getResourceData(orgId);
+    const resources = await resourcesFor(orgId);
 
     expect(resources.lambda.invocations).toBe(0);
     expect(resources.lambda.invocationsKnownForCount).toBe(0);
@@ -110,16 +123,16 @@ describe('AIChatContextRepository -- Lambda invocation figure (real usage, not t
     const orgId = await insertOrg();
     await insertLambdaResource(orgId, { invocations_30d: 0, usage_state: 'zero_usage' });
 
-    const resources = await (contextRepo as any).getResourceData(orgId);
+    const resources = await resourcesFor(orgId);
 
     expect(resources.lambda).toEqual({ count: 1, invocations: 0, invocationsKnownForCount: 1 });
   });
 
-  it('omits the lambda key entirely when the org has no Lambda functions', async () => {
+  it('an org with no Lambda functions gets an explicit, confirmed count of 0 -- not an omitted key', async () => {
     const orgId = await insertOrg();
 
-    const resources = await (contextRepo as any).getResourceData(orgId);
+    const resources = await resourcesFor(orgId);
 
-    expect(resources.lambda).toBeUndefined();
+    expect(resources.lambda).toEqual({ count: 0, invocations: 0, invocationsKnownForCount: 0 });
   });
 });

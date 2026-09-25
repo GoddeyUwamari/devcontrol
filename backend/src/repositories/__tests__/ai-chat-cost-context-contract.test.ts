@@ -66,8 +66,13 @@ async function insertResource(organizationId: string, estimatedMonthlyCost: numb
   );
 }
 
+/** Stubs the aws_accounts lookup as the section getConnectedAccount() returns: a row, or none connected. */
 function stubConnectedAccount(account: { accountId: string | null; region: string | null } | null = { accountId: ACCOUNT_ID, region: 'us-east-1' }) {
-  jest.spyOn(contextRepo as any, 'getConnectedAccount').mockResolvedValue(account);
+  jest.spyOn(contextRepo as any, 'getConnectedAccount').mockResolvedValue(
+    account
+      ? { state: 'available', source: 'DevControl connected AWS account record', asOf: null, scope: null, coverage: null, reason: null, data: account }
+      : { state: 'unavailable', source: 'DevControl connected AWS account record', asOf: null, scope: null, coverage: null, reason: 'no AWS account is connected', data: null }
+  );
 }
 
 function mockCostExplorer(total: number, byService: Array<{ service: string; amount: number }>) {
@@ -428,7 +433,8 @@ describe('Inventory scope', () => {
     const throwingPool = { query: jest.fn().mockRejectedValue(new Error('relation "aws_accounts" does not exist')) } as unknown as Pool;
     const repo = new AIChatContextRepository(throwingPool);
 
-    await expect((repo as any).getConnectedAccount('org-id')).resolves.toBeNull();
+    // A failed lookup is 'error' -- distinguishable from "no account connected" -- and carries no guessed row.
+    await expect((repo as any).getConnectedAccount('org-id')).resolves.toMatchObject({ state: 'error', data: null });
 
     const orgId = await insertOrg();
     stubConnectedAccount(null);
@@ -551,10 +557,56 @@ describe('DORA context labeling', () => {
 
     const dora = await (contextRepo as any).getDORAMetrics('org-id');
 
-    expect(dora).toEqual({
+    expect(dora.state).toBe('available');
+    expect(dora.data).toEqual({
       deploymentFrequency: '114 deployments in 30 days',
       leadTime: '6.12 hours (Average time between consecutive deployments)',
       mttr: '71.35 minutes (1 incidents recovered)',
     });
   });
 });
+
+describe('Comparison provenance: asOf and basis', () => {
+  it('carries when its daily trend was fetched, and states that credits are excluded (daily category charges floored to zero)', async () => {
+    const orgId = await insertOrg();
+    stubConnectedAccount();
+    mockCostExplorer(500, [{ service: 'AWS Lambda', amount: 500 }]);
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(dailyTrend(10, 5).points);
+    const fetchedAt = jest.spyOn(awsCostService, 'getCostTrendFetchedAt').mockReturnValue('2026-09-25T15:17:36.123Z');
+
+    const context = await contextRepo.gatherContext(orgId);
+    const { comparison } = context.costs;
+
+    expect(fetchedAt).toHaveBeenCalledWith(orgId, '90d');
+    expect(comparison.asOf).toBe('2026-09-25T15:17:36.123Z');
+    expect(comparison.basis).toMatch(/daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded/);
+    const section = (chatService as any).formatComparisonSection(comparison);
+    expect(section).toMatch(/- as_of: 2026-09-25T15:17:36\.123Z/);
+    expect(section).toMatch(/- basis: sum of AWS Cost Explorer daily charges per cost category/);
+    // The calculation itself is unchanged -- only its provenance is new.
+    expect(comparison.changeAmount).toBe(10 * dailyTrend(10, 5).currentDays - 5 * dailyTrend(10, 5).previousDays);
+  });
+
+  it('an unknown fetch time is null and stated as "unknown", never a guessed timestamp', () => {
+    const comparison = compare(14.83, 14.33);
+
+    expect(comparison.asOf).toBeNull();
+    expect((chatService as any).formatComparisonSection(comparison)).toMatch(/- as_of: unknown/);
+  });
+
+  it('a failed or impossible comparison still states its basis and claims no freshness', async () => {
+    const orgId = await insertOrg();
+    stubConnectedAccount();
+    mockCostExplorer(500, [{ service: 'AWS Lambda', amount: 500 }]);
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockRejectedValue(new Error('ThrottlingException'));
+
+    const { comparison } = (await contextRepo.gatherContext(orgId)).costs;
+
+    expect(comparison).toMatchObject({ state: 'error', asOf: null, currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null });
+    expect(comparison.basis).toBe(dailyBasis());
+  });
+});
+
+function dailyBasis() {
+  return 'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month_to_date_spend';
+}
