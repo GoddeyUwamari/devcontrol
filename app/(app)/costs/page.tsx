@@ -237,17 +237,19 @@ export default function CostsPage() {
   // (source C) already fetched above — no fabricated per-category dollar figure.
   const categorySavings = useMemo(() => {
     if (isDemoActive) return null
-    const byType = (type: string) => activeRecs.filter(r => r.resourceType === type)
-    const summarize = (recs: CostRecommendation[]) => {
-      const total = recs.reduce((sum, r) => sum + (r.potentialSavings || 0), 0)
+    // The total is the server's de-duplicated per-type figure (two
+    // recommendations can draw on the same instance's cost), not a client sum.
+    const summarize = (type: string) => {
+      const recs = activeRecs.filter(r => r.resourceType === type)
+      const total = recStats?.potentialSavingsByResourceType?.[type] ?? 0
       const top = [...recs].sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))[0]
       return { total, issue: top?.issue ?? null }
     }
     return {
-      compute: summarize(byType('EC2')),
-      database: summarize(byType('RDS')),
+      compute: summarize('EC2'),
+      database: summarize('RDS'),
     }
-  }, [isDemoActive, activeRecs])
+  }, [isDemoActive, activeRecs, recStats])
 
   const costAnomalyDetected = !isDemoActive && growthRate > 20
 

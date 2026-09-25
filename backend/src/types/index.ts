@@ -213,6 +213,8 @@ export interface RecommendationStats {
   total_recommendations: number;
   active_recommendations: number;
   total_potential_savings: number;
+  /** Estimated potential savings per resource_type, de-duplicated like the total. */
+  potential_savings_by_resource_type: Record<string, number>;
   by_severity: {
     high: number;
     medium: number;

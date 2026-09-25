@@ -273,5 +273,18 @@ describe('CostOptimizationService.detectIdleEC2Instances (ec2_idle) — evidence
     expect(description).toContain('not a rightsizing recommendation');
     expect(description).not.toMatch(/downsiz/i);
   });
+
+  it('(22) its estimated savings are labeled as an estimate and declare the instance cost they draw on', async () => {
+    const { result } = await detect(ec2Instance('i-22'), cpuWindow(2));
+    const metadata = result.issues[0].metadata;
+
+    expect(metadata.savings_basis).toMatch(/^estimated:/);
+    expect(metadata.savings_basis).toContain('not billed cost or guaranteed savings');
+    // Nothing the customer sees implies a guaranteed saving from stopping it.
+    for (const text of [metadata.savings_basis, result.issues[0].description]) {
+      expect(text).not.toMatch(/stopping|would save|will save|guarantee(?!d savings)/i);
+    }
+    expect(metadata.savings_claim).toEqual({ kind: 'full_resource_cost', resource_ids: ['i-22'] });
+  });
 });
 

@@ -8,6 +8,7 @@ import {
   RecommendationStatus,
 } from '../types';
 import { DetectorObservation } from '../services/cost-optimization.service';
+import { aggregateEstimatedSavings } from '../services/estimated-savings';
 import {
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_RDS_OVERSIZED_INSTANCE,
@@ -413,10 +414,13 @@ export class CostRecommendationsRepository {
         'SELECT COUNT(*) as count FROM cost_recommendations WHERE status = $1 AND organization_id = $2',
         ['ACTIVE', organizationId]
       );
-      const savingsQuery = await client.query(
-        'SELECT COALESCE(SUM(potential_savings), 0) as total FROM cost_recommendations WHERE status = $1 AND organization_id = $2',
+      // Not a plain SUM(potential_savings): two active recommendations can
+      // draw on the same resource's cost -- see estimated-savings.ts.
+      const savingsRows = await client.query(
+        'SELECT resource_type, potential_savings, metadata FROM cost_recommendations WHERE status = $1 AND organization_id = $2',
         ['ACTIVE', organizationId]
       );
+      const savings = aggregateEstimatedSavings(savingsRows.rows);
 
       const severityQuery = await client.query(
         `
@@ -433,7 +437,8 @@ export class CostRecommendationsRepository {
       return {
         total_recommendations: parseInt(totalQuery.rows[0].count),
         active_recommendations: parseInt(activeQuery.rows[0].count),
-        total_potential_savings: parseFloat(savingsQuery.rows[0].total),
+        total_potential_savings: savings.total,
+        potential_savings_by_resource_type: savings.byResourceType,
         by_severity: {
           high: parseInt(severityQuery.rows[0].high),
           medium: parseInt(severityQuery.rows[0].medium),

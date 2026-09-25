@@ -426,11 +426,13 @@ export default function DashboardPage() {
       ]
     : OPPORTUNITY_CATEGORIES.map((cat) => {
         const matches = costRecsRaw.filter((r) => r.resourceType === cat.type)
-        const total = matches.reduce((sum, r) => sum + (r.potentialSavings ?? 0), 0)
+        // The server's de-duplicated per-type total, not a client-side sum: two
+        // recommendations can draw on the same instance's cost (e.g. idle + RI).
+        const total = costRecStats?.potentialSavingsByResourceType?.[cat.type]
         return {
           ...cat,
           count: matches.length,
-          savingsLabel: matches.length > 0 ? `${formatSavingsCurrency(total)}/mo` : '$0/mo',
+          savingsLabel: matches.length === 0 ? '$0/mo' : total != null ? `${formatSavingsCurrency(total)}/mo` : '—',
           priorityBadge: priorityBadgeFor(matches[0]?.severity),
         }
       })

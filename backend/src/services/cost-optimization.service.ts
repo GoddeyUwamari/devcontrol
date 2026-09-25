@@ -392,6 +392,7 @@ class CostOptimizationService {
                   datapoints_required: EC2_IDLE_MIN_DATAPOINTS,
                 },
                 savings_basis: 'estimated: compute cost from DevControl\'s list-price table (a default estimate for unlisted instance types); not billed cost or guaranteed savings',
+                savings_claim: { kind: 'full_resource_cost', resource_ids: [instance.InstanceId] },
                 configuration: {
                   parameter: 'cpu_threshold_percent',
                   value: config.value,
@@ -1841,12 +1842,15 @@ class CostOptimizationService {
       });
       const riResponse = await ec2Client.send(riCommand);
 
-      // Count instances by type
+      // Count instances by type, keeping their IDs so the savings claim below
+      // names the pool it draws on (see estimated-savings.ts).
       const instanceCounts: Record<string, number> = {};
+      const instanceIdsByType: Record<string, string[]> = {};
       for (const reservation of instancesResponse.Reservations || []) {
         for (const instance of reservation.Instances || []) {
           const type = instance.InstanceType || 'unknown';
           instanceCounts[type] = (instanceCounts[type] || 0) + 1;
+          if (instance.InstanceId) (instanceIdsByType[type] ??= []).push(instance.InstanceId);
         }
       }
 
@@ -1883,6 +1887,14 @@ class CostOptimizationService {
               instance_type: instanceType,
               uncovered_count: unconveredCount,
               estimated_discount: '35%',
+              // Which of the type's instances are uncovered is undefined (RIs
+              // float across a type), so the claim is on the whole pool.
+              savings_claim: {
+                kind: 'fleet_discount',
+                resource_ids: instanceIdsByType[instanceType] ?? [],
+                per_resource_savings: onDemandCost - riCost,
+                counted_resources: unconveredCount,
+              },
             },
           });
         }
