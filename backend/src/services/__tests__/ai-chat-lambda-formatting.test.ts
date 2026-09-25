@@ -20,7 +20,22 @@ import { AIChatService, ChatContext } from '../ai-chat.service';
 function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
   return {
     services: [],
-    costs: { current: 0, previous: 0, changePercent: null, topSpenders: [], source: 'unavailable', asOf: null },
+    costs: {
+      state: 'unavailable',
+      source: 'unavailable',
+      current: null,
+      asOf: null,
+      period: null,
+      scope: null,
+      topSpenders: null,
+      costExplorer: { state: 'unavailable', reason: 'no connected AWS account' },
+      estimateCoverage: null,
+      comparison: {
+        state: 'unavailable', note: null, currentWindow: null, previousWindow: null,
+        currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null,
+      },
+    },
+    inventoryScope: { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: null },
     resources: {},
     alerts: { total: 0, critical: 0, recent: [] },
     timeRange: '30d',

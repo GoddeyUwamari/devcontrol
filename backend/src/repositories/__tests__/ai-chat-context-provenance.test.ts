@@ -136,9 +136,10 @@ describe('AIChatContextRepository -- cost provenance (actual / estimated / unava
 
     const context = await contextRepo.gatherContext(orgId);
 
+    expect(context.costs.state).toBe('available');
     expect(context.costs.source).toBe('actual');
     expect(context.costs.asOf).toBe(fetchedAt);
-    expect(context.costs.current).toBe(251); // rounded
+    expect(context.costs.current).toBe(250.5); // cents precision, never whole-dollar rounding
   });
 
   it('Cost Explorer failing, with a usable aws_resources estimate present, falls back to source "estimated" using discovery freshness as its asOf', async () => {
@@ -151,24 +152,31 @@ describe('AIChatContextRepository -- cost provenance (actual / estimated / unava
 
     const context = await contextRepo.gatherContext(orgId);
 
+    expect(context.costs.state).toBe('available');
     expect(context.costs.source).toBe('estimated');
     expect(context.costs.current).toBe(42);
     expect(context.costs.asOf).toBe(completedAt.toISOString());
   });
 
-  it('Cost Explorer failing AND no usable estimate produces source "unavailable" -- never a bare $0 masquerading as confirmed spend', async () => {
+  it('Cost Explorer failing AND no usable estimate produces source "unavailable" with a null figure -- never a bare $0 masquerading as confirmed spend', async () => {
     const orgId = await insertOrg();
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AWS_NOT_CONNECTED: no account'));
     jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue([]);
 
     const context = await contextRepo.gatherContext(orgId);
 
+    expect(context.costs.state).toBe('unavailable');
     expect(context.costs.source).toBe('unavailable');
-    expect(context.costs.current).toBe(0);
+    expect(context.costs.current).toBeNull();
     expect(context.costs.asOf).toBeNull();
   });
 
-  it('Cost Explorer returning a real zero total (genuinely no spend) is treated the same as unreachable -- falls through to the estimate/unavailable path, not labeled "actual"', async () => {
+  // Deliberately inverted from the prior rule ("total > 0 is the only condition
+  // that counts as 'actual'", mirroring getDashboardStats()): a successful Cost
+  // Explorer response of $0 is real billing data, and routing it into the
+  // list-price estimate replaced a true $0 with a fabricated figure. The
+  // Dashboard's own getMonthlySpendWithFallback() is unchanged.
+  it('Cost Explorer returning a real zero total is actual billing data -- $0, state available, never replaced by an estimate', async () => {
     const orgId = await insertOrg();
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({
       total: 0,
@@ -178,10 +186,12 @@ describe('AIChatContextRepository -- cost provenance (actual / estimated / unava
     });
     jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue([]);
 
+    await insertAwsResourceWithEstimate(orgId, 42); // an estimate exists, and must NOT be used
+
     const context = await contextRepo.gatherContext(orgId);
 
-    // Matches stats.controller.ts's own getDashboardStats() semantics exactly:
-    // total > 0 is the only condition that counts as 'actual'.
-    expect(context.costs.source).not.toBe('actual');
+    expect(context.costs.state).toBe('available');
+    expect(context.costs.source).toBe('actual');
+    expect(context.costs.current).toBe(0);
   });
 });

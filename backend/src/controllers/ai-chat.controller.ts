@@ -131,6 +131,7 @@ export class AIChatController {
           context: {
             services: context.services.length,
             currentCost: context.costs.current,
+            costState: context.costs.state,
             costSource: context.costs.source,
             costDataAsOf: context.costs.asOf,
             resourceDataAsOf: context.resourceDataAsOf,
