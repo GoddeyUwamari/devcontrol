@@ -117,7 +117,7 @@ describe('AIChatService.formatContext -- anomalies', () => {
     const formatted: string = (service as any).formatContext(baseContext());
     const anomalies = formatted.slice(formatted.indexOf('Anomalies:'), formatted.indexOf('DORA metrics'));
 
-    expect(anomalies).toMatch(/state: not_supported/);
+    expect(anomalies).toMatch(/Status: Not supported/);
     expect(anomalies).toMatch(/No anomaly detection is connected to the assistant's context\./);
     expect(anomalies).toMatch(/This is not a zero, "none", or "no findings"/);
     expect(formatted).not.toMatch(/Detected Anomalies/);

@@ -170,8 +170,10 @@ export class AIChatContextRepository {
 
   /**
    * An inventory read (aws_resources) as a section. A failing query is
-   * 'error'. A result is only a confirmed zero/empty once a discovery run has
-   * completed; before that an empty result is 'unavailable', not "none".
+   * 'error'. A result is only 'available' (and an empty one only a confirmed
+   * zero) once the latest discovery run has completed. Otherwise an empty
+   * result is 'unavailable', not "none", and existing rows are 'partial' --
+   * kept, but possibly stale or incomplete.
    */
   private inventorySection<T>(
     discovery: ChatContext['discovery'],
@@ -186,12 +188,12 @@ export class AIChatContextRepository {
         return { state: 'available', data, asOf: discovery.data.completedAt };
       }
       const discoveryProblem = discovery.state === 'error'
-        ? 'the discovery-run lookup failed'
-        : 'no resource discovery run has completed as the latest run';
+        ? 'The status of the latest discovery run could not be determined'
+        : 'Latest discovery run is incomplete';
       if (isEmpty(data)) {
         return { state: 'unavailable', reason: `${discoveryProblem}, so an empty inventory is not a confirmed zero` };
       }
-      return { state: 'available', data, asOf: null, reason: `freshness unknown: ${discoveryProblem}` };
+      return { state: 'partial', data, asOf: null, reason: `${discoveryProblem}; inventory data may be stale or incomplete.` };
     });
   }
 

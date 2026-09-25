@@ -174,10 +174,11 @@ export class AIChatController {
         data: context,
       });
     } catch (error: any) {
+      // The raw message can carry database/infrastructure detail: log it, don't return it.
       console.error('[AI Chat Controller] Context error:', error.message);
       res.status(500).json({
         success: false,
-        error: error.message,
+        error: 'Failed to load AI context',
       });
     }
   };

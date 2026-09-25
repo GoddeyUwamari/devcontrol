@@ -164,10 +164,10 @@ describe('Cost Explorer success', () => {
     });
 
     const formatted = format(context);
-    expect(formatted).toMatch(/scope\.kind: cost_explorer_billing_scope/);
-    expect(formatted).toMatch(/scope\.linked_account_filter: none/);
-    expect(formatted).toMatch(/scope\.consolidated_billing: unknown/);
-    expect(formatted).toMatch(/scope\.regions: all/);
+    expect(formatted).toMatch(/Scope: the AWS Cost Explorer billing scope of the connected IAM role/);
+    expect(formatted).toMatch(/Linked-account filter: none/);
+    expect(formatted).toMatch(/Consolidated billing: unknown/);
+    expect(formatted).toMatch(/Regions: all/);
     // Never asserts an account type that DevControl hasn't verified.
     expect(formatted).not.toMatch(/member account|single (AWS )?account|account-wide spend/i);
     expect(formatted).not.toMatch(/is a (management|payer) account/i);
@@ -187,7 +187,7 @@ describe('Cost Explorer success', () => {
     expect(context.costs.current).toBe(0);
     expect(context.costs.topSpenders).toEqual([]); // a real, empty breakdown -- not a stand-in for "unknown"
     const formatted = format(context);
-    expect(formatted).toMatch(/month_to_date_spend: \$0\.00/);
+    expect(formatted).toMatch(/Month-to-date spend: \$0\.00/);
     expect(formatted).toMatch(/Cost Explorer returned no billed service line items/);
     expect(formatted).not.toMatch(/\$80/);
   });
@@ -207,7 +207,7 @@ describe('Cost Explorer success', () => {
     expect(context.costs.source).toBe('actual');
     expect(context.costs.current).toBe(-12.34);
     expect(context.costs.topSpenders!.every(s => s.percentage === null)).toBe(true);
-    expect(format(context)).toMatch(/month_to_date_spend: -\$12\.34 \(net negative/);
+    expect(format(context)).toMatch(/Month-to-date spend: -\$12\.34 \(net negative/);
   });
 
   it('a sub-dollar total keeps its cents rather than rounding to a "$0" that reads as no spend', async () => {
@@ -219,7 +219,7 @@ describe('Cost Explorer success', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.current).toBe(0.4);
-    expect(format(context)).toMatch(/month_to_date_spend: \$0\.40/);
+    expect(format(context)).toMatch(/Month-to-date spend: \$0\.40/);
   });
 });
 
@@ -244,9 +244,9 @@ describe('Cost Explorer failure', () => {
     expect(trendSpy).not.toHaveBeenCalled();
 
     const formatted = format(context);
-    expect(formatted).toMatch(/- state: error/);
-    expect(formatted).toMatch(/cost_explorer\.state: error/);
-    expect(formatted).toMatch(/spend: not available .*not a zero amount/);
+    expect(formatted).toMatch(/- Status: Could not be retrieved/);
+    expect(formatted).toMatch(/AWS Cost Explorer status: Could not be retrieved/);
+    expect(formatted).toMatch(/Spend: not available .*not a zero amount/);
     expect(formatted).not.toMatch(/\$0\.00/);
   });
 
@@ -302,10 +302,10 @@ describe('Inventory estimate fallback', () => {
     expect(context.costs.comparison.state).toBe('unavailable');
 
     const formatted = format(context);
-    expect(formatted).toMatch(/source: DevControl inventory estimate .*NOT AWS billing data/);
-    expect(formatted).toMatch(/scope\.kind: resource_inventory/);
-    expect(formatted).toMatch(/scope\.regions: us-east-1 only/);
-    expect(formatted).toMatch(/estimated_monthly_cost: \$42\.50/);
+    expect(formatted).toMatch(/Source: DevControl inventory estimate .*NOT AWS billing data/);
+    expect(formatted).toMatch(/Scope: AWS resources DevControl discovered under the connected IAM role/);
+    expect(formatted).toMatch(/Regions: us-east-1 only/);
+    expect(formatted).toMatch(/Estimated monthly cost: \$42\.50/);
     expect(formatted).not.toMatch(/- month_to_date_spend:/);
     expect(formatted).not.toMatch(/scope\.kind: cost_explorer/);
   });
@@ -322,7 +322,7 @@ describe('Inventory estimate fallback', () => {
 
     expect(context.costs.state).toBe('partial');
     expect(context.costs.estimateCoverage).toEqual({ estimatedResources: 1, totalResources: 2 });
-    expect(format(context)).toMatch(/coverage: 1 of 2 discovered resources have a cost estimate/);
+    expect(format(context)).toMatch(/Coverage: 1 of 2 discovered resources have a cost estimate/);
   });
 });
 
@@ -366,9 +366,9 @@ describe('Month-over-month comparison', () => {
     expect(comparison.previousWindowTotal).not.toBe(context.costs.current);
 
     const formatted = format(context);
-    expect(formatted).toMatch(/previous period: not available -- do not assume spend was unchanged/);
+    expect(formatted).toMatch(/Previous period: not available -- do not assume spend was unchanged/);
     expect(formatted).not.toMatch(/previous_window:/);
-    expect(formatted).not.toMatch(/- change: /);
+    expect(formatted).not.toMatch(/- Change: /);
   });
 
   it('a failed trend request makes the comparison "error" while the current figure stays available', async () => {
@@ -414,8 +414,8 @@ describe('Inventory scope', () => {
 
     expect(context.inventoryScope).toEqual({ kind: 'resource_inventory', connectedAccountId: ACCOUNT_ID, discoveryRegion: 'eu-west-1' });
     const formatted = format(context);
-    expect(formatted).toMatch(/scope\.regions: all/); // cost
-    expect(formatted).toMatch(/scope\.regions: eu-west-1 only/); // inventory
+    expect(formatted).toMatch(/Regions: all/); // cost
+    expect(formatted).toMatch(/Regions: eu-west-1 only/); // inventory
   });
 
   it('a null stored region is the us-east-1 that discovery itself falls back to (AWSClientFactory.createClients)', async () => {
@@ -443,7 +443,7 @@ describe('Inventory scope', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.inventoryScope).toEqual({ kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: null });
-    expect(format(context)).toMatch(/scope\.connected_account_id: unknown/);
+    expect(format(context)).toMatch(/Connected AWS account: unknown/);
   });
 });
 
@@ -499,7 +499,7 @@ describe('Comparison arithmetic is done on the displayed cents', () => {
     expect(comparison.changeAmount).toBe(-2.51);
     expect(comparison.changePercent).toBe(-20.1);
     const formatted = (chatService as any).formatComparisonSection(comparison);
-    expect(formatted).toMatch(/- change: -\$2\.51 \(-20\.1%\)/);
+    expect(formatted).toMatch(/- Change: -\$2\.51 \(-20\.1%\)/);
   });
 
   it('sub-dollar windows keep their cents rather than rounding to $0', () => {
@@ -536,7 +536,7 @@ describe('Comparison partial-day semantics', () => {
     expect(comparison.currentWindow.end).toBe(today);
     expect(comparison.currentWindowIncludesToday).toBe(true);
     const formatted = (chatService as any).formatComparisonSection(comparison);
-    expect(formatted).toMatch(new RegExp(`partial_day: the current window's last day \\(${today}\\) is today and still in progress`));
+    expect(formatted).toMatch(new RegExp(`Partial day: the current window's last day \\(${today}\\) is today and still in progress`));
   });
 
   it('a comparison with no windows makes no partial-day claim', () => {
@@ -581,8 +581,8 @@ describe('Comparison provenance: asOf and basis', () => {
     expect(comparison.asOf).toBe('2026-09-25T15:17:36.123Z');
     expect(comparison.basis).toMatch(/daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded/);
     const section = (chatService as any).formatComparisonSection(comparison);
-    expect(section).toMatch(/- as_of: 2026-09-25T15:17:36\.123Z/);
-    expect(section).toMatch(/- basis: sum of AWS Cost Explorer daily charges per cost category/);
+    expect(section).toMatch(/- As of: 2026-09-25T15:17:36\.123Z/);
+    expect(section).toMatch(/- Basis: sum of AWS Cost Explorer daily charges per cost category/);
     // The calculation itself is unchanged -- only its provenance is new.
     expect(comparison.changeAmount).toBe(10 * dailyTrend(10, 5).currentDays - 5 * dailyTrend(10, 5).previousDays);
   });
@@ -591,7 +591,7 @@ describe('Comparison provenance: asOf and basis', () => {
     const comparison = compare(14.83, 14.33);
 
     expect(comparison.asOf).toBeNull();
-    expect((chatService as any).formatComparisonSection(comparison)).toMatch(/- as_of: unknown/);
+    expect((chatService as any).formatComparisonSection(comparison)).toMatch(/- As of: unknown/);
   });
 
   it('a failed or impossible comparison still states its basis and claims no freshness', async () => {
@@ -608,5 +608,50 @@ describe('Comparison provenance: asOf and basis', () => {
 });
 
 function dailyBasis() {
-  return 'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month_to_date_spend';
+  return 'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month-to-date spend';
 }
+
+describe('Credits: month-to-date spend vs the comparison window total', () => {
+  it('when credits make them differ, both figures stay as calculated and are never presented as the same total', async () => {
+    const orgId = await insertOrg();
+    stubConnectedAccount();
+    // Cost Explorer's month-to-date total nets a $5 credit: $15 charges - $5 = $10.
+    mockCostExplorer(10, [
+      { service: 'Amazon Elastic Compute Cloud - Compute', amount: 15 },
+      { service: 'Credits', amount: -5 },
+    ]);
+    // The daily trend floors each negative category amount to zero (D2), so the
+    // same days sum to the $15 of charges, credit excluded.
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(trendWithTotals(15, 12));
+
+    const context = await contextRepo.gatherContext(orgId);
+
+    // The existing calculations are unchanged: two different, correctly-sourced figures.
+    expect(context.costs.current).toBe(10);
+    expect(context.costs.comparison.currentWindowTotal).toBe(15);
+    expect(context.costs.comparison.changeAmount).toBe(3);
+
+    const formatted = format(context);
+    expect(formatted).toMatch(/- Month-to-date spend: \$10\.00 \(observed spend for the period above/);
+    expect(formatted).toMatch(/- Current window: .* total \$15\.00/);
+    expect(formatted).toMatch(/- Basis: .*credits and refunds are excluded, so window totals can differ from month-to-date spend/);
+    expect(formatted).toMatch(/- Not the same total as month-to-date spend: this window's total \(\$15\.00\) and the month-to-date spend above \(\$10\.00\) are calculated differently \(see Basis\) -- present them as two different figures, never as the same total/);
+  });
+
+  it('when the two agree, no difference is claimed', () => {
+    const section = (chatService as any).formatComparisonSection(compare(14.83, 14.33), 14.83);
+
+    expect(section).not.toMatch(/Not the same total/);
+  });
+
+  it('with no actual month-to-date figure (estimate or unavailable), no comparison against it is made', async () => {
+    const orgId = await insertOrg();
+    stubConnectedAccount();
+    jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('ThrottlingException'));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const formatted = format(await contextRepo.gatherContext(orgId));
+
+    expect(formatted).not.toMatch(/Not the same total/);
+  });
+});

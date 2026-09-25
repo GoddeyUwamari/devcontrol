@@ -68,7 +68,10 @@ export type SectionResult<T> =
 /**
  * Runs one getter and returns its section. A getter that throws becomes
  * state 'error' with data null -- never [], {}, 0, or an apparently valid
- * empty result -- and the failure is logged with its reason.
+ * empty result. The raw failure (which can carry SQL, database, or
+ * infrastructure detail) goes to the server log only; the section's reason is
+ * a safe diagnostic, since sections reach both the model and the
+ * authenticated GET /api/ai-chat/context response.
  */
 export async function collectSection<T>(
   meta: SectionMeta,
@@ -94,7 +97,7 @@ export async function collectSection<T>(
       asOf: null,
       scope: meta.scope ?? null,
       coverage: null,
-      reason: `could not be retrieved: ${message}`,
+      reason: `${meta.source} could not be retrieved.`,
       data: null,
     };
   }

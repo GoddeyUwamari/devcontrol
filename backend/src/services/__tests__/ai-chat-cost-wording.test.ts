@@ -103,7 +103,7 @@ describe('user-facing dates from an exclusive end boundary', () => {
   it('the period is stated inclusively and the exclusive boundary never appears as a date', () => {
     const formatted = format(productionLikeContext());
 
-    expect(formatted).toMatch(/- period: month-to-date, 2026-09-01 through 2026-09-25 inclusive \(September 1–25, 2026\)/);
+    expect(formatted).toMatch(/- Period: month-to-date, 2026-09-01 through 2026-09-25 inclusive \(September 1–25, 2026\)/);
     expect(formatted).not.toMatch(/2026-09-26/);
     expect(formatted).not.toMatch(/September 1–26/);
   });
@@ -122,10 +122,10 @@ describe('user-facing dates from an exclusive end boundary', () => {
   it('comparison windows are stated inclusively, with the partial current day called out', () => {
     const formatted = format(productionLikeContext());
 
-    expect(formatted).toMatch(/current_window: 2026-09-01 through 2026-09-25 inclusive \(September 1–25, 2026\), total \$14\.83/);
-    expect(formatted).toMatch(/previous_window: 2026-08-01 through 2026-08-25 inclusive \(August 1–25, 2026\), total \$14\.33/);
-    expect(formatted).toMatch(/partial_day: the current window's last day \(2026-09-25\) is today and still in progress, while every previous-window day is complete/);
-    expect(formatted).toMatch(/- change: \+\$0\.50 \(\+3\.5%\)/);
+    expect(formatted).toMatch(/Current window: 2026-09-01 through 2026-09-25 inclusive \(September 1–25, 2026\), total \$14\.83/);
+    expect(formatted).toMatch(/Previous window: 2026-08-01 through 2026-08-25 inclusive \(August 1–25, 2026\), total \$14\.33/);
+    expect(formatted).toMatch(/Partial day: the current window's last day \(2026-09-25\) is today and still in progress, while every previous-window day is complete/);
+    expect(formatted).toMatch(/- Change: \+\$0\.50 \(\+3\.5%\)/);
   });
 
   it('the system prompt forbids presenting an exclusive boundary as an included day', () => {
@@ -138,7 +138,7 @@ describe('observed partial-period spend is not a monthly or annual rate', () => 
     const formatted = format(productionLikeContext());
     const costSection = formatted.slice(formatted.indexOf('Cost data:'), formatted.indexOf('Resource inventory'));
 
-    expect(costSection).toMatch(/month_to_date_spend: \$14\.83 \(observed spend for the period above -- not a full-month amount or a monthly rate\)/);
+    expect(costSection).toMatch(/Month-to-date spend: \$14\.83 \(observed spend for the period above -- not a full-month amount or a monthly rate\)/);
     expect(costSection).toMatch(/observed amounts for the period above, not monthly rates/);
     expect(costSection).not.toMatch(/\/month|\/year|per month|annual/i);
   });
@@ -225,8 +225,8 @@ describe('DORA metrics in the cost context', () => {
     const formatted = format(productionLikeContext({}, dora));
 
     expect(formatted).toMatch(/DORA metrics \(not AWS billing data and unrelated to the cost data above/);
-    expect(formatted).toMatch(/source: DevControl deployment records/);
-    expect(formatted).toMatch(/scope: this DevControl organization, last 30 days/);
+    expect(formatted).toMatch(/Source: DevControl deployment records/);
+    expect(formatted).toMatch(/Scope: this DevControl organization, last 30 days/);
     expect(formatted).toMatch(/- Lead time: 6\.12 hours \(Average time between consecutive deployments\)/);
     expect(formatted).not.toMatch(/Lead time for changes/);
   });
@@ -235,8 +235,8 @@ describe('DORA metrics in the cost context', () => {
     const formatted = format(productionLikeContext());
     const doraSection = formatted.slice(formatted.indexOf('DORA metrics'));
 
-    expect(doraSection).toMatch(/state: unavailable/);
-    expect(doraSection).toMatch(/data: not available -- no deployments were recorded for this organization in the last 30 days/);
+    expect(doraSection).toMatch(/Status: Not available/);
+    expect(doraSection).toMatch(/Data: not available -- no deployments were recorded for this organization in the last 30 days/);
     expect(formatted).not.toMatch(/deployments in/);
     expect(formatted).not.toMatch(/Lead time:/);
   });

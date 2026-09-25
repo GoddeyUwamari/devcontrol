@@ -81,7 +81,19 @@ export interface CostComparison {
  * each floored at $0 (the Dashboard's comparison uses the same figures).
  */
 export const COMPARISON_BASIS =
-  'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month_to_date_spend';
+  'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month-to-date spend';
+
+/**
+ * How each state reads in model-facing text. The model repeats what it is
+ * given, so it gets these words -- never the raw enum values.
+ */
+const STATE_LABELS: Record<ContextDataState, string> = {
+  available: 'Available',
+  partial: 'Partial',
+  unavailable: 'Not available',
+  error: 'Could not be retrieved',
+  not_supported: 'Not supported',
+};
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -209,21 +221,23 @@ You receive structured context about the user's AWS environment, including:
 
 This context is NOT a live feed. Each section carries its own real provenance and
 freshness, which you must respect exactly as labeled:
-- Cost data has a "state", a "source" (AWS Cost Explorer, a DevControl inventory
-  estimate used when Cost Explorer is unavailable, or none), an "as_of" timestamp
+- Cost data has a Status, a Source (AWS Cost Explorer, a DevControl inventory
+  estimate used when Cost Explorer is unavailable, or none), an "As of" timestamp
   -- the moment that figure was actually obtained, which may be several hours old
   even when the source is Cost Explorer, since it is served from a short-lived cache
-  -- and a "scope" (which AWS account/billing scope and which regions it covers).
+  -- and a Scope (which AWS account/billing scope and which regions it covers).
   Cost Explorer figures cover the connected IAM role's billing scope across all
   regions; whether that includes other linked accounts is stated as unknown unless
   the scope says otherwise. Resource inventory covers only the regions its scope lists.
   Never describe a Cost Explorer figure as covering exactly one AWS account, and
   never compare it to inventory as if the two had the same scope.
-- Datasets carry a state: "available" (complete for its scope), "partial" (only
-  part of its scope -- say which part), "unavailable" (no data), "error" (collection
-  failed), or "not_supported". Only report figures that are actually present;
-  never treat "unavailable", "error", or "not_supported" as $0, zero, none,
-  empty, unchanged, or "no findings" -- say that data is not available and why.
+- Every section has a Status: "Available" (complete for its scope), "Partial"
+  (only part of its scope, or possibly stale -- say which, using its Limitation),
+  "Not available" (no data), "Could not be retrieved" (collection failed), or
+  "Not supported" (DevControl has no source for it). Only report figures that are
+  actually present; never treat "Not available", "Could not be retrieved", or
+  "Not supported" as $0, zero, none, empty, unchanged, or "no findings" -- say
+  that data is not available and why.
 - Resource inventory (services, EC2/RDS/Lambda counts) is synchronized
   periodically by a background discovery process, not queried live -- its "As of"
   timestamp is the last time that process completed successfully for this account.
@@ -241,7 +255,7 @@ RULES:
 - When a user asks how current, fresh, or up-to-date your data is, answer using
   the actual "As of" timestamp provided -- do not guess, and do not imply the
   data reflects this exact moment.
-- If a section's source is "unavailable," say so plainly (e.g. "I don't have
+- If a section has no data (Source "none" or Status "Not available"), say so plainly (e.g. "I don't have
   current cost data for this account") -- never substitute a $0 or empty value
   as if it were a confirmed fact.
 
@@ -349,7 +363,7 @@ If context is empty, state clearly what's missing.
   automatically -- some of it may be unavailable, partial, or out of scope
 - NEVER ask users to "share data", "provide details", or "pull information"
 - Users CANNOT manually provide technical data - you already have what exists
-- If critical data is missing from context, or its state is not "available", state:
+- If critical data is missing from context, or its Status is not "Available", state:
   "I don't have [specific metric] available in the current data"
 - Then provide best analysis possible with the data that is actually present,
   without inferring the missing values
@@ -371,22 +385,22 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
    */
   private formatScope(scope: ContextScope): string[] {
     if (scope.kind === 'organization') {
-      return [`- scope: this DevControl organization, ${scope.window}`];
+      return [`- Scope: this DevControl organization, ${scope.window}`];
     }
     const account = scope.connectedAccountId ?? 'unknown';
     if (scope.kind === 'cost_explorer') {
       return [
-        `- scope.kind: cost_explorer_billing_scope (the AWS Cost Explorer billing scope of the connected IAM role)`,
-        `- scope.connected_account_id: ${account}`,
-        `- scope.linked_account_filter: none (the query is not narrowed to the connected account)`,
-        `- scope.consolidated_billing: unknown (DevControl does not detect whether the connected account is a management/payer account, so this figure may or may not include other linked accounts)`,
-        `- scope.regions: all (the query is not region-filtered)`,
+        `- Scope: the AWS Cost Explorer billing scope of the connected IAM role`,
+        `- Connected AWS account: ${account}`,
+        `- Linked-account filter: none (the query is not narrowed to the connected account)`,
+        `- Consolidated billing: unknown (DevControl does not detect whether the connected account is a management/payer account, so this figure may or may not include other linked accounts)`,
+        `- Regions: all (the query is not region-filtered)`,
       ];
     }
     return [
-      `- scope.kind: resource_inventory (resources DevControl discovered under the connected IAM role)`,
-      `- scope.connected_account_id: ${account}`,
-      `- scope.regions: ${scope.discoveryRegion ?? 'unknown'} only (resources in other regions are not discovered, except services listed account-wide such as S3)`,
+      `- Scope: AWS resources DevControl discovered under the connected IAM role`,
+      `- Connected AWS account: ${account}`,
+      `- Regions: ${scope.discoveryRegion ?? 'unknown'} only (resources in other regions are not discovered, except services listed account-wide such as S3)`,
     ];
   }
 
@@ -400,28 +414,28 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
   private formatSectionHeader(title: string, section: ContextSection<unknown>): { lines: string[]; showData: boolean } {
     const lines = [
       `${title}:`,
-      `- state: ${section.state}`,
-      `- source: ${section.source}`,
-      `- as_of: ${section.asOf ?? 'unknown'}`,
+      `- Status: ${STATE_LABELS[section.state]}`,
+      `- Source: ${section.source}`,
+      `- As of: ${section.asOf ?? 'unknown'}`,
       ...(section.scope ? this.formatScope(section.scope) : []),
     ];
-    if (section.coverage) lines.push(`- coverage: ${section.coverage}`);
+    if (section.coverage) lines.push(`- Coverage: ${section.coverage}`);
 
     switch (section.state) {
       case 'error':
-        lines.push('- data: could not be retrieved -- this is missing data, not an empty result or a zero');
+        lines.push('- Data: could not be retrieved -- this is missing data, not an empty result or a zero');
         break;
       case 'not_supported':
-        lines.push(`- data: not supported -- ${section.reason ?? 'DevControl has no source for this data'} This is not a zero, "none", or "no findings".`);
+        lines.push(`- Data: not supported -- ${section.reason ?? 'DevControl has no source for this data.'} This is not a zero, "none", or "no findings".`);
         break;
       case 'unavailable':
-        lines.push(`- data: not available -- ${section.reason ?? 'no data exists for this section'}. Do not treat this as zero or none.`);
+        lines.push(`- Data: not available -- ${section.reason ?? 'no data exists for this section'}. Do not treat this as zero or none.`);
         break;
       case 'partial':
-        lines.push(`- limitation: ${section.reason ?? 'only part of the stated scope is covered'}`);
+        lines.push(`- Limitation: ${section.reason ?? 'only part of the stated scope is covered'}`);
         break;
       default:
-        if (section.reason) lines.push(`- note: ${section.reason}`);
+        if (section.reason) lines.push(`- Note: ${section.reason}`);
     }
 
     const showData = (section.state === 'available' || section.state === 'partial') && section.data !== null;
@@ -437,15 +451,15 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
 
     const lines = [
       'Cost data:',
-      `- state: ${costs.state}`,
-      `- source: ${sourceLabel}`,
-      `- as_of: ${costs.asOf ?? 'unknown'}`,
-      `- cost_explorer.state: ${costs.costExplorer.state}${costs.costExplorer.reason ? ` (${costs.costExplorer.reason})` : ''}`,
+      `- Status: ${STATE_LABELS[costs.state]}`,
+      `- Source: ${sourceLabel}`,
+      `- As of: ${costs.asOf ?? 'unknown'}`,
+      `- AWS Cost Explorer status: ${STATE_LABELS[costs.costExplorer.state]}${costs.costExplorer.reason ? ` (${costs.costExplorer.reason})` : ''}`,
       ...(costs.scope ? this.formatScope(costs.scope) : []),
     ];
 
     if (costs.current === null) {
-      lines.push('- spend: not available (no Cost Explorer result and no inventory estimate) -- this is missing data, not a zero amount');
+      lines.push('- Spend: not available (no Cost Explorer result and no inventory estimate) -- this is missing data, not a zero amount');
     } else if (costs.source === 'actual') {
       if (costs.period) {
         // The query's End is exclusive; the reader is only ever shown the
@@ -454,57 +468,67 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
         const last = lastIncludedDay(costs.period.endExclusive);
         if (last >= start) {
           const lastDayInProgress = costs.asOf !== null && costs.asOf.slice(0, 10) === last;
-          lines.push(`- period: month-to-date, ${start} through ${last} inclusive (${formatInclusiveRange(start, last)})${lastDayInProgress ? `; ${last} was still in progress when this figure was obtained, so that day's spend is incomplete` : ''}`);
+          lines.push(`- Period: month-to-date, ${start} through ${last} inclusive (${formatInclusiveRange(start, last)})${lastDayInProgress ? `; ${last} was still in progress when this figure was obtained, so that day's spend is incomplete` : ''}`);
         }
       }
-      lines.push(`- month_to_date_spend: ${this.formatMoney(costs.current)}${costs.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''} (observed spend for the period above -- not a full-month amount or a monthly rate)`);
+      lines.push(`- Month-to-date spend: ${this.formatMoney(costs.current)}${costs.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''} (observed spend for the period above -- not a full-month amount or a monthly rate)`);
       lines.push('Top services by month-to-date spend (observed amounts for the period above, not monthly rates. Cost Explorer SERVICE categories for the scope above, NOT per-resource costs: each line is its own category and does not include charges billed under another listed category, and a category total is not proof that any one resource caused that spend):');
       if (costs.topSpenders && costs.topSpenders.length > 0) {
         lines.push(...costs.topSpenders.map(s => `- ${s.service}: ${this.formatMoney(s.cost)}${s.percentage !== null ? ` (${s.percentage.toFixed(1)}%)` : ''}`));
         if (costs.topSpenders.some(s => /cost explorer/i.test(s.service))) {
-          lines.push('- note: the AWS Cost Explorer line item is observed spend for the period above. It may include charges for Cost Explorer API requests, which any cost-monitoring tool querying this billing scope can generate, including DevControl (it queries Cost Explorer to build this cost data). Which callers made those requests is unknown -- attribute the charge to no one.');
+          lines.push('- Note: the AWS Cost Explorer line item is observed spend for the period above. It may include charges for Cost Explorer API requests, which any cost-monitoring tool querying this billing scope can generate, including DevControl (it queries Cost Explorer to build this cost data). Which callers made those requests is unknown -- attribute the charge to no one.');
         }
       } else {
         lines.push('- Cost Explorer returned no billed service line items for this period');
       }
     } else {
-      lines.push('- basis: monthly run-rate estimate for currently discovered resources -- not billed spend for any period');
+      lines.push('- Basis: monthly run-rate estimate for currently discovered resources -- not billed spend for any period');
       if (costs.estimateCoverage) {
-        lines.push(`- coverage: ${costs.estimateCoverage.estimatedResources} of ${costs.estimateCoverage.totalResources} discovered resources have a cost estimate`);
+        lines.push(`- Coverage: ${costs.estimateCoverage.estimatedResources} of ${costs.estimateCoverage.totalResources} discovered resources have a cost estimate`);
       }
-      lines.push(`- estimated_monthly_cost: ${this.formatMoney(costs.current)}`);
-      lines.push('- per-service breakdown: not available for estimates');
+      lines.push(`- Estimated monthly cost: ${this.formatMoney(costs.current)}`);
+      lines.push('- Per-service breakdown: not available for estimates');
     }
 
     return lines.join('\n');
   }
 
-  private formatComparisonSection(comparison: CostComparison): string {
+  /**
+   * monthToDateSpend (optional): the cost section's actual month-to-date
+   * figure, so a window total that differs from it is called out rather than
+   * left to read as the same total.
+   */
+  private formatComparisonSection(comparison: CostComparison, monthToDateSpend: number | null = null): string {
     const lines = [
       'Period comparison (month-to-date vs the same days of the previous month; source: AWS Cost Explorer daily trend, same scope as the cost data above):',
-      `- state: ${comparison.state}`,
-      `- as_of: ${comparison.asOf ?? 'unknown'}`,
-      `- basis: ${comparison.basis}`,
+      `- Status: ${STATE_LABELS[comparison.state]}`,
+      `- As of: ${comparison.asOf ?? 'unknown'}`,
+      `- Basis: ${comparison.basis}`,
     ];
-    if (comparison.note) lines.push(`- note: ${comparison.note}`);
+    if (comparison.note) lines.push(`- Note: ${comparison.note}`);
 
     const { currentWindow, previousWindow, currentWindowTotal, previousWindowTotal, coverage } = comparison;
     if (!currentWindow || !previousWindow || currentWindowTotal === null || previousWindowTotal === null || !coverage) {
-      lines.push('- previous period: not available -- do not assume spend was unchanged, and do not derive a change from the current figure alone');
+      lines.push('- Previous period: not available -- do not assume spend was unchanged, and do not derive a change from the current figure alone');
       return lines.join('\n');
     }
 
-    lines.push(`- current_window: ${currentWindow.start} through ${currentWindow.end} inclusive (${formatInclusiveRange(currentWindow.start, currentWindow.end)}), total ${this.formatMoney(currentWindowTotal)} (${coverage.currentDays} of ${coverage.expectedCurrentDays} days of data)`);
-    lines.push(`- previous_window: ${previousWindow.start} through ${previousWindow.end} inclusive (${formatInclusiveRange(previousWindow.start, previousWindow.end)}), total ${this.formatMoney(previousWindowTotal)} (${coverage.previousDays} of ${coverage.expectedPreviousDays} days of data)`);
+    lines.push(`- Current window: ${currentWindow.start} through ${currentWindow.end} inclusive (${formatInclusiveRange(currentWindow.start, currentWindow.end)}), total ${this.formatMoney(currentWindowTotal)} (${coverage.currentDays} of ${coverage.expectedCurrentDays} days of data)`);
+    lines.push(`- Previous window: ${previousWindow.start} through ${previousWindow.end} inclusive (${formatInclusiveRange(previousWindow.start, previousWindow.end)}), total ${this.formatMoney(previousWindowTotal)} (${coverage.previousDays} of ${coverage.expectedPreviousDays} days of data)`);
+    // The window total is summed from daily category charges with credits
+    // excluded (see Basis); month-to-date spend is Cost Explorer's own total.
+    if (monthToDateSpend !== null && Math.round(monthToDateSpend * 100) !== Math.round(currentWindowTotal * 100)) {
+      lines.push(`- Not the same total as month-to-date spend: this window's total (${this.formatMoney(currentWindowTotal)}) and the month-to-date spend above (${this.formatMoney(monthToDateSpend)}) are calculated differently (see Basis) -- present them as two different figures, never as the same total`);
+    }
     if (comparison.currentWindowIncludesToday) {
-      lines.push(`- partial_day: the current window's last day (${currentWindow.end}) is today and still in progress, while every previous-window day is complete -- the change compares a partial day against a full one`);
+      lines.push(`- Partial day: the current window's last day (${currentWindow.end}) is today and still in progress, while every previous-window day is complete -- the change compares a partial day against a full one`);
     }
     if (comparison.changeAmount !== null) {
       const sign = comparison.changeAmount > 0 ? '+' : '';
       const percent = comparison.changePercent !== null
         ? ` (${comparison.changePercent > 0 ? '+' : ''}${comparison.changePercent.toFixed(1)}%)`
         : ' (percentage undefined: previous window total is $0.00)';
-      lines.push(`- change: ${sign}${this.formatMoney(comparison.changeAmount)}${percent}`);
+      lines.push(`- Change: ${sign}${this.formatMoney(comparison.changeAmount)}${percent}`);
     }
     return lines.join('\n');
   }
@@ -520,11 +544,15 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
     const utilization = ec2.utilization;
     lines.push(utilization.state === 'available' && utilization.data
       ? `- EC2 underutilized: ${utilization.data.underutilized} of ${ec2.count}`
-      : `- EC2 utilization: ${utilization.state} -- ${utilization.reason ?? 'no utilization data'} Do not describe any instance as underutilized or as not underutilized.`);
+      : `- EC2 utilization: ${STATE_LABELS[utilization.state]} -- ${utilization.reason ?? 'no utilization data.'} Do not describe any instance as underutilized or as not underutilized.`);
 
-    const rdsEstimate = rds.estimatedMonthlyCost !== null
-      ? `; DevControl estimated monthly cost ${this.formatMoney(rds.estimatedMonthlyCost)} for ${rds.estimatedForCount} of ${rds.count} (list-price estimate for the whole database -- not AWS billed spend)`
-      : rds.count > 0 ? '; no cost estimate available' : '';
+    // Resources with no recorded estimate are stored as $0.00 by default, so a
+    // zero (or a count "with a stored value") cannot confirm a zero-cost estimate.
+    const rdsEstimate = rds.estimatedMonthlyCost === null
+      ? rds.count > 0 ? '; no cost estimate available' : ''
+      : `; DevControl estimated monthly cost ${this.formatMoney(rds.estimatedMonthlyCost)} across the ${rds.estimatedForCount} of ${rds.count} databases with a stored estimate value (list-price estimate for the whole database -- not AWS billed spend${rds.estimatedMonthlyCost === 0
+        ? '; a $0.00 total may mean no estimate was recorded, since databases without an estimate are stored as $0.00 by default -- do not present it as a confirmed zero cost'
+        : ''})`;
     lines.push(`- RDS: ${rds.count} databases${rdsEstimate}`);
 
     if (lambda.count === 0) {
@@ -597,7 +625,7 @@ ${services.lines.join('\n')}
 
 ${this.formatCostSection(context.costs)}
 
-${this.formatComparisonSection(context.costs.comparison)}
+${this.formatComparisonSection(context.costs.comparison, context.costs.source === 'actual' ? context.costs.current : null)}
 
 ${resources.lines.join('\n')}
 

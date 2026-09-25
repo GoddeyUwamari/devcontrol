@@ -97,17 +97,23 @@ describe('collectSection', () => {
       expect(section.source).toBe('test source');
     });
 
-    it('keeps the failure reason and logs it -- the error is not swallowed silently', async () => {
-      const section = await collectSection({ source: 'test source' }, async () => { throw new Error('timeout after 5000ms'); });
+    it('logs the raw failure server-side, and keeps only a safe diagnostic in the section', async () => {
+      const section = await collectSection({ source: 'test source' }, async () => {
+        throw new Error('relation "aws_accounts" does not exist at character 15');
+      });
 
-      expect(section.reason).toBe('could not be retrieved: timeout after 5000ms');
-      expect(consoleError).toHaveBeenCalledWith('[AI Context] test source could not be retrieved:', 'timeout after 5000ms');
+      // Not swallowed: the raw message reaches the server log...
+      expect(consoleError).toHaveBeenCalledWith('[AI Context] test source could not be retrieved:', 'relation "aws_accounts" does not exist at character 15');
+      // ...but never the section, which reaches the model and the /context response.
+      expect(section.reason).toBe('test source could not be retrieved.');
+      expect(JSON.stringify(section)).not.toMatch(/relation|aws_accounts|character 15/);
     });
 
     it('a non-Error throw still becomes "error"', async () => {
       const section = await collectSection({ source: 'test source' }, async () => { throw 'plain string failure'; });
 
-      expect(section).toMatchObject({ state: 'error', data: null, reason: 'could not be retrieved: plain string failure' });
+      expect(section).toMatchObject({ state: 'error', data: null, reason: 'test source could not be retrieved.' });
+      expect(JSON.stringify(section)).not.toMatch(/plain string failure/);
     });
   });
 });

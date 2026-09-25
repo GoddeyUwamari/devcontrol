@@ -314,7 +314,7 @@ describe('Resources section', () => {
     expect(ec2.utilization).toMatchObject({ state: 'not_supported', data: null });
     expect(ec2.utilization.reason).toMatch(/does not collect EC2 CPU utilization/);
     const formatted = format(context);
-    expect(formatted).toMatch(/EC2 utilization: not_supported/);
+    expect(formatted).toMatch(/EC2 utilization: Not supported/);
     expect(formatted).not.toMatch(/\d+ underutilized|underutilized: \d/);
   });
 
@@ -329,7 +329,7 @@ describe('Resources section', () => {
 
     expect(context.resources.data!.rds).toEqual({ count: 3, estimatedMonthlyCost: 12.84, estimatedForCount: 2 });
     const formatted = format(context);
-    expect(formatted).toMatch(/- RDS: 3 databases; DevControl estimated monthly cost \$12\.84 for 2 of 3 \(list-price estimate for the whole database -- not AWS billed spend\)/);
+    expect(formatted).toMatch(/- RDS: 3 databases; DevControl estimated monthly cost \$12\.84 across the 2 of 3 databases with a stored estimate value \(list-price estimate for the whole database -- not AWS billed spend\)/);
     expect(formatted).not.toMatch(/storage cost/);
   });
 });
@@ -453,7 +453,103 @@ describe('gatherContext() negative control: every getter throws', () => {
 
     const formatted = format(context);
     expect(formatted).not.toMatch(/\$0\.00|No services detected|active alerts: 0|No recent incidents|underutilized: \d|types: none|- EC2: 0/);
-    expect(formatted.match(/data: could not be retrieved/g)?.length).toBe(3); // services, resources, DORA
+    expect(formatted.match(/Data: could not be retrieved/g)?.length).toBe(3); // services, resources, DORA
     expect(formatted).not.toMatch(/database unavailable/); // raw error text stays out of the prompt
+  });
+});
+
+describe('Inventory freshness: completed vs incomplete vs unknown discovery', () => {
+  it('a completed latest discovery run makes existing inventory "available" with that run as its asOf', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
+    await insertResource(orgId, 'ec2', null);
+
+    const context = await contextFor(orgId);
+
+    expect(context.resources).toMatchObject({ state: 'available', asOf: COMPLETED_AT, reason: null });
+    expect(context.services).toMatchObject({ state: 'available', asOf: COMPLETED_AT, data: ['ec2'] });
+  });
+
+  it('an incomplete latest discovery run keeps existing inventory as "partial" -- possibly stale, not an error and not "available"', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'running', null);
+    await insertResource(orgId, 'ec2', null);
+
+    const context = await contextFor(orgId);
+
+    for (const section of [context.resources, context.services]) {
+      expect(section.state).toBe('partial');
+      expect(section.asOf).toBeNull();
+      expect(section.reason).toBe('Latest discovery run is incomplete; inventory data may be stale or incomplete.');
+      expect(section.data).not.toBeNull();
+    }
+    expect(context.resources.data!.ec2.count).toBe(1);
+
+    const formatted = format(context);
+    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts & incidents'));
+    expect(inventory).toMatch(/- Status: Partial/);
+    expect(inventory).toMatch(/- Limitation: Latest discovery run is incomplete; inventory data may be stale or incomplete\./);
+    expect(inventory).toMatch(/- EC2: 1 instances/);
+    // Natural language only -- no raw state or field labels.
+    expect(inventory).not.toMatch(/\bpartial\b|asOf|as_of|state:/);
+  });
+
+  it('a failed discovery lookup is "error" for discovery itself, and existing inventory is "partial" with unknown freshness', async () => {
+    const orgId = await insertOrg();
+    await insertResource(orgId, 'ec2', null);
+    jest.spyOn((contextRepo as any).awsResourcesRepository, 'getLatestDiscoveryJob').mockRejectedValue(new Error('relation "resource_discovery_jobs" does not exist'));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const context = await contextFor(orgId);
+
+    expect(context.discovery).toMatchObject({ state: 'error', data: null });
+    expect(context.resources).toMatchObject({
+      state: 'partial', asOf: null,
+      reason: 'The status of the latest discovery run could not be determined; inventory data may be stale or incomplete.',
+    });
+    expect(format(context)).not.toMatch(/resource_discovery_jobs/);
+  });
+
+  it('no discovered inventory with no completed run stays "unavailable" (unchanged)', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'running', null);
+
+    const context = await contextFor(orgId);
+
+    expect(context.resources).toMatchObject({ state: 'unavailable', data: null });
+    expect(context.services).toMatchObject({ state: 'unavailable', data: null });
+  });
+});
+
+describe('RDS estimate of $0.00 (column default vs recorded zero)', () => {
+  it('is never presented as a confirmed zero-cost estimate, because databases without an estimate are stored as $0.00', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
+    // One database with an explicit $0 estimate, one relying on the column default (0.00).
+    await insertResource(orgId, 'rds', 0);
+    await pool.query(
+      `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status)
+       VALUES ($1, $2, $3, 'rds', 'us-east-1', 'running')`,
+      [orgId, `arn:aws:rds:us-east-1:123456789012:db:default-${uniqueSuffix()}`, `default-${uniqueSuffix()}`]
+    );
+
+    const context = await contextFor(orgId);
+
+    // The two are indistinguishable in the data...
+    expect(context.resources.data!.rds).toEqual({ count: 2, estimatedMonthlyCost: 0, estimatedForCount: 2 });
+    // ...so the wording must not claim a measured $0.
+    const formatted = format(context);
+    expect(formatted).toMatch(/- RDS: 2 databases; DevControl estimated monthly cost \$0\.00 across the 2 of 2 databases with a stored estimate value \(list-price estimate for the whole database -- not AWS billed spend; a \$0\.00 total may mean no estimate was recorded, since databases without an estimate are stored as \$0\.00 by default -- do not present it as a confirmed zero cost\)/);
+  });
+
+  it('a non-zero estimate carries no zero-value caveat', async () => {
+    const orgId = await insertOrg();
+    await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
+    await insertResource(orgId, 'rds', 25);
+
+    const formatted = format(await contextFor(orgId));
+
+    expect(formatted).toMatch(/DevControl estimated monthly cost \$25\.00 across the 1 of 1 databases with a stored estimate value \(list-price estimate for the whole database -- not AWS billed spend\)/);
+    expect(formatted).not.toMatch(/may mean no estimate was recorded/);
   });
 });

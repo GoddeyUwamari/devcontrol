@@ -106,9 +106,9 @@ describe('AIChatService formatContext (private, provenance-aware)', () => {
     const service = new AIChatService(pool);
     const formatted: string = (service as any).formatContext(baseContext());
 
-    expect(formatted).toMatch(/source: AWS Cost Explorer/);
-    expect(formatted).toMatch(/as_of: 2026-09-06T10:00:00\.000Z/);
-    expect(formatted).toMatch(/month_to_date_spend: \$1,000\.00/);
+    expect(formatted).toMatch(/Source: AWS Cost Explorer/);
+    expect(formatted).toMatch(/As of: 2026-09-06T10:00:00\.000Z/);
+    expect(formatted).toMatch(/Month-to-date spend: \$1,000\.00/);
   });
 
   it('cost source "estimated" labels the figure as a database estimate, not a live Cost Explorer result', () => {
@@ -116,8 +116,8 @@ describe('AIChatService formatContext (private, provenance-aware)', () => {
     const context = baseContext({ costs: estimatedCosts(500) });
     const formatted: string = (service as any).formatContext(context);
 
-    expect(formatted).toMatch(/source: DevControl inventory estimate .*NOT AWS billing data/);
-    expect(formatted).toMatch(/as_of: 2026-09-06T06:00:00\.000Z/);
+    expect(formatted).toMatch(/Source: DevControl inventory estimate .*NOT AWS billing data/);
+    expect(formatted).toMatch(/As of: 2026-09-06T06:00:00\.000Z/);
   });
 
   it('cost source "unavailable" never prints a dollar figure and states no data is available', () => {
@@ -125,9 +125,9 @@ describe('AIChatService formatContext (private, provenance-aware)', () => {
     const context = baseContext({ costs: unavailableCosts() });
     const formatted: string = (service as any).formatContext(context);
 
-    expect(formatted).toMatch(/source: none/);
+    expect(formatted).toMatch(/Source: none/);
     expect(formatted).not.toMatch(/\$0/);
-    expect(formatted).toMatch(/spend: not available .*not a zero amount/);
+    expect(formatted).toMatch(/Spend: not available .*not a zero amount/);
   });
 
   it('resource inventory section states its own source and as-of timestamp, distinct from the cost section', () => {
@@ -136,8 +136,8 @@ describe('AIChatService formatContext (private, provenance-aware)', () => {
 
     const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts & incidents'));
     expect(inventory).toMatch(/Resource inventory \(synchronized periodically by DevControl AWS discovery/);
-    expect(inventory).toMatch(/source: DevControl resource inventory \(periodic AWS discovery\)/);
-    expect(inventory).toMatch(/as_of: 2026-09-06T06:00:00\.000Z/);
+    expect(inventory).toMatch(/Source: DevControl resource inventory \(periodic AWS discovery\)/);
+    expect(inventory).toMatch(/As of: 2026-09-06T06:00:00\.000Z/);
   });
 
   it('resource inventory with no completed discovery run states that plainly rather than fabricating a timestamp', () => {
@@ -149,8 +149,8 @@ describe('AIChatService formatContext (private, provenance-aware)', () => {
     const formatted: string = (service as any).formatContext(context);
     const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts & incidents'));
 
-    expect(inventory).toMatch(/as_of: unknown/);
-    expect(inventory).toMatch(/data: not available -- no resource discovery run has completed/);
+    expect(inventory).toMatch(/As of: unknown/);
+    expect(inventory).toMatch(/Data: not available -- no resource discovery run has completed/);
     expect(inventory).not.toMatch(/EC2: \d/);
   });
 });
@@ -212,8 +212,8 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
     const formatted = format(baseContext({ services: noData('error', { reason: 'could not be retrieved: relation "aws_resources" does not exist' }) }));
     const services = sectionOf(formatted, 'Services in use', 'Cost data:');
 
-    expect(services).toMatch(/state: error/);
-    expect(services).toMatch(/data: could not be retrieved -- this is missing data, not an empty result or a zero/);
+    expect(services).toMatch(/Status: Could not be retrieved/);
+    expect(services).toMatch(/Data: could not be retrieved -- this is missing data, not an empty result or a zero/);
     expect(services).not.toMatch(/types:/);
     expect(formatted).not.toMatch(/No services detected/);
     expect(formatted).not.toMatch(/relation "aws_resources"/);
@@ -223,7 +223,7 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
     const formatted = format(baseContext());
     const alerts = sectionOf(formatted, 'Alerts & incidents', 'Anomalies:');
 
-    expect(alerts).toMatch(/state: not_supported/);
+    expect(alerts).toMatch(/Status: Not supported/);
     expect(alerts).toMatch(/does not yet associate alerts with an organization/);
     expect(alerts).toMatch(/This is not a zero, "none", or "no findings"/);
     expect(formatted).not.toMatch(/active alerts: 0|Total active alerts|No recent incidents|recent: none/i);
@@ -233,7 +233,7 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
     const formatted = format(baseContext());
     const dora = formatted.slice(formatted.indexOf('DORA metrics'));
 
-    expect(dora).toMatch(/data: not available -- no deployments were recorded/);
+    expect(dora).toMatch(/Data: not available -- no deployments were recorded/);
     expect(dora).not.toMatch(/Deployment frequency|Lead time|Mean time/);
   });
 
@@ -252,9 +252,9 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
     }));
     const services = sectionOf(formatted, 'Services in use', 'Cost data:');
 
-    expect(services).toMatch(/state: partial/);
-    expect(services).toMatch(/coverage: 1 of 2 regions/);
-    expect(services).toMatch(/limitation: only us-east-1 was discovered/);
+    expect(services).toMatch(/Status: Partial/);
+    expect(services).toMatch(/Coverage: 1 of 2 regions/);
+    expect(services).toMatch(/Limitation: only us-east-1 was discovered/);
     expect(services).toMatch(/types: ec2/);
   });
 
@@ -262,14 +262,14 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
     const formatted = format(baseContext());
 
     expect(formatted).toMatch(/- EC2: 3 instances/);
-    expect(formatted).toMatch(/EC2 utilization: not_supported -- DevControl does not collect EC2 CPU utilization/);
+    expect(formatted).toMatch(/EC2 utilization: Not supported -- DevControl does not collect EC2 CPU utilization/);
     expect(formatted).not.toMatch(/\d+ underutilized|underutilized: \d/);
   });
 
   it('the system prompt forbids reading error / not_supported / unavailable as none or zero', () => {
     const prompt: string = (service as any).getSystemPrompt();
 
-    expect(prompt).toMatch(/never treat "unavailable", "error", or "not_supported" as \$0, zero, none,\s+empty, unchanged, or "no findings"/);
+    expect(prompt).toMatch(/never treat "Not available", "Could not be retrieved", or\s+"Not supported" as \$0, zero, none, empty, unchanged, or "no findings"/);
   });
 });
 
