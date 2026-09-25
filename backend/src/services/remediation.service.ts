@@ -461,33 +461,10 @@ export class RemediationService {
       // was enabled to get this far.
       await this.assertNotDevControlInfrastructureByTag(this.makeEC2Client(creds, region), workflow.resource_id);
 
-      switch (workflow.action_type) {
-        case 'stop_instance':
-          ({ log, rollbackSnapshotId, rollbackAvailable } =
-            await this.stopInstance(creds, params, log, workflowId));
-          break;
-        case 'rightsize_instance':
-          ({ log } = await this.rightsizeInstance(creds, params, log, workflowId));
-          break;
-        case 'delete_snapshot':
-          ({ log } = await this.deleteSnapshot(creds, params, log));
-          break;
-        case 'delete_unattached_volume':
-          ({ log, rollbackSnapshotId, rollbackAvailable } =
-            await this.deleteUnattachedVolume(creds, params, log, workflowId));
-          break;
-        case 'enable_s3_lifecycle':
-          ({ log } = await this.enableS3Lifecycle(creds, params, log));
-          break;
-        case 'downgrade_rds_instance':
-          ({ log } = await this.downgradeRDSInstance(creds, params, log));
-          break;
-        case 'delete_unused_elasticip':
-          ({ log } = await this.deleteUnusedElasticIP(creds, params, log));
-          break;
-        default:
-          throw new Error(`Unknown action type: ${workflow.action_type}`);
-      }
+      const result = await this.dispatchAction(workflow.action_type, creds, params, log, workflowId);
+      log = result.log;
+      rollbackSnapshotId = result.rollbackSnapshotId;
+      rollbackAvailable = result.rollbackAvailable ?? false;
 
       log = this.appendLog(log, 'Execution completed successfully');
 
@@ -518,6 +495,37 @@ export class RemediationService {
     }
 
     return this.getWorkflow(workflowId);
+  }
+
+  /**
+   * The action dispatcher: the single place an approved workflow's action_type
+   * becomes a mutating AWS call. Every execution path goes through here.
+   */
+  private async dispatchAction(
+    actionType: ActionType,
+    creds: Awaited<ReturnType<typeof this.getAWSCredentials>>,
+    params: Record<string, any>,
+    log: string,
+    workflowId: string
+  ): Promise<{ log: string; rollbackSnapshotId?: string; rollbackAvailable?: boolean }> {
+    switch (actionType) {
+      case 'stop_instance':
+        return this.stopInstance(creds, params, log, workflowId);
+      case 'rightsize_instance':
+        return this.rightsizeInstance(creds, params, log, workflowId);
+      case 'delete_snapshot':
+        return this.deleteSnapshot(creds, params, log);
+      case 'delete_unattached_volume':
+        return this.deleteUnattachedVolume(creds, params, log, workflowId);
+      case 'enable_s3_lifecycle':
+        return this.enableS3Lifecycle(creds, params, log);
+      case 'downgrade_rds_instance':
+        return this.downgradeRDSInstance(creds, params, log);
+      case 'delete_unused_elasticip':
+        return this.deleteUnusedElasticIP(creds, params, log);
+      default:
+        throw new Error(`Unknown action type: ${actionType}`);
+    }
   }
 
   // ─── Rollback ─────────────────────────────────────────────────────────────
