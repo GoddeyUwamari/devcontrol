@@ -305,6 +305,50 @@ describe('installTenantTagReset -- tag cleared before a connection returns to th
     expect(() => c.release()).toThrow('Release called on client which has already been released to the pool.');
   });
 
+  it('double release of a TAGGED connection throws synchronously, causes no unhandled rejection, and returns the connection once', async () => {
+    const p = rolePool({ reset: true });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const c = await p.connect();
+      await tag(c, orgA);
+      const { pid } = await stateOf(c);
+      c.release(); // reset now in flight
+      expect(() => c.release()).toThrow('Release called on client which has already been released to the pool.');
+
+      // With max: 1 this resolves only once the in-flight reset has completed
+      // and pg-pool's own release has run -- a second releaseToPool() from the
+      // reset callback would throw inside the .then and surface below.
+      const next = await p.connect();
+      try {
+        expect(await stateOf(next)).toMatchObject({ pid, tag: '' });
+      } finally {
+        next.release();
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+      expect(p.totalCount).toBe(1);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('a tag set through a QueryConfig object ({ text, values }) is detected and cleared', async () => {
+    const p = rolePool({ reset: true });
+    const c = await p.connect();
+    await c.query({ text: "SELECT set_config('app.current_organization_id', $1, false)", values: [orgA] });
+    const { rows } = await c.query('SELECT pg_backend_pid() AS pid');
+    c.release();
+
+    const next = await p.connect();
+    try {
+      expect(await stateOf(next)).toMatchObject({ pid: rows[0].pid, tag: '' });
+    } finally {
+      next.release();
+    }
+  });
+
   it('the callback form of connect() gets the same reset', async () => {
     const p = rolePool({ reset: true });
     const { client, done } = await new Promise<{ client: PoolClient; done: (err?: any) => void }>((resolve, reject) =>
