@@ -1,4 +1,5 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
+import { assertTenantContext } from '../config/database';
 import {
   AWSResource,
   OrphanedResource,
@@ -8,14 +9,22 @@ import {
 /**
  * Orphaned Resource Detector Service
  * Identifies AWS resources that are not being actively used
+ *
+ * `pool` must be a connection already tagged for the organization being
+ * scanned (discovery passes its own org-tagged client). aws_resources is
+ * RLS-protected, so an untagged read would otherwise return zero rows and be
+ * indistinguishable from "nothing is orphaned" -- detectOrphaned() checks the
+ * tag first and throws instead.
  */
 export class OrphanedResourceDetectorService {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool | PoolClient) {}
 
   /**
    * Detect all orphaned resources for an organization
    */
   async detectOrphaned(organizationId: string): Promise<OrphanedResource[]> {
+    await assertTenantContext(this.pool, organizationId);
+
     const orphanedResources: OrphanedResource[] = [];
 
     // Find stopped EC2 instances (stopped for > 30 days)

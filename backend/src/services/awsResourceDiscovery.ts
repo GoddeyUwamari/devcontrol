@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { requestContext } from '../config/database';
 import { trackFunnelEventOnce } from './analyticsEvents';
 import {
   EC2Client,
@@ -147,7 +148,18 @@ export class AWSResourceDiscoveryService {
   async discoverAllResources(organizationId: string): Promise<DiscoveryResult> {
     console.log(`\n🔍 [Discovery] Starting AWS resource discovery for organization: ${organizationId}`);
 
+    // Discovery always runs on its own connection and binds it as the ambient
+    // requestContext for its whole duration. Callers like POST /api/aws/accounts
+    // start this fire-and-forget from inside an authenticated request, whose
+    // requestContext client is released as soon as the response is sent --
+    // without this rebinding, every ambient pool.query() below (e.g.
+    // AWSClientFactory) would keep running on that released connection,
+    // which the pool may by then have handed to another org's request.
     const client = await this.pool.connect();
+    return requestContext.run(client, () => this.runDiscovery(organizationId, client));
+  }
+
+  private async runDiscovery(organizationId: string, client: PoolClient): Promise<DiscoveryResult> {
     let jobId: string;
 
     try {
@@ -624,7 +636,7 @@ export class AWSResourceDiscoveryService {
       // of the stubbed always-0 orphaned_count.
       try {
         console.log(`🔎 [Discovery] Running orphaned-resource detection...`);
-        const detector = new OrphanedResourceDetectorService(this.pool);
+        const detector = new OrphanedResourceDetectorService(client);
         const orphaned = await detector.detectOrphaned(organizationId);
 
         await client.query(
