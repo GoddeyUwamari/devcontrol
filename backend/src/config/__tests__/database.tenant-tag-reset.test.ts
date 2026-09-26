@@ -484,9 +484,16 @@ describe('empty-string trap: onboarding_progress / analytics_events on a reset c
       [orgA]
     );
     await leaveClearedConnection(mockPools.app!, orgB);
+    // getStatus also reads aws_accounts, which no canonical migration creates
+    // (so it is absent from CI's schema) and which is outside what this test
+    // covers; stub that one lookup so onboarding_progress stays the real path.
+    const awsLookup = jest
+      .spyOn(onboardingService as unknown as { getAwsCredentialsWithClient: () => Promise<unknown> }, 'getAwsCredentialsWithClient')
+      .mockResolvedValue(undefined);
 
     const status = await onboardingService.getStatus(orgA, '00000000-0000-0000-0000-000000000000');
     expect(status).toBeDefined();
+    expect(awsLookup).toHaveBeenCalledTimes(1);
   });
 
   /**
