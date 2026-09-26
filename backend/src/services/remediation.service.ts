@@ -70,6 +70,23 @@ interface WorkflowRow {
   updated_at: Date;
 }
 
+// Actions DevControl will not create, approve, execute, or roll back.
+// rightsize_instance stops an EC2 instance, changes its type to a
+// caller-supplied target, and restarts it -- and DevControl has no validated
+// rightsizing recommendation to base that target on yet. This is "currently
+// unavailable", not "no rightsizing opportunity exists". The implementation
+// (rightsizeInstance) is kept for when a validated recommendation exists.
+export const ACTION_UNAVAILABLE_PREFIX = 'ACTION_UNAVAILABLE:';
+const UNAVAILABLE_ACTIONS: Partial<Record<ActionType, string>> = {
+  rightsize_instance:
+    'EC2 rightsizing remediation is currently unavailable. DevControl does not yet have a validated rightsizing recommendation to base an instance-type change on.',
+};
+
+export function assertActionAvailable(actionType: string): void {
+  const reason = UNAVAILABLE_ACTIONS[actionType as ActionType];
+  if (reason) throw new Error(`${ACTION_UNAVAILABLE_PREFIX} ${reason}`);
+}
+
 export class RemediationService {
   constructor(private pool: Pool) {}
 
@@ -340,6 +357,8 @@ export class RemediationService {
     },
     createdBy?: string
   ) {
+    assertActionAvailable(data.actionType);
+
     const result = await this.pool.query(
       `INSERT INTO remediation_workflows
          (organization_id, recommendation_id, resource_id, resource_type,
@@ -373,6 +392,7 @@ export class RemediationService {
   async approve(workflowId: string, organizationId: string, approvedBy: string, ipAddress?: string) {
     const workflow = await this.getWorkflow(workflowId);
     if (workflow.organization_id !== organizationId) throw new Error('Workflow not found');
+    assertActionAvailable(workflow.action_type);
     if (workflow.status !== 'pending_approval') throw new Error(`Cannot approve workflow in status: ${workflow.status}`);
 
     await this.updateStatus(
@@ -415,6 +435,9 @@ export class RemediationService {
   async execute(workflowId: string, organizationId: string, executedBy: string, ipAddress?: string) {
     const workflow = await this.getWorkflow(workflowId);
     if (workflow.organization_id !== organizationId) throw new Error('Workflow not found');
+    // Before any status change, credential fetch, or AWS call. dispatchAction()
+    // repeats the check immediately before the handler (defense in depth).
+    assertActionAvailable(workflow.action_type);
     if (workflow.status !== 'approved') {
       throw new Error(`Workflow must be approved before executing. Current status: ${workflow.status}`);
     }
@@ -461,33 +484,10 @@ export class RemediationService {
       // was enabled to get this far.
       await this.assertNotDevControlInfrastructureByTag(this.makeEC2Client(creds, region), workflow.resource_id);
 
-      switch (workflow.action_type) {
-        case 'stop_instance':
-          ({ log, rollbackSnapshotId, rollbackAvailable } =
-            await this.stopInstance(creds, params, log, workflowId));
-          break;
-        case 'rightsize_instance':
-          ({ log } = await this.rightsizeInstance(creds, params, log, workflowId));
-          break;
-        case 'delete_snapshot':
-          ({ log } = await this.deleteSnapshot(creds, params, log));
-          break;
-        case 'delete_unattached_volume':
-          ({ log, rollbackSnapshotId, rollbackAvailable } =
-            await this.deleteUnattachedVolume(creds, params, log, workflowId));
-          break;
-        case 'enable_s3_lifecycle':
-          ({ log } = await this.enableS3Lifecycle(creds, params, log));
-          break;
-        case 'downgrade_rds_instance':
-          ({ log } = await this.downgradeRDSInstance(creds, params, log));
-          break;
-        case 'delete_unused_elasticip':
-          ({ log } = await this.deleteUnusedElasticIP(creds, params, log));
-          break;
-        default:
-          throw new Error(`Unknown action type: ${workflow.action_type}`);
-      }
+      const result = await this.dispatchAction(workflow.action_type, creds, params, log, workflowId);
+      log = result.log;
+      rollbackSnapshotId = result.rollbackSnapshotId;
+      rollbackAvailable = result.rollbackAvailable ?? false;
 
       log = this.appendLog(log, 'Execution completed successfully');
 
@@ -520,11 +520,44 @@ export class RemediationService {
     return this.getWorkflow(workflowId);
   }
 
+  /**
+   * The action dispatcher: the single place an approved workflow's action_type
+   * becomes a mutating AWS call. Every execution path goes through here.
+   */
+  private async dispatchAction(
+    actionType: ActionType,
+    creds: Awaited<ReturnType<typeof this.getAWSCredentials>>,
+    params: Record<string, any>,
+    log: string,
+    workflowId: string
+  ): Promise<{ log: string; rollbackSnapshotId?: string; rollbackAvailable?: boolean }> {
+    switch (actionType) {
+      case 'stop_instance':
+        return this.stopInstance(creds, params, log, workflowId);
+      case 'rightsize_instance':
+        assertActionAvailable(actionType); // never reaches rightsizeInstance while unavailable
+        return this.rightsizeInstance(creds, params, log, workflowId);
+      case 'delete_snapshot':
+        return this.deleteSnapshot(creds, params, log);
+      case 'delete_unattached_volume':
+        return this.deleteUnattachedVolume(creds, params, log, workflowId);
+      case 'enable_s3_lifecycle':
+        return this.enableS3Lifecycle(creds, params, log);
+      case 'downgrade_rds_instance':
+        return this.downgradeRDSInstance(creds, params, log);
+      case 'delete_unused_elasticip':
+        return this.deleteUnusedElasticIP(creds, params, log);
+      default:
+        throw new Error(`Unknown action type: ${actionType}`);
+    }
+  }
+
   // ─── Rollback ─────────────────────────────────────────────────────────────
 
   async rollback(workflowId: string, organizationId: string, executedBy: string, ipAddress?: string) {
     const workflow = await this.getWorkflow(workflowId);
     if (workflow.organization_id !== organizationId) throw new Error('Workflow not found');
+    assertActionAvailable(workflow.action_type);
     if (!workflow.rollback_available) throw new Error('Rollback is not available for this workflow');
     if (workflow.status !== 'completed') throw new Error('Can only rollback completed workflows');
 
