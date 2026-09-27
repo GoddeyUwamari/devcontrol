@@ -7,6 +7,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createHash } from 'crypto';
 import { Pool } from 'pg';
+import { requireOrganizationId } from './ai-context-contract';
 
 export interface CostData {
   previousCost: number;
@@ -561,10 +562,7 @@ Be specific, technical, and focus on AWS-specific optimizations. Keep each secti
    * or global cache.
    */
   private requireOrganizationId(organizationId: string): string {
-    if (typeof organizationId !== 'string' || organizationId.trim() === '') {
-      throw new Error('[AI Insights] organizationId is required for cache access');
-    }
-    return organizationId;
+    return requireOrganizationId(organizationId, 'AI Insights', 'cache access');
   }
 
   /**

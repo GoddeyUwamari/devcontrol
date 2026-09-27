@@ -6,46 +6,18 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
-import type { ContextDataState, ContextScope, ContextSection } from './ai-context-contract';
+import {
+  CONTEXT_STATE_LABELS,
+  type ContextDataState,
+  type ContextScope,
+  type ContextSection,
+  type CostExplorerScope,
+  type InventoryScope,
+  type SpendProvenance,
+} from './ai-context-contract';
 
 // Defined in ai-context-contract.ts; re-exported so existing imports keep working.
-export type { ContextDataState, ContextSection } from './ai-context-contract';
-
-/**
- * Scope of a Cost Explorer figure, exactly as the current query establishes
- * it (aws-cost.service.ts fetchMonthlyCosts()/fetchCostTrend(): one
- * GetCostAndUsage call under the connected IAM role, grouped by SERVICE, with
- * no Filter). Deliberately does NOT claim the figure covers one AWS account:
- * with no LINKED_ACCOUNT filter the result is the role account's whole
- * billing scope, and DevControl does not detect whether that account is a
- * management/payer account whose billing scope spans linked accounts.
- */
-export interface CostExplorerScope {
-  kind: 'cost_explorer';
-  /** aws_accounts.account_id of the connected role the call runs under; null if it couldn't be read. */
-  connectedAccountId: string | null;
-  /** The query is never narrowed to a single linked account. */
-  linkedAccountFilter: 'none';
-  /** Whether the billing scope is consolidated across linked accounts -- not detected. */
-  consolidatedBilling: 'unknown';
-  /** The query has no region filter. */
-  regions: 'all';
-}
-
-/**
- * Scope of DevControl's resource inventory (aws_resources), and so of any
- * figure derived from it: discovery runs under the connected role, in the
- * single region stored on aws_accounts (AWSClientFactory.createClients()),
- * plus services listed account-wide (e.g. S3). Never the same scope as
- * CostExplorerScope.
- */
-export interface InventoryScope {
-  kind: 'resource_inventory';
-  /** aws_accounts.account_id of the connected role; null if it couldn't be read. */
-  connectedAccountId: string | null;
-  /** aws_accounts.region -- the one region discovery runs in; null if it couldn't be read. */
-  discoveryRegion: string | null;
-}
+export type { ContextDataState, ContextSection, CostExplorerScope, InventoryScope } from './ai-context-contract';
 
 /**
  * Month-to-date vs the same days of the previous month, from Cost Explorer's
@@ -83,17 +55,8 @@ export interface CostComparison {
 export const COMPARISON_BASIS =
   'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month-to-date spend';
 
-/**
- * How each state reads in model-facing text. The model repeats what it is
- * given, so it gets these words -- never the raw enum values.
- */
-const STATE_LABELS: Record<ContextDataState, string> = {
-  available: 'Available',
-  partial: 'Partial',
-  unavailable: 'Not available',
-  error: 'Could not be retrieved',
-  not_supported: 'Not supported',
-};
+/** How each state reads in model-facing text (shared with every AI surface). */
+const STATE_LABELS = CONTEXT_STATE_LABELS;
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -155,7 +118,9 @@ export interface ChatContext {
     //                 aws_resources' estimated_monthly_cost (list-price estimates
     //                 of discovered resources) -- not AWS billing data.
     // 'unavailable' = neither exists; `current` is null, never 0.
-    source: 'actual' | 'estimated' | 'unavailable';
+    // ('unavailable' here is a state, not a provenance -- this pre-contract
+    // shape mixes the two; it moves onto ContextSection in the AI Chat PR.)
+    source: SpendProvenance | 'unavailable';
     /** null whenever no figure exists -- never 0 standing in for "unknown". */
     current: number | null;
     // ISO timestamp this cost figure was actually obtained -- for 'actual',

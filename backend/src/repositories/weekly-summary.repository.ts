@@ -6,6 +6,7 @@
 import { Pool, PoolClient } from 'pg';
 import awsCostService from '../services/aws-cost.service';
 import { requestContext } from '../config/database';
+import type { SpendProvenance } from '../services/ai-context-contract';
 import { DORAMetricsRepository, DORAMetricsFilters } from './dora-metrics.repository';
 import { DORAMetricsService, BenchmarkLevel } from '../services/dora-metrics.service';
 
@@ -24,7 +25,7 @@ export interface WeeklyCostComparison {
   currentCost: number;
   previousCost: number | null;
   hasComparableCosts: boolean;
-  costSource: 'actual' | 'estimated';
+  costSource: SpendProvenance;
 }
 
 export interface DORABenchmarkResult {

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import type { SpendProvenance } from '../services/ai-context-contract';
 
 // Database Models
 export interface Team {
@@ -138,7 +139,7 @@ export interface PlatformStats {
   total_services: number;
   active_deployments: number;
   total_infrastructure_cost: number;
-  cost_source: 'actual' | 'estimated';
+  cost_source: SpendProvenance;
   free_tier_remaining: number;
   recent_deployments: Deployment[];
   service_health: {

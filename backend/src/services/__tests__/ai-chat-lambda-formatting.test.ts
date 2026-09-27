@@ -17,14 +17,14 @@
 import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection, InventoryResources } from '../ai-chat.service';
 
 function noData(state: ContextSection<never>['state'], reason: string | null = null): ContextSection<never> {
-  return { state, source: 'test source', asOf: null, scope: null, coverage: null, reason, data: null };
+  return { state, source: 'test source', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason, data: null };
 }
 
 /** An available inventory section whose only non-zero resource type is Lambda. */
 function withLambda(lambda: InventoryResources['lambda']): ChatContext['resources'] {
   return {
     state: 'available', source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-06T06:00:00.000Z',
-    scope: null, coverage: null, reason: null,
+    scope: null, coverage: null, reason: null, provenance: null, period: null, completeness: null, derivedFrom: null,
     data: {
       ec2: { count: 0, utilization: noData('not_supported', 'DevControl does not collect EC2 CPU utilization into the resource inventory.') },
       rds: { count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 },

@@ -22,6 +22,7 @@ import {
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
 import { Pool } from 'pg'
 import { pool } from '../config/database'
+import type { SpendProvenance } from './ai-context-contract'
 
 interface ResourceCost {
   service: string
@@ -541,7 +542,7 @@ class AWSCostService {
    */
   async getMonthlySpendWithFallback(
     organizationId: string
-  ): Promise<{ amount: number; source: 'actual' | 'estimated' }> {
+  ): Promise<{ amount: number; source: SpendProvenance }> {
     let liveTotal = 0
     try {
       const liveCost = await this.fetchMonthlyCosts(organizationId)
