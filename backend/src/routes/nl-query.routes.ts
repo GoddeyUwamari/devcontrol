@@ -10,6 +10,7 @@ import { authenticate as authenticateToken } from '../middleware/auth.middleware
 import { requirePro } from '../middleware/subscription.middleware';
 import { pool } from '../config/database';
 import { NLQueryExecutorService } from '../services/nl-query-executor.service';
+import { classifyUnsupportedQuestion } from '../services/nl-query-guard';
 
 const router = Router();
 const service = new NLQueryService(pool);
@@ -44,28 +45,48 @@ router.use(requirePro);
 router.post('/parse', controller.parseQuery);
 router.get('/analytics', controller.getAnalytics);
 
-// POST /api/nl-query/execute — parse intent AND return real data
+// POST /api/nl-query/execute — answer a question from this org's evidence
+//
+// 1. Questions DevControl has no evidence for (causes, comparisons,
+//    forecasts, savings/waste, utilization) are answered with an explicit
+//    limitation before any parsing -- the parser is never asked to invent them.
+// 2. Otherwise the question is parsed (Claude or the keyword fallback); the
+//    parser's output is untrusted and is validated against an allowlist in
+//    the executor before anything runs.
+// 3. The organization is always req.user.organizationId -- never the body,
+//    the question, or the parser output.
+// An execution failure is HTTP 500 with a sanitized message, never a
+// successful-looking empty result.
 router.post('/execute', async (req: any, res) => {
   try {
-    const { query } = req.body;
+    const query = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
     const organizationId = req.user?.organizationId;
 
-    if (!query?.trim()) {
+    if (!query) {
       return res.status(400).json({ success: false, message: 'Query is required' });
+    }
+    if (query.length > 200) {
+      return res.status(400).json({ success: false, message: 'Query too long' });
     }
     if (!organizationId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    // Parse intent with Claude
-    const intent = await service.parseQuery(query, organizationId);
+    const unsupported = classifyUnsupportedQuestion(query);
+    if (unsupported) {
+      return res.json({ success: true, data: executor.notSupportedResult(unsupported.message) });
+    }
 
-    // Execute against real DB
+    const intent = await service.parseQuery(query, organizationId);
     const result = await executor.execute(intent, organizationId);
 
+    if (result.data.outcome === 'error') {
+      return res.status(500).json({ success: false, message: result.data.summary, data: result });
+    }
     return res.json({ success: true, data: result });
   } catch (err: any) {
-    console.error('[NL Query Execute]', err);
+    // Raw error to the server log only; the client gets a generic message.
+    console.error('[NL Query Execute]', err?.message ?? err);
     return res.status(500).json({ success: false, message: 'Failed to execute query' });
   }
 });

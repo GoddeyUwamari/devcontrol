@@ -74,9 +74,11 @@ export function CommandPalette() {
     try {
       const result = await nlQueryService.executeQuery(search)
       setNlResult(result)
-    } catch {
+    } catch (err: any) {
       toast.error('Could not process query', {
-        description: 'Try: "show expensive EC2" or "critical alerts today"',
+        description: err?.message && err.message !== 'Failed to execute query'
+          ? err.message
+          : 'Try: "show running EC2 instances" or "what is my AWS spend"',
       })
     } finally {
       setIsProcessing(false)
@@ -157,7 +159,9 @@ export function CommandPalette() {
                   <Sparkles className="h-3 w-3 text-purple-600" />
                   <span>AI Results</span>
                   <span className="text-xs text-muted-foreground font-normal">
-                    {nlResult.rowCount} result{nlResult.rowCount !== 1 ? 's' : ''}
+                    {nlResult.data.outcome === 'answered' || nlResult.data.outcome === 'no_results'
+                      ? `${nlResult.rowCount} result${nlResult.rowCount !== 1 ? 's' : ''}`
+                      : nlResult.data.outcome === 'not_supported' ? "Can't answer this" : 'Data not available'}
                     · {nlResult.executionMs}ms
                   </span>
                 </div>
@@ -172,11 +176,13 @@ export function CommandPalette() {
                 {nlResult.data.summary}
               </div>
               {nlResult.data.rows.length === 0 ? (
-                <div className="px-2 py-3 text-xs text-center
-                  text-muted-foreground flex items-center justify-center gap-2">
-                  <AlertCircle className="h-3 w-3" />
-                  No data matched. Try rephrasing.
-                </div>
+                nlResult.data.outcome === 'no_results' ? (
+                  <div className="px-2 py-3 text-xs text-center
+                    text-muted-foreground flex items-center justify-center gap-2">
+                    <AlertCircle className="h-3 w-3" />
+                    Checked -- nothing matched.
+                  </div>
+                ) : null
               ) : (
                 nlResult.data.rows.slice(0, 8).map((row, idx) => {
                   const label = String(
@@ -185,12 +191,12 @@ export function CommandPalette() {
                   )
                   const sub1 = String(
                     row.resource_type ?? row.type ?? row.service_type ??
-                    row.severity ?? Object.values(row)[1] ?? ''
+                    row.severity ?? row.share ?? Object.values(row)[1] ?? ''
                   )
                   const sub2 = String(
-                    row.monthly_cost !== null && row.monthly_cost !== undefined
-                      ? '$' + Number(row.monthly_cost).toLocaleString() + '/mo'
-                      : row.region ?? row.status ?? row.environment ??
+                    row.estimated_monthly_cost !== null && row.estimated_monthly_cost !== undefined
+                      ? 'est. $' + Number(row.estimated_monthly_cost).toLocaleString() + '/mo'
+                      : row.month_to_date_spend ?? row.region ?? row.status ?? row.environment ??
                         Object.values(row)[2] ?? ''
                   )
                   return (
@@ -199,7 +205,7 @@ export function CommandPalette() {
                       const resourceId = row.id || null
                       if (resourceId && nlResult.intent.target === 'infrastructure') {
                         router.push(`/infrastructure?resource=${resourceId}`)
-                      } else {
+                      } else if (nlResult.intent.target !== 'none') {
                         router.push(`/${nlResult.intent.target}`)
                       }
                     }}>

@@ -14,7 +14,7 @@ import {
 import { usePlan } from '@/lib/hooks/use-plan'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
-import { nlQueryService, NLQueryResult } from '@/lib/services/nl-query.service'
+import { nlQueryService, NLQueryResult, NLQueryOutcome } from '@/lib/services/nl-query.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
@@ -36,6 +36,15 @@ const DATE_RANGES: { label: string; days: number; range: '7d' | '30d' | '90d' | 
   { label: '6M',  days: 180, range: '6mo' },
   { label: '1Y',  days: 365, range: '1yr' },
 ]
+
+/** Ask AI result header: says whether the question was answered, found nothing, or could not be answered. */
+const NL_OUTCOME_LABEL: Record<NLQueryOutcome, (rows: number) => string> = {
+  answered: rows => (rows > 0 ? `${rows} result${rows !== 1 ? 's' : ''}` : 'Answered'),
+  no_results: () => 'No matches',
+  unavailable: () => 'Data not available',
+  not_supported: () => "Ask AI can't answer this",
+  error: () => 'Could not be retrieved',
+}
 
 const severityStyles: Record<RecommendationSeverity, string> = {
   HIGH: 'bg-red-50 text-red-700 border-red-200',
@@ -200,7 +209,9 @@ export default function CostsPage() {
       setNlResult(result)
     } catch (err: any) {
       if (err?.status === 402) setNlUpgradeBanner(true)
-      else setNlError('Could not process query. Try: "Show EC2 spend last 30 days" or "Which services cost the most?"')
+      else setNlError(err?.message && err.message !== 'Failed to execute query'
+        ? err.message
+        : 'Could not process query. Try: "What is my AWS spend this month?" or "Show running EC2 instances"')
     } finally {
       setNlLoading(false)
     }
@@ -491,7 +502,7 @@ export default function CostsPage() {
                 ref={inputRef}
                 value={nlQuery}
                 onChange={e => setNlQuery(e.target.value)}
-                placeholder='Ask anything — "Show EC2 spend last 30 days" · "Which region costs the most?"'
+                placeholder='Ask about your data — "What is my AWS spend this month?" · "Show running EC2 instances"'
                 className="w-full pl-11 pr-28 py-3.5 rounded-xl border border-slate-200 text-sm text-slate-900 bg-white outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
               />
               <button
@@ -504,7 +515,7 @@ export default function CostsPage() {
               </button>
             </div>
             <div className="flex flex-wrap gap-1.5 mt-2.5">
-              {['Why is EC2 cost high?', 'What can I optimize today?', 'Show biggest waste', 'Compare vs last month'].map(chip => (
+              {['What is my AWS spend this month?', 'Show running EC2 instances', 'Unencrypted S3 buckets', 'Failed production deployments'].map(chip => (
                 <button
                   key={chip}
                   type="button"
@@ -532,7 +543,7 @@ export default function CostsPage() {
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-slate-900 m-0">{nlResult.intent.explanation}</p>
-                      <p className="text-xs text-violet-600 m-0">{nlResult.rowCount} results · {nlResult.executionMs}ms · Confidence: {nlResult.intent.confidence}</p>
+                      <p className="text-xs text-violet-600 m-0">{NL_OUTCOME_LABEL[nlResult.data.outcome](nlResult.rowCount)} · {nlResult.executionMs}ms</p>
                     </div>
                   </div>
                   <button onClick={() => setNlResult(null)} className="bg-transparent border-none cursor-pointer text-slate-400 hover:text-slate-600">
@@ -560,9 +571,9 @@ export default function CostsPage() {
                     ))}
                   </div>
                 )}
-                {nlResult.data.rows.length === 0 && (
+                {nlResult.data.outcome === 'no_results' && (
                   <div className="px-5 py-8 text-center">
-                    <p className="text-sm text-slate-500 m-0">No data matched your query. Try rephrasing or check your AWS connection.</p>
+                    <p className="text-sm text-slate-500 m-0">The data was checked and nothing matched this query.</p>
                   </div>
                 )}
               </div>
