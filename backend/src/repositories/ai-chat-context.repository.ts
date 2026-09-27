@@ -81,24 +81,8 @@ export class AIChatContextRepository {
   async gatherContext(organizationId: string): Promise<ChatContext> {
     console.log(`[AI Chat Context] Gathering context for org: ${organizationId}`);
 
-    // Fetched up front (not inside the Promise.all below) because the
-    // inventory sections and getCostData's estimated-fallback branch need
-    // them too -- one query each, reused, rather than a second identical lookup.
-    const [discovery, account] = await Promise.all([
-      this.getDiscoveryFreshness(organizationId),
-      this.getConnectedAccount(organizationId),
-    ]);
-
-    // Discovery's real scope: AWSClientFactory.createClients() reads this same
-    // row and falls back to 'us-east-1' when region is null. No connected
-    // account row (or a failed lookup) means the scope is unknown -- not a guess;
-    // `account.state` says which.
+    const { discovery, account, inventoryScope } = await this.gatherInventoryBasis(organizationId);
     const connectedAccount = account.data;
-    const inventoryScope: InventoryScope = {
-      kind: 'resource_inventory',
-      connectedAccountId: connectedAccount?.accountId ?? null,
-      discoveryRegion: connectedAccount ? (connectedAccount.region ?? 'us-east-1') : null,
-    };
 
     const [costs, resources, services, dora] = await Promise.all([
       this.getCostData(organizationId, discovery.data?.completedAt ?? null, connectedAccount?.accountId ?? null, inventoryScope),
@@ -122,6 +106,49 @@ export class AIChatContextRepository {
       anomalies,
       dora,
     };
+  }
+
+  /**
+   * Discovery freshness, the connected account row, and the inventory scope
+   * they establish -- fetched once and shared by every section that depends
+   * on them. Public so other AI surfaces gate inventory-backed evidence on
+   * the same discovery state without also calling Cost Explorer.
+   */
+  async gatherInventoryBasis(organizationId: string): Promise<Pick<ChatContext, 'discovery' | 'account' | 'inventoryScope'>> {
+    const [discovery, account] = await Promise.all([
+      this.getDiscoveryFreshness(organizationId),
+      this.getConnectedAccount(organizationId),
+    ]);
+
+    // Discovery's real scope: AWSClientFactory.createClients() reads this same
+    // row and falls back to 'us-east-1' when region is null. No connected
+    // account row (or a failed lookup) means the scope is unknown -- not a guess;
+    // `account.state` says which.
+    const connectedAccount = account.data;
+    const inventoryScope: InventoryScope = {
+      kind: 'resource_inventory',
+      connectedAccountId: connectedAccount?.accountId ?? null,
+      discoveryRegion: connectedAccount ? (connectedAccount.region ?? 'us-east-1') : null,
+    };
+    return { discovery, account, inventoryScope };
+  }
+
+  /**
+   * Just the cost evidence (plus the discovery/account/scope it depends on),
+   * built exactly as gatherContext() builds it -- for other AI surfaces (AI
+   * Reports, the Dashboard AI summary) that need truthful cost data: a real
+   * $0 or net-credit Cost Explorer month stays 'actual', an inventory estimate
+   * stays 'estimated', and neither becomes a number when both are missing.
+   */
+  async gatherCostContext(organizationId: string): Promise<Pick<ChatContext, 'discovery' | 'account' | 'inventoryScope' | 'costs'>> {
+    const basis = await this.gatherInventoryBasis(organizationId);
+    const costs = await this.getCostData(
+      organizationId,
+      basis.discovery.data?.completedAt ?? null,
+      basis.account.data?.accountId ?? null,
+      basis.inventoryScope
+    );
+    return { ...basis, costs };
   }
 
   /**

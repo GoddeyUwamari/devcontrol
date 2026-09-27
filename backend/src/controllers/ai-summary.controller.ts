@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AISummaryService } from '../services/ai-summary.service';
+import { AISummaryService, SYSTEM_STATUS_UNAVAILABLE } from '../services/ai-summary.service';
 
 const service = new AISummaryService();
 
@@ -18,14 +18,11 @@ export class AISummaryController {
       return;
     }
 
-    const costDeltaParam = req.query.costDeltaPct;
-    const costDeltaPct =
-      typeof costDeltaParam === 'string' && costDeltaParam.trim() !== '' && !isNaN(Number(costDeltaParam))
-        ? Number(costDeltaParam)
-        : null;
-
+    // Every fact, including the month-over-month change, is computed
+    // server-side for the authenticated org; no client-supplied figure (such
+    // as the former costDeltaPct query param) is trusted as evidence.
     try {
-      const result = await service.getSummary(organizationId, costDeltaPct);
+      const result = await service.getSummary(organizationId);
       res.json({ success: true, data: result });
     } catch (error: any) {
       console.error('[AI Summary] Controller error:', error.message);
@@ -35,7 +32,8 @@ export class AISummaryController {
           overallHealth: { score: null, context: null },
           topRisk: null,
           cloudSpend: null,
-          systemStatus: null,
+          systemStatus: SYSTEM_STATUS_UNAVAILABLE,
+          topRiskStatus: 'unavailable',
           generatedAt: new Date().toISOString(),
         },
       });

@@ -334,9 +334,9 @@ export default function DashboardPage() {
     : 'var(--text-warning)'
 
   // Real-data-only, like every other computed-metric feature on this dashboard — no
-  // demo-mode fabrication. Reuses the already-computed cost delta above so the backend
-  // doesn't need a second, separately-billed Cost Explorer call to reference spend trend.
-  const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, monthOverMonthCostChange, !isDemoActive && hasBillingData)
+  // demo-mode fabrication. The backend gathers its own cost evidence through the shared
+  // AI Chat cost-context path (per-org cached Cost Explorer results); nothing is sent from here.
+  const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, !isDemoActive && hasBillingData)
 
   // Canonical System Intelligence score for the Infrastructure Health KPI --
   // same endpoint/cache the Infrastructure page reads, independent of
@@ -488,6 +488,8 @@ export default function DashboardPage() {
   ]
 
   const topRisk = isDemoActive ? DEMO_TOP_RISK : (aiSummaryData?.topRisk ?? null)
+  // No summary (disabled, failed, or not yet returned) is 'unavailable', never "no risks".
+  const topRiskStatus = isDemoActive ? 'identified' as const : (aiSummaryData?.topRiskStatus ?? 'unavailable')
 
   // Infrastructure Health reads the canonical System Intelligence score
   // directly (same computation, same shared 2-minute cache the Infrastructure
@@ -591,6 +593,7 @@ export default function DashboardPage() {
 
           <InfrastructureIntelligence
             topRisk={topRisk}
+            topRiskStatus={topRiskStatus}
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
             systemStatus={{ label: statusConf.label, color: statusConf.color, background: statusConf.background, dotColor: statusConf.dot }}
             isLive={isConnected}

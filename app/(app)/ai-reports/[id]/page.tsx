@@ -223,7 +223,7 @@ export default function ReportDetailPage() {
         {report.performanceAnalysis && (
           <Section title="Performance & Deployments" icon={<TrendingUp size={13} />}>
             <div className="flex flex-col gap-4">
-              {[{ label: 'Overview', text: report.performanceAnalysis.overview }, { label: 'DORA Metrics', text: report.performanceAnalysis.doraMetrics }].map(({ label, text }) => (
+              {[{ label: 'Overview', text: report.performanceAnalysis.overview }, { label: 'Delivery Metrics', text: report.performanceAnalysis.doraMetrics }].map(({ label, text }) => (
                 <div key={label}><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p><p className="text-sm text-slate-600 leading-relaxed">{text}</p></div>
               ))}
               {report.performanceAnalysis.recommendations?.length > 0 && (

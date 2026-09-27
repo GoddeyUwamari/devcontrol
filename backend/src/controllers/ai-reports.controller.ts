@@ -54,20 +54,25 @@ export class AIReportsController {
 
       console.log('[AI Reports] Generating report for organization:', organizationId);
 
-      // Fetch data (pass reportType so irrelevant queries are skipped)
+      // Fetch data (pass reportType so irrelevant queries are skipped).
+      // organizationId is the authenticated user's -- the body schema has no
+      // organization field, so a client-supplied one is stripped by zod.
       const data = await service.fetchReportData(organizationId, dateRange || defaultDateRange, reportType || 'weekly_summary');
 
       // Generate report
       const startTime = Date.now();
-      const report = await service.generateWeeklyReport(data, reportType || 'weekly_summary');
+      const { report, wasFallback } = await service.generateWeeklyReport(data, reportType || 'weekly_summary');
       const generationTime = Date.now() - startTime;
 
-      // Save to database
+      // Save to database -- was_fallback is recorded so the report page never
+      // labels the deterministic template "AI-generated".
       const reportId = await service.saveGeneratedReport(
         organizationId,
         report,
         data.dateRange,
-        reportType || 'weekly_summary'
+        reportType || 'weekly_summary',
+        undefined,
+        wasFallback
       );
 
       console.log(`[AI Reports] Report generated successfully in ${generationTime}ms`);
@@ -77,15 +82,17 @@ export class AIReportsController {
         data: {
           ...report,
           reportId,
-          generationTime
+          generationTime,
+          wasFallback
         }
       });
 
     } catch (error: any) {
+      // Raw failures (SQL, AWS, model errors) go to the server log only.
       console.error('[AI Reports] Generate report error:', error);
       return res.status(500).json({
         success: false,
-        error: error.message || 'Failed to generate report'
+        error: 'Failed to generate report'
       });
     }
   }

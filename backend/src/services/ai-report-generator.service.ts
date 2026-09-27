@@ -1,104 +1,126 @@
 /**
  * AI Report Generator Service
- * Generates AI-powered infrastructure reports with insights and recommendations
+ * Generates AI-powered infrastructure reports from evidence DevControl
+ * actually holds.
+ *
+ * Every data source is its own ContextSection (ai-context-contract.ts), so a
+ * report can have cost available, security partial, and alerts not supported
+ * at the same time -- never one global "data unavailable" switch, never a
+ * placeholder number standing in for missing evidence. In particular there is
+ * no fabricated previous cost, previous security score, resource change,
+ * lead-time default, or hard-coded issue severity: a fact is stated only when
+ * a section carries evidence for it.
+ *
+ * Cost evidence comes from the AI Chat cost path
+ * (AIChatContextRepository.gatherCostContext() via cost-context-sections.ts),
+ * so a real $0 or net-credit Cost Explorer month stays actual billed spend
+ * and an inventory estimate is always labeled an estimate.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
-import { DeploymentsRepository } from '../repositories/deployments.repository';
-import { DORAMetricsRepository } from '../repositories/dora-metrics.repository';
-import { AlertHistoryRepository } from '../repositories/alert-history.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
+import type { ChatContext } from './ai-chat.service';
+import {
+  AI_CONTEXT_CONTRACT_VERSION,
+  collectSection,
+  deriveSection,
+  EVIDENCE_CLAIM_RULES,
+  hasEvidence,
+  notSupported,
+  requireOrganizationId,
+  toModelEvidence,
+  type ContextSection,
+  type EvidencePeriod,
+  type SectionMeta,
+} from './ai-context-contract';
+import { monthOverMonthSection, spendSection, type MonthOverMonthEvidence, type SpendEvidence } from './cost-context-sections';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+type Severity = 'critical' | 'high' | 'medium' | 'low';
+const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
+
+export interface ComplianceFindingsEvidence {
+  /** Non-terminated discovered resources the checks ran against. */
+  resourcesEvaluated: number;
+  resourcesWithFindings: number;
+  findingsBySeverity: Record<Severity, number>;
+  /** Per category, with severities and resource types taken from the findings themselves. */
+  byCategory: Array<{ category: string; findings: number; highestSeverity: Severity; resourceTypes: string[] }>;
+}
+
+export interface DeploymentCounts {
+  total: number;
+  successful: number;
+  failed: number;
+}
+
+export interface DeliveryRates {
+  /** null when no deployments were recorded -- a rate of nothing is undefined, not 0%. */
+  successRatePercent: number | null;
+  changeFailureRatePercent: number | null;
+  deploymentsPerDay: number;
+}
+
+export interface TimeBetweenDeployments {
+  averageHours: number;
+  intervalsMeasured: number;
+  servicesMeasured: number;
+}
+
+export interface IdleResourceRecommendations {
+  items: Array<{ resourceId: string; resourceType: string; issue: string; estimatedMonthlySavings: number }>;
+  totalEstimatedMonthlySavings: number;
+}
+
+interface DeploymentRecord {
+  serviceId: string;
+  status: string;
+  deployedAt: string;
+}
+
+/** The evidence one report is written from. A section absent here was not requested for this report type. */
 export interface ReportData {
   organizationId: string;
-  dateRange: {
-    from: string;
-    to: string;
-  };
-  // True only when fetchReportData()'s underlying queries failed and this is
-  // the all-zero getFallbackReportData() placeholder -- distinguishes "cost
-  // analysis genuinely found zero opportunities" from "we don't actually know
-  // because the data fetch itself failed," so a fallback report never reports
-  // unavailable data as a positive infrastructure finding.
-  dataUnavailable?: boolean;
-  costs: {
-    current: number;
-    previous: number;
-    change: number;
-    changePercent: number;
-    breakdown: {
-      compute: number;
-      storage: number;
-      database: number;
-      network: number;
-      other: number;
-    };
-  };
-  security: {
-    score: number;
-    previousScore: number;
-    criticalIssues: number;
-    highIssues: number;
-    mediumIssues: number;
-    topIssues: Array<{
-      title: string;
-      severity: string;
-      resourceType: string;
-      count: number;
-    }>;
-  };
-  deployments: {
-    total: number;
-    successful: number;
-    failed: number;
-    averageLeadTime: number;
-    deploymentFrequency: number;
-    changeFailureRate: number;
-  };
-  resources: {
-    total: number;
-    change: number;
-    byType: Record<string, number>;
-    topCostResources: Array<{
-      id: string;
-      type: string;
-      cost: number;
-      name: string;
-    }>;
-    unusedResources: Array<{
-      id: string;
-      type: string;
-      potentialSavings: number;
-    }>;
-  };
-  alerts: {
-    total: number;
-    critical: number;
-    resolved: number;
-    avgResolutionTime: number;
+  reportType: string;
+  /** The requested report period; `to` is exclusive (matching the deployment query). */
+  dateRange: { from: string; to: string };
+  sections: {
+    spend?: ContextSection<SpendEvidence>;
+    monthOverMonth?: ContextSection<MonthOverMonthEvidence>;
+    topEstimatedResources?: ContextSection<Array<{ resourceId: string; resourceType: string; name: string; estimatedMonthlyCost: number }>>;
+    idleResourceRecommendations?: ContextSection<IdleResourceRecommendations>;
+    resourceInventory?: ContextSection<{ total: number; byType: Record<string, number> }>;
+    resourceChange?: ContextSection<never>;
+    securityFindings?: ContextSection<ComplianceFindingsEvidence>;
+    securityScore?: ContextSection<never>;
+    securityHistory?: ContextSection<never>;
+    deployments?: ContextSection<DeploymentCounts>;
+    deliveryRates?: ContextSection<DeliveryRates>;
+    timeBetweenDeployments?: ContextSection<TimeBetweenDeployments>;
+    alerts?: ContextSection<never>;
   };
 }
 
 export interface GeneratedReport {
   summary: string;
   keyHighlights: string[];
-  costAnalysis: {
+  costAnalysis?: {
     overview: string;
     trends: string;
     recommendations: string[];
   };
-  securityAnalysis: {
+  securityAnalysis?: {
     overview: string;
     topRisks: string;
     recommendations: string[];
   };
-  performanceAnalysis: {
+  performanceAnalysis?: {
     overview: string;
     doraMetrics: string;
     recommendations: string[];
@@ -113,95 +135,86 @@ export interface GeneratedReport {
   executiveSummary: string;
 }
 
+export interface GeneratedReportResult {
+  report: GeneratedReport;
+  /** True when the deterministic template was used instead of the model. */
+  wasFallback: boolean;
+}
+
+const SECTION_TITLES: Record<keyof ReportData['sections'], string> = {
+  spend: 'Cloud spend',
+  monthOverMonth: 'Month-over-month cost comparison',
+  topEstimatedResources: 'Highest estimated-cost discovered resources',
+  idleResourceRecommendations: 'Active idle/unused-resource recommendations',
+  resourceInventory: 'Discovered resource inventory',
+  resourceChange: 'Resource changes over the report period',
+  securityFindings: 'Configuration-check findings on discovered resources',
+  securityScore: 'Security score',
+  securityHistory: 'Previous-period security results',
+  deployments: 'Deployments recorded in the report period',
+  deliveryRates: 'Deployment rates',
+  timeBetweenDeployments: 'Average time between successful deployments of the same service (NOT DORA lead time)',
+  alerts: 'Alerts',
+};
+
+const ALERTS_NOT_SUPPORTED_REASON =
+  "DevControl's alert sync does not yet associate alerts with an organization, so this account's alert counts cannot be determined.";
+const RESOURCE_CHANGE_NOT_SUPPORTED_REASON =
+  'DevControl keeps only the current resource inventory, not its state at the start of the period, so resources added or removed during the period cannot be determined.';
+const SECURITY_SCORE_NOT_SUPPORTED_REASON =
+  'DevControl does not compute a validated security score for reports; the configuration-check findings are reported as counts instead.';
+const SECURITY_HISTORY_NOT_SUPPORTED_REASON =
+  "Each resource's configuration-check result is overwritten on every scan, so no earlier period's results exist to compare against.";
+
+const CHECKS_COVERAGE =
+  "DevControl's configuration checks (encryption, backups, public access, tagging, IAM and other checks) on resources discovered in the connected account's discovery region. Does not include account-level security findings or AWS Security Hub.";
+
+const PROMPT_RULES = [
+  'Cost figures have their own period (month-to-date billed spend, or a point-in-time monthly run-rate estimate), which may differ from the requested report period -- always state which one a figure is.',
+  'Never state a previous-period cost, a trend, or a percentage change unless the month-over-month comparison section carries evidence. Never invent history.',
+  'There is no security score and no earlier security result: do not state, estimate, or compare either.',
+  'Resource changes over the period are not tracked: do not describe resource growth or decline.',
+  '"Average time between successful deployments" is not DORA lead time for changes: never call it lead time.',
+  'Alert data is not supported: never say there were no alerts, zero alerts, or that alerting is healthy.',
+  'Configuration-check findings cover only DevControl\'s checks on discovered resources: no findings means none from those checks, not that no security issues exist.',
+  'Recommend only actions grounded in the supplied evidence. Do not recommend rightsizing, Reserved Instances, or Savings Plans unless a supplied recommendation says so.',
+  'Savings are DevControl estimates of potential savings, never realized savings. In topRecommendations, set estimatedSavings only to a value copied from the idle/unused-resource recommendation evidence; otherwise omit the field.',
+  'When a section has no evidence, say that data is not available in the relevant analysis -- do not fill it in.',
+].map(rule => `- ${rule}`).join('\n');
+
+function money(amount: number): string {
+  const abs = Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return amount < 0 ? `-$${abs}` : `$${abs}`;
+}
+
+function round(value: number, places: number): number {
+  const f = 10 ** places;
+  return Math.round(value * f) / f;
+}
+
+function unavailablePhrase(section: ContextSection<unknown>): string {
+  return (section.reason ?? `${section.source} is not available`).replace(/\.$/, '');
+}
+
 export class AIReportGeneratorService {
   private awsResourcesRepo: AWSResourcesRepository;
-  private deploymentsRepo: DeploymentsRepository;
-  private doraMetricsRepo: DORAMetricsRepository;
-  private alertHistoryRepo: AlertHistoryRepository;
   private costRecommendationsRepo: CostRecommendationsRepository;
+  private contextRepo: AIChatContextRepository;
 
   constructor(private pool: Pool) {
     this.awsResourcesRepo = new AWSResourcesRepository(pool);
-    this.deploymentsRepo = new DeploymentsRepository();
-    this.doraMetricsRepo = new DORAMetricsRepository(pool);
-    this.alertHistoryRepo = new AlertHistoryRepository(pool);
     this.costRecommendationsRepo = new CostRecommendationsRepository();
+    this.contextRepo = new AIChatContextRepository(pool);
   }
 
-  async generateWeeklyReport(data: ReportData, reportType: string = 'weekly_summary'): Promise<GeneratedReport> {
+  async generateWeeklyReport(data: ReportData, reportType: string = 'weekly_summary'): Promise<GeneratedReportResult> {
     if (!process.env.ANTHROPIC_API_KEY) {
       console.warn('[AI Report Generator] ANTHROPIC_API_KEY not set - using fallback report');
-      return this.generateFallbackReport(data, reportType);
+      return { report: this.generateFallbackReport(data), wasFallback: true };
     }
 
     const systemPrompt = this.buildSystemPrompt(reportType);
-    const reportLabel = this.buildReportLabel(reportType, data.dateRange);
-
-    const userPrompt = `Generate a ${reportLabel} for the period ${data.dateRange.from} to ${data.dateRange.to}.
-
-COST DATA:
-- Current spending: $${data.costs.current.toLocaleString()}/month
-- Previous period: $${data.costs.previous.toLocaleString()}/month
-- Change: ${data.costs.changePercent > 0 ? '+' : ''}${data.costs.changePercent.toFixed(1)}% ($${Math.abs(data.costs.change).toLocaleString()})
-- Breakdown: Compute $${data.costs.breakdown.compute}, Storage $${data.costs.breakdown.storage}, Database $${data.costs.breakdown.database}, Network $${data.costs.breakdown.network}, Other $${data.costs.breakdown.other}
-${data.resources.topCostResources.length > 0 ? `- Top cost resources: ${data.resources.topCostResources.map(r => `${r.type} ${r.id} ($${r.cost}/mo)`).join(', ')}` : ''}
-${data.resources.unusedResources.length > 0 ? `- Unused resources: ${data.resources.unusedResources.length} resources with potential savings of $${data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0)}/month` : ''}
-
-SECURITY DATA:
-- Security score: ${data.security.score}/100 (${data.security.previousScore > 0 ? `${data.security.score > data.security.previousScore ? '+' : ''}${data.security.score - data.security.previousScore} vs last period` : 'baseline'})
-- Critical issues: ${data.security.criticalIssues}
-- High severity: ${data.security.highIssues}
-- Medium severity: ${data.security.mediumIssues}
-${data.security.topIssues.length > 0 ? `- Top issues: ${data.security.topIssues.map(i => `${i.count} ${i.resourceType} with ${i.title} (${i.severity})`).join(', ')}` : ''}
-
-DEPLOYMENT DATA:
-- Total deployments: ${data.deployments.total}
-- Success rate: ${data.deployments.total > 0 ? ((data.deployments.successful / data.deployments.total) * 100).toFixed(1) : '0'}%
-- Failed deployments: ${data.deployments.failed}
-- Average lead time: ${data.deployments.averageLeadTime.toFixed(1)} hours
-- Deployment frequency: ${data.deployments.deploymentFrequency.toFixed(1)} per day
-- Change failure rate: ${(data.deployments.changeFailureRate * 100).toFixed(1)}%
-
-RESOURCE DATA:
-- Total resources: ${data.resources.total} (${data.resources.change > 0 ? '+' : ''}${data.resources.change} this period)
-- By type: ${Object.entries(data.resources.byType).map(([type, count]) => `${count} ${type}`).join(', ')}
-
-ALERTS DATA:
-- Total alerts: ${data.alerts.total}
-- Critical: ${data.alerts.critical}
-- Resolved: ${data.alerts.resolved}
-- Avg resolution time: ${data.alerts.avgResolutionTime.toFixed(1)} hours
-
-Return JSON with this structure:
-{
-  "summary": "2-3 sentence executive summary",
-  "keyHighlights": ["highlight 1", "highlight 2", "highlight 3"],
-  "costAnalysis": {
-    "overview": "1-2 paragraphs on cost trends",
-    "trends": "Key cost patterns observed",
-    "recommendations": ["recommendation 1", "recommendation 2"]
-  },
-  "securityAnalysis": {
-    "overview": "1-2 paragraphs on security posture",
-    "topRisks": "Most urgent security concerns",
-    "recommendations": ["recommendation 1", "recommendation 2"]
-  },
-  "performanceAnalysis": {
-    "overview": "1-2 paragraphs on deployment performance",
-    "doraMetrics": "DORA metrics analysis",
-    "recommendations": ["recommendation 1", "recommendation 2"]
-  },
-  "topRecommendations": [
-    {
-      "title": "Short recommendation title",
-      "impact": "high",
-      "description": "What to do and why",
-      "estimatedSavings": 500,
-      "effort": "low"
-    }
-  ],
-  "executiveSummary": "3-4 sentence summary for executives"
-}`;
+    const userPrompt = this.buildUserPrompt(data, reportType);
 
     try {
       console.log('[AI Report Generator] Generating report with Claude API...');
@@ -237,82 +250,124 @@ Return JSON with this structure:
       const report: GeneratedReport = JSON.parse(jsonText);
 
       console.log('[AI Report Generator] Report generated successfully');
-      return report;
+      return { report: this.stripUngroundedSavings(report, data), wasFallback: false };
     } catch (error: any) {
       console.error('[AI Report Generator] Error:', error.message);
       console.log('[AI Report Generator] Falling back to basic report');
-      return this.generateFallbackReport(data, reportType);
+      return { report: this.generateFallbackReport(data), wasFallback: true };
     }
   }
 
+  /** The model-facing request: every section as toModelEvidence() JSON, plus the claim rules. */
+  buildUserPrompt(data: ReportData, reportType: string): string {
+    const sections = (Object.keys(data.sections) as Array<keyof ReportData['sections']>)
+      .map(name => `### ${SECTION_TITLES[name]}\n${JSON.stringify(toModelEvidence(data.sections[name] as ContextSection<unknown>))}`)
+      .join('\n\n');
+
+    return `Generate a ${this.buildReportLabel(reportType)}. Requested report period: ${data.dateRange.from} to ${data.dateRange.to} (end date exclusive).
+
+EVIDENCE (contract version ${AI_CONTEXT_CONTRACT_VERSION}): each section below is JSON with its state (available / partial / unavailable / error / not_supported), whether evidence is present, provenance (actual / estimated / derived), source, scope, period, asOf (when it was obtained), completeness, coverage, reason, and data. The meaning of each state and provenance is included with it.
+
+RULES:
+${EVIDENCE_CLAIM_RULES.split('\n').map(rule => `- ${rule}`).join('\n')}
+${PROMPT_RULES}
+
+${sections}
+
+Return JSON with this structure (omit costAnalysis, securityAnalysis, or performanceAnalysis if no section above covers that area):
+{
+  "summary": "2-3 sentence summary grounded in the evidence",
+  "keyHighlights": ["highlight 1", "highlight 2", "highlight 3"],
+  "costAnalysis": {
+    "overview": "cost evidence, with source and period",
+    "trends": "the month-over-month comparison if it has evidence; otherwise say it is not available",
+    "recommendations": ["recommendation grounded in the evidence"]
+  },
+  "securityAnalysis": {
+    "overview": "configuration-check findings, with what they cover",
+    "topRisks": "the most severe categories found, or that none were found by these checks",
+    "recommendations": ["recommendation grounded in the evidence"]
+  },
+  "performanceAnalysis": {
+    "overview": "deployment evidence for the report period",
+    "doraMetrics": "only the delivery metrics present in the evidence, with their exact meaning",
+    "recommendations": ["recommendation grounded in the evidence"]
+  },
+  "topRecommendations": [
+    {
+      "title": "Short recommendation title",
+      "impact": "high",
+      "description": "What to do and why, citing the evidence",
+      "estimatedSavings": 0,
+      "effort": "low"
+    }
+  ],
+  "executiveSummary": "3-4 sentence summary for executives, grounded in the evidence"
+}`;
+  }
+
   private buildSystemPrompt(reportType: string): string {
-    const base = `You are an AI infrastructure analyst for DevControl.
+    const base = `You are an AI infrastructure analyst for DevControl. You turn supplied, already-verified evidence into a clear report.
 
 REPORT STYLE:
-- Professional, concise, data-driven
-- Highlight trends and changes (not just current state)
-- Provide specific, actionable recommendations
-- Use percentages and dollar amounts for impact
-- Flag urgent issues clearly
+- Professional, concise, and strictly evidence-grounded
+- Describe a trend or change only when a comparison section carries evidence for it
+- Use dollar amounts and percentages only as they appear in the evidence, with their source and period
+- Say plainly when data is not available, partial, or an estimate -- never fill a gap with an assumption
 
 TONE:
 - Clear and direct
 - Balance technical accuracy with business language
 
 RECOMMENDATIONS:
-- Prioritize by ROI (cost savings or risk reduction)
-- Include estimated impact ($ or %)
+- Only recommend actions the evidence supports
+- Include estimated impact only when the evidence contains it, labeled as an estimate
 - Specify effort level (low/medium/high)`;
 
     switch (reportType) {
       case 'cost_analysis':
         return `${base}
 
-FOCUS: Cost optimization and cloud spend efficiency.
-- Lead every section with dollar impact and savings potential
-- Identify rightsizing opportunities, idle resources, and Reserved Instance candidates
-- Rank recommendations by estimated monthly savings
-- Downplay security and deployment details — mention only if they have direct cost impact`;
+FOCUS: Cost evidence and the active DevControl recommendations.
+- Lead with the cost figures supplied, stating whether each is billed spend or an estimate
+- Rank recommendations by the estimated savings given in the evidence
+- Mention security and deployment details only if they are supplied and relevant to cost`;
 
       case 'security_insights':
         return `${base}
 
-FOCUS: Security posture, vulnerabilities, and compliance risk.
-- Lead every section with risk severity and blast radius
-- Map each finding to a specific remediation action and SLA
-- Rank recommendations by risk reduction impact (critical → high → medium)
-- Downplay cost and deployment details — mention only if they introduce security exposure`;
+FOCUS: DevControl configuration-check findings on discovered resources.
+- Lead with the most severe finding categories present in the evidence
+- Map each finding category present to a concrete remediation action
+- Rank recommendations by the severity recorded in the evidence (critical, high, medium, low)`;
 
       case 'infrastructure_health':
         return `${base}
 
-FOCUS: Operational reliability and deployment quality.
-- Lead every section with availability, error rates, and DORA metrics
-- Identify deployment failure patterns and alert noise sources
-- Rank recommendations by reliability improvement (MTTR reduction, failure rate)
-- Downplay cost details — mention only if resource sprawl affects stability`;
+FOCUS: Deployment activity and the resource inventory supplied.
+- Lead with the deployment evidence for the report period
+- Availability, error-rate, and alert data are not part of this report's evidence -- do not describe them`;
 
       case 'executive_summary':
         return `${base}
 
 FOCUS: Board-ready executive summary with business impact.
 - Use business language, not technical jargon
-- Lead with financial and risk headline numbers
+- Lead with the cost and risk facts present in the evidence
 - Keep each section to 2-3 sentences maximum
-- Recommendations must include business outcome, not just technical action`;
+- Recommendations must include a business outcome, and only where the evidence supports it`;
 
       default:
         // weekly_summary, monthly_summary — comprehensive review
         return `${base}
 
-FOCUS: Comprehensive infrastructure review across cost, security, and reliability.
-- Cover all dimensions: cost trends, security posture, deployment performance
-- Provide a balanced view of wins and areas for improvement
+FOCUS: Comprehensive review across the cost, security, and deployment evidence supplied.
+- Cover each area that has a section, stating what is and is not available
 - Include an executive summary suitable for non-technical stakeholders`;
     }
   }
 
-  private buildReportLabel(reportType: string, dateRange: { from: string; to: string }): string {
+  private buildReportLabel(reportType: string): string {
     switch (reportType) {
       case 'cost_analysis':       return 'cost analysis report';
       case 'security_insights':   return 'security insights report';
@@ -323,104 +378,204 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
     }
   }
 
-  private generateFallbackReport(data: ReportData, reportType: string = 'weekly_summary'): GeneratedReport {
-    const costChange = data.costs.changePercent > 0 ? 'increased' : 'decreased';
-    const costChangeAbs = Math.abs(data.costs.changePercent);
-
+  /**
+   * The model may only cite savings that exist in the evidence: an
+   * estimatedSavings that isn't one of the recommendation estimates (or
+   * their total) is removed rather than shown as a DevControl figure.
+   */
+  private stripUngroundedSavings(report: GeneratedReport, data: ReportData): GeneratedReport {
+    const recs = data.sections.idleResourceRecommendations;
+    const allowed = new Set<number>();
+    if (recs && hasEvidence(recs)) {
+      recs.data.items.forEach(item => allowed.add(round(item.estimatedMonthlySavings, 2)));
+      allowed.add(round(recs.data.totalEstimatedMonthlySavings, 2));
+    }
     return {
-      summary: `Infrastructure costs ${costChange} by ${costChangeAbs.toFixed(1)}% to $${data.costs.current.toLocaleString()}/month. Security score is ${data.security.score}/100 with ${data.security.criticalIssues} critical issues. ${data.deployments.total} deployments with ${data.deployments.total > 0 ? ((data.deployments.successful / data.deployments.total) * 100).toFixed(1) : '0'}% success rate.`,
-      keyHighlights: [
-        `AWS spending ${costChange} by ${costChangeAbs.toFixed(1)}% ($${Math.abs(data.costs.change).toLocaleString()})`,
-        `${data.security.criticalIssues} critical security issues require attention`,
-        `${data.deployments.total} deployments with ${data.deployments.failed} failures`,
-        `${data.resources.total} total resources across ${Object.keys(data.resources.byType).length} types`,
-        `${data.alerts.critical} critical alerts with ${data.alerts.avgResolutionTime.toFixed(1)} hour avg resolution time`,
-      ],
-      costAnalysis: {
-        overview: `AWS costs are currently $${data.costs.current.toLocaleString()}/month, ${costChange} by ${costChangeAbs.toFixed(1)}% compared to the previous period. The largest cost categories are compute ($${data.costs.breakdown.compute}), storage ($${data.costs.breakdown.storage}), and database ($${data.costs.breakdown.database}).`,
-        trends: `Cost ${data.costs.changePercent > 0 ? 'growth' : 'reduction'} of ${costChangeAbs.toFixed(1)}% observed over the reporting period.`,
-        recommendations: [
-          data.resources.unusedResources.length > 0
-            ? `Review ${data.resources.unusedResources.length} unused resources for potential savings of $${data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0)}/month`
-            : 'Continue monitoring resource utilization',
-          'Consider Reserved Instances or Savings Plans for predictable workloads',
-        ],
-      },
-      securityAnalysis: {
-        overview: `Security score is ${data.security.score}/100. There are ${data.security.criticalIssues} critical issues and ${data.security.highIssues} high-severity issues that require attention.`,
-        topRisks: `Critical issues include: ${data.security.topIssues.map(i => `${i.count} ${i.resourceType} with ${i.title}`).join(', ') || 'None identified'}`,
-        recommendations: [
-          data.security.criticalIssues > 0
-            ? `Address ${data.security.criticalIssues} critical security issues immediately`
-            : 'Maintain current security posture',
-          'Review and update security policies regularly',
-        ],
-      },
-      performanceAnalysis: {
-        overview: `${data.deployments.total} deployments were executed with a ${data.deployments.total > 0 ? ((data.deployments.successful / data.deployments.total) * 100).toFixed(1) : '0'}% success rate. Average lead time is ${data.deployments.averageLeadTime.toFixed(1)} hours.`,
-        doraMetrics: `Deployment frequency: ${data.deployments.deploymentFrequency.toFixed(1)} per day. Change failure rate: ${(data.deployments.changeFailureRate * 100).toFixed(1)}%.`,
-        recommendations: [
-          data.deployments.failed > 0 ? `Investigate ${data.deployments.failed} failed deployments` : 'Maintain deployment quality',
-          'Continue monitoring DORA metrics for performance trends',
-        ],
-      },
-      topRecommendations: [
-        ...(data.security.criticalIssues > 0
-          ? [
-              {
-                title: 'Address Critical Security Issues',
-                impact: 'high' as const,
-                description: `Resolve ${data.security.criticalIssues} critical security vulnerabilities to reduce risk exposure.`,
-                effort: 'high' as const,
-              },
-            ]
-          : []),
-        ...(data.resources.unusedResources.length > 0
-          ? [
-              {
-                title: 'Optimize Unused Resources',
-                impact: 'high' as const,
-                description: `Review ${data.resources.unusedResources.length} idle or unused resources (estimated savings).`,
-                estimatedSavings: data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0),
-                effort: 'low' as const,
-              },
-            ]
-          : []),
-        ...(data.deployments.failed > 3
-          ? [
-              {
-                title: 'Improve Deployment Success Rate',
-                impact: 'medium' as const,
-                description: `Investigate and fix recurring deployment failures (${data.deployments.failed} failures this period).`,
-                effort: 'medium' as const,
-              },
-            ]
-          : []),
-      ],
-      executiveSummary: `This week's infrastructure performance shows AWS costs at $${data.costs.current.toLocaleString()}/month (${costChange} ${costChangeAbs.toFixed(1)}%). Security score is ${data.security.score}/100 with ${data.security.criticalIssues} critical issues. ${data.deployments.total} deployments achieved ${data.deployments.total > 0 ? ((data.deployments.successful / data.deployments.total) * 100).toFixed(1) : '0'}% success rate. ${
-        data.dataUnavailable
-          ? 'Cost data is currently unavailable, so optimization opportunities could not be assessed this period.'
-          : data.resources.unusedResources.length > 0
-            ? `Estimated potential savings of $${data.resources.unusedResources.reduce((sum, r) => sum + r.potentialSavings, 0)}/month from idle or unused resources (a DevControl estimate, not billed savings).`
-            // An empty list is not evidence that nothing can be saved: a check
-            // may have failed or lacked data, and that is not recorded yet.
-            : ''
-      }`.trimEnd(),
+      ...report,
+      topRecommendations: (report.topRecommendations ?? []).map(rec => {
+        if (rec.estimatedSavings === undefined || rec.estimatedSavings === null) return rec;
+        if (allowed.has(round(Number(rec.estimatedSavings), 2))) return rec;
+        const { estimatedSavings: _dropped, ...rest } = rec;
+        return rest;
+      }),
     };
   }
+
+  // -------------------------------------------------------------------------
+  // Deterministic fallback (no API key, or the model call failed)
+  // -------------------------------------------------------------------------
+
+  private spendSentence(section: ContextSection<SpendEvidence>): string {
+    if (!hasEvidence(section)) return `Cloud spend is not available: ${unavailablePhrase(section)}.`;
+    const d = section.data;
+    if (d.basis === 'estimated_monthly_run_rate') {
+      const partial = section.state === 'partial' && section.reason ? `; ${section.reason}` : '';
+      return `DevControl estimates the monthly run-rate of discovered resources at ${money(d.amount)} (a list-price estimate, not AWS billing data${partial}).`;
+    }
+    const period = section.period?.kind === 'range' ? ` for ${section.period.start} up to ${section.period.endExclusive} (exclusive)` : '';
+    const credit = d.amount < 0 ? ' (net credit: credits and refunds exceed charges)' : '';
+    const inProgress = d.lastDayInProgress ? '; the current day is still being billed' : '';
+    return `AWS Cost Explorer shows ${money(d.amount)} of billed spend month-to-date${period}${credit}${inProgress}.`;
+  }
+
+  private monthOverMonthSentence(section: ContextSection<MonthOverMonthEvidence>): string {
+    if (!hasEvidence(section)) return `A month-over-month cost comparison is not available (${unavailablePhrase(section)}), so no cost trend is reported.`;
+    const d = section.data;
+    const pct = d.changePercent !== null ? ` (${d.changePercent > 0 ? '+' : ''}${d.changePercent.toFixed(1)}%)` : ' (percentage undefined: the previous window totals $0.00)';
+    const today = d.currentWindowIncludesToday ? " The current window's last day is today and still being billed." : '';
+    const partial = section.state === 'partial' ? ' Some days in the compared windows have no daily data.' : '';
+    return `Spend from ${d.currentWindow.start} to ${d.currentWindow.end} was ${money(d.currentWindowTotal)} vs ${money(d.previousWindowTotal)} for ${d.previousWindow.start} to ${d.previousWindow.end}, a change of ${money(d.changeAmount)}${pct}, from AWS Cost Explorer daily charges with credits excluded.${today}${partial}`;
+  }
+
+  private securitySentence(section: ContextSection<ComplianceFindingsEvidence>): string {
+    if (!hasEvidence(section)) return `Configuration-check findings are not available: ${unavailablePhrase(section)}.`;
+    const d = section.data;
+    const partial = section.state === 'partial' && section.reason ? ` (${section.reason.replace(/\.$/, '')})` : '';
+    const total = SEVERITIES.reduce((sum, s) => sum + d.findingsBySeverity[s], 0);
+    if (total === 0) {
+      return `DevControl's configuration checks on ${d.resourcesEvaluated} discovered resources recorded no findings${partial}. This covers only those checks, not account-level security findings.`;
+    }
+    const counts = SEVERITIES.map(s => `${d.findingsBySeverity[s]} ${s}`).join(', ');
+    return `DevControl's configuration checks on ${d.resourcesEvaluated} discovered resources recorded ${total} findings on ${d.resourcesWithFindings} resources (${counts})${partial}.`;
+  }
+
+  private deploymentsSentence(section: ContextSection<DeploymentCounts>, rates?: ContextSection<DeliveryRates>): string {
+    if (!hasEvidence(section)) return `Deployment data is not available: ${unavailablePhrase(section)}.`;
+    const d = section.data;
+    const rate = rates && hasEvidence(rates) && rates.data.successRatePercent !== null ? `, a ${rates.data.successRatePercent}% success rate` : '';
+    return `${d.total} deployments were recorded in DevControl for the report period: ${d.successful} successful and ${d.failed} failed${rate}.`;
+  }
+
+  private deliveryMetricsSentence(rates?: ContextSection<DeliveryRates>, gap?: ContextSection<TimeBetweenDeployments>): string {
+    const parts: string[] = [];
+    if (rates && hasEvidence(rates)) {
+      parts.push(`Deployment frequency: ${rates.data.deploymentsPerDay} per day.`);
+      parts.push(rates.data.changeFailureRatePercent !== null
+        ? `Change failure rate: ${rates.data.changeFailureRatePercent}% of recorded deployments failed.`
+        : 'Change failure rate: not applicable, no deployments were recorded.');
+    } else if (rates) {
+      parts.push(`Deployment rates are not available: ${unavailablePhrase(rates)}.`);
+    }
+    if (gap && hasEvidence(gap)) {
+      parts.push(`Average time between consecutive successful deployments of the same service: ${gap.data.averageHours} hours (${gap.data.intervalsMeasured} intervals across ${gap.data.servicesMeasured} services).`);
+    } else if (gap) {
+      parts.push(`Time between deployments is not available: ${unavailablePhrase(gap)}.`);
+    }
+    parts.push('DevControl does not measure DORA lead time for changes.');
+    return parts.join(' ');
+  }
+
+  private generateFallbackReport(data: ReportData): GeneratedReport {
+    const s = data.sections;
+    const highlights: string[] = [];
+    const topRecommendations: GeneratedReport['topRecommendations'] = [];
+    const report: GeneratedReport = { summary: '', keyHighlights: highlights, topRecommendations, executiveSummary: '' };
+
+    const recs = s.idleResourceRecommendations;
+    const recsWithItems = recs && hasEvidence(recs) && recs.data.items.length > 0 ? recs.data : null;
+
+    if (s.spend) {
+      const spend = this.spendSentence(s.spend);
+      const trend = s.monthOverMonth ? this.monthOverMonthSentence(s.monthOverMonth) : '';
+      highlights.push(spend);
+      const top = hasEvidence(s.spend) && s.spend.data.topServices && s.spend.data.topServices.length > 0
+        ? ` Largest Cost Explorer service categories: ${s.spend.data.topServices.map(t => `${t.service} ${money(t.amount)}`).join(', ')}.`
+        : '';
+      const costRecommendations: string[] = [];
+      if (recsWithItems) {
+        costRecommendations.push(`Review ${recsWithItems.items.length} active recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
+      } else if (recs && !hasEvidence(recs)) {
+        costRecommendations.push(`Cost recommendations are not available: ${unavailablePhrase(recs)}.`);
+      }
+      report.costAnalysis = { overview: `${spend}${top}`, trends: trend, recommendations: costRecommendations };
+    }
+
+    if (recsWithItems) {
+      highlights.push(`Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from idle or unused resources (a DevControl estimate, not realized savings).`);
+      topRecommendations.push({
+        title: 'Review idle or unused resources',
+        impact: 'medium',
+        description: `${recsWithItems.items.length} active DevControl recommendations flag idle or unused resources. Savings are DevControl estimates, not realized savings.`,
+        estimatedSavings: recsWithItems.totalEstimatedMonthlySavings,
+        effort: 'low',
+      });
+    }
+
+    if (s.securityFindings) {
+      const security = this.securitySentence(s.securityFindings);
+      highlights.push(security);
+      const findings = hasEvidence(s.securityFindings) ? s.securityFindings.data : null;
+      const severe = findings ? findings.findingsBySeverity.critical + findings.findingsBySeverity.high : 0;
+      report.securityAnalysis = {
+        overview: `${security} DevControl does not compute a security score for reports, and earlier-period results are not stored.`,
+        topRisks: !findings
+          ? 'Not available.'
+          : findings.byCategory.length > 0
+            ? findings.byCategory.map(c => `${c.category}: ${c.findings} findings (highest severity: ${c.highestSeverity}; resource types: ${c.resourceTypes.join(', ')})`).join('; ')
+            : 'No findings were recorded by these checks.',
+        recommendations: severe > 0 ? [`Review the ${severe} critical and high severity configuration findings.`] : [],
+      };
+      if (severe > 0) {
+        topRecommendations.unshift({
+          title: 'Address critical and high severity configuration findings',
+          impact: 'high',
+          description: `DevControl's configuration checks recorded ${severe} critical or high severity findings on discovered resources.`,
+          effort: 'medium',
+        });
+      }
+    }
+
+    if (s.deployments) {
+      const deployments = this.deploymentsSentence(s.deployments, s.deliveryRates);
+      highlights.push(deployments);
+      const failed = hasEvidence(s.deployments) ? s.deployments.data.failed : 0;
+      report.performanceAnalysis = {
+        overview: deployments,
+        doraMetrics: this.deliveryMetricsSentence(s.deliveryRates, s.timeBetweenDeployments),
+        recommendations: failed > 0 ? [`Investigate the ${failed} failed deployments recorded in this period.`] : [],
+      };
+      if (failed > 3) {
+        topRecommendations.push({
+          title: 'Improve Deployment Success Rate',
+          impact: 'medium',
+          description: `Investigate recurring deployment failures (${failed} failures recorded this period).`,
+          effort: 'medium',
+        });
+      }
+    }
+
+    if (s.resourceInventory) {
+      highlights.push(hasEvidence(s.resourceInventory)
+        ? `${s.resourceInventory.data.total} discovered resources across ${Object.keys(s.resourceInventory.data.byType).length} types${s.resourceInventory.state === 'partial' ? ' (inventory may be incomplete)' : ''}. Changes over the period are not tracked.`
+        : `Resource inventory is not available: ${unavailablePhrase(s.resourceInventory)}.`);
+    }
+
+    if (s.alerts) {
+      highlights.push('Alert counts are not available: DevControl does not yet associate alerts with an organization.');
+    }
+
+    report.summary = highlights.slice(0, 3).join(' ');
+    report.executiveSummary = highlights.join(' ');
+    return report;
+  }
+
+  // -------------------------------------------------------------------------
+  // Persistence
+  // -------------------------------------------------------------------------
 
   async saveGeneratedReport(
     organizationId: string,
     report: GeneratedReport,
     dateRange: { from: string; to: string },
     reportType: string = 'weekly',
-    scheduledReportId?: string
+    scheduledReportId?: string,
+    wasFallback: boolean = false
   ): Promise<string> {
     try {
       const result = await this.pool.query(
         `INSERT INTO generated_reports
-         (organization_id, scheduled_report_id, report_type, date_range_from, date_range_to, report_data)
-         VALUES ($1, $2, $3, $4, $5, $6)
+         (organization_id, scheduled_report_id, report_type, date_range_from, date_range_to, report_data, was_fallback)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id`,
         [
           organizationId,
@@ -429,6 +584,7 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
           dateRange.from,
           dateRange.to,
           JSON.stringify(report),
+          wasFallback,
         ]
       );
 
@@ -475,11 +631,16 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Evidence
+  // -------------------------------------------------------------------------
+
   async fetchReportData(
     organizationId: string,
     dateRange: { from: string; to: string },
     reportType: string = 'weekly_summary'
   ): Promise<ReportData> {
+    requireOrganizationId(organizationId, 'AI Reports', 'report evidence');
     const fetchStart = Date.now();
     console.log(`[AI Report Generator] Fetching data... (org=${organizationId}, type=${reportType}, range=${dateRange.from}→${dateRange.to})`);
 
@@ -490,289 +651,299 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
     const needsResources  = ['cost_analysis', 'infrastructure_health', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
     const needsAlerts     = ['infrastructure_health', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
 
-    const fallback = this.getFallbackReportData(organizationId, dateRange);
+    // Discovery state gates every inventory-backed section; the cost path
+    // (which also calls Cost Explorer) runs only when cost is requested.
+    const basis = needsCost
+      ? await this.contextRepo.gatherCostContext(organizationId)
+      : await this.contextRepo.gatherInventoryBasis(organizationId);
+    const { discovery, inventoryScope } = basis;
 
-    try {
-      const [costs, security, deployments, resources, alerts] = await Promise.all([
-        needsCost      ? this.fetchCostData(organizationId, dateRange)       : Promise.resolve(fallback.costs),
-        needsSecurity  ? this.fetchSecurityData(organizationId, dateRange)   : Promise.resolve(fallback.security),
-        needsDeploys   ? this.fetchDeploymentData(organizationId, dateRange) : Promise.resolve(fallback.deployments),
-        needsResources ? this.fetchResourceData(organizationId, dateRange)   : Promise.resolve(fallback.resources),
-        needsAlerts    ? this.fetchAlertData(organizationId, dateRange)      : Promise.resolve(fallback.alerts),
-      ]);
+    // Shared by the inventory and security sections; each awaits it inside its
+    // own getter, so a failure becomes that section's 'error', not a crash.
+    const statsPromise = needsResources || needsSecurity ? this.awsResourcesRepo.getStats(organizationId) : null;
+    statsPromise?.catch(() => undefined);
 
-      console.log(`[AI Report Generator] Data fetched in ${Date.now() - fetchStart}ms (cost=${needsCost}, security=${needsSecurity}, deploys=${needsDeploys}, resources=${needsResources}, alerts=${needsAlerts})`);
+    const sections: ReportData['sections'] = {};
+    const tasks: Array<Promise<void>> = [];
 
-      return {
-        organizationId,
-        dateRange,
-        costs,
-        security,
-        deployments,
-        resources,
-        alerts,
-        dataUnavailable: false,
-      };
-    } catch (error: any) {
-      console.error('[AI Report Generator] Error fetching report data:', error.message);
-      return { ...fallback, dataUnavailable: true };
-    }
-  }
-
-  /**
-   * Fetch cost data from AWS resources
-   */
-  private async fetchCostData(
-    organizationId: string,
-    dateRange: { from: string; to: string }
-  ) {
-    // Get current period stats
-    const stats = await this.awsResourcesRepo.getStats(organizationId);
-    const currentCost = stats.total_monthly_cost || 0;
-
-    // Get previous period cost (simplified - using a percentage of current for now)
-    // In production, you'd query historical cost data or AWS Cost Explorer API
-    const previousCost = currentCost * 0.9; // Assume 10% growth as fallback
-    const change = currentCost - previousCost;
-    const changePercent = previousCost > 0 ? (change / previousCost) * 100 : 0;
-
-    // Map cost by type to the breakdown categories
-    const ec2Cost = stats.cost_by_type?.ec2 || 0;
-    const ecsLambdaCost = (stats.cost_by_type?.ecs || 0) + (stats.cost_by_type?.lambda || 0);
-    const s3Cost = stats.cost_by_type?.s3 || 0;
-    const rdsCost = stats.cost_by_type?.rds || 0;
-    const networkCost = (stats.cost_by_type?.vpc || 0) + (stats.cost_by_type?.elb || 0) + (stats.cost_by_type?.['load-balancer'] || 0);
-
-    const computeCost = ec2Cost + ecsLambdaCost;
-    const storageCost = s3Cost;
-    const databaseCost = rdsCost;
-    const otherCost = Math.max(0, currentCost - computeCost - storageCost - databaseCost - networkCost);
-
-    const breakdown = {
-      compute: computeCost,
-      storage: storageCost,
-      database: databaseCost,
-      network: networkCost,
-      other: otherCost,
-    };
-
-    return {
-      current: Math.round(currentCost),
-      previous: Math.round(previousCost),
-      change: Math.round(change),
-      changePercent: parseFloat(changePercent.toFixed(1)),
-      breakdown: {
-        compute: Math.round(breakdown.compute),
-        storage: Math.round(breakdown.storage),
-        database: Math.round(breakdown.database),
-        network: Math.round(breakdown.network),
-        other: Math.max(0, Math.round(breakdown.other)),
-      },
-    };
-  }
-
-  /**
-   * Fetch security data from compliance checks
-   */
-  private async fetchSecurityData(
-    organizationId: string,
-    _dateRange: { from: string; to: string }
-  ) {
-    const stats = await this.awsResourcesRepo.getStats(organizationId);
-    const complianceStats = stats.compliance_stats;
-
-    // Calculate security score based on compliance
-    const totalIssues = complianceStats?.total_issues || 0;
-    const totalResources = stats.total_resources || 1;
-
-    // Security score: inversely proportional to issues (100 - penalty)
-    const issuePenalty = Math.min(100, (totalIssues / totalResources) * 100);
-    const currentScore = Math.max(0, Math.round(100 - issuePenalty));
-
-    // Previous score (simplified - would need historical data)
-    const previousScore = Math.max(0, currentScore - 5);
-
-    // Count issues by severity
-    const criticalIssues = complianceStats?.by_severity?.critical || 0;
-    const highIssues = complianceStats?.by_severity?.high || 0;
-    const mediumIssues = complianceStats?.by_severity?.medium || 0;
-
-    // Build top issues list from category counts
-    const topIssues = [];
-    if (complianceStats?.by_category) {
-      if (complianceStats.by_category.encryption > 0) {
-        topIssues.push({
-          title: 'Unencrypted resources',
-          severity: 'critical',
-          resourceType: 'mixed',
-          count: complianceStats.by_category.encryption,
-        });
-      }
-      if (complianceStats.by_category.public_access > 0) {
-        topIssues.push({
-          title: 'Publicly exposed resources',
-          severity: 'critical',
-          resourceType: 'mixed',
-          count: complianceStats.by_category.public_access,
-        });
-      }
-      if (complianceStats.by_category.backups > 0) {
-        topIssues.push({
-          title: 'Missing backup configuration',
-          severity: 'high',
-          resourceType: 'rds/ec2',
-          count: complianceStats.by_category.backups,
-        });
-      }
-      if (complianceStats.by_category.tagging > 0) {
-        topIssues.push({
-          title: 'Untagged resources',
-          severity: 'medium',
-          resourceType: 'mixed',
-          count: complianceStats.by_category.tagging,
-        });
-      }
-      if (complianceStats.by_category.iam > 0) {
-        topIssues.push({
-          title: 'IAM policy issues',
-          severity: 'high',
-          resourceType: 'iam',
-          count: complianceStats.by_category.iam,
-        });
-      }
+    if (needsCost && 'costs' in basis) {
+      const costs = (basis as Pick<ChatContext, 'costs'>).costs;
+      tasks.push((async () => {
+        [sections.spend, sections.monthOverMonth] = await Promise.all([spendSection(costs), monthOverMonthSection(costs)]);
+      })());
     }
 
-    return {
-      score: currentScore,
-      previousScore,
-      criticalIssues,
-      highIssues,
-      mediumIssues,
-      topIssues: topIssues.slice(0, 5),
-    };
-  }
-
-  /**
-   * Fetch deployment data and DORA metrics
-   */
-  private async fetchDeploymentData(
-    organizationId: string,
-    dateRange: { from: string; to: string }
-  ) {
-    const periodDays = this.calculateDaysBetween(dateRange.from, dateRange.to);
-
-    // Get deployments in the date range
-    const deploymentsResult = await this.pool.query(
-      `SELECT d.status, d.deployed_at
-       FROM deployments d
-       JOIN services s ON d.service_id = s.id
-       WHERE s.organization_id = $1
-       AND d.deployed_at >= $2
-       AND d.deployed_at <= $3`,
-      [organizationId, dateRange.from, dateRange.to]
-    );
-
-    const total = deploymentsResult.rows.length;
-    const successful = deploymentsResult.rows.filter(r => r.status === 'success').length;
-    const failed = deploymentsResult.rows.filter(r => r.status === 'failed').length;
-
-    // Get DORA metrics
-    const doraFilters = { dateRange: `${periodDays}d` as '7d' | '30d' | '90d', organizationId };
-
-    let averageLeadTime = 2.0; // Default fallback
-    let deploymentFrequency = total / Math.max(1, periodDays);
-    let changeFailureRate = total > 0 ? failed / total : 0;
-
-    try {
-      // Try to get real DORA metrics
-      const leadTimeResult = await this.doraMetricsRepo.calculateLeadTime(doraFilters);
-      averageLeadTime = leadTimeResult.averageLeadTimeHours || 2.0;
-    } catch (error) {
-      console.warn('[AI Report Generator] Could not fetch lead time, using default');
+    if (needsResources && statsPromise) {
+      tasks.push((async () => {
+        sections.resourceInventory = await this.discoveryGated(
+          { source: 'DevControl resource inventory (periodic AWS discovery)', provenance: 'actual', scope: inventoryScope, period: { kind: 'point_in_time' } },
+          discovery,
+          d => d.total === 0,
+          async () => {
+            const stats = await statsPromise;
+            return { total: stats.total_resources, byType: this.convertByTypeToRecord(stats.by_type) };
+          }
+        );
+      })());
+      tasks.push((async () => { sections.topEstimatedResources = await this.fetchTopEstimatedResources(organizationId, discovery, inventoryScope); })());
+      tasks.push((async () => { sections.idleResourceRecommendations = await this.fetchIdleResourceRecommendations(organizationId, inventoryScope); })());
+      sections.resourceChange = notSupported({ source: 'DevControl resource inventory', scope: inventoryScope }, RESOURCE_CHANGE_NOT_SUPPORTED_REASON);
     }
 
-    return {
-      total,
-      successful,
-      failed,
-      averageLeadTime: parseFloat(averageLeadTime.toFixed(1)),
-      deploymentFrequency: parseFloat(deploymentFrequency.toFixed(1)),
-      changeFailureRate: parseFloat(changeFailureRate.toFixed(2)),
-    };
+    if (needsSecurity && statsPromise) {
+      tasks.push((async () => {
+        sections.securityFindings = await this.discoveryGated<ComplianceFindingsEvidence>(
+          { source: 'DevControl configuration checks on discovered resources', provenance: 'actual', scope: inventoryScope, period: { kind: 'point_in_time' }, coverage: CHECKS_COVERAGE },
+          discovery,
+          d => d.resourcesWithFindings === 0,
+          async () => this.summarizeComplianceFindings(organizationId, (await statsPromise).total_resources)
+        );
+      })());
+      sections.securityScore = notSupported({ source: 'DevControl security score' }, SECURITY_SCORE_NOT_SUPPORTED_REASON);
+      sections.securityHistory = notSupported({ source: 'DevControl configuration checks on discovered resources', scope: inventoryScope }, SECURITY_HISTORY_NOT_SUPPORTED_REASON);
+    }
+
+    if (needsDeploys) {
+      tasks.push((async () => { Object.assign(sections, await this.fetchDeploymentSections(organizationId, dateRange)); })());
+    }
+
+    if (needsAlerts) {
+      sections.alerts = notSupported({ source: 'DevControl alert history' }, ALERTS_NOT_SUPPORTED_REASON);
+    }
+
+    await Promise.all(tasks);
+
+    const states = (Object.keys(sections) as Array<keyof ReportData['sections']>).map(k => `${k}=${sections[k]!.state}`).join(', ');
+    console.log(`[AI Report Generator] Evidence gathered in ${Date.now() - fetchStart}ms: ${states}`);
+
+    return { organizationId, reportType, dateRange, sections };
   }
 
   /**
-   * Fetch resource data
+   * An inventory-backed read: 'available' (and an empty result a confirmed
+   * zero) only once the latest discovery run has completed. Otherwise an empty
+   * result is 'unavailable' and existing rows are 'partial'. Mirrors AI Chat's
+   * inventorySection() gating so both surfaces agree.
    */
-  private async fetchResourceData(
-    organizationId: string,
-    _dateRange: { from: string; to: string }
-  ) {
-    const stats = await this.awsResourcesRepo.getStats(organizationId);
-
-    // Calculate change (simplified - would need historical tracking)
-    const change = Math.round(stats.total_resources * 0.03); // Assume 3% growth
-
-    // Get top cost resources
-    const topCostResult = await this.pool.query(
-      `SELECT resource_id, resource_type, estimated_monthly_cost, resource_name
-       FROM aws_resources
-       WHERE organization_id = $1
-       AND estimated_monthly_cost > 0
-       AND status != 'terminated'
-       ORDER BY estimated_monthly_cost DESC
-       LIMIT 5`,
-      [organizationId]
-    );
-
-    const topCostResources = topCostResult.rows.map(row => ({
-      id: row.resource_id,
-      type: row.resource_type,
-      cost: Math.round(row.estimated_monthly_cost),
-      name: row.resource_name || row.resource_id,
-    }));
-
-    // Get unused resources from cost recommendations
-    const unusedRecommendations = await this.costRecommendationsRepo.findAll(organizationId, {
-      status: 'ACTIVE',
-      limit: 10,
+  private discoveryGated<T>(
+    meta: SectionMeta,
+    discovery: ChatContext['discovery'],
+    isEmpty: (data: T) => boolean,
+    query: () => Promise<T>
+  ): Promise<ContextSection<T>> {
+    return collectSection<T>(meta, async () => {
+      const data = await query();
+      if (discovery.state === 'available' && discovery.data) {
+        return { state: 'available', data, asOf: discovery.data.completedAt };
+      }
+      const problem = discovery.state === 'error'
+        ? 'the status of the latest discovery run could not be determined'
+        : 'the latest discovery run has not completed';
+      if (isEmpty(data)) {
+        return { state: 'unavailable', reason: `${problem}, so an empty result is not a confirmed zero` };
+      }
+      return { state: 'partial', data, asOf: null, reason: `${problem}; data may be stale or incomplete` };
     });
+  }
 
-    const unusedResources = unusedRecommendations
-      .filter(rec => rec.issue.toLowerCase().includes('idle') || rec.issue.toLowerCase().includes('unused'))
-      .map(rec => ({
-        id: rec.resource_id,
-        type: rec.resource_type,
-        potentialSavings: Math.round(rec.potential_savings),
-      }));
+  /** Counts, severities, and resource types taken from the recorded findings -- no severity is assigned by category. */
+  private async summarizeComplianceFindings(organizationId: string, resourcesEvaluated: number): Promise<ComplianceFindingsEvidence> {
+    const rows = await this.awsResourcesRepo.getComplianceIssues(organizationId);
+    const findingsBySeverity: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+    const categories = new Map<string, { findings: number; severities: Set<Severity>; resourceTypes: Set<string> }>();
+
+    for (const row of rows) {
+      for (const issue of row.issues ?? []) {
+        const severity = issue.severity as Severity;
+        if (severity in findingsBySeverity) findingsBySeverity[severity]++;
+        const entry = categories.get(issue.category) ?? { findings: 0, severities: new Set<Severity>(), resourceTypes: new Set<string>() };
+        entry.findings++;
+        entry.severities.add(severity);
+        entry.resourceTypes.add(String(row.resource_type));
+        categories.set(issue.category, entry);
+      }
+    }
+
+    const rank = (s: Severity) => SEVERITIES.indexOf(s);
+    const byCategory = [...categories.entries()]
+      .map(([category, e]) => ({
+        category,
+        findings: e.findings,
+        highestSeverity: [...e.severities].sort((a, b) => rank(a) - rank(b))[0],
+        resourceTypes: [...e.resourceTypes].sort(),
+      }))
+      .sort((a, b) => rank(a.highestSeverity) - rank(b.highestSeverity) || b.findings - a.findings)
+      .slice(0, 5);
 
     return {
-      total: stats.total_resources,
-      change,
-      byType: this.convertByTypeToRecord(stats.by_type),
-      topCostResources,
-      unusedResources: unusedResources.slice(0, 5),
+      resourcesEvaluated,
+      resourcesWithFindings: rows.filter(r => (r.issues ?? []).length > 0).length,
+      findingsBySeverity,
+      byCategory,
     };
   }
 
+  private fetchTopEstimatedResources(
+    organizationId: string,
+    discovery: ChatContext['discovery'],
+    inventoryScope: ChatContext['inventoryScope']
+  ): Promise<NonNullable<ReportData['sections']['topEstimatedResources']>> {
+    return this.discoveryGated(
+      {
+        source: 'DevControl inventory cost estimates',
+        provenance: 'estimated',
+        scope: inventoryScope,
+        period: { kind: 'point_in_time' },
+        coverage: 'list-price monthly estimates for individual discovered resources -- not AWS billed spend',
+      },
+      discovery,
+      rows => rows.length === 0,
+      async () => {
+        const result = await this.pool.query(
+          `SELECT resource_id, resource_type, estimated_monthly_cost, resource_name
+           FROM aws_resources
+           WHERE organization_id = $1
+           AND estimated_monthly_cost > 0
+           AND status != 'terminated'
+           ORDER BY estimated_monthly_cost DESC
+           LIMIT 5`,
+          [organizationId]
+        );
+        return result.rows.map(row => ({
+          resourceId: row.resource_id,
+          resourceType: row.resource_type,
+          name: row.resource_name || row.resource_id,
+          estimatedMonthlyCost: round(parseFloat(row.estimated_monthly_cost), 2),
+        }));
+      }
+    );
+  }
+
+  private fetchIdleResourceRecommendations(
+    organizationId: string,
+    inventoryScope: ChatContext['inventoryScope']
+  ): Promise<NonNullable<ReportData['sections']['idleResourceRecommendations']>> {
+    return collectSection<IdleResourceRecommendations>(
+      {
+        source: 'DevControl cost recommendations',
+        provenance: 'estimated',
+        scope: inventoryScope,
+        period: { kind: 'point_in_time' },
+        coverage: 'the 10 active recommendations with the highest estimated savings, filtered to idle or unused resources',
+      },
+      async () => {
+        const active = await this.costRecommendationsRepo.findAll(organizationId, { status: 'ACTIVE', limit: 10 });
+        const items = active
+          .filter(rec => rec.issue.toLowerCase().includes('idle') || rec.issue.toLowerCase().includes('unused'))
+          .slice(0, 5)
+          .map(rec => ({
+            resourceId: rec.resource_id,
+            resourceType: rec.resource_type,
+            issue: rec.issue,
+            estimatedMonthlySavings: round(Number(rec.potential_savings), 2),
+          }));
+        return {
+          state: 'available',
+          data: { items, totalEstimatedMonthlySavings: round(items.reduce((sum, i) => sum + i.estimatedMonthlySavings, 0), 2) },
+          // An empty list is only "none recorded", never "nothing can be saved".
+          reason: 'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings',
+        };
+      }
+    );
+  }
+
   /**
-   * Fetch alert data
+   * Deployment counts for the report period (end exclusive), plus rates and
+   * the average gap between successful deployments -- each derived from the
+   * same records, never from a default.
    */
-  private async fetchAlertData(
+  private async fetchDeploymentSections(
     organizationId: string,
     dateRange: { from: string; to: string }
-  ) {
-    const periodDays = this.calculateDaysBetween(dateRange.from, dateRange.to);
-    const alertFilters = { dateRange: `${periodDays}d` as '7d' | '30d' | '90d', organizationId };
+  ): Promise<Pick<ReportData['sections'], 'deployments' | 'deliveryRates' | 'timeBetweenDeployments'>> {
+    const period: EvidencePeriod = { kind: 'range', start: dateRange.from, endExclusive: dateRange.to };
+    const periodDays = Math.max(1, this.calculateDaysBetween(dateRange.from, dateRange.to));
 
-    const alertStats = await this.alertHistoryRepo.getStats(alertFilters);
+    const records = await collectSection<DeploymentRecord[]>(
+      { source: 'DevControl deployment records', provenance: 'actual', period, scope: { kind: 'organization', window: `${dateRange.from} to ${dateRange.to} (end exclusive)` } },
+      async () => {
+        const result = await this.pool.query(
+          `SELECT d.service_id, d.status, d.deployed_at
+           FROM deployments d
+           JOIN services s ON d.service_id = s.id
+           WHERE s.organization_id = $1
+           AND d.deployed_at >= $2
+           AND d.deployed_at < $3
+           ORDER BY d.deployed_at`,
+          [organizationId, dateRange.from, dateRange.to]
+        );
+        return {
+          state: 'available',
+          data: result.rows.map(r => ({ serviceId: String(r.service_id), status: r.status, deployedAt: new Date(r.deployed_at).toISOString() })),
+          asOf: new Date().toISOString(),
+        };
+      }
+    );
 
-    return {
-      total: alertStats.total,
-      critical: alertStats.criticalCount,
-      resolved: alertStats.resolved,
-      avgResolutionTime: parseFloat((alertStats.avgResolutionTime / 60).toFixed(1)), // Convert minutes to hours
-    };
+    // The counts are the same records, summarized -- same state and provenance.
+    const deployments: ContextSection<DeploymentCounts> = hasEvidence(records)
+      ? {
+          ...records,
+          data: {
+            total: records.data.length,
+            successful: records.data.filter(r => r.status === 'success').length,
+            failed: records.data.filter(r => r.status === 'failed').length,
+          },
+        }
+      : { ...records, data: null };
+
+    const deliveryRates = await deriveSection(
+      { source: 'DevControl calculation from deployment records', period },
+      [deployments] as const,
+      ([d]) => ({
+        successRatePercent: d.total > 0 ? round((d.successful / d.total) * 100, 1) : null,
+        changeFailureRatePercent: d.total > 0 ? round((d.failed / d.total) * 100, 1) : null,
+        deploymentsPerDay: round(d.total / periodDays, 2),
+      })
+    );
+
+    const intervals = hasEvidence(records) ? this.successfulDeploymentIntervals(records.data) : null;
+    const timeBetweenDeployments = intervals && intervals.hours.length === 0
+      ? await collectSection<TimeBetweenDeployments>(
+          { source: 'DevControl calculation from deployment records', period },
+          async () => ({ state: 'unavailable', reason: 'no service had two or more successful deployments in the report period' })
+        )
+      : await deriveSection(
+          { source: 'DevControl calculation from deployment records', period },
+          [records] as const,
+          () => ({
+            averageHours: round(intervals!.hours.reduce((a, b) => a + b, 0) / intervals!.hours.length, 1),
+            intervalsMeasured: intervals!.hours.length,
+            servicesMeasured: intervals!.services,
+          })
+        );
+
+    return { deployments, deliveryRates, timeBetweenDeployments };
+  }
+
+  /** Hours between consecutive successful deployments of the same service (the report period only). */
+  private successfulDeploymentIntervals(records: DeploymentRecord[]): { hours: number[]; services: number } {
+    const byService = new Map<string, number[]>();
+    for (const r of records) {
+      if (r.status !== 'success') continue;
+      const times = byService.get(r.serviceId) ?? [];
+      times.push(new Date(r.deployedAt).getTime());
+      byService.set(r.serviceId, times);
+    }
+    const hours: number[] = [];
+    let services = 0;
+    for (const times of byService.values()) {
+      if (times.length < 2) continue;
+      services++;
+      times.sort((a, b) => a - b);
+      for (let i = 1; i < times.length; i++) hours.push((times[i] - times[i - 1]) / 3_600_000);
+    }
+    return { hours, services };
   }
 
   /**
@@ -786,15 +957,6 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
   }
 
   /**
-   * Helper: Subtract days from a date
-   */
-  private subtractDays(dateString: string, days: number): string {
-    const date = new Date(dateString);
-    date.setDate(date.getDate() - days);
-    return date.toISOString().split('T')[0];
-  }
-
-  /**
    * Helper: Convert by_type object to Record format
    */
   private convertByTypeToRecord(byType: any): Record<string, number> {
@@ -805,54 +967,5 @@ FOCUS: Comprehensive infrastructure review across cost, security, and reliabilit
       });
     }
     return result;
-  }
-
-  /**
-   * Fallback data when queries fail
-   */
-  private getFallbackReportData(
-    organizationId: string,
-    dateRange: { from: string; to: string }
-  ): ReportData {
-    return {
-      organizationId,
-      dateRange,
-      costs: {
-        current: 0,
-        previous: 0,
-        change: 0,
-        changePercent: 0,
-        breakdown: { compute: 0, storage: 0, database: 0, network: 0, other: 0 },
-      },
-      security: {
-        score: 0,
-        previousScore: 0,
-        criticalIssues: 0,
-        highIssues: 0,
-        mediumIssues: 0,
-        topIssues: [],
-      },
-      deployments: {
-        total: 0,
-        successful: 0,
-        failed: 0,
-        averageLeadTime: 0,
-        deploymentFrequency: 0,
-        changeFailureRate: 0,
-      },
-      resources: {
-        total: 0,
-        change: 0,
-        byType: {},
-        topCostResources: [],
-        unusedResources: [],
-      },
-      alerts: {
-        total: 0,
-        critical: 0,
-        resolved: 0,
-        avgResolutionTime: 0,
-      },
-    };
   }
 }
