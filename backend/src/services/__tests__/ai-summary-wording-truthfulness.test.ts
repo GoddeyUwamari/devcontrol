@@ -27,6 +27,8 @@ import path from 'path';
 
 const AI_SUMMARY_SERVICE_PATH = path.join(__dirname, '..', 'ai-summary.service.ts');
 const WEEKLY_AI_SUMMARY_JOB_PATH = path.join(__dirname, '..', '..', 'jobs', 'weekly-ai-summary.job.ts');
+// The weekly email's wording moved from the job into its deterministic composer.
+const WEEKLY_SUMMARY_CONTENT_PATH = path.join(__dirname, '..', 'weekly-summary-content.ts');
 
 /** Strip block/line comments so explanatory comments never trip a prohibited-phrase assertion. */
 function readCode(filePath: string): string {
@@ -38,6 +40,7 @@ describe('AI summary wording — SOC2/HIPAA mischaracterization removed', () => 
   it.each([
     ['ai-summary.service.ts', AI_SUMMARY_SERVICE_PATH],
     ['weekly-ai-summary.job.ts', WEEKLY_AI_SUMMARY_JOB_PATH],
+    ['weekly-summary-content.ts', WEEKLY_SUMMARY_CONTENT_PATH],
   ])('%s no longer contains the misleading "SOC2/HIPAA checks" characterization in generated text', (_label, filePath) => {
     const code = readCode(filePath);
     expect(code).not.toMatch(/SOC2\/HIPAA/i);
@@ -46,14 +49,14 @@ describe('AI summary wording — SOC2/HIPAA mischaracterization removed', () => 
 
   it.each([
     ['ai-summary.service.ts', AI_SUMMARY_SERVICE_PATH],
-    ['weekly-ai-summary.job.ts', WEEKLY_AI_SUMMARY_JOB_PATH],
+    ['weekly-summary-content.ts', WEEKLY_SUMMARY_CONTENT_PATH],
   ])('%s replaces it with wording that accurately names the real technical checks (encryption, backups, tagging)', (_label, filePath) => {
     const code = readCode(filePath);
     expect(code).toMatch(/encryption, backups, tagging, and other infrastructure checks/);
   });
 
   it('neither file has a remaining SOC2 or HIPAA token outside an explanatory comment', () => {
-    for (const filePath of [AI_SUMMARY_SERVICE_PATH, WEEKLY_AI_SUMMARY_JOB_PATH]) {
+    for (const filePath of [AI_SUMMARY_SERVICE_PATH, WEEKLY_AI_SUMMARY_JOB_PATH, WEEKLY_SUMMARY_CONTENT_PATH]) {
       const code = readCode(filePath);
       expect(code).not.toMatch(/SOC\s*2/i);
       expect(code).not.toMatch(/\bHIPAA\b/);

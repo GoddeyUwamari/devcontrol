@@ -8,6 +8,8 @@ import { pool } from '../config/database';
 import { AIInsightsService } from '../services/ai-insights.service';
 import { AIInsightsController } from '../controllers/ai-insights.controller';
 import { authenticate } from '../middleware/auth.middleware';
+import { requireOwner } from '../middleware/rbac.middleware';
+import { weeklySummaryTriggerRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -30,21 +32,30 @@ router.get('/cache-stats', aiInsightsController.getCacheStats);
 router.post('/clear-cache', aiInsightsController.clearCache);
 
 // POST /api/ai-insights/trigger-weekly-summary
-// Manually trigger weekly summary email for the caller's own org (for testing)
-router.post('/trigger-weekly-summary', async (req, res) => {
+// Manually send the weekly summary email for the caller's own org. Owner only
+// and rate limited per org: each call sends a real email. The recipient is
+// the org's eligible owner (opted in + verified), same as the scheduled run.
+router.post('/trigger-weekly-summary', requireOwner, weeklySummaryTriggerRateLimiter, async (req, res) => {
   try {
-    const { WeeklyAISummaryJob } = await import('../jobs/weekly-ai-summary.job');
-    // Always the caller's own org — never trust a client-supplied id, and
-    // never call triggerManual() with no id (it falls through to sending
-    // every organization's summary).
+    // Always the caller's own org — never trust a client-supplied id.
     const organizationId = (req as any).user?.organizationId;
+    if (!organizationId) {
+      return res.status(400).json({ success: false, error: 'Organization context required' });
+    }
 
+    const { WeeklyAISummaryJob } = await import('../jobs/weekly-ai-summary.job');
     const job = new WeeklyAISummaryJob(pool);
     const result = await job.triggerManual(organizationId);
 
-    res.json({
-      success: true,
-      message: `Weekly summary sent to organization ${organizationId}. Check your email inbox.`,
+    const message = result.sent > 0
+      ? 'Weekly summary sent to the organization owner. Check your email inbox.'
+      : result.skipped > 0
+        ? 'Not sent: no organization owner has weekly summaries enabled and a verified email address.'
+        : 'Weekly summary could not be sent.';
+
+    res.status(result.errors > 0 ? 500 : 200).json({
+      success: result.errors === 0,
+      message,
       result
     });
   } catch (error: any) {
@@ -87,51 +98,30 @@ router.get('/test-email-config', async (req, res) => {
 });
 
 // GET /api/ai-insights/preview-weekly-summary
-// Preview weekly summary data (for the caller's own org) without sending email
+// Preview the caller's own org's weekly summary evidence and wording without sending email
 router.get('/preview-weekly-summary', async (req, res) => {
   try {
     const { WeeklySummaryRepository } = await import('../repositories/weekly-summary.repository');
+    const { composeWeeklySummary } = await import('../services/weekly-summary-content');
 
     const repository = new WeeklySummaryRepository(pool);
     const organizationId = (req as any).user?.organizationId;
+    if (!organizationId) {
+      return res.status(400).json({ success: false, error: 'Organization context required' });
+    }
 
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
-
-    const query = { organizationId, startDate, endDate };
-
-    // Gather weekly data
-    const [costData, costComparison, alertsData, userInfo, doraMetrics] = await Promise.all([
-      repository.getWeeklyCostData(query),
-      repository.getWeeklyCostComparison(query),
-      repository.getWeeklyAlerts(query),
+    const [recipient, evidence] = await Promise.all([
       repository.getUserInfo(organizationId),
-      repository.getWeeklyDORAMetrics(query)
+      repository.gatherWeeklyEvidence(organizationId, new Date()),
     ]);
-
-    const { currentCost, previousCost, hasComparableCosts, costSource } = costComparison;
-    const changePercent = hasComparableCosts && previousCost
-      ? ((currentCost - previousCost) / previousCost) * 100
-      : 0;
 
     res.json({
       success: true,
       organizationId,
-      userInfo,
-      data: {
-        costs: {
-          previous: previousCost,
-          current: currentCost,
-          changePercent: Math.round(changePercent * 100) / 100,
-          costSource,
-          hasComparableCosts,
-          topSpenders: costData.slice(0, 5)
-        },
-        alerts: alertsData,
-        dora: doraMetrics
-      },
-      message: 'This is the data that will be sent in the weekly email'
+      userInfo: recipient ? { email: recipient.email, fullName: recipient.fullName } : null,
+      evidence,
+      content: composeWeeklySummary(evidence),
+      message: 'This is the evidence and wording the weekly email would use (the AI recommendation is not generated in preview)'
     });
   } catch (error: any) {
     console.error('[AI Insights] Preview error:', error);

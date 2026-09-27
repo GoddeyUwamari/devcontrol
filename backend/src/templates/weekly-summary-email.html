@@ -55,6 +55,10 @@
       border-left-color: #f59e0b;
       background: #fffbeb;
     }
+    .section.security {
+      border-left-color: #6366f1;
+      background: #eef2ff;
+    }
     .section.dora {
       border-left-color: #3b82f6;
       background: #eff6ff;
@@ -138,7 +142,7 @@
     </div>
 
     <p class="greeting">Hi {{userName}},</p>
-    <p style="margin-bottom: 24px;">Here's what happened this week:</p>
+    <p style="margin-bottom: 24px;">Here's your DevControl summary for the past week:</p>
 
     <div class="section cost">
       <div class="section-title">
@@ -147,32 +151,37 @@
       <p class="section-content">{{costSummary}}</p>
     </div>
 
-    {{#if hasAlerts}}
+    <div class="section security">
+      <div class="section-title">
+        <span class="section-icon">&#128274;</span> SECURITY
+      </div>
+      <p class="section-content">{{securitySummary}}</p>
+    </div>
+
     <div class="section alert">
       <div class="section-title">
-        <span class="section-icon">&#9888;&#65039;</span> ALERTS: {{totalAlerts}} this week
+        <span class="section-icon">&#9888;&#65039;</span> ALERTS
       </div>
       <p class="section-content">{{alertSummary}}</p>
     </div>
-    {{/if}}
 
-    {{#if hasDora}}
     <div class="section dora">
       <div class="section-title">
-        <span class="section-icon">&#128200;</span> DORA METRICS
+        <span class="section-icon">&#128200;</span> DELIVERY
       </div>
-      <p class="section-content">{{doraSummary}}</p>
+      <p class="section-content">{{deliverySummary}}</p>
     </div>
-    {{/if}}
 
-    {{#if hasRecommendation}}
+    {{#if hasRecommendations}}
     <div class="section recommendation">
       <div class="section-title">
-        <span class="section-icon">&#127919;</span> AI RECOMMENDATION
+        <span class="section-icon">&#127919;</span> RECOMMENDATIONS
       </div>
-      <p class="section-content">{{recommendation}}</p>
-      {{#if estimatedSavings}}
-      <div class="savings">&#128176; Save ${{estimatedSavings}}/month</div>
+      {{#if recommendation}}
+      <p class="section-content"><strong>AI recommendation:</strong> {{recommendation}}</p>
+      {{/if}}
+      {{#if savingsSummary}}
+      <div class="savings">{{savingsSummary}}</div>
       {{/if}}
     </div>
     {{/if}}

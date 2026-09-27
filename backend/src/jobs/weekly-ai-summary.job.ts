@@ -9,19 +9,36 @@ import fs from 'fs';
 import path from 'path';
 import Handlebars from 'handlebars';
 import { Resend } from 'resend';
-import { AIInsightsService, WeeklySummaryData } from '../services/ai-insights.service';
-import { WeeklySummaryRepository } from '../repositories/weekly-summary.repository';
-import { RiskTrackingService } from '../services/risk-tracking.service';
-import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
-import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
+import { AIInsightsService } from '../services/ai-insights.service';
+import { WeeklySummaryRepository, type WeeklyEvidence } from '../repositories/weekly-summary.repository';
+import { requireOrganizationId } from '../services/ai-context-contract';
+import {
+  buildRecommendationPrompt,
+  checkRecommendationText,
+  composeWeeklySummary,
+  type WeeklySummaryContent,
+} from '../services/weekly-summary-content';
 import { RELEASE_SHA } from '../version';
+
+export interface WeeklyEmailTemplateData {
+  userName: string;
+  costSummary: string;
+  securitySummary: string;
+  alertSummary: string;
+  deliverySummary: string;
+  hasRecommendations: boolean;
+  recommendation?: string;
+  savingsSummary?: string;
+  dashboardUrl: string;
+  unsubscribeUrl: string;
+  preferencesUrl: string;
+  privacyUrl: string;
+  year: number;
+}
 
 export class WeeklyAISummaryJob {
   private aiService: AIInsightsService;
   private repository: WeeklySummaryRepository;
-  private riskTrackingService: RiskTrackingService;
-  private costRecommendationsRepository: CostRecommendationsRepository;
-  private accountFindingsRepository: AccountSecurityFindingsRepository;
   private task: ReturnType<typeof cron.schedule> | null = null;
   private emailTemplate: HandlebarsTemplateDelegate | null = null;
   private resend: Resend | null = null;
@@ -29,9 +46,6 @@ export class WeeklyAISummaryJob {
   constructor(private pool: Pool) {
     this.aiService = new AIInsightsService(pool);
     this.repository = new WeeklySummaryRepository(pool);
-    this.riskTrackingService = new RiskTrackingService(pool);
-    this.costRecommendationsRepository = new CostRecommendationsRepository();
-    this.accountFindingsRepository = new AccountSecurityFindingsRepository();
     this.loadEmailTemplate();
     this.setupResendClient();
   }
@@ -107,22 +121,21 @@ export class WeeklyAISummaryJob {
   }
 
   /**
-   * Manually trigger summary (for testing)
+   * Manually send one organization's summary (the authenticated trigger route).
+   * Always a single organization -- never a fallthrough to every org -- and
+   * subject to the same recipient eligibility as the scheduled run.
    */
-  async triggerManual(organizationId?: string): Promise<{ sent: number; errors: number }> {
+  async triggerManual(organizationId: string): Promise<{ sent: number; skipped: number; errors: number }> {
+    requireOrganizationId(organizationId, 'Weekly AI Summary', 'a manual weekly summary');
     console.log('[Weekly AI Summary] Manual trigger...');
 
-    if (organizationId) {
-      try {
-        await this.sendSummaryForOrganization(organizationId);
-        return { sent: 1, errors: 0 };
-      } catch (error: any) {
-        console.error('[Weekly AI Summary] Manual trigger failed:', error.message);
-        return { sent: 0, errors: 1 };
-      }
+    try {
+      const outcome = await this.sendSummaryForOrganization(organizationId);
+      return outcome === 'sent' ? { sent: 1, skipped: 0, errors: 0 } : { sent: 0, skipped: 1, errors: 0 };
+    } catch (error: any) {
+      console.error('[Weekly AI Summary] Manual trigger failed:', error.message);
+      return { sent: 0, skipped: 0, errors: 1 };
     }
-
-    return await this.sendWeeklySummaries();
   }
 
   /**
@@ -133,9 +146,10 @@ export class WeeklyAISummaryJob {
    * production-log-based monitor looks for to establish whether a given
    * Monday run happened, finished, and under which release. Deliberately
    * carries only counts and the release SHA, never an org id, email address,
-   * or any other customer-identifying data.
+   * or any other customer-identifying data. `skipped` counts organizations
+   * with no eligible recipient -- they are not counted as sent.
    */
-  private async sendWeeklySummaries(): Promise<{ sent: number; errors: number }> {
+  private async sendWeeklySummaries(): Promise<{ sent: number; skipped: number; errors: number }> {
     const startedAt = new Date();
     console.log(`[Weekly AI Summary] START ${JSON.stringify({
       timestamp: startedAt.toISOString(),
@@ -146,12 +160,14 @@ export class WeeklyAISummaryJob {
     console.log(`[Weekly AI Summary] Found ${organizations.length} organizations`);
 
     let sent = 0;
+    let skipped = 0;
     let errors = 0;
 
     for (const orgId of organizations) {
       try {
-        await this.sendSummaryForOrganization(orgId);
-        sent++;
+        const outcome = await this.sendSummaryForOrganization(orgId);
+        if (outcome === 'sent') sent++;
+        else skipped++;
       } catch (error: any) {
         console.error(`[Weekly AI Summary] Failed for org ${orgId}:`, error.message);
         errors++;
@@ -164,16 +180,18 @@ export class WeeklyAISummaryJob {
       durationMs: completedAt.getTime() - startedAt.getTime(),
       organizations: organizations.length,
       sent,
+      skipped,
       errors,
       releaseSha: RELEASE_SHA,
     })}`);
-    return { sent, errors };
+    return { sent, skipped, errors };
   }
 
   /**
-   * Send summary for a single organization
+   * Send summary for a single organization. Returns 'skipped' (nothing
+   * gathered, nothing sent) when the organization has no eligible recipient.
    */
-  private async sendSummaryForOrganization(organizationId: string): Promise<void> {
+  private async sendSummaryForOrganization(organizationId: string): Promise<'sent' | 'skipped'> {
     if (!this.resend) {
       throw new Error('Resend email client not configured');
     }
@@ -194,110 +212,35 @@ export class WeeklyAISummaryJob {
         [organizationId]
       );
 
-      // Calculate date range (last 7 days)
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-
-      const query = { organizationId, startDate, endDate };
-
-      // Gather weekly data in parallel
-      const [costData, costComparison, alertsData, userInfo, doraMetrics] = await Promise.all([
-        this.repository.getWeeklyCostData(query, client),
-        this.repository.getWeeklyCostComparison(query, client),
-        this.repository.getWeeklyAlerts(query, client),
-        this.repository.getUserInfo(organizationId, client),
-        this.repository.getWeeklyDORAMetrics(query, client)
-      ]);
-
-      if (!userInfo?.email) {
-        console.log(`[Weekly AI Summary] No email found for org ${organizationId}`);
-        return;
+      // Eligibility first (opted in + verified owner, see getUserInfo), so an
+      // ineligible org costs no Cost Explorer or model calls.
+      const recipient = await this.repository.getUserInfo(organizationId, client);
+      if (!recipient) {
+        console.log(`[Weekly AI Summary] No eligible recipient for org ${organizationId} -- skipped`);
+        return 'skipped';
       }
 
-      const { currentCost, previousCost, hasComparableCosts, costSource } = costComparison;
-      const changePercent = hasComparableCosts && previousCost
-        ? ((currentCost - previousCost) / previousCost) * 100
-        : 0;
+      const evidence = await this.repository.gatherWeeklyEvidence(organizationId, new Date(), client);
+      const content = composeWeeklySummary(evidence);
+      const recommendation = await this.generateAIRecommendation(evidence, content);
 
-      let costSummaryText: string;
-      if (hasComparableCosts && previousCost) {
-        const direction = changePercent >= 0 ? 'increased' : 'decreased';
-        costSummaryText = `Costs ${direction} ${Math.abs(changePercent).toFixed(1)}% this week ($${previousCost.toFixed(0)} → $${currentCost.toFixed(0)}).`;
-      } else if (currentCost > 0) {
-        costSummaryText = costSource === 'estimated'
-          ? `Estimated cloud spend: $${currentCost.toFixed(0)} (connect an AWS account for week-over-week trends).`
-          : `New spend detected: $${currentCost.toFixed(0)} this week.`;
-      } else {
-        costSummaryText = 'No cloud spend recorded this week.';
-      }
-
-      // DORA section is only meaningful once there's real pipeline activity —
-      // deploymentFrequency parses to a number even in its "0.0 per day" empty state,
-      // so pair it with leadTime still being 'N/A' to detect "nothing has happened yet".
-      const deploymentFreqValue = parseFloat(doraMetrics.deploymentFrequency);
-      const hasDora = !((isNaN(deploymentFreqValue) || deploymentFreqValue === 0) && doraMetrics.leadTime === 'N/A');
-
-      // Build weekly summary data
-      const weeklyData: WeeklySummaryData = {
-        costs: {
-          previous: previousCost ?? 0,
-          current: currentCost,
-          changePercent: Math.round(changePercent * 100) / 100,
-          topChanges: costData.slice(0, 3).map(item => ({
-            service: item.resource_type,
-            change: 0 // Would need historical data to calculate change
-          }))
-        },
-        alerts: {
-          total: alertsData.total,
-          critical: alertsData.critical,
-          topAlert: alertsData.topAlert ?? undefined
-        },
-        dora: doraMetrics
-      };
-
-      // Generate AI summary for alerts/dora narrative — cost summary is overwritten
-      // below with deterministic text since arithmetic shouldn't be left to AI/fallback.
-      const aiSummary = await this.aiService.generateWeeklySummary(weeklyData);
-      aiSummary.costs.summary = costSummaryText;
-
-      // Real AI recommendation grounded in this org's actual data — omitted entirely
-      // (not a generic fallback string) if generation fails or there's nothing real to say.
-      const recommendation = await this.generateAIRecommendation(organizationId, currentCost);
-
-      // Render email HTML
-      const userName = userInfo.fullName?.split(' ')[0] || userInfo.email.split('@')[0];
+      const userName = recipient.fullName?.split(' ')[0] || recipient.email.split('@')[0];
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
-
-      // Get user ID for unsubscribe token
-      const userResult = await client.query(
-        'SELECT id FROM users WHERE email = $1',
-        [userInfo.email]
-      );
-      const userId = userResult.rows[0]?.id;
-
-      // Create unsubscribe token (base64 encoded user ID)
-      const unsubscribeToken = userId ? Buffer.from(userId).toString('base64') : '';
       const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
 
-      const templateData = {
+      // Unsubscribe token (base64 encoded user ID) -- unchanged scheme, see
+      // user-preferences.controller.ts unsubscribeAll().
+      const unsubscribeToken = Buffer.from(recipient.userId).toString('base64');
+
+      const templateData = this.buildTemplateData({
         userName,
-        costSummary: aiSummary.costs.summary,
-        hasAlerts: aiSummary.alerts.total > 0,
-        totalAlerts: aiSummary.alerts.total,
-        alertSummary: aiSummary.alerts.summary,
-        hasDora,
-        doraSummary: aiSummary.dora.summary,
-        hasRecommendation: recommendation !== null,
-        recommendation: recommendation?.text,
-        estimatedSavings: recommendation?.estimatedSavings,
+        content,
+        recommendation,
         dashboardUrl: `${frontendUrl}/dashboard`,
         unsubscribeUrl: `${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}`,
         preferencesUrl: `${frontendUrl}/settings/notifications`,
         privacyUrl: `${frontendUrl}/privacy`,
-        year: new Date().getFullYear()
-      };
+      });
 
       const html = this.emailTemplate(templateData);
 
@@ -308,19 +251,20 @@ export class WeeklyAISummaryJob {
       try {
         const result = await this.resend.emails.send({
           from: process.env.EMAIL_FROM || 'DevControl <noreply@devcontrol.app>',
-          to: userInfo.email,
+          to: recipient.email,
           subject: 'Your DevControl Weekly Summary (AI-Powered)',
           html,
           text: textContent,
           headers: {
-            'List-Unsubscribe': `<${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}>`,
+            'List-Unsubscribe': `<${templateData.unsubscribeUrl}>`,
             'X-Entity-Ref-ID': `weekly-summary-${Date.now()}`,
           },
         });
 
-        console.log(`[Weekly AI Summary] ✅ Sent to ${userInfo.email} via Resend (ID: ${result.data?.id})`);
+        console.log(`[Weekly AI Summary] ✅ Sent to ${recipient.email} via Resend (ID: ${result.data?.id})`);
+        return 'sent';
       } catch (error: any) {
-        console.error(`[Weekly AI Summary] ❌ Failed to send to ${userInfo.email}:`, error.message);
+        console.error(`[Weekly AI Summary] ❌ Failed to send to ${recipient.email}:`, error.message);
         throw error;
       }
     } finally {
@@ -328,76 +272,58 @@ export class WeeklyAISummaryJob {
     }
   }
 
+  /** Template/text-version fields, from the deterministic content plus the optional model recommendation. */
+  buildTemplateData(input: {
+    userName: string;
+    content: WeeklySummaryContent;
+    recommendation: string | null;
+    dashboardUrl: string;
+    unsubscribeUrl: string;
+    preferencesUrl: string;
+    privacyUrl: string;
+  }): WeeklyEmailTemplateData {
+    const { content, recommendation } = input;
+    return {
+      userName: input.userName,
+      costSummary: content.costSummary,
+      securitySummary: content.securitySummary,
+      alertSummary: content.alertSummary,
+      deliverySummary: content.deliverySummary,
+      hasRecommendations: recommendation !== null || content.savingsSummary !== null,
+      recommendation: recommendation ?? undefined,
+      savingsSummary: content.savingsSummary ?? undefined,
+      dashboardUrl: input.dashboardUrl,
+      unsubscribeUrl: input.unsubscribeUrl,
+      preferencesUrl: input.preferencesUrl,
+      privacyUrl: input.privacyUrl,
+      year: new Date().getFullYear(),
+    };
+  }
+
+  /** The full rendered email for already-gathered evidence -- no send. */
+  renderEmail(templateData: WeeklyEmailTemplateData): { html: string; text: string } {
+    if (!this.emailTemplate) throw new Error('Email template not loaded');
+    return { html: this.emailTemplate(templateData), text: this.generateTextVersion(templateData) };
+  }
+
   /**
-   * Build a fact-only prompt from this org's real security/cost data and ask Claude
-   * for a short recommendation — same fact-gathering shape as AISummaryService, but
-   * for the weekly email context. Returns null (never a generic placeholder) if AI
-   * generation fails or there's nothing real to recommend on.
+   * Ask Claude for one short recommendation from the same deterministic lines
+   * the email states (weekly-summary-content.ts). Returns null -- never a
+   * generic placeholder -- when there is nothing real to recommend on, the
+   * model call fails, or checkRecommendationText() finds the text contradicts
+   * or goes beyond the evidence.
    */
-  private async generateAIRecommendation(
-    organizationId: string,
-    monthlySpend: number
-  ): Promise<{ text: string; estimatedSavings: number | null } | null> {
+  async generateAIRecommendation(evidence: WeeklyEvidence, content: WeeklySummaryContent): Promise<string | null> {
     try {
-      const [riskScore, costStats, activeFindings] = await Promise.all([
-        this.riskTrackingService.getCurrentRiskScore(organizationId),
-        this.costRecommendationsRepository.getStats(organizationId),
-        this.accountFindingsRepository.getActive(organizationId)
-      ]);
-
-      const facts: string[] = [];
-
-      if (!riskScore.isPreliminary) {
-        // Same split as AISummaryService's dashboard summary: complianceIssueCounts
-        // combines account-level findings (security groups, IAM) with per-resource
-        // compliance issues (encryption/backup/tagging/access-logging) from two
-        // different scanners — report them separately instead of one undifferentiated
-        // total. Described as generic infrastructure checks, not "SOC2/HIPAA checks" --
-        // most of these findings carry no framework label at all, and even the
-        // HIPAA-labeled subset is tag-inferred, not a real HIPAA evaluation; naming
-        // SOC2/HIPAA here would overstate what was checked.
-        const c = riskScore.complianceIssueCounts;
-        const totalCombined = c.critical + c.high + c.medium + c.low;
-        const accountLevelCount = activeFindings.length;
-        const resourceComplianceCount = totalCombined - accountLevelCount;
-        facts.push(
-          `Security posture score: ${riskScore.score}/100 — ${accountLevelCount} account-level ` +
-          `finding${accountLevelCount !== 1 ? 's' : ''} (security groups, IAM) and ` +
-          `${resourceComplianceCount} resource compliance issue${resourceComplianceCount !== 1 ? 's' : ''} ` +
-          `(encryption, backups, tagging, and other infrastructure checks) currently active.`
-        );
-      }
-
-      if (costStats.active_recommendations > 0) {
-        facts.push(
-          `${costStats.active_recommendations} active cost optimization` +
-          `${costStats.active_recommendations !== 1 ? 's have' : ' has'} estimated potential savings of approximately ` +
-          `$${Math.round(costStats.total_potential_savings).toLocaleString()}/month.`
-        );
-      }
-
-      if (monthlySpend > 0) {
-        facts.push(`Current monthly cloud spend is $${Math.round(monthlySpend).toLocaleString()}.`);
-      }
-
-      if (facts.length === 0) return null;
-
-      const prompt =
-        `You are writing a single, specific, actionable recommendation for a weekly ` +
-        `cloud infrastructure email, aimed at an engineering lead.\n\n` +
-        `Use ONLY the facts below. Do not invent, estimate, or assume anything not explicitly ` +
-        `stated. Do not add generic advice like "review your dashboard".\n\n` +
-        `Facts:\n${facts.map((f) => `- ${f}`).join('\n')}\n\n` +
-        `Write the recommendation now (1-2 sentences, no preamble, no markdown):`;
+      const prompt = buildRecommendationPrompt(evidence, content);
+      if (!prompt) return null;
 
       const text = await this.aiService.generateDashboardSummary(prompt);
-      if (!text) return null;
-
-      const estimatedSavings = costStats.active_recommendations > 0
-        ? Math.round(costStats.total_potential_savings)
-        : null;
-
-      return { text, estimatedSavings };
+      const checked = checkRecommendationText(text, prompt);
+      if (checked.rejected) {
+        console.warn(`[Weekly AI Summary] Recommendation dropped: ${checked.rejected}`);
+      }
+      return checked.text;
     } catch (error: any) {
       console.error('[Weekly AI Summary] AI recommendation generation failed:', error.message);
       return null;
@@ -407,59 +333,43 @@ export class WeeklyAISummaryJob {
   /**
    * Generate plain text version of email for better deliverability
    */
-  private generateTextVersion(data: {
-    userName: string;
-    costSummary: string;
-    hasAlerts: boolean;
-    totalAlerts: number;
-    alertSummary: string;
-    hasDora: boolean;
-    doraSummary: string;
-    hasRecommendation: boolean;
-    recommendation?: string;
-    estimatedSavings?: number | null;
-    dashboardUrl: string;
-    unsubscribeUrl: string;
-    preferencesUrl: string;
-  }): string {
+  private generateTextVersion(data: WeeklyEmailTemplateData): string {
     let text = `
 Your DevControl Weekly Summary
 AI-Powered Infrastructure Insights
 
 Hi ${data.userName},
 
-Here's what happened this week:
+Here's your DevControl summary for the past week:
 
 COSTS
 ${data.costSummary}
-`;
 
-    if (data.hasAlerts) {
-      text += `
-ALERTS: ${data.totalAlerts} this week
+SECURITY
+${data.securitySummary}
+
+ALERTS
 ${data.alertSummary}
+
+DELIVERY
+${data.deliverySummary}
 `;
-    }
 
-    if (data.hasDora) {
+    if (data.hasRecommendations) {
       text += `
-DORA METRICS
-${data.doraSummary}
-`;
-    }
-
-    if (data.hasRecommendation) {
-      text += `
-AI RECOMMENDATION
-${data.recommendation}`;
-
-      if (data.estimatedSavings) {
-        text += `\nEstimated Savings: $${data.estimatedSavings}/month`;
+RECOMMENDATIONS`;
+      if (data.recommendation) {
+        text += `
+AI recommendation: ${data.recommendation}`;
       }
+      if (data.savingsSummary) {
+        text += `
+${data.savingsSummary}`;
+      }
+      text += '\n';
     }
 
     text += `
-
 View Full Dashboard: ${data.dashboardUrl}
 
 ---
@@ -473,7 +383,7 @@ with weekly summaries enabled.
 DevControl, Inc.
 Questions? Reply to this email or contact support.
 
-© ${new Date().getFullYear()} DevControl. All rights reserved.
+© ${data.year} DevControl. All rights reserved.
 `.trim();
 
     return text;
