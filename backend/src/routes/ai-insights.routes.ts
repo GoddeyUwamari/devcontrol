@@ -22,11 +22,11 @@ router.use(authenticate);
 router.post('/analyze-cost', aiInsightsController.analyzeCost);
 
 // GET /api/ai-insights/cache-stats
-// Get cache statistics (for monitoring/debugging)
+// Get the caller's organization's cache statistics (for monitoring/debugging)
 router.get('/cache-stats', aiInsightsController.getCacheStats);
 
 // POST /api/ai-insights/clear-cache
-// Clear the insights cache (admin operation)
+// Clear the caller's organization's insights cache (other orgs untouched)
 router.post('/clear-cache', aiInsightsController.clearCache);
 
 // POST /api/ai-insights/trigger-weekly-summary
