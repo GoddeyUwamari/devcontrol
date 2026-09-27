@@ -288,7 +288,7 @@ describe('truth/provenance foundation', () => {
       ]);
     });
 
-    it('a derived value is never computed from an unavailable/error input -- no "0%" or "flat"', async () => {
+    it('a derived value is never computed from an error input -- the result is error, not "0%" or "flat"', async () => {
       const current = await collectSection(CE_META, async () => ({ state: 'available', data: { total: 120 } }));
       const previous = await collectSection(CE_META, async () => { throw new Error('ThrottlingException'); });
       const compute = jest.fn(() => ({ changePercent: 0 }));
@@ -296,9 +296,44 @@ describe('truth/provenance foundation', () => {
       const change = await deriveSection({ source: 'DevControl month-over-month comparison' }, [current, previous] as const, compute);
 
       expect(compute).not.toHaveBeenCalled();
-      expect(change).toMatchObject({ state: 'unavailable', data: null, provenance: null });
+      expect(change).toMatchObject({ state: 'error', data: null, provenance: null });
       expect(change.reason).toBe('cannot be calculated: AWS Cost Explorer: could not be retrieved');
       expect(JSON.stringify(change)).not.toMatch(/Throttling/);
+    });
+
+    it.each([
+      ['unavailable', () => collectSection<number>({ source: 'history' }, async () => ({ state: 'unavailable', reason: 'no history yet' })), 'history: not available'],
+      ['not_supported', async () => notSupported<number>({ source: 'history' }, 'no source'), 'history: not supported'],
+    ] as const)('a derived value from a %s input is unavailable, and compute never runs', async (_label, makeInput, reasonPart) => {
+      const input = await makeInput();
+      const compute = jest.fn(() => 0);
+
+      const derived = await deriveSection({ source: 'trend' }, [input] as const, compute);
+
+      expect(compute).not.toHaveBeenCalled();
+      expect(derived).toMatchObject({ state: 'unavailable', data: null, provenance: null, reason: `cannot be calculated: ${reasonPart}` });
+      expect(derived.derivedFrom).toEqual([expect.objectContaining({ source: 'history', state: input.state })]);
+    });
+
+    it('mixed missing inputs: error takes precedence over unavailable', async () => {
+      const failed = await collectSection<number>({ source: 'A' }, async () => { throw new Error('x'); });
+      const missing = await collectSection<number>({ source: 'B' }, async () => ({ state: 'unavailable', reason: 'none' }));
+
+      for (const inputs of [[failed, missing], [missing, failed]] as const) {
+        const derived = await deriveSection({ source: 'sum' }, inputs, ([a, b]) => a + b);
+        expect(derived).toMatchObject({ state: 'error', data: null, provenance: null });
+      }
+    });
+
+    it('with zero inputs is unavailable -- a derived value must cite its evidence', async () => {
+      const compute = jest.fn(() => 5);
+      const derived = await deriveSection({ source: 'orphan' }, [] as const, compute);
+
+      expect(compute).not.toHaveBeenCalled();
+      expect(derived).toMatchObject({
+        state: 'unavailable', data: null, provenance: null, derivedFrom: [],
+        reason: 'cannot be calculated: no input sections were supplied',
+      });
     });
 
     it('a derived value from partial input is partial; a compute failure is a sanitized error', async () => {
@@ -317,6 +352,26 @@ describe('truth/provenance foundation', () => {
       expect(forecast.provenance).toBe('estimated');
       expect(forecast.derivedFrom?.[0].provenance).toBe('actual');
     });
+  });
+
+  it('hasEvidence is false for an available section whose data is null', () => {
+    const hollow: ContextSection<number> = { ...notSupported<number>({ source: 'x' }, 'x'), state: 'available', reason: null };
+    expect(hollow.data).toBeNull();
+    expect(hasEvidence(hollow)).toBe(false);
+    expect(toModelEvidence(hollow)).toMatchObject({ evidencePresent: false, data: null, provenance: null });
+  });
+
+  it('an unavailable result may carry completeness: kept, validated, never promoted, no data', async () => {
+    const completeness = { unit: 'days', expected: 14, received: 3, missing: null };
+    const section = await collectSection<number[]>(CE_META, async () => ({ state: 'unavailable', reason: 'not enough history', completeness }));
+
+    expect(section).toMatchObject({ state: 'unavailable', data: null, provenance: null, reason: 'not enough history', completeness });
+    expect(toModelEvidence(section)).toMatchObject({ evidencePresent: false, completeness: { ...completeness, complete: false } });
+
+    const invalid = await collectSection<number[]>(CE_META, async () => ({
+      state: 'unavailable', reason: 'x', completeness: { unit: 'days', expected: 1, received: 2, missing: null },
+    }));
+    expect(invalid).toMatchObject({ state: 'error', data: null, completeness: null });
   });
 
   it('I. available with zero findings is a measured fact, distinct from unavailable', async () => {

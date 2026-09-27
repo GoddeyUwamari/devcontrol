@@ -249,7 +249,12 @@ interface SectionResultMeta {
   completeness?: EvidenceCompleteness | null;
 }
 
-/** What a getter that ran successfully found. */
+/**
+ * What a getter that ran successfully found. An 'unavailable' result may
+ * carry completeness to record what was requested vs obtained when too little
+ * was obtained to use (e.g. 3 of 14 days of history) -- it stays unavailable
+ * with no data; the counts are validated but never promote it.
+ */
 export type SectionResult<T> =
   | (SectionResultMeta & { state: 'available' | 'partial'; data: T; provenance?: EvidenceProvenance | null; reason?: string | null })
   | (SectionResultMeta & { state: 'unavailable'; reason: string });
@@ -364,11 +369,16 @@ function referenceTo(section: ContextSection<unknown>): EvidenceReference {
 /**
  * A value calculated from other sections (a comparison, a delta, a share, a
  * forecast). compute() runs only when every input actually carries evidence;
- * otherwise the result is 'unavailable' naming each missing input -- so an
- * unavailable or failed input can never become 0, "0%", or "flat". If any
- * input is partial, so is the result. Provenance is 'derived' (or 'estimated'
- * for projections), never 'actual', and derivedFrom records every input's
- * provenance, scope, and period.
+ * otherwise nothing is calculated and the result names each missing input --
+ * so an unavailable or failed input can never become 0, "0%", or "flat".
+ * The result's state follows its inputs, by precedence
+ * error > unavailable > partial > available:
+ *   - any input 'error'                         -> 'error' (a failure stays a failure)
+ *   - any input unavailable/not_supported/empty -> 'unavailable'
+ *   - any input 'partial'                       -> 'partial'
+ * No inputs at all is 'unavailable': a derived value must cite its evidence.
+ * Provenance is 'derived' (or 'estimated' for projections), never 'actual',
+ * and derivedFrom records every input's provenance, scope, and period.
  */
 export async function deriveSection<T, Inputs extends readonly ContextSection<any>[]>(
   meta: SectionMeta & { provenance?: Extract<EvidenceProvenance, 'derived' | 'estimated'> },
@@ -377,22 +387,29 @@ export async function deriveSection<T, Inputs extends readonly ContextSection<an
 ): Promise<ContextSection<T>> {
   const derivedFrom = inputs.map(referenceTo);
   const provenance = meta.provenance ?? 'derived';
+  const noData = (state: 'error' | 'unavailable', reason: string): ContextSection<T> => ({
+    state,
+    source: meta.source,
+    provenance: null,
+    asOf: null,
+    scope: meta.scope ?? null,
+    period: meta.period ?? null,
+    completeness: null,
+    coverage: null,
+    reason,
+    derivedFrom,
+    data: null,
+  });
+
+  if (inputs.length === 0) {
+    return noData('unavailable', 'cannot be calculated: no input sections were supplied');
+  }
 
   const missing = inputs.filter(input => !hasEvidence(input));
   if (missing.length > 0) {
-    return {
-      state: 'unavailable',
-      source: meta.source,
-      provenance: null,
-      asOf: null,
-      scope: meta.scope ?? null,
-      period: meta.period ?? null,
-      completeness: null,
-      coverage: null,
-      reason: `cannot be calculated: ${missing.map(m => `${m.source}: ${CONTEXT_STATE_LABELS[m.state].toLowerCase()}`).join('; ')}`,
-      derivedFrom,
-      data: null,
-    };
+    // Input reasons are already customer-safe; only state labels are repeated here.
+    const reason = `cannot be calculated: ${missing.map(m => `${m.source}: ${CONTEXT_STATE_LABELS[m.state].toLowerCase()}`).join('; ')}`;
+    return noData(missing.some(m => m.state === 'error') ? 'error' : 'unavailable', reason);
   }
 
   try {
