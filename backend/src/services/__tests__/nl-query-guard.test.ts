@@ -297,3 +297,61 @@ describe('date-range edge cases (re-review)', () => {
     expect(dep('deployments except the last 7 days', '7d')).toBe('unsupported');
   });
 });
+
+describe('re-review 2: gate on every target, bare day/months, cost thresholds', () => {
+  it.each([
+    ['who is on call', 'services'],
+    ['which services cost the most', 'services'],
+    ['which service is the most expensive', 'services'],
+    ['slowest services', 'services'],
+    ['services owned by alice', 'services'],
+    ['deployments by bob', 'deployments'],
+    ['services with the most errors', 'services'],
+  ])('"%s" mislabeled as %s is unsupported (vocabulary gate on every target)', (q, target) => {
+    expect(reconcileWithQuery(q, intent(target)).target).toBe('unsupported');
+  });
+
+  it('supported services and deployments questions still pass the gate', () => {
+    expect(reconcileWithQuery('failed services', intent('services', { status: 'failed' })).target).toBe('services');
+    expect(reconcileWithQuery('failed production deployments', intent('deployments', { environment: 'production', status: 'failed' })).target).toBe('deployments');
+  });
+
+  it.each([
+    'what is my spend for the day', 'spend per day', 'what did we spend in a day', 'spend over the months',
+    'month to date spend for the day', 'daily spend',
+  ])('detectPeriod("%s") is other (bare day/days/daily/months)', q => {
+    expect(detectPeriod(q)).toBe('other');
+  });
+
+  it('"N days", "last/past N days", "month", "monthly", "month to date" are unchanged', () => {
+    expect(detectPeriod('deployments in the last 30 days')).toBe('other');
+    expect(detectPeriod('spend in 3 days')).toBe('other');
+    expect(detectPeriod('estimated monthly cost per month')).toBe('none');
+    expect(detectPeriod('month to date spend')).toBe('current_month');
+  });
+
+  it.each(['is my spend over 1000', 'did we spend more than 500', 'how much more do we spend', 'is the bill under $50'])(
+    'cost question "%s" with a threshold or comparison is unsupported',
+    q => {
+      expect(reconcileWithQuery(q, intent('costs', undefined, 'navigate')).target).toBe('unsupported');
+    }
+  );
+
+  it('a plain cost question still passes', () => {
+    expect(reconcileWithQuery('what is my aws spend', intent('costs', undefined, 'navigate')).target).toBe('costs');
+  });
+});
+
+describe('H1 disclosure: the explanation names every applied inventory filter', () => {
+  it('each filter appears in describeIntent()', () => {
+    const v = validateIntent(intent('infrastructure', {
+      resourceType: 'ec2', status: 'running', awsRegion: 'us-east-1', encrypted: false, hasBackup: true, publicAccess: true, costMin: 10, costMax: 900,
+    }));
+    expect(v.ok).toBe(true);
+    const text = describeIntent((v as any).intent);
+    for (const part of ['EC2 resources', 'with status running', 'in us-east-1', 'that are not encrypted', 'with backups',
+      'that are publicly accessible', 'at least $10', 'at most $900']) {
+      expect(text).toContain(part);
+    }
+  });
+});

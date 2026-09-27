@@ -67,7 +67,7 @@ export class NLQueryService {
       });
       console.log('[NL Query] Service initialized with Anthropic API');
     } else {
-      console.warn('[NL Query] ANTHROPIC_API_KEY not found - using fallback parser');
+      console.warn('[NL Query] ANTHROPIC_API_KEY not found - Ask AI will answer "temporarily unavailable"');
     }
 
     // Initialize analytics

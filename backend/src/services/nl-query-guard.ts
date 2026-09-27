@@ -118,7 +118,10 @@ export function detectPeriod(query: string): NLPeriod {
     /\b(january|february|march|april|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b/.test(q) ||
     /(?<![$\d.,])\b(19|20)\d{2}\b(?![.,]?\d)/.test(q) ||
     /\b\d{4}-\d{2}(-\d{2})?\b|\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/.test(q);
-  if (other) return 'other';
+  // A bare day/days/daily/months is a time reference too ("spend for the day",
+  // "spend over the months") -- never read as no period. ("month" alone is
+  // the per-month unit of the run-rate, and "month to date" is current_month.)
+  if (other || /\b(day|days|daily|months)\b/.test(q)) return 'other';
   if (/\b(this|current) month\b|\bmonth[- ]to[- ]date\b|\bmtd\b/.test(q)) return 'current_month';
   return 'none';
 }
@@ -239,9 +242,20 @@ export function reconcileWithQuery(query: string, intent: NLQueryIntent): NLQuer
     if (detectPeriod(rest) !== 'none' || NEGATION.test(q) || !fullyRecognized(rest)) return unsupported;
   }
 
-  // Costs and inventory execute only for questions made entirely of words
-  // Ask AI maps exactly -- independent of what the parser claims.
-  if ((target === 'costs' || target === 'infrastructure') && !fullyRecognized(query)) return unsupported;
+  // Every target executes only for questions made entirely of words Ask AI
+  // maps exactly -- independent of what the parser claims. (Services and
+  // deployments can only be filtered by status, template, environment, and a
+  // 7/30/90-day range, so a question naming a person, a service, or a metric
+  // can't be answered exactly anyway.)
+  if (!fullyRecognized(query)) return unsupported;
+
+  // A cost question with a threshold or comparison ("is my spend over 1000",
+  // "how much more do we spend") is not a month-to-date lookup.
+  if (target === 'costs') {
+    const bounds = statedCostBounds(query);
+    if (bounds === 'invalid' || bounds.min !== undefined || bounds.max !== undefined) return unsupported;
+    if (/\b(more|less|than|over|under|above|below|exceed\w*)\b/i.test(query)) return unsupported;
+  }
 
   // A cost threshold must be the one the question states: the parser can
   // neither invent, drop, nor misread it ("$1,000" is 1000, "1k" is 1000).

@@ -173,6 +173,9 @@ export function CommandPalette() {
             }>
               <div className="px-2 py-2 text-xs text-muted-foreground
                 border-b border-border mb-1">
+                {/* What was actually queried, written by DevControl (never the model),
+                    so an answer to a misread question discloses its real filters. */}
+                <div className="font-medium text-foreground">{nlResult.intent.explanation}</div>
                 {nlResult.data.summary}
               </div>
               {nlResult.data.rows.length === 0 ? (

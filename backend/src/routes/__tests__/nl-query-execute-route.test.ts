@@ -481,6 +481,66 @@ describe('supported questions are answered through the model path', () => {
   });
 });
 
+describe('re-review 2 (H2): services and deployments are word-gated too', () => {
+  it.each([
+    ['who is on call', 'services', 'null'],
+    ['which services cost the most', 'services', 'null'],
+    ['which service is the most expensive', 'services', 'null'],
+    ['slowest services', 'services', 'null'],
+    ['services owned by alice', 'services', 'null'],
+    ['deployments by bob', 'deployments', 'null'],
+    ['services with the most errors', 'services', '{"status": "failed"}'],
+  ])('"%s" mislabeled as %s -> not_supported, no query', async (question, target, filters) => {
+    modelReplies(reply(target, filters));
+    const { body } = await ask(question);
+    expectRefusedWithoutQuery(body);
+  });
+});
+
+describe('re-review 2 (H3): bare day/days/daily/months are time references', () => {
+  it.each([
+    ['what is my spend for the day', 'none'],
+    ['spend per day', 'none'],
+    ['what did we spend in a day', 'none'],
+    ['spend over the months', 'none'],
+    ['month to date spend for the day', 'current_month'],
+  ])('"%s" (model says costs, PERIOD %s) -> not_supported, no cost lookup', async (question, period) => {
+    actualCosts();
+    modelReplies(reply('costs', 'null', period));
+    const { body } = await ask(question);
+    expectRefusedWithoutQuery(body);
+  });
+});
+
+describe('re-review 2: cost questions with a threshold or comparison', () => {
+  it.each(['is my spend over 1000', 'did we spend more than 500', 'how much more do we spend'])(
+    '"%s" (model says costs) -> not_supported, no cost lookup',
+    async question => {
+      actualCosts();
+      modelReplies(reply('costs'));
+      const { body } = await ask(question);
+      expectRefusedWithoutQuery(body);
+    }
+  );
+});
+
+describe('re-review 2 (H1 disclosure): a mislabeled inventory answer names the filter actually applied', () => {
+  it.each([
+    ['stopped ec2 instances', '{"resourceType": "ec2", "status": "running"}', 'EC2 resources with status running'],
+    ['unencrypted s3 buckets', '{"resourceType": "s3", "encrypted": true}', 'S3 resources that are encrypted'],
+    ['rds databases with no backups', '{"resourceType": "rds", "hasBackup": true}', 'RDS resources with backups'],
+    ['ec2 instances in ireland', '{"resourceType": "ec2", "awsRegion": "us-east-1"}', 'EC2 resources in us-east-1'],
+    ['ec2 instances in us-east-1 or us-west-2', '{"resourceType": "ec2", "awsRegion": "us-east-1"}', 'EC2 resources in us-east-1'],
+    ['ec2 and rds instances', '{"resourceType": "ec2"}', 'EC2 resources'],
+  ])('"%s" answered with %s is labeled "%s"', async (question, filters, explanation) => {
+    modelReplies(reply('infrastructure', filters));
+    const { body } = await ask(question);
+    // Not cross-checked in this PR (named follow-up): executed, but self-disclosing.
+    expect(body.data.data.outcome).toBe('answered');
+    expect(body.data.intent.explanation).toBe(explanation);
+  });
+});
+
 describe('execution failures', () => {
   it('a DB failure is HTTP 500 with a sanitized message -- never a 200 "no data"', async () => {
     mockFailResources = true;
