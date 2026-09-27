@@ -2,25 +2,35 @@
  * Ask AI (NL query) guardrails: what a question may ask, and what a parsed
  * intent may contain, before anything is executed.
  *
+ * The safety boundary is an ALLOWLIST: Ask AI answers only when a question
+ * positively maps to a supported target, filters, and period. Everything
+ * else is not_supported.
+ *
  * The parser (Claude or the keyword fallback) is an untrusted interpreter of
  * untrusted user text. Its output is never authorization: the organization
  * always comes from the authenticated request, and an intent executes only
- * if its target, action, and every filter are on the allowlist below. An
- * unknown target, an unknown or target-inappropriate filter (including
- * anything like organization_id), or an invalid value is rejected as
- * not_supported -- never silently dropped or reinterpreted, which would
- * answer a different question than the one asked.
+ * if validateIntent() accepts all of it --
+ *   - target is one of the four executable targets (not "unsupported",
+ *     missing, or anything else; looked up as own properties only),
+ *   - the parser reported CONFIDENCE: high (an exact mapping),
+ *   - the period is one the target can honor (costs: none or this month
+ *     only; inventory/services: current snapshot; deployments: a 7/30/90-day
+ *     range the filter applies),
+ *   - every filter is on the target's allowlist with a valid value.
+ * Anything else is rejected as not_supported -- never dropped or
+ * reinterpreted, which would answer a different question than the one asked.
  *
- * classifyUnsupportedQuestion() catches question types DevControl has no
- * evidence to answer (causes, historical comparisons, forecasts,
- * optimization/savings/waste, utilization/rightsizing, RI/Savings Plans)
- * before the parser runs, so they get an explicit limitation instead of an
- * unrelated resource list.
+ * classifyUnsupportedQuestion() is only a fast path: it catches common
+ * phrasings of question types DevControl has no evidence to answer before
+ * any parsing, so they get a specific message. It is not the boundary.
  */
 
 import type { NLQueryIntent } from './nl-query.service';
 
 export type NLTarget = 'infrastructure' | 'services' | 'deployments' | 'costs';
+
+/** The time a question refers to. 'other' is any time reference except this month / month to date. */
+export type NLPeriod = 'none' | 'current_month' | 'other';
 
 /** A parsed intent that passed validation; filters are typed and bounded. */
 export interface ValidatedIntent {
@@ -48,7 +58,7 @@ export type IntentValidation =
   | { ok: false; reason: string };
 
 export interface UnsupportedQuestion {
-  kind: 'causal' | 'comparison' | 'forecast' | 'optimization' | 'utilization';
+  kind: 'causal' | 'comparison' | 'forecast' | 'optimization' | 'utilization' | 'period' | 'other';
   message: string;
 }
 
@@ -72,11 +82,68 @@ const TARGET_FILTERS: Record<NLTarget, ReadonlySet<string>> = {
   costs: new Set(),
 };
 
+export const GENERIC_NOT_SUPPORTED =
+  "Ask AI can't answer that from the data it has. It can report month-to-date AWS spend, and list resources in your inventory, services, and deployments.";
+export const COST_PERIOD_NOT_SUPPORTED = 'Ask AI only has month-to-date AWS spend.';
+const INVENTORY_PERIOD_NOT_SUPPORTED =
+  'Ask AI only has your current inventory and services, not their state or costs over a past or future period.';
+const DEPLOYMENT_PERIOD_NOT_SUPPORTED = 'Ask AI can filter deployments to the last 7, 30, or 90 days only.';
+
 const TARGET_NOT_SUPPORTED: Record<string, string> = {
   alerts:
     "Ask AI can't answer alert questions: DevControl's alert sync does not yet associate alerts with an organization, so this organization's alerts cannot be determined.",
   teams: "Ask AI can't list teams. Open the Teams page to see them.",
 };
+
+function own<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+}
+
+/** The period a question refers to, deterministically. Any time reference that isn't this month / MTD is 'other'. */
+export function detectPeriod(query: string): NLPeriod {
+  const q = query.toLowerCase();
+  const other =
+    /\b(last|past|previous|prior|next|ago|since|yesterday|today|tomorrow|tonight)\b/.test(q) ||
+    /\b(weeks?|weekly|quarters?|quarterly|years?|yearly|annual|fortnight)\b/.test(q) ||
+    /\bq[1-4]\b/.test(q) ||
+    /\b\d+\s*(days?|weeks?|months?|years?|hours?)\b/.test(q) ||
+    /\b(january|february|march|april|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b/.test(q) ||
+    /(?<![$\d.,])\b(19|20)\d{2}\b(?![.,]?\d)/.test(q) ||
+    /\b\d{4}-\d{2}(-\d{2})?\b|\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/.test(q);
+  if (other) return 'other';
+  if (/\b(this|current) month\b|\bmonth[- ]to[- ]date\b|\bmtd\b/.test(q)) return 'current_month';
+  return 'none';
+}
+
+const PERIOD_RANK: Record<NLPeriod, number> = { none: 0, current_month: 1, other: 2 };
+
+/**
+ * Reconcile the parser's claims with the question text before validation,
+ * so the boundary never rests on the parser alone:
+ *   - the period is the stricter of the parser's and detectPeriod(query)'s
+ *     (a parser can't downgrade "last month" to none); a missing parser
+ *     period stays missing and is rejected by validateIntent();
+ *   - a dateRange filter is kept only if the question literally states
+ *     "last/past N days" with the same N; otherwise the intent is unsupported
+ *     (e.g. "this week" is never silently approximated as 7 days).
+ */
+export function reconcileWithQuery(query: string, intent: NLQueryIntent): NLQueryIntent {
+  if (!intent || typeof intent !== 'object') return intent;
+  const detected = detectPeriod(query);
+  const claimed = typeof intent.period === 'string' ? (intent.period.toLowerCase() as NLPeriod) : undefined;
+  const period = claimed && Object.prototype.hasOwnProperty.call(PERIOD_RANK, claimed)
+    ? (PERIOD_RANK[detected] > PERIOD_RANK[claimed] ? detected : claimed)
+    : undefined;
+
+  const filters = intent.filters && typeof intent.filters === 'object' ? (intent.filters as Record<string, unknown>) : undefined;
+  if (filters && filters.dateRange !== undefined && filters.dateRange !== null) {
+    const stated = query.toLowerCase().match(/\b(last|past)\s+(7|30|90)\s+days\b/);
+    if (!stated || String(filters.dateRange).toLowerCase() !== `${stated[2]}d`) {
+      return { ...intent, target: 'unsupported', period };
+    }
+  }
+  return { ...intent, period };
+}
 
 function nonNegativeNumber(value: unknown): number | null {
   const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
@@ -88,14 +155,18 @@ function lowerString(value: unknown): string | null {
 }
 
 export function validateIntent(intent: NLQueryIntent | null | undefined): IntentValidation {
-  if (!intent || typeof intent !== 'object') return { ok: false, reason: "Ask AI couldn't interpret that question." };
+  if (!intent || typeof intent !== 'object') return { ok: false, reason: GENERIC_NOT_SUPPORTED };
 
+  // Own-property lookups only: "__proto__"/"constructor" must never resolve through the prototype.
   const target = lowerString(intent.target) ?? '';
-  if (TARGET_NOT_SUPPORTED[target]) return { ok: false, reason: TARGET_NOT_SUPPORTED[target] };
-  if (!(target in TARGET_FILTERS)) return { ok: false, reason: "Ask AI can't answer that kind of question." };
-  if (!ACTIONS.has(lowerString(intent.action) ?? '')) return { ok: false, reason: "Ask AI couldn't interpret that question." };
+  const targetReason = own(TARGET_NOT_SUPPORTED, target);
+  if (targetReason) return { ok: false, reason: targetReason };
+  const allowed = own(TARGET_FILTERS as Record<string, ReadonlySet<string>>, target);
+  if (!allowed) return { ok: false, reason: GENERIC_NOT_SUPPORTED }; // includes "unsupported" and a missing target
+  if (!ACTIONS.has(lowerString(intent.action) ?? '')) return { ok: false, reason: GENERIC_NOT_SUPPORTED };
+  // Only an exact mapping executes: a guessed ("medium"/"low") or missing confidence is not an answer.
+  if (lowerString(intent.confidence) !== 'high') return { ok: false, reason: GENERIC_NOT_SUPPORTED };
 
-  const allowed = TARGET_FILTERS[target as NLTarget];
   const raw = intent.filters && typeof intent.filters === 'object' ? (intent.filters as Record<string, unknown>) : {};
   const filters: ValidatedFilters = {};
   const invalid = (key: string) => ({ ok: false as const, reason: `Ask AI can't apply the "${key}" filter to that question.` });
@@ -168,6 +239,22 @@ export function validateIntent(intent: NLQueryIntent | null | undefined): Intent
   if (filters.costMin !== undefined && filters.costMax !== undefined && filters.costMin > filters.costMax) {
     return { ok: false, reason: 'The minimum cost is greater than the maximum cost.' };
   }
+
+  // The period must be reported and must be one this target can honor -- a
+  // question about another period is never answered with current data.
+  const period = lowerString(intent.period);
+  if (period !== 'none' && period !== 'current_month' && period !== 'other') {
+    return { ok: false, reason: GENERIC_NOT_SUPPORTED };
+  }
+  if (target === 'costs' && period === 'other') return { ok: false, reason: COST_PERIOD_NOT_SUPPORTED };
+  if ((target === 'infrastructure' || target === 'services') && period === 'other') {
+    return { ok: false, reason: INVENTORY_PERIOD_NOT_SUPPORTED };
+  }
+  if (target === 'deployments') {
+    // A time reference is only honored as a 7/30/90-day range the query applies.
+    if (period !== 'none' && filters.dateRangeDays === undefined) return { ok: false, reason: DEPLOYMENT_PERIOD_NOT_SUPPORTED };
+  }
+
   return { ok: true, intent: { target: target as NLTarget, filters } };
 }
 
@@ -200,24 +287,26 @@ export function describeIntent(intent: ValidatedIntent): string {
   }
 }
 
+const COST_WORDS = /\b(cost|costs|costing|spend|spends|spending|spent|bill|billed|billing|bills|charges?|charged|invoice)\b/i;
+
 const UNSUPPORTED_RULES: Array<{ kind: UnsupportedQuestion['kind']; pattern: RegExp; message: string }> = [
   {
     kind: 'utilization',
-    pattern: /\b(right-?siz\w*|downsiz\w*|over-?sized|over-?provisioned|under-?utili[sz]\w*|utili[sz]ation|cpu|memory usage|idle)\b/i,
+    pattern: /\b(right[- ]?siz\w*|downsiz\w*|over-?sized|over-?provisioned|under-?utili[sz]\w*|utili[sz]ation|cpu|memory usage|idle|low usage|doing nothing|not (being )?used)\b/i,
     message:
       "Ask AI doesn't have utilization data, so it can't determine which resources are oversized, idle, or underutilized. " +
       'It can list the resources in your current inventory -- for example, "show running EC2 instances".',
   },
   {
     kind: 'optimization',
-    pattern: /\b(optimi[sz]\w*|save|saving|savings|waste|wasted|wasteful|wasting|unused|reserved instances?|savings plans?|reduce (my |our |the )?(cost|costs|spend|spending|bill))\b/i,
+    pattern: /\b(optimi[sz]\w*|save|saving|savings|waste|wasted|wasteful|wasting|unused|reserved instances?|savings plans?|commitments?|commit|(reduce|cut|lower|decrease|trim|shrink) (my |our |the )?(aws )?(cost|costs|spend|spending|bill|bills))\b|\bRIs?\b/i,
     message:
       "Ask AI doesn't have the evidence to identify savings or waste, so it won't estimate savings. " +
       "DevControl's detector-backed cost recommendations, with their estimated savings, are on the Cost Optimization page.",
   },
   {
     kind: 'causal',
-    pattern: /(^\s*why\b|\bwhy (is|are|did|does|do|has|have|was|were)\b|\bwhat('s| is| are) (causing|driving)\b|\broot cause\b|\bexplain (the |my |our )?(cost|spend|bill|increase|spike))/i,
+    pattern: /(^\s*why\b|\bwhy (is|are|did|does|do|has|have|was|were)\b|\bwhat('s| is| are) (causing|driving)\b|\bwhat made\b|\bwhat happened\b|\broot cause\b|\b(go|goes|went|gone|going) (up|down)\b|\b(spike|spiked|jump|jumped|increase[ds]?|decrease[ds]?)\b|\bexplain (the |my |our )?(cost|spend|bill|increase|spike))/i,
     message:
       "Ask AI doesn't have resource-level billing attribution, so it can't explain why a cost is what it is. " +
       'It can show current month-to-date AWS spend ("what is my AWS spend") or list resources with their inventory cost estimates.',
@@ -231,15 +320,26 @@ const UNSUPPORTED_RULES: Array<{ kind: UnsupportedQuestion['kind']; pattern: Reg
   },
   {
     kind: 'forecast',
-    pattern: /\b(forecast\w*|predict\w*|projection|projected|next month|end of (the )?month|will (i|we) spend)\b/i,
+    pattern: /\b(forecast\w*|predict\w*|projection|projected|expected|expect|next (month|quarter|year)|end[- ]of[- ](the[- ])?month|will (i|we) spend|estimate (my |our |the )?(end|bill|spend))\b/i,
     message: "Ask AI can't forecast spend. It can show current month-to-date AWS spend.",
+  },
+  {
+    kind: 'other',
+    pattern: /\b(incidents?|outages?|downtime|teams?|who owns|owner of|ownership|best practices?|advice|recommend\w*)\b/i,
+    message: GENERIC_NOT_SUPPORTED,
   },
 ];
 
-/** A question DevControl has no evidence to answer, or null. Checked before any parsing. */
+/**
+ * A question DevControl has no evidence to answer, or null. A fast path
+ * checked before any parsing -- not the boundary (see validateIntent()).
+ */
 export function classifyUnsupportedQuestion(query: string): UnsupportedQuestion | null {
   for (const rule of UNSUPPORTED_RULES) {
     if (rule.pattern.test(query)) return { kind: rule.kind, message: rule.message };
+  }
+  if (COST_WORDS.test(query) && detectPeriod(query) === 'other') {
+    return { kind: 'period', message: COST_PERIOD_NOT_SUPPORTED };
   }
   return null;
 }

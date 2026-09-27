@@ -107,10 +107,10 @@ export class NLQueryExecutorService {
   }
 
   /** A question rejected before execution (unsupported kind or invalid intent). */
-  notSupportedResult(message: string, intent?: NLQueryIntent | null): NLQueryResult {
+  notSupportedResult(message: string, _intent?: NLQueryIntent | null): NLQueryResult {
     const section = notSupported<never>({ source: 'Ask AI' }, message);
     return {
-      intent: { target: String(intent?.target ?? 'none'), filters: {}, explanation: 'Not something Ask AI can answer' },
+      intent: { target: 'none', filters: {}, explanation: 'Not something Ask AI can answer' },
       data: { type: 'none', outcome: 'not_supported', rows: [], summary: message, columns: [], evidence: evidenceOf(section) },
       executedAt: new Date(),
       rowCount: 0,

@@ -10,7 +10,7 @@ import { authenticate as authenticateToken } from '../middleware/auth.middleware
 import { requirePro } from '../middleware/subscription.middleware';
 import { pool } from '../config/database';
 import { NLQueryExecutorService } from '../services/nl-query-executor.service';
-import { classifyUnsupportedQuestion } from '../services/nl-query-guard';
+import { classifyUnsupportedQuestion, reconcileWithQuery } from '../services/nl-query-guard';
 
 const router = Router();
 const service = new NLQueryService(pool);
@@ -50,9 +50,12 @@ router.get('/analytics', controller.getAnalytics);
 // 1. Questions DevControl has no evidence for (causes, comparisons,
 //    forecasts, savings/waste, utilization) are answered with an explicit
 //    limitation before any parsing -- the parser is never asked to invent them.
-// 2. Otherwise the question is parsed (Claude or the keyword fallback); the
-//    parser's output is untrusted and is validated against an allowlist in
-//    the executor before anything runs.
+// 2. Otherwise the question is parsed (Claude or the keyword fallback). The
+//    parser's output is untrusted: its period and date range are reconciled
+//    with the question text, then validated against the allowlist in the
+//    executor (supported target, CONFIDENCE: high, an honorable period,
+//    allowlisted filters) before anything runs. The allowlist -- not the
+//    fast path in step 1 -- is the boundary.
 // 3. The organization is always req.user.organizationId -- never the body,
 //    the question, or the parser output.
 // An execution failure is HTTP 500 with a sanitized message, never a
@@ -77,7 +80,9 @@ router.post('/execute', async (req: any, res) => {
       return res.json({ success: true, data: executor.notSupportedResult(unsupported.message) });
     }
 
-    const intent = await service.parseQuery(query, organizationId);
+    // The parser's period and date range are checked against the question
+    // text itself before the allowlist validation in execute().
+    const intent = reconcileWithQuery(query, await service.parseQuery(query, organizationId));
     const result = await executor.execute(intent, organizationId);
 
     if (result.data.outcome === 'error') {

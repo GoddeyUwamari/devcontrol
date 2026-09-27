@@ -3,11 +3,19 @@
  * explicit limitation before parsing, and which parsed intents may execute.
  * Pure functions -- no DB, no model.
  */
-import { classifyUnsupportedQuestion, describeIntent, validateIntent } from '../nl-query-guard';
+import {
+  classifyUnsupportedQuestion,
+  COST_PERIOD_NOT_SUPPORTED,
+  describeIntent,
+  detectPeriod,
+  GENERIC_NOT_SUPPORTED,
+  reconcileWithQuery,
+  validateIntent,
+} from '../nl-query-guard';
 import type { NLQueryIntent } from '../nl-query.service';
 
-const intent = (target: string, filters?: Record<string, unknown>, action = 'filter'): NLQueryIntent =>
-  ({ target, action, filters, explanation: 'model text', confidence: 'high' } as unknown as NLQueryIntent);
+const intent = (target: string, filters?: Record<string, unknown>, action = 'filter', extra: Record<string, unknown> = {}): NLQueryIntent =>
+  ({ target, action, filters, explanation: 'model text', confidence: 'high', period: 'none', ...extra } as unknown as NLQueryIntent);
 
 describe('classifyUnsupportedQuestion', () => {
   it.each([
@@ -124,5 +132,102 @@ describe('validateIntent', () => {
     expect(v.ok && describeIntent(v.intent)).toBe('EC2 resources with an estimated monthly cost of at least $100');
     const c = validateIntent(intent('costs', undefined, 'navigate'));
     expect(c.ok && describeIntent(c.intent)).toBe('AWS spend, month to date');
+  });
+});
+
+describe('allowlist boundary (review H1): only an exact, supported mapping executes', () => {
+  it('TARGET: unsupported, a missing target, and an empty target are not supported', () => {
+    expect(validateIntent(intent('unsupported'))).toEqual({ ok: false, reason: GENERIC_NOT_SUPPORTED });
+    expect(validateIntent({ action: 'navigate', confidence: 'high', period: 'none' } as any)).toEqual({ ok: false, reason: GENERIC_NOT_SUPPORTED });
+    expect(validateIntent(intent(''))).toEqual({ ok: false, reason: GENERIC_NOT_SUPPORTED });
+  });
+
+  it.each(['medium', 'low', undefined, 'HIGH-ish'])('confidence %s is not supported, even for a valid target', confidence => {
+    expect(validateIntent(intent('infrastructure', { resourceType: 'ec2' }, 'filter', { confidence }))).toEqual({ ok: false, reason: GENERIC_NOT_SUPPORTED });
+  });
+
+  it('a missing or unknown period is not supported (fails closed)', () => {
+    expect(validateIntent(intent('costs', undefined, 'navigate', { period: undefined })).ok).toBe(false);
+    expect(validateIntent(intent('costs', undefined, 'navigate', { period: 'yesterday' })).ok).toBe(false);
+  });
+});
+
+describe('periods (review H2)', () => {
+  it('costs: only no time reference or this month / month to date', () => {
+    expect(validateIntent(intent('costs', undefined, 'navigate', { period: 'none' })).ok).toBe(true);
+    expect(validateIntent(intent('costs', undefined, 'navigate', { period: 'current_month' })).ok).toBe(true);
+    expect(validateIntent(intent('costs', undefined, 'navigate', { period: 'other' }))).toEqual({ ok: false, reason: COST_PERIOD_NOT_SUPPORTED });
+  });
+
+  it('inventory and services are a current snapshot: another period is not answered with it', () => {
+    expect(validateIntent(intent('infrastructure', { resourceType: 'ec2' }, 'filter', { period: 'other' })).ok).toBe(false);
+    expect(validateIntent(intent('services', {}, 'navigate', { period: 'other' })).ok).toBe(false);
+  });
+
+  it('deployments: a time reference is honored only as an applied 7/30/90-day range', () => {
+    expect(validateIntent(intent('deployments', { dateRange: '30d' }, 'filter', { period: 'other' })).ok).toBe(true);
+    expect(validateIntent(intent('deployments', { environment: 'production' }, 'filter', { period: 'other' })).ok).toBe(false);
+    expect(validateIntent(intent('deployments', {}, 'navigate', { period: 'current_month' })).ok).toBe(false);
+  });
+
+  it.each([
+    ['what did we spend last month', 'other'],
+    ['What did we spend in August?', 'other'],
+    ['spend since last month', 'other'],
+    ['deployments in the last 30 days', 'other'],
+    ['spend next quarter', 'other'],
+    ['cost yesterday', 'other'],
+    ['this week', 'other'],
+    ['spend in 2025', 'other'],
+    ['spend on 2026-08-01', 'other'],
+    ['two weeks ago', 'other'],
+    ['what is my spend this month', 'current_month'],
+    ['month to date spend', 'current_month'],
+    ['MTD cost', 'current_month'],
+    ['what is my AWS spend', 'none'],
+    ['resources over $2000', 'none'],
+    ['estimated monthly cost per month', 'none'],
+  ])('detectPeriod("%s") = %s', (query, period) => {
+    expect(detectPeriod(query)).toBe(period);
+  });
+
+  it('reconcileWithQuery: the parser cannot downgrade a period the question states', () => {
+    const r = reconcileWithQuery('EC2 inventory as of August', intent('infrastructure', { resourceType: 'ec2' }, 'filter', { period: 'none' }));
+    expect(r.period).toBe('other');
+    expect(validateIntent(r).ok).toBe(false);
+  });
+
+  it('reconcileWithQuery: a dateRange is kept only when the question states that exact range', () => {
+    const thisWeek = reconcileWithQuery('production deployments this week', intent('deployments', { environment: 'production', dateRange: '7d' }, 'filter', { period: 'other' }));
+    expect(thisWeek.target).toBe('unsupported');
+    expect(validateIntent(thisWeek).ok).toBe(false);
+    const mismatch = reconcileWithQuery('deployments in the last 30 days', intent('deployments', { dateRange: '90d' }, 'filter', { period: 'other' }));
+    expect(mismatch.target).toBe('unsupported');
+    const stated = reconcileWithQuery('deployments in the last 30 days', intent('deployments', { dateRange: '30d' }, 'filter', { period: 'other' }));
+    expect(validateIntent(stated)).toEqual({ ok: true, intent: { target: 'deployments', filters: { dateRangeDays: 30 } } });
+  });
+});
+
+describe('prototype keys (review L1)', () => {
+  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf'])('target "%s" is rejected with the generic message', target => {
+    const v = validateIntent(intent(target));
+    expect(v).toEqual({ ok: false, reason: GENERIC_NOT_SUPPORTED });
+    expect(typeof (v as { reason: string }).reason).toBe('string');
+  });
+});
+
+describe('fast-path paraphrases (the guard is not the boundary; see route tests)', () => {
+  it.each([
+    'What made our bill go up?', 'cost went up a lot, what happened', 'expected spend for next quarter', 'estimate end-of-month bill',
+    'RI opportunities', 'right sizing candidates', 'instances doing nothing', 'low usage instances', 'commitment discounts',
+    'cut my AWS bill', 'lower costs', 'incidents', 'outages', 'teams', 'who owns the api service', 'best practices for security',
+    'spend last month', 'What did we spend in August?', 'EC2 spend last 30 days',
+  ])('"%s" is caught before parsing', question => {
+    expect(classifyUnsupportedQuestion(question)).not.toBeNull();
+  });
+
+  it('"what is my AWS spend this month" and "month to date spend" are not blocked', () => {
+    expect(classifyUnsupportedQuestion('what is my AWS spend this month')).toBeNull();
+    expect(classifyUnsupportedQuestion('month to date spend')).toBeNull();
   });
 });

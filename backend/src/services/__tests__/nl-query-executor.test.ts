@@ -17,7 +17,7 @@ import type { NLQueryIntent } from '../nl-query.service';
 const ORG = '11111111-1111-4111-8111-111111111111';
 
 const intent = (target: string, filters?: Record<string, unknown>): NLQueryIntent =>
-  ({ target, action: 'filter', filters, explanation: 'MODEL-WRITTEN TEXT', confidence: 'high' } as unknown as NLQueryIntent);
+  ({ target, action: 'filter', filters, explanation: 'MODEL-WRITTEN TEXT', confidence: 'high', period: 'none' } as unknown as NLQueryIntent);
 
 type Responder = (sql: string, params: unknown[]) => { rows: any[] } | Error;
 

@@ -14,7 +14,7 @@ const executor = new NLQueryExecutorService(appPool as unknown as Pool);
 const orgIds: string[] = [];
 
 const intent = (target: string, filters?: Record<string, unknown>): NLQueryIntent =>
-  ({ target, action: 'filter', filters, explanation: '', confidence: 'high' } as unknown as NLQueryIntent);
+  ({ target, action: 'filter', filters, explanation: '', confidence: 'high', period: 'none' } as unknown as NLQueryIntent);
 
 function suffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
