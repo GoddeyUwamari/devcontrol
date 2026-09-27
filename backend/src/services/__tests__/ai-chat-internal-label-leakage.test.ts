@@ -42,7 +42,7 @@ function expectNoInternalLabels(text: string) {
 }
 
 function section<T>(state: ContextSection<T>['state'], data: T | null, extra: Partial<ContextSection<T>> = {}): ContextSection<T> {
-  return { state, source: 'DevControl resource inventory (periodic AWS discovery)', asOf: null, scope: null, coverage: null, reason: null, data, ...extra };
+  return { state, source: 'DevControl resource inventory (periodic AWS discovery)', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data, ...extra };
 }
 function noData(state: ContextSection<never>['state'], extra: Partial<ContextSection<never>> = {}): ContextSection<never> {
   return section<never>(state, null, extra);

@@ -21,7 +21,7 @@
 import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection, formatInclusiveRange, lastIncludedDay } from '../ai-chat.service';
 
 function noData(state: ContextSection<never>['state'], extra: Partial<ContextSection<never>> = {}): ContextSection<never> {
-  return { state, source: 'test source', asOf: null, scope: null, coverage: null, reason: null, data: null, ...extra };
+  return { state, source: 'test source', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data: null, ...extra };
 }
 
 const NO_DEPLOYMENTS = noData('unavailable', { source: 'DevControl deployment records', reason: 'no deployments were recorded for this organization in the last 30 days' });
@@ -39,10 +39,10 @@ function systemPrompt(): string {
 /** The real production context shape observed 2026-09-25 (figures as returned by /api/ai-chat/context). */
 function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, dora: ChatContext['dora'] = NO_DEPLOYMENTS): ChatContext {
   const inventoryScope: ChatContext['inventoryScope'] = { kind: 'resource_inventory', connectedAccountId: '815931739526', discoveryRegion: 'us-east-1' };
-  const inventory = { source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-25T06:00:03.693Z', scope: inventoryScope, reason: null };
+  const inventory = { source: 'DevControl resource inventory (periodic AWS discovery)', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: '2026-09-25T06:00:03.693Z', scope: inventoryScope, reason: null };
   return {
-    discovery: { state: 'available', source: 'DevControl resource discovery runs', asOf: '2026-09-25T06:00:03.693Z', scope: null, coverage: null, reason: null, data: { completedAt: '2026-09-25T06:00:03.693Z' } },
-    account: { state: 'available', source: 'DevControl connected AWS account record', asOf: null, scope: null, coverage: null, reason: null, data: { accountId: '815931739526', region: 'us-east-1' } },
+    discovery: { state: 'available', source: 'DevControl resource discovery runs', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: '2026-09-25T06:00:03.693Z', scope: null, coverage: null, reason: null, data: { completedAt: '2026-09-25T06:00:03.693Z' } },
+    account: { state: 'available', source: 'DevControl connected AWS account record', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data: { accountId: '815931739526', region: 'us-east-1' } },
     services: { state: 'available', ...inventory, coverage: null, data: ['ec2', 's3', 'sns', 'vpc'] },
     costs: {
       state: 'available',
@@ -210,6 +210,7 @@ describe('DORA metrics in the cost context', () => {
   const dora: ChatContext['dora'] = {
     state: 'available',
     source: 'DevControl deployment records',
+    provenance: null, period: null, completeness: null, derivedFrom: null,
     asOf: '2026-09-25T08:57:16.538Z',
     scope: { kind: 'organization', window: 'last 30 days' },
     coverage: 'deployments and incidents recorded in DevControl for this organization; deployments made outside DevControl are not included',

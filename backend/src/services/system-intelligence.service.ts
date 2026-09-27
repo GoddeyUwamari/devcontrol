@@ -6,6 +6,7 @@ import {
 import { CloudWatchService }
   from './cloudwatch.service'
 import awsCostService from './aws-cost.service'
+import type { SpendProvenance } from './ai-context-contract'
 import { RiskTrackingService }
   from './risk-tracking.service'
 import { CostRecommendationsRepository }
@@ -37,7 +38,7 @@ export interface ComponentScore {
   // getMonthlySpendWithFallback). Only populated on the cost component, so
   // callers that narrate monthlySpend (e.g. ai-summary.service.ts) can say so
   // truthfully instead of presenting an estimate as an observed fact.
-  costSource?: 'actual' | 'estimated'
+  costSource?: SpendProvenance
 }
 
 export interface SystemDriver {

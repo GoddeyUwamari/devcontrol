@@ -359,8 +359,9 @@ describe('Anomalies section', () => {
     const context = await contextFor(orgId);
 
     expect(context.anomalies).toEqual({
-      state: 'not_supported', source: 'DevControl anomaly detection', asOf: null, scope: null,
-      coverage: null, reason: "No anomaly detection is connected to the assistant's context.", data: null,
+      state: 'not_supported', source: 'DevControl anomaly detection', provenance: null, asOf: null, scope: null,
+      period: null, completeness: null, coverage: null, reason: "No anomaly detection is connected to the assistant's context.",
+      derivedFrom: null, data: null,
     });
     const formatted = format(context);
     expect(formatted).not.toMatch(/cost_spike|Detected Anomalies|resources with high spend/);

@@ -23,7 +23,7 @@ const NO_COMPARISON: ChatContext['costs']['comparison'] = {
 
 /** A section in a given state -- data only when available/partial, as the repository builds them. */
 function section<T>(state: ContextSection<T>['state'], data: T | null, extra: Partial<ContextSection<T>> = {}): ContextSection<T> {
-  return { state, source: 'test source', asOf: null, scope: null, coverage: null, reason: null, data, ...extra };
+  return { state, source: 'test source', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data, ...extra };
 }
 
 /** A section with no data (error / not_supported / unavailable). */
