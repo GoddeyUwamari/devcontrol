@@ -69,6 +69,9 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
 
+      - name: Generate backend version module
+        run: node backend/scripts/generate-version.js
+
       - name: Run backend tests
         run: npm test --workspace=backend
         env:

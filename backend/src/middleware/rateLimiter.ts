@@ -233,6 +233,30 @@ export const remediationExecuteRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for the manual weekly summary trigger
+ * Each call sends a real email to the organization's owner (and runs Cost
+ * Explorer and model calls), so it is limited per organization, not per IP.
+ * In-memory: per backend process.
+ */
+export const weeklySummaryTriggerRateLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000, // 24 hours
+  max: 2,
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  keyGenerator: (req: Request) => `weekly-summary:${req.user?.organizationId ?? 'unauthenticated'}`,
+
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({
+      success: false,
+      error: 'Weekly summary trigger limit reached. Maximum 2 manual sends per 24 hours per organization.',
+      retry_after: 86400,
+    });
+  },
+});
+
+/**
  * Rate limiter for SAML SSO initiation
  * Prevents abuse of the IdP redirect endpoint
  */
