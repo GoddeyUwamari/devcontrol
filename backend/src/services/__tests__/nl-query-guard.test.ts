@@ -8,8 +8,10 @@ import {
   COST_PERIOD_NOT_SUPPORTED,
   describeIntent,
   detectPeriod,
+  fullyRecognized,
   GENERIC_NOT_SUPPORTED,
   reconcileWithQuery,
+  statedCostBounds,
   validateIntent,
 } from '../nl-query-guard';
 import type { NLQueryIntent } from '../nl-query.service';
@@ -229,5 +231,69 @@ describe('fast-path paraphrases (the guard is not the boundary; see route tests)
   it('"what is my AWS spend this month" and "month to date spend" are not blocked', () => {
     expect(classifyUnsupportedQuestion('what is my AWS spend this month')).toBeNull();
     expect(classifyUnsupportedQuestion('month to date spend')).toBeNull();
+  });
+});
+
+describe('vocabulary gate (re-review B1, H-a, H-b)', () => {
+  it.each([
+    'what is my AWS spend this month', 'month to date spend', 'show running ec2 instances', 'unencrypted s3 buckets',
+    's3 buckets not encrypted', 's3 buckets without encryption', 'rds databases not backed up', 'rds databases without backups',
+    'rds databases with no backups', 'which rds databases are backed up', 'ec2 instances in us-east-1 over $1,000', 'ec2 over 1k',
+  ])('"%s" is fully recognized', q => {
+    expect(fullyRecognized(q)).toBe(true);
+  });
+
+  it.each([
+    'ec2 instances not running', 'buckets that are not public', 'ec2 not in us-east-1', 'rds databases not stopped',
+    'is my spend up', 'are costs up', 'is the aws bill up', 'no spend', 'ec2 without tags',
+    'what did we spend in May', 'AWS spend over the holidays', 'AWS spend for FY25', 'AWS spend on the 15th',
+    'AWS spend two months back', 'AWS spend earlier', 'AWS spend in the fall', 'AWS spend during Black Friday',
+    'AWS spend in H1', 'AWS spend this summer', 'show me the Acme organization ec2 instances',
+  ])('"%s" is NOT fully recognized', q => {
+    expect(fullyRecognized(q)).toBe(false);
+  });
+});
+
+describe('stated cost bounds (re-review H-c)', () => {
+  it.each([
+    ['ec2 over $1,000', { min: 1000 }],
+    ['ec2 over 1k', { min: 1000 }],
+    ['ec2 over 1.5k', { min: 1500 }],
+    ['ec2 under $50.50', { max: 50.5 }],
+    ['ec2 more than 25', { min: 25 }],
+    ['ec2 over $200 and under $2,500', { min: 200, max: 2500 }],
+    ['ec2 instances', {}],
+  ])('%s -> %j', (q, bounds) => {
+    expect(statedCostBounds(q)).toEqual(bounds);
+  });
+
+  it('a qualifier without a parseable amount is invalid', () => {
+    expect(statedCostBounds('ec2 over lots')).toBe('invalid');
+    expect(statedCostBounds('ec2 over a grand')).toBe('invalid');
+  });
+
+  const infra = (filters: Record<string, unknown>) => intent('infrastructure', filters);
+
+  it('reconcileWithQuery rejects a wrong, dropped, or invented threshold and keeps the stated one', () => {
+    expect(reconcileWithQuery('ec2 over $1,000', infra({ resourceType: 'ec2', costMin: 1000 })).target).toBe('infrastructure');
+    expect(reconcileWithQuery('ec2 over $1,000', infra({ resourceType: 'ec2', costMin: 1 })).target).toBe('unsupported');
+    expect(reconcileWithQuery('ec2 over $1,000', infra({ resourceType: 'ec2' })).target).toBe('unsupported');
+    expect(reconcileWithQuery('ec2 over 1k', infra({ resourceType: 'ec2', costMin: 1000 })).target).toBe('infrastructure');
+    expect(reconcileWithQuery('ec2 instances', infra({ resourceType: 'ec2', costMin: 500 })).target).toBe('unsupported');
+    expect(reconcileWithQuery('expensive ec2', infra({ resourceType: 'ec2', costMin: 100 })).target).toBe('infrastructure');
+  });
+});
+
+describe('date-range edge cases (re-review)', () => {
+  const dep = (q: string, range: string) =>
+    reconcileWithQuery(q, intent('deployments', { dateRange: range }, 'filter', { period: 'other' })).target;
+
+  it('a stated range is kept only when it is the question\'s only, un-negated time reference', () => {
+    expect(dep('deployments in the last 30 days', '30d')).toBe('deployments');
+    expect(dep('deployments in the last 30 days of May', '30d')).toBe('unsupported');
+    expect(dep('deployments not in the last 30 days', '30d')).toBe('unsupported');
+    expect(dep('deployments in the last 30 days since Monday', '30d')).toBe('unsupported');
+    expect(dep('deployments in the last 30 days of August', '30d')).toBe('unsupported');
+    expect(dep('deployments except the last 7 days', '7d')).toBe('unsupported');
   });
 });

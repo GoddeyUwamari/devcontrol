@@ -6,10 +6,13 @@
  * positively maps to a supported target, filters, and period. Everything
  * else is not_supported.
  *
- * The parser (Claude or the keyword fallback) is an untrusted interpreter of
- * untrusted user text. Its output is never authorization: the organization
- * always comes from the authenticated request, and an intent executes only
- * if validateIntent() accepts all of it --
+ * The parser (the model) is an untrusted interpreter of untrusted user
+ * text. Its output is never authorization: the organization always comes
+ * from the authenticated request. reconcileWithQuery() first checks the
+ * parser's claims against the question text itself -- the period, a stated
+ * date range, cost thresholds, and, for costs and inventory, that every word
+ * of the question is in the allowlist VOCABULARY. Then an intent executes
+ * only if validateIntent() accepts all of it --
  *   - target is one of the four executable targets (not "unsupported",
  *     missing, or anything else; looked up as own properties only),
  *   - the parser reported CONFIDENCE: high (an exact mapping),
@@ -23,6 +26,11 @@
  * classifyUnsupportedQuestion() is only a fast path: it catches common
  * phrasings of question types DevControl has no evidence to answer before
  * any parsing, so they get a specific message. It is not the boundary.
+ *
+ * Limit: these checks validate structure and wording, not meaning. A model
+ * that labels a question as a supported target with high confidence, using
+ * only allowlisted words, is executed; the answer is still deterministic and
+ * labeled with its real scope and source.
  */
 
 import type { NLQueryIntent } from './nl-query.service';
@@ -115,7 +123,89 @@ export function detectPeriod(query: string): NLPeriod {
   return 'none';
 }
 
+/**
+ * Every word Ask AI can map exactly. A cost or inventory question with any
+ * other word is not executed, whatever the parser says: this makes period
+ * and meaning safety independent of how complete detectPeriod() or the
+ * fast-path guard are (e.g. "May", "the holidays", "FY25", "earlier").
+ * Negations and "up" are deliberately absent; they are accepted only inside
+ * the exact phrases in NEGATION_PHRASES, so "not running" or "is my spend
+ * up" are never read as "running" or as a plain spend question.
+ */
+const VOCABULARY = new Set([
+  // phrasing
+  'show', 'list', 'find', 'get', 'view', 'display', 'give', 'me', 'my', 'our', 'all', 'the', 'a', 'an', 'of', 'in', 'on',
+  'with', 'and', 'or', 'for', 'which', 'what', 'whats', "what's", 'is', 'are', 'were', 'was', 'do', 'does', 'did', 'i', 'we',
+  'have', 'has', 'any', 'that', 'from', 'to', 'by', 'per', 'please', 'current', 'currently', 'total', 'how', 'much', 'many',
+  'aws', 'amazon', 'there', 'right', 'now', 'so', 'far', 'at',
+  // inventory
+  'resource', 'resources', 'instance', 'instances', 'ec2', 'rds', 'database', 'databases', 'db', 'dbs', 's3', 'bucket', 'buckets',
+  'lambda', 'lambdas', 'function', 'functions', 'vpc', 'vpcs', 'cloudfront', 'elb', 'elbs', 'load', 'balancer', 'balancers',
+  'infrastructure', 'region', 'regions',
+  'running', 'stopped', 'terminated', 'pending', 'failed', 'failing', 'active', 'inactive',
+  'virginia', 'ohio', 'california', 'oregon', 'ireland', 'singapore',
+  'encrypted', 'unencrypted', 'encryption', 'public', 'publicly', 'exposed', 'accessible', 'backup', 'backups',
+  // cost
+  'cost', 'costs', 'costing', 'spend', 'spending', 'spent', 'bill', 'billing', 'charges', 'expensive', 'cheap', 'over', 'under', 'more',
+  'than', 'above', 'below', 'monthly', 'month', 'date', 'mtd', 'this', 'estimated',
+  // time words (the period, not the vocabulary, decides whether they can be honored)
+  'last', 'past', 'previous', 'prior', 'next', 'ago', 'since', 'yesterday', 'today', 'week', 'weeks', 'quarter', 'year', 'day', 'days', 'months',
+  'january', 'february', 'march', 'april', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+  // deployments / services / alerts
+  'deploy', 'deploys', 'deployment', 'deployments', 'deployed', 'production', 'prod', 'staging', 'development', 'dev', 'environment',
+  'service', 'services', 'microservice', 'microservices', 'api', 'apis', 'template',
+  'alert', 'alerts', 'critical', 'warning', 'warnings', 'firing', 'acknowledged', 'resolved', 'severity',
+  // placeholders for NEGATION_PHRASES
+  'phrase_unencrypted', 'phrase_no_backups', 'phrase_backed_up',
+]);
+
+/** The only places a negation or "up" is understood; each becomes one known token. */
+const NEGATION_PHRASES: Array<[RegExp, string]> = [
+  [/\bnot encrypted\b/g, 'phrase_unencrypted'],
+  [/\bwithout encryption\b/g, 'phrase_unencrypted'],
+  [/\b(no|without) backups?\b/g, 'phrase_no_backups'],
+  [/\bnot backed up\b/g, 'phrase_no_backups'],
+  [/\bbacked up\b/g, 'phrase_backed_up'],
+];
+
+const REGION_TOKEN = /^[a-z]{2}(-gov)?-[a-z]+-\d$/;
+const NUMBER_TOKEN = /^\$?\d{1,3}(,\d{3})*(\.\d+)?k?$|^\$?\d+(\.\d+)?k?$/;
+
+/** True when every word in the question is in the allowlist vocabulary (negations only inside exact phrases). */
+export function fullyRecognized(query: string): boolean {
+  let q = query.toLowerCase();
+  for (const [pattern, token] of NEGATION_PHRASES) q = q.replace(pattern, ` ${token} `);
+  const tokens = q.replace(/[?!;:()"]/g, ' ').split(/\s+/).map(t => t.replace(/[.,]+$/, '')).filter(Boolean);
+  return tokens.length > 0 && tokens.every(t => VOCABULARY.has(t) || REGION_TOKEN.test(t) || NUMBER_TOKEN.test(t) || t === '$' || t === '-');
+}
+
+/** A dollar amount as written in a question: "$1,000", "1k", "1.5k", "250.50". null when unparseable. */
+function parseAmount(text: string): number | null {
+  const m = text.replace(/[$,]/g, '').match(/^(\d+(?:\.\d+)?)(k?)$/);
+  if (!m) return null;
+  return parseFloat(m[1]) * (m[2] === 'k' ? 1000 : 1);
+}
+
+/**
+ * The cost thresholds a question states, deterministically: the amount must
+ * directly follow its qualifier ("over $1,000", "under 1k"). 'invalid' when a
+ * qualifier is followed by something that isn't a parseable amount.
+ */
+export function statedCostBounds(query: string): { min?: number; max?: number } | 'invalid' {
+  const q = query.toLowerCase();
+  const bounds: { min?: number; max?: number } = {};
+  for (const [pattern, key] of [[/\b(?:over|more than|above)\s+(\S+)/g, 'min'], [/\b(?:under|less than|below)\s+(\S+)/g, 'max']] as const) {
+    for (const m of q.matchAll(pattern)) {
+      const amount = parseAmount(m[1].replace(/[?!;:()".]+$/, ''));
+      if (amount === null) return 'invalid';
+      bounds[key] = amount;
+    }
+  }
+  return bounds;
+}
+
 const PERIOD_RANK: Record<NLPeriod, number> = { none: 0, current_month: 1, other: 2 };
+const NEGATION = /\b(not|no|without|except|excluding|outside|before|after|besides)\b/;
 
 /**
  * Reconcile the parser's claims with the question text before validation,
@@ -135,13 +225,37 @@ export function reconcileWithQuery(query: string, intent: NLQueryIntent): NLQuer
     ? (PERIOD_RANK[detected] > PERIOD_RANK[claimed] ? detected : claimed)
     : undefined;
 
+  const unsupported = { ...intent, target: 'unsupported' as const, period };
+  const target = typeof intent.target === 'string' ? intent.target.toLowerCase() : '';
   const filters = intent.filters && typeof intent.filters === 'object' ? (intent.filters as Record<string, unknown>) : undefined;
+
   if (filters && filters.dateRange !== undefined && filters.dateRange !== null) {
-    const stated = query.toLowerCase().match(/\b(last|past)\s+(7|30|90)\s+days\b/);
-    if (!stated || String(filters.dateRange).toLowerCase() !== `${stated[2]}d`) {
-      return { ...intent, target: 'unsupported', period };
-    }
+    const q = query.toLowerCase();
+    const stated = q.match(/\b(last|past)\s+(7|30|90)\s+days\b/);
+    if (!stated || String(filters.dateRange).toLowerCase() !== `${stated[2]}d`) return unsupported;
+    // The stated range must be the question's only time reference, un-negated
+    // ("last 30 days of May", "not in the last 30 days" are not that range).
+    const rest = q.replace(stated[0], ' ');
+    if (detectPeriod(rest) !== 'none' || NEGATION.test(q) || !fullyRecognized(rest)) return unsupported;
   }
+
+  // Costs and inventory execute only for questions made entirely of words
+  // Ask AI maps exactly -- independent of what the parser claims.
+  if ((target === 'costs' || target === 'infrastructure') && !fullyRecognized(query)) return unsupported;
+
+  // A cost threshold must be the one the question states: the parser can
+  // neither invent, drop, nor misread it ("$1,000" is 1000, "1k" is 1000).
+  if (target === 'infrastructure') {
+    const bounds = statedCostBounds(query);
+    if (bounds === 'invalid') return unsupported;
+    const q = query.toLowerCase();
+    const min = filters?.costMin !== undefined && filters?.costMin !== null ? Number(filters.costMin) : undefined;
+    const max = filters?.costMax !== undefined && filters?.costMax !== null ? Number(filters.costMax) : undefined;
+    const expectedMin = bounds.min ?? (/\bexpensive\b/.test(q) ? 100 : undefined);
+    const expectedMax = bounds.max ?? (/\bcheap\b/.test(q) ? 50 : undefined);
+    if (min !== expectedMin || max !== expectedMax) return unsupported;
+  }
+
   return { ...intent, period };
 }
 

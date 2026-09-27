@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import { NLQueryController } from '../controllers/nl-query.controller';
-import { NLQueryService } from '../services/nl-query.service';
+import { NLQueryService, NLParserUnavailableError } from '../services/nl-query.service';
 import { authenticate as authenticateToken } from '../middleware/auth.middleware';
 import { requirePro } from '../middleware/subscription.middleware';
 import { pool } from '../config/database';
@@ -50,7 +50,8 @@ router.get('/analytics', controller.getAnalytics);
 // 1. Questions DevControl has no evidence for (causes, comparisons,
 //    forecasts, savings/waste, utilization) are answered with an explicit
 //    limitation before any parsing -- the parser is never asked to invent them.
-// 2. Otherwise the question is parsed (Claude or the keyword fallback). The
+// 2. Otherwise the question is parsed by the model (no model, or a failed
+//    call, means "Ask AI is temporarily unavailable" -- never a keyword guess). The
 //    parser's output is untrusted: its period and date range are reconciled
 //    with the question text, then validated against the allowlist in the
 //    executor (supported target, CONFIDENCE: high, an honorable period,
@@ -80,9 +81,22 @@ router.post('/execute', async (req: any, res) => {
       return res.json({ success: true, data: executor.notSupportedResult(unsupported.message) });
     }
 
-    // The parser's period and date range are checked against the question
-    // text itself before the allowlist validation in execute().
-    const intent = reconcileWithQuery(query, await service.parseQuery(query, organizationId));
+    let parsed;
+    try {
+      parsed = await service.parseQuery(query, organizationId);
+    } catch (error: unknown) {
+      // No model or a failed model call: Ask AI is unavailable. The question
+      // is never answered by keyword matching instead.
+      if (error instanceof NLParserUnavailableError) {
+        return res.json({ success: true, data: executor.unavailableResult() });
+      }
+      throw error;
+    }
+
+    // The parser's period, date range, cost thresholds, and (for costs and
+    // inventory) every word of the question are checked against the question
+    // text before the allowlist validation in execute().
+    const intent = reconcileWithQuery(query, parsed);
     const result = await executor.execute(intent, organizationId);
 
     if (result.data.outcome === 'error') {

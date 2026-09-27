@@ -6,7 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
 import { NLQueryAnalyticsService } from './nl-query-analytics.service';
-import { detectPeriod, type NLPeriod } from './nl-query-guard';
+import { detectPeriod, fullyRecognized, type NLPeriod } from './nl-query-guard';
 
 export interface NLQueryIntent {
   action: 'navigate' | 'filter' | 'search';
@@ -31,49 +31,22 @@ export interface NLQueryIntent {
   period?: NLPeriod;
 }
 
+/**
+ * The parser (the model) could not be used: no API key, or the call failed.
+ * The route answers "Ask AI is temporarily unavailable" -- the question is
+ * never answered by keyword matching instead. The message is for server
+ * logs only.
+ */
+export class NLParserUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NLParserUnavailableError';
+  }
+}
+
 /** What the parser returns for anything it can't map exactly -- never executed. */
 export function unsupportedIntent(period: NLPeriod = 'none'): NLQueryIntent {
   return { action: 'navigate', target: 'unsupported', filters: undefined, explanation: '', confidence: 'low', period };
-}
-
-/**
- * Every word the keyword fallback understands. A question with any other
- * content word is not mapped to a target (it becomes the unsupported
- * intent) -- the fallback answers only questions it fully recognizes, never
- * the "closest" match on a keyword found somewhere in the question.
- */
-const FALLBACK_VOCABULARY = new Set([
-  // phrasing
-  'show', 'list', 'find', 'get', 'view', 'display', 'give', 'me', 'my', 'our', 'all', 'the', 'a', 'an', 'of', 'in', 'on',
-  'with', 'without', 'and', 'or', 'for', 'which', 'what', 'whats', "what's", 'is', 'are', 'were', 'was', 'do', 'does', 'did', 'i', 'we',
-  'have', 'has', 'any', 'that', 'from', 'to', 'by', 'per', 'please', 'current', 'currently', 'total', 'how', 'much', 'many',
-  'aws', 'amazon', 'there', 'currently', 'right', 'now', 'so', 'far', 'at',
-  // inventory
-  'resource', 'resources', 'instance', 'instances', 'ec2', 'rds', 'database', 'databases', 'db', 'dbs', 's3', 'bucket', 'buckets',
-  'lambda', 'lambdas', 'function', 'functions', 'vpc', 'vpcs', 'cloudfront', 'elb', 'elbs', 'load', 'balancer', 'balancers',
-  'infrastructure', 'region', 'regions',
-  'running', 'stopped', 'terminated', 'pending', 'failed', 'failing', 'active', 'inactive',
-  'virginia', 'ohio', 'california', 'oregon', 'ireland', 'singapore',
-  'encrypted', 'unencrypted', 'not', 'encryption', 'public', 'publicly', 'exposed', 'accessible', 'backup', 'backups', 'backed', 'up', 'no',
-  // cost
-  'cost', 'costs', 'costing', 'spend', 'spending', 'spent', 'bill', 'billing', 'charges', 'expensive', 'cheap', 'over', 'under', 'more',
-  'than', 'above', 'below', 'monthly', 'month', 'date', 'mtd', 'this', 'estimated',
-  // time words (the period, not the vocabulary, decides whether they can be honored)
-  'last', 'past', 'previous', 'prior', 'next', 'ago', 'since', 'yesterday', 'today', 'week', 'weeks', 'quarter', 'year', 'day', 'days', 'months',
-  'january', 'february', 'march', 'april', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
-  // deployments / services / alerts
-  'deploy', 'deploys', 'deployment', 'deployments', 'deployed', 'production', 'prod', 'staging', 'development', 'dev', 'environment',
-  'service', 'services', 'microservice', 'microservices', 'api', 'apis', 'template',
-  'alert', 'alerts', 'critical', 'warning', 'warnings', 'firing', 'acknowledged', 'resolved', 'severity',
-]);
-
-const REGION_TOKEN = /^[a-z]{2}(-gov)?-[a-z]+-\d$/;
-const NUMBER_TOKEN = /^\$?\d+(\.\d+)?k?\/?(mo|month)?$/;
-
-/** True when every word in the question is one the fallback understands. */
-function fullyRecognized(query: string): boolean {
-  const tokens = query.toLowerCase().replace(/[?!,;:()"]/g, ' ').split(/\s+/).map(t => t.replace(/\.+$/, '')).filter(Boolean);
-  return tokens.length > 0 && tokens.every(t => FALLBACK_VOCABULARY.has(t) || REGION_TOKEN.test(t) || NUMBER_TOKEN.test(t) || t === '$' || t === '-');
 }
 
 interface CacheEntry {
@@ -201,43 +174,11 @@ export class NLQueryService {
       return cached;
     }
 
-    // Quick keyword detection - if it looks like a keyword, skip AI
-    if (this.isKeywordQuery(query)) {
-      const intent = this.fallbackParse(query);
-      this.saveToCache(query, organizationId, intent);
-
-      const responseTime = Date.now() - startTime;
-      this.analytics.logQuery({
-        organizationId,
-        query,
-        target: intent.target,
-        action: intent.action,
-        filterCount: intent.filters ? Object.keys(intent.filters).length : 0,
-        confidence: intent.confidence,
-        wasCached: false,
-        responseTime,
-      });
-
-      return intent;
-    }
-
+    // No model, no answer: the keyword fallback is retired as an answer
+    // source (PR #137 re-review B1/H-a/H-c -- it could invert negations and
+    // misread amounts). Single-word questions go through the model too.
     if (!this.anthropic) {
-      const intent = this.fallbackParse(query);
-      this.saveToCache(query, organizationId, intent);
-
-      const responseTime = Date.now() - startTime;
-      this.analytics.logQuery({
-        organizationId,
-        query,
-        target: intent.target,
-        action: intent.action,
-        filterCount: intent.filters ? Object.keys(intent.filters).length : 0,
-        confidence: intent.confidence,
-        wasCached: false,
-        responseTime,
-      });
-
-      return intent;
+      throw new NLParserUnavailableError('ANTHROPIC_API_KEY is not configured');
     }
 
     try {
@@ -269,23 +210,9 @@ export class NLQueryService {
 
       return intent;
     } catch (error: any) {
+      // A model failure is "Ask AI unavailable" -- never a keyword guess.
       console.error('[NL Query] Parse error:', error.message);
-      const intent = this.fallbackParse(query);
-      this.saveToCache(query, organizationId, intent);
-
-      const responseTime = Date.now() - startTime;
-      this.analytics.logQuery({
-        organizationId,
-        query,
-        target: intent.target,
-        action: intent.action,
-        filterCount: intent.filters ? Object.keys(intent.filters).length : 0,
-        confidence: intent.confidence,
-        wasCached: false,
-        responseTime,
-      });
-
-      return intent;
+      throw new NLParserUnavailableError('the model call failed');
     }
   }
 
@@ -598,6 +525,7 @@ Now parse: ${quoted}`;
     };
   }
 
+  /** Unused since the keyword fallback was retired (PR #137 re-review); kept with fallbackParse(). */
   private isKeywordQuery(query: string): boolean {
     // Single word, no spaces, likely a service name
     if (!query.includes(' ') && query.length < 30) {
@@ -611,12 +539,11 @@ Now parse: ${quoted}`;
   }
 
   /**
-   * Keyword fallback (no API key, single-word queries, or a model error).
-   * Answers only questions it fully recognizes: any unrecognized word, and
-   * any question that falls through to the old catch-all, becomes the
-   * unsupported intent. A recognized mapping is an exact one (CONFIDENCE:
-   * high), and the period is detected deterministically so validateIntent()
-   * can refuse a question about another period.
+   * RETIRED as an answer source -- unreachable from parseQuery() (PR #137
+   * re-review B1/H-a/H-c: keyword matching inverted negations such as "not
+   * running" and misread amounts such as "$1,000"). Kept, not deleted, only
+   * to keep that commit's diff small; do not call it to answer questions.
+   * With no model, Ask AI is unavailable instead.
    */
   private fallbackParse(query: string): NLQueryIntent {
     const period = detectPeriod(query);

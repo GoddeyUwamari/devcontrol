@@ -118,6 +118,25 @@ export class NLQueryExecutorService {
     };
   }
 
+  /** Ask AI itself couldn't run (no model, or the model call failed): unavailable, nothing queried. */
+  unavailableResult(): NLQueryResult {
+    const message = 'Ask AI is temporarily unavailable.';
+    return {
+      intent: { target: 'none', filters: {}, explanation: 'Ask AI is temporarily unavailable' },
+      data: {
+        type: 'none',
+        outcome: 'unavailable',
+        rows: [],
+        summary: message,
+        columns: [],
+        evidence: { state: 'unavailable', source: 'Ask AI', provenance: null, period: null, asOf: null, reason: message },
+      },
+      executedAt: new Date(),
+      rowCount: 0,
+      executionMs: 0,
+    };
+  }
+
   async execute(parsed: NLQueryIntent, organizationId: string): Promise<NLQueryResult> {
     const start = Date.now();
     const validation = validateIntent(parsed);
