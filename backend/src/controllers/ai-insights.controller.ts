@@ -27,6 +27,20 @@ const analyzeCostSchema = z.object({
   timeRange: z.string().min(1, 'Time range is required')
 });
 
+/**
+ * The caller's organization, taken only from the authenticated token — never
+ * from the body/query. Sends 401 and returns null when it's missing so every
+ * cache-touching handler fails closed.
+ */
+function requireAuthenticatedOrganizationId(req: Request, res: Response): string | null {
+  const organizationId = (req as any).user?.organizationId;
+  if (typeof organizationId !== 'string' || organizationId.trim() === '') {
+    res.status(401).json({ success: false, error: 'Unauthorized' });
+    return null;
+  }
+  return organizationId;
+}
+
 export class AIInsightsController {
   private service: AIInsightsService;
 
@@ -39,6 +53,9 @@ export class AIInsightsController {
    * Analyze cost changes and provide AI insights
    */
   analyzeCost = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = requireAuthenticatedOrganizationId(req, res);
+    if (!organizationId) return;
+
     try {
       console.log('[AI Insights Controller] Received cost analysis request');
 
@@ -52,13 +69,13 @@ export class AIInsightsController {
       let insights;
       if (validatedData.percentageIncrease > 5) {
         console.log('[AI Insights Controller] Analysis type: INCREASE');
-        insights = await this.service.analyzeCostIncrease(validatedData);
+        insights = await this.service.analyzeCostIncrease(organizationId, validatedData);
       } else if (validatedData.percentageIncrease < -5) {
         console.log('[AI Insights Controller] Analysis type: DECREASE');
-        insights = await this.service.analyzeCostDecrease(validatedData);
+        insights = await this.service.analyzeCostDecrease(organizationId, validatedData);
       } else {
         console.log('[AI Insights Controller] Analysis type: TREND');
-        insights = await this.service.analyzeCostTrend(validatedData);
+        insights = await this.service.analyzeCostTrend(organizationId, validatedData);
       }
 
       console.log(`[AI Insights Controller] Analysis complete - Confidence: ${insights.confidence}, Cached: ${insights.cached || false}`);
@@ -97,11 +114,14 @@ export class AIInsightsController {
 
   /**
    * GET /api/ai-insights/cache-stats
-   * Get cache statistics (for debugging)
+   * Get the caller's organization's cache statistics (for debugging)
    */
   getCacheStats = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = requireAuthenticatedOrganizationId(req, res);
+    if (!organizationId) return;
+
     try {
-      const stats = this.service.getCacheStats();
+      const stats = this.service.getCacheStats(organizationId);
 
       res.json({
         success: true,
@@ -123,12 +143,15 @@ export class AIInsightsController {
 
   /**
    * POST /api/ai-insights/clear-cache
-   * Clear the insights cache (admin only)
+   * Clear the caller's organization's insights cache only
    */
   clearCache = async (req: Request, res: Response): Promise<void> => {
+    const organizationId = requireAuthenticatedOrganizationId(req, res);
+    if (!organizationId) return;
+
     try {
       console.log('[AI Insights Controller] Cache clear requested');
-      this.service.clearCache();
+      this.service.clearCache(organizationId);
 
       res.json({
         success: true,

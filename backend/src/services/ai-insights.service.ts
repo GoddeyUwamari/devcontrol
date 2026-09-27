@@ -1,10 +1,11 @@
 /**
  * AI Insights Service
  * Analyzes cost changes using Claude AI and provides actionable insights
- * Includes 1-hour caching to minimize API costs
+ * Includes 1-hour, organization-scoped caching to minimize API costs
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { createHash } from 'crypto';
 import { Pool } from 'pg';
 
 export interface CostData {
@@ -36,10 +37,15 @@ export interface AIInsightResponse {
   cacheAge?: number; // in seconds
 }
 
+type CostAnalysisType = 'increase' | 'decrease' | 'trend';
+
 interface CacheEntry {
   data: AIInsightResponse;
   timestamp: number;
   cacheKey: string;
+  // Owning tenant. Stored alongside the key (which also digests it) so
+  // per-org stats/clear filter on an exact field, never on key parsing.
+  organizationId: string;
 }
 
 // Weekly Summary Types
@@ -124,11 +130,11 @@ export class AIInsightsService {
   /**
    * Analyze cost increase and provide AI-powered insights
    */
-  async analyzeCostIncrease(data: CostData): Promise<AIInsightResponse> {
-    const cacheKey = this.generateCacheKey('increase', data);
+  async analyzeCostIncrease(organizationId: string, data: CostData): Promise<AIInsightResponse> {
+    const cacheKey = this.generateCacheKey(organizationId, 'increase', data);
 
     // Check cache first
-    const cached = this.getFromCache(cacheKey);
+    const cached = this.getFromCache(organizationId, cacheKey);
     if (cached) {
       console.log(`[AI Insights] Cache hit for cost increase (age: ${cached.cacheAge}s)`);
       return cached.data;
@@ -157,7 +163,7 @@ export class AIInsightsService {
       const result = this.parseAIResponse(response);
 
       // Cache the result
-      this.setCache(cacheKey, result);
+      this.setCache(organizationId, cacheKey, result);
       console.log('[AI Insights] Cost increase analysis complete - cached for 1 hour');
 
       return result;
@@ -172,10 +178,10 @@ export class AIInsightsService {
   /**
    * Analyze cost decrease
    */
-  async analyzeCostDecrease(data: CostData): Promise<AIInsightResponse> {
-    const cacheKey = this.generateCacheKey('decrease', data);
+  async analyzeCostDecrease(organizationId: string, data: CostData): Promise<AIInsightResponse> {
+    const cacheKey = this.generateCacheKey(organizationId, 'decrease', data);
 
-    const cached = this.getFromCache(cacheKey);
+    const cached = this.getFromCache(organizationId, cacheKey);
     if (cached) {
       console.log(`[AI Insights] Cache hit for cost decrease (age: ${cached.cacheAge}s)`);
       return cached.data;
@@ -226,7 +232,7 @@ Be specific, technical, and actionable. Focus on AWS-specific optimizations.`;
       const response = this.extractTextContent(message.content);
       const result = this.parseAIResponse(response);
 
-      this.setCache(cacheKey, result);
+      this.setCache(organizationId, cacheKey, result);
       console.log('[AI Insights] Cost decrease analysis complete - cached for 1 hour');
 
       return result;
@@ -240,10 +246,10 @@ Be specific, technical, and actionable. Focus on AWS-specific optimizations.`;
   /**
    * General cost analysis (when no significant change)
    */
-  async analyzeCostTrend(data: CostData): Promise<AIInsightResponse> {
-    const cacheKey = this.generateCacheKey('trend', data);
+  async analyzeCostTrend(organizationId: string, data: CostData): Promise<AIInsightResponse> {
+    const cacheKey = this.generateCacheKey(organizationId, 'trend', data);
 
-    const cached = this.getFromCache(cacheKey);
+    const cached = this.getFromCache(organizationId, cacheKey);
     if (cached) {
       console.log(`[AI Insights] Cache hit for cost trend (age: ${cached.cacheAge}s)`);
       return cached.data;
@@ -289,7 +295,7 @@ Focus on AWS cost optimization opportunities.`;
       const response = this.extractTextContent(message.content);
       const result = this.parseAIResponse(response);
 
-      this.setCache(cacheKey, result);
+      this.setCache(organizationId, cacheKey, result);
       console.log('[AI Insights] Cost trend analysis complete - cached for 1 hour');
 
       return result;
@@ -550,20 +556,46 @@ Be specific, technical, and focus on AWS-specific optimizations. Keep each secti
   }
 
   /**
-   * Generate cache key from data
+   * Fail closed: every cache operation is tenant-scoped, so a missing
+   * organization id is a caller bug, never a cue to fall back to a shared
+   * or global cache.
    */
-  private generateCacheKey(type: string, data: CostData): string {
-    // Create a simple hash of the key data points
-    const key = `${type}_${data.currentCost.toFixed(2)}_${data.previousCost.toFixed(2)}_${data.percentageIncrease.toFixed(1)}`;
-    return key;
+  private requireOrganizationId(organizationId: string): string {
+    if (typeof organizationId !== 'string' || organizationId.trim() === '') {
+      throw new Error('[AI Insights] organizationId is required for cache access');
+    }
+    return organizationId;
+  }
+
+  /**
+   * Generate an organization-scoped cache key: a digest of the owning org,
+   * the analysis type, and every input value the prompt (and fallback)
+   * actually renders, at the precision it renders them. Two orgs with
+   * identical cost figures must never share an entry.
+   */
+  private generateCacheKey(organizationId: string, type: CostAnalysisType, data: CostData): string {
+    this.requireOrganizationId(organizationId);
+    const input = {
+      previousCost: data.previousCost.toFixed(2),
+      currentCost: data.currentCost.toFixed(2),
+      percentageIncrease: data.percentageIncrease.toFixed(1),
+      timeRange: data.timeRange,
+      newResources: (data.newResources ?? []).map(r => [r.type, r.name, r.cost.toFixed(2), r.region]),
+      topSpenders: (data.topSpenders ?? []).map(s => [s.service, s.cost.toFixed(2), s.change.toFixed(1)]),
+    };
+    const digest = createHash('sha256')
+      .update(JSON.stringify([organizationId, type, input]))
+      .digest('hex');
+    return `${type}:${digest}`;
   }
 
   /**
    * Get item from cache if not expired
    */
-  private getFromCache(key: string): { data: AIInsightResponse; cacheAge: number } | null {
+  private getFromCache(organizationId: string, key: string): { data: AIInsightResponse; cacheAge: number } | null {
+    this.requireOrganizationId(organizationId);
     const entry = this.cache.get(key);
-    if (!entry) return null;
+    if (!entry || entry.organizationId !== organizationId) return null;
 
     const age = Date.now() - entry.timestamp;
     if (age > this.CACHE_TTL) {
@@ -584,11 +616,13 @@ Be specific, technical, and focus on AWS-specific optimizations. Keep each secti
   /**
    * Set item in cache
    */
-  private setCache(key: string, data: AIInsightResponse): void {
+  private setCache(organizationId: string, key: string, data: AIInsightResponse): void {
+    this.requireOrganizationId(organizationId);
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
-      cacheKey: key
+      cacheKey: key,
+      organizationId
     });
   }
 
@@ -615,22 +649,30 @@ Be specific, technical, and focus on AWS-specific optimizations. Keep each secti
   }
 
   /**
-   * Get cache statistics
+   * Get cache statistics for one organization's entries only
    */
-  getCacheStats(): { size: number; keys: string[] } {
-    return {
-      size: this.cache.size,
-      keys: Array.from(this.cache.keys())
-    };
+  getCacheStats(organizationId: string): { size: number; keys: string[] } {
+    this.requireOrganizationId(organizationId);
+    const keys = Array.from(this.cache.values())
+      .filter(entry => entry.organizationId === organizationId)
+      .map(entry => entry.cacheKey);
+    return { size: keys.length, keys };
   }
 
   /**
-   * Clear all cache
+   * Clear one organization's cache entries; other orgs' entries are untouched
    */
-  clearCache(): void {
-    const size = this.cache.size;
-    this.cache.clear();
-    console.log(`[AI Insights] Cache cleared: ${size} entries removed`);
+  clearCache(organizationId: string): number {
+    this.requireOrganizationId(organizationId);
+    let removed = 0;
+    for (const [key, entry] of Array.from(this.cache.entries())) {
+      if (entry.organizationId === organizationId) {
+        this.cache.delete(key);
+        removed++;
+      }
+    }
+    console.log(`[AI Insights] Cache cleared for organization ${organizationId}: ${removed} entries removed`);
+    return removed;
   }
 
   /**
