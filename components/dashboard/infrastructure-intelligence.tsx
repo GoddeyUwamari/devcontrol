@@ -6,6 +6,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 interface InfrastructureIntelligenceProps {
   topRisk: string | null
+  /** From the AI summary: only 'none_identified' may render as "no risks". */
+  topRiskStatus: 'identified' | 'none_identified' | 'unavailable'
   aiSummaryLoading: boolean
   systemStatus: { label: string; color: string; background: string; dotColor: string }
   isLive: boolean
@@ -72,9 +74,12 @@ function IntelCard({ icon: Icon, iconColor, iconBackground, label, valueNode, de
  * shown twice). Those two figures are now shown exactly once, in the primary
  * KPI row.
  *
- * Top Risk's fallback ("No urgent risks identified") is a specific,
- * falsifiable claim, so it's only ever shown once aiSummaryData has actually
- * settled -- while aiSummaryLoading is true it renders a skeleton instead.
+ * Top Risk's "No urgent risks identified" is a specific, falsifiable claim,
+ * so it's shown only when the backend reports topRiskStatus
+ * 'none_identified' (security evidence evaluated, no active findings) --
+ * never merely because topRisk is null. Missing or failed evidence reads
+ * "Risk status unavailable". While aiSummaryLoading is true it renders a
+ * skeleton instead.
  *
  * No "View details" link on the section header: even after trimming to two
  * cards, there's still no single page that represents "Top Risk (AI-derived,
@@ -83,7 +88,11 @@ function IntelCard({ icon: Icon, iconColor, iconBackground, label, valueNode, de
  * "Monitoring Overview" reaches via /monitoring) below instead of the header pointing
  * everywhere at once.
  */
-export function InfrastructureIntelligence({ topRisk, aiSummaryLoading, systemStatus, isLive }: InfrastructureIntelligenceProps) {
+export function InfrastructureIntelligence({ topRisk, topRiskStatus, aiSummaryLoading, systemStatus, isLive }: InfrastructureIntelligenceProps) {
+  const noRiskHeadline = topRiskStatus === 'none_identified' ? 'No urgent risks identified' : 'Risk status unavailable'
+  const noRiskDescription = topRiskStatus === 'none_identified'
+    ? "No active findings in DevControl's evaluated security checks."
+    : 'DevControl could not evaluate current risks right now.'
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2.5 mb-4">
@@ -107,7 +116,7 @@ export function InfrastructureIntelligence({ topRisk, aiSummaryLoading, systemSt
             aiSummaryLoading ? (
               <Skeleton className="h-4 w-4/5" />
             ) : (
-              <div className="text-sm font-bold text-foreground leading-snug line-clamp-2">{topRisk ? splitRiskText(topRisk).headline : 'No urgent risks identified'}</div>
+              <div className="text-sm font-bold text-foreground leading-snug line-clamp-2">{topRisk ? splitRiskText(topRisk).headline : noRiskHeadline}</div>
             )
           }
           description={
@@ -117,7 +126,7 @@ export function InfrastructureIntelligence({ topRisk, aiSummaryLoading, systemSt
                 <Skeleton className="h-3 w-1/2" />
               </span>
             ) : (
-              topRisk ? (splitRiskText(topRisk).rest ?? '') : 'Nothing currently requires immediate attention.'
+              topRisk ? (splitRiskText(topRisk).rest ?? '') : noRiskDescription
             )
           }
         />

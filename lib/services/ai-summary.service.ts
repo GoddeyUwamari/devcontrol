@@ -5,19 +5,22 @@ export interface AISummaryResult {
   topRisk: string | null;
   cloudSpend: string | null;
   systemStatus: string | null;
+  /**
+   * identified      = topRisk states a finding present in the evidence
+   * none_identified = security evidence was evaluated and records no active findings
+   * unavailable     = risk could not be evaluated -- never shown as "no risks"
+   */
+  topRiskStatus: 'identified' | 'none_identified' | 'unavailable';
   generatedAt: string;
 }
 
 export const aiSummaryService = {
   /**
-   * @param costDeltaPct - already-computed month-over-month cost delta from the
-   * dashboard's own costTrend data (see computeMonthOverMonthCostChange in
-   * dashboard/page.tsx). Passed through so the backend can reference a real spend
-   * trend without making a second, separately-billed Cost Explorer call.
+   * Every fact, including the month-over-month change, is computed server-side
+   * for the authenticated org -- no client-computed figure is sent.
    */
-  getSummary: async (costDeltaPct?: number | null): Promise<AISummaryResult> => {
-    const params = costDeltaPct != null ? { costDeltaPct } : undefined;
-    const response = await api.get('/api/platform/ai-summary', { params });
+  getSummary: async (): Promise<AISummaryResult> => {
+    const response = await api.get('/api/platform/ai-summary');
     return handleApiResponse(response);
   },
 };

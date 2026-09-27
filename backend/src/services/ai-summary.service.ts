@@ -1,33 +1,46 @@
 /**
  * AI Summary Service
- * Composes real, already-computed dashboard data (System Intelligence score,
- * security posture, top finding, cost recommendations, active anomalies) into a
- * fact-only prompt and asks Claude (via AIInsightsService) to turn it into a short
- * plain-English summary. Never fabricates — any field that isn't available is
- * simply omitted from the facts list, and the whole summary is null if nothing
- * real is available to say.
+ * Composes real, already-computed dashboard evidence (System Intelligence
+ * score, security posture, top finding, cost recommendations, cloud spend and
+ * its month-over-month comparison) into a fact-only prompt and asks Claude (via
+ * AIInsightsService) to turn it into a short plain-English summary.
  *
- * Cached per-org, keyed on a JSON digest of every dynamic value that actually gets
- * baked into the generated prose — composite/component System Intelligence scores,
- * security posture score, account-level + resource compliance finding counts, the
- * top finding, active cost-recommendation count + savings, critical anomaly count,
- * monthly spend, and cost delta — with a 4h TTL ceiling as a defensive fallback. Each
- * of these moves on its own cadence (anomaly detection every 15m, alert sync every
- * 1m, the manual "Analyze Costs" action, a daily-refreshed risk score, cost data on
- * its own cadence) fully decoupled from the resource-discovery scan this used to be
- * keyed on alone — so nothing here can go stale for longer than a real fact change
- * takes to next be observed, up to the TTL ceiling.
+ * Every input is its own ContextSection (ai-context-contract.ts), so one
+ * failed source never blanks the others, and missing evidence is stated as
+ * missing -- never as zero, "none", or "no outages". Outage/anomaly status is
+ * not evaluated by DevControl, so systemStatus says so deterministically
+ * rather than letting the model infer "no critical outages" from absent data.
+ *
+ * Spend comes from the AI Chat cost path (AIChatContextRepository.
+ * gatherCostContext() via cost-context-sections.ts), so a real $0 or
+ * net-credit Cost Explorer month stays actual billed spend, an inventory
+ * estimate is labeled an estimate, and the month-over-month change is
+ * DevControl's own derived comparison -- never a client-supplied number.
+ *
+ * Cached per-org, keyed on evidenceFingerprint() of every section the prompt
+ * is built from (so any change in a fact, its state, or its freshness
+ * regenerates the prose), with a 4h TTL ceiling as a defensive fallback.
  */
 
-import { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { AIInsightsService, StructuredDashboardSummary } from './ai-insights.service';
-import systemIntelligenceService, { SystemIntelligenceResult } from './system-intelligence.service';
+import systemIntelligenceService from './system-intelligence.service';
 import { RiskTrackingService } from './risk-tracking.service';
-import { RiskScore } from '../utils/riskScoring';
-import { AccountSecurityFindingsRepository, AccountSecurityFinding } from '../repositories/account-security-findings.repository';
+import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 import { formatSavingsCurrency } from '../utils/formatSavingsCurrency';
+import {
+  collectSection,
+  EVIDENCE_CLAIM_RULES,
+  evidenceFingerprint,
+  hasEvidence,
+  notSupported,
+  requireOrganizationId,
+  type ContextSection,
+} from './ai-context-contract';
+import { lastIncludedDay } from './ai-chat.service';
+import { monthOverMonthSection, spendSection, type MonthOverMonthEvidence, type SpendEvidence } from './cost-context-sections';
 
 const EMPTY_FIELDS: StructuredDashboardSummary = {
   overallHealth: { score: null, context: null },
@@ -36,23 +49,49 @@ const EMPTY_FIELDS: StructuredDashboardSummary = {
   systemStatus: null,
 };
 
+/** Bump when the prompt or the facts it is built from change, so cached prose is not reused. */
+const PROMPT_VERSION = 'dashboard-summary-v2';
+
+/** Shown instead of any model-written status while DevControl evaluates no outage/anomaly source. */
+export const SYSTEM_STATUS_UNAVAILABLE = 'Outage status unavailable: DevControl does not currently evaluate outages or incidents.';
+
+/**
+ * identified      = topRisk states a finding present in the evidence
+ * none_identified = security evidence was evaluated and records no active findings
+ * unavailable     = risk could not be evaluated (missing, failed, or preliminary evidence)
+ */
+export type TopRiskStatus = 'identified' | 'none_identified' | 'unavailable';
+
 export interface AISummaryResult extends StructuredDashboardSummary {
+  topRiskStatus: TopRiskStatus;
   generatedAt: string;
 }
 
+type SummaryFields = StructuredDashboardSummary & { topRiskStatus: TopRiskStatus };
+
 interface CacheEntry {
-  fields: StructuredDashboardSummary;
-  factsKey: string;
+  fields: SummaryFields;
+  fingerprint: string;
   timestamp: number;
 }
 
-interface DashboardFacts {
-  intelligence: SystemIntelligenceResult;
-  riskScore: RiskScore;
-  activeFindings: AccountSecurityFinding[];
-  costStats: { active_recommendations: number; total_potential_savings: number };
-  criticalAnomalies: number;
-  costDeltaPct: number | null;
+export interface DashboardSections {
+  systemScore: ContextSection<{ score: number; cost: number | null; security: number | null; observability: number | null }>;
+  securityPosture: ContextSection<{ score: number; combinedFindings: number }>;
+  accountFindings: ContextSection<{ count: number; top: { title: string; severity: string } | null }>;
+  recommendations: ContextSection<{ active: number; totalEstimatedMonthlySavings: number }>;
+  spend: ContextSection<SpendEvidence>;
+  monthOverMonth: ContextSection<MonthOverMonthEvidence>;
+  monitoring: ContextSection<never>;
+}
+
+function money(amount: number): string {
+  const abs = Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return amount < 0 ? `-$${abs}` : `$${abs}`;
+}
+
+function missing(section: ContextSection<unknown>): string {
+  return (section.reason ?? 'no data').replace(/\.$/, '');
 }
 
 export class AISummaryService {
@@ -60,259 +99,248 @@ export class AISummaryService {
   private riskTrackingService = new RiskTrackingService(pool);
   private accountFindingsRepository = new AccountSecurityFindingsRepository();
   private costRecommendationsRepository = new CostRecommendationsRepository();
+  private contextRepository = new AIChatContextRepository(pool);
 
   private cache: Map<string, CacheEntry> = new Map();
   private static readonly CACHE_TTL_CEILING = 4 * 60 * 60 * 1000; // 4h
 
-  private async withOrgClient<T>(
-    organizationId: string,
-    fn: (client: PoolClient) => Promise<T>
-  ): Promise<T> {
-    const client = await pool.connect();
-    try {
-      await client.query(
-        "SELECT set_config('app.current_organization_id', $1, false)",
-        [organizationId]
-      );
-      return await fn(client);
-    } finally {
-      client.release();
-    }
-  }
-
-  private async getLatestScanCompletedAt(organizationId: string): Promise<string | null> {
-    return this.withOrgClient(organizationId, async (client) => {
-      const result = await client.query(
-        `SELECT completed_at FROM resource_discovery_jobs
-         WHERE organization_id = $1 AND status = 'completed'
-         ORDER BY completed_at DESC LIMIT 1`,
-        [organizationId]
-      );
-      const completedAt = result.rows[0]?.completed_at;
-      return completedAt ? new Date(completedAt).toISOString() : null;
-    });
-  }
-
-  private async getCriticalAnomalyCount(organizationId: string): Promise<number> {
-    return this.withOrgClient(organizationId, async (client) => {
-      const result = await client.query(
-        `SELECT COUNT(*) as count FROM anomaly_detections
-         WHERE organization_id = $1 AND severity = 'critical' AND status = 'active'`,
-        [organizationId]
-      );
-      return parseInt(result.rows[0]?.count ?? '0', 10);
-    });
-  }
-
   /**
-   * Get the cached summary if every dynamic value referenced in the prose is
-   * unchanged from the cached run — otherwise regenerate and cache. Values are
-   * rounded/normalized to the precision actually shown in the generated text (e.g.
-   * $ whole number, 1 decimal %) so this doesn't regenerate on noise smaller than
-   * what a user could ever see change.
+   * Get the cached summary if the evidence fingerprint is unchanged from the
+   * cached run -- otherwise regenerate and cache. organizationId must be the
+   * authenticated caller's; there is no fallback tenant.
    */
-  async getSummary(organizationId: string, costDeltaPct?: number | null): Promise<AISummaryResult> {
-    const scanCompletedAt = await this.getLatestScanCompletedAt(organizationId);
-    const normalizedCostDeltaPct = costDeltaPct ?? null;
+  async getSummary(organizationId: string): Promise<AISummaryResult> {
+    requireOrganizationId(organizationId, 'AI Summary', 'the dashboard summary');
 
-    let fields: StructuredDashboardSummary;
-    let factsKey: string;
-
+    let fields: SummaryFields;
     try {
-      const [intelligence, riskScore, activeFindings, costStats, criticalAnomalies] = await Promise.all([
-        systemIntelligenceService.getSystemIntelligence(organizationId),
-        this.riskTrackingService.getCurrentRiskScore(organizationId),
-        this.accountFindingsRepository.getActive(organizationId),
-        this.costRecommendationsRepository.getStats(organizationId),
-        this.getCriticalAnomalyCount(organizationId),
-      ]);
-
-      const facts: DashboardFacts = {
-        intelligence,
-        riskScore,
-        activeFindings,
-        costStats,
-        criticalAnomalies,
-        costDeltaPct: normalizedCostDeltaPct,
-      };
-
-      factsKey = JSON.stringify({ scanCompletedAt, ...this.extractKeyFacts(facts) });
+      const sections = await this.gatherSections(organizationId);
+      const fingerprint = evidenceFingerprint({ organizationId, sections: { ...sections }, promptVersion: PROMPT_VERSION });
 
       const cached = this.cache.get(organizationId);
-      if (
-        cached &&
-        cached.factsKey === factsKey &&
-        Date.now() - cached.timestamp < AISummaryService.CACHE_TTL_CEILING
-      ) {
+      if (cached && cached.fingerprint === fingerprint && Date.now() - cached.timestamp < AISummaryService.CACHE_TTL_CEILING) {
         return { ...cached.fields, generatedAt: new Date(cached.timestamp).toISOString() };
       }
 
-      fields = await this.buildSummary(facts);
+      fields = await this.buildSummary(sections);
+      const timestamp = Date.now();
+      this.cache.set(organizationId, { fields, fingerprint, timestamp });
+      return { ...fields, generatedAt: new Date(timestamp).toISOString() };
     } catch (error: any) {
+      // Not cached: the next request retries instead of serving a failure for 4h.
       console.error('[AI Summary] Error generating summary:', error.message);
-      fields = EMPTY_FIELDS;
-      factsKey = JSON.stringify({ scanCompletedAt, costDeltaPct: normalizedCostDeltaPct, error: true });
+      fields = { ...EMPTY_FIELDS, systemStatus: SYSTEM_STATUS_UNAVAILABLE, topRiskStatus: 'unavailable' };
+      return { ...fields, generatedAt: new Date().toISOString() };
+    }
+  }
+
+  async gatherSections(organizationId: string): Promise<DashboardSections> {
+    const costSections = this.contextRepository.gatherCostContext(organizationId)
+      .then(({ costs }) => Promise.all([spendSection(costs), monthOverMonthSection(costs)]))
+      .catch(async (error: unknown) => {
+        const failed = () => { throw error; };
+        return Promise.all([
+          collectSection<SpendEvidence>({ source: 'AWS Cost Explorer' }, failed),
+          collectSection<MonthOverMonthEvidence>({ source: 'DevControl month-over-month comparison' }, failed),
+        ]);
+      });
+
+    const [systemScore, securityPosture, accountFindings, recommendations, [spend, monthOverMonth]] = await Promise.all([
+      collectSection<DashboardSections['systemScore'] extends ContextSection<infer T> ? T : never>(
+        { source: 'DevControl System Intelligence score', provenance: 'derived', coverage: "composite of DevControl's cost, security, and observability component scores" },
+        async () => {
+          const intelligence = await systemIntelligenceService.getSystemIntelligence(organizationId);
+          if (intelligence.system_score == null) return { state: 'unavailable', reason: 'the System Intelligence score is not ready yet' };
+          return {
+            state: 'available',
+            data: {
+              score: intelligence.system_score,
+              cost: intelligence.components.cost.score ?? null,
+              security: intelligence.components.security.score ?? null,
+              observability: intelligence.components.observability.score ?? null,
+            },
+          };
+        }
+      ),
+      collectSection<DashboardSections['securityPosture'] extends ContextSection<infer T> ? T : never>(
+        { source: 'DevControl security posture score', provenance: 'derived' },
+        async () => {
+          const risk = await this.riskTrackingService.getCurrentRiskScore(organizationId);
+          if (risk.isPreliminary) return { state: 'unavailable', reason: 'the security posture score is still preliminary' };
+          const c = risk.complianceIssueCounts;
+          return { state: 'available', data: { score: risk.score, combinedFindings: c.critical + c.high + c.medium + c.low } };
+        }
+      ),
+      collectSection<DashboardSections['accountFindings'] extends ContextSection<infer T> ? T : never>(
+        { source: 'DevControl account-level security findings (security groups, IAM)', provenance: 'actual' },
+        async () => {
+          // getActive() sorts by severity, so [0] is the most severe active finding.
+          const active = await this.accountFindingsRepository.getActive(organizationId);
+          const top = active[0] ? { title: active[0].title, severity: active[0].severity } : null;
+          return { state: 'available', data: { count: active.length, top } };
+        }
+      ),
+      collectSection<DashboardSections['recommendations'] extends ContextSection<infer T> ? T : never>(
+        { source: 'DevControl cost recommendations', provenance: 'estimated' },
+        async () => {
+          const stats = await this.costRecommendationsRepository.getStats(organizationId);
+          return { state: 'available', data: { active: stats.active_recommendations, totalEstimatedMonthlySavings: stats.total_potential_savings } };
+        }
+      ),
+      costSections,
+    ]);
+
+    const monitoring = notSupported<never>(
+      { source: 'DevControl outage and anomaly detection' },
+      'DevControl does not currently evaluate outages, incidents, or anomalies'
+    );
+
+    return { systemScore, securityPosture, accountFindings, recommendations, spend, monthOverMonth, monitoring };
+  }
+
+  /** The fact lines the prompt is built from -- every missing source stated as missing. */
+  buildFactLines(s: DashboardSections): string[] {
+    const facts: string[] = [];
+
+    if (hasEvidence(s.systemScore)) {
+      const d = s.systemScore.data;
+      facts.push(`Composite System Intelligence score: ${d.score}/100 (Cost ${d.cost}, Security ${d.security}, Observability ${d.observability}).`);
     }
 
-    const timestamp = Date.now();
-    this.cache.set(organizationId, { fields, factsKey, timestamp });
-    return { ...fields, generatedAt: new Date(timestamp).toISOString() };
+    if (hasEvidence(s.securityPosture) && hasEvidence(s.accountFindings)) {
+      // The posture score's counts combine account-level findings (security
+      // groups, IAM -- account_security_findings) with per-resource compliance
+      // issues (see RiskTrackingService.combineSeverityCounts(), a plain
+      // per-field sum), so the resource count is the exact difference.
+      // Described as generic infrastructure checks, not framework checks --
+      // most carry no framework label, so naming one would overstate them.
+      const accountLevelCount = s.accountFindings.data.count;
+      const resourceComplianceCount = s.securityPosture.data.combinedFindings - accountLevelCount;
+      facts.push(
+        `Security posture score: ${s.securityPosture.data.score}/100 — ${accountLevelCount} account-level ` +
+        `finding${accountLevelCount !== 1 ? 's' : ''} (security groups, IAM) and ` +
+        `${resourceComplianceCount} resource compliance issue${resourceComplianceCount !== 1 ? 's' : ''} ` +
+        `(encryption, backups, tagging, and other infrastructure checks) currently active.`
+      );
+    } else {
+      const reason = !hasEvidence(s.securityPosture) ? missing(s.securityPosture) : missing(s.accountFindings);
+      facts.push(`Security findings: not available (${reason}). Do not state or imply that there are no security findings or risks.`);
+    }
+
+    if (hasEvidence(s.accountFindings) && s.accountFindings.data.top) {
+      facts.push(`Top active finding: "${s.accountFindings.data.top.title}" (severity: ${s.accountFindings.data.top.severity}).`);
+    }
+
+    if (hasEvidence(s.recommendations)) {
+      const { active, totalEstimatedMonthlySavings } = s.recommendations.data;
+      if (active > 0) {
+        facts.push(
+          `${active} active cost optimization${active !== 1 ? 's have' : ' has'} estimated potential savings of approximately ` +
+          `${formatSavingsCurrency(totalEstimatedMonthlySavings)}/month (a DevControl estimate, not realized savings).`
+        );
+      }
+    } else {
+      facts.push(`Cost recommendations: not available (${missing(s.recommendations)}).`);
+    }
+
+    facts.push(
+      `Outage and incident status: not available — ${missing(s.monitoring)}. ` +
+      'Do not state or imply that there are no outages, incidents, or anomalies.'
+    );
+
+    if (hasEvidence(s.spend)) {
+      const d = s.spend.data;
+      if (d.basis === 'billed_month_to_date') {
+        const period = s.spend.period?.kind === 'range'
+          ? ` (${s.spend.period.start} through ${lastIncludedDay(s.spend.period.endExclusive)})`
+          : '';
+        const credit = d.amount < 0 ? ' (net negative: credits and refunds exceed charges)' : '';
+        const inProgress = d.lastDayInProgress ? '; the current day is still being billed' : '';
+        facts.push(`AWS Cost Explorer month-to-date billed spend${period} is ${money(d.amount)}${credit}${inProgress}.`);
+      } else {
+        const partial = s.spend.state === 'partial' && s.spend.reason ? `; ${s.spend.reason}` : '';
+        facts.push(
+          `Estimated current monthly cloud spend is approximately ${money(d.amount)} ` +
+          `(based on discovered resource pricing, not live billing data${partial}).`
+        );
+      }
+    } else {
+      facts.push(`Cloud spend: not available (${missing(s.spend)}). Do not describe spend as $0 or unchanged.`);
+    }
+
+    if (hasEvidence(s.monthOverMonth)) {
+      const d = s.monthOverMonth.data;
+      const pct = d.changePercent !== null
+        ? `${d.changePercent > 0 ? 'up' : d.changePercent < 0 ? 'down' : 'unchanged at'} ${Math.abs(d.changePercent).toFixed(1)}%`
+        : 'a percentage change is undefined because the previous window totals $0.00';
+      const today = d.currentWindowIncludesToday ? '; the current day is still being billed' : '';
+      const partial = s.monthOverMonth.state === 'partial' ? '; some days have no daily data' : '';
+      facts.push(
+        `Month-to-date spend vs the same days last month: ${pct} (${money(d.currentWindowTotal)} vs ${money(d.previousWindowTotal)}, ` +
+        `daily charges with credits excluded${today}${partial}).`
+      );
+    } else if (hasEvidence(s.spend)) {
+      facts.push(`Month-over-month change: not available (${missing(s.monthOverMonth)}). Do not describe spend as up, down, flat, or unchanged.`);
+    }
+
+    return facts;
   }
 
   /**
-   * Pull out exactly the values `buildSummary()` below turns into prose, rounded to
-   * the precision actually shown, as a plain object suitable for JSON-digesting into
-   * the cache key.
+   * Top Risk is only ever a finding present in the evidence. "none_identified"
+   * requires both security sources to be evaluated and empty -- anything
+   * missing, failed, or preliminary is "unavailable", never "no risks".
    */
-  private extractKeyFacts(facts: DashboardFacts) {
-    const { intelligence, riskScore, activeFindings, costStats, criticalAnomalies, costDeltaPct } = facts;
-    const topFinding = activeFindings[0] ?? null;
+  private topRiskFor(s: DashboardSections, modelTopRisk: string | null): { topRisk: string | null; topRiskStatus: TopRiskStatus } {
+    const accountCount = hasEvidence(s.accountFindings) ? s.accountFindings.data.count : null;
+    const combined = hasEvidence(s.securityPosture) ? s.securityPosture.data.combinedFindings : null;
 
-    let accountLevelCount: number | null = null;
-    let resourceComplianceCount: number | null = null;
-    if (!riskScore.isPreliminary) {
-      const c = riskScore.complianceIssueCounts;
-      const totalCombined = c.critical + c.high + c.medium + c.low;
-      accountLevelCount = activeFindings.length;
-      resourceComplianceCount = totalCombined - accountLevelCount;
+    if ((accountCount ?? 0) > 0 || (combined ?? 0) > 0) {
+      const top = hasEvidence(s.accountFindings) ? s.accountFindings.data.top : null;
+      const deterministic = top
+        ? `${top.title} (${top.severity} severity)`
+        : `${combined} resource compliance issue${combined !== 1 ? 's' : ''} currently active`;
+      return { topRisk: modelTopRisk ?? deterministic, topRiskStatus: 'identified' };
     }
 
-    return {
-      systemScore: intelligence.system_score,
-      costScore: intelligence.components.cost.score,
-      securityScore: intelligence.components.security.score,
-      observabilityScore: intelligence.components.observability.score,
-      monthlySpendRounded: intelligence.components.cost.monthlySpend != null
-        ? Math.round(intelligence.components.cost.monthlySpend)
-        : null,
-      // Included so a source flip (e.g. AWS connects mid-cache-window and the
-      // spend figure switches from estimated to actual) invalidates the cached
-      // prose even if the rounded dollar amount happens to stay the same.
-      costSource: intelligence.components.cost.costSource ?? null,
-      costDeltaPct,
-      riskScore: riskScore.isPreliminary ? null : riskScore.score,
-      accountLevelCount,
-      resourceComplianceCount,
-      topFindingKey: topFinding ? `${topFinding.title}|${topFinding.severity}` : null,
-      activeRecommendations: costStats.active_recommendations,
-      // formatSavingsCurrency(), not Math.round(): this cache key must change
-      // whenever the prose buildSummary() below actually generates would change,
-      // and that prose now shows sub-dollar totals at 2dp instead of rounding
-      // them all to the same "$0" bucket.
-      totalPotentialSavingsRounded: formatSavingsCurrency(costStats.total_potential_savings),
-      criticalAnomalies,
-    };
+    const evaluatedAndEmpty =
+      s.accountFindings.state === 'available' && accountCount === 0 &&
+      s.securityPosture.state === 'available' && combined === 0;
+    return { topRisk: null, topRiskStatus: evaluatedAndEmpty ? 'none_identified' : 'unavailable' };
   }
 
-  private async buildSummary(facts: DashboardFacts): Promise<StructuredDashboardSummary> {
-    try {
-      const { intelligence, riskScore, activeFindings, costStats, criticalAnomalies, costDeltaPct } = facts;
+  private async buildSummary(sections: DashboardSections): Promise<SummaryFields> {
+    const facts = this.buildFactLines(sections);
 
-      // Reuse the monthly spend system-intelligence already fetched (live Cost
-      // Explorer, falling back to the DB estimate) instead of independently
-      // re-calling Cost Explorer for the same org.
-      const monthlySpend = intelligence.components.cost.monthlySpend;
-      const costSource = intelligence.components.cost.costSource;
+    const prompt =
+      `You are populating a scannable, 4-part executive summary for a cloud infrastructure ` +
+      `dashboard: Overall Health, Top Risk, Cloud Spend, and System Status.\n\n` +
+      `Use ONLY the facts below. Do not invent, estimate, or assume anything not explicitly ` +
+      `stated — reproduce any scores or dollar amounts exactly as given, including any ` +
+      `"estimated"/"approximately" qualifier on a figure — never drop it or state an ` +
+      `estimated figure as if it were confirmed. A fact marked "not available" is missing ` +
+      `data: never turn it into zero, none, no findings, no outages, or unchanged. Do not add ` +
+      `generic advice or filler. Each field should be a short, plain-English clause or sentence, ` +
+      `not a list. If a fact needed for a field is not present below, leave that field null ` +
+      `rather than guessing.\n\n` +
+      `Evidence rules:\n${EVIDENCE_CLAIM_RULES.split('\n').map(rule => `- ${rule}`).join('\n')}\n\n` +
+      `Fields to populate:\n` +
+      `- overallHealth: the composite System Intelligence score (if present) plus a brief ` +
+      `clause of context on what's driving it.\n` +
+      `- topRisk: the single most urgent security finding present below, one short sentence; null if none is present.\n` +
+      `- cloudSpend: current spend, trend, and optimization potential as stated below, one short sentence.\n` +
+      `- systemStatus: the outage/incident state exactly as stated below, one short clause.\n\n` +
+      `Facts:\n${facts.map((f) => `- ${f}`).join('\n')}`;
 
-      // Highest-severity active finding — AccountSecurityFindingsRepository.getActive()
-      // (unfiltered, no limit) already sorts the full result set by severity in JS, so
-      // [0] here is genuinely the most severe finding, not just the most recent one.
-      const topFinding = activeFindings[0] ?? null;
+    const result = await this.aiInsightsService.generateStructuredDashboardSummary(prompt);
+    const fields = result ?? EMPTY_FIELDS;
+    const risk = this.topRiskFor(sections, fields.topRisk);
 
-      const factLines: string[] = [];
-
-      if (intelligence.system_score != null) {
-        factLines.push(
-          `Composite System Intelligence score: ${intelligence.system_score}/100 ` +
-          `(Cost ${intelligence.components.cost.score}, Security ${intelligence.components.security.score}, ` +
-          `Observability ${intelligence.components.observability.score}).`
-        );
-      }
-
-      if (!riskScore.isPreliminary) {
-        // riskScore.complianceIssueCounts is account-level findings (security groups,
-        // IAM — the account_security_findings table) combined with per-resource
-        // compliance issues (encryption/backup/tagging/access-logging checks stored on
-        // aws_resources) — see RiskTrackingService.combineSeverityCounts(). Reporting
-        // only the combined total as "N active findings" reads as one homogeneous
-        // metric when it's actually two different things from two different scanners;
-        // report them separately instead. activeFindings.length is the real
-        // account-level count; the resource-level count is recovered by subtracting
-        // it from the combined total (combineSeverityCounts is a plain per-field sum,
-        // so this is exact, not an estimate). Described as generic infrastructure
-        // checks, not "SOC2/HIPAA checks" -- most of these findings carry no framework
-        // label at all, and even the HIPAA-labeled subset is tag-inferred, not a real
-        // HIPAA evaluation; naming SOC2/HIPAA here would overstate what was checked.
-        const c = riskScore.complianceIssueCounts;
-        const totalCombined = c.critical + c.high + c.medium + c.low;
-        const accountLevelCount = activeFindings.length;
-        const resourceComplianceCount = totalCombined - accountLevelCount;
-        factLines.push(
-          `Security posture score: ${riskScore.score}/100 — ${accountLevelCount} account-level ` +
-          `finding${accountLevelCount !== 1 ? 's' : ''} (security groups, IAM) and ` +
-          `${resourceComplianceCount} resource compliance issue${resourceComplianceCount !== 1 ? 's' : ''} ` +
-          `(encryption, backups, tagging, and other infrastructure checks) currently active.`
-        );
-      }
-
-      if (topFinding) {
-        factLines.push(`Top active finding: "${topFinding.title}" (severity: ${topFinding.severity}).`);
-      }
-
-      if (costStats.active_recommendations > 0) {
-        factLines.push(
-          `${costStats.active_recommendations} active cost optimization` +
-          `${costStats.active_recommendations !== 1 ? 's have' : ' has'} estimated potential savings of approximately ` +
-          `${formatSavingsCurrency(costStats.total_potential_savings)}/month.`
-        );
-      }
-
-      factLines.push(
-        criticalAnomalies > 0
-          ? `${criticalAnomalies} critical outage${criticalAnomalies !== 1 ? 's are' : ' is'} currently active.`
-          : 'No critical outages are currently active.'
-      );
-
-      if (monthlySpend != null && monthlySpend > 0) {
-        // Estimated (DB cost-estimate fallback, no live billing data) must read
-        // differently from actual (live Cost Explorer) -- otherwise this line
-        // states an estimate as if it were an observed fact. See ComponentScore.
-        // costSource / AWSCostService.getMonthlySpendWithFallback.
-        const spendClause = costSource === 'estimated'
-          ? `Estimated current monthly cloud spend is approximately $${Math.round(monthlySpend).toLocaleString()} ` +
-            `(based on discovered resource pricing, not live billing data)`
-          : `Current monthly cloud spend is $${Math.round(monthlySpend).toLocaleString()}`;
-        factLines.push(
-          costDeltaPct != null
-            ? `${spendClause}, ${costDeltaPct > 0 ? 'up' : costDeltaPct < 0 ? 'down' : 'unchanged'} ${Math.abs(costDeltaPct)}% vs last month.`
-            : `${spendClause}.`
-        );
-      }
-
-      if (factLines.length === 0) return EMPTY_FIELDS;
-
-      const prompt =
-        `You are populating a scannable, 4-part executive summary for a cloud infrastructure ` +
-        `dashboard: Overall Health, Top Risk, Cloud Spend, and System Status.\n\n` +
-        `Use ONLY the facts below. Do not invent, estimate, or assume anything not explicitly ` +
-        `stated — reproduce any scores or dollar amounts exactly as given, including any ` +
-        `"estimated"/"approximately" qualifier on a figure — never drop it or state an ` +
-        `estimated figure as if it were confirmed. Do not add generic advice or filler. Each ` +
-        `field should be a short, plain-English clause or sentence, not a list. If a fact needed ` +
-        `for a field is not present below, leave that field null rather than guessing.\n\n` +
-        `Fields to populate:\n` +
-        `- overallHealth: the composite System Intelligence score (if present) plus a brief ` +
-        `clause of context on what's driving it.\n` +
-        `- topRisk: the single most urgent finding, one short sentence.\n` +
-        `- cloudSpend: current spend, trend, and optimization potential, one short sentence.\n` +
-        `- systemStatus: the outage/incident state, one short clause.\n\n` +
-        `Facts:\n${factLines.map((f) => `- ${f}`).join('\n')}`;
-
-      const result = await this.aiInsightsService.generateStructuredDashboardSummary(prompt);
-      return result ?? EMPTY_FIELDS;
-    } catch (error: any) {
-      console.error('[AI Summary] Error generating summary:', error.message);
-      return EMPTY_FIELDS;
-    }
+    return {
+      ...fields,
+      ...risk,
+      // No outage source is evaluated: never let generated text claim a status.
+      systemStatus: hasEvidence(sections.monitoring) ? fields.systemStatus : SYSTEM_STATUS_UNAVAILABLE,
+    };
   }
 }

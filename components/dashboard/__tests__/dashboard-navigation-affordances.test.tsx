@@ -99,6 +99,7 @@ describe('System Status arrow', () => {
     render(
       <InfrastructureIntelligence
         topRisk={null}
+        topRiskStatus="unavailable"
         aiSummaryLoading={false}
         systemStatus={{ label: 'All systems operational', color: 'green', background: 'white', dotColor: 'green' }}
         isLive
