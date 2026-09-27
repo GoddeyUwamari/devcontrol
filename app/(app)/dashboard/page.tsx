@@ -334,8 +334,8 @@ export default function DashboardPage() {
     : 'var(--text-warning)'
 
   // Real-data-only, like every other computed-metric feature on this dashboard — no
-  // demo-mode fabrication. Reuses the already-computed cost delta above so the backend
-  // doesn't need a second, separately-billed Cost Explorer call to reference spend trend.
+  // demo-mode fabrication. The backend gathers its own cost evidence through the shared
+  // AI Chat cost-context path (per-org cached Cost Explorer results); nothing is sent from here.
   const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, !isDemoActive && hasBillingData)
 
   // Canonical System Intelligence score for the Infrastructure Health KPI --

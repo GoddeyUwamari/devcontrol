@@ -290,17 +290,18 @@ export class AISummaryService {
    * Top Risk is only ever a finding present in the evidence. "none_identified"
    * requires both security sources to be evaluated and empty -- anything
    * missing, failed, or preliminary is "unavailable", never "no risks".
+   * Always deterministic: model-written text never reaches this field.
    */
-  private topRiskFor(s: DashboardSections, modelTopRisk: string | null): { topRisk: string | null; topRiskStatus: TopRiskStatus } {
+  private topRiskFor(s: DashboardSections): { topRisk: string | null; topRiskStatus: TopRiskStatus } {
     const accountCount = hasEvidence(s.accountFindings) ? s.accountFindings.data.count : null;
     const combined = hasEvidence(s.securityPosture) ? s.securityPosture.data.combinedFindings : null;
 
     if ((accountCount ?? 0) > 0 || (combined ?? 0) > 0) {
       const top = hasEvidence(s.accountFindings) ? s.accountFindings.data.top : null;
-      const deterministic = top
+      const topRisk = top
         ? `${top.title} (${top.severity} severity)`
         : `${combined} resource compliance issue${combined !== 1 ? 's' : ''} currently active`;
-      return { topRisk: modelTopRisk ?? deterministic, topRiskStatus: 'identified' };
+      return { topRisk, topRiskStatus: 'identified' };
     }
 
     const evaluatedAndEmpty =
@@ -334,7 +335,7 @@ export class AISummaryService {
 
     const result = await this.aiInsightsService.generateStructuredDashboardSummary(prompt);
     const fields = result ?? EMPTY_FIELDS;
-    const risk = this.topRiskFor(sections, fields.topRisk);
+    const risk = this.topRiskFor(sections);
 
     return {
       ...fields,

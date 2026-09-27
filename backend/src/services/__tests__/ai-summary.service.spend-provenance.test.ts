@@ -179,6 +179,7 @@ describe('Dashboard AI summary -- monitoring, security, recommendations', () => 
     expect(prompt).toMatch(/Security findings: not available \(DevControl account-level security findings \(security groups, IAM\) could not be retrieved\)\. Do not state or imply that there are no security findings or risks\./);
     expect(prompt).not.toMatch(/relation/);
     expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'unavailable' });
+    expect(JSON.stringify(result)).not.toContain('No risks at all');
   });
 
   it('a preliminary risk score is unavailable, not "no risks"', async () => {
@@ -191,14 +192,22 @@ describe('Dashboard AI summary -- monitoring, security, recommendations', () => 
     expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'none_identified' });
   });
 
-  it('an identified risk keeps the model sentence, or falls back to the finding itself when the model is unavailable', async () => {
+  it('an identified risk is always the finding itself -- model text can never replace it', async () => {
+    // The model returns topRisk "No risks at all" alongside a critical finding.
     const identified = await run({ findings: [{ title: 'SSH open to the internet', severity: 'critical' }], combined: 1 });
     expect(identified.prompt).toContain('Top active finding: "SSH open to the internet" (severity: critical).');
-    expect(identified.result).toMatchObject({ topRisk: 'No risks at all', topRiskStatus: 'identified' });
+    expect(identified.result).toMatchObject({ topRisk: 'SSH open to the internet (critical severity)', topRiskStatus: 'identified' });
+    expect(JSON.stringify(identified.result)).not.toContain('No risks at all');
 
     jest.restoreAllMocks();
     const noModel = await run({ findings: [{ title: 'SSH open to the internet', severity: 'critical' }], combined: 1, model: null });
     expect(noModel.result).toMatchObject({ topRisk: 'SSH open to the internet (critical severity)', topRiskStatus: 'identified', systemStatus: SYSTEM_STATUS_UNAVAILABLE });
+  });
+
+  it('with no findings, a model-invented risk is never shown', async () => {
+    const { result } = await run({ findings: [], combined: 0, model: { ...MODEL_FIELDS, topRisk: 'SSH exposure detected' } });
+    expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'none_identified' });
+    expect(JSON.stringify(result)).not.toContain('SSH exposure detected');
   });
 
   it('failed recommendation evidence is stated as not available, never as zero opportunities', async () => {
