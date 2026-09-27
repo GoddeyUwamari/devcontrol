@@ -30,7 +30,7 @@ import {
   type WeeklySecurityEvidence,
 } from '../../repositories/weekly-summary.repository';
 import { buildRecommendationPrompt, checkRecommendationText, composeWeeklySummary } from '../weekly-summary-content';
-import { WeeklyAISummaryJob } from '../../jobs/weekly-ai-summary.job';
+import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../../jobs/weekly-ai-summary.job';
 import { AIInsightsService } from '../ai-insights.service';
 
 // AIInsightsService starts a cache-cleanup setInterval in its constructor; not under test here.
@@ -155,7 +155,12 @@ const UNSUPPORTED = {
 describe('Weekly Summary email wording', () => {
   it('A/G/C: actual spend is labeled with its real 7-day period and gross-before-credits basis, never as monthly spend', async () => {
     const out = render(await evidence());
-    expect(out).toContain('AWS Cost Explorer gross charges for the last 7 complete days (Sep 21, 2026 – Sep 27, 2026, UTC): $770.00, before credits and refunds.');
+    expect(out).toContain(
+      'AWS Cost Explorer gross charges for the last 7 days (Sep 21, 2026 – Sep 27, 2026, UTC), per Cost Explorer data as of Sep 28, 2026, 08:55 UTC: ' +
+      '$770.00, before credits and refunds. Cost Explorer figures for recent days may still be updating.'
+    );
+    // H2: never implies finalized figures.
+    expect(out).not.toMatch(/complete days/i);
     expect(out).toContain('up 10.0% from $700.00 for the previous 7 days (Sep 14, 2026 – Sep 20, 2026)');
     expect(out).not.toMatch(UNSUPPORTED.monthlySpend);
     expect(out).not.toMatch(/monthly/i);
@@ -167,7 +172,7 @@ describe('Weekly Summary email wording', () => {
       inventory: { total_resources: '4', priced_resources: '4', total_cost: '120' },
     });
     const out = render(e);
-    expect(out).toContain('gross charges for the last 7 complete days (Sep 21, 2026 – Sep 27, 2026, UTC): $0.00');
+    expect(out).toContain('gross charges for the last 7 days (Sep 21, 2026 – Sep 27, 2026, UTC), per Cost Explorer data as of Sep 28, 2026, 08:55 UTC: $0.00');
     expect(out).toContain('a week-over-week percentage cannot be calculated');
     expect(out).not.toMatch(UNSUPPORTED.noSpend);
     expect(composeWeeklySummary(e).costSummary).not.toMatch(/estimate|run-rate/i);
@@ -308,33 +313,45 @@ describe('Weekly Summary email wording', () => {
   });
 });
 
-describe('Weekly Summary AI recommendation guard', () => {
-  it('N/O: model text contradicting the evidence (no spend, rightsizing, definite savings) is dropped', async () => {
-    const e = await evidence({ trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); } });
-    const content = composeWeeklySummary(e);
-    const aiService = (job as any).aiService;
-    const spy = jest.spyOn(aiService, 'generateDashboardSummary');
-
-    for (const modelText of [
-      'No cloud spend this week, so focus on security.',
-      'Rightsizing your EC2 instances could cut costs.',
-      'You can save $845/month by acting on the open recommendations.',
-      'Buy Reserved Instances to save 20-40% on compute.',
-      'Lead time looks healthy; keep deploying.',
-      'There were no alerts, so focus on the 2 account-level findings.',
-    ]) {
-      spy.mockResolvedValueOnce(modelText);
-      expect(await job.generateAIRecommendation(e, content)).toBeNull();
-    }
-
-    // The final email keeps the evidence-backed unavailable state.
-    const out = render(e, null);
-    expect(out).toContain('Cloud spend data was unavailable for this period');
-    expect(out).not.toMatch(UNSUPPORTED.noSpend);
+describe('Weekly Summary model-written recommendation (disabled, PR #136 review B1)', () => {
+  it('B1: generateAIRecommendation returns null and makes no model call, even with open recommendations and findings', async () => {
+    const e = await evidence(); // 3 open recommendations, 7 active findings: the old code would have called the model
+    const spy = jest.spyOn(AIInsightsService.prototype, 'generateDashboardSummary');
+    expect(await job.generateAIRecommendation(e, composeWeeklySummary(e))).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 
-  it('O: figures the model invents (not in the evidence) are rejected; grounded text passes', async () => {
+  it('B1: with no recommendation, no AI section or AI claim renders in HTML or plain text; the deterministic savings line still does', async () => {
+    const e = await evidence();
+    const content = composeWeeklySummary(e);
+    const data = job.buildTemplateData({
+      userName: 'Alex',
+      content,
+      recommendation: await job.generateAIRecommendation(e, content),
+      dashboardUrl: 'https://app.example.test/dashboard',
+      unsubscribeUrl: 'https://api.example.test/unsubscribe?token=x',
+      preferencesUrl: 'https://app.example.test/settings/notifications',
+      privacyUrl: 'https://app.example.test/privacy',
+    });
+    const { html, text } = job.renderEmail(data);
+
+    for (const out of [html, text]) {
+      expect(out).not.toMatch(/AI recommendation/i);
+      expect(out).not.toMatch(/AI-Powered/i);
+      expect(out).not.toMatch(/\bAI\b/);
+      expect(out).toContain('Estimated savings opportunity: $845/month');
+    }
+  });
+
+  it('B1: the subject makes no AI claim', () => {
+    expect(WEEKLY_SUMMARY_SUBJECT).toBe('Your DevControl Weekly Summary');
+    expect(WEEKLY_SUMMARY_SUBJECT).not.toMatch(/\bAI\b/);
+  });
+
+  // checkRecommendationText()/buildRecommendationPrompt() are kept, unused, pending a
+  // grounded redesign; these pin their current behavior only.
+  it('retained helper: invented $/% figures are rejected; grounded text passes', async () => {
     const e = await evidence();
     const content = composeWeeklySummary(e);
     const prompt = buildRecommendationPrompt(e, content)!;
@@ -346,7 +363,7 @@ describe('Weekly Summary AI recommendation guard', () => {
     expect(checkRecommendationText(grounded, prompt).text).toBe(grounded);
   });
 
-  it('10: the prompt carries every evidence state and the no-fabrication rules', async () => {
+  it('retained helper: the prompt carries every evidence state and the no-fabrication rules', async () => {
     const e = await evidence({ trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); } });
     const prompt = buildRecommendationPrompt(e, composeWeeklySummary(e))!;
     expect(prompt).toContain('Cloud spend data was unavailable for this period');
@@ -354,17 +371,6 @@ describe('Weekly Summary AI recommendation guard', () => {
     expect(prompt).toMatch(/never describe it as zero, none/);
     expect(prompt).toMatch(/Do not recommend rightsizing, Reserved Instances, or Savings Plans/);
     expect(prompt).not.toMatch(/Current monthly cloud spend/);
-  });
-
-  it('10: no model call when there is nothing real to recommend on', async () => {
-    const e = await evidence({
-      security: await failed<WeeklySecurityEvidence>('DevControl security posture score and configuration checks'),
-      recommendations: await available<WeeklyRecommendationEvidence>('DevControl cost recommendations', { active: 0, totalEstimatedMonthlySavings: 0 }),
-    });
-    const spy = jest.spyOn((job as any).aiService, 'generateDashboardSummary');
-    expect(await job.generateAIRecommendation(e, composeWeeklySummary(e))).toBeNull();
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
   });
 });
 

@@ -177,6 +177,29 @@ export function weeklySummaryPeriod(now: Date): WeeklySummaryPeriod {
   };
 }
 
+/**
+ * Who may receive an organization's weekly summary (aliases: u = users,
+ * om = organization_memberships, o = organizations). Shared verbatim by
+ * getActiveOrganizations() and getUserInfo() so the two can never diverge.
+ *
+ * "Accepted membership" is om.joined_at IS NOT NULL: every path that creates
+ * or accepts a membership sets it (org creator, signup, invitation accept,
+ * standalone invitation accept, SAML provisioning of a new user, and the
+ * legacy migrations-admin/005 owner row); only a pending invitation leaves it
+ * NULL. Fail safe by design: an invitee who signs in through SAML while their
+ * invitation is still pending (saml.service.ts findOrCreateUser() accepts any
+ * is_active membership and leaves joined_at/invitation_token untouched) is
+ * excluded until they accept the invitation -- skipped, never broadened.
+ */
+const WEEKLY_SUMMARY_RECIPIENT_PREDICATES = `om.role = 'owner'
+         AND om.is_active = true
+         AND om.joined_at IS NOT NULL
+         AND o.deleted_at IS NULL
+         AND u.deleted_at IS NULL
+         AND u.email IS NOT NULL
+         AND u.email_weekly_summary = true
+         AND u.is_email_verified = true`;
+
 const EMPTY_DORA_BENCHMARKS: WeeklyDORAMetrics['benchmarks'] = {
   deploymentFrequency: null,
   changeFailureRate: null,
@@ -306,7 +329,7 @@ export class WeeklySummaryRepository {
         scope: COST_EXPLORER_SCOPE,
         period: { kind: 'range', start: period.previousCost.start, endExclusive: period.cost.endExclusive },
         asOf,
-        coverage: 'the last 7 complete UTC days vs the 7 complete days before them; gross daily charges before credits',
+        coverage: 'the 7 UTC days before today vs the 7 days before them; gross daily charges before credits, per Cost Explorer data that may still be updating for recent days',
       },
       [currentWeekSpend, previousWeekSpend] as const,
       ([current, previous]) => ({
@@ -424,22 +447,23 @@ export class WeeklySummaryRepository {
 
   /**
    * The organization owner who receives the weekly summary. Same eligibility
-   * as getActiveOrganizations() -- opted in (email_weekly_summary) and
-   * verified -- so an owner who opted out or is unverified is never selected,
-   * on the scheduled path or the manual trigger. Deterministic when an org
-   * has several eligible owners: earliest membership first, then user id.
-   * Returns null when no owner is eligible; a query failure throws.
+   * as getActiveOrganizations() (WEEKLY_SUMMARY_RECIPIENT_PREDICATES), so an
+   * owner who opted out, is unverified, was deactivated or soft-deleted, or
+   * has only a pending (unaccepted) invitation is never selected -- on the
+   * scheduled path or the manual trigger -- and a soft-deleted organization
+   * gets no summary. Deterministic when an org has several eligible owners:
+   * earliest membership first, then user id. Returns null when no owner is
+   * eligible (the org is skipped, never sent to a fallback); a query failure
+   * throws.
    */
   async getUserInfo(organizationId: string, client?: PoolClient): Promise<UserInfo | null> {
     const result = await (client ?? this.pool).query(
       `SELECT u.id, u.email, u.full_name
        FROM users u
        JOIN organization_memberships om ON u.id = om.user_id
+       JOIN organizations o ON o.id = om.organization_id
        WHERE om.organization_id = $1
-         AND om.role = 'owner'
-         AND u.email IS NOT NULL
-         AND u.email_weekly_summary = true
-         AND u.is_email_verified = true
+         AND ${WEEKLY_SUMMARY_RECIPIENT_PREDICATES}
        ORDER BY om.created_at ASC NULLS LAST, u.id ASC
        LIMIT 1`,
       [organizationId]
@@ -473,8 +497,8 @@ export class WeeklySummaryRepository {
   }
 
   /**
-   * Get all active organizations with email enabled
-   * Filters by user email preferences (opt-in/opt-out)
+   * Organizations with at least one eligible weekly-summary recipient --
+   * the same predicates getUserInfo() applies (WEEKLY_SUMMARY_RECIPIENT_PREDICATES).
    */
   async getActiveOrganizations(): Promise<string[]> {
     const result = await this.pool.query(
@@ -482,10 +506,7 @@ export class WeeklySummaryRepository {
        FROM organizations o
        JOIN organization_memberships om ON o.id = om.organization_id
        JOIN users u ON om.user_id = u.id
-       WHERE om.role = 'owner'
-         AND u.email_weekly_summary = true
-         AND u.email IS NOT NULL
-         AND u.is_email_verified = true
+       WHERE ${WEEKLY_SUMMARY_RECIPIENT_PREDICATES}
        ORDER BY o.created_at DESC
        LIMIT 100`
     );

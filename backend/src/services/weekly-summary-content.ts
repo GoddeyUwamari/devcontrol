@@ -3,7 +3,7 @@
  * sections WeeklySummaryRepository.gatherWeeklyEvidence() collects.
  *
  * Every customer-facing statement here follows its section's state:
- *   - spend is labeled with its real period (7 complete UTC days), source,
+ *   - spend is labeled with its real period (the 7 UTC days before today), source,
  *     and basis (gross daily charges before credits); an inventory estimate
  *     is labeled a monthly run-rate estimate, never billed spend; missing
  *     spend is "unavailable", never $0 or "no spend";
@@ -13,10 +13,11 @@
  *     evaluated say so, never "none";
  *   - savings are an estimated opportunity, never "you can save".
  *
- * The model only ever writes the optional recommendation sentence, from
- * fact lines built here, and checkRecommendationText() drops it if it
- * contradicts or goes beyond that evidence -- model prose never replaces a
- * deterministic line.
+ * The model-written recommendation is currently DISABLED
+ * (WeeklyAISummaryJob.generateAIRecommendation always returns null; PR #136
+ * review finding B1). buildRecommendationPrompt() and checkRecommendationText()
+ * below are kept but unused: the denylist lets evidence-contradicting prose
+ * through, so re-enabling requires a grounded redesign, not this filter.
  */
 
 import { CONTEXT_STATE_LABELS, EVIDENCE_CLAIM_RULES, hasEvidence, type ContextSection } from './ai-context-contract';
@@ -40,6 +41,15 @@ function money(amount: number): string {
 
 function formatDay(day: string): string {
   return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** "Sep 28, 2026, 08:55 UTC" */
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const day = d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${day}, ${time} UTC`;
 }
 
 /** "Sep 20, 2026 – Sep 26, 2026" for a window with an exclusive end. */
@@ -68,8 +78,10 @@ function costSummary(e: WeeklyEvidence): string {
   const range = formatDayWindow(e.period.cost);
 
   if (hasEvidence(current)) {
+    const asOf = current.asOf ? `, per Cost Explorer data as of ${formatTimestamp(current.asOf)}` : '';
     const parts = [
-      `AWS Cost Explorer gross charges for the last 7 complete days (${range}, UTC): ${money(current.data.amount)}, before credits and refunds.`,
+      `AWS Cost Explorer gross charges for the last 7 days (${range}, UTC)${asOf}: ${money(current.data.amount)}, ` +
+      'before credits and refunds. Cost Explorer figures for recent days may still be updating.',
     ];
     if (current.state === 'partial' && current.completeness) {
       parts.push(

@@ -4,11 +4,8 @@
  * no email leaves the process.
  */
 import { Pool } from 'pg';
-import { WeeklyAISummaryJob } from '../weekly-ai-summary.job';
+import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../weekly-ai-summary.job';
 import { AIInsightsService } from '../../services/ai-insights.service';
-
-// AIInsightsService starts a cache-cleanup setInterval in its constructor; not under test here.
-jest.spyOn(AIInsightsService.prototype as any, 'startCacheCleanup').mockImplementation(() => {});
 
 const ORG_A = 'c0000000-0000-4000-8000-00000000000a';
 const ORG_B = 'c0000000-0000-4000-8000-00000000000b';
@@ -84,12 +81,12 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     expect(all).not.toHaveBeenCalled();
   });
 
-  it('P/16: an eligible org is sent only to its own recipient, with the unchanged unsubscribe token scheme', async () => {
-    const { job, send, repository } = setup(org => ({ userId: `user-of-${org}`, email: `owner@${org}.test`, fullName: 'Pat Owner' }));
+  /** Evidence with every source missing, except open recommendations and active findings (what used to trigger a model call). */
+  function stubEvidence(repository: any) {
     const { weeklySummaryPeriod } = jest.requireActual('../../repositories/weekly-summary.repository');
-    const { notSupported } = jest.requireActual('../../services/ai-context-contract');
+    const { notSupported, collectSection } = jest.requireActual('../../services/ai-context-contract');
     const missing = (source: string) => notSupported({ source }, 'not evaluated in this test');
-    const gather = jest.spyOn(repository, 'gatherWeeklyEvidence').mockImplementation(async (...args: any[]) => ({
+    return jest.spyOn(repository, 'gatherWeeklyEvidence').mockImplementation(async (...args: any[]) => ({
       period: weeklySummaryPeriod(args[1]),
       currentWeekSpend: missing('AWS Cost Explorer daily trend'),
       previousWeekSpend: missing('AWS Cost Explorer daily trend'),
@@ -97,9 +94,19 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
       inventoryEstimate: null,
       alerts: missing('DevControl alert history'),
       delivery: missing('DevControl deployment records'),
-      security: missing('DevControl security posture score and configuration checks'),
-      recommendations: missing('DevControl cost recommendations'),
+      security: await collectSection({ source: 'DevControl security posture score and configuration checks' }, async () => ({
+        state: 'available', data: { score: 70, accountLevelFindings: 2, resourceComplianceIssues: 3 },
+      })),
+      recommendations: await collectSection({ source: 'DevControl cost recommendations' }, async () => ({
+        state: 'available', data: { active: 3, totalEstimatedMonthlySavings: 845 },
+      })),
     }));
+  }
+
+  it('P/16/B1: an eligible org is sent only to its own recipient, with no model call, no AI section, and a subject with no AI claim', async () => {
+    const { job, send, repository } = setup(org => ({ userId: `user-of-${org}`, email: `owner@${org}.test`, fullName: 'Pat Owner' }));
+    const gather = stubEvidence(repository);
+    const modelCall = jest.spyOn(AIInsightsService.prototype, 'generateDashboardSummary');
 
     const result = await job.triggerManual(ORG_B);
 
@@ -112,5 +119,44 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     expect(payload.headers['List-Unsubscribe']).toContain(`token=${token}`);
     expect(payload.text).toContain('Cloud spend data was unavailable for this period');
     expect(payload.text).not.toMatch(/No cloud spend recorded|No alerts|DORA|lead time/i);
+
+    // B1: no model call; nothing model-written or "AI"-claimed reaches the email.
+    expect(modelCall).not.toHaveBeenCalled();
+    expect(payload.subject).toBe(WEEKLY_SUMMARY_SUBJECT);
+    expect(payload.subject).not.toMatch(/\bAI\b/);
+    for (const body of [payload.html, payload.text]) {
+      expect(body).not.toMatch(/AI recommendation|AI-Powered/i);
+      expect(body).toContain('Estimated savings opportunity: $845/month');
+    }
+    modelCall.mockRestore();
+  });
+
+  it('H1: a Resend { error } result is a failed send -- counted as an error, never as sent, with a sanitized log', async () => {
+    const { job, send, repository } = setup(org => ({ userId: `user-of-${org}`, email: `owner@${org}.test`, fullName: 'Pat Owner' }));
+    stubEvidence(repository);
+    send.mockResolvedValue({
+      data: null,
+      error: { name: 'validation_error', message: `Invalid \`to\` field: owner@${ORG_A}.test is not allowed` },
+    } as any);
+    jest.spyOn(repository, 'getActiveOrganizations').mockResolvedValue([ORG_A, ORG_B]);
+    const errorLog = console.error as jest.Mock;
+    const logLine = console.log as jest.Mock;
+    errorLog.mockClear();
+    logLine.mockClear();
+
+    const scheduled = await (job as any).sendWeeklySummaries();
+    expect(scheduled).toEqual({ sent: 0, skipped: 0, errors: 2 });
+
+    const manual = await job.triggerManual(ORG_A);
+    expect(manual).toEqual({ sent: 0, skipped: 0, errors: 1 });
+
+    // Never logged as a success, and Resend's raw message never reaches the logs.
+    const logged = [...errorLog.mock.calls, ...logLine.mock.calls].map(call => call.map(String).join(' ')).join('\n');
+    expect(logged).not.toContain('✅ Sent');
+    expect(logged).toContain('Resend rejected the send (validation_error)');
+    expect(logged).not.toContain('is not allowed');
+    const complete = logLine.mock.calls.map(c => String(c[0])).find(l => l.includes('[Weekly AI Summary] COMPLETE'));
+    expect(complete).toContain('"sent":0');
+    expect(complete).toContain('"errors":2');
   });
 });

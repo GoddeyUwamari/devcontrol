@@ -1,6 +1,9 @@
 /**
- * Weekly AI Summary Job
- * Sends AI-powered weekly summary emails every Monday at 9 AM
+ * Weekly Summary Job
+ * Sends the evidence-grounded weekly summary email every Monday at 9 AM.
+ * The email contains no model-written content (see generateAIRecommendation).
+ * Log lines keep the "[Weekly AI Summary]" prefix: weeklyEmailJobMonitor.ts
+ * matches its START/COMPLETE/ERROR markers on it.
  */
 
 import cron from 'node-cron';
@@ -9,16 +12,13 @@ import fs from 'fs';
 import path from 'path';
 import Handlebars from 'handlebars';
 import { Resend } from 'resend';
-import { AIInsightsService } from '../services/ai-insights.service';
 import { WeeklySummaryRepository, type WeeklyEvidence } from '../repositories/weekly-summary.repository';
 import { requireOrganizationId } from '../services/ai-context-contract';
-import {
-  buildRecommendationPrompt,
-  checkRecommendationText,
-  composeWeeklySummary,
-  type WeeklySummaryContent,
-} from '../services/weekly-summary-content';
+import { composeWeeklySummary, type WeeklySummaryContent } from '../services/weekly-summary-content';
 import { RELEASE_SHA } from '../version';
+
+/** No "AI" claim: the email contains no model-written content. */
+export const WEEKLY_SUMMARY_SUBJECT = 'Your DevControl Weekly Summary';
 
 export interface WeeklyEmailTemplateData {
   userName: string;
@@ -37,14 +37,12 @@ export interface WeeklyEmailTemplateData {
 }
 
 export class WeeklyAISummaryJob {
-  private aiService: AIInsightsService;
   private repository: WeeklySummaryRepository;
   private task: ReturnType<typeof cron.schedule> | null = null;
   private emailTemplate: HandlebarsTemplateDelegate | null = null;
   private resend: Resend | null = null;
 
   constructor(private pool: Pool) {
-    this.aiService = new AIInsightsService(pool);
     this.repository = new WeeklySummaryRepository(pool);
     this.loadEmailTemplate();
     this.setupResendClient();
@@ -252,7 +250,7 @@ export class WeeklyAISummaryJob {
         const result = await this.resend.emails.send({
           from: process.env.EMAIL_FROM || 'DevControl <noreply@devcontrol.app>',
           to: recipient.email,
-          subject: 'Your DevControl Weekly Summary (AI-Powered)',
+          subject: WEEKLY_SUMMARY_SUBJECT,
           html,
           text: textContent,
           headers: {
@@ -260,6 +258,13 @@ export class WeeklyAISummaryJob {
             'X-Entity-Ref-ID': `weekly-summary-${Date.now()}`,
           },
         });
+
+        // Resend reports API failures (validation, rate limit, auth) as a
+        // returned { error }, not a throw -- same check as EmailService.send.
+        // A returned error is a failed send: counted as an error, never sent.
+        if (result.error) {
+          throw new Error(`Resend rejected the send (${result.error.name ?? 'unknown_error'})`);
+        }
 
         console.log(`[Weekly AI Summary] ✅ Sent to ${recipient.email} via Resend (ID: ${result.data?.id})`);
         return 'sent';
@@ -307,27 +312,19 @@ export class WeeklyAISummaryJob {
   }
 
   /**
-   * Ask Claude for one short recommendation from the same deterministic lines
-   * the email states (weekly-summary-content.ts). Returns null -- never a
-   * generic placeholder -- when there is nothing real to recommend on, the
-   * model call fails, or checkRecommendationText() finds the text contradicts
-   * or goes beyond the evidence.
+   * The model-written recommendation is DISABLED: always null, and no model
+   * call is made. PR #136 review finding B1 showed the denylist in
+   * checkRecommendationText() (weekly-summary-content.ts) lets evidence-
+   * contradicting prose through -- "No security issues were detected" while
+   * security is unavailable, "Your monthly spend is $X" for a 7-day figure,
+   * spelled-out or "k"/"percent" figures, "guaranteed" savings, and
+   * downsizing/reservation advice. buildRecommendationPrompt() and
+   * checkRecommendationText() are kept, unused, pending a grounded redesign
+   * (e.g. an allowlist of evidence figures and claims); re-enabling needs
+   * that redesign, not this denylist.
    */
-  async generateAIRecommendation(evidence: WeeklyEvidence, content: WeeklySummaryContent): Promise<string | null> {
-    try {
-      const prompt = buildRecommendationPrompt(evidence, content);
-      if (!prompt) return null;
-
-      const text = await this.aiService.generateDashboardSummary(prompt);
-      const checked = checkRecommendationText(text, prompt);
-      if (checked.rejected) {
-        console.warn(`[Weekly AI Summary] Recommendation dropped: ${checked.rejected}`);
-      }
-      return checked.text;
-    } catch (error: any) {
-      console.error('[Weekly AI Summary] AI recommendation generation failed:', error.message);
-      return null;
-    }
+  async generateAIRecommendation(_evidence: WeeklyEvidence, _content: WeeklySummaryContent): Promise<string | null> {
+    return null;
   }
 
   /**
@@ -336,7 +333,7 @@ export class WeeklyAISummaryJob {
   private generateTextVersion(data: WeeklyEmailTemplateData): string {
     let text = `
 Your DevControl Weekly Summary
-AI-Powered Infrastructure Insights
+Cost, security, and delivery summary
 
 Hi ${data.userName},
 
