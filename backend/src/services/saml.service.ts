@@ -56,6 +56,9 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 /** How long a user has to complete the IdP login after /initiate. */
 export const SAML_REQUEST_TTL_MS = 10 * 60 * 1000;
 
+/** Accepted IdP/SP clock drift on assertion validity timestamps. */
+export const SAML_CLOCK_SKEW_MS = 60 * 1000;
+
 const SAML_PROTOCOL_NS = 'urn:oasis:names:tc:SAML:2.0:protocol';
 const SAML_ASSERTION_NS = 'urn:oasis:names:tc:SAML:2.0:assertion';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -132,6 +135,11 @@ function buildSAMLInstance(config: SSOConfiguration): SAML {
     wantAssertionsSigned: true,
     validateInResponseTo: ValidateInResponseTo.always,
     requestIdExpirationPeriodMs: SAML_REQUEST_TTL_MS,
+    // Tolerance for IdP/SP clock drift on the assertion's NotBefore and
+    // NotOnOrAfter (Conditions and SubjectConfirmationData) only. Replay
+    // protection doesn't rely on these timestamps -- request IDs are
+    // single-use and expire by the database clock.
+    acceptedClockSkewMs: SAML_CLOCK_SKEW_MS,
     cacheProvider: requestIdStore(config.organization_id),
     disableRequestedAuthnContext: true,
   });

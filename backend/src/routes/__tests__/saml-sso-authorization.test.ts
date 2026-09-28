@@ -26,7 +26,7 @@ import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import { signSamlPost } from '@node-saml/node-saml/lib/saml-post-signing';
 import { createSAMLRoutes } from '../saml.routes';
-import { samlService, samlCallbackUrl } from '../../services/saml.service';
+import { samlService, samlCallbackUrl, SAML_CLOCK_SKEW_MS } from '../../services/saml.service';
 import { authService } from '../../services/auth.service';
 
 // The production limiters (10 SSO initiations / 15 min / IP) would throttle
@@ -38,6 +38,11 @@ jest.mock('../../middleware/rateLimiter', () => {
   const passThrough = (_req: unknown, _res: unknown, next: () => void) => next();
   return { ...actual, samlInitiateRateLimiter: passThrough, authRateLimiter: passThrough };
 });
+
+// Each test signs XML with RSA and makes several HTTP + Postgres round trips;
+// under full-suite parallel load that can exceed Jest's 5 s default (seen:
+// the replay test timed out while its assertions pass in ~0.4 s alone).
+jest.setTimeout(30000);
 
 function dbConfig() {
   return {
@@ -229,10 +234,14 @@ async function initiate(orgId: string): Promise<string> {
 interface ResponseOptions {
   email: string;
   inResponseTo?: string | null;
+  /** SubjectConfirmationData InResponseTo; defaults to the Response's. */
+  subjectInResponseTo?: string | null;
   destination?: string | null;
   recipient?: string;
   audience?: string;
   notOnOrAfterMs?: number;
+  /** Conditions NotBefore offset from now; defaults to -60 s. */
+  notBeforeMs?: number;
   signingKey?: string | null;
   extraAttributes?: Record<string, string>;
 }
@@ -247,6 +256,9 @@ function buildResponse(orgId: string, opts: ResponseOptions): string {
   const notOnOrAfter = iso(now + (opts.notOnOrAfterMs ?? 5 * 60 * 1000));
   const inResponseTo = opts.inResponseTo ?? null;
   const irt = inResponseTo ? ` InResponseTo="${inResponseTo}"` : '';
+  const subjectIrtValue = opts.subjectInResponseTo === undefined ? inResponseTo : opts.subjectInResponseTo;
+  const subjectIrt = subjectIrtValue ? ` InResponseTo="${subjectIrtValue}"` : '';
+  const notBefore = iso(now + (opts.notBeforeMs ?? -60 * 1000));
   const dest = destination ? ` Destination="${destination}"` : '';
   const attrs = { email: opts.email, ...(opts.extraAttributes ?? {}) };
   const attributeXml = Object.entries(attrs)
@@ -262,9 +274,9 @@ function buildResponse(orgId: string, opts: ResponseOptions): string {
     `<saml:Issuer>${IDP_ENTITY_ID}</saml:Issuer>` +
     `<saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">${opts.email}</saml:NameID>` +
     `<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">` +
-    `<saml:SubjectConfirmationData NotOnOrAfter="${notOnOrAfter}" Recipient="${recipient}"${irt}/>` +
+    `<saml:SubjectConfirmationData NotOnOrAfter="${notOnOrAfter}" Recipient="${recipient}"${subjectIrt}/>` +
     `</saml:SubjectConfirmation></saml:Subject>` +
-    `<saml:Conditions NotBefore="${iso(now - 60 * 1000)}" NotOnOrAfter="${notOnOrAfter}">` +
+    `<saml:Conditions NotBefore="${notBefore}" NotOnOrAfter="${notOnOrAfter}">` +
     `<saml:AudienceRestriction><saml:Audience>${audience}</saml:Audience></saml:AudienceRestriction></saml:Conditions>` +
     `<saml:AuthnStatement AuthnInstant="${iso(now)}" SessionIndex="_s${crypto.randomUUID()}"><saml:AuthnContext>` +
     `<saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef>` +
@@ -326,9 +338,21 @@ async function sessionCount(userId: string): Promise<number> {
   return rows[0].n;
 }
 
+/**
+ * Whether an issued request ID is still redeemable. The callback consumes it
+ * only after the response has passed every protocol check (signature,
+ * audience, timestamps, Destination, Recipient, InResponseTo), so "consumed"
+ * proves a rejection happened later, at membership resolution; "still
+ * outstanding" proves it happened earlier (config/tier/protocol).
+ */
+async function requestIdOutstanding(requestId: string): Promise<boolean> {
+  const { rows } = await pool.query('SELECT 1 FROM saml_request_ids WHERE request_id = $1', [requestId]);
+  return rows.length === 1;
+}
+
 async function membershipRow(orgId: string, userId: string) {
   const { rows } = await pool.query(
-    'SELECT role, is_active, invitation_token FROM organization_memberships WHERE organization_id = $1 AND user_id = $2',
+    'SELECT role, is_active, invitation_token, joined_at FROM organization_memberships WHERE organization_id = $1 AND user_id = $2',
     [orgId, userId]
   );
   return rows[0] ?? null;
@@ -449,12 +473,51 @@ describe('SAML callback -- protocol validation', () => {
     expectRejected(await postCallback(orgB.orgId, buildResponse(orgA.orgId, { email: user.email, inResponseTo: requestIdForB })));
   });
 
+  it('Response and SubjectConfirmationData InResponseTo must name the same request', async () => {
+    const org = await ssoOrg();
+    // Both genuinely issued for this org, so each would pass on its own.
+    const idA = await initiate(org.orgId);
+    const idB = await initiate(org.orgId);
+
+    expectRejected(
+      await postCallback(org.orgId, buildResponse(org.orgId, { email: org.member.email, inResponseTo: idA, subjectInResponseTo: idB }))
+    );
+    expectRejected(
+      await postCallback(org.orgId, buildResponse(org.orgId, { email: org.member.email, inResponseTo: idB, subjectInResponseTo: idA }))
+    );
+    expect(await sessionCount(org.member.id)).toBe(0);
+    // Neither mismatched attempt redeemed either request...
+    expect(await requestIdOutstanding(idA)).toBe(true);
+    expect(await requestIdOutstanding(idB)).toBe(true);
+    // ...and a consistent response still completes the real login.
+    const genuine = await postCallback(org.orgId, buildResponse(org.orgId, { email: org.member.email, inResponseTo: idA }));
+    expect(genuine.succeeded).toBe(true);
+    expect(await requestIdOutstanding(idA)).toBe(false);
+  });
+
+  it('an issued ID in SubjectConfirmationData cannot rescue an unissued or missing Response InResponseTo', async () => {
+    const org = await ssoOrg();
+    const issued = await initiate(org.orgId);
+
+    expectRejected(
+      await postCallback(
+        org.orgId,
+        buildResponse(org.orgId, { email: org.member.email, inResponseTo: '_never-issued', subjectInResponseTo: issued })
+      )
+    );
+    expectRejected(
+      await postCallback(org.orgId, buildResponse(org.orgId, { email: org.member.email, inResponseTo: null, subjectInResponseTo: issued }))
+    );
+    expect(await sessionCount(org.member.id)).toBe(0);
+    expect(await requestIdOutstanding(issued)).toBe(true);
+  });
+
   it.each([
     ['wrong Destination', { destination: 'https://evil.example.test/acs' }],
     ['missing Destination', { destination: null }],
     ['wrong Recipient', { recipient: 'https://evil.example.test/acs' }],
     ['wrong audience', { audience: 'https://evil.example.test/sp' }],
-    ['expired assertion', { notOnOrAfterMs: -60 * 1000 }],
+    ['expired assertion (beyond clock-skew tolerance)', { notBeforeMs: -5 * 60 * 1000, notOnOrAfterMs: -2 * 60 * 1000 }],
     ['signed by an untrusted key', { signingKey: 'ROGUE' }],
     ['unsigned', { signingKey: null }],
   ] as const)('%s is rejected and the request ID stays redeemable', async (_label, override) => {
@@ -484,6 +547,9 @@ describe('SAML callback -- protocol validation', () => {
 });
 
 // ─── Configuration / tier gating ────────────────────────────────────────────
+//
+// These are refused BEFORE protocol validation (requireUsableConfig), so an
+// in-flight login's request ID must still be outstanding afterwards.
 
 describe('SAML -- configuration and Enterprise gating', () => {
   it('missing SSO configuration: initiate and callback are rejected', async () => {
@@ -492,6 +558,7 @@ describe('SAML -- configuration and Enterprise gating', () => {
     const init = await fetch(`${baseUrl}/initiate?orgId=${orgId}`, { redirect: 'manual' });
     expect(new URL(init.headers.get('location')!).pathname).toBe('/login');
     expectRejected(await postCallback(orgId, buildResponse(orgId, { email: user.email, inResponseTo: '_x' })));
+    expect(await sessionCount(user.id)).toBe(0);
   });
 
   it('inactive configuration: initiate is refused, and an in-flight login is rejected', async () => {
@@ -502,6 +569,8 @@ describe('SAML -- configuration and Enterprise gating', () => {
     const init = await fetch(`${baseUrl}/initiate?orgId=${org.orgId}`, { redirect: 'manual' });
     expect(new URL(init.headers.get('location')!).pathname).toBe('/login');
     expectRejected(await postCallback(org.orgId, buildResponse(org.orgId, { email: org.owner.email, inResponseTo: requestId })));
+    expect(await requestIdOutstanding(requestId)).toBe(true);
+    expect(await sessionCount(org.owner.id)).toBe(0);
   });
 
   it('downgraded from Enterprise: initiate is refused, and an in-flight login is rejected', async () => {
@@ -512,6 +581,27 @@ describe('SAML -- configuration and Enterprise gating', () => {
     const init = await fetch(`${baseUrl}/initiate?orgId=${org.orgId}`, { redirect: 'manual' });
     expect(new URL(init.headers.get('location')!).pathname).toBe('/login');
     expectRejected(await postCallback(org.orgId, buildResponse(org.orgId, { email: org.owner.email, inResponseTo: requestId })));
+    expect(await requestIdOutstanding(requestId)).toBe(true);
+    expect(await sessionCount(org.owner.id)).toBe(0);
+  });
+
+  it('soft-deleted organization: initiate is refused and an in-flight login is rejected, until restored', async () => {
+    const org = await ssoOrg();
+    const requestId = await initiate(org.orgId);
+    await pool.query('UPDATE organizations SET deleted_at = NOW() WHERE id = $1', [org.orgId]);
+
+    const init = await fetch(`${baseUrl}/initiate?orgId=${org.orgId}`, { redirect: 'manual' });
+    expect(new URL(init.headers.get('location')!).pathname).toBe('/login');
+    const response = buildResponse(org.orgId, { email: org.owner.email, inResponseTo: requestId });
+    expectRejected(await postCallback(org.orgId, response));
+    expect(await requestIdOutstanding(requestId)).toBe(true);
+    expect(await sessionCount(org.owner.id)).toBe(0);
+
+    // Positive control: the org's deleted state was the only obstacle.
+    await pool.query('UPDATE organizations SET deleted_at = NULL WHERE id = $1', [org.orgId]);
+    const restored = await postCallback(org.orgId, response);
+    expect(restored.succeeded).toBe(true);
+    expect(restored.token).toMatchObject({ userId: org.owner.id, organizationId: org.orgId, role: 'owner' });
   });
 
   it('malformed orgId is rejected', async () => {
@@ -520,34 +610,128 @@ describe('SAML -- configuration and Enterprise gating', () => {
   });
 });
 
+// ─── Clock-skew tolerance ───────────────────────────────────────────────────
+//
+// node-saml applies acceptedClockSkewMs to NotBefore/NotOnOrAfter only:
+//   rejected if now + skew <  NotBefore
+//   rejected if now - skew >= NotOnOrAfter
+// Offsets are half and one-and-a-half times the tolerance, so test runtime
+// (milliseconds) can't move a case across the boundary.
+
+describe('SAML callback -- clock-skew tolerance', () => {
+  it('is 60 seconds', () => {
+    expect(SAML_CLOCK_SKEW_MS).toBe(60 * 1000);
+  });
+
+  const within = SAML_CLOCK_SKEW_MS / 2;
+  const beyond = (SAML_CLOCK_SKEW_MS * 3) / 2;
+
+  it.each([
+    ['NotBefore in the future, within tolerance (IdP clock ahead)', { notBeforeMs: within }, true],
+    ['NotBefore in the future, beyond tolerance', { notBeforeMs: beyond }, false],
+    ['NotOnOrAfter in the past, within tolerance (IdP clock behind)', { notBeforeMs: -5 * 60 * 1000, notOnOrAfterMs: -within }, true],
+    ['NotOnOrAfter in the past, beyond tolerance', { notBeforeMs: -5 * 60 * 1000, notOnOrAfterMs: -beyond }, false],
+  ] as const)('%s', async (_label, timing, accepted) => {
+    const org = await ssoOrg();
+    const requestId = await initiate(org.orgId);
+    const result = await postCallback(
+      org.orgId,
+      buildResponse(org.orgId, { email: org.member.email, inResponseTo: requestId, ...timing })
+    );
+
+    if (accepted) {
+      expect(result.succeeded).toBe(true);
+      expect(result.token).toMatchObject({ userId: org.member.id, organizationId: org.orgId, role: 'member' });
+      expect(await requestIdOutstanding(requestId)).toBe(false);
+    } else {
+      expectRejected(result);
+      expect(await sessionCount(org.member.id)).toBe(0);
+      // Rejected during protocol validation: the login wasn't redeemed.
+      expect(await requestIdOutstanding(requestId)).toBe(true);
+    }
+  });
+});
+
 // ─── Membership / account-linking ──────────────────────────────────────────
+//
+// Each rejection below is pinned to membership resolution by two
+// behavioral facts, not by log output:
+//   1. the request ID was CONSUMED -- the callback redeems it only after the
+//      response passed every protocol check, so the rejection came later;
+//   2. a positive control -- correcting exactly the one membership-state
+//      defect under test makes the same flow succeed, with the role from
+//      THIS org's membership row.
+// Together these rule out an unrelated failure (the pre-PR JIT path, for
+// instance, rejected several of these only because its user INSERT violated
+// users.password_hash NOT NULL -- and never consumed anything). Each also
+// asserts the intended state outcome: nothing created, activated, or linked.
 
 describe('SAML callback -- membership is required, never manufactured', () => {
-  async function attempt(orgId: string, email: string): Promise<CallbackResult> {
+  async function attempt(orgId: string, email: string): Promise<{ result: CallbackResult; requestId: string }> {
     const requestId = await initiate(orgId);
-    return postCallback(orgId, buildResponse(orgId, { email, inResponseTo: requestId }));
+    const result = await postCallback(orgId, buildResponse(orgId, { email, inResponseTo: requestId }));
+    return { result, requestId };
   }
 
-  it('unknown email: rejected, and no user is created', async () => {
+  /** Rejected, with no token, AFTER full protocol validation. */
+  async function expectRejectedAtMembership(orgId: string, email: string): Promise<void> {
+    const requestId = await initiate(orgId);
+    // Outstanding before, consumed after -- never vacuously "not there".
+    expect(await requestIdOutstanding(requestId)).toBe(true);
+    const result = await postCallback(orgId, buildResponse(orgId, { email, inResponseTo: requestId }));
+    expectRejected(result);
+    expect(await requestIdOutstanding(requestId)).toBe(false);
+  }
+
+  async function expectSignsInAs(orgId: string, email: string, userId: string, role: string): Promise<void> {
+    const { result } = await attempt(orgId, email);
+    expect(result.succeeded).toBe(true);
+    expect(result.token).toMatchObject({ userId, organizationId: orgId, role });
+  }
+
+  async function userRow(userId: string) {
+    const { rows } = await pool.query(
+      'SELECT email, is_active, deleted_at, last_login_at FROM users WHERE id = $1',
+      [userId]
+    );
+    return rows[0];
+  }
+
+  it('unknown email: rejected, no user or membership is created; an invited-and-accepted account then signs in', async () => {
     const org = await ssoOrg();
     const email = `sso-authz-nobody-${uniqueSuffix()}@example.com`;
-    expectRejected(await attempt(org.orgId, email));
-    const { rows } = await pool.query('SELECT 1 FROM users WHERE email = $1', [email]);
+    await expectRejectedAtMembership(org.orgId, email);
+    const { rows } = await pool.query('SELECT 1 FROM users WHERE lower(email) = lower($1)', [email]);
     expect(rows).toHaveLength(0);
+
+    // Positive control: the only missing piece was an account with an active membership.
+    const { rows: created } = await pool.query(
+      `INSERT INTO users (email, password_hash, full_name) VALUES ($1, 'x', 'Later') RETURNING id`,
+      [email]
+    );
+    createdUserIds.push(created[0].id);
+    await addMembership(org.orgId, created[0].id, 'viewer');
+    await expectSignsInAs(org.orgId, email, created[0].id, 'viewer');
   });
 
   it.each(['owner', 'admin'] as const)(
-    'the email of another org\'s %s grants nothing here and adds no membership',
+    'the email of another org\'s %s grants nothing here: no membership, no session, account untouched',
     async (role) => {
       const org = await ssoOrg();
       const elsewhere = await ssoOrg();
       const victim = elsewhere[role];
-      const result = await attempt(org.orgId, victim.email);
-      expectRejected(result);
+      const before = await userRow(victim.id);
+
+      await expectRejectedAtMembership(org.orgId, victim.email);
       expect(await membershipRow(org.orgId, victim.id)).toBeNull();
       expect(await sessionCount(victim.id)).toBe(0);
-      // Their real membership elsewhere is untouched.
+      expect(await userRow(victim.id)).toEqual(before);
       expect((await membershipRow(elsewhere.orgId, victim.id)).role).toBe(role);
+
+      // Positive control: once they genuinely belong here (as a viewer), SSO
+      // signs them in with THIS org's role -- never their role elsewhere.
+      await addMembership(org.orgId, victim.id, 'viewer');
+      await expectSignsInAs(org.orgId, victim.email, victim.id, 'viewer');
     }
   );
 
@@ -555,52 +739,137 @@ describe('SAML callback -- membership is required, never manufactured', () => {
     const org = await ssoOrg();
     const user = await insertUser('inactive');
     await addMembership(org.orgId, user.id, 'admin', { isActive: false });
-    expectRejected(await attempt(org.orgId, user.email));
-    expect((await membershipRow(org.orgId, user.id)).is_active).toBe(false);
+
+    await expectRejectedAtMembership(org.orgId, user.email);
+    const row = await membershipRow(org.orgId, user.id);
+    expect(row.is_active).toBe(false);
+    expect(row.role).toBe('admin');
+    expect(await sessionCount(user.id)).toBe(0);
+
+    // Positive control: reactivation (by an owner/admin, not by SSO) is the only obstacle.
+    await pool.query(
+      'UPDATE organization_memberships SET is_active = true WHERE organization_id = $1 AND user_id = $2',
+      [org.orgId, user.id]
+    );
+    await expectSignsInAs(org.orgId, user.email, user.id, 'admin');
   });
 
   it.each([
     ['stored inactive (current invite path)', false],
     ['legacy row stored active', true],
-  ])('a pending invitation (%s) is not an active membership and is not accepted by SSO', async (_label, isActive) => {
+  ])('a pending invitation (%s) is not accepted by SSO and stays pending', async (_label, isActive) => {
     const org = await ssoOrg();
     const user = await insertUser('pending');
-    await addMembership(org.orgId, user.id, 'admin', { isActive, invitationToken: `tok-${uniqueSuffix()}` });
-    expectRejected(await attempt(org.orgId, user.email));
+    const invitationToken = `tok-${uniqueSuffix()}`;
+    await addMembership(org.orgId, user.id, 'admin', { isActive, invitationToken });
+
+    await expectRejectedAtMembership(org.orgId, user.email);
     const row = await membershipRow(org.orgId, user.id);
     expect(row.is_active).toBe(isActive);
-    expect(row.invitation_token).not.toBeNull();
+    expect(row.invitation_token).toBe(invitationToken);
+    expect(row.joined_at).toBeNull();
+    expect(await sessionCount(user.id)).toBe(0);
+
+    // Positive control: the state acceptInvitation() produces (token cleared,
+    // joined, active) is what SSO requires.
+    await pool.query(
+      `UPDATE organization_memberships
+       SET invitation_token = NULL, invitation_expires_at = NULL, joined_at = NOW(), is_active = true
+       WHERE organization_id = $1 AND user_id = $2`,
+      [org.orgId, user.id]
+    );
+    await expectSignsInAs(org.orgId, user.email, user.id, 'admin');
   });
 
-  it('a deactivated user account is rejected', async () => {
+  it('a deactivated user account is rejected and stays deactivated', async () => {
     const org = await ssoOrg();
     await pool.query('UPDATE users SET is_active = false WHERE id = $1', [org.member.id]);
-    expectRejected(await attempt(org.orgId, org.member.email));
+
+    await expectRejectedAtMembership(org.orgId, org.member.email);
+    expect((await userRow(org.member.id)).is_active).toBe(false);
+    expect(await sessionCount(org.member.id)).toBe(0);
+
+    await pool.query('UPDATE users SET is_active = true WHERE id = $1', [org.member.id]);
+    await expectSignsInAs(org.orgId, org.member.email, org.member.id, 'member');
   });
 
-  it('a deleted user account is rejected', async () => {
+  it('a deleted user account is rejected and stays deleted', async () => {
     const org = await ssoOrg();
     await pool.query('UPDATE users SET deleted_at = NOW() WHERE id = $1', [org.member.id]);
-    expectRejected(await attempt(org.orgId, org.member.email));
+
+    await expectRejectedAtMembership(org.orgId, org.member.email);
+    expect((await userRow(org.member.id)).deleted_at).not.toBeNull();
+    expect(await sessionCount(org.member.id)).toBe(0);
+
+    await pool.query('UPDATE users SET deleted_at = NULL WHERE id = $1', [org.member.id]);
+    await expectSignsInAs(org.orgId, org.member.email, org.member.id, 'member');
   });
 
-  it('a membership with an invalid stored role is rejected', async () => {
+  it('an inactive organization is rejected at membership resolution', async () => {
+    const org = await ssoOrg();
+    await pool.query('UPDATE organizations SET is_active = false WHERE id = $1', [org.orgId]);
+
+    await expectRejectedAtMembership(org.orgId, org.owner.email);
+    expect(await sessionCount(org.owner.id)).toBe(0);
+
+    await pool.query('UPDATE organizations SET is_active = true WHERE id = $1', [org.orgId]);
+    await expectSignsInAs(org.orgId, org.owner.email, org.owner.id, 'owner');
+  });
+
+  it('a membership with an invalid stored role is rejected, and the role is not rewritten', async () => {
     const org = await ssoOrg();
     await pool.query(
       "UPDATE organization_memberships SET role = 'superuser' WHERE organization_id = $1 AND user_id = $2",
       [org.orgId, org.member.id]
     );
-    expectRejected(await attempt(org.orgId, org.member.email));
+
+    await expectRejectedAtMembership(org.orgId, org.member.email);
+    expect((await membershipRow(org.orgId, org.member.id)).role).toBe('superuser');
+    expect(await sessionCount(org.member.id)).toBe(0);
+
+    await pool.query(
+      "UPDATE organization_memberships SET role = 'member' WHERE organization_id = $1 AND user_id = $2",
+      [org.orgId, org.member.id]
+    );
+    await expectSignsInAs(org.orgId, org.member.email, org.member.id, 'member');
   });
 
-  it('every rejection redirects with the same generic message', async () => {
+  it('every rejection redirects with the same generic message, naming no user or org', async () => {
     const org = await ssoOrg();
-    const nonMember = await attempt(org.orgId, `sso-authz-nobody-${uniqueSuffix()}@example.com`);
+    const messages: (string | null)[] = [];
+    const collect = (r: CallbackResult) => {
+      expectRejected(r);
+      messages.push(r.location.searchParams.get('message'));
+    };
+
+    // Non-member (membership stage).
+    collect((await attempt(org.orgId, `sso-authz-nobody-${uniqueSuffix()}@example.com`)).result);
+    // Replay (consume stage).
     const replayId = await initiate(org.orgId);
     const response = buildResponse(org.orgId, { email: org.member.email, inResponseTo: replayId });
     await postCallback(org.orgId, response);
-    const replay = await postCallback(org.orgId, response);
-    expect(nonMember.location.searchParams.get('message')).toBe(replay.location.searchParams.get('message'));
+    collect(await postCallback(org.orgId, response));
+    // Bad signature (protocol stage).
+    const sigId = await initiate(org.orgId);
+    collect(await postCallback(org.orgId, buildResponse(org.orgId, { email: org.member.email, inResponseTo: sigId, signingKey: rogueKey })));
+    // No SSO configuration (config stage).
+    const bare = await insertOrg('enterprise');
+    collect(await postCallback(bare, buildResponse(bare, { email: org.member.email, inResponseTo: '_x' })));
+    // Missing orgId on the callback URL.
+    const noOrg = await fetch(`${baseUrl}/callback`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ SAMLResponse: response }).toString(),
+    });
+    collect({ status: noOrg.status, succeeded: false, location: new URL(noOrg.headers.get('location')!) });
+
+    expect(new Set(messages).size).toBe(1);
+    const message = messages[0]!;
+    expect(message).toBeTruthy();
+    for (const leak of [org.orgId, bare, org.member.email, 'member', 'replay', 'signature', 'configured']) {
+      expect(message.toLowerCase()).not.toContain(leak.toLowerCase());
+    }
   });
 });
 
