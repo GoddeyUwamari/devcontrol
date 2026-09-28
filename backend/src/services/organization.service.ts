@@ -3,11 +3,19 @@
  * Handles organization CRUD operations, memberships, and invitations
  */
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { encryptionService } from './encryption.service';
 import { emailService } from './email.service';
-import { TIER_LIMITS } from '../middleware/subscription.middleware';
+import { TIER_LIMITS, assertOrganizationHasSeat } from '../middleware/subscription.middleware';
+import {
+  OrganizationAccessError,
+  canManageRole,
+  getActiveMembershipRole,
+  isInvitableRole,
+  isOrganizationRole,
+  lockOrganizationMemberships,
+} from './organization-authorization';
 
 interface CreateOrganizationData {
   name: string;
@@ -27,7 +35,8 @@ interface UpdateOrganizationData {
 
 interface InviteUserData {
   email: string;
-  role: 'admin' | 'member' | 'viewer';
+  // Untrusted request input -- validated at runtime in inviteUser().
+  role: unknown;
   invitedBy: string;
 }
 
@@ -328,6 +337,18 @@ export class OrganizationService {
   ): Promise<{ invitationToken: string }> {
     const { email, role, invitedBy } = data;
 
+    if (!isInvitableRole(role)) {
+      throw new OrganizationAccessError('Invalid role. Invitations may grant admin, member, or viewer.', 400);
+    }
+
+    // Authorize against the inviter's current membership, not their JWT
+    // role: an admin may invite member/viewer only; admins are invited by
+    // owners.
+    const inviterRole = await getActiveMembershipRole(pool, organizationId, invitedBy);
+    if (!inviterRole || !canManageRole(inviterRole, role)) {
+      throw new OrganizationAccessError('Insufficient permissions to invite with this role', 403);
+    }
+
     const org = await this.getOrganization(organizationId);
 
     // Check if user already exists
@@ -356,7 +377,11 @@ export class OrganizationService {
     const invitationExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
     if (userId) {
-      // User exists - create membership with invitation
+      // User exists - create a PENDING membership row carrying the
+      // invitation. is_active=false explicitly: the column defaults to true,
+      // which previously made an unaccepted invitation a live membership
+      // everywhere is_active is read (login, /me, member lists, SSO). Only
+      // acceptInvitation() activates it.
       await pool.query(
         `INSERT INTO organization_memberships (
           organization_id,
@@ -364,8 +389,9 @@ export class OrganizationService {
           role,
           invited_by,
           invitation_token,
-          invitation_expires_at
-        ) VALUES ($1, $2, $3, $4, $5, $6)`,
+          invitation_expires_at,
+          is_active
+        ) VALUES ($1, $2, $3, $4, $5, $6, false)`,
         [organizationId, userId, role, invitedBy, invitationToken, invitationExpiry]
       );
 
@@ -424,22 +450,58 @@ export class OrganizationService {
 
   /**
    * Accept invitation
+   *
+   * An invitation is a request made by its inviter at invite time; it is
+   * honored only if it still holds now: the stored role must be a valid
+   * invitable role, the inviter must still be an active member currently
+   * authorized to grant it, and the organization being JOINED (not the
+   * accepting user's own org) must have a free seat.
    */
   async acceptInvitation(invitationToken: string, userId: string): Promise<any> {
-    const result = await pool.query(
-      `SELECT organization_id, role
-       FROM organization_memberships
-       WHERE invitation_token = $1
-         AND invitation_expires_at > NOW()
-         AND user_id = $2`,
+    // Unlocked lookup only to learn which org to lock -- the row is re-read
+    // under lock below. Taking the org lock before any membership row lock
+    // keeps the lock order identical to removeUser()/updateUserRole().
+    const lookup = await pool.query(
+      `SELECT organization_id FROM organization_memberships
+       WHERE invitation_token = $1 AND user_id = $2`,
       [invitationToken, userId]
     );
 
-    if (result.rows.length > 0) {
-      const { organization_id, role } = result.rows[0];
+    if (lookup.rows.length === 0) {
+      // Not an organization_memberships invitation for this user -- fall back
+      // to a standalone organization_invitations row (inviteUser()'s
+      // non-existent-user branch), which the invitee can now redeem since
+      // reaching this authenticated endpoint means they've since registered.
+      return this.acceptPendingInvitation(invitationToken, userId);
+    }
+
+    const organizationId: string = lookup.rows[0].organization_id;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await lockOrganizationMemberships(client, organizationId);
+
+      const result = await client.query(
+        `SELECT role, invited_by
+         FROM organization_memberships
+         WHERE invitation_token = $1
+           AND invitation_expires_at > NOW()
+           AND user_id = $2
+           AND organization_id = $3
+         FOR UPDATE`,
+        [invitationToken, userId, organizationId]
+      );
+
+      if (result.rows.length === 0) {
+        throw new Error('Invalid or expired invitation');
+      }
+
+      const { role, invited_by } = result.rows[0];
+      await this.assertInvitationStillAuthorized(client, organizationId, role, invited_by);
+      await assertOrganizationHasSeat(client, organizationId, userId);
 
       // Mark as joined
-      await pool.query(
+      await client.query(
         `UPDATE organization_memberships
          SET joined_at = NOW(),
              invitation_token = NULL,
@@ -449,17 +511,18 @@ export class OrganizationService {
         [invitationToken, userId]
       );
 
+      await client.query('COMMIT');
+
       return {
-        organizationId: organization_id,
+        organizationId,
         role,
       };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    // Not an organization_memberships invitation for this user -- fall back
-    // to a standalone organization_invitations row (inviteUser()'s
-    // non-existent-user branch), which the invitee can now redeem since
-    // reaching this authenticated endpoint means they've since registered.
-    return this.acceptPendingInvitation(invitationToken, userId);
   }
 
   /**
@@ -505,6 +568,14 @@ export class OrganizationService {
         throw new Error('This invitation was sent to a different email address');
       }
 
+      await lockOrganizationMemberships(client, invitation.organization_id);
+      await this.assertInvitationStillAuthorized(
+        client,
+        invitation.organization_id,
+        invitation.role,
+        invitation.invited_by
+      );
+
       const existingMembership = await client.query(
         'SELECT id FROM organization_memberships WHERE organization_id = $1 AND user_id = $2',
         [invitation.organization_id, userId]
@@ -513,6 +584,8 @@ export class OrganizationService {
       if (existingMembership.rows.length > 0) {
         throw new Error('User is already a member of this organization');
       }
+
+      await assertOrganizationHasSeat(client, invitation.organization_id, userId);
 
       await client.query(
         `INSERT INTO organization_memberships (
@@ -548,77 +621,191 @@ export class OrganizationService {
   }
 
   /**
-   * Remove user from organization
+   * Re-validates a stored invitation at acceptance time: the stored role is
+   * never trusted as-is, and an invitation whose inviter has since lost the
+   * authority to grant that role (demoted, removed, deactivated) is void.
    */
-  async removeUser(organizationId: string, userId: string): Promise<void> {
-    // Check if user is the only owner
-    const ownersResult = await pool.query(
-      `SELECT COUNT(*) FROM organization_memberships
-       WHERE organization_id = $1 AND role = 'owner' AND is_active = true`,
-      [organizationId]
+  private async assertInvitationStillAuthorized(
+    client: PoolClient,
+    organizationId: string,
+    role: unknown,
+    invitedBy: string | null
+  ): Promise<void> {
+    if (!isInvitableRole(role)) {
+      throw new Error('Invalid or expired invitation');
+    }
+    const inviterRole = invitedBy
+      ? await getActiveMembershipRole(client, organizationId, invitedBy)
+      : null;
+    if (!inviterRole || !canManageRole(inviterRole, role)) {
+      throw new OrganizationAccessError(
+        'This invitation is no longer valid. Ask an organization owner or admin to send a new one.',
+        403
+      );
+    }
+  }
+
+  /**
+   * Throws unless at least one active, accepted owner other than
+   * `excludedUserId` would remain. Must run under lockOrganizationMemberships.
+   */
+  private async assertAnotherOwnerRemains(
+    client: PoolClient,
+    organizationId: string,
+    excludedUserId: string,
+    message: string
+  ): Promise<void> {
+    const result = await client.query(
+      `SELECT COUNT(*) FROM organization_memberships om
+       JOIN users u ON u.id = om.user_id
+       WHERE om.organization_id = $1
+         AND om.user_id <> $2
+         AND om.role = 'owner'
+         AND om.is_active = true
+         AND om.invitation_token IS NULL
+         AND u.is_active = true
+         AND u.deleted_at IS NULL`,
+      [organizationId, excludedUserId]
     );
+    if (parseInt(result.rows[0].count) === 0) {
+      throw new Error(message);
+    }
+  }
 
-    const ownerCount = parseInt(ownersResult.rows[0].count);
-
-    const userRoleResult = await pool.query(
-      `SELECT role FROM organization_memberships
-       WHERE organization_id = $1 AND user_id = $2`,
-      [organizationId, userId]
-    );
-
-    if (userRoleResult.rows.length > 0 && userRoleResult.rows[0].role === 'owner' && ownerCount === 1) {
-      throw new Error('Cannot remove the only owner. Transfer ownership or add another owner first.');
+  /**
+   * Remove user from organization
+   *
+   * `actorUserId` is the authenticated caller (from their token, never the
+   * request body). Authorized against the caller's current membership; see
+   * organization-authorization.ts for the policy.
+   */
+  async removeUser(organizationId: string, actorUserId: string, userId: string): Promise<void> {
+    if (actorUserId === userId) {
+      throw new OrganizationAccessError('You cannot remove your own membership', 403);
     }
 
-    await pool.query(
-      `DELETE FROM organization_memberships
-       WHERE organization_id = $1 AND user_id = $2`,
-      [organizationId, userId]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await lockOrganizationMemberships(client, organizationId);
+
+      const actorRole = await getActiveMembershipRole(client, organizationId, actorUserId);
+      if (!actorRole) {
+        throw new OrganizationAccessError('Insufficient permissions', 403);
+      }
+
+      // Any membership row, pending or active -- removing a pending
+      // existing-user invitation is how it is revoked.
+      const target = await client.query(
+        `SELECT role, is_active, invitation_token FROM organization_memberships
+         WHERE organization_id = $1 AND user_id = $2`,
+        [organizationId, userId]
+      );
+
+      if (target.rows.length === 0) {
+        throw new OrganizationAccessError('User is not a member of this organization', 404);
+      }
+
+      if (!canManageRole(actorRole, target.rows[0].role)) {
+        throw new OrganizationAccessError('Insufficient permissions to remove this member', 403);
+      }
+
+      if (target.rows[0].role === 'owner') {
+        await this.assertAnotherOwnerRemains(
+          client,
+          organizationId,
+          userId,
+          'Cannot remove the only owner. Transfer ownership or add another owner first.'
+        );
+      }
+
+      await client.query(
+        `DELETE FROM organization_memberships
+         WHERE organization_id = $1 AND user_id = $2`,
+        [organizationId, userId]
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**
    * Update user role
+   *
+   * `actorUserId` is the authenticated caller; `newRole` is untrusted
+   * request input and is validated at runtime here.
    */
   async updateUserRole(
     organizationId: string,
+    actorUserId: string,
     userId: string,
-    newRole: string
+    newRole: unknown
   ): Promise<void> {
-    // Check if changing the only owner
-    const userRoleResult = await pool.query(
-      `SELECT role FROM organization_memberships
-       WHERE organization_id = $1 AND user_id = $2`,
-      [organizationId, userId]
-    );
-
-    if (userRoleResult.rows.length === 0) {
-      throw new Error('User is not a member of this organization');
+    if (!isOrganizationRole(newRole)) {
+      throw new OrganizationAccessError('Invalid role. Must be one of: owner, admin, member, viewer', 400);
     }
 
-    const currentRole = userRoleResult.rows[0].role;
+    if (actorUserId === userId) {
+      throw new OrganizationAccessError('You cannot change your own role', 403);
+    }
 
-    if (currentRole === 'owner' && newRole !== 'owner') {
-      // Check if there's another owner
-      const ownersResult = await pool.query(
-        `SELECT COUNT(*) FROM organization_memberships
-         WHERE organization_id = $1 AND role = 'owner' AND is_active = true`,
-        [organizationId]
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await lockOrganizationMemberships(client, organizationId);
+
+      const actorRole = await getActiveMembershipRole(client, organizationId, actorUserId);
+      if (!actorRole) {
+        throw new OrganizationAccessError('Insufficient permissions', 403);
+      }
+
+      // Only an active, accepted membership has a role to change; a pending
+      // invitation's role is fixed by (and re-validated against) its inviter.
+      const target = await client.query(
+        `SELECT role FROM organization_memberships
+         WHERE organization_id = $1 AND user_id = $2
+           AND is_active = true AND invitation_token IS NULL`,
+        [organizationId, userId]
       );
 
-      const ownerCount = parseInt(ownersResult.rows[0].count);
-
-      if (ownerCount === 1) {
-        throw new Error('Cannot change role of the only owner. Add another owner first.');
+      if (target.rows.length === 0) {
+        throw new OrganizationAccessError('User is not a member of this organization', 404);
       }
-    }
 
-    await pool.query(
-      `UPDATE organization_memberships
-       SET role = $1, updated_at = NOW()
-       WHERE organization_id = $2 AND user_id = $3`,
-      [newRole, organizationId, userId]
-    );
+      const currentRole = target.rows[0].role;
+
+      if (!canManageRole(actorRole, currentRole) || !canManageRole(actorRole, newRole)) {
+        throw new OrganizationAccessError('Insufficient permissions to assign this role', 403);
+      }
+
+      if (currentRole === 'owner' && newRole !== 'owner') {
+        await this.assertAnotherOwnerRemains(
+          client,
+          organizationId,
+          userId,
+          'Cannot change role of the only owner. Add another owner first.'
+        );
+      }
+
+      await client.query(
+        `UPDATE organization_memberships
+         SET role = $1, updated_at = NOW()
+         WHERE organization_id = $2 AND user_id = $3`,
+        [newRole, organizationId, userId]
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**
