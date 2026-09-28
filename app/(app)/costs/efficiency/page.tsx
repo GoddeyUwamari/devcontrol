@@ -18,9 +18,10 @@ import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { anomalyService } from '@/lib/services/anomaly.service'
-import type { InfrastructureResource, PlatformDashboardStats } from '@/lib/types'
+import type { InfrastructureResource, CostSummary } from '@/lib/types'
 import type { AnomalyDetection } from '@/types/anomaly.types'
 import { formatSavingsCurrency } from '@/lib/utils'
+import { describeSpend, formatUsd, roundCents } from '../cost-display'
 import Link from 'next/link'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
@@ -207,10 +208,12 @@ function EfficiencyInfoBadge() {
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 function KPICard({
-  label, value, delta, prefix = '', suffix = '', accent = false,
+  label, value, delta, prefix = '', suffix = '', accent = false, note,
 }: {
   label: string; value: number | string; delta?: number
   prefix?: string; suffix?: string; accent?: boolean
+  /** Where the figure came from, or why it is missing. */
+  note?: string
 }) {
   const isPositiveDelta = (delta ?? 0) > 0
   const deltaColor = label === 'Idle Resource Cost'
@@ -230,6 +233,7 @@ function KPICard({
           <span style={{ fontSize: '12px', color: '#6b7280' }}>vs previous</span>
         </div>
       )}
+      {note && <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, lineHeight: 1.4 }}>{note}</p>}
     </div>
   )
 }
@@ -278,7 +282,7 @@ export default function EfficiencyPage() {
   const [barGrouping,    setBarGrouping]    = useState<'service' | 'region' | 'team'>('service')
   const [scatterFilter,  setScatterFilter]  = useState<'all' | 'at-risk' | 'efficient' | 'strategic' | 'low-roi'>('all')
 
-  const { data: resources = [] } = useQuery({
+  const { data: resources = [], isLoading: resourcesLoading, isError: resourcesError } = useQuery({
     queryKey: ['infrastructure-all'],
     queryFn: async () => {
       const all = await infrastructureService.getAll()
@@ -287,26 +291,28 @@ export default function EfficiencyPage() {
     enabled: !isDemoActive,
   })
 
-  const { data: savingsStats } = useQuery({
+  const { data: savingsStats, isLoading: savingsLoading, isError: savingsError } = useQuery({
     queryKey: ['cost-recommendations-stats'],
     queryFn: costRecommendationsService.getStats,
     enabled: !isDemoActive,
   })
 
-  // Source A — same call costs/page.tsx and dashboard/page.tsx use for live spend.
-  // The Total Spend KPI card was previously summing infrastructure_resources (source B),
-  // disagreeing with the Spend breakdown chart below (already on source A via realCostTrend).
-  const { data: platformStats } = useQuery<PlatformDashboardStats>({
-    queryKey: ['platform-dashboard-stats'],
-    queryFn: platformStatsService.getDashboardStats,
+  // Source A — month-to-date spend as an evidence section (actual Cost Explorer /
+  // inventory estimate / unavailable / error), the same endpoint and cache entry
+  // costs/page.tsx reads. A missing figure is a state, never $0.
+  const { data: costSummary, isLoading: costSummaryLoading, isError: costSummaryError } = useQuery<CostSummary>({
+    queryKey: ['platform-cost-summary'],
+    queryFn: platformStatsService.getCostSummary,
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive,
   })
 
   // Same endpoint app/(app)/dashboard/page.tsx uses for its cost trend chart —
-  // real AWS Cost Explorer data, degrades to [] (not fabricated) when not connected.
-  const { data: realCostTrend = [] } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
+  // real AWS Cost Explorer data; [] only when the request succeeded with no data
+  // (e.g. no connected account). A failed request is an error, not an empty series.
+  // Keyed ['cost-trend', '6mo'] -- distinct from the Costs page's own key.
+  const { data: realCostTrend = [], isError: realCostTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
     queryKey: ['cost-trend', '6mo'],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -314,7 +320,7 @@ export default function EfficiencyPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: 'include',
       })
-      if (!res.ok) return []
+      if (!res.ok) throw new Error('The AWS Cost Explorer trend could not be retrieved')
       const json = await res.json()
       return json.data ?? []
     },
@@ -324,7 +330,7 @@ export default function EfficiencyPage() {
   })
 
   // Same anomalyService the Security and Anomalies pages already use.
-  const { data: realAnomalies = [] } = useQuery<AnomalyDetection[]>({
+  const { data: realAnomalies = [], isError: realAnomaliesError } = useQuery<AnomalyDetection[]>({
     queryKey: ['anomalies', 'efficiency-page'],
     queryFn: async () => {
       const { anomalies } = await anomalyService.getAnomalies()
@@ -342,20 +348,27 @@ export default function EfficiencyPage() {
   const realTotalSpend = resources.reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
   const realIdleCost   = resources.filter(r => r.status !== 'running').reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
   const realCostPerRes = resources.length > 0 ? realTotalSpend / resources.length : 0
-  const realSavings    = savingsStats?.totalPotentialSavings ?? 0
-  // Source A — feeds the Total Spend KPI card so it agrees with the Spend breakdown
-  // chart, which already reads realCostTrend from the same live Cost Explorer endpoint.
-  const realTotalSpendLive = platformStats?.monthlyAwsCost ?? 0
+  // Source A — the Total Spend KPI, with its provenance (see costSummary above).
+  const realSpend = describeSpend(costSummary?.spend, { isLoading: costSummaryLoading, isError: costSummaryError })
 
-  const kpis = isDemoActive ? DEMO_KPIS : {
-    totalSpend:      realTotalSpendLive,
-    totalSpendDelta: 0,
-    costPerResource: realCostPerRes,
-    costPerDelta:    0,
-    idleCost:        realIdleCost,
-    idleDelta:       0,
-    savingsRealized: realSavings,
-    savingsDelta:    0,
+  // Real-mode KPI cards. No period-over-period deltas are computed for real data,
+  // so none is shown (a 0 here used to render as a fabricated "0% vs previous").
+  // Resource-based figures are inventory estimates (costPerMonth), labeled as such;
+  // a failed request is "—", never $0.
+  const inventoryNote = resourcesLoading ? 'Loading…'
+    : resourcesError ? 'Could not be retrieved'
+    : 'Estimate from resource inventory'
+  const realKpis = {
+    totalSpend: { label: realSpend.label, value: realSpend.value, note: realSpend.sub },
+    costPerResource: {
+      value: resourcesLoading || resourcesError || resources.length === 0 ? '—' : formatUsd(realCostPerRes),
+      note: !resourcesLoading && !resourcesError && resources.length === 0 ? 'No discovered resources' : inventoryNote,
+    },
+    idleCost: { value: resourcesLoading || resourcesError ? '—' : formatUsd(realIdleCost), note: inventoryNote },
+    savings: {
+      value: savingsLoading || savingsError || !savingsStats ? '—' : formatSavingsCurrency(savingsStats.totalPotentialSavings),
+      note: savingsLoading ? 'Loading…' : savingsError || !savingsStats ? 'Could not be retrieved' : 'Estimated monthly savings from recommendations',
+    },
   }
 
   // ── Scatter data ──
@@ -429,11 +442,12 @@ export default function EfficiencyPage() {
     ? DEMO_BAR_DATA
     : realCostTrend.map(p => ({
         month:    MONTH_LABELS[parseInt(p.date.slice(5, 7), 10) - 1] ?? p.date,
-        Compute:  Math.round(p.compute),
-        Storage:  Math.round(p.storage),
-        Database: Math.round(p.database),
-        Network:  Math.round(p.network),
-        Other:    Math.round(p.other),
+        // Cents, not whole dollars: a sub-dollar month must not read as $0.
+        Compute:  roundCents(p.compute),
+        Storage:  roundCents(p.storage),
+        Database: roundCents(p.database),
+        Network:  roundCents(p.network),
+        Other:    roundCents(p.other),
       }))
 
   // Max stacked total across months — decides whether the Y-axis ticks
@@ -499,10 +513,21 @@ export default function EfficiencyPage() {
 
       {/* ── KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KPICard label="Total Spend"        value={kpis.totalSpend}                   delta={kpis.totalSpendDelta} prefix="$" accent />
-        <KPICard label="Cost Per Resource"  value={kpis.costPerResource.toFixed(2)}   delta={kpis.costPerDelta}    prefix="$" />
-        <KPICard label="Idle Resource Cost" value={kpis.idleCost}                     delta={kpis.idleDelta}       prefix="$" />
-        <KPICard label="Est. Savings Opportunity" value={isDemoActive ? kpis.savingsRealized : formatSavingsCurrency(kpis.savingsRealized)} delta={kpis.savingsDelta} prefix={isDemoActive ? '$' : ''} />
+        {isDemoActive ? (
+          <>
+            <KPICard label="Total Spend"        value={DEMO_KPIS.totalSpend}                   delta={DEMO_KPIS.totalSpendDelta} prefix="$" accent />
+            <KPICard label="Cost Per Resource"  value={DEMO_KPIS.costPerResource.toFixed(2)}   delta={DEMO_KPIS.costPerDelta}    prefix="$" />
+            <KPICard label="Idle Resource Cost" value={DEMO_KPIS.idleCost}                     delta={DEMO_KPIS.idleDelta}       prefix="$" />
+            <KPICard label="Est. Savings Opportunity" value={DEMO_KPIS.savingsRealized} delta={DEMO_KPIS.savingsDelta} prefix="$" />
+          </>
+        ) : (
+          <>
+            <KPICard label={realKpis.totalSpend.label} value={realKpis.totalSpend.value} note={realKpis.totalSpend.note} accent />
+            <KPICard label="Cost Per Resource"  value={realKpis.costPerResource.value} note={realKpis.costPerResource.note} />
+            <KPICard label="Idle Resource Cost" value={realKpis.idleCost.value}        note={realKpis.idleCost.note} />
+            <KPICard label="Est. Savings Opportunity" value={realKpis.savings.value}   note={realKpis.savings.note} />
+          </>
+        )}
       </div>
 
       {/* ── CHARTS ── */}
@@ -544,7 +569,11 @@ export default function EfficiencyPage() {
             </>
           ) : (
             <div style={{ padding: '48px 0', textAlign: 'center' }}>
-              <p style={{ fontSize: '13px', color: '#6b7280' }}>No cost trend data available yet</p>
+              <p style={{ fontSize: '13px', color: '#6b7280' }}>
+                {!isDemoActive && realCostTrendError
+                  ? 'The spend trend could not be retrieved from AWS Cost Explorer.'
+                  : 'No cost trend data available yet'}
+              </p>
             </div>
           )}
         </div>
@@ -725,7 +754,15 @@ export default function EfficiencyPage() {
           </div>
         ) : (
           <div style={{ padding: '32px 0', textAlign: 'center' }}>
-            <p style={{ fontSize: '13px', color: '#6b7280' }}>No cost anomalies detected</p>
+            <p style={{ fontSize: '13px', color: '#6b7280' }}>
+              {/* Real mode: no anomaly detector is connected, so an empty response is not
+                  evidence that no anomalies exist -- never claim their absence. */}
+              {isDemoActive
+                ? 'No cost anomalies detected'
+                : realAnomaliesError
+                  ? 'Anomalies could not be retrieved.'
+                  : 'Cost anomaly detection is not currently available.'}
+            </p>
           </div>
         )}
       </div>

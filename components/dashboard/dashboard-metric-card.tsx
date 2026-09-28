@@ -15,6 +15,8 @@ interface DashboardMetricCardProps {
   valueSuffix?: string
   valueColor?: string
   trend?: { direction: 'up' | 'down' | 'flat'; label: string; color: string }
+  /** Secondary lines under the value (e.g. where a figure came from, or why it is missing). */
+  captions?: string[]
   /** Real historical series only — omit rather than fabricate a trend shape. */
   sparkline?: SparklinePoint[]
   href?: string
@@ -44,7 +46,7 @@ function Sparkline({ points, color }: { points: SparklinePoint[]; color: string 
  * value, optional trend line and real-data-only sparkline, matching the
  * approved mockup's card shape.
  */
-export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, label, value, valueSuffix, valueColor, trend, sparkline, href }: DashboardMetricCardProps) {
+export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, label, value, valueSuffix, valueColor, trend, captions, sparkline, href }: DashboardMetricCardProps) {
   const TrendIcon = trend?.direction === 'up' ? TrendingUp : trend?.direction === 'down' ? TrendingDown : Minus
   const content = (
     <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full">
@@ -67,6 +69,9 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
           <span className="text-xs font-semibold" style={{ color: trend.color }}>{trend.label}</span>
         </div>
       )}
+      {captions?.map((caption) => (
+        <p key={caption} className="text-xs text-[var(--text-secondary)] mt-1 mb-0 leading-snug">{caption}</p>
+      ))}
       {sparkline && sparkline.length >= 2 && <Sparkline points={sparkline} color={trend?.color ?? 'var(--text-success)'} />}
     </div>
   )

@@ -9,6 +9,8 @@ interface CostTrendsCardProps {
   hasBillingData: boolean
   costTrend: Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>
   costTrendLoading: boolean
+  /** The trend request failed -- shown as such, never as an empty (zero-spend) chart. */
+  costTrendError?: boolean
   demoBreakdownData: Array<{ name: string; value: number; change: number; color: string }>
   demoTotalCost: number
   dateRange: DateRange
@@ -27,6 +29,7 @@ export function CostTrendsCard({
   hasBillingData,
   costTrend,
   costTrendLoading,
+  costTrendError = false,
   demoBreakdownData,
   demoTotalCost,
   dateRange,
@@ -59,6 +62,12 @@ export function CostTrendsCard({
       <CostTrendChart
         data={costTrend}
         isLoading={costTrendLoading}
+        unavailableMessage={
+          costTrendLoading ? null
+            : costTrendError ? 'The cost trend could not be retrieved from AWS Cost Explorer.'
+            : costTrend.length === 0 ? 'No AWS Cost Explorer data is available for this range.'
+            : null
+        }
         dateRange={dateRange}
         onDateRangeChange={onDateRangeChange}
         onExport={onExport}

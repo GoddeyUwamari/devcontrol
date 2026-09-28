@@ -144,7 +144,10 @@ describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication 
 describe('Currency formatting: precise 2-decimal display', () => {
   it('Monthly Spend uses the precise Intl.NumberFormat currency formatter, not a rounding .toLocaleString()', () => {
     expect(pageSource).toMatch(/const currencyFormatter = new Intl\.NumberFormat\('en-US', \{ style: 'currency', currency: 'USD' \}\)/)
-    expect(pageSource).toMatch(/currencyFormatter\.format\(currentSpend\)/)
+    // Demo mode formats here; real mode's figure comes from computeDashboardSpendCard(),
+    // whose describeSpend() uses the same always-2-decimal Intl currency format.
+    expect(pageSource).toMatch(/currencyFormatter\.format\(DEMO_DASHBOARD_STATS\.monthlyAwsCost\)/)
+    expect(pageSource).toMatch(/computeDashboardSpendCard\(/)
   })
 
   it('no longer uses a bare toLocaleString() for the currency display (which drops cents/rounds)', () => {
@@ -183,7 +186,7 @@ describe('Cloud provider tiles: reusable connected/unavailable variants', () => 
 
 describe('Primary KPI row: all three cards link to their detail pages', () => {
   it('Monthly Spend links to /costs, Security Posture links to /security, Infrastructure Health links to /infrastructure', () => {
-    expect(pageSource).toMatch(/label="Monthly Spend"[^]*?href="\/costs"/)
+    expect(pageSource).toMatch(/'Monthly Spend'[^]*?href="\/costs"/)
     expect(pageSource).toMatch(/label="Security Posture"[^]*?href="\/security"/)
     expect(pageSource).toMatch(/label="Infrastructure Health"[^]*?href="\/infrastructure"/)
   })
