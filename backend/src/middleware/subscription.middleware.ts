@@ -118,7 +118,7 @@ export function isOrgRestricted(row: {
  * paid tier to the client -- restriction affects access, not what plan the
  * customer is shown as being on.
  */
-async function getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
+export async function getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
   const result = await pool.query(
     `SELECT subscription_tier, billing_lifecycle_state, grace_period_ends_at
      FROM organizations WHERE id = $1 AND deleted_at IS NULL`,

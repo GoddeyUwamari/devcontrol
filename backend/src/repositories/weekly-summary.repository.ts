@@ -184,12 +184,11 @@ export function weeklySummaryPeriod(now: Date): WeeklySummaryPeriod {
  *
  * "Accepted membership" is om.joined_at IS NOT NULL: every path that creates
  * or accepts a membership sets it (org creator, signup, invitation accept,
- * standalone invitation accept, SAML provisioning of a new user, and the
- * legacy migrations-admin/005 owner row); only a pending invitation leaves it
- * NULL. Fail safe by design: an invitee who signs in through SAML while their
- * invitation is still pending (saml.service.ts findOrCreateUser() accepts any
- * is_active membership and leaves joined_at/invitation_token untouched) is
- * excluded until they accept the invitation -- skipped, never broadened.
+ * standalone invitation accept, and the legacy migrations-admin/005 owner
+ * row); only a pending invitation leaves it NULL. Pending existing-user
+ * invitations are also stored is_active = false, and SAML sign-in never
+ * creates or activates a membership, so this is belt-and-braces: a pending
+ * invitee is excluded until they accept -- skipped, never broadened.
  */
 const WEEKLY_SUMMARY_RECIPIENT_PREDICATES = `om.role = 'owner'
          AND om.is_active = true
