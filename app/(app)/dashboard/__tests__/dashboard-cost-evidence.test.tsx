@@ -2,9 +2,11 @@
  * The Dashboard's evidence-aware spend KPI, end to end through the real
  * DashboardPage:
  *   - the connection gates and the /connect-aws redirect still read only
- *     /api/platform/stats/dashboard (monthlyAwsCost et al.), so they behave
- *     identically for a connected account whatever the Cost Explorer evidence
- *     says ($0, net credit, unavailable, error, failed request);
+ *     /api/aws/accounts and /api/platform/stats/dashboard (monthlyAwsCost et
+ *     al.), so they behave identically whatever the Cost Explorer evidence
+ *     says ($0, net credit, unavailable, error, failed request) -- including
+ *     connected via only one of those signals, and an unconnected account
+ *     still being redirected;
  *   - the AI Summary request carries nothing from the page (no MoM value);
  *   - a failed or empty cost trend reads as such, not as a $0 chart.
  * All figures are test fixtures, not production data.
@@ -53,17 +55,23 @@ const EVIDENCE: Array<[string, CostSummary | null, string]> = [
 ]
 
 /**
- * What /api/platform/stats/dashboard (unchanged) returns for a connected account:
- * one with billing data, and one whose legacy figure is 0 with no billing data yet.
+ * What /api/platform/stats/dashboard (unchanged) returns: an account with
+ * billing data, one whose legacy figure is 0 with services but no billing data
+ * yet, and one with nothing at all yet.
  */
-const LEGACY_STATS: Record<'billing' | 'servicesOnly', PlatformDashboardStats> = {
+const LEGACY_STATS: Record<'billing' | 'servicesOnly' | 'zero', PlatformDashboardStats> = {
   billing: { totalServices: 3, servicesChange: 0, activeDeployments: 1, deploymentsChange: 0, monthlyAwsCost: 100, costChange: 0, totalTeams: 1, teamsChange: 0, costSource: 'actual' },
   servicesOnly: { totalServices: 3, servicesChange: 0, activeDeployments: 0, deploymentsChange: 0, monthlyAwsCost: 0, costChange: 0, totalTeams: 1, teamsChange: 0, costSource: 'estimated' },
+  zero: { totalServices: 0, servicesChange: 0, activeDeployments: 0, deploymentsChange: 0, monthlyAwsCost: 0, costChange: 0, totalTeams: 0, teamsChange: 0, costSource: 'estimated' },
 }
 const SYNCING_BANNER = /Historical billing data is still syncing/
+const BILLING_SYNC_BANNER = /Billing sync in progress/
+const CONNECTED_ACCOUNTS = [{ id: 'acct' }]
 
 let client: QueryClient
 let trendResponse: { ok: boolean; data: unknown[] }
+/** What /api/aws/accounts returns (the other connection signal besides the legacy stats). */
+let awsAccounts: unknown[]
 
 function setup(stats: PlatformDashboardStats, summary: CostSummary | null) {
   vi.spyOn(platformStatsService, 'getDashboardStats').mockResolvedValue(stats)
@@ -89,9 +97,10 @@ beforeEach(() => {
   vi.spyOn(soc2Service, 'getReadiness').mockResolvedValue([] as never)
   vi.spyOn(complianceFrameworksService, 'getFrameworks').mockResolvedValue([] as never)
   trendResponse = { ok: true, data: [{ date: '2026-09-26', compute: 1, storage: 0, database: 0, network: 0, other: 0, total: 1 }, { date: '2026-09-27', compute: 2, storage: 0, database: 0, network: 0, other: 0, total: 2 }] }
-  // aws-accounts and cost-trend call fetch() directly: a connected account.
+  // aws-accounts and cost-trend call fetch() directly: a connected account unless a test says otherwise.
+  awsAccounts = CONNECTED_ACCOUNTS
   vi.stubGlobal('fetch', vi.fn(async (url: string) => String(url).includes('/api/aws/accounts')
-    ? { ok: true, json: async () => ({ data: [{ id: 'acct' }] }) }
+    ? { ok: true, json: async () => ({ data: awsAccounts }) }
     : { ok: trendResponse.ok, json: async () => (trendResponse.ok ? { success: true, data: trendResponse.data } : { success: false }) }))
 })
 afterEach(() => {
@@ -110,6 +119,18 @@ async function spendCardText(expectedValue: string) {
   })
   return (screen.getAllByText(expectedValue).find((el) => el.closest('a[href="/costs"]'))!.closest('a') as HTMLElement).textContent ?? ''
 }
+/**
+ * Waits until every input the redirect decision depends on has settled -- the
+ * accounts list, the legacy stats, and the cost evidence -- so a "no redirect"
+ * assertion can't pass merely because the accounts hadn't loaded yet.
+ */
+async function gateInputsSettled() {
+  await waitFor(() => {
+    expect(client.getQueryData(['aws-accounts', 'org-test'])).toBeDefined()
+    expect(client.getQueryState(['platform-dashboard-stats', 'org-test'])?.status).toBe('success')
+    expect(client.getQueryState(['platform-cost-summary', 'org-test'])?.status).not.toBe('pending')
+  })
+}
 
 describe('connection gates and the /connect-aws redirect ignore the cost evidence', () => {
   for (const legacy of ['billing', 'servicesOnly'] as const) {
@@ -118,7 +139,7 @@ describe('connection gates and the /connect-aws redirect ignore the cost evidenc
       renderDashboard()
 
       await spendCardText(value)
-      await waitFor(() => expect(platformStatsService.getCostSummary).toHaveBeenCalled())
+      await gateInputsSettled()
       expect(router.replace).not.toHaveBeenCalled()
       // hasServicesOnly comes from computeDashboardAwsGates(stats) alone.
       if (legacy === 'servicesOnly') expect(screen.getByText(SYNCING_BANNER)).toBeInTheDocument()
@@ -127,6 +148,43 @@ describe('connection gates and the /connect-aws redirect ignore the cost evidenc
       expect(screen.getByText('Security Posture')).toBeInTheDocument()
     })
   }
+
+  // Connected through only one of the two legacy signals: the other can't mask
+  // the evidence leaking into the connection decision.
+  it.each(EVIDENCE)('accounts connected, all legacy stats zero, evidence %s: never redirects, and the billing-sync banner shows', async (_name, summary, value) => {
+    setup(LEGACY_STATS.zero, summary)
+    renderDashboard()
+
+    await spendCardText(value)
+    await gateInputsSettled()
+    expect(router.replace).not.toHaveBeenCalled()
+    // isBillingSyncing comes from computeDashboardAwsGates(stats) alone.
+    expect(screen.getByText(BILLING_SYNC_BANNER)).toBeInTheDocument()
+    expect(screen.queryByText(SYNCING_BANNER)).not.toBeInTheDocument()
+  })
+
+  it.each(EVIDENCE)('no accounts, legacy billing stats present, evidence %s: never redirects', async (_name, summary, value) => {
+    awsAccounts = []
+    setup(LEGACY_STATS.billing, summary)
+    renderDashboard()
+
+    await spendCardText(value)
+    await gateInputsSettled()
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(screen.queryByText(BILLING_SYNC_BANNER)).not.toBeInTheDocument()
+    expect(screen.getByText('Security Posture')).toBeInTheDocument()
+  })
+
+  it.each(EVIDENCE)('no accounts and all legacy stats zero, evidence %s: still redirects to /connect-aws', async (_name, summary) => {
+    awsAccounts = []
+    setup(LEGACY_STATS.zero, summary)
+    renderDashboard()
+
+    await gateInputsSettled()
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/connect-aws'))
+    // Even actual Cost Explorer spend ($0 or a credit) does not make the account "connected".
+    expect(screen.queryByText('Security Posture')).not.toBeInTheDocument()
+  })
 })
 
 describe('the spend card reads the evidence', () => {
