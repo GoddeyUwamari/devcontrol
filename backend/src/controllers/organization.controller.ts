@@ -7,6 +7,20 @@ import { Request, Response } from 'express';
 import { organizationService } from '../services/organization.service';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
 
+/**
+ * Status for a failed membership operation: authorization/seat errors from
+ * the service carry their own (403/404/402), everything else keeps this
+ * controller's existing 400.
+ */
+function membershipErrorResponse(res: Response, error: any, fallback: string): void {
+  const status = typeof error?.statusCode === 'number' ? error.statusCode : 400;
+  res.status(status).json({
+    success: false,
+    error: error?.message || fallback,
+    ...(error?.code ? { code: error.code } : {}),
+  });
+}
+
 export class OrganizationController {
   /**
    * POST /api/organizations
@@ -246,10 +260,7 @@ export class OrganizationController {
         data: result,
       });
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to invite user',
-      });
+      membershipErrorResponse(res, error, 'Failed to invite user');
     }
   }
 
@@ -288,10 +299,7 @@ export class OrganizationController {
         data: result,
       });
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to accept invitation',
-      });
+      membershipErrorResponse(res, error, 'Failed to accept invitation');
     }
   }
 
@@ -301,19 +309,26 @@ export class OrganizationController {
    */
   async removeUser(req: Request, res: Response): Promise<void> {
     try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+        });
+        return;
+      }
+
       const { id, userId } = req.params;
 
-      await organizationService.removeUser(id, userId);
+      // The caller is always the authenticated token's user -- :userId is
+      // only ever the TARGET membership.
+      await organizationService.removeUser(id, req.user.userId, userId);
 
       res.status(200).json({
         success: true,
         message: 'User removed from organization successfully',
       });
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to remove user',
-      });
+      membershipErrorResponse(res, error, 'Failed to remove user');
     }
   }
 
@@ -323,6 +338,14 @@ export class OrganizationController {
    */
   async updateUserRole(req: Request, res: Response): Promise<void> {
     try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+        });
+        return;
+      }
+
       const { id, userId } = req.params;
       const { role } = req.body;
 
@@ -334,17 +357,16 @@ export class OrganizationController {
         return;
       }
 
-      await organizationService.updateUserRole(id, userId, role);
+      // The caller is always the authenticated token's user -- :userId is
+      // only ever the TARGET membership; role is validated in the service.
+      await organizationService.updateUserRole(id, req.user.userId, userId, role);
 
       res.status(200).json({
         success: true,
         message: 'User role updated successfully',
       });
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to update user role',
-      });
+      membershipErrorResponse(res, error, 'Failed to update user role');
     }
   }
 

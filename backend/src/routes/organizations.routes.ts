@@ -76,7 +76,9 @@ router.delete(
 // Member management
 router.get('/:id/members', requireOwnOrg, organizationController.getMembers.bind(organizationController));
 
-// Invite users (requires admin or owner, checks user limit)
+// Invite users (requires admin or owner, checks user limit). requireAdmin is a
+// coarse gate on the token's role claim; the service re-authorizes against the
+// caller's current membership and the specific role being granted.
 router.post(
   '/:id/invite',
   requireOwnOrg,
@@ -85,12 +87,14 @@ router.post(
   organizationController.inviteUser.bind(organizationController)
 );
 
-// Accept invitation (any authenticated user, checks user limit) — deliberately
-// NOT gated by requireOwnOrg: this is how a user joins an org they aren't a
-// member of yet, so the target org legitimately differs from their current one.
+// Accept invitation (any authenticated user) — deliberately NOT gated by
+// requireOwnOrg: this is how a user joins an org they aren't a member of yet,
+// so the target org legitimately differs from their current one. For the same
+// reason the seat limit is NOT checked here by checkResourceLimit (which
+// counts the caller's own org): acceptInvitation() checks the org being
+// joined, inside its transaction.
 router.post(
   '/accept-invitation',
-  checkResourceLimit('users', 1),
   organizationController.acceptInvitation.bind(organizationController)
 );
 

@@ -3,13 +3,44 @@
  * Handles SAML 2.0 authentication flows and SSO configuration management
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
 import { samlInitiateRateLimiter, authRateLimiter } from '../middleware/rateLimiter';
 import { samlService } from '../services/saml.service';
+import { pool } from '../config/database';
+import { requireCurrentRole } from '../services/organization-authorization';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3010';
+
+// Shown to the browser for every SSO failure; the specific reason is only
+// logged, so the callback can't be used to probe who is a member, whether
+// SSO is configured, or why an assertion was refused.
+const SSO_FAILED_MESSAGE = 'SSO sign-in failed. Contact your organization owner if this persists.';
+
+/**
+ * Replacing or removing an org's IdP decides who can sign in as whom --
+ * whoever controls the IdP can assert any member's email, owners included --
+ * so it is owner-only, checked against the caller's CURRENT membership (not
+ * their JWT role claim, and not Enterprise membership alone).
+ */
+async function requireCurrentOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Authentication required' });
+      return;
+    }
+    await requireCurrentRole(pool, req.user.organizationId, req.user.userId, ['owner']);
+    next();
+  } catch (err: any) {
+    if (err?.statusCode === 403) {
+      res.status(403).json({ success: false, error: 'Only an organization owner can change SSO configuration' });
+      return;
+    }
+    console.error('[SAML] owner check error:', err);
+    res.status(500).json({ success: false, error: 'Failed to verify permissions' });
+  }
+}
 
 export function createSAMLRoutes(): Router {
   const router = Router();
@@ -55,25 +86,26 @@ export function createSAMLRoutes(): Router {
       const url = await samlService.getInitiateUrl(orgId);
       res.redirect(url);
     } catch (err: any) {
-      console.error('[SAML] initiate error:', err);
-      const msg = encodeURIComponent(err.message || 'SSO initiation failed');
-      res.redirect(`${FRONTEND_URL}/login?error=sso_failed&message=${msg}`);
+      console.error('[SAML] initiate error:', err?.message ?? err);
+      res.redirect(`${FRONTEND_URL}/login?error=sso_failed&message=${encodeURIComponent(SSO_FAILED_MESSAGE)}`);
     }
   });
 
   // ─── Public: SAML callback (IdP posts assertion here) ────────────────────
   // Must parse URL-encoded body — express.urlencoded is mounted globally in server.ts
+  // The org is the one bound to this callback URL (?orgId=), which is also
+  // the ACS URL the response must be addressed to — never RelayState or an
+  // assertion attribute. authenticateCallback only authenticates an existing
+  // active member; the token's user/org/role come from that membership row.
   router.post('/callback', async (req: Request, res: Response) => {
     try {
       const orgId = req.query.orgId as string;
       if (!orgId) {
-        res.redirect(`${FRONTEND_URL}/login?error=sso_failed&message=Missing+orgId`);
+        res.redirect(`${FRONTEND_URL}/login?error=sso_failed&message=${encodeURIComponent(SSO_FAILED_MESSAGE)}`);
         return;
       }
 
-      const profile = await samlService.validateCallback(orgId, req.body);
-      const user = await samlService.findOrCreateUser(orgId, profile);
-      const tokens = await samlService.issueTokens(user.userId, user.email, orgId, user.role);
+      const tokens = await samlService.authenticateCallback(orgId, req.body);
 
       // Redirect to frontend SSO landing page with tokens in query params
       // The frontend page reads these, stores to localStorage, then redirects to /dashboard
@@ -84,9 +116,8 @@ export function createSAMLRoutes(): Router {
       });
       res.redirect(`${FRONTEND_URL}/auth/sso/callback?${params.toString()}`);
     } catch (err: any) {
-      console.error('[SAML] callback error:', err);
-      const msg = encodeURIComponent(err.message || 'SSO authentication failed');
-      res.redirect(`${FRONTEND_URL}/login?error=sso_failed&message=${msg}`);
+      console.error('[SAML] callback rejected:', err?.message ?? err);
+      res.redirect(`${FRONTEND_URL}/login?error=sso_failed&message=${encodeURIComponent(SSO_FAILED_MESSAGE)}`);
     }
   });
 
@@ -140,8 +171,8 @@ export function createSAMLRoutes(): Router {
     }
   });
 
-  // ─── Protected: save SSO config (Enterprise only) ────────────────────────
-  router.post('/config', authenticateToken, requireEnterprise, async (req: Request, res: Response) => {
+  // ─── Protected: save SSO config (Enterprise, current owner only) ─────────
+  router.post('/config', authenticateToken, requireEnterprise, requireCurrentOwner, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).organizationId || (req as any).user?.organizationId;
       const {
@@ -191,8 +222,8 @@ export function createSAMLRoutes(): Router {
     }
   });
 
-  // ─── Protected: delete SSO config (Enterprise only) ──────────────────────
-  router.delete('/config', authenticateToken, requireEnterprise, async (req: Request, res: Response) => {
+  // ─── Protected: delete SSO config (Enterprise, current owner only) ───────
+  router.delete('/config', authenticateToken, requireEnterprise, requireCurrentOwner, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).organizationId || (req as any).user?.organizationId;
       await samlService.deleteConfig(orgId);

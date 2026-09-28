@@ -4,6 +4,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
+import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
@@ -117,7 +118,7 @@ export function isOrgRestricted(row: {
  * paid tier to the client -- restriction affects access, not what plan the
  * customer is shown as being on.
  */
-async function getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
+export async function getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
   const result = await pool.query(
     `SELECT subscription_tier, billing_lifecycle_state, grace_period_ends_at
      FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
@@ -245,6 +246,62 @@ export const requireEnterprise = requireTier('enterprise');
  */
 export type ResourceLimitType = 'services' | 'users' | 'deployments' | 'aws_resources';
 
+function resolveMaxUsers(
+  org: { max_users: number | null },
+  tier: SubscriptionTier,
+  restricted: boolean
+): number {
+  return restricted ? TIER_LIMITS.free.maxUsers : (org.max_users || TIER_LIMITS[tier].maxUsers);
+}
+
+/**
+ * Seat check for a specific organization, resolved exactly as
+ * checkResourceLimit('users') resolves it, but against an explicit
+ * organization and executor instead of the caller's own org -- invitation
+ * acceptance joins a DIFFERENT org than the accepting user's token names,
+ * and runs inside its own transaction. Throws if one more active member
+ * would exceed the limit. `excludeUserId`'s own membership row is not
+ * counted, so accepting an invitation never counts the invitee twice.
+ */
+export async function assertOrganizationHasSeat(
+  executor: Pool | PoolClient,
+  organizationId: string,
+  excludeUserId: string
+): Promise<void> {
+  const orgResult = await executor.query(
+    `SELECT subscription_tier, max_users, billing_lifecycle_state, grace_period_ends_at
+     FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
+    [organizationId]
+  );
+  if (orgResult.rows.length === 0) {
+    throw new Error('Organization not found');
+  }
+  const org = orgResult.rows[0];
+  const restricted = isOrgRestricted(org);
+  const tier: SubscriptionTier = restricted ? 'free' : ((org.subscription_tier as SubscriptionTier) || 'free');
+  const maxUsers = resolveMaxUsers(org, tier, restricted);
+  if (maxUsers === -1) return;
+
+  const usersResult = await executor.query(
+    `SELECT COUNT(*) FROM organization_memberships
+     WHERE organization_id = $1 AND is_active = true AND user_id <> $2`,
+    [organizationId, excludeUserId]
+  );
+  const currentUsage = parseInt(usersResult.rows[0].count);
+  if (currentUsage + 1 > maxUsers) {
+    throw new SeatLimitReachedError(currentUsage, maxUsers);
+  }
+}
+
+export class SeatLimitReachedError extends Error {
+  readonly statusCode = 402;
+  readonly code = 'RESOURCE_LIMIT_REACHED';
+  constructor(public readonly currentUsage: number, public readonly maxLimit: number) {
+    super(`This organization has reached its users limit (${currentUsage}/${maxLimit}).`);
+    this.name = 'SeatLimitReachedError';
+  }
+}
+
 /**
  * Get organization's resource limits and current usage
  */
@@ -311,7 +368,7 @@ async function getOrganizationLimits(organizationId: string): Promise<{
     tier,
     limits: {
       maxServices: restricted ? TIER_LIMITS.free.maxServices : (org.max_services || TIER_LIMITS[tier].maxServices),
-      maxUsers: restricted ? TIER_LIMITS.free.maxUsers : (org.max_users || TIER_LIMITS[tier].maxUsers),
+      maxUsers: resolveMaxUsers(org, tier, restricted),
       maxDeploymentsPerMonth: restricted ? TIER_LIMITS.free.maxDeploymentsPerMonth : (org.max_deployments_per_month || TIER_LIMITS[tier].maxDeploymentsPerMonth),
       maxResources: TIER_LIMITS[tier].maxResources,
     },
