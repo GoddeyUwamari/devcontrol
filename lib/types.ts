@@ -504,6 +504,48 @@ export interface PlatformDashboardStats {
   costSource?: 'actual' | 'estimated';
 }
 
+/**
+ * Wire shape of the backend's shared evidence contract, ContextSection<T>
+ * (backend/src/services/ai-context-contract.ts) -- typing only. State and
+ * provenance are decided server-side; the client never infers them from a
+ * value (a missing figure is a state, never 0).
+ */
+export interface ContextSection<T> {
+  state: 'available' | 'partial' | 'unavailable' | 'error' | 'not_supported';
+  source: string;
+  provenance: 'actual' | 'estimated' | 'derived' | null;
+  asOf: string | null;
+  coverage: string | null;
+  reason: string | null;
+  data: T | null;
+}
+
+/** SpendEvidence in backend/src/services/cost-context-sections.ts. */
+export interface CostSpendEvidence {
+  /** USD. May be 0 or negative (credits exceed charges) for billed spend. */
+  amount: number;
+  basis: 'billed_month_to_date' | 'estimated_monthly_run_rate';
+  lastDayInProgress: boolean;
+}
+
+/** MonthOverMonthEvidence in backend/src/services/cost-context-sections.ts. */
+export interface CostMonthOverMonthEvidence {
+  currentWindow: { start: string; end: string };
+  previousWindow: { start: string; end: string };
+  currentWindowTotal: number;
+  previousWindowTotal: number;
+  changeAmount: number;
+  /** null when the previous window totals $0 (a percentage is undefined). */
+  changePercent: number | null;
+  currentWindowIncludesToday: boolean;
+}
+
+/** GET /api/platform/costs/summary */
+export interface CostSummary {
+  spend: ContextSection<CostSpendEvidence>;
+  monthOverMonth: ContextSection<CostMonthOverMonthEvidence>;
+}
+
 // Cost Metrics
 export interface CostMetrics {
   totalMonthlyCost: number;

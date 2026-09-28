@@ -11,6 +11,7 @@ const activityFeedController = new ActivityFeedController();
 
 router.get('/stats/dashboard', authenticateToken, (req, res) => controller.getDashboardStats(req, res));
 router.get('/costs/trend', authenticateToken, (req, res) => controller.getCostTrend(req, res));
+router.get('/costs/summary', authenticateToken, (req, res) => controller.getCostSummary(req, res));
 router.get('/ai-summary', authenticateToken, (req, res) => aiSummaryController.getSummary(req, res));
 router.get('/activity', authenticateToken, (req, res) => activityFeedController.getActivity(req, res));
 

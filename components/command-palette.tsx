@@ -140,7 +140,7 @@ export function CommandPalette() {
                     Press Enter to search with AI
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Try: "show expensive EC2" · "critical alerts today"
+                    {'Try: "stopped EC2 instances" · "what is my AWS spend this month"'}
                   </p>
                 </>
               )}
