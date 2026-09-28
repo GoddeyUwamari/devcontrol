@@ -1,5 +1,5 @@
 import api, { handleApiResponse } from '../api';
-import type { PlatformDashboardStats, ApiResponse } from '../types';
+import type { PlatformDashboardStats, ApiResponse, CostSummary } from '../types';
 
 export const platformStatsService = {
   // Get dashboard statistics
@@ -19,5 +19,12 @@ export const platformStatsService = {
       teamsChange: 0,
       costSource: (result.cost_source as 'actual' | 'estimated') ?? 'estimated',
     };
+  },
+
+  // Month-to-date spend and month-over-month comparison as evidence sections --
+  // actual / estimated / unavailable / error are distinct, never a 0 fallback.
+  getCostSummary: async (): Promise<CostSummary> => {
+    const response = await api.get<ApiResponse<CostSummary>>('/api/platform/costs/summary');
+    return handleApiResponse(response);
   },
 };

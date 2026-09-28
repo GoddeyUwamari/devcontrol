@@ -8,7 +8,7 @@ import {
 } from 'recharts'
 import {
   Search, Download, TrendingUp, TrendingDown, Minus,
-  Sparkles, ArrowRight, Loader2, X, ChevronRight,
+  Sparkles, Loader2, X, ChevronRight,
   Zap, Lock,
 } from 'lucide-react'
 import { usePlan } from '@/lib/hooks/use-plan'
@@ -18,8 +18,9 @@ import { nlQueryService, NLQueryResult, NLQueryOutcome } from '@/lib/services/nl
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
-import type { PlatformDashboardStats, CostRecommendation, RecommendationSeverity } from '@/lib/types'
-import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
+import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/lib/types'
+import { formatSavingsCurrency } from '@/lib/utils'
+import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, roundCents, TODAY_STILL_BILLING } from './cost-display'
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -101,42 +102,6 @@ const DEMO_CHART_DATA: { date: string; actual: number | null; forecast: number |
   { date: 'Apr 29', actual: null, forecast: 192 }, { date: 'Apr 30', actual: null, forecast: 195 },
 ]
 
-// Month-over-month cost delta, derived from the already-fetched costTrend daily series
-// (no new API call). Compares this month's spend-to-date against the same number of
-// days into last month, calendar-string-parsed to avoid UTC/local timezone day-shift.
-// Only returns a value when both windows have enough real daily coverage to trust the
-// comparison — otherwise null. Mirrors computeMonthOverMonthCostChange in dashboard/page.tsx.
-function computeMonthOverMonthCostChange(
-  costTrend: Array<{ date: string; total: number }>
-): number | null {
-  if (!costTrend || costTrend.length === 0) return null
-
-  const now = new Date()
-  const curYear = now.getFullYear()
-  const curMonth = now.getMonth()
-  const dayOfMonth = now.getDate()
-  const lastMonth = curMonth === 0 ? 11 : curMonth - 1
-  const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear
-
-  let currentSum = 0, currentDays = 0
-  let lastSum = 0, lastDays = 0
-
-  for (const entry of costTrend) {
-    const [y, m, d] = entry.date.split('-').map(Number)
-    const month = m - 1
-    if (y === curYear && month === curMonth && d <= dayOfMonth) {
-      currentSum += entry.total
-      currentDays++
-    } else if (y === lastMonthYear && month === lastMonth && d <= dayOfMonth) {
-      lastSum += entry.total
-      lastDays++
-    }
-  }
-
-  if (currentDays < dayOfMonth * 0.5 || lastDays < dayOfMonth * 0.5 || lastSum === 0) return null
-  return Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10
-}
-
 export default function CostsPage() {
   const { isPro } = usePlan()
   const [selectedRange, setSelectedRange] = useState('30D')
@@ -154,10 +119,12 @@ export default function CostsPage() {
 
   const selectedRangeParam = DATE_RANGES.find(r => r.label === selectedRange)?.range ?? '30d'
 
-  // Source A: live AWS Cost Explorer, same call as dashboard/page.tsx.
-  const { data: stats, isLoading: statsLoading } = useQuery<PlatformDashboardStats>({
-    queryKey: ['platform-dashboard-stats'],
-    queryFn: platformStatsService.getDashboardStats,
+  // Source A: month-to-date spend and the month-over-month comparison as evidence
+  // sections (actual Cost Explorer / inventory estimate / unavailable / error),
+  // the same cost path AI Reports and Ask AI use. A missing figure is a state, never 0.
+  const { data: costSummary, isLoading: costSummaryLoading, isError: costSummaryError } = useQuery<CostSummary>({
+    queryKey: ['platform-cost-summary'],
+    queryFn: platformStatsService.getCostSummary,
     // AWS cost data changes slowly — long staleTime/gcTime avoids re-hitting Cost Explorer
     // (billed per API call) on every render/tab-switch. Matches dashboard/page.tsx.
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
@@ -166,17 +133,20 @@ export default function CostsPage() {
   })
 
   // Source A: per-category daily cost trend, same endpoint as dashboard/page.tsx.
-  const { data: costTrend = [], isLoading: costTrendLoading } = useQuery<
+  // The key is this page's own: /costs/efficiency caches a failed request under
+  // ['cost-trend', '6mo'] as [], which must never read as "no data" here.
+  const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<
     Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>
   >({
-    queryKey: ['cost-trend', selectedRangeParam],
+    queryKey: ['costs-page', 'cost-trend', selectedRangeParam],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=${selectedRangeParam}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: 'include',
       })
-      if (!res.ok) return []
+      // A failed request is an error, not an empty (zero-spend) series.
+      if (!res.ok) throw new Error('The AWS Cost Explorer trend could not be retrieved')
       const json = await res.json()
       return json.data ?? []
     },
@@ -186,14 +156,14 @@ export default function CostsPage() {
   })
 
   // Source C: cost_recommendations — same service Cost Optimization page uses.
-  const { data: recStats, isLoading: recStatsLoading } = useQuery({
+  const { data: recStats, isLoading: recStatsLoading, isError: recStatsError } = useQuery({
     queryKey: ['cost-recommendations-stats'],
     queryFn: costRecommendationsService.getStats,
     staleTime: 5 * 60 * 1000,
     enabled: !isDemoActive,
   })
 
-  const { data: activeRecs = [] } = useQuery<CostRecommendation[]>({
+  const { data: activeRecs = [], isError: activeRecsError } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations-active'],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
     staleTime: 5 * 60 * 1000,
@@ -218,23 +188,34 @@ export default function CostsPage() {
   }
 
   const selectedDays = DATE_RANGES.find(r => r.label === selectedRange)?.days ?? 30
+  // 6M/1Y trend points are monthly totals (Cost Explorer MONTHLY granularity); shorter ranges are daily.
+  const trendUnit = selectedRangeParam === '6mo' || selectedRangeParam === '1yr' ? 'month' : 'day'
   const chartData = useMemo(() => {
     if (isDemoActive) return DEMO_CHART_DATA
     return costTrend.slice(-selectedDays).map(p => ({
       date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      actual: Math.round(p.total),
+      actual: roundCents(p.total),
       forecast: null as number | null,
     }))
   }, [isDemoActive, costTrend, selectedDays])
+  // Whether the trend has real Cost Explorer points to show; an empty or failed series is never drawn as $0.
+  const hasTrendData = !isDemoActive && !costTrendLoading && !costTrendError && costTrend.length > 0
 
-  const mtdSpend = isDemoActive ? DEMO_MTD_SPEND : (stats?.monthlyAwsCost ?? 0)
+  const spend = isDemoActive
+    ? { label: 'Month-to-Date Spend', value: `$${DEMO_MTD_SPEND.toLocaleString()}`, sub: 'Live from AWS Cost Explorer', amount: DEMO_MTD_SPEND, provenance: 'actual' as const }
+    : describeSpend(costSummary?.spend, { isLoading: costSummaryLoading, isError: costSummaryError })
+  // Month-over-month is FIXED to month to date vs the same days last month (the
+  // backend's comparison over a 90-day trend, costSummary.monthOverMonth). It is
+  // independent of the chart range: selectedRange changes only the Spend Trend data.
+  const mom = isDemoActive
+    ? { value: `+${DEMO_GROWTH_RATE}%`, sub: 'Spend trending up vs last month', changePercent: DEMO_GROWTH_RATE, direction: 'up' as const, includesToday: false }
+    : describeMonthOverMonth(costSummary?.monthOverMonth, { isLoading: costSummaryLoading, isError: costSummaryError })
+  // Only a real percentage drives colors and the spike banner; a missing comparison is neither up nor down.
+  const growthRate = mom.changePercent
 
-  const monthOverMonthChange = isDemoActive ? null : computeMonthOverMonthCostChange(costTrend)
-  const growthRate = isDemoActive ? DEMO_GROWTH_RATE : (monthOverMonthChange ?? 0)
-
-  const totalSavings   = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
-  const displaySavings = totalSavings
-  const displayAnnual  = annualizeMonthly(displaySavings)
+  const savingsMissing = !isDemoActive && (recStatsLoading || recStatsError || !recStats)
+  const displaySavings = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
+  const savingsValue = savingsMissing ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`
   const activeRecsCount = isDemoActive ? DEMO_TOP_SAVINGS.length : (recStats?.activeRecommendations ?? 0)
 
   const topSavingsRows: { id: string; title: string; savings: number; severity: RecommendationSeverity }[] = isDemoActive
@@ -262,7 +243,7 @@ export default function CostsPage() {
     }
   }, [isDemoActive, activeRecs, recStats])
 
-  const costAnomalyDetected = !isDemoActive && growthRate > 20
+  const costAnomalyDetected = !isDemoActive && growthRate !== null && growthRate > 20
 
   const handleExportCSV = () => {
     // Real export uses costTrend (source A, already fetched for the Spend Trend chart
@@ -271,16 +252,18 @@ export default function CostsPage() {
     if (isDemoActive) {
       rows.push(...DEMO_SPEND_DATA.map(d => [d.date, 'Total', d.actual ?? d.forecast ?? 0]))
     } else {
+      // Cents, not whole dollars: a sub-dollar day must not export as 0.
       for (const p of costTrend) {
-        rows.push([p.date, 'Compute (EC2, Lambda, ECS)', Math.round(p.compute)])
-        rows.push([p.date, 'Storage (S3, EBS)',          Math.round(p.storage)])
-        rows.push([p.date, 'Database (RDS, DynamoDB)',   Math.round(p.database)])
-        rows.push([p.date, 'Network (Data Transfer)',    Math.round(p.network)])
-        rows.push([p.date, 'Other Services',              Math.round(p.other)])
-        rows.push([p.date, 'Total',                       Math.round(p.total)])
+        rows.push([p.date, 'Compute (EC2, Lambda, ECS)', roundCents(p.compute)])
+        rows.push([p.date, 'Storage (S3, EBS)',          roundCents(p.storage)])
+        rows.push([p.date, 'Database (RDS, DynamoDB)',   roundCents(p.database)])
+        rows.push([p.date, 'Network (Data Transfer)',    roundCents(p.network)])
+        rows.push([p.date, 'Other Services',              roundCents(p.other)])
+        rows.push([p.date, 'Total',                       roundCents(p.total)])
       }
     }
-    const csv = rows.map(r => r.join(',')).join('\n')
+    // Quote every field: the service names contain commas.
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -291,7 +274,7 @@ export default function CostsPage() {
   }
 
   // Real per-category totals for the selected window, from the same costTrend response
-  // already fetched for the chart — no fabricated percentage split of mtdSpend.
+  // already fetched for the chart — no fabricated percentage split of month-to-date spend.
   const categoryTotals = useMemo(() => {
     if (isDemoActive) return null
     return costTrend.reduce((acc, p) => {
@@ -306,55 +289,58 @@ export default function CostsPage() {
 
   const serviceBreakdown: { name: string; amount: number; pct: number; trend?: string; up?: boolean }[] = isDemoActive
     ? [
-        { name: 'Compute (EC2, Lambda, ECS)', amount: Math.round(mtdSpend * 0.63), pct: 63, trend: '+13%', up: true },
-        { name: 'Storage (S3, EBS)',          amount: Math.round(mtdSpend * 0.18), pct: 18, trend: '-5%',  up: false },
-        { name: 'Database (RDS, DynamoDB)',   amount: Math.round(mtdSpend * 0.10), pct: 10, trend: '+8%',  up: true },
-        { name: 'Network (Data Transfer)',    amount: Math.round(mtdSpend * 0.05), pct: 5,  trend: '+2%',  up: true },
-        { name: 'Other Services',            amount: Math.round(mtdSpend * 0.04), pct: 4,  trend: '-1%',  up: false },
+        { name: 'Compute (EC2, Lambda, ECS)', amount: Math.round(DEMO_MTD_SPEND * 0.63), pct: 63, trend: '+13%', up: true },
+        { name: 'Storage (S3, EBS)',          amount: Math.round(DEMO_MTD_SPEND * 0.18), pct: 18, trend: '-5%',  up: false },
+        { name: 'Database (RDS, DynamoDB)',   amount: Math.round(DEMO_MTD_SPEND * 0.10), pct: 10, trend: '+8%',  up: true },
+        { name: 'Network (Data Transfer)',    amount: Math.round(DEMO_MTD_SPEND * 0.05), pct: 5,  trend: '+2%',  up: true },
+        { name: 'Other Services',            amount: Math.round(DEMO_MTD_SPEND * 0.04), pct: 4,  trend: '-1%',  up: false },
       ]
     : (() => {
         const ct = categoryTotals!
         const total = ct.compute + ct.storage + ct.database + ct.network + ct.other
         const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0
         return [
-          { name: 'Compute (EC2, Lambda, ECS)', amount: Math.round(ct.compute),  pct: pct(ct.compute) },
-          { name: 'Storage (S3, EBS)',          amount: Math.round(ct.storage),  pct: pct(ct.storage) },
-          { name: 'Database (RDS, DynamoDB)',   amount: Math.round(ct.database), pct: pct(ct.database) },
-          { name: 'Network (Data Transfer)',    amount: Math.round(ct.network),  pct: pct(ct.network) },
-          { name: 'Other Services',             amount: Math.round(ct.other),    pct: pct(ct.other) },
+          { name: 'Compute (EC2, Lambda, ECS)', amount: roundCents(ct.compute),  pct: pct(ct.compute) },
+          { name: 'Storage (S3, EBS)',          amount: roundCents(ct.storage),  pct: pct(ct.storage) },
+          { name: 'Database (RDS, DynamoDB)',   amount: roundCents(ct.database), pct: pct(ct.database) },
+          { name: 'Network (Data Transfer)',    amount: roundCents(ct.network),  pct: pct(ct.network) },
+          { name: 'Other Services',             amount: roundCents(ct.other),    pct: pct(ct.other) },
         ]
       })()
 
   const kpiCards = [
     {
       key: 'savings', label: 'Estimated Savings Opportunity',
-      value: (!isDemoActive && recStatsLoading) ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`,
-      sub: mtdSpend > 0
-        ? `${formatSavingsCurrency(displayAnnual)} annually · ${Math.round((displaySavings / mtdSpend) * 100)}% of current spend`
-        : `${formatSavingsCurrency(displayAnnual)} annually`,
-      subColor: 'text-green-600', TrendIcon: TrendingDown, trendColor: 'text-green-600',
+      value: savingsValue,
+      // No "% of current spend": the savings estimate is a monthly run-rate over the
+      // resource inventory, current spend is Cost Explorer month-to-date billing --
+      // different periods and scopes, so the ratio is not a real billing ratio.
+      sub: !isDemoActive && recStatsLoading ? 'Loading…'
+        : savingsMissing ? 'Could not be retrieved'
+        : describeAnnualizedSavings(displaySavings),
+      subColor: savingsMissing ? 'text-slate-500' : 'text-green-600', TrendIcon: savingsMissing ? Minus : TrendingDown, trendColor: savingsMissing ? 'text-slate-400' : 'text-green-600',
       href: '/cost-optimization', borderTop: 'border-t-[3px] border-t-green-500', valueColor: 'text-green-600',
     },
     {
-      key: 'mtd', label: 'Month-to-Date Spend',
-      value: (!isDemoActive && statsLoading) ? '—' : `$${mtdSpend.toLocaleString()}`,
-      sub: isDemoActive || stats?.costSource === 'actual' ? 'Live from AWS Cost Explorer' : 'Estimated · Cost Explorer unavailable',
+      key: 'mtd', label: spend.label,
+      value: spend.value,
+      sub: spend.sub,
       subColor: 'text-slate-500', TrendIcon: Minus, trendColor: 'text-slate-400',
       href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
     },
     {
       key: 'momchange', label: 'Month-over-Month Change',
-      value: (!isDemoActive && costTrendLoading) ? '—' : `${growthRate > 0 ? '+' : ''}${growthRate}%`,
-      sub: growthRate > 0 ? 'Spend trending up vs last month' : growthRate < 0 ? 'Spend trending down vs last month' : 'Spend flat vs last month',
-      subColor: growthRate > 10 ? 'text-red-600' : growthRate > 5 ? 'text-amber-500' : 'text-green-600',
-      TrendIcon: growthRate > 0 ? TrendingUp : growthRate < 0 ? TrendingDown : Minus,
-      trendColor: growthRate > 5 ? 'text-amber-500' : 'text-green-600',
+      value: mom.value,
+      sub: mom.sub,
+      subColor: growthRate === null ? 'text-slate-500' : growthRate > 10 ? 'text-red-600' : growthRate > 5 ? 'text-amber-500' : 'text-green-600',
+      TrendIcon: mom.direction === 'up' ? TrendingUp : mom.direction === 'down' ? TrendingDown : Minus,
+      trendColor: growthRate === null ? 'text-slate-400' : growthRate > 5 ? 'text-amber-500' : 'text-green-600',
       href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
     },
     {
       key: 'activerecs', label: 'Active Recommendations',
-      value: (!isDemoActive && recStatsLoading) ? '—' : `${activeRecsCount}`,
-      sub: activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations',
+      value: savingsMissing ? '—' : `${activeRecsCount}`,
+      sub: !isDemoActive && recStatsLoading ? 'Loading…' : savingsMissing ? 'Could not be retrieved' : activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations',
       subColor: activeRecsCount > 0 ? 'text-amber-500' : 'text-slate-500',
       TrendIcon: activeRecsCount > 0 ? TrendingUp : Minus,
       trendColor: activeRecsCount > 0 ? 'text-amber-500' : 'text-slate-400',
@@ -376,18 +362,32 @@ export default function CostsPage() {
                 Demo Mode
               </span>
             )}
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-slate-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-              Synced 2 min ago
-            </span>
-            <span className={`inline-flex items-center gap-1.5 text-xs font-medium rounded-full px-2.5 py-1 ${
-              costAnomalyDetected && !isDemoActive
-                ? 'bg-red-50 border border-red-200 text-red-600'
-                : 'bg-green-50 border border-green-200 text-green-600'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${costAnomalyDetected && !isDemoActive ? 'bg-red-500' : 'bg-green-500'}`} />
-              {costAnomalyDetected && !isDemoActive ? '1 anomaly detected' : 'All systems clear'}
-            </span>
+            {isDemoActive ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-slate-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                Synced 2 min ago
+              </span>
+            ) : costSummary?.spend.asOf ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-slate-500">
+                Cost data as of {new Date(costSummary.spend.asOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </span>
+            ) : null}
+            {isDemoActive ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium rounded-full px-2.5 py-1 bg-green-50 border border-green-200 text-green-600">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500" />
+                All systems clear
+              </span>
+            ) : growthRate !== null ? (
+              // Only a real comparison can say whether spend spiked; a missing one says nothing.
+              <span className={`inline-flex items-center gap-1.5 text-xs font-medium rounded-full px-2.5 py-1 ${
+                costAnomalyDetected
+                  ? 'bg-red-50 border border-red-200 text-red-600'
+                  : 'bg-green-50 border border-green-200 text-green-600'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${costAnomalyDetected ? 'bg-red-500' : 'bg-green-500'}`} />
+                {costAnomalyDetected ? 'Spend up over 20% vs last month' : 'No spend spike vs last month'}
+              </span>
+            ) : null}
           </div>
           <p className="text-xs text-slate-500 font-medium leading-relaxed">
             Real-time AWS spend visibility, forecasting, and AI-powered cost optimization.
@@ -412,19 +412,16 @@ export default function CostsPage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <p className="text-xs font-bold text-amber-900 m-0">Cost Anomaly Detected</p>
-              <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">AI Detected</span>
+              <p className="text-xs font-bold text-amber-900 m-0">{isDemoActive ? 'Cost Anomaly Detected' : 'Spend Up Sharply vs Last Month'}</p>
+              <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">{isDemoActive ? 'AI Detected' : 'Month-over-month'}</span>
             </div>
             <p className="text-xs text-amber-800 leading-relaxed mb-2.5">
               {isDemoActive
                 ? 'EC2 compute spending increased 35% in the last 24 hours. Possible cause: Lambda invocation spike on payment-processor triggering auto-scaling. Estimated impact: $864/month if sustained.'
-                : 'Unusual cost pattern detected: spend is trending well above last month. Review your recent deployments and scaling events.'
+                : `Month-to-date spend is more than 20% above the same days last month (AWS Cost Explorer)${mom.includesToday ? `; ${TODAY_STILL_BILLING}` : ''}. Review your recent deployments and scaling events.`
               }
             </p>
             <div className="flex gap-2 flex-wrap">
-              <a href="/anomalies" className="text-xs font-bold text-amber-600 bg-white border border-amber-200 px-3 py-1.5 rounded-lg no-underline inline-flex items-center gap-1">
-                Investigate <ArrowRight size={11} />
-              </a>
               <a href="/cost-optimization" className="text-xs font-medium text-amber-800 px-3 py-1.5 rounded-lg no-underline inline-flex items-center gap-1">
                 View optimization recommendations →
               </a>
@@ -439,7 +436,7 @@ export default function CostsPage() {
               </>
             ) : (
               <>
-                <p className="text-lg font-bold text-amber-500 m-0">+{growthRate}<span className="text-xs font-medium">%</span></p>
+                <p className="text-lg font-bold text-amber-500 m-0">{mom.value}</p>
                 <p className="text-xs text-amber-700 mt-0.5">vs last month</p>
               </>
             )}
@@ -589,7 +586,7 @@ export default function CostsPage() {
           <div>
             <h2 className="text-sm font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
             <p className="text-xs text-slate-500 leading-relaxed m-0">
-              {isDemoActive ? 'Historical spend and AI forecast · Dashed line indicates prediction' : 'Historical AWS spend by day, from Cost Explorer'}
+              {isDemoActive ? 'Historical spend and AI forecast · Dashed line indicates prediction' : `Historical AWS spend by ${trendUnit}, from Cost Explorer`}
             </p>
           </div>
           <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
@@ -610,14 +607,19 @@ export default function CostsPage() {
         {/* Chart summary */}
         <div className="flex flex-wrap gap-4 sm:gap-8 mb-5 pb-5 border-b border-slate-100">
           {[
-            { label: 'Current Run Rate',       value: `$${mtdSpend.toLocaleString()}/mo`, color: 'text-slate-900' },
-            { label: 'Month-over-Month',       value: `${growthRate > 0 ? '+' : ''}${growthRate}%`, color: growthRate > 5 ? 'text-red-600' : 'text-green-600' },
-            { label: 'Active Recommendations', value: `${activeRecsCount}`, color: 'text-slate-500' },
-            { label: 'Estimated Savings Opportunity', value: `${formatSavingsCurrency(displaySavings)}/mo`, color: 'text-green-600' },
-          ].map(({ label, value, color }) => (
+            { label: spend.label,              value: spend.value, color: 'text-slate-900' },
+            {
+              label: 'Month-over-Month', value: mom.value, color: growthRate === null ? 'text-slate-500' : growthRate > 5 ? 'text-red-600' : 'text-green-600',
+              // Fixed basis, stated because this strip sits under the range tabs it does not follow.
+              note: isDemoActive ? undefined : `${MOM_BASIS_LABEL}${mom.includesToday ? ` · ${TODAY_STILL_BILLING}` : ''}`,
+            },
+            { label: 'Active Recommendations', value: savingsMissing ? '—' : `${activeRecsCount}`, color: 'text-slate-500' },
+            { label: 'Estimated Savings Opportunity', value: savingsValue, color: 'text-green-600' },
+          ].map(({ label, value, color, note }: { label: string; value: string; color: string; note?: string }) => (
             <div key={label}>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
               <p className={`text-lg font-bold tracking-tight m-0 ${color}`}>{value}</p>
+              {note && <p className="text-xs text-slate-500 mt-0.5 m-0" data-testid="mom-basis">{note}</p>}
             </div>
           ))}
         </div>
@@ -625,17 +627,19 @@ export default function CostsPage() {
         {/* Top drivers */}
         <div className="flex flex-wrap gap-3 mb-5 pb-4 border-b border-slate-100">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest m-0 self-center">Top drivers</p>
-          {[
-            { name: 'Compute',  amount: isDemoActive ? 5200 : Math.round(categoryTotals?.compute  ?? 0), color: '#3B82F6' },
-            { name: 'Database', amount: isDemoActive ? 2400 : Math.round(categoryTotals?.database ?? 0), color: '#8B5CF6' },
-            { name: 'Storage',  amount: isDemoActive ? 3800 : Math.round(categoryTotals?.storage  ?? 0), color: '#06B6D4' },
+          {isDemoActive || hasTrendData ? [
+            { name: 'Compute',  amount: isDemoActive ? 5200 : categoryTotals!.compute,  color: '#3B82F6' },
+            { name: 'Database', amount: isDemoActive ? 2400 : categoryTotals!.database, color: '#8B5CF6' },
+            { name: 'Storage',  amount: isDemoActive ? 3800 : categoryTotals!.storage,  color: '#06B6D4' },
           ].map(({ name, amount, color }) => (
             <div key={name} className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
               <span className="text-xs text-slate-500">{name}</span>
-              <span className="text-xs font-bold text-slate-900">${amount.toLocaleString()}</span>
+              <span className="text-xs font-bold text-slate-900">{isDemoActive ? `$${amount.toLocaleString()}` : formatUsd(amount)}</span>
             </div>
-          ))}
+          )) : (
+            <span className="text-xs text-slate-500 self-center">{costTrendLoading ? 'Loading…' : 'Not available'}</span>
+          )}
         </div>
 
         {/* Chart */}
@@ -669,6 +673,14 @@ export default function CostsPage() {
           <div className="h-60 flex items-center justify-center">
             <Loader2 size={20} className="text-slate-400 animate-spin" />
           </div>
+        ) : !hasTrendData ? (
+          <div className="h-60 flex items-center justify-center text-center px-4">
+            <p className="text-xs text-slate-500 m-0">
+              {costTrendError
+                ? 'The spend trend could not be retrieved from AWS Cost Explorer.'
+                : 'No AWS Cost Explorer spend data is available for this range.'}
+            </p>
+          </div>
         ) : (
           <div className="overflow-hidden">
             <ResponsiveContainer width="100%" height={240}>
@@ -682,9 +694,8 @@ export default function CostsPage() {
                 <CartesianGrid vertical={false} stroke="#F1F5F9" />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
-                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '0.75rem', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '10px 14px' }} labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }} formatter={(v: any) => [`$${typeof v === 'number' ? v.toLocaleString() : v}/mo`, 'Actual Spend']} />
+                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '0.75rem', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '10px 14px' }} labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }} formatter={(v: any) => [`${typeof v === 'number' ? formatUsd(v) : v}/${trendUnit}`, 'Actual Spend']} />
                 <Area type="monotone" dataKey="actual" stroke="#0F172A" strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
-                <ReferenceLine y={mtdSpend} stroke="#94A3B8" strokeDasharray="4 3" strokeWidth={1} label={{ value: `$${mtdSpend}/mo baseline`, position: 'insideTopRight', fontSize: 10, fill: '#94A3B8' } as any} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -709,7 +720,7 @@ export default function CostsPage() {
             </div>
           ))}
           <span className="text-xs text-slate-500 ml-auto hidden sm:block">
-            {isDemoActive ? 'Values shown as monthly equivalent' : 'Values shown as daily spend'}
+            {isDemoActive ? 'Values shown as monthly equivalent' : trendUnit === 'month' ? 'Values shown as monthly spend' : 'Values shown as daily spend'}
           </span>
         </div>
       </div>
@@ -720,13 +731,22 @@ export default function CostsPage() {
         {/* Cost by Service */}
         <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-sm font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
+              {!isDemoActive && <p className="text-xs text-slate-500 m-0 mt-0.5">AWS Cost Explorer · selected range ({selectedRange})</p>}
+            </div>
             <a href="/cost-optimization" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">
               Full breakdown <ChevronRight size={12} />
             </a>
           </div>
           <div className="flex flex-col gap-4">
-            {(() => {
+            {!isDemoActive && !hasTrendData ? (
+              <p className="text-xs text-slate-500 m-0 py-6 text-center">
+                {costTrendLoading ? 'Loading…'
+                  : costTrendError ? 'Cost by service could not be retrieved from AWS Cost Explorer.'
+                  : 'No AWS Cost Explorer spend data is available for this range.'}
+              </p>
+            ) : (() => {
               const totalServiceSpend = serviceBreakdown.reduce((sum, s) => sum + s.amount, 0)
               const hasSpend = totalServiceSpend > 0
               return serviceBreakdown.map(({ name, amount, pct, trend, up }) => {
@@ -750,7 +770,7 @@ export default function CostsPage() {
                       <div className="flex items-center gap-3">
                         {hasSpend && <span className="text-xs text-slate-500 font-medium">{pctOfTotal}%</span>}
                         {hasSpend && trend != null && <span className={`text-xs font-medium ${up ? 'text-amber-500' : 'text-green-600'}`}>{trend}</span>}
-                        <span className="text-sm font-semibold text-slate-900 min-w-[60px] text-right">${amount.toLocaleString()}</span>
+                        <span className="text-sm font-semibold text-slate-900 min-w-[60px] text-right">{isDemoActive ? `$${amount.toLocaleString()}` : formatUsd(amount)}</span>
                       </div>
                     </div>
                     <div className="h-1.5 bg-slate-100 rounded-full">
@@ -791,7 +811,8 @@ export default function CostsPage() {
           <div className="bg-green-50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-green-600 uppercase tracking-widest mb-1">Estimated Savings Opportunity</p>
-              <p className="text-2xl font-extrabold text-green-600 m-0">{formatSavingsCurrency(displaySavings)}<span className="text-sm font-medium">/mo</span></p>
+              <p className="text-2xl font-extrabold text-green-600 m-0">{savingsMissing ? '—' : <>{formatSavingsCurrency(displaySavings)}<span className="text-sm font-medium">/mo</span></>}</p>
+              {!savingsMissing && <p className="text-xs text-green-700 mt-1 m-0">{describeAnnualizedSavings(displaySavings)}</p>}
             </div>
             <div className="text-center sm:text-right">
               <a href="/cost-optimization" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold no-underline inline-block transition-colors whitespace-nowrap">
@@ -802,7 +823,11 @@ export default function CostsPage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            {topSavingsRows.length > 0 ? topSavingsRows.map((rec) => (
+            {!isDemoActive && activeRecsError ? (
+              <div className="p-6 text-center">
+                <p className="text-xs text-slate-500 m-0">Recommendations could not be retrieved.</p>
+              </div>
+            ) : topSavingsRows.length > 0 ? topSavingsRows.map((rec) => (
               <div key={rec.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
