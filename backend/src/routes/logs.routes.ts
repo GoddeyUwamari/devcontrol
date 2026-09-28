@@ -12,56 +12,14 @@ interface RequestWithWS extends Request {
   app: any;
 }
 
-// Start log stream for deployment
-router.post('/logs/stream/:deploymentId', authenticate, async (req: RequestWithWS, res: Response) => {
-  try {
-    const { deploymentId } = req.params;
-    const { logGroupName, logStreamName } = req.body;
-    const organizationId = (req as any).organizationId;
-
-    if (!logGroupName || !logStreamName) {
-      return res.status(400).json({
-        success: false,
-        error: 'logGroupName and logStreamName are required',
-      });
-    }
-
-    // deploymentId is otherwise just a client-supplied label with no DB
-    // lookup, and logGroupName/logStreamName are trusted as-is — without
-    // this, any authenticated user could stream any CloudWatch log
-    // group/stream (including another org's) to themselves by guessing
-    // names, since CloudWatch access here uses platform-level credentials,
-    // not per-org scoping.
-    const deployment = await deploymentsRepository.findById(deploymentId, organizationId);
-    if (!deployment) {
-      return res.status(404).json({
-        success: false,
-        error: 'Deployment not found',
-      });
-    }
-
-    const wsServer: WebSocketServer = req.app.get('wsServer');
-    const logService = new LogStreamingService(wsServer);
-
-    await logService.startLogStream(
-      deploymentId,
-      organizationId,
-      logGroupName,
-      logStreamName
-    );
-
-    res.json({
-      success: true,
-      message: 'Log streaming started',
-      deploymentId,
-    });
-  } catch (error: any) {
-    console.error('Error starting log stream:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
+// Start log stream for deployment.
+// Temporarily disabled: live log streaming is unavailable until it is
+// reimplemented. The request body is intentionally not read.
+router.post('/logs/stream/:deploymentId', authenticate, (_req: RequestWithWS, res: Response) => {
+  res.status(503).json({
+    success: false,
+    error: 'Live log streaming is temporarily unavailable',
+  });
 });
 
 // Stop log stream
