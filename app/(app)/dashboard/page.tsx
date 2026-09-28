@@ -27,8 +27,9 @@ import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
+import { computeDashboardSpendCard } from './dashboardSpendCard'
 import { computeSecurityHealthKpi, SECURITY_STATUS_BADGE } from './securityHealthKpi'
-import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
+import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
@@ -67,44 +68,6 @@ function generateCostBreakdownData() {
     { name: 'Network (Data Transfer)', value: 1200, change: 3, color: SERVICE_COLORS['Network (Data Transfer)'] },
     { name: 'Other Services', value: 247, change: -2, color: SERVICE_COLORS['Other Services'] },
   ]
-}
-
-// Month-over-month cost delta, derived from the already-fetched costTrend daily series
-// (no new API call). Compares this month's spend-to-date against the same number of
-// days into last month, calendar-string-parsed to avoid UTC/local timezone day-shift.
-// Only returns a value when both windows have enough real daily coverage to trust the
-// comparison — otherwise null, so the caller can hide the line rather than fabricate it.
-function computeMonthOverMonthCostChange(
-  costTrend: Array<{ date: string; total: number }>
-): number | null {
-  if (!costTrend || costTrend.length === 0) return null
-
-  const now = new Date()
-  const curYear = now.getFullYear()
-  const curMonth = now.getMonth()
-  const dayOfMonth = now.getDate()
-  const lastMonth = curMonth === 0 ? 11 : curMonth - 1
-  const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear
-
-  let currentSum = 0, currentDays = 0
-  let lastSum = 0, lastDays = 0
-
-  for (const entry of costTrend) {
-    const [y, m, d] = entry.date.split('-').map(Number)
-    const month = m - 1
-    if (y === curYear && month === curMonth && d <= dayOfMonth) {
-      currentSum += entry.total
-      currentDays++
-    } else if (y === lastMonthYear && month === lastMonth && d <= dayOfMonth) {
-      lastSum += entry.total
-      lastDays++
-    }
-  }
-
-  const minDays = Math.max(1, Math.floor(dayOfMonth * 0.8))
-  if (currentDays < minDays || lastDays < minDays || lastSum <= 0) return null
-
-  return Math.round(((currentSum - lastSum) / lastSum) * 1000) / 10
 }
 
 const DEMO_TOP_RISK = 'Lambda invocation spike on payment-processor (+178%) — review before it affects downstream services.'
@@ -171,6 +134,19 @@ export default function DashboardPage() {
   // /connect-aws redirect never act on "no stats" before the stats could be fetched.
   const statsLoading = statsQueryLoading || (!isDemoActive && !organization?.id)
 
+  // The spend KPI's figure and month-over-month comparison, as evidence sections
+  // (actual Cost Explorer / inventory estimate / unavailable / error) -- the same
+  // endpoint the Costs page reads. `stats` above still drives the AWS connection
+  // gates and the /connect-aws redirect; this never feeds them.
+  const { data: costSummary, isLoading: costSummaryQueryLoading, isError: costSummaryError } = useQuery<CostSummary>({
+    queryKey: ['platform-cost-summary', organization?.id],
+    queryFn: platformStatsService.getCostSummary,
+    staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !isDemoActive && !!organization?.id,
+  })
+  const costSummaryLoading = costSummaryQueryLoading || (!isDemoActive && !organization?.id)
+
   const { data: systemHealth } = useQuery({
     queryKey: ['system-health'],
     queryFn: () => monitoringService.getSystemHealth(),
@@ -224,6 +200,7 @@ export default function DashboardPage() {
     }
     const invalidateAll = () => {
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['platform-cost-summary'] })
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     }
@@ -259,8 +236,8 @@ export default function DashboardPage() {
     }
   }, [socket, queryClient])
 
-  const currentSpend    = isDemoActive ? DEMO_DASHBOARD_STATS.monthlyAwsCost : (stats?.monthlyAwsCost ?? 0)
-  const costChange      = isDemoActive ? DEMO_DASHBOARD_STATS.costChange : (stats?.costChange ?? 0)
+  // Demo-only: real mode's spend trend comes from spendCard below.
+  const costChange      = DEMO_DASHBOARD_STATS.costChange
   // Raw (unrounded) monthly waste — kept separately so the annual projection can
   // round once after multiplying, matching costs/page.tsx and cost-optimization/page.tsx,
   // instead of rounding the monthly figure first and compounding the rounding error.
@@ -309,7 +286,7 @@ export default function DashboardPage() {
     }
   }, [isDemoActive, statsLoading, isAwsConnected, awsAccounts, router])
 
-  const { data: costTrend = [], isLoading: costTrendLoading } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
+  const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
     queryKey: ['cost-trend', costDateRange, organization?.id],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -317,7 +294,8 @@ export default function DashboardPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: 'include',
       })
-      if (!res.ok) return []
+      // A failed request is an error, not an empty (zero-spend) series.
+      if (!res.ok) throw new Error('The AWS Cost Explorer trend could not be retrieved')
       const json = await res.json()
       return json.data ?? []
     },
@@ -328,10 +306,9 @@ export default function DashboardPage() {
     enabled: !isDemoActive && hasBillingData && !!organization?.id,
   })
 
-  const monthOverMonthCostChange = isDemoActive ? null : computeMonthOverMonthCostChange(costTrend)
-  const mtdCostDeltaColor = monthOverMonthCostChange !== null
-    ? (monthOverMonthCostChange > 0 ? (currentSpend >= 100 ? 'var(--text-danger)' : 'var(--text-warning)') : monthOverMonthCostChange < 0 ? 'var(--text-success)' : 'var(--text-warning)')
-    : 'var(--text-warning)'
+  // Real mode: the backend's month-to-date vs same-days-last-month comparison, never
+  // computed here from whichever trend range is selected.
+  const spendCard = isDemoActive ? null : computeDashboardSpendCard({ costSummary, isLoading: costSummaryLoading, isError: costSummaryError })
 
   // Real-data-only, like every other computed-metric feature on this dashboard — no
   // demo-mode fabrication. The backend gathers its own cost evidence through the shared
@@ -554,15 +531,14 @@ export default function DashboardPage() {
               icon={DollarSign}
               iconColor="var(--text-success)"
               iconBackground="var(--bg-success)"
-              label="Monthly Spend"
-              value={(statsLoading && !isDemoActive) || (currentSpend === 0 && !isDemoActive) ? 'Syncing…' : currencyFormatter.format(currentSpend)}
+              label={spendCard ? spendCard.label : 'Monthly Spend'}
+              value={spendCard ? spendCard.value : currencyFormatter.format(DEMO_DASHBOARD_STATS.monthlyAwsCost)}
               trend={
-                isDemoActive
-                  ? { direction: costChange > 0 ? 'up' : costChange < 0 ? 'down' : 'flat', label: `${costChange > 0 ? '+' : ''}${Math.abs(costChange)}% vs last 30 days`, color: costDeltaColor }
-                  : monthOverMonthCostChange !== null
-                    ? { direction: monthOverMonthCostChange > 0 ? 'up' : monthOverMonthCostChange < 0 ? 'down' : 'flat', label: `${monthOverMonthCostChange > 0 ? '+' : ''}${monthOverMonthCostChange}% vs last month`, color: mtdCostDeltaColor }
-                    : undefined
+                spendCard
+                  ? spendCard.trend
+                  : { direction: costChange > 0 ? 'up' : costChange < 0 ? 'down' : 'flat', label: `${costChange > 0 ? '+' : ''}${Math.abs(costChange)}% vs last 30 days`, color: costDeltaColor }
               }
+              captions={spendCard?.captions}
               sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.map(d => ({ value: d.total }))) : undefined}
               href="/costs"
             />
@@ -616,6 +592,7 @@ export default function DashboardPage() {
                 hasBillingData={hasBillingData}
                 costTrend={costTrend}
                 costTrendLoading={costTrendLoading}
+                costTrendError={costTrendError}
                 demoBreakdownData={generateCostBreakdownData()}
                 demoTotalCost={DEMO_DASHBOARD_STATS.monthlyAwsCost}
                 dateRange={costDateRange}

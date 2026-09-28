@@ -45,6 +45,8 @@ interface CostDataPoint {
 interface CostTrendChartProps {
   data: CostDataPoint[];
   isLoading?: boolean;
+  /** When set, shown instead of the chart (e.g. a failed or empty trend), keeping the range controls. */
+  unavailableMessage?: string | null;
   dateRange?: '7d' | '30d' | '90d' | '6mo' | '1yr';
   onDateRangeChange?: (range: '7d' | '30d' | '90d' | '6mo' | '1yr') => void;
   onExport?: () => void;
@@ -53,6 +55,7 @@ interface CostTrendChartProps {
 export function CostTrendChart({
   data,
   isLoading,
+  unavailableMessage = null,
   dateRange = '90d',
   onDateRangeChange,
   onExport,
@@ -81,6 +84,10 @@ export function CostTrendChart({
   const formatCurrency = (value: number) => {
     if (value >= 1000) {
       return `$${(value / 1000).toFixed(1)}K`;
+    }
+    // Cents below $10, so a sub-dollar axis never reads as all "$0".
+    if (value !== 0 && Math.abs(value) < 10) {
+      return `$${value.toFixed(2)}`;
     }
     return `$${value.toFixed(0)}`;
   };
@@ -294,6 +301,12 @@ export function CostTrendChart({
         </div>
       </CardHeader>
       <CardContent>
+        {unavailableMessage ? (
+          <div className="h-[300px] flex items-center justify-center text-center px-4">
+            <p className="text-sm text-muted-foreground">{unavailableMessage}</p>
+          </div>
+        ) : (
+        <>
         {/* Chart */}
         <ResponsiveContainer width="100%" height={300}>
           {hasServiceBreakdown ? (
@@ -421,6 +434,8 @@ export function CostTrendChart({
               <span className="font-semibold">⚠️ May cause unexpected AWS bill increase</span> — unusual spending pattern identified. Review details above.
             </p>
           </div>
+        )}
+        </>
         )}
       </CardContent>
     </Card>

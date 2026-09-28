@@ -77,9 +77,11 @@ function tenantOfToken(): Tenant | null {
   return token === TOKEN.a ? 'a' : token === TOKEN.b ? 'b' : null
 }
 
-// The seven previously-unscoped tenant-data queries, as the dashboard now keys them.
+// The seven previously-unscoped tenant-data queries, as the dashboard now keys them --
+// plus the cost summary behind the spend KPI, added org-scoped from the start.
 const SEVEN_PREFIXES = [
   ['platform-dashboard-stats'],
+  ['platform-cost-summary'],
   ['cost-trend'],
   ['cost-recommendations'],
   ['cost-recommendations-stats'],
@@ -89,6 +91,7 @@ const SEVEN_PREFIXES = [
 ] as const
 const scopedKeys = (orgId: string) => [
   ['platform-dashboard-stats', orgId],
+  ['platform-cost-summary', orgId],
   ['cost-trend', '7d', orgId],
   ['cost-recommendations', orgId],
   ['cost-recommendations-stats', orgId],
@@ -126,6 +129,16 @@ function installNetworkDoubles() {
     respond('platform-dashboard-stats', (t) => ({
       owner: ORG[t].id, totalServices: 3, servicesChange: 0, activeDeployments: 1, deploymentsChange: 0,
       monthlyAwsCost: SPEND[t], costChange: 0, totalTeams: 1, teamsChange: 0, costSource: 'actual',
+    }) as never))
+  // The spend KPI's figure: actual Cost Explorer month-to-date spend for the token's tenant.
+  vi.spyOn(platformStatsService, 'getCostSummary').mockImplementation(() =>
+    respond('platform-cost-summary', (t) => ({
+      owner: ORG[t].id,
+      spend: {
+        state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf: null, coverage: null, reason: null,
+        data: { amount: SPEND[t], basis: 'billed_month_to_date', lastDayInProgress: false },
+      },
+      monthOverMonth: { state: 'unavailable', source: 'DevControl month-over-month comparison', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
     }) as never))
   vi.spyOn(costRecommendationsService, 'getAll').mockImplementation(() => respond('cost-recommendations', () => [] as never))
   vi.spyOn(costRecommendationsService, 'getStats').mockImplementation(() =>
@@ -304,7 +317,7 @@ describe('each identity transition resets the cache on its own (not relying on l
     // Both the org-scoped keys and the legacy unscoped shapes the old code used.
     for (const key of scopedKeys(ORG.a.id)) client.setQueryData(key, { owner: ORG.a.id })
     for (const [name] of SEVEN_PREFIXES) client.setQueryData([name], { owner: ORG.a.id })
-    expect(tenantDataEntries().length).toBe(14)
+    expect(tenantDataEntries().length).toBe(2 * SEVEN_PREFIXES.length)
   }
 
   it('login(): a new identity starts from an empty cache even if the previous one never logged out', async () => {
@@ -333,7 +346,7 @@ describe('each identity transition resets the cache on its own (not relying on l
 
     await act(async () => { await expect(auth.login('x@y.test', 'wrong')).rejects.toThrow() })
 
-    expect(tenantDataEntries().length).toBe(14)
+    expect(tenantDataEntries().length).toBe(2 * SEVEN_PREFIXES.length)
     expect(nav.log).toEqual([])
   })
 
