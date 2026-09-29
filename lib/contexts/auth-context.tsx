@@ -44,6 +44,12 @@ interface AuthContextValue {
 }
 
 /**
+ * How long refreshUser waits, once, for another tab to finish rotating the
+ * refresh token before treating a failed refresh as a logout.
+ */
+export const REFRESH_RACE_RECHECK_MS = 1000;
+
+/**
  * Auth Context
  */
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -145,7 +151,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     async (email: string, password: string) => {
       try {
         const response = await authService.login({ email, password });
-        console.log('FULL RESPONSE:', JSON.stringify(response, null, 2));
 
         // Handle both flat and nested response structures
         const payload = response?.data ?? response;
@@ -335,6 +340,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     };
 
+    const adoptRotatedSession = async (usedRefreshToken: string): Promise<boolean> => {
+      const rotated = () => {
+        const current = tokenManager.getRefreshToken();
+        return !!current && current !== usedRefreshToken;
+      };
+      if (!rotated()) {
+        await new Promise((resolve) => setTimeout(resolve, REFRESH_RACE_RECHECK_MS));
+        if (!rotated()) return false;
+      }
+      const accessToken = tokenManager.getAccessToken();
+      if (!accessToken) return false;
+      try {
+        tokenManager.setAuthCookie(accessToken);
+        applyUserResponse(await authService.getCurrentUser());
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     try {
       const response = await authService.getCurrentUser();
       applyUserResponse(response);
@@ -356,6 +381,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
             applyUserResponse(retryResponse);
             return;
           } catch {
+            // Refresh tokens are single-use: another tab may have rotated this
+            // one first. If it has (now or after one short wait), continue with
+            // the session it stored instead of logging out.
+            if (await adoptRotatedSession(storedRefreshToken)) {
+              return;
+            }
             // Refresh token also rejected — fall through to forced logout
           }
         }
