@@ -30,9 +30,14 @@ vi.mock('@/lib/services/platform-stats.service', () => ({
 
 const mockGetStats = vi.fn()
 const mockGetAll = vi.fn()
+const mockGetAnalysisRuns = vi.fn()
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
-  costRecommendationsService: { getStats: () => mockGetStats(), getAll: () => mockGetAll() },
+  costRecommendationsService: { getStats: () => mockGetStats(), getAll: () => mockGetAll(), getAnalysisRuns: () => mockGetAnalysisRuns() },
 }))
+
+function analysisRun(status: 'running' | 'completed' | 'failed') {
+  return { id: `run-${status}`, status, recommendations_found: 0, total_potential_savings: null, started_at: '2026-09-27T08:00:00.000Z', completed_at: status === 'running' ? null : '2026-09-27T08:05:00.000Z', created_at: '2026-09-27T08:00:00.000Z', error_message: null }
+}
 vi.mock('@/lib/services/nl-query.service', () => ({ nlQueryService: { executeQuery: vi.fn() } }))
 
 function recStats(totalPotentialSavings: number, activeRecommendations = 1) {
@@ -79,6 +84,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockGetStats.mockResolvedValue(recStats(0.96))
   mockGetAll.mockResolvedValue([])
+  mockGetAnalysisRuns.mockResolvedValue([analysisRun('completed')])
   vi.stubGlobal('fetch', trendResponse(true, [
     { date: '2026-09-26', compute: 0.21, storage: 0.1, database: 0, network: 0, other: 0.05, total: 0.36 },
   ]))
@@ -186,6 +192,71 @@ describe('Costs page -- savings wording', () => {
     expect(await within(savingsCard).findByText('Could not be retrieved')).toBeInTheDocument()
     expect(savingsCard.textContent).not.toMatch(/\$0/)
     expect(await screen.findByText('Recommendations could not be retrieved.')).toBeInTheDocument()
+  })
+})
+
+describe('Costs page -- zero recommendations before any cost analysis', () => {
+  beforeEach(() => {
+    mockGetCostSummary.mockResolvedValue({ spend: spendActual(3.2), monthOverMonth: mom(0, 0) })
+    mockGetStats.mockResolvedValue(recStats(0, 0))
+  })
+
+  async function expectNotMeasured(sub: string | RegExp) {
+    const savingsCard = await card('Estimated Savings Opportunity')
+    const recsCard = await card('Active Recommendations')
+    expect(await within(savingsCard).findByText(sub)).toBeInTheDocument()
+    expect(within(recsCard).getByText(sub)).toBeInTheDocument()
+    for (const c of [savingsCard, recsCard]) {
+      expect(c.textContent).not.toMatch(/\$0/)
+      expect(c.textContent).not.toMatch(/No open recommendations/)
+      expect(c.textContent).toContain('—')
+    }
+    expect(document.body.textContent).not.toMatch(/\$0\/mo/)
+  }
+
+  it('no analysis has ever run: not a measured $0 or 0', async () => {
+    mockGetAnalysisRuns.mockResolvedValue([])
+    renderPage()
+    await expectNotMeasured('No cost analysis has run yet')
+  })
+
+  it('only failed analyses: still not measured', async () => {
+    mockGetAnalysisRuns.mockResolvedValue([analysisRun('failed')])
+    renderPage()
+    await expectNotMeasured('No cost analysis has run yet')
+  })
+
+  it('an analysis is running: in progress, not $0', async () => {
+    mockGetAnalysisRuns.mockResolvedValue([analysisRun('running')])
+    renderPage()
+    await expectNotMeasured('Cost analysis in progress')
+  })
+
+  it('the analysis history could not be retrieved: unknown, not $0', async () => {
+    mockGetAnalysisRuns.mockRejectedValue(new Error('500'))
+    renderPage()
+    await expectNotMeasured('Could not be retrieved')
+  })
+
+  it('after a completed analysis, zero is a measured result', async () => {
+    mockGetAnalysisRuns.mockResolvedValue([analysisRun('completed')])
+    renderPage()
+
+    const recsCard = await card('Active Recommendations')
+    expect(await within(recsCard).findByText('No open recommendations')).toBeInTheDocument()
+    expect(within(recsCard).getByText('0')).toBeInTheDocument()
+    const savingsCard = await card('Estimated Savings Opportunity')
+    expect(savingsCard.textContent).toMatch(/\$0\/mo/)
+  })
+
+  it('existing recommendations are shown even without analysis history', async () => {
+    mockGetStats.mockResolvedValue(recStats(120, 3))
+    mockGetAnalysisRuns.mockResolvedValue([])
+    renderPage()
+
+    const recsCard = await card('Active Recommendations')
+    expect(await within(recsCard).findByText('3')).toBeInTheDocument()
+    expect(within(recsCard).getByText('Ready to review')).toBeInTheDocument()
   })
 })
 

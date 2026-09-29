@@ -581,6 +581,9 @@ export default function MonitoringPage() {
       {/* Main content */}
       {(!loading || isDemoActive) && (!error || isDemoActive) && (
         <>
+          {/* An empty alert list says nothing about anomalies: alert_history has no
+              organization-scoped writer and no anomaly detection exists, so the healthy
+              case only states what CloudWatch evidence shows. */}
           {/* AI Insight banner — Phase A: rewritten healthy-case sentence to reference the
               actual resource counts computed above instead of response-time/uptime figures
               that are usually N/A for non-ALB accounts. Degraded/critical/down branches
@@ -599,7 +602,7 @@ export default function MonitoringPage() {
                           ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
                           : 'One or more services may need attention. Review Service Health below for details.')
                       : (healthSummary?.monitored ?? 0) > 0
-                        ? `Infrastructure is healthy. ${healthSummary!.monitored} AWS resource${healthSummary!.monitored !== 1 ? 's are' : ' is'} currently monitored with no active health violations. ${alerts.length === 0 ? 'No reliability anomalies were detected during the selected period.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`
+                        ? `Infrastructure is healthy. ${healthSummary!.monitored} AWS resource${healthSummary!.monitored !== 1 ? 's are' : ' is'} currently monitored with no active health violations.${alerts.length > 0 ? ` ${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.` : ''}`
                         : 'No monitored resources yet. Connect AWS or run resource discovery to start tracking infrastructure health.'}
               </p>
             </div>

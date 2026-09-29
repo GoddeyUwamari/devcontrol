@@ -120,10 +120,18 @@ export class RiskTrackingService {
   /**
    * Store daily risk score snapshot
    * Should be called once per day via cron job
+   *
+   * Returns false, storing nothing, when the organization has no evidence to
+   * score: no discovered resources and no account findings. calculateRiskScore
+   * treats that as a perfect 100, which would otherwise be recorded (and shown
+   * in the activity feed) as a real security score.
    */
-  async storeDailySnapshot(organizationId: string, client?: PoolClient): Promise<void> {
+  async storeDailySnapshot(organizationId: string, client?: PoolClient): Promise<boolean> {
     const stats = await this.resourcesRepository.getStats(organizationId, client);
     const accountFindings = await this.accountFindingsRepository.getStats(organizationId, client);
+    if ((stats.total_resources || 0) === 0 && (accountFindings.total || 0) === 0) {
+      return false;
+    }
     const riskScore = await this.calculateCurrentRiskScore(organizationId, client);
 
     await this.repository.createSnapshot({
@@ -146,6 +154,7 @@ export class RiskTrackingService {
       ),
       orphanedCount: stats.orphaned_count || 0,
     }, client);
+    return true;
   }
 
   /**
@@ -169,8 +178,12 @@ export class RiskTrackingService {
             [org.id]
           );
 
-          await this.storeDailySnapshot(org.id, client);
-          console.log(`[Risk Tracking] Snapshot stored for ${org.name}`);
+          const stored = await this.storeDailySnapshot(org.id, client);
+          console.log(
+            stored
+              ? `[Risk Tracking] Snapshot stored for ${org.name}`
+              : `[Risk Tracking] No resources or findings for ${org.name}; snapshot skipped`
+          );
         } catch (error: any) {
           console.error(`[Risk Tracking] Failed for ${org.name}:`, error.message);
         }

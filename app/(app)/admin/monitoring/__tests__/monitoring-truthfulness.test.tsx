@@ -342,3 +342,21 @@ describe('Monitoring page — Phase 2D detail pagination disclosure', () => {
     })
   })
 })
+
+describe('Monitoring page — the healthy summary claims only what CloudWatch shows', () => {
+  beforeEach(() => {
+    mockUseDemoMode.mockReturnValue(false)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('an empty alert list is not reported as "no anomalies detected"', async () => {
+    installFetchMock({ connected: true, metrics: cloudWatchMetricsFixture() })
+
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText(/1 AWS resource is currently monitored with no active health violations\./)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/anomal(y|ies) (were|was) detected|No reliability anomalies/i)
+  })
+})

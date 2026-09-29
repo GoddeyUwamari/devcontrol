@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, Clock, Sparkles, ArrowRight, RefreshCw } from 'lucide-react';
+import { AlertCircle, Clock, Sparkles, ArrowRight, RefreshCw } from 'lucide-react';
 import { alertHistoryService } from '@/lib/services/alert-history.service';
 import { Alert, AlertFilters as AlertFiltersType, DateRangeOption } from '@/lib/types';
 import { subDays, format } from 'date-fns';
@@ -32,6 +32,12 @@ const DEMO_ALERTS: Alert[] = [
 ];
 const DEMO_STATS = { total: 4, active: 2, critical: 1, avgResolutionTime: 47 };
 const getDemoCostImpact = (a: Alert) => a.status === 'resolved' || a.status === 'acknowledged' ? 'No cost impact' : a.severity === 'critical' ? '+$120/mo estimated' : '+$48/mo if sustained';
+
+
+// alert_history's only writer (the Prometheus alert sync) stores no organization,
+// so org-scoped reads cannot see its alerts -- the same caveat the AI assistant
+// applies (ai-chat-context.repository.ts). An empty list is not "all healthy".
+const NO_ORG_ALERTS_NOTE = "DevControl's alert sync does not yet associate alerts with an organization, so an empty list here does not mean your services are healthy.";
 
 export default function AlertsPage() {
   return (
@@ -76,13 +82,16 @@ function AlertsContent() {
 
   const filters: AlertFiltersType & { page: number; limit: number } = { dateRange, page, limit: 50, ...(selectedSeverity !== 'all' && { severity: selectedSeverity as any }), ...(selectedStatus !== 'all' && { status: selectedStatus as any }) };
 
-  const { data: statsData } = useQuery({ queryKey: ['alert-stats', dateRange], queryFn: () => alertHistoryService.getAlertStats({ dateRange }), refetchInterval: 30000 });
-  const { data: historyData, isLoading: historyLoading, refetch } = useQuery({ queryKey: ['alert-history', filters], queryFn: () => alertHistoryService.getAlertHistory(filters), refetchInterval: 30000 });
+  const { data: statsData, isError: statsError } = useQuery({ queryKey: ['alert-stats', dateRange], queryFn: () => alertHistoryService.getAlertStats({ dateRange }), refetchInterval: 30000 });
+  const { data: historyData, isLoading: historyLoading, isError: historyError, refetch } = useQuery({ queryKey: ['alert-history', filters], queryFn: () => alertHistoryService.getAlertHistory(filters), refetchInterval: 30000 });
 
   const acknowledgeMutation = useMutation({ mutationFn: (id: string) => alertHistoryService.acknowledgeAlert(id), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['alert-history'] }); queryClient.invalidateQueries({ queryKey: ['alert-stats'] }); toast.success('Alert acknowledged'); } });
   const resolveMutation = useMutation({ mutationFn: (id: string) => alertHistoryService.resolveAlert(id), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['alert-history'] }); queryClient.invalidateQueries({ queryKey: ['alert-stats'] }); toast.success('Alert resolved'); } });
 
   const displayAlerts: Alert[] = isDemoActive ? DEMO_ALERTS : (historyData?.data || []);
+  // A failed request is not "zero alerts".
+  const statsUnavailable = !isDemoActive && statsError && !statsData;
+  const historyUnavailable = !isDemoActive && historyError && !historyData;
   const displayStats = isDemoActive ? DEMO_STATS : { total: statsData?.data?.total || 0, active: statsData?.data?.active || 0, critical: statsData?.data?.criticalCount || 0, avgResolutionTime: statsData?.data?.avgResolutionTime || 0 };
 
   const filteredAlerts = displayAlerts.filter((a: Alert) => {
@@ -99,7 +108,7 @@ function AlertsContent() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Active Alerts</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Live alerts and incidents across all services · Real-time monitoring</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Alerts recorded by DevControl for your organization</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => refetch()} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
@@ -119,9 +128,11 @@ function AlertsContent() {
           <p className="text-sm text-slate-700 leading-relaxed">
             {isDemoActive
               ? '2 critical alerts firing. API Gateway latency spike detected in us-east-1 — P99 latency at 2,400ms. EC2 CPU spike sustained for 8 minutes. Estimated cost impact if unresolved: $168/month.'
-              : displayStats.active > 0
-                ? `${displayStats.critical} critical and ${displayStats.active - displayStats.critical} warning alerts active. Average resolution time is ${displayStats.avgResolutionTime} minutes.`
-                : 'All systems healthy. No active alerts in the last 24 hours. Actively monitoring cost spikes, security risks, traffic thresholds, and latency degradation across all services.'}
+              : statsUnavailable
+                ? 'Alert data could not be retrieved.'
+                : displayStats.active > 0
+                  ? `${displayStats.critical} critical and ${displayStats.active - displayStats.critical} warning alerts active. Average resolution time is ${displayStats.avgResolutionTime} minutes.`
+                  : `No active alerts recorded. ${NO_ORG_ALERTS_NOTE}`}
           </p>
         </div>
         {displayStats.critical > 0 && (
@@ -133,18 +144,18 @@ function AlertsContent() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Total Alerts</p>
-          <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{displayStats.total}</div>
-          <p className="text-xs text-slate-400">{displayStats.total === 0 ? 'Stable — last 7 days clean' : `${displayStats.total} recorded`}</p>
+          <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{statsUnavailable ? '—' : displayStats.total}</div>
+          <p className="text-xs text-slate-400">{statsUnavailable ? 'Could not be retrieved' : displayStats.total === 0 ? 'None recorded' : `${displayStats.total} recorded`}</p>
         </div>
-        <div className={`rounded-xl p-4 sm:p-8 border ${displayStats.active === 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+        <div className={`rounded-xl p-4 sm:p-8 border ${statsUnavailable || displayStats.active === 0 ? 'bg-white border-slate-200' : 'bg-red-50 border-red-200'}`}>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Active Now</p>
-          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${displayStats.active === 0 ? 'text-green-600' : 'text-red-700'}`}>{displayStats.active}</div>
-          <p className="text-xs text-slate-400">{displayStats.active === 0 ? 'All services healthy' : 'Requires immediate attention'}</p>
+          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${statsUnavailable || displayStats.active === 0 ? 'text-slate-900' : 'text-red-700'}`}>{statsUnavailable ? '—' : displayStats.active}</div>
+          <p className="text-xs text-slate-400">{statsUnavailable ? 'Could not be retrieved' : displayStats.active === 0 ? 'None recorded' : 'Requires immediate attention'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Critical</p>
-          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${displayStats.critical === 0 ? 'text-green-600' : 'text-red-700'}`}>{displayStats.critical}</div>
-          <p className="text-xs text-slate-400">{displayStats.critical === 0 ? 'No critical issues' : 'Immediate action required'}</p>
+          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${statsUnavailable || displayStats.critical === 0 ? 'text-slate-900' : 'text-red-700'}`}>{statsUnavailable ? '—' : displayStats.critical}</div>
+          <p className="text-xs text-slate-400">{statsUnavailable ? 'Could not be retrieved' : displayStats.critical === 0 ? 'None recorded' : 'Immediate action required'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Avg Resolution</p>
@@ -223,7 +234,7 @@ function AlertsContent() {
             ))}
           </div>
           {filteredAlerts.length === 0 ? (
-            <EmptyState searchQuery={searchQuery} selectedSeverity={selectedSeverity} selectedStatus={selectedStatus} />
+            <EmptyState searchQuery={searchQuery} selectedSeverity={selectedSeverity} selectedStatus={selectedStatus} unavailable={historyUnavailable} />
           ) : filteredAlerts.map((alert: Alert, idx: number) => {
             const sevCls = alert.severity === 'critical' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600';
             const statusCls = alert.status === 'firing' ? 'bg-red-50 text-red-600' : alert.status === 'acknowledged' ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600';
@@ -257,7 +268,7 @@ function AlertsContent() {
         {/* Mobile cards */}
         <div className="sm:hidden flex flex-col divide-y divide-slate-50">
           {filteredAlerts.length === 0 ? (
-            <EmptyState searchQuery={searchQuery} selectedSeverity={selectedSeverity} selectedStatus={selectedStatus} />
+            <EmptyState searchQuery={searchQuery} selectedSeverity={selectedSeverity} selectedStatus={selectedStatus} unavailable={historyUnavailable} />
           ) : filteredAlerts.map((alert: Alert) => {
             const sevCls = alert.severity === 'critical' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600';
             const statusCls = alert.status === 'firing' ? 'bg-red-50 text-red-600' : alert.status === 'acknowledged' ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600';
@@ -307,16 +318,18 @@ function AlertsContent() {
   );
 }
 
-function EmptyState({ searchQuery, selectedSeverity, selectedStatus }: { searchQuery: string; selectedSeverity: string; selectedStatus: string }) {
+function EmptyState({ searchQuery, selectedSeverity, selectedStatus, unavailable }: { searchQuery: string; selectedSeverity: string; selectedStatus: string; unavailable: boolean }) {
   const hasFilters = searchQuery || selectedSeverity !== 'all' || selectedStatus !== 'all';
   return (
     <div className="p-10 sm:p-16 text-center">
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4 ${hasFilters ? 'bg-slate-50' : 'bg-green-50'}`}>
-        {hasFilters ? <AlertCircle size={20} className="text-slate-300" /> : <CheckCircle2 size={20} className="text-green-600" />}
+      <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4 bg-slate-50">
+        <AlertCircle size={20} className="text-slate-300" />
       </div>
-      <p className="text-sm font-semibold text-slate-900 mb-1.5">{hasFilters ? 'No alerts match your filters' : 'All systems healthy'}</p>
+      <p className="text-sm font-semibold text-slate-900 mb-1.5">
+        {unavailable ? 'Alerts could not be retrieved' : hasFilters ? 'No alerts match your filters' : 'No alerts recorded'}
+      </p>
       <p className="text-sm text-slate-500 leading-relaxed max-w-sm mx-auto">
-        {hasFilters ? 'Try adjusting your search or filter criteria.' : 'No active alerts in the last 24 hours. Actively monitoring cost spikes, security risks, traffic thresholds, and latency degradation.'}
+        {unavailable ? 'Try refreshing.' : hasFilters ? 'Try adjusting your search or filter criteria.' : NO_ORG_ALERTS_NOTE}
       </p>
     </div>
   );

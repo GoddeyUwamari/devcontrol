@@ -10,7 +10,7 @@ import {
 import {
   Shield, AlertTriangle, CheckSquare, ClipboardList,
   ArrowRight, ChevronRight, Loader2, RefreshCw,
-  TrendingUp, TrendingDown, Check, ShieldCheck, EyeOff, ShieldAlert,
+  TrendingUp, TrendingDown, ShieldCheck, EyeOff, ShieldAlert,
 } from 'lucide-react'
 import { useCurrentRiskScore, useRiskScoreTrend } from '@/lib/hooks/useRiskScore'
 import { useComplianceFrameworks, useComplianceScans } from '@/lib/hooks/useComplianceFrameworks'
@@ -134,7 +134,7 @@ export default function SecurityPage() {
   const { frameworks, loading: frameworksLoading } = useComplianceFrameworks()
   const { scans, loading: scansLoading } = useComplianceScans()
 
-  const { data: anomalyData, isLoading: anomalyLoading, refetch: refetchAnomalies } = useQuery({
+  const { data: anomalyData, isLoading: anomalyLoading, isError: anomalyError, refetch: refetchAnomalies } = useQuery({
     queryKey: ['anomalies', 'active'],
     queryFn: () => anomalyService.getAnomalies('active'),
     staleTime: 2 * 60 * 1000,
@@ -151,13 +151,20 @@ export default function SecurityPage() {
   // explicit "N unresolved findings" count derived from this list — silently
   // capping the fetch to a handful and rendering it with no count is exactly
   // the truncation-without-disclosure this hook previously caused.
-  const { data: accountFindings, isLoading: findingsLoading } = useAccountSecurityFindings(undefined, !demoMode)
+  const { data: accountFindings, isLoading: findingsLoading, isError: findingsError } = useAccountSecurityFindings(undefined, !demoMode)
+  // A failed fetch is not an empty result: never show it as "no findings".
+  const findingsUnavailable = !demoMode && findingsError && !accountFindings
 
   // Real accounts: compliance + orphaned-resource scanning haven't run yet (backend stub),
   // so an undefined/errored fetch must not fall back to a fabricated "87 Good" — treat it
   // as preliminary/unknown instead. Demo data is always final.
   const isPreliminary = !demoMode && (!riskScore || riskScore.isPreliminary)
   const score = riskScore?.score ?? (demoMode ? 87 : 0)
+  // Same rule as the Dashboard's Security Posture KPI: no number until the score
+  // is final. A missing score is not 0, and a preliminary score for an account
+  // with nothing scanned yet is calculateRiskScore's default 100, not a result.
+  const scoreAvailable = demoMode || (!!riskScore && !riskScore.isPreliminary)
+  const scoreUnavailableReason = !riskScore ? 'Score could not be retrieved' : 'Full security scan pending'
   const scoreLabel = isPreliminary ? 'Preliminary' : score >= 90 ? 'Excellent' : score >= 80 ? 'Good' : score >= 70 ? 'Fair' : 'At Risk'
   const scoreColor = isPreliminary ? '#D97706' : score >= 80 ? '#059669' : score >= 70 ? '#D97706' : '#DC2626'
   const activeAnomalies = anomalyStats?.active || anomalyData?.anomalies?.length || 0
@@ -470,19 +477,24 @@ export default function SecurityPage() {
           {riskLoading ? <Loader2 size={18} className="text-slate-300" /> : (
             <>
               <div className="flex items-end gap-1 mb-2">
-                <span className="text-3xl font-bold text-slate-900 tracking-tight leading-none">{score}</span>
-                <span className="text-lg text-slate-400 mb-0.5">/100</span>
+                <span data-testid="security-score-value" className="text-3xl font-bold text-slate-900 tracking-tight leading-none">{scoreAvailable ? score : '—'}</span>
+                {scoreAvailable && <span className="text-lg text-slate-400 mb-0.5">/100</span>}
               </div>
-              <span className="text-xs font-semibold" style={{ color: scoreColor }}>{scoreLabel}</span>
+              <span className="text-xs font-semibold" style={{ color: scoreColor }}>{scoreAvailable ? scoreLabel : riskScore ? 'Preliminary' : 'Unavailable'}</span>
               <span className={`block text-xs mt-0.5 ${(criticalAnomalies > 0 || activeAnomalies > 0) ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>
-                {(criticalAnomalies > 0 || activeAnomalies > 0) ? 'Unstable — active critical risks' : isPreliminary ? 'Full security scan pending' : 'Above benchmark'}
+                {(criticalAnomalies > 0 || activeAnomalies > 0) ? 'Unstable — active critical risks' : scoreAvailable ? "Based on DevControl's evaluated checks" : scoreUnavailableReason}
               </span>
             </>
           )}
         </div>
         <div className={`bg-white rounded-xl p-5 border ${criticalAnomalies > 0 ? 'border-red-100' : 'border-slate-100'}`}>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Active Anomalies</p>
-          {anomalyLoading ? <Loader2 size={18} className="text-slate-300" /> : (
+          {anomalyLoading ? <Loader2 size={18} className="text-slate-300" /> : !demoMode && anomalyError && !anomalyData ? (
+            <>
+              <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">—</div>
+              <span className="text-xs text-slate-400">Could not be retrieved</span>
+            </>
+          ) : (
             <>
               <div className="flex items-end gap-2 mb-2">
                 <span className="text-3xl font-bold text-slate-900 tracking-tight leading-none">{activeAnomalies}</span>
@@ -491,7 +503,7 @@ export default function SecurityPage() {
               <div className="flex items-center gap-1.5">
                 {criticalAnomalies > 0
                   ? <><AlertTriangle size={12} className="text-red-600" /><span className="text-xs text-red-600 font-semibold">{criticalAnomalies} critical need attention</span></>
-                  : <><Check size={12} className="text-green-600" /><span className="text-xs text-slate-400">No critical threats</span></>}
+                  : <span className="text-xs text-slate-400">No critical anomalies</span>}
               </div>
             </>
           )}
@@ -546,10 +558,14 @@ export default function SecurityPage() {
           </div>
           {trendLoading ? (
             <div className="h-44 flex items-center justify-center"><Loader2 size={18} className="text-slate-300" /></div>
-          ) : (chartData.length === 0 || chartData.every(d => d.score === chartData[0].score)) ? (
+          ) : chartData.length === 0 ? (
+            <div className="h-44 flex flex-col items-center justify-center gap-2 bg-slate-50 rounded-xl">
+              <p className="text-sm font-medium text-slate-500">No score history yet</p>
+            </div>
+          ) : chartData.every(d => d.score === chartData[0].score) ? (
             <div className="h-44 flex flex-col items-center justify-center gap-2 bg-slate-50 rounded-xl">
               <p className="text-sm font-medium text-slate-500">Security posture stable</p>
-              <p className="text-xs text-slate-500">No significant changes · Score: {score}/100</p>
+              <p className="text-xs text-slate-500">No significant changes · Score: {chartData[chartData.length - 1].score}/100</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={180}>
@@ -640,12 +656,15 @@ export default function SecurityPage() {
                 </div>
               )
             })}
-            {topAnomalies.length === 0 && (
+            {topAnomalies.length === 0 && (!demoMode && anomalyError && !anomalyData ? (
               <div className="text-center py-8">
-                <Check size={22} className="text-green-500 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">No active anomalies · System is secure</p>
+                <p className="text-sm text-slate-500">Anomalies could not be retrieved</p>
               </div>
-            )}
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-sm text-slate-500">No active anomalies</p>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -716,7 +735,7 @@ export default function SecurityPage() {
               "this is everything" when it isn't — this panel fetches the full,
               unlimited findings list (see useAccountSecurityFindings(undefined, ...)
               above), so this count is always the true total, not a page/slice size. */}
-          {!findingsLoading && (
+          {!findingsLoading && !findingsUnavailable && (
             <p className="text-xs text-slate-400 mb-4">
               {findings.length === 0 ? 'No unresolved findings' : `${findings.length} unresolved finding${findings.length === 1 ? '' : 's'}`}
             </p>
@@ -724,6 +743,10 @@ export default function SecurityPage() {
           <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto">
             {findingsLoading && !demoMode ? (
               <div className="py-8 flex items-center justify-center"><Loader2 size={18} className="text-slate-300 animate-spin" /></div>
+            ) : findingsUnavailable ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-slate-500">Findings could not be retrieved</p>
+              </div>
             ) : (
               <>
                 {findings.map((finding) => {
@@ -783,8 +806,7 @@ export default function SecurityPage() {
                 })}
                 {findings.length === 0 && (
                   <div className="text-center py-8">
-                    <Check size={22} className="text-green-500 mx-auto mb-2" />
-                    <p className="text-sm text-slate-500">No active findings · Security groups and IAM users look clean</p>
+                    <p className="text-sm text-slate-500">No active security group or IAM findings</p>
                   </div>
                 )}
               </>

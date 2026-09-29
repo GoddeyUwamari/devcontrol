@@ -296,7 +296,7 @@ function InfrastructureContent() {
     enabled: !isDemoActive,
   })
 
-  const { data: apiStats, isLoading: statsLoading } = useQuery({
+  const { data: apiStats, isLoading: statsLoading, isError: statsError } = useQuery({
     queryKey: ['services-stats'],
     queryFn: awsServicesService.getStats,
     enabled: !isDemoActive,
@@ -364,8 +364,9 @@ function InfrastructureContent() {
   // Source A — live Cost Explorer total, matching Dashboard/costs pages. Replaces the
   // former sum of infrastructure_resources.cost_per_month (source B).
   const totalMonthlyCost = isDemoActive ? demoMonthlyCost: (platformStats?.monthlyAwsCost ?? 0)
-  const activeCount      = isDemoActive ? demoActive     : (statsLoading ? null : (apiStats?.healthy         ?? 0))
-  const warningCount     = isDemoActive ? demoWarning    : (statsLoading ? null : (apiStats?.needs_attention ?? 0))
+  // A failed stats request is unknown (null -> "—"), never 0.
+  const activeCount      = isDemoActive ? demoActive     : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.healthy         ?? 0))
+  const warningCount     = isDemoActive ? demoWarning    : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.needs_attention ?? 0))
 
   const DEMO_INTELLIGENCE = {
     // 73 is 'Stable' under the canonical overall thresholds (scoreToStatus:
@@ -599,6 +600,7 @@ function InfrastructureContent() {
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
               <p className="text-base font-bold text-slate-900 mb-0.5">{intelStatus}</p>
+              <p data-testid="system-score-basis" className="text-xs text-slate-500">Readiness across cost, security, and observability setup — not measured uptime or performance</p>
               {intelCalculatedAgo && <p className="text-xs text-slate-500">Calculated {intelCalculatedAgo}</p>}
             </div>
           </div>
@@ -710,9 +712,9 @@ function InfrastructureContent() {
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'active' ? null : 'active')}
         >
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">Healthy</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">{isDemoActive ? 'Healthy' : 'No Flagged Issues'}</p>
           <div className="text-3xl sm:text-4xl font-bold text-emerald-600 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (activeCount ?? '—')}</div>
-          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">Running normally</p>
+          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">{isDemoActive ? 'Running normally' : 'Not stopped, failed, or flagged'}</p>
           <p className="text-xs text-gray-500">Click to filter</p>
         </div>
 
@@ -725,7 +727,7 @@ function InfrastructureContent() {
         >
           <p className="text-xs font-semibold text-red-600 uppercase tracking-widest mb-4">Critical Issues</p>
           <div className="text-3xl sm:text-4xl font-bold text-red-600 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
-          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">1 cost inefficiency · 1 reliability risk</p>
+          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">{isDemoActive ? '1 cost inefficiency · 1 reliability risk' : 'Stopped, failed, or with a high-severity finding'}</p>
           <p className="text-xs text-red-600 font-medium">Resolve now →</p>
         </div>
 

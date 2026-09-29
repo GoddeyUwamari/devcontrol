@@ -9,8 +9,8 @@ interface InfrastructureIntelligenceProps {
   /** From the AI summary: only 'none_identified' may render as "no risks". */
   topRiskStatus: 'identified' | 'none_identified' | 'unavailable'
   aiSummaryLoading: boolean
-  systemStatus: { label: string; color: string; background: string; dotColor: string }
-  isLive: boolean
+  /** DevControl's own service health (its /health check) -- never the customer's AWS. */
+  systemStatus: { value: string; label: string; color: string; background: string; dotColor: string }
 }
 
 // topRisk is generated server-side as "one short sentence" (see
@@ -88,7 +88,7 @@ function IntelCard({ icon: Icon, iconColor, iconBackground, label, valueNode, de
  * "Monitoring Overview" reaches via /monitoring) below instead of the header pointing
  * everywhere at once.
  */
-export function InfrastructureIntelligence({ topRisk, topRiskStatus, aiSummaryLoading, systemStatus, isLive }: InfrastructureIntelligenceProps) {
+export function InfrastructureIntelligence({ topRisk, topRiskStatus, aiSummaryLoading, systemStatus }: InfrastructureIntelligenceProps) {
   const noRiskHeadline = topRiskStatus === 'none_identified' ? 'No urgent risks identified' : 'Risk status unavailable'
   const noRiskDescription = topRiskStatus === 'none_identified'
     ? "No active findings in DevControl's evaluated security checks."
@@ -98,12 +98,6 @@ export function InfrastructureIntelligence({ topRisk, topRiskStatus, aiSummaryLo
       <div className="flex items-center gap-2.5 mb-4">
         <BarChart3 size={17} style={{ color: 'var(--text-accent)' }} />
         <h2 className="text-base font-bold text-foreground">Infrastructure Intelligence</h2>
-        {isLive && (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--text-success)', background: 'var(--bg-success)' }}>
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--fill-success)' }} />
-            Real-time
-          </span>
-        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -139,7 +133,7 @@ export function InfrastructureIntelligence({ topRisk, topRiskStatus, aiSummaryLo
           valueNode={
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: systemStatus.dotColor }} />
-              <span className="text-xl font-bold" style={{ color: systemStatus.color }}>{systemStatus.label.startsWith('All systems') ? 'Healthy' : systemStatus.label.startsWith('Degraded') ? 'Degraded' : systemStatus.label.startsWith('System outage') ? 'Down' : 'Unknown'}</span>
+              <span className="text-xl font-bold" style={{ color: systemStatus.color }}>{systemStatus.value}</span>
             </div>
           }
           description={systemStatus.label}

@@ -280,6 +280,20 @@ export default function ServicesPage() {
   // connected." True when there's a connected account OR any resources have
   // ever synced (totalServices comes from the unfiltered /services/stats call).
   const isAwsConnected    = isDemoActive || !noAwsAccount || totalServices > 0
+  // What the counts below can support. "Healthy" in /services/stats means "not
+  // stopped/failed and no high-severity finding" -- no monitoring source exists
+  // (avg_uptime is always null) -- so real mode says "no flagged issues", and
+  // zero services or a failed request is never read as all-healthy.
+  const serviceDataState: 'loading' | 'unavailable' | 'none' | 'present' = isDemoActive ? 'present'
+    : isLoading ? 'loading'
+    : error && !noAwsAccount ? 'unavailable'
+    : totalServices === 0 ? 'none'
+    : 'present'
+  const serviceStatusHeadline = serviceDataState === 'loading' ? 'Loading…'
+    : serviceDataState === 'unavailable' ? 'Service data unavailable'
+    : serviceDataState === 'none' ? 'No services discovered'
+    : warningCount === 0 ? 'No services flagged'
+    : `${warningCount} of ${totalServices} at risk`
   const activeFilterLabel = templateFilter !== 'all' ? TYPE_DISPLAY[templateFilter] : null
   // A "needs attention" filter turning up zero results is good news, not a
   // dead end — keep it visually and textually distinct from a real no-match.
@@ -308,7 +322,7 @@ export default function ServicesPage() {
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-violet-600 mb-1">Services</p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Services Intelligence</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real-time visibility into performance, cost, and risk across your entire cloud environment.</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Your discovered AWS services, their cost, and any flagged issues.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -365,7 +379,7 @@ export default function ServicesPage() {
               <p className="text-base font-bold text-slate-900 leading-tight">
                 {isDemoActive
                   ? (warningCount > 0 ? 'Performance Risk Emerging' : 'All Systems Healthy')
-                  : (warningCount === 0 ? 'All Healthy' : `${warningCount} of ${totalServices} at risk`)}
+                  : serviceStatusHeadline}
               </p>
               {isDemoActive && (
                 <p className="text-xs font-medium text-slate-500">{totalServices}/{totalServices} services · High confidence</p>
@@ -377,12 +391,12 @@ export default function ServicesPage() {
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">At Risk</p>
               <p className="text-2xl font-bold text-red-600">{warningCount} <span className="text-sm text-slate-500 font-normal">of {totalServices}</span></p>
-              <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : warningCount > 0 ? 'Require review' : 'All healthy'}</p>
+              <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : warningCount > 0 ? 'Require review' : serviceDataState === 'present' ? 'None flagged' : '—'}</p>
             </div>
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">Business Impact</p>
               <p className="text-sm font-bold text-slate-900 leading-tight">
-                {isDemoActive ? 'Transaction flow at risk' : warningCount > 0 ? `${warningCount} at risk` : 'No impact detected'}
+                {isDemoActive ? 'Transaction flow at risk' : warningCount > 0 ? `${warningCount} at risk` : serviceDataState === 'present' ? 'None flagged' : '—'}
               </p>
               <p className={`text-xs font-semibold ${warningCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
                 {isDemoActive ? 'Payment degradation' : warningCount > 0 ? 'Review below' : 'All nominal'}
@@ -421,7 +435,7 @@ export default function ServicesPage() {
                 <p className="text-base font-bold text-slate-900">
                   {isDemoActive
                     ? (warningCount > 0 ? 'System Stable — Performance Risk Emerging in Production' : 'All Systems Healthy')
-                    : (warningCount === 0 ? 'All Healthy' : `${warningCount} of ${totalServices} at risk`)}
+                    : serviceStatusHeadline}
                 </p>
                 {isDemoActive && (
                   <p className="text-xs font-medium text-slate-500">{totalServices}/{totalServices} services measured · High confidence</p>
@@ -441,14 +455,16 @@ export default function ServicesPage() {
                     <p className="text-sm text-slate-700 font-medium m-0">● Analytics worker cost inefficiency detected</p>
                     <p className="text-sm text-slate-700 font-medium m-0">● {healthyCount} services operating within thresholds</p>
                   </>
+                ) : serviceDataState !== 'present' ? (
+                  <p className="text-sm text-slate-500 font-medium m-0">● {serviceStatusHeadline}</p>
                 ) : warningCount > 0 ? (
                   <>
                     <p className="text-sm text-red-600 font-semibold m-0">● {warningCount} service{warningCount !== 1 ? 's' : ''} requiring attention</p>
-                    <p className="text-sm text-slate-700 font-medium m-0">● {healthyCount} services operating within thresholds</p>
+                    <p className="text-sm text-slate-700 font-medium m-0">● {healthyCount} with no flagged issues</p>
                   </>
                 ) : (
                   <>
-                    <p className="text-sm text-green-600 font-semibold m-0">● All {totalServices} services operating within thresholds</p>
+                    <p className="text-sm text-slate-700 font-semibold m-0">● {totalServices} service{totalServices !== 1 ? 's' : ''} with no flagged issues</p>
                     <p className="text-sm text-slate-700 font-medium m-0">● Average uptime {avgUptimeDisplay}</p>
                   </>
                 )}
@@ -461,10 +477,10 @@ export default function ServicesPage() {
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">Business Impact</p>
               <p className="text-sm font-bold text-slate-900 mb-0.5">
-                {isDemoActive ? 'Transaction flow at risk · $864 cost increase' : warningCount > 0 ? `${warningCount} service${warningCount !== 1 ? 's' : ''} at risk` : 'No active business impact detected'}
+                {isDemoActive ? 'Transaction flow at risk · $864 cost increase' : warningCount > 0 ? `${warningCount} service${warningCount !== 1 ? 's' : ''} at risk` : serviceDataState === 'present' ? 'None flagged' : '—'}
               </p>
               <p className={`text-xs font-semibold m-0 ${warningCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                {isDemoActive ? 'Payment processing degradation — user-facing' : warningCount > 0 ? 'Review highlighted services below' : 'All systems nominal'}
+                {isDemoActive ? 'Payment processing degradation — user-facing' : warningCount > 0 ? 'Review highlighted services below' : serviceDataState === 'present' ? 'No flagged issues' : serviceStatusHeadline}
               </p>
             </div>
 
@@ -475,7 +491,7 @@ export default function ServicesPage() {
               <p className="text-xs font-bold uppercase tracking-widest text-red-600 mb-1">At Risk</p>
               <p className="text-2xl font-bold text-red-600 mb-0.5">{warningCount} of {totalServices}</p>
               <p className="text-xs font-medium text-slate-500 m-0">
-                {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Require immediate review' : 'All services healthy'}
+                {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Require immediate review' : serviceDataState === 'present' ? 'None flagged' : '—'}
               </p>
             </div>
           </div>
@@ -516,16 +532,16 @@ export default function ServicesPage() {
         </div>
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">Healthy</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">{isDemoActive ? 'Healthy' : 'No Flagged Issues'}</p>
           <div className="text-4xl font-bold text-green-600 leading-none mb-1">{isLoading && !isDemoActive ? '…' : healthyCount}</div>
-          <p className="text-slate-500 text-xs font-medium m-0">Operating within thresholds</p>
+          <p className="text-slate-500 text-xs font-medium m-0">{isDemoActive ? 'Operating within thresholds' : 'No flagged issues'}</p>
         </div>
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">At Risk</p>
           <div className="text-4xl font-bold text-red-600 leading-none mb-1">{isLoading && !isDemoActive ? '…' : warningCount}</div>
           <p className="text-slate-500 text-xs font-medium m-0">
-            {isDemoActive ? '1 reliability · 1 cost inefficiency · both in production' : warningCount > 0 ? `${warningCount} at risk — affecting production services` : 'No services at risk'}
+            {isDemoActive ? '1 reliability · 1 cost inefficiency · both in production' : warningCount > 0 ? `${warningCount} flagged for review` : serviceDataState === 'present' ? 'None flagged' : '—'}
           </p>
           {warningCount > 0 && <p className="text-xs font-semibold text-red-600 mt-1 m-0">Resolve now →</p>}
         </div>
@@ -550,19 +566,23 @@ export default function ServicesPage() {
           <p className="text-sm text-slate-900 font-semibold leading-relaxed mb-1">
             {isDemoActive
               ? <><strong className="text-red-600">Payment Processor</strong> showing Lambda invocation spike (+178%) — likely retry loop driving <strong className="text-red-600">$864 cost increase</strong> this month.</>
-              : totalServices === 0
-                ? 'Connect AWS to unlock real-time cost insights, security risks, and performance signals.'
-                : warningCount > 0
-                  ? <>{warningCount} service{warningCount > 1 ? 's' : ''} showing early degradation signals. No current outage risk, but performance instability detected.</>
-                  : <>All {totalServices} service{totalServices !== 1 ? 's' : ''} healthy. No active issues.</>
+              : serviceDataState === 'loading'
+                ? 'Loading services…'
+                : serviceDataState === 'unavailable'
+                  ? 'Service data could not be retrieved.'
+                  : serviceDataState === 'none'
+                    ? 'No services have been discovered for this organization yet.'
+                    : warningCount > 0
+                      ? <>{warningCount} service{warningCount > 1 ? 's' : ''} flagged for review: stopped, failed, or with a high-severity finding.</>
+                      : <>No flagged issues across {totalServices} service{totalServices !== 1 ? 's' : ''}.</>
             }
           </p>
           <p className="text-xs text-slate-500 font-medium m-0">
             {isDemoActive
               ? '17 of 19 services operating within thresholds · no new issues in last 24h.'
-              : warningCount > 0
-                ? `Review highlighted services below — ${healthyCount} of ${totalServices} operating normally.`
-                : totalServices > 0 ? 'System is healthy — no action required.' : ''
+              : serviceDataState === 'present' && warningCount > 0
+                ? `Review highlighted services below — ${healthyCount} of ${totalServices} have no flagged issues.`
+                : serviceDataState === 'present' ? 'Based on resource state and DevControl findings; DevControl does not monitor service uptime.' : ''
             }
           </p>
         </div>
@@ -705,7 +725,7 @@ export default function ServicesPage() {
               </div>
               <p className="text-sm font-semibold text-slate-900 mb-1">Nothing needs attention right now</p>
               <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                All {totalServices} service{totalServices !== 1 ? 's' : ''} are healthy.
+                None of the {totalServices} service{totalServices !== 1 ? 's have' : ' has'} a flagged issue.
               </p>
               <button
                 onClick={clearFilters}
@@ -748,7 +768,7 @@ export default function ServicesPage() {
               </div>
             )}
 
-            {/* Collapsed healthy group — expands into the same row format, sortable by cost */}
+            {/* Collapsed no-flagged-issues group — expands into the same row format, sortable by cost */}
             {healthySorted.length > 0 && (
               <div>
                 <button
@@ -758,7 +778,7 @@ export default function ServicesPage() {
                   <span className="flex items-center gap-2">
                     <CheckCircle2 size={15} className="text-green-600 shrink-0" />
                     <span className="text-sm font-semibold text-slate-700">
-                      {healthySorted.length} service{healthySorted.length !== 1 ? 's' : ''} healthy
+                      {healthySorted.length} service{healthySorted.length !== 1 ? 's' : ''} with no flagged issues
                     </span>
                   </span>
                   {healthyExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}

@@ -188,11 +188,21 @@ export class ActivityFeedService {
     }));
   }
 
+  // Snapshots taken with nothing to score (no resources, no issues) recorded a
+  // default 100; they are not a security score and are left out of the feed.
+  // RiskTrackingService.storeDailySnapshot no longer writes them.
   private async getScoreEvents(client: PoolClient, organizationId: string): Promise<ActivityEvent[]> {
     const result = await client.query(
       `SELECT created_at, overall_score
        FROM risk_score_history
        WHERE organization_id = $1
+         AND NOT (
+           COALESCE(total_resources, 0) = 0
+           AND COALESCE((compliance_issues->>'critical')::int, 0)
+             + COALESCE((compliance_issues->>'high')::int, 0)
+             + COALESCE((compliance_issues->>'medium')::int, 0)
+             + COALESCE((compliance_issues->>'low')::int, 0) = 0
+         )
        ORDER BY created_at DESC LIMIT $2`,
       [organizationId, PER_SOURCE_LIMIT]
     );

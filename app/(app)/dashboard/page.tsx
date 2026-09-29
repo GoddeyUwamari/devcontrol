@@ -357,11 +357,13 @@ export default function DashboardPage() {
 
   const systemStatusLabel = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'unknown'
 
+  // systemHealth is DevControl's own /health check (API + database), not the
+  // customer's AWS -- the wording says so.
   const systemStatusConfig = {
-    healthy:  { color: 'var(--text-success)', background: 'var(--bg-success)', border: 'var(--border-success)', dot: 'var(--fill-success)', label: 'All systems operational' },
-    degraded: { color: 'var(--text-warning)', background: 'var(--bg-warning)', border: 'var(--border-warning)', dot: 'var(--fill-warning)', label: 'Degraded performance detected' },
-    down:     { color: 'var(--text-danger)', background: 'var(--bg-danger)', border: 'var(--border-danger)', dot: 'var(--fill-danger)', label: 'System outage detected' },
-    unknown:  { color: 'var(--text-secondary)', background: 'var(--surface-1)', border: 'var(--border)', dot: 'var(--text-secondary)', label: 'Status pending' },
+    healthy:  { color: 'var(--text-success)', background: 'var(--bg-success)', border: 'var(--border-success)', dot: 'var(--fill-success)', value: 'Operational', label: "DevControl's API and database are responding. Not a status of your AWS resources." },
+    degraded: { color: 'var(--text-warning)', background: 'var(--bg-warning)', border: 'var(--border-warning)', dot: 'var(--fill-warning)', value: 'Degraded', label: "DevControl's own services are degraded. Not a status of your AWS resources." },
+    down:     { color: 'var(--text-danger)', background: 'var(--bg-danger)', border: 'var(--border-danger)', dot: 'var(--fill-danger)', value: 'Not responding', label: "DevControl's API is not responding normally. Not a status of your AWS resources." },
+    unknown:  { color: 'var(--text-secondary)', background: 'var(--surface-1)', border: 'var(--border)', dot: 'var(--text-secondary)', value: 'Checking', label: "Checking DevControl's own service status." },
   } as const
   const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.unknown
 
@@ -571,8 +573,7 @@ export default function DashboardPage() {
             topRisk={topRisk}
             topRiskStatus={topRiskStatus}
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
-            systemStatus={{ label: statusConf.label, color: statusConf.color, background: statusConf.background, dotColor: statusConf.dot }}
-            isLive={isConnected}
+            systemStatus={{ value: statusConf.value, label: statusConf.label, color: statusConf.color, background: statusConf.background, dotColor: statusConf.dot }}
           />
 
           {/* ── PLATFORM EFFICIENCY BREAKDOWN ── */}
@@ -597,7 +598,6 @@ export default function DashboardPage() {
                 demoTotalCost={DEMO_DASHBOARD_STATS.monthlyAwsCost}
                 dateRange={costDateRange}
                 onDateRangeChange={setCostDateRange}
-                onExport={() => { toast.success('Exporting cost data...') }}
               />
             </div>
             <div className="lg:col-span-2">
@@ -661,7 +661,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 mt-2 mb-2">
             {isConnected ? <Wifi size={13} className="text-[var(--text-secondary)]" /> : <WifiOff size={13} className="text-[var(--text-secondary)]" />}
             <span className="text-xs text-[var(--text-secondary)]">
-              {isConnected ? 'Real-time monitoring active' : 'Reconnecting…'} · data updates based on source availability
+              {isConnected ? 'Live update channel connected' : 'Live update channel reconnecting…'} · each data source refreshes on its own schedule
             </span>
           </div>
         </>

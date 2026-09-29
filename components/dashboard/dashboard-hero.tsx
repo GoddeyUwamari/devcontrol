@@ -11,9 +11,9 @@ interface DashboardHeroProps {
 
 /**
  * Page hero: title, truthful supporting copy, AWS connection pill, and
- * cloud-provider status tiles. "Real-time" describes live operational
- * signals only — see the dashboard page's own data-provenance comments for
- * what is/isn't asynchronous.
+ * cloud-provider status tiles. No "real-time" claim: the dashboard's sources
+ * refresh on their own schedules (see the dashboard page's data-provenance
+ * comments).
  */
 export function DashboardHero({ isAwsConnected, orgName, lastSynced }: DashboardHeroProps) {
   return (
@@ -23,7 +23,7 @@ export function DashboardHero({ isAwsConnected, orgName, lastSynced }: Dashboard
           AI-Powered Cloud Operations &amp; Infrastructure Intelligence
         </h1>
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-xl">
-          Real-time operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence.
+          Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence.
         </p>
         <p className="text-xs text-[var(--text-secondary)] font-medium mt-2">
           {isAwsConnected

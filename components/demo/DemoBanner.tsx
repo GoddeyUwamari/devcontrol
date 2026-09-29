@@ -1,41 +1,31 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 
+/**
+ * The only app-wide label for demo mode, so it is not dismissible: while demo
+ * mode is on, sample data replaces real data on every page and must stay
+ * visibly labelled. Leaving demo mode is the way to remove it.
+ */
 export function DemoBanner() {
   const demoMode = useDemoMode()
   const { enabled: salesDemoMode, toggle: toggleSalesDemo } = useSalesDemo()
-  const [dismissed, setDismissed] = useState(false)
 
-  useEffect(() => {
-    if (demoMode || salesDemoMode) {
-      // Always show banner fresh when demo mode activates
-      localStorage.removeItem('demo_banner_dismissed')
-      setDismissed(false)
-    }
-  }, [demoMode, salesDemoMode])
-
-  const handleDismiss = () => {
-    localStorage.setItem('demo_banner_dismissed', 'true')
-    setDismissed(true)
-  }
-
-  if ((!demoMode && !salesDemoMode) || dismissed) return null
+  if (!demoMode && !salesDemoMode) return null
 
   const handleSwitch = () => {
     if (salesDemoMode) toggleSalesDemo()
     if (demoMode) {
       localStorage.setItem('devcontrol_demo_mode', 'false')
-      localStorage.removeItem('demo_banner_dismissed')
       window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled: false } }))
     }
   }
 
   return (
     <div
+      role="status"
+      data-testid="demo-banner"
       className="flex items-center justify-between flex-wrap gap-y-1 px-3 sm:px-6 py-2 relative z-[60]"
       style={{ background: '#6d28d9', borderTop: '1px solid #4c1d95', borderBottom: '1px solid #4c1d95' }}
     >
@@ -45,7 +35,7 @@ export function DemoBanner() {
           {salesDemoMode ? 'Sales Demo Mode active' : 'Demo Mode active'}
         </span>
         <span className="hidden sm:inline text-[0.82rem] text-white/80">
-          · Showing curated data for presentations
+          · Showing sample data, not your AWS account
         </span>
       </div>
 
@@ -61,14 +51,6 @@ export function DemoBanner() {
           }}
         >
           Switch to real data
-        </button>
-        <button
-          onClick={handleDismiss}
-          className="p-2 flex items-center text-purple-100 hover:text-white hover:bg-white/10 rounded-md cursor-pointer"
-          style={{ background: 'transparent', border: 'none' }}
-          aria-label="Dismiss banner"
-        >
-          <X size={16} />
         </button>
       </div>
     </div>

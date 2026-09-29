@@ -15,7 +15,6 @@ interface CostTrendsCardProps {
   demoTotalCost: number
   dateRange: DateRange
   onDateRangeChange: (range: DateRange) => void
-  onExport: () => void
 }
 
 /**
@@ -34,7 +33,6 @@ export function CostTrendsCard({
   demoTotalCost,
   dateRange,
   onDateRangeChange,
-  onExport,
 }: CostTrendsCardProps) {
   if (isDemoActive) {
     return (
@@ -49,7 +47,6 @@ export function CostTrendsCard({
           isLoading={false}
           dateRange={dateRange}
           onDateRangeChange={onDateRangeChange}
-          onExport={onExport}
         />
       </div>
     )
@@ -70,7 +67,6 @@ export function CostTrendsCard({
         }
         dateRange={dateRange}
         onDateRangeChange={onDateRangeChange}
-        onExport={onExport}
       />
     )
   }
