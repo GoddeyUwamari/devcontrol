@@ -4,6 +4,7 @@
  */
 
 import bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import { pool } from '../config/database';
@@ -11,12 +12,20 @@ import { encryptionService } from './encryption.service';
 import { emailService } from './email.service';
 import { TIER_LIMITS } from '../middleware/subscription.middleware';
 import { trackFunnelEventOnce } from './analyticsEvents';
+import { getActiveMembershipRole } from './organization-authorization';
 
 const BCRYPT_ROUNDS = 10;
 const ACCESS_TOKEN_EXPIRY = '7d'; // 7 days
 const REFRESH_TOKEN_EXPIRY = '30d'; // 30 days
+const REFRESH_TOKEN_EXPIRY_SECONDS = 30 * 24 * 60 * 60;
+// Absolute session lifetime, from sessions.created_at (login). Refreshing
+// never extends a session past this; the user must sign in again.
+const SESSION_MAX_LIFETIME_DAYS = 30;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MINUTES = 30;
+// Single message for every refresh rejection after token verification, so a
+// caller can't distinguish a revoked session from a lost membership.
+export const SESSION_REVOKED_MESSAGE = 'Session not found or has been revoked';
 
 interface User {
   id: string;
@@ -417,6 +426,9 @@ export class AuthService {
       this.jwtSecret,
       {
         expiresIn: ACCESS_TOKEN_EXPIRY,
+        // Unique per token: otherwise two tokens with the same claims issued
+        // in the same second are identical and share a session hash.
+        jwtid: randomUUID(),
       }
     );
   }
@@ -424,7 +436,10 @@ export class AuthService {
   /**
    * Generate refresh token (JWT)
    */
-  private generateRefreshToken(payload: Omit<JWTPayload, 'type'>): string {
+  private generateRefreshToken(
+    payload: Omit<JWTPayload, 'type'>,
+    expiresInSeconds?: number
+  ): string {
     return jwt.sign(
       {
         ...payload,
@@ -432,7 +447,10 @@ export class AuthService {
       },
       this.jwtSecret,
       {
-        expiresIn: REFRESH_TOKEN_EXPIRY,
+        expiresIn: expiresInSeconds ?? REFRESH_TOKEN_EXPIRY,
+        // Unique per token: otherwise two tokens with the same claims issued
+        // in the same second are identical and share a session hash.
+        jwtid: randomUUID(),
       }
     );
   }
@@ -512,6 +530,13 @@ export class AuthService {
 
   /**
    * Refresh access token using refresh token
+   *
+   * The refresh token only locates a session. Who the session belongs to
+   * comes from the stored session row, and what it may do comes from the
+   * caller's current membership -- role/email claims in the presented token
+   * are never copied forward. A session whose user or membership is no
+   * longer valid is revoked, not merely refused. Refreshing never extends a
+   * session beyond SESSION_MAX_LIFETIME_DAYS from when it was created.
    */
   async refreshAccessToken(refreshToken: string): Promise<{
     accessToken: string;
@@ -527,55 +552,133 @@ export class AuthService {
     // Check if session is still active
     const refreshTokenHash = encryptionService.hash(refreshToken);
     const sessionResult = await pool.query(
-      `SELECT id FROM sessions
-       WHERE refresh_token_hash = $1 AND is_active = true AND revoked_at IS NULL`,
-      [refreshTokenHash]
+      `SELECT id, user_id, organization_id,
+              created_at + make_interval(days => $2) AS session_expires_at
+       FROM sessions
+       WHERE refresh_token_hash = $1
+         AND is_active = true
+         AND revoked_at IS NULL
+         AND refresh_token_expires_at > NOW()
+         AND created_at > NOW() - make_interval(days => $2)`,
+      [refreshTokenHash, SESSION_MAX_LIFETIME_DAYS]
     );
 
     if (sessionResult.rows.length === 0) {
-      throw new Error('Session not found or has been revoked');
+      throw new Error(SESSION_REVOKED_MESSAGE);
     }
 
+    const session = sessionResult.rows[0];
+
+    // The new refresh token may not outlive the session's absolute lifetime.
+    const secondsLeftInSession = Math.floor(
+      (new Date(session.session_expires_at).getTime() - Date.now()) / 1000
+    );
+    if (secondsLeftInSession <= 0) {
+      throw new Error(SESSION_REVOKED_MESSAGE);
+    }
+    const refreshExpiresInSeconds = Math.min(REFRESH_TOKEN_EXPIRY_SECONDS, secondsLeftInSession);
+
+    if (session.user_id !== decoded.userId || session.organization_id !== decoded.organizationId) {
+      await this.revokeSession(session.id);
+      throw new Error(SESSION_REVOKED_MESSAGE);
+    }
+
+    const authorization = await this.getSessionAuthorization(session.user_id, session.organization_id);
+    if (!authorization) {
+      await this.revokeSession(session.id);
+      throw new Error(SESSION_REVOKED_MESSAGE);
+    }
+
+    const payload = {
+      userId: session.user_id as string,
+      email: authorization.email,
+      organizationId: session.organization_id as string,
+      role: authorization.role,
+    };
+
     // Generate new tokens
-    const newAccessToken = this.generateAccessToken({
-      userId: decoded.userId,
-      email: decoded.email,
-      organizationId: decoded.organizationId,
-      role: decoded.role,
-    });
+    const newAccessToken = this.generateAccessToken(payload);
+    const newRefreshToken = this.generateRefreshToken(payload, refreshExpiresInSeconds);
+    const newRefreshTokenExp = (jwt.decode(newRefreshToken) as { exp: number }).exp;
 
-    const newRefreshToken = this.generateRefreshToken({
-      userId: decoded.userId,
-      email: decoded.email,
-      organizationId: decoded.organizationId,
-      role: decoded.role,
-    });
-
-    // Update session
+    // Update session. Conditional on the presented token still being the
+    // session's current one, so a refresh token can be exchanged only once.
     const newAccessTokenHash = encryptionService.hash(newAccessToken);
     const newRefreshTokenHash = encryptionService.hash(newRefreshToken);
 
-    await pool.query(
+    const updateResult = await pool.query(
       `UPDATE sessions
        SET access_token_hash = $1,
            refresh_token_hash = $2,
            access_token_expires_at = $3,
            refresh_token_expires_at = $4,
            last_used_at = NOW()
-       WHERE id = $5`,
+       WHERE id = $5
+         AND refresh_token_hash = $6
+         AND is_active = true
+         AND revoked_at IS NULL`,
       [
         newAccessTokenHash,
         newRefreshTokenHash,
         new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        sessionResult.rows[0].id,
+        new Date(newRefreshTokenExp * 1000),
+        session.id,
+        refreshTokenHash,
       ]
     );
+
+    if (updateResult.rowCount === 0) {
+      throw new Error(SESSION_REVOKED_MESSAGE);
+    }
 
     return {
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
     };
+  }
+
+  /**
+   * Current authorization for a session's user in its organization, or null
+   * if the session may no longer be used: the membership must be active and
+   * accepted and the user active (getActiveMembershipRole), and the
+   * organization must still be active.
+   */
+  private async getSessionAuthorization(
+    userId: string,
+    organizationId: string
+  ): Promise<{ email: string; role: string } | null> {
+    const role = await getActiveMembershipRole(pool, organizationId, userId);
+    if (!role) {
+      return null;
+    }
+
+    const result = await pool.query(
+      `SELECT u.email
+       FROM users u
+       JOIN organizations o ON o.id = $2
+       WHERE u.id = $1
+         AND o.is_active = true
+         AND o.deleted_at IS NULL`,
+      [userId, organizationId]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return { email: result.rows[0].email, role };
+  }
+
+  /**
+   * Revoke a single session.
+   */
+  private async revokeSession(sessionId: string): Promise<void> {
+    await pool.query(
+      `UPDATE sessions
+       SET is_active = false, revoked_at = NOW()
+       WHERE id = $1`,
+      [sessionId]
+    );
   }
 
   /**
