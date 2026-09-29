@@ -4,7 +4,17 @@
  */
 
 import { Request, Response } from 'express';
-import { authService } from '../services/auth.service';
+import { authService, SESSION_REVOKED_MESSAGE } from '../services/auth.service';
+
+// Refresh failures whose message is safe to return as-is; anything else
+// (e.g. a database error) is reported generically.
+const REFRESH_ERROR_MESSAGES = new Set([
+  'Token has expired',
+  'Invalid token',
+  'Token verification failed',
+  'Invalid token type',
+  SESSION_REVOKED_MESSAGE,
+]);
 
 export class AuthController {
   /**
@@ -94,7 +104,7 @@ export class AuthController {
     } catch (error: any) {
       res.status(401).json({
         success: false,
-        error: error.message || 'Token refresh failed',
+        error: REFRESH_ERROR_MESSAGES.has(error?.message) ? error.message : 'Token refresh failed',
       });
     }
   }
