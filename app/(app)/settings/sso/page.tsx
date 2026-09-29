@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { tokenManager } from "@/lib/services/auth.service";
 import { Lock, ShieldCheck, Copy, Check, Trash2, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -42,7 +43,7 @@ const DEFAULT_FORM: FormState = {
 };
 
 function authHeaders() {
-  const token = typeof window !== "undefined" ? localStorage.getItem("auth-token") : null;
+  const token = tokenManager.getAccessToken();
   return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 

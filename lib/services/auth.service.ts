@@ -92,7 +92,7 @@ export const authService = {
    */
   async refreshToken(refreshToken: string): Promise<RefreshTokenResponse> {
     const response = await api.post<RefreshTokenResponse>(
-      "/api/auth/refresh-token",
+      "/api/auth/refresh",
       {
         refreshToken,
       }
@@ -128,6 +128,15 @@ export const authService = {
     await api.post("/api/auth/verify-email", { token });
   },
 };
+
+/**
+ * Attributes shared by setting and clearing the auth cookie. Secure only over
+ * https, so local http development can still set it.
+ */
+function authCookieAttributes(): string {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  return `; path=/; SameSite=Strict${secure}`;
+}
 
 /**
  * Token Management Utilities
@@ -222,15 +231,8 @@ export const tokenManager = {
    * Set auth cookie for middleware
    */
   setAuthCookie(token: string): void {
-    console.log('setAuthCookie called with:', token);
-    console.log('typeof token:', typeof token);
     if (typeof window === "undefined") return;
-    // Set cookie with SameSite and Secure flags for better compatibility
-    const isSecure = window.location.protocol === "https:";
-    const secureFlag = isSecure ? " Secure;" : "";
-    console.log('Setting auth-token cookie with token:', token.substring(0, 20) + '...');
-    document.cookie = `auth-token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Strict`;
-    console.log('Cookie after set:', document.cookie);
+    document.cookie = `auth-token=${token}; max-age=${30 * 24 * 60 * 60}${authCookieAttributes()}`;
   },
 
   /**
@@ -238,6 +240,6 @@ export const tokenManager = {
    */
   clearAuthCookie(): void {
     if (typeof window === "undefined") return;
-    document.cookie = "auth-token=; path=/; max-age=0; SameSite=Lax";
+    document.cookie = `auth-token=; max-age=0${authCookieAttributes()}`;
   },
 };

@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { tokenManager } from "@/lib/services/auth.service";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -14,7 +15,6 @@ function SSOCallbackContent() {
   useEffect(() => {
     const token = searchParams.get("token");
     const refreshToken = searchParams.get("refreshToken");
-    const orgId = searchParams.get("orgId");
 
     if (!token || !refreshToken) {
       setError("SSO authentication failed — missing tokens.");
@@ -23,9 +23,9 @@ function SSOCallbackContent() {
 
     try {
       // Store tokens exactly as the standard login flow does
-      localStorage.setItem("auth-token", token);
-      localStorage.setItem("refresh-token", refreshToken);
-      if (orgId) localStorage.setItem("organization-id", orgId);
+      tokenManager.setAccessToken(token);
+      tokenManager.setRefreshToken(refreshToken);
+      tokenManager.setAuthCookie(token);
 
       // Fetch user info then navigate to dashboard
       fetch(`${BACKEND_URL}/api/auth/me`, {
