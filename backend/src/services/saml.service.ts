@@ -258,10 +258,15 @@ export const samlService = {
   },
 
   /**
-   * Delete SSO configuration for an org
+   * Delete SSO configuration for an org. Returns the deleted configuration's
+   * id, or null when the org had none.
    */
-  async deleteConfig(organizationId: string): Promise<void> {
-    await pool.query('DELETE FROM sso_configurations WHERE organization_id = $1', [organizationId]);
+  async deleteConfig(organizationId: string): Promise<string | null> {
+    const result = await pool.query(
+      'DELETE FROM sso_configurations WHERE organization_id = $1 RETURNING id',
+      [organizationId]
+    );
+    return result.rows[0]?.id ?? null;
   },
 
   /**

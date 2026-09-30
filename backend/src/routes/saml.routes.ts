@@ -10,6 +10,7 @@ import { samlInitiateRateLimiter, authRateLimiter } from '../middleware/rateLimi
 import { samlService } from '../services/saml.service';
 import { pool } from '../config/database';
 import { requireCurrentRole } from '../services/organization-authorization';
+import { auditEvents, auditRequestContext } from '../services/auditEvents.service';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3010';
 
@@ -203,6 +204,17 @@ export function createSAMLRoutes(): Router {
         isActive,
       });
 
+      // Configuration identity and state only -- never the certificate or IdP details.
+      await auditEvents.record({
+        organizationId: orgId,
+        actorId: req.user!.userId,
+        action: 'sso_configuration.set',
+        resourceType: 'sso_configuration',
+        resourceId: config.id,
+        metadata: { isActive: config.is_active },
+        request: auditRequestContext(req),
+      });
+
       res.json({
         success: true,
         data: {
@@ -226,7 +238,17 @@ export function createSAMLRoutes(): Router {
   router.delete('/config', authenticateToken, requireEnterprise, requireCurrentOwner, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).organizationId || (req as any).user?.organizationId;
-      await samlService.deleteConfig(orgId);
+      const deletedId = await samlService.deleteConfig(orgId);
+      if (deletedId) {
+        await auditEvents.record({
+          organizationId: orgId,
+          actorId: req.user!.userId,
+          action: 'sso_configuration.deleted',
+          resourceType: 'sso_configuration',
+          resourceId: deletedId,
+          request: auditRequestContext(req),
+        });
+      }
       res.json({ success: true, message: 'SSO configuration deleted' });
     } catch (err) {
       console.error('[SAML] delete config error:', err);

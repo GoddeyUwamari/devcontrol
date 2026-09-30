@@ -15,7 +15,6 @@ import { requestLogger } from './middleware/request-logger';
 import { corsMiddleware } from './middleware/cors';
 import { pool, testConnection } from './config/database';
 import { metricsMiddleware } from './middleware/metrics';
-import { auditLogger } from './middleware/auditLogger';
 import { standardRateLimiter } from './middleware/rateLimiter';
 import { sanitizerMiddleware } from './middleware/sanitizer';
 import metricsRoutes from './routes/metrics.routes';
@@ -135,9 +134,6 @@ app.use(requestLogger);
 
 // Metrics middleware
 app.use(metricsMiddleware);
-
-// Audit logger middleware (after auth, before routes)
-app.use(auditLogger);
 
 // Rate limiting middleware (protects all API routes)
 app.use('/api', standardRateLimiter);

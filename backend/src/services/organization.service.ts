@@ -16,6 +16,7 @@ import {
   isOrganizationRole,
   lockOrganizationMemberships,
 } from './organization-authorization';
+import { auditEvents, AuditRequestContext } from './auditEvents.service';
 
 interface CreateOrganizationData {
   name: string;
@@ -333,7 +334,8 @@ export class OrganizationService {
    */
   async inviteUser(
     organizationId: string,
-    data: InviteUserData
+    data: InviteUserData,
+    request: AuditRequestContext | null = null
   ): Promise<{ invitationToken: string }> {
     const { email, role, invitedBy } = data;
 
@@ -382,7 +384,7 @@ export class OrganizationService {
       // which previously made an unaccepted invitation a live membership
       // everywhere is_active is read (login, /me, member lists, SSO). Only
       // acceptInvitation() activates it.
-      await pool.query(
+      const pending = await pool.query(
         `INSERT INTO organization_memberships (
           organization_id,
           user_id,
@@ -391,9 +393,21 @@ export class OrganizationService {
           invitation_token,
           invitation_expires_at,
           is_active
-        ) VALUES ($1, $2, $3, $4, $5, $6, false)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, false)
+        RETURNING id`,
         [organizationId, userId, role, invitedBy, invitationToken, invitationExpiry]
       );
+
+      // Never the invitation token.
+      await auditEvents.record({
+        organizationId,
+        actorId: invitedBy,
+        action: 'organization_invitation.created',
+        resourceType: 'organization_membership',
+        resourceId: pending.rows[0].id,
+        metadata: { role, inviteeUserId: userId },
+        request,
+      });
 
       // Only send here: this is the one branch where invitationToken is
       // actually persisted (organization_memberships row above), so the
@@ -414,7 +428,7 @@ export class OrganizationService {
       // re-inviting the same not-yet-registered address refreshes the
       // token/role/expiry instead of accumulating stale pending rows --
       // see 202608231400_create_organization_invitations.sql.
-      await pool.query(
+      const invitation = await pool.query(
         `INSERT INTO organization_invitations (
           organization_id,
           email,
@@ -429,9 +443,21 @@ export class OrganizationService {
           invited_by = EXCLUDED.invited_by,
           invitation_token = EXCLUDED.invitation_token,
           invitation_expires_at = EXCLUDED.invitation_expires_at,
-          updated_at = NOW()`,
+          updated_at = NOW()
+        RETURNING id`,
         [organizationId, email.toLowerCase(), role, invitedBy, invitationToken, invitationExpiry]
       );
+
+      // Never the invitation token; the invitation row holds the address.
+      await auditEvents.record({
+        organizationId,
+        actorId: invitedBy,
+        action: 'organization_invitation.created',
+        resourceType: 'organization_invitation',
+        resourceId: invitation.rows[0].id,
+        metadata: { role },
+        request,
+      });
 
       await emailService.sendInvitationEmail({
         to: email,
@@ -457,7 +483,11 @@ export class OrganizationService {
    * authorized to grant it, and the organization being JOINED (not the
    * accepting user's own org) must have a free seat.
    */
-  async acceptInvitation(invitationToken: string, userId: string): Promise<any> {
+  async acceptInvitation(
+    invitationToken: string,
+    userId: string,
+    request: AuditRequestContext | null = null
+  ): Promise<any> {
     // Unlocked lookup only to learn which org to lock -- the row is re-read
     // under lock below. Taking the org lock before any membership row lock
     // keeps the lock order identical to removeUser()/updateUserRole().
@@ -472,17 +502,18 @@ export class OrganizationService {
       // to a standalone organization_invitations row (inviteUser()'s
       // non-existent-user branch), which the invitee can now redeem since
       // reaching this authenticated endpoint means they've since registered.
-      return this.acceptPendingInvitation(invitationToken, userId);
+      return this.acceptPendingInvitation(invitationToken, userId, request);
     }
 
     const organizationId: string = lookup.rows[0].organization_id;
+    let accepted: { membershipId: string; role: string; invitedBy: string | null };
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       await lockOrganizationMemberships(client, organizationId);
 
       const result = await client.query(
-        `SELECT role, invited_by
+        `SELECT id, role, invited_by
          FROM organization_memberships
          WHERE invitation_token = $1
            AND invitation_expires_at > NOW()
@@ -496,7 +527,7 @@ export class OrganizationService {
         throw new Error('Invalid or expired invitation');
       }
 
-      const { role, invited_by } = result.rows[0];
+      const { id: membershipId, role, invited_by } = result.rows[0];
       await this.assertInvitationStillAuthorized(client, organizationId, role, invited_by);
       await assertOrganizationHasSeat(client, organizationId, userId);
 
@@ -512,17 +543,28 @@ export class OrganizationService {
       );
 
       await client.query('COMMIT');
-
-      return {
-        organizationId,
-        role,
-      };
+      accepted = { membershipId, role, invitedBy: invited_by };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
+
+    await auditEvents.record({
+      organizationId,
+      actorId: userId,
+      action: 'organization_invitation.accepted',
+      resourceType: 'organization_membership',
+      resourceId: accepted.membershipId,
+      metadata: { role: accepted.role, invitedBy: accepted.invitedBy },
+      request,
+    });
+
+    return {
+      organizationId,
+      role: accepted.role,
+    };
   }
 
   /**
@@ -530,7 +572,11 @@ export class OrganizationService {
    * email that had no account at invite time. The invitee must have
    * registered by now -- acceptInvitation() is only reachable authenticated.
    */
-  private async acceptPendingInvitation(invitationToken: string, userId: string): Promise<any> {
+  private async acceptPendingInvitation(
+    invitationToken: string,
+    userId: string,
+    request: AuditRequestContext | null
+  ): Promise<any> {
     const userResult = await pool.query(
       'SELECT email FROM users WHERE id = $1 AND deleted_at IS NULL',
       [userId]
@@ -542,6 +588,13 @@ export class OrganizationService {
 
     const accountEmail: string = userResult.rows[0].email;
 
+    let accepted: {
+      organizationId: string;
+      membershipId: string;
+      invitationId: string;
+      role: string;
+      invitedBy: string | null;
+    };
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -587,7 +640,7 @@ export class OrganizationService {
 
       await assertOrganizationHasSeat(client, invitation.organization_id, userId);
 
-      await client.query(
+      const membership = await client.query(
         `INSERT INTO organization_memberships (
           organization_id,
           user_id,
@@ -595,7 +648,8 @@ export class OrganizationService {
           invited_by,
           joined_at,
           is_active
-        ) VALUES ($1, $2, $3, $4, NOW(), true)`,
+        ) VALUES ($1, $2, $3, $4, NOW(), true)
+        RETURNING id`,
         [invitation.organization_id, userId, invitation.role, invitation.invited_by]
       );
 
@@ -607,10 +661,12 @@ export class OrganizationService {
       );
 
       await client.query('COMMIT');
-
-      return {
+      accepted = {
         organizationId: invitation.organization_id,
+        membershipId: membership.rows[0].id,
+        invitationId: invitation.id,
         role: invitation.role,
+        invitedBy: invitation.invited_by,
       };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -618,6 +674,21 @@ export class OrganizationService {
     } finally {
       client.release();
     }
+
+    await auditEvents.record({
+      organizationId: accepted.organizationId,
+      actorId: userId,
+      action: 'organization_invitation.accepted',
+      resourceType: 'organization_membership',
+      resourceId: accepted.membershipId,
+      metadata: { role: accepted.role, invitedBy: accepted.invitedBy, invitationId: accepted.invitationId },
+      request,
+    });
+
+    return {
+      organizationId: accepted.organizationId,
+      role: accepted.role,
+    };
   }
 
   /**
@@ -679,11 +750,17 @@ export class OrganizationService {
    * request body). Authorized against the caller's current membership; see
    * organization-authorization.ts for the policy.
    */
-  async removeUser(organizationId: string, actorUserId: string, userId: string): Promise<void> {
+  async removeUser(
+    organizationId: string,
+    actorUserId: string,
+    userId: string,
+    request: AuditRequestContext | null = null
+  ): Promise<void> {
     if (actorUserId === userId) {
       throw new OrganizationAccessError('You cannot remove your own membership', 403);
     }
 
+    let removed: { membershipId: string; role: string; pendingInvitation: boolean };
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -697,7 +774,7 @@ export class OrganizationService {
       // Any membership row, pending or active -- removing a pending
       // existing-user invitation is how it is revoked.
       const target = await client.query(
-        `SELECT role, is_active, invitation_token FROM organization_memberships
+        `SELECT id, role, is_active, invitation_token FROM organization_memberships
          WHERE organization_id = $1 AND user_id = $2`,
         [organizationId, userId]
       );
@@ -726,12 +803,28 @@ export class OrganizationService {
       );
 
       await client.query('COMMIT');
+      removed = {
+        membershipId: target.rows[0].id,
+        role: target.rows[0].role,
+        pendingInvitation: target.rows[0].invitation_token !== null,
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
+
+    // Whether it was a pending invitation, never the invitation token itself.
+    await auditEvents.record({
+      organizationId,
+      actorId: actorUserId,
+      action: 'organization_membership.removed',
+      resourceType: 'organization_membership',
+      resourceId: removed.membershipId,
+      metadata: { userId, role: removed.role, pendingInvitation: removed.pendingInvitation },
+      request,
+    });
   }
 
   /**
@@ -744,7 +837,8 @@ export class OrganizationService {
     organizationId: string,
     actorUserId: string,
     userId: string,
-    newRole: unknown
+    newRole: unknown,
+    request: AuditRequestContext | null = null
   ): Promise<void> {
     if (!isOrganizationRole(newRole)) {
       throw new OrganizationAccessError('Invalid role. Must be one of: owner, admin, member, viewer', 400);
@@ -754,6 +848,7 @@ export class OrganizationService {
       throw new OrganizationAccessError('You cannot change your own role', 403);
     }
 
+    let changed: { membershipId: string; from: string };
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -767,7 +862,7 @@ export class OrganizationService {
       // Only an active, accepted membership has a role to change; a pending
       // invitation's role is fixed by (and re-validated against) its inviter.
       const target = await client.query(
-        `SELECT role FROM organization_memberships
+        `SELECT id, role FROM organization_memberships
          WHERE organization_id = $1 AND user_id = $2
            AND is_active = true AND invitation_token IS NULL`,
         [organizationId, userId]
@@ -800,11 +895,26 @@ export class OrganizationService {
       );
 
       await client.query('COMMIT');
+      changed = { membershipId: target.rows[0].id, from: currentRole };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
+    }
+
+    // Only an actual transition is a role change.
+    if (changed.from !== newRole) {
+      await auditEvents.record({
+        organizationId,
+        actorId: actorUserId,
+        action: 'organization_membership.role_changed',
+        resourceType: 'organization_membership',
+        resourceId: changed.membershipId,
+        changes: { from: changed.from, to: newRole },
+        metadata: { userId },
+        request,
+      });
     }
   }
 
