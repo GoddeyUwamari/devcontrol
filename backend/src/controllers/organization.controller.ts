@@ -6,6 +6,7 @@
 import { Request, Response } from 'express';
 import { organizationService } from '../services/organization.service';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
+import { auditRequestContext } from '../services/auditEvents.service';
 
 /**
  * Status for a failed membership operation: authorization/seat errors from
@@ -248,11 +249,15 @@ export class OrganizationController {
         return;
       }
 
-      const result = await organizationService.inviteUser(id, {
-        email,
-        role,
-        invitedBy: req.user.userId,
-      });
+      const result = await organizationService.inviteUser(
+        id,
+        {
+          email,
+          role,
+          invitedBy: req.user.userId,
+        },
+        auditRequestContext(req)
+      );
 
       res.status(200).json({
         success: true,
@@ -290,7 +295,8 @@ export class OrganizationController {
 
       const result = await organizationService.acceptInvitation(
         invitationToken,
-        req.user.userId
+        req.user.userId,
+        auditRequestContext(req)
       );
 
       res.status(200).json({
@@ -321,7 +327,7 @@ export class OrganizationController {
 
       // The caller is always the authenticated token's user -- :userId is
       // only ever the TARGET membership.
-      await organizationService.removeUser(id, req.user.userId, userId);
+      await organizationService.removeUser(id, req.user.userId, userId, auditRequestContext(req));
 
       res.status(200).json({
         success: true,
@@ -359,7 +365,7 @@ export class OrganizationController {
 
       // The caller is always the authenticated token's user -- :userId is
       // only ever the TARGET membership; role is validated in the service.
-      await organizationService.updateUserRole(id, req.user.userId, userId, role);
+      await organizationService.updateUserRole(id, req.user.userId, userId, role, auditRequestContext(req));
 
       res.status(200).json({
         success: true,

@@ -7,7 +7,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
 import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents'
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
-import { awsAccountAuditService } from '../services/awsAccountAudit.service'
+import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -253,11 +253,16 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
       properties: { accountId },
     })
 
-    await awsAccountAuditService.record({
+    // resource_id stays null: it is a UUID column and aws_accounts ids are not
+    // guaranteed to be UUIDs. Never the ExternalId or any credential.
+    await auditEvents.record({
       organizationId: orgId,
-      action: 'aws_account.connected',
       actorId: req.user!.userId,
+      action: 'aws_account.connected',
+      resourceType: 'aws_account',
+      resourceId: null,
       metadata: { awsAccountId: accountId },
+      request: auditRequestContext(req),
     })
 
     // Clean up session

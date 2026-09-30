@@ -3,6 +3,7 @@ import { pool } from '../config/database'
 import crypto from 'crypto'
 import { authenticateToken } from '../middleware/auth.middleware'
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
+import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
 
 const router = Router()
 
@@ -70,6 +71,16 @@ router.post('/', requireCurrentAdminOrOwner, async (req, res) => {
        RETURNING id, name, prefix, scopes, status, created_at, last_used_at`,
       [name.trim(), keyHash, prefix, keyScopes, organizationId]
     )
+    // The key's internal id only -- never the raw key, its hash, or its prefix.
+    await auditEvents.record({
+      organizationId,
+      actorId: req.user!.userId,
+      action: 'api_key.created',
+      resourceType: 'api_key',
+      resourceId: result.rows[0].id,
+      metadata: { scopes: result.rows[0].scopes },
+      request: auditRequestContext(req),
+    })
     // Return the raw key ONCE — it will never be shown again
     return res.status(201).json({
       success: true,
@@ -96,6 +107,14 @@ router.delete('/:id', requireCurrentAdminOrOwner, async (req, res) => {
     if (result.rowCount === 0) {
       return res.status(404).json({ success: false, message: 'Key not found or already revoked' })
     }
+    await auditEvents.record({
+      organizationId,
+      actorId: req.user!.userId,
+      action: 'api_key.revoked',
+      resourceType: 'api_key',
+      resourceId: result.rows[0].id,
+      request: auditRequestContext(req),
+    })
     return res.json({ success: true, message: 'API key revoked' })
   } catch (err: any) {
     console.error('[api-keys DELETE]', err)

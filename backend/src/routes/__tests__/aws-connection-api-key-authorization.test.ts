@@ -23,6 +23,7 @@ import awsRoutes from '../aws.routes';
 import apiKeysRoutes from '../api-keys.routes';
 import { authService } from '../../services/auth.service';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
+import { auditEvents, createAuditEventWriter } from '../../services/auditEvents.service';
 
 jest.mock('@aws-sdk/client-sts', () => ({
   STSClient: jest.fn().mockImplementation(() => ({
@@ -164,6 +165,8 @@ let baseUrl: string;
 beforeAll(async () => {
   await ensureFixtureSchema();
   const app = express();
+  // Same as server.ts, so req.ip is the client address behind the proxy.
+  app.set('trust proxy', 1);
   app.use(express.json());
   app.use('/api/aws', awsRoutes);
   app.use('/api/keys', apiKeysRoutes);
@@ -224,7 +227,12 @@ function as(userId: string, orgId: string | undefined, jwtRole = 'owner') {
     } as unknown as ReturnType<typeof authService.verifyToken>);
     return fetch(`${baseUrl}${path}`, {
       method,
-      headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: 'Bearer test-token',
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '203.0.113.60',
+        'User-Agent': 'A3AuditTest/1.0',
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   };
@@ -268,7 +276,7 @@ async function awsAccountRow(orgId: string) {
 
 async function auditRows(orgId: string) {
   const { rows } = await pool.query(
-    `SELECT organization_id, user_id, action, resource_type, resource_id, metadata
+    `SELECT organization_id, user_id, action, resource_type, resource_id, ip_address, user_agent, metadata
        FROM audit_logs WHERE organization_id = $1 AND action = 'aws_account.connected'`,
     [orgId]
   );
@@ -498,6 +506,8 @@ describe('AWS account connection -- audit event', () => {
       action: 'aws_account.connected',
       resource_type: 'aws_account',
       resource_id: null,
+      ip_address: '203.0.113.60',
+      user_agent: 'A3AuditTest/1.0',
     });
     expect(rows[0].metadata).toEqual({ awsAccountId: accountId });
     const serialized = JSON.stringify(rows[0]);
@@ -515,6 +525,22 @@ describe('AWS account connection -- audit event', () => {
     await insertConnectSession(org.orgId);
     expect((await as(org.owner, org.orgId).connect()).status).toBe(409);
     expect(await auditRows(org.orgId)).toHaveLength(1);
+  });
+});
+
+describe('AWS account connection -- audit-write failure', () => {
+  it('a failed audit write does not fail the connection', async () => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+    const failing = createAuditEventWriter({
+      connect: () => Promise.reject(new Error('audit database unavailable')),
+    } as unknown as Parameters<typeof createAuditEventWriter>[0]);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(auditEvents, 'record').mockImplementation(failing.record);
+
+    expect((await as(org.owner, org.orgId).connect()).status).toBe(201);
+    expect(await awsAccountRow(org.orgId)).not.toBeNull();
+    expect(await auditRows(org.orgId)).toHaveLength(0);
   });
 });
 
