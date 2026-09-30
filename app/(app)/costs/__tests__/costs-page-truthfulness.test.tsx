@@ -35,8 +35,23 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: { getStats: () => mockGetStats(), getAll: () => mockGetAll(), getAnalysisRuns: () => mockGetAnalysisRuns() },
 }))
 
-function analysisRun(status: 'running' | 'completed' | 'failed') {
-  return { id: `run-${status}`, status, recommendations_found: 0, total_potential_savings: null, started_at: '2026-09-27T08:00:00.000Z', completed_at: status === 'running' ? null : '2026-09-27T08:05:00.000Z', created_at: '2026-09-27T08:00:00.000Z', error_message: null }
+const mockGetDiscoveryJobs = vi.fn()
+vi.mock('@/lib/services/aws-resources.service', () => ({
+  awsResourcesService: { getDiscoveryJobs: () => mockGetDiscoveryJobs() },
+}))
+
+function analysisRun(status: 'running' | 'completed' | 'failed', createdAt = '2026-09-27T08:00:00.000Z') {
+  return { id: `run-${status}`, status, recommendations_found: 0, total_potential_savings: null, started_at: createdAt, completed_at: status === 'running' ? null : createdAt, created_at: createdAt, error_message: null }
+}
+
+/** A scheduled discovery job (the 6-hourly cron, which also runs cost analysis). */
+function discoveryJob(status: 'running' | 'completed' | 'failed', costAnalysisCompleted: boolean, createdAt = '2026-09-27T06:00:00.000Z') {
+  return {
+    id: `job-${status}`, organization_id: 'org-1', status, resources_discovered: 3, resources_updated: 0, resources_deleted: 0,
+    regions: ['us-east-1'], resource_types: ['ec2'], error_message: null, started_at: createdAt,
+    completed_at: status === 'running' ? null : createdAt, created_at: createdAt,
+    compliance_scan_completed: true, cost_analysis_completed: costAnalysisCompleted,
+  }
 }
 vi.mock('@/lib/services/nl-query.service', () => ({ nlQueryService: { executeQuery: vi.fn() } }))
 
@@ -85,6 +100,7 @@ beforeEach(() => {
   mockGetStats.mockResolvedValue(recStats(0.96))
   mockGetAll.mockResolvedValue([])
   mockGetAnalysisRuns.mockResolvedValue([analysisRun('completed')])
+  mockGetDiscoveryJobs.mockResolvedValue([])
   vi.stubGlobal('fetch', trendResponse(true, [
     { date: '2026-09-26', compute: 0.21, storage: 0.1, database: 0, network: 0, other: 0.05, total: 0.36 },
   ]))
@@ -220,10 +236,10 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     await expectNotMeasured('No cost analysis has run yet')
   })
 
-  it('only failed analyses: still not measured', async () => {
+  it('the latest analysis failed: not measured', async () => {
     mockGetAnalysisRuns.mockResolvedValue([analysisRun('failed')])
     renderPage()
-    await expectNotMeasured('No cost analysis has run yet')
+    await expectNotMeasured('Latest cost analysis did not complete')
   })
 
   it('an analysis is running: in progress, not $0', async () => {
@@ -247,6 +263,43 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     expect(within(recsCard).getByText('0')).toBeInTheDocument()
     const savingsCard = await card('Estimated Savings Opportunity')
     expect(savingsCard.textContent).toMatch(/\$0\/mo/)
+  })
+
+  it('a completed scheduled (discovery) analysis counts: zero is a measured result', async () => {
+    mockGetAnalysisRuns.mockResolvedValue([])
+    mockGetDiscoveryJobs.mockResolvedValue([discoveryJob('completed', true)])
+    renderPage()
+
+    const recsCard = await card('Active Recommendations')
+    expect(await within(recsCard).findByText('No open recommendations')).toBeInTheDocument()
+    expect(within(recsCard).getByText('0')).toBeInTheDocument()
+    expect((await card('Estimated Savings Opportunity')).textContent).toMatch(/\$0\/mo/)
+  })
+
+  it('a scheduled job whose cost analysis did not finish is not a measured $0', async () => {
+    mockGetAnalysisRuns.mockResolvedValue([])
+    mockGetDiscoveryJobs.mockResolvedValue([discoveryJob('completed', false)])
+    renderPage()
+    await expectNotMeasured('Latest cost analysis did not complete')
+  })
+
+  it('a failed manual run newer than a completed scheduled analysis is not a measured $0', async () => {
+    mockGetDiscoveryJobs.mockResolvedValue([discoveryJob('completed', true, '2026-09-27T06:00:00.000Z')])
+    mockGetAnalysisRuns.mockResolvedValue([analysisRun('failed', '2026-09-27T09:00:00.000Z')])
+    renderPage()
+    await expectNotMeasured('Latest cost analysis did not complete')
+  })
+
+  it('the scheduled-analysis history could not be retrieved: unknown, not $0', async () => {
+    mockGetDiscoveryJobs.mockRejectedValue(new Error('500'))
+    renderPage()
+    await expectNotMeasured('Could not be retrieved')
+  })
+
+  it('the page subtitle makes no real-time claim', async () => {
+    renderPage()
+    await card('Estimated Savings Opportunity')
+    expect(screen.getByText(/AWS spend visibility, forecasting/).textContent).not.toMatch(/real[- ]?time/i)
   })
 
   it('existing recommendations are shown even without analysis history', async () => {

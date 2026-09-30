@@ -393,3 +393,37 @@ describe('No evidence is never presented as secure', () => {
     expect(screen.queryByText('Security posture stable')).not.toBeInTheDocument()
   })
 })
+
+describe('Top Security Gaps -- no "all passing" without a final score', () => {
+  const allPassing = { encryption: 100, publicAccess: 100, backup: 100, compliance: 100, resourceManagement: 100 }
+  const gapsPanel = () => screen.getByText('Top Security Gaps').closest('div')!
+
+  it('a preliminary score with no gaps is not yet evaluated, never "All security checks passing"', () => {
+    mockUseCurrentRiskScore.mockReturnValue({ data: { score: 100, factors: allPassing, isPreliminary: true }, isLoading: false })
+    renderSecurityPage()
+
+    expect(within(gapsPanel()).getByText('Not yet evaluated')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/All security checks passing/)
+  })
+
+  it('a preliminary score still shows real gaps, without an "all passing" claim', () => {
+    mockUseCurrentRiskScore.mockReturnValue({ data: { score: 80, factors: { ...allPassing, encryption: 60 }, isPreliminary: true }, isLoading: false })
+    renderSecurityPage()
+
+    expect(within(gapsPanel()).getByText('Encryption coverage incomplete')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/All security checks passing/)
+  })
+
+  it('a final score with every check passing still says so', () => {
+    mockUseCurrentRiskScore.mockReturnValue({ data: { score: 100, factors: allPassing, isPreliminary: false }, isLoading: false })
+    renderSecurityPage()
+
+    expect(within(gapsPanel()).getByText('All security checks passing')).toBeInTheDocument()
+    expect(within(gapsPanel()).queryByText('Not yet evaluated')).not.toBeInTheDocument()
+  })
+
+  it('the page subtitle makes no real-time claim', () => {
+    renderSecurityPage()
+    expect(screen.getByText(/Security posture, risk detection, compliance/).textContent).not.toMatch(/real[- ]?time/i)
+  })
+})

@@ -387,7 +387,7 @@ export default function SecurityPage() {
             {demoMode && <span className="text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Demo Mode</span>}
             {isPreliminary && <span className="text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">Preliminary — full scan pending</span>}
           </div>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real-time security posture, risk detection, compliance, and audit visibility.</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Security posture, risk detection, compliance, and audit visibility.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={handleRunScan} disabled={isScanning}
@@ -606,9 +606,18 @@ export default function SecurityPage() {
                     </div>
                   </div>
                 ))}
-                {riskFactors.filter(rf => rf.status === 'Warning').length === 0 && (
+                {/* Warning rows above are real findings even on a preliminary score;
+                    "all passing" is only claimed for a final score (same scoreAvailable
+                    rule as the Security Score card) -- a preliminary score's factors
+                    default to 100 when nothing has been scanned. */}
+                {riskFactors.filter(rf => rf.status === 'Warning').length === 0 && (scoreAvailable ? (
                   <div className="py-5 text-center"><p className="text-xs text-green-600 font-medium">All security checks passing</p></div>
-                )}
+                ) : (
+                  <div className="py-5 text-center">
+                    <p className="text-xs text-slate-400 font-medium">Not yet evaluated</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Full security scan pending</p>
+                  </div>
+                ))}
               </>
             )}
           </div>

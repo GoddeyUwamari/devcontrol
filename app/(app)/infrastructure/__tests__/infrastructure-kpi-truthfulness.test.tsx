@@ -144,3 +144,13 @@ describe('/infrastructure System Score -- a readiness score, not measured health
     expect(basis.textContent).toMatch(/not measured uptime or performance/i)
   })
 })
+
+describe('/infrastructure subtitle', () => {
+  it('makes no real-time claim', async () => {
+    mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
+    renderPage()
+
+    const subtitle = await screen.findByText(/Visibility into cost, health, and risk/)
+    expect(subtitle.textContent).not.toMatch(/real[- ]?time/i)
+  })
+})

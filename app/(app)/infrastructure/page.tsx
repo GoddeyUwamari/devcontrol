@@ -514,7 +514,7 @@ function InfrastructureContent() {
         <div className="flex-1">
           <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Infrastructure</p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">AWS System Intelligence</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Real-time visibility into cost, health, and risk across your AWS infrastructure.</p>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Visibility into cost, health, and risk across your AWS infrastructure.</p>
 
           {/* Mobile-only action buttons */}
           <div className="flex gap-2 mt-4 sm:hidden">

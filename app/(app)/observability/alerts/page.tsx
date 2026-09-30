@@ -93,6 +93,12 @@ function AlertsContent() {
   const statsUnavailable = !isDemoActive && statsError && !statsData;
   const historyUnavailable = !isDemoActive && historyError && !historyData;
   const displayStats = isDemoActive ? DEMO_STATS : { total: statsData?.data?.total || 0, active: statsData?.data?.active || 0, critical: statsData?.data?.criticalCount || 0, avgResolutionTime: statsData?.data?.avgResolutionTime || 0 };
+  // No alert recorded for the organization at all: with an organization-less alert
+  // writer that is not a confirmed zero, so the counts are not shown as 0.
+  const statsPending = !isDemoActive && !statsData && !statsError;
+  const noOrgAlertData = !isDemoActive && !!statsData && displayStats.total === 0;
+  const kpiUnavailable = statsUnavailable || statsPending || noOrgAlertData;
+  const kpiUnavailableSub = statsUnavailable ? 'Could not be retrieved' : statsPending ? 'Loading…' : 'Not available for this organization';
 
   const filteredAlerts = displayAlerts.filter((a: Alert) => {
     if (selectedSeverity !== 'all' && a.severity !== selectedSeverity) return false;
@@ -144,18 +150,18 @@ function AlertsContent() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Total Alerts</p>
-          <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{statsUnavailable ? '—' : displayStats.total}</div>
-          <p className="text-xs text-slate-400">{statsUnavailable ? 'Could not be retrieved' : displayStats.total === 0 ? 'None recorded' : `${displayStats.total} recorded`}</p>
+          <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{kpiUnavailable ? '—' : displayStats.total}</div>
+          <p className="text-xs text-slate-400">{kpiUnavailable ? kpiUnavailableSub : `${displayStats.total} recorded`}</p>
         </div>
         <div className={`rounded-xl p-4 sm:p-8 border ${statsUnavailable || displayStats.active === 0 ? 'bg-white border-slate-200' : 'bg-red-50 border-red-200'}`}>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Active Now</p>
-          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${statsUnavailable || displayStats.active === 0 ? 'text-slate-900' : 'text-red-700'}`}>{statsUnavailable ? '—' : displayStats.active}</div>
-          <p className="text-xs text-slate-400">{statsUnavailable ? 'Could not be retrieved' : displayStats.active === 0 ? 'None recorded' : 'Requires immediate attention'}</p>
+          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${statsUnavailable || displayStats.active === 0 ? 'text-slate-900' : 'text-red-700'}`}>{kpiUnavailable ? '—' : displayStats.active}</div>
+          <p className="text-xs text-slate-400">{kpiUnavailable ? kpiUnavailableSub : displayStats.active === 0 ? 'None active' : 'Requires immediate attention'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Critical</p>
-          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${statsUnavailable || displayStats.critical === 0 ? 'text-slate-900' : 'text-red-700'}`}>{statsUnavailable ? '—' : displayStats.critical}</div>
-          <p className="text-xs text-slate-400">{statsUnavailable ? 'Could not be retrieved' : displayStats.critical === 0 ? 'None recorded' : 'Immediate action required'}</p>
+          <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${statsUnavailable || displayStats.critical === 0 ? 'text-slate-900' : 'text-red-700'}`}>{kpiUnavailable ? '—' : displayStats.critical}</div>
+          <p className="text-xs text-slate-400">{kpiUnavailable ? kpiUnavailableSub : displayStats.critical === 0 ? 'None critical' : 'Immediate action required'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Avg Resolution</p>

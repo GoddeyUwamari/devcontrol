@@ -14,6 +14,8 @@ import {
 import { usePlan } from '@/lib/hooks/use-plan'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import { awsResourcesService } from '@/lib/services/aws-resources.service'
+import { pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { nlQueryService, NLQueryResult, NLQueryOutcome } from '@/lib/services/nl-query.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -163,12 +165,21 @@ export default function CostsPage() {
     enabled: !isDemoActive,
   })
 
-  // Whether any cost analysis has completed -- the same evaluation signal the
-  // Dashboard uses (opportunityEvaluationState). Until one has, zero
+  // Cost analysis runs both manually (cost_analysis_runs) and inside the
+  // scheduled discovery job (resource_discovery_jobs.cost_analysis_completed).
+  // Both histories feed pickLatestAnalysis(), the same merge the Cost
+  // Optimization page uses. Until an analysis has completed, zero
   // recommendations means "not analyzed yet", not "no savings found".
   const { data: analysisRuns, isLoading: analysisRunsLoading, isError: analysisRunsError } = useQuery({
     queryKey: ['cost-analysis-runs', 5],
     queryFn: () => costRecommendationsService.getAnalysisRuns(5),
+    staleTime: 60_000,
+    retry: false,
+    enabled: !isDemoActive,
+  })
+  const { data: discoveryJobs, isLoading: discoveryJobsLoading, isError: discoveryJobsError } = useQuery({
+    queryKey: ['discovery-jobs', 5],
+    queryFn: () => awsResourcesService.getDiscoveryJobs(5),
     staleTime: 60_000,
     retry: false,
     enabled: !isDemoActive,
@@ -227,21 +238,24 @@ export default function CostsPage() {
   const savingsMissing = !isDemoActive && (recStatsLoading || recStatsError || !recStats)
   const displaySavings = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
   const activeRecsCount = isDemoActive ? DEMO_TOP_SAVINGS.length : (recStats?.activeRecommendations ?? 0)
-  // Zero recommendations is only a measured result once an analysis has completed.
-  const analysisCompleted = (analysisRuns ?? []).some((r) => r.status === 'completed')
-  const zeroRecsState: null | 'loading' | 'unknown' | 'in_progress' | 'not_evaluated' =
+  // Zero recommendations is only a measured result once the latest analysis
+  // (scheduled or manual) has completed.
+  const latestAnalysis = pickLatestAnalysis({ latestDiscoveryJob: discoveryJobs?.[0], latestAnalysisRun: analysisRuns?.[0] })
+  const zeroRecsState: null | 'loading' | 'unknown' | 'in_progress' | 'failed' | 'not_evaluated' =
     isDemoActive || savingsMissing || activeRecsCount > 0 ? null
-      : analysisRunsLoading ? 'loading'
-      : analysisRunsError ? 'unknown'
-      : analysisCompleted ? null
-      : analysisRuns?.[0]?.status === 'running' ? 'in_progress'
-      : 'not_evaluated'
+      : analysisRunsLoading || discoveryJobsLoading ? 'loading'
+      : analysisRunsError || discoveryJobsError ? 'unknown'
+      : !latestAnalysis ? 'not_evaluated'
+      : latestAnalysis.status === 'running' ? 'in_progress'
+      : latestAnalysis.status === 'failed' ? 'failed'
+      : null
   const recsUnavailable = savingsMissing || zeroRecsState !== null
   const recsUnavailableSub = !isDemoActive && recStatsLoading ? 'Loading…'
     : savingsMissing ? 'Could not be retrieved'
     : zeroRecsState === 'loading' ? 'Loading…'
     : zeroRecsState === 'unknown' ? 'Could not be retrieved'
     : zeroRecsState === 'in_progress' ? 'Cost analysis in progress'
+    : zeroRecsState === 'failed' ? 'Latest cost analysis did not complete'
     : 'No cost analysis has run yet'
   const savingsValue = recsUnavailable ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`
 
@@ -415,7 +429,7 @@ export default function CostsPage() {
             ) : null}
           </div>
           <p className="text-xs text-slate-500 font-medium leading-relaxed">
-            Real-time AWS spend visibility, forecasting, and AI-powered cost optimization.
+            AWS spend visibility, forecasting, and AI-powered cost optimization.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

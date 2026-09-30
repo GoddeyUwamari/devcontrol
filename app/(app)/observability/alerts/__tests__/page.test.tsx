@@ -59,7 +59,22 @@ describe('Active Alerts -- no alerts', () => {
 
     expect((await screen.findAllByText('No alerts recorded')).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/does not yet associate alerts with an organization/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('None recorded').length).toBe(3)
+    expect((await screen.findAllByText('Not available for this organization')).length).toBe(3)
+    expect(screen.queryByText('None recorded')).not.toBeInTheDocument()
+    expect(claimsText()).not.toMatch(HEALTH_CLAIMS)
+    for (const label of ['Total Alerts', 'Active Now', 'Critical']) {
+      const kpi = screen.getByText(label, { selector: 'p' }).parentElement as HTMLElement
+      expect(kpi.textContent).toContain('—')
+      expect(kpi.textContent).not.toMatch(/\b0\b/)
+    }
+  })
+
+  it('an organization with recorded alerts but none active shows a real zero', async () => {
+    mockGetAlertStats.mockResolvedValue(stats(5, 0, 0))
+    renderPage()
+
+    expect(await screen.findByText('None active')).toBeInTheDocument()
+    expect(screen.getByText('5 recorded')).toBeInTheDocument()
     expect(claimsText()).not.toMatch(HEALTH_CLAIMS)
   })
 })
@@ -73,7 +88,7 @@ describe('Active Alerts -- failed requests', () => {
     expect(await screen.findByText('Alert data could not be retrieved.')).toBeInTheDocument()
     expect((await screen.findAllByText('Alerts could not be retrieved')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Could not be retrieved').length).toBe(3)
-    expect(screen.queryByText('None recorded')).not.toBeInTheDocument()
+    expect(screen.queryByText('Not available for this organization')).not.toBeInTheDocument()
     expect(claimsText()).not.toMatch(HEALTH_CLAIMS)
   })
 })
