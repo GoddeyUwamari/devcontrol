@@ -30,6 +30,9 @@ router.get(
         await readinessService
           .getReadiness(organizationId)
 
+      // connected:false only when no AWS account row exists. A credential or
+      // evidence failure is data.state 'error'; connected is null when the
+      // account lookup itself failed.
       if (!result) {
         return res.json({
           success: true,
@@ -41,7 +44,7 @@ router.get(
       res.json({
         success: true,
         data: result,
-        connected: true,
+        connected: result.connected,
       })
     } catch (err) {
       console.error(

@@ -538,7 +538,7 @@ const dynamoDbCapability: ResourceCapability = {
 // here — the fetch/dimension plumbing in evaluateResource() is generic. ECS is
 // deliberately NOT in this registry — see evaluateEcsService() below and the
 // ResourceCapability doc comment for why.
-const resourceTypeRegistry: {
+export const resourceTypeRegistry: {
   ec2: ResourceCapability
   rds: ResourceCapability
   'load-balancer': ResourceCapability<AlbExtra>

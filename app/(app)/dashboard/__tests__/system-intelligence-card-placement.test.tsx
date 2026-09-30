@@ -133,3 +133,21 @@ describe('Platform Efficiency Breakdown card on the real Dashboard page', () => 
     expect(intelligenceSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('Infrastructure Health KPI -- partial composite', () => {
+  const REASON = 'Observability is partial: Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
+
+  it('a partial composite is labeled "Partial" with the backend reason under the score', async () => {
+    intelligenceSpy.mockResolvedValue({ ...INTELLIGENCE, composite_state: 'partial', composite_reason: REASON } as never)
+    renderDashboard()
+    expect(await screen.findByText(`Partial · ${REASON}`)).toBeInTheDocument()
+    expect(screen.getByText('69')).toBeInTheDocument()
+  })
+
+  it('an available composite carries no partial caption', async () => {
+    intelligenceSpy.mockResolvedValue({ ...INTELLIGENCE, composite_state: 'available', composite_reason: null } as never)
+    renderDashboard()
+    await waitFor(() => expect(screen.getByText('69')).toBeInTheDocument())
+    expect(screen.queryByText(/^Partial · /)).not.toBeInTheDocument()
+  })
+})

@@ -15,10 +15,14 @@ import { render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { SystemIntelligenceCard } from '../system-intelligence-card'
 import { SECURITY_STATUS_BADGE } from '@/app/(app)/dashboard/securityHealthKpi'
-import type { SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
+import type { ObservabilityComponentScore, SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
 
 const component = (overrides: Partial<SystemIntelligenceComponentScore>): SystemIntelligenceComponentScore => ({
   score: 0, label: 'X', detail: '', severity: 'healthy', delta: null, status: 'good', ready: true, ...overrides,
+})
+
+const observability = (overrides: Partial<ObservabilityComponentScore>): ObservabilityComponentScore => ({
+  score: 0, label: 'Observability', detail: '', severity: 'healthy', delta: null, status: 'good', ready: true, state: 'available', reason: null, ...overrides,
 })
 
 // Deliberately different statuses per column. Security pairs a high score (82)
@@ -27,7 +31,7 @@ const component = (overrides: Partial<SystemIntelligenceComponentScore>): System
 const READY: SystemIntelligenceResult['components'] = {
   cost: component({ label: 'Cost Efficiency', score: 95, status: 'good' }),
   security: component({ label: 'Security Posture', score: 82, status: 'risk' }),
-  observability: component({ label: 'Observability', score: 55, status: 'warning' }),
+  observability: observability({ score: 55, status: 'warning' }),
 }
 
 function renderCard(overrides: Partial<ComponentProps<typeof SystemIntelligenceCard>> = {}) {
@@ -112,7 +116,7 @@ describe('ready gating: each component independently', () => {
   })
 
   it('a ready score of 0 is a real score and is shown with its bar (readiness is never inferred from the number)', () => {
-    renderCard({ components: { ...READY, observability: component({ label: 'Observability', score: 0, status: 'risk', ready: true }) } })
+    renderCard({ components: { ...READY, observability: observability({ score: 0, status: 'risk', ready: true }) } })
     const col = column('Observability')
     expect(within(col).getByText('0')).toBeInTheDocument()
     expect(within(col).getByText('At risk')).toBeInTheDocument()
@@ -121,11 +125,44 @@ describe('ready gating: each component independently', () => {
 
   it('all three not ready: the card still renders, with three placeholders and no bars', () => {
     const notReady = (label: string) => component({ label, score: 50, status: 'good', ready: false })
-    const { container } = renderCard({ components: { cost: notReady('Cost Efficiency'), security: notReady('Security Posture'), observability: notReady('Observability') } })
+    const { container } = renderCard({ components: { cost: notReady('Cost Efficiency'), security: notReady('Security Posture'), observability: observability({ score: null, ready: false, state: 'unavailable' }) } })
     expect(screen.getByText('Platform Efficiency Breakdown')).toBeInTheDocument()
     expect(screen.getAllByText('Not yet available')).toHaveLength(3)
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0)
     expect(screen.queryByText('50')).not.toBeInTheDocument()
+  })
+})
+
+describe('observability evidence state', () => {
+  const PARTIAL_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
+
+  it('partial: the score is shown with a visible "Partial" label and the backend reason', () => {
+    renderCard({ components: { ...READY, observability: observability({ score: 0, status: 'risk', state: 'partial', reason: PARTIAL_REASON }) } })
+    const col = column('Observability')
+    expect(within(col).getByText('0')).toBeInTheDocument()
+    expect(within(col).getByText('Partial')).toBeInTheDocument()
+    expect(within(col).getByText(PARTIAL_REASON)).toBeInTheDocument()
+    expect(barIn(col)).toHaveAttribute('aria-valuetext', '0 of 100, At risk, partial')
+  })
+
+  it('error: score null renders "Could not be retrieved" -- never 0 and no bar', () => {
+    renderCard({ components: { ...READY, observability: observability({ score: null, ready: false, status: 'risk', state: 'error', reason: 'the connected AWS role could not be assumed' }) } })
+    const col = column('Observability')
+    expect(within(col).getByText('Could not be retrieved')).toBeInTheDocument()
+    expect(within(col).queryByText('0')).not.toBeInTheDocument()
+    expect(barIn(col)).toBeNull()
+  })
+
+  it('a null score is never rendered even if ready were true', () => {
+    renderCard({ components: { ...READY, observability: observability({ score: null, ready: true, state: 'unavailable' }) } })
+    const col = column('Observability')
+    expect(within(col).getByText('Not yet available')).toBeInTheDocument()
+    expect(barIn(col)).toBeNull()
+  })
+
+  it('cost and security (no state) never show a partial label', () => {
+    renderCard({ components: { ...READY, observability: observability({ score: 55, status: 'warning', state: 'partial', reason: PARTIAL_REASON }) } })
+    expect(screen.getAllByText('Partial')).toHaveLength(1)
   })
 })
 

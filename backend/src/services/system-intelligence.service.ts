@@ -6,7 +6,7 @@ import {
 import { CloudWatchService }
   from './cloudwatch.service'
 import awsCostService from './aws-cost.service'
-import type { SpendProvenance } from './ai-context-contract'
+import type { ContextDataState, SpendProvenance } from './ai-context-contract'
 import { RiskTrackingService }
   from './risk-tracking.service'
 import { CostRecommendationsRepository }
@@ -41,6 +41,18 @@ export interface ComponentScore {
   costSource?: SpendProvenance
 }
 
+/**
+ * The observability component carries its evidence state: its score is null
+ * whenever nothing was measured (never 0 from a failure), and a 'partial'
+ * state means it measures EC2/RDS alert coverage only.
+ */
+export interface ObservabilityComponentScore
+  extends Omit<ComponentScore, 'score'> {
+  score: number | null
+  state: ContextDataState
+  reason: string | null
+}
+
 export interface SystemDriver {
   id: string
   type: 'cost' | 'security'
@@ -66,12 +78,17 @@ export interface TopAction {
 
 export interface SystemIntelligenceResult {
   system_score: number | null
+  // 'partial' when system_score is computed from a partial component (today:
+  // observability, which measures alert coverage only); composite_reason
+  // says why. null alongside a null system_score.
+  composite_state: Extract<ContextDataState, 'available' | 'partial'> | null
+  composite_reason: string | null
   status: 'Healthy' | 'Stable'
     | 'Degraded' | 'At Risk' | 'Pending'
   components: {
     cost: ComponentScore
     security: ComponentScore
-    observability: ComponentScore
+    observability: ObservabilityComponentScore
   }
   top_action: TopAction | null
   top_drivers: SystemDriver[]
@@ -150,7 +167,7 @@ export class SystemIntelligenceService {
         await awsCostService.getMonthlySpendWithFallback(organizationId)
 
       // Scoring model — continuous weighted-coverage-ratio, same shape as
-      // Security's riskScoring.ts and Observability's computeReadinessScore:
+      // Security's riskScoring.ts:
       // every term is a real ratio scaled to 0–100, combined with fixed
       // weights. No base value with bolted-on flat bonuses/penalties.
       const hasSpendData = monthlySpend > 0
@@ -357,29 +374,47 @@ export class SystemIntelligenceService {
 
   private async computeObservabilityScore(
     organizationId: string
-  ): Promise<ComponentScore> {
+  ): Promise<ObservabilityComponentScore> {
     const readiness =
       await this.readinessService
         .getReadiness(organizationId)
 
-    if (!readiness) {
-      return {
-        score: 0,
-        label: 'Observability',
-        detail: 'No AWS account connected',
-        severity: 'critical',
-        delta: null,
-        status: 'risk',
-        ready: false,
-      }
-    }
+    const notMeasured = (
+      state: ContextDataState,
+      detail: string,
+      reason: string | null
+    ): ObservabilityComponentScore => ({
+      score: null,
+      label: 'Observability',
+      detail,
+      severity: 'critical',
+      delta: null,
+      status: 'risk',
+      ready: false,
+      state,
+      reason,
+    })
 
+    // connected:false is reserved for "no account row"; a credential or
+    // evidence failure arrives as a result with state 'error'.
+    if (!readiness) {
+      return notMeasured('unavailable', 'No AWS account connected', 'no AWS account is connected')
+    }
     const score = readiness.readiness_score
+    if (score === null) {
+      return notMeasured(
+        readiness.state,
+        readiness.state === 'error'
+          ? 'Observability evidence could not be retrieved'
+          : 'Alert coverage not measurable yet',
+        readiness.reason
+      )
+    }
 
     return {
       score,
       label: 'Observability',
-      detail: `${readiness.status} · ${readiness.top_gaps.length} gap${readiness.top_gaps.length !== 1 ? 's' : ''} identified`,
+      detail: `Alert coverage ${score}% · EC2/RDS only`,
       severity:
         score >= 80 ? 'healthy'
         : score >= 65 ? 'medium'
@@ -393,6 +428,8 @@ export class SystemIntelligenceService {
             ? 'warning'
             : 'risk',
       ready: true,
+      state: readiness.state,
+      reason: readiness.reason,
     }
   }
 
@@ -401,7 +438,7 @@ export class SystemIntelligenceService {
   private buildDrivers(
     cost: ComponentScore,
     security: ComponentScore,
-    observability: ComponentScore
+    observability: ObservabilityComponentScore
   ): SystemDriver[] {
     const drivers: SystemDriver[] = []
 
@@ -456,21 +493,22 @@ export class SystemIntelligenceService {
       })
     }
 
-    if (observability.ready && observability.status !== 'good') {
+    if (observability.ready && observability.score !== null && observability.status !== 'good') {
+      const obsScore = observability.score
       drivers.push({
         id: 'observability-readiness',
         type: 'observability',
         severity:
-          observability.score < 50
+          obsScore < 50
             ? 'high'
             : 'medium',
         message: observability.detail,
         consequence:
-          observability.score < 50
-            ? 'Incidents may go undetected and team will not be notified'
-            : 'Detection and response gaps may delay incident resolution',
+          obsScore < 50
+            ? 'Incidents on resources without an actionable alarm may go undetected'
+            : 'Some discovered resources have no actionable alarm',
         impact_score: Math.round(
-          (100 - observability.score) * 0.30
+          (100 - obsScore) * 0.30
         ),
         action: {
           label: 'Fix coverage gaps',
@@ -587,15 +625,23 @@ export class SystemIntelligenceService {
       observability.ready
 
     let system_score: number | null = null
+    let composite_state: SystemIntelligenceResult['composite_state'] = null
+    let composite_reason: string | null = null
     let status: SystemIntelligenceResult['status'] = 'Pending'
 
-    if (allReady) {
+    if (allReady && observability.score !== null) {
       system_score = Math.round(
         cost.score * 0.30 +
         security.score * 0.40 +
         observability.score * 0.30
       )
       status = this.scoreToStatus(system_score)
+      if (observability.state === 'partial') {
+        composite_state = 'partial'
+        composite_reason = `Observability is partial: ${observability.reason ?? 'it measures alert coverage only'}`
+      } else {
+        composite_state = 'available'
+      }
     }
 
     const top_drivers =
@@ -610,6 +656,8 @@ export class SystemIntelligenceService {
 
     return {
       system_score,
+      composite_state,
+      composite_reason,
       status,
       components: {
         cost,

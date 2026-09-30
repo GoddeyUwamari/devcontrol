@@ -14,7 +14,7 @@
  * chain -- that computation itself is unchanged by this work and is not
  * re-tested here. This file proves only the caching wrapper's own behavior.
  */
-import { SystemIntelligenceService, SystemIntelligenceResult, ComponentScore } from '../system-intelligence.service';
+import { SystemIntelligenceService, SystemIntelligenceResult, ComponentScore, ObservabilityComponentScore } from '../system-intelligence.service';
 
 function componentFixture(overrides: Partial<ComponentScore> = {}): ComponentScore {
   return {
@@ -29,14 +29,20 @@ function componentFixture(overrides: Partial<ComponentScore> = {}): ComponentSco
   };
 }
 
+function observabilityFixture(overrides: Partial<ComponentScore> = {}): ObservabilityComponentScore {
+  return { ...componentFixture(overrides), state: 'partial', reason: 'Measures EC2 alert coverage only' };
+}
+
 function intelligenceFixture(overrides: Partial<SystemIntelligenceResult> = {}): SystemIntelligenceResult {
   return {
     system_score: 80,
+    composite_state: 'partial',
+    composite_reason: 'Observability is partial: Measures EC2 alert coverage only',
     status: 'Healthy',
     components: {
       cost: componentFixture({ label: 'Cost Efficiency', monthlySpend: 1000, costSource: 'actual' }),
       security: componentFixture({ label: 'Security Posture' }),
-      observability: componentFixture({ label: 'Observability' }),
+      observability: observabilityFixture({ label: 'Observability' }),
     },
     top_action: null,
     top_drivers: [],
@@ -53,7 +59,7 @@ function pendingFixture(): SystemIntelligenceResult {
     components: {
       cost: componentFixture({ label: 'Cost Efficiency', ready: false }),
       security: componentFixture({ label: 'Security Posture' }),
-      observability: componentFixture({ label: 'Observability' }),
+      observability: observabilityFixture({ label: 'Observability' }),
     },
   });
 }
@@ -226,7 +232,7 @@ describe('SystemIntelligenceService.getSystemIntelligence — response cache', (
       components: {
         cost: componentFixture({ score: 60 }),
         security: componentFixture({ score: 80 }),
-        observability: componentFixture({ score: 70 }),
+        observability: observabilityFixture({ score: 70 }),
       },
     });
     jest

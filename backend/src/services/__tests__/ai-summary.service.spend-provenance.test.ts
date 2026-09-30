@@ -62,11 +62,13 @@ function intelligence(): SystemIntelligenceResult {
   const componentBase = { label: '', detail: '', severity: 'healthy' as const, delta: null, status: 'good' as const, ready: true };
   return {
     system_score: 80,
+    composite_state: 'available',
+    composite_reason: null,
     status: 'Healthy',
     components: {
       cost: { ...componentBase, score: 80, label: 'Cost Efficiency' },
       security: { ...componentBase, score: 80, label: 'Security Posture' },
-      observability: { ...componentBase, score: 80, label: 'Observability' },
+      observability: { ...componentBase, score: 80, label: 'Observability', state: 'available', reason: null },
     },
     top_action: null,
     top_drivers: [],
@@ -83,8 +85,9 @@ function mockDependencies(opts: {
   preliminary?: boolean;
   recommendations?: { active: number; savings: number } | Error;
   model?: typeof MODEL_FIELDS | null;
+  intelligence?: SystemIntelligenceResult;
 } = {}) {
-  jest.spyOn(SystemIntelligenceService.prototype, 'getSystemIntelligence').mockResolvedValue(intelligence());
+  jest.spyOn(SystemIntelligenceService.prototype, 'getSystemIntelligence').mockResolvedValue(opts.intelligence ?? intelligence());
   jest.spyOn(RiskTrackingService.prototype, 'getCurrentRiskScore').mockResolvedValue({
     score: 72,
     isPreliminary: opts.preliminary ?? false,
@@ -265,5 +268,62 @@ describe('Dashboard AI summary -- tenant and caching', () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(getSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe('Dashboard AI summary -- observability and composite state', () => {
+  const PARTIAL_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.';
+
+  function partialIntelligence(): SystemIntelligenceResult {
+    const base = intelligence();
+    return {
+      ...base,
+      system_score: 51,
+      composite_state: 'partial',
+      composite_reason: `Observability is partial: ${PARTIAL_REASON}`,
+      components: {
+        ...base.components,
+        observability: { ...base.components.observability, score: 0, state: 'partial', reason: PARTIAL_REASON },
+      },
+    };
+  }
+
+  it('a partial composite reaches the model as partial, with what observability actually measures', async () => {
+    const { prompt } = await run({ intelligence: partialIntelligence() });
+    expect(prompt).toContain('Composite System Intelligence score: 51/100 (Cost 80, Security 80, Observability 0, which measures EC2/RDS alert coverage only).');
+    expect(prompt).toContain(`This composite is partial and must be described as partial: Observability is partial: ${PARTIAL_REASON.replace(/\.$/, '')}.`);
+  });
+
+  it('the systemScore section itself is partial, not available', async () => {
+    mockDependencies({ intelligence: partialIntelligence() });
+    const sections = await (new AISummaryService() as any).gatherSections(ORG);
+    expect(sections.systemScore.state).toBe('partial');
+    expect(sections.systemScore.data.observabilityState).toBe('partial');
+    expect(sections.systemScore.reason).toBe(`Observability is partial: ${PARTIAL_REASON}`);
+  });
+
+  it('an observability error leaves no composite: the section is unavailable and no score reaches the model', async () => {
+    const base = intelligence();
+    const { prompt } = await run({
+      intelligence: {
+        ...base,
+        system_score: null,
+        composite_state: null,
+        composite_reason: null,
+        status: 'Pending',
+        components: {
+          ...base.components,
+          observability: { ...base.components.observability, score: null, ready: false, state: 'error', reason: 'the connected AWS role could not be assumed' },
+        },
+      },
+    });
+    expect(prompt).not.toMatch(/Composite System Intelligence score/);
+    expect(prompt).not.toMatch(/Observability 0/);
+  });
+
+  it('a fully available composite carries no partial caveat', async () => {
+    const { prompt } = await run();
+    expect(prompt).toContain('Composite System Intelligence score: 80/100 (Cost 80, Security 80, Observability 80).');
+    expect(prompt).not.toMatch(/composite is partial/);
   });
 });
