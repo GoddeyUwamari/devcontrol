@@ -365,6 +365,10 @@ export default function MonitoringPage() {
       return
     }
     if (demoMode) { generateDemoMetrics(); return }
+    // Alerts come from alert history, not CloudWatch, so they are fetched on the
+    // not-connected and CloudWatch-failed paths too -- otherwise alertsState never
+    // leaves 'loading'.
+    fetchAlerts()
     // Monitoring Truthfulness Phase 1: prefer the caller-provided, just-resolved connection
     // result over the `awsConnected` state closure, which may not yet reflect a check that
     // just completed (see refreshAwsHealth()).
@@ -675,7 +679,7 @@ export default function MonitoringPage() {
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Active Alerts</p>
                 <a href="/settings/alerts" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">View all <ArrowRight size={11} /></a>
               </div>
-              <ActiveAlertsPanel alerts={alerts} emptyMessage={alertsEmptyMessage ?? 'Not available for this organization'} />
+              <ActiveAlertsPanel alerts={alerts} countsAvailable={alertsState === 'present'} emptyMessage={alertsEmptyMessage ?? 'Not available for this organization'} />
             </div>
           </div>
 

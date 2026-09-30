@@ -18,9 +18,12 @@ interface ActiveAlertsPanelProps {
   alerts: Alert[]
   /** Shown when there are no alerts to list -- why, not a health verdict. */
   emptyMessage: string
+  /** Whether `alerts` is a confirmed result. When it is not (loading, unavailable,
+   * failed), no severity counts are shown -- an empty list is not zero alerts. */
+  countsAvailable: boolean
 }
 
-export function ActiveAlertsPanel({ alerts, emptyMessage }: ActiveAlertsPanelProps) {
+export function ActiveAlertsPanel({ alerts, emptyMessage, countsAvailable }: ActiveAlertsPanelProps) {
   const criticalCount = alerts.filter((a) => a.severity === 'critical').length
   const warningCount = alerts.filter((a) => a.severity === 'warning').length
 
@@ -29,9 +32,11 @@ export function ActiveAlertsPanel({ alerts, emptyMessage }: ActiveAlertsPanelPro
       <div className="px-6 py-4 border-b flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold">Active Alerts</h3>
-          <p className="text-sm text-gray-600">
-            {criticalCount} critical • {warningCount} warnings
-          </p>
+          {countsAvailable && (
+            <p className="text-sm text-gray-600">
+              {criticalCount} critical • {warningCount} warnings
+            </p>
+          )}
         </div>
         <Button size="sm" variant="outline">
           View All

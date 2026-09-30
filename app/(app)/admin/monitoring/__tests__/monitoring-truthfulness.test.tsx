@@ -25,6 +25,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import MonitoringPage from '../page'
 import { alertHistoryService } from '@/lib/services/alert-history.service'
+import type { AlertHistoryResponse } from '@/lib/types'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -364,6 +365,9 @@ describe('Monitoring page — the healthy summary claims only what CloudWatch sh
 
 describe('Monitoring page — Active Alerts only counts alerts it can actually see', () => {
   const getAlertHistory = vi.mocked(alertHistoryService.getAlertHistory)
+  const emptyAlertHistory: AlertHistoryResponse = {
+    success: true, data: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+  }
   // The KPI card (the section below it shares the "Active Alerts" title).
   const activeAlertsCard = () =>
     screen.getAllByText('Active Alerts', { selector: 'p' })
@@ -397,6 +401,49 @@ describe('Monitoring page — Active Alerts only counts alerts it can actually s
     expect(document.body.textContent).not.toMatch(/No active alerts|All Systems Operational/i)
   })
 
+  it('AWS not connected: the alert state resolves instead of staying on "Loading…"', async () => {
+    installFetchMock({ connected: false, prometheusHealthOk: false })
+    getAlertHistory.mockClear()
+    getAlertHistory.mockResolvedValue(emptyAlertHistory)
+    render(<MonitoringPage />)
+
+    await waitFor(() => expect(activeAlertsCard().textContent).toMatch(/Not available for this organization/))
+    expect(getAlertHistory).toHaveBeenCalled()
+    expect(activeAlertsCard().textContent).not.toMatch(/Loading/)
+    expect(activeAlertsCard().textContent).toContain('—')
+  })
+
+  it('AWS not connected and the alert request fails: unavailable, not loading and not zero', async () => {
+    installFetchMock({ connected: false, prometheusHealthOk: false })
+    getAlertHistory.mockRejectedValue(new Error('500'))
+    render(<MonitoringPage />)
+
+    await waitFor(() => expect(activeAlertsCard().textContent).toMatch(/Could not be retrieved/))
+    expect(activeAlertsCard().textContent).not.toMatch(/Loading/)
+    expect(document.body.textContent).not.toMatch(/0 critical • 0 warnings/)
+  })
+
+  it('CloudWatch fetch fails: alerts are still fetched, so their state does not stay "loading"', async () => {
+    // The CloudWatch error card replaces the KPI cards and alert panel, so the state
+    // is observable only through the fetch that resolves it.
+    installFetchMock({ connected: true, metrics: null })
+    getAlertHistory.mockClear()
+    getAlertHistory.mockResolvedValue(emptyAlertHistory)
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText("Can't fetch CloudWatch metrics right now")).toBeInTheDocument()
+    await waitFor(() => expect(getAlertHistory).toHaveBeenCalled())
+    expect(document.body.textContent).not.toMatch(/Loading…|\d+ critical • \d+ warnings/)
+  })
+
+  it('unavailable alert data does not render severity counts in the Active Alerts panel', async () => {
+    getAlertHistory.mockResolvedValue(emptyAlertHistory)
+    render(<MonitoringPage />)
+
+    await waitFor(() => expect(activeAlertsCard().textContent).toMatch(/Not available for this organization/))
+    expect(document.body.textContent).not.toMatch(/\d+ critical • \d+ warnings/)
+  })
+
   it('real firing alerts are counted', async () => {
     getAlertHistory.mockResolvedValue({
       data: [{ id: 'a1', alertName: 'High CPU', description: 'CPU above threshold', severity: 'critical', status: 'firing', serviceName: 'api', startedAt: '2026-09-27T08:00:00.000Z' }],
@@ -406,5 +453,7 @@ describe('Monitoring page — Active Alerts only counts alerts it can actually s
     await waitFor(() => expect(activeAlertsCard().textContent).toMatch(/Needs attention/))
     expect(activeAlertsCard().textContent).toContain('1')
     expect(screen.getAllByText('High CPU').length).toBeGreaterThan(0)
+    // A confirmed result shows its counts, including a genuine zero.
+    expect(screen.getByText('1 critical • 0 warnings')).toBeInTheDocument()
   })
 })
