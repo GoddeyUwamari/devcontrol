@@ -14,6 +14,8 @@ import {
 import { usePlan } from '@/lib/hooks/use-plan'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import { awsResourcesService } from '@/lib/services/aws-resources.service'
+import { pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { nlQueryService, NLQueryResult, NLQueryOutcome } from '@/lib/services/nl-query.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -163,6 +165,26 @@ export default function CostsPage() {
     enabled: !isDemoActive,
   })
 
+  // Cost analysis runs both manually (cost_analysis_runs) and inside the
+  // scheduled discovery job (resource_discovery_jobs.cost_analysis_completed).
+  // Both histories feed pickLatestAnalysis(), the same merge the Cost
+  // Optimization page uses. Until an analysis has completed, zero
+  // recommendations means "not analyzed yet", not "no savings found".
+  const { data: analysisRuns, isLoading: analysisRunsLoading, isError: analysisRunsError } = useQuery({
+    queryKey: ['cost-analysis-runs', 5],
+    queryFn: () => costRecommendationsService.getAnalysisRuns(5),
+    staleTime: 60_000,
+    retry: false,
+    enabled: !isDemoActive,
+  })
+  const { data: discoveryJobs, isLoading: discoveryJobsLoading, isError: discoveryJobsError } = useQuery({
+    queryKey: ['discovery-jobs', 5],
+    queryFn: () => awsResourcesService.getDiscoveryJobs(5),
+    staleTime: 60_000,
+    retry: false,
+    enabled: !isDemoActive,
+  })
+
   const { data: activeRecs = [], isError: activeRecsError } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations-active'],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
@@ -215,8 +237,27 @@ export default function CostsPage() {
 
   const savingsMissing = !isDemoActive && (recStatsLoading || recStatsError || !recStats)
   const displaySavings = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
-  const savingsValue = savingsMissing ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`
   const activeRecsCount = isDemoActive ? DEMO_TOP_SAVINGS.length : (recStats?.activeRecommendations ?? 0)
+  // Zero recommendations is only a measured result once the latest analysis
+  // (scheduled or manual) has completed.
+  const latestAnalysis = pickLatestAnalysis({ latestDiscoveryJob: discoveryJobs?.[0], latestAnalysisRun: analysisRuns?.[0] })
+  const zeroRecsState: null | 'loading' | 'unknown' | 'in_progress' | 'failed' | 'not_evaluated' =
+    isDemoActive || savingsMissing || activeRecsCount > 0 ? null
+      : analysisRunsLoading || discoveryJobsLoading ? 'loading'
+      : analysisRunsError || discoveryJobsError ? 'unknown'
+      : !latestAnalysis ? 'not_evaluated'
+      : latestAnalysis.status === 'running' ? 'in_progress'
+      : latestAnalysis.status === 'failed' ? 'failed'
+      : null
+  const recsUnavailable = savingsMissing || zeroRecsState !== null
+  const recsUnavailableSub = !isDemoActive && recStatsLoading ? 'Loading…'
+    : savingsMissing ? 'Could not be retrieved'
+    : zeroRecsState === 'loading' ? 'Loading…'
+    : zeroRecsState === 'unknown' ? 'Could not be retrieved'
+    : zeroRecsState === 'in_progress' ? 'Cost analysis in progress'
+    : zeroRecsState === 'failed' ? 'Latest cost analysis did not complete'
+    : 'No cost analysis has run yet'
+  const savingsValue = recsUnavailable ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`
 
   const topSavingsRows: { id: string; title: string; savings: number; severity: RecommendationSeverity }[] = isDemoActive
     ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savings: d.savings, severity: d.severity }))
@@ -315,10 +356,8 @@ export default function CostsPage() {
       // No "% of current spend": the savings estimate is a monthly run-rate over the
       // resource inventory, current spend is Cost Explorer month-to-date billing --
       // different periods and scopes, so the ratio is not a real billing ratio.
-      sub: !isDemoActive && recStatsLoading ? 'Loading…'
-        : savingsMissing ? 'Could not be retrieved'
-        : describeAnnualizedSavings(displaySavings),
-      subColor: savingsMissing ? 'text-slate-500' : 'text-green-600', TrendIcon: savingsMissing ? Minus : TrendingDown, trendColor: savingsMissing ? 'text-slate-400' : 'text-green-600',
+      sub: recsUnavailable ? recsUnavailableSub : describeAnnualizedSavings(displaySavings),
+      subColor: recsUnavailable ? 'text-slate-500' : 'text-green-600', TrendIcon: recsUnavailable ? Minus : TrendingDown, trendColor: recsUnavailable ? 'text-slate-400' : 'text-green-600',
       href: '/cost-optimization', borderTop: 'border-t-[3px] border-t-green-500', valueColor: 'text-green-600',
     },
     {
@@ -339,8 +378,8 @@ export default function CostsPage() {
     },
     {
       key: 'activerecs', label: 'Active Recommendations',
-      value: savingsMissing ? '—' : `${activeRecsCount}`,
-      sub: !isDemoActive && recStatsLoading ? 'Loading…' : savingsMissing ? 'Could not be retrieved' : activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations',
+      value: recsUnavailable ? '—' : `${activeRecsCount}`,
+      sub: recsUnavailable ? recsUnavailableSub : activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations',
       subColor: activeRecsCount > 0 ? 'text-amber-500' : 'text-slate-500',
       TrendIcon: activeRecsCount > 0 ? TrendingUp : Minus,
       trendColor: activeRecsCount > 0 ? 'text-amber-500' : 'text-slate-400',
@@ -390,7 +429,7 @@ export default function CostsPage() {
             ) : null}
           </div>
           <p className="text-xs text-slate-500 font-medium leading-relaxed">
-            Real-time AWS spend visibility, forecasting, and AI-powered cost optimization.
+            AWS spend visibility, forecasting, and AI-powered cost optimization.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -613,7 +652,7 @@ export default function CostsPage() {
               // Fixed basis, stated because this strip sits under the range tabs it does not follow.
               note: isDemoActive ? undefined : `${MOM_BASIS_LABEL}${mom.includesToday ? ` · ${TODAY_STILL_BILLING}` : ''}`,
             },
-            { label: 'Active Recommendations', value: savingsMissing ? '—' : `${activeRecsCount}`, color: 'text-slate-500' },
+            { label: 'Active Recommendations', value: recsUnavailable ? '—' : `${activeRecsCount}`, color: 'text-slate-500' },
             { label: 'Estimated Savings Opportunity', value: savingsValue, color: 'text-green-600' },
           ].map(({ label, value, color, note }: { label: string; value: string; color: string; note?: string }) => (
             <div key={label}>
@@ -811,8 +850,10 @@ export default function CostsPage() {
           <div className="bg-green-50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-green-600 uppercase tracking-widest mb-1">Estimated Savings Opportunity</p>
-              <p className="text-2xl font-extrabold text-green-600 m-0">{savingsMissing ? '—' : <>{formatSavingsCurrency(displaySavings)}<span className="text-sm font-medium">/mo</span></>}</p>
-              {!savingsMissing && <p className="text-xs text-green-700 mt-1 m-0">{describeAnnualizedSavings(displaySavings)}</p>}
+              <p className="text-2xl font-extrabold text-green-600 m-0">{recsUnavailable ? '—' : <>{formatSavingsCurrency(displaySavings)}<span className="text-sm font-medium">/mo</span></>}</p>
+              {recsUnavailable
+                ? <p className="text-xs text-slate-500 mt-1 m-0">{recsUnavailableSub}</p>
+                : <p className="text-xs text-green-700 mt-1 m-0">{describeAnnualizedSavings(displaySavings)}</p>}
             </div>
             <div className="text-center sm:text-right">
               <a href="/cost-optimization" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold no-underline inline-block transition-colors whitespace-nowrap">

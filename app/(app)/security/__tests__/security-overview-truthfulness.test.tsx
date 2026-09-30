@@ -260,7 +260,7 @@ describe('Active Anomalies — real-mode fallback leakage', () => {
     mockGetAnomalies.mockResolvedValue({})
     renderSecurityPage()
 
-    expect(await screen.findByText('No active anomalies · System is secure')).toBeInTheDocument()
+    expect(await screen.findByText('No active anomalies')).toBeInTheDocument()
     // FALLBACK_ANOMALIES' resource names must not leak into real mode.
     expect(screen.queryByText(/production-worker/)).not.toBeInTheDocument()
     expect(screen.queryByText(/old-backup-bucket/)).not.toBeInTheDocument()
@@ -310,5 +310,120 @@ describe('Security Score Trend — real-mode fallback leakage', () => {
     demoModeValue = true
     renderSecurityPage()
     expect(screen.getByText(/pts this month/)).toBeInTheDocument()
+  })
+})
+
+describe('No evidence is never presented as secure', () => {
+  function scoreCard() {
+    return screen.getByTestId('security-score-value').closest('div.bg-white') as HTMLElement
+  }
+
+  it('a missing risk score is not 0/100', () => {
+    mockUseCurrentRiskScore.mockReturnValue({ data: undefined, isLoading: false })
+    renderSecurityPage()
+
+    expect(screen.getByTestId('security-score-value')).toHaveTextContent('—')
+    expect(scoreCard().textContent).not.toMatch(/\/100/)
+    expect(scoreCard().textContent).toMatch(/could not be retrieved/i)
+  })
+
+  it('a preliminary score (nothing scanned yet) is not shown as a number, even when it is 100', () => {
+    mockUseCurrentRiskScore.mockReturnValue({
+      data: { score: 100, factors: { encryption: 100, publicAccess: 100, backup: 100, compliance: 100, resourceManagement: 100 }, isPreliminary: true },
+      isLoading: false,
+    })
+    renderSecurityPage()
+
+    expect(screen.getByTestId('security-score-value')).toHaveTextContent('—')
+    expect(scoreCard().textContent).not.toMatch(/100/)
+    expect(scoreCard().textContent).toMatch(/scan pending/i)
+  })
+
+  it('a final score is shown, without an unsupported benchmark claim', () => {
+    mockUseCurrentRiskScore.mockReturnValue({
+      data: { score: 88, factors: { encryption: 90, publicAccess: 90, backup: 80, compliance: 85, resourceManagement: 95 }, isPreliminary: false },
+      isLoading: false,
+    })
+    renderSecurityPage()
+
+    expect(screen.getByTestId('security-score-value')).toHaveTextContent('88')
+    expect(scoreCard().textContent).toMatch(/\/100/)
+    expect(document.body.textContent).not.toMatch(/benchmark/i)
+  })
+
+  it('a failed findings request is not "no findings"', () => {
+    mockUseAccountSecurityFindings.mockReturnValue({ data: undefined, isLoading: false, isError: true })
+    renderSecurityPage()
+
+    expect(screen.getByText('Findings could not be retrieved')).toBeInTheDocument()
+    expect(screen.queryByText(/No unresolved findings/)).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/look clean/i)
+  })
+
+  it('an empty findings list states only what it is, not that the account is clean', () => {
+    mockUseAccountSecurityFindings.mockReturnValue({ data: [], isLoading: false })
+    renderSecurityPage()
+
+    expect(screen.getByText('No active security group or IAM findings')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/look clean|is secure/i)
+  })
+
+  it('a failed anomalies request is not "no anomalies" or "secure"', async () => {
+    mockGetAnomalies.mockRejectedValue(new Error('500'))
+    mockGetAnomalyStats.mockRejectedValue(new Error('500'))
+    renderSecurityPage()
+
+    expect(await screen.findByText('Anomalies could not be retrieved')).toBeInTheDocument()
+    expect(screen.queryByText('No active anomalies')).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/System is secure|No critical threats|No critical anomalies/i)
+  })
+
+  it('no anomalies makes no security verdict', async () => {
+    renderSecurityPage()
+
+    expect(await screen.findByText('No active anomalies')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/System is secure|No critical threats/i)
+  })
+
+  it('no score history is not "stable"', () => {
+    mockUseRiskScoreTrend.mockReturnValue({ data: { history: [] }, isLoading: false })
+    renderSecurityPage()
+
+    expect(screen.getByText('No score history yet')).toBeInTheDocument()
+    expect(screen.queryByText('Security posture stable')).not.toBeInTheDocument()
+  })
+})
+
+describe('Top Security Gaps -- no "all passing" without a final score', () => {
+  const allPassing = { encryption: 100, publicAccess: 100, backup: 100, compliance: 100, resourceManagement: 100 }
+  const gapsPanel = () => screen.getByText('Top Security Gaps').closest('div')!
+
+  it('a preliminary score with no gaps is not yet evaluated, never "All security checks passing"', () => {
+    mockUseCurrentRiskScore.mockReturnValue({ data: { score: 100, factors: allPassing, isPreliminary: true }, isLoading: false })
+    renderSecurityPage()
+
+    expect(within(gapsPanel()).getByText('Not yet evaluated')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/All security checks passing/)
+  })
+
+  it('a preliminary score still shows real gaps, without an "all passing" claim', () => {
+    mockUseCurrentRiskScore.mockReturnValue({ data: { score: 80, factors: { ...allPassing, encryption: 60 }, isPreliminary: true }, isLoading: false })
+    renderSecurityPage()
+
+    expect(within(gapsPanel()).getByText('Encryption coverage incomplete')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/All security checks passing/)
+  })
+
+  it('a final score with every check passing still says so', () => {
+    mockUseCurrentRiskScore.mockReturnValue({ data: { score: 100, factors: allPassing, isPreliminary: false }, isLoading: false })
+    renderSecurityPage()
+
+    expect(within(gapsPanel()).getByText('All security checks passing')).toBeInTheDocument()
+    expect(within(gapsPanel()).queryByText('Not yet evaluated')).not.toBeInTheDocument()
+  })
+
+  it('the page subtitle makes no real-time claim', () => {
+    renderSecurityPage()
+    expect(screen.getByText(/Security posture, risk detection, compliance/).textContent).not.toMatch(/real[- ]?time/i)
   })
 })

@@ -89,8 +89,13 @@ describe('Engineering Health', () => {
   it('uses the text arrow "→" like the other dashboard text links, not an ArrowRight icon', () => {
     const { container } = render(<EngineeringHealthCard isDemoActive={false} doraRows={[]} />)
     expect(screen.getByText('View details →').closest('a')!.getAttribute('href')).toBe('/app/dora-metrics')
-    expect(screen.getByText('Connect CI/CD →').closest('a')!.getAttribute('href')).toBe('/deployments')
     expect(container.querySelectorAll('svg.lucide-arrow-right')).toHaveLength(0)
+  })
+
+  it('makes no claim about CI/CD being disconnected when no DORA data is shown', () => {
+    const { container } = render(<EngineeringHealthCard isDemoActive={false} doraRows={[]} />)
+    expect(container.textContent).not.toMatch(/connect ci\/cd/i)
+    expect(container.textContent).toMatch(/not summarized on the dashboard/i)
   })
 })
 
@@ -101,8 +106,7 @@ describe('System Status arrow', () => {
         topRisk={null}
         topRiskStatus="unavailable"
         aiSummaryLoading={false}
-        systemStatus={{ label: 'All systems operational', color: 'green', background: 'white', dotColor: 'green' }}
-        isLive
+        systemStatus={{ value: 'Operational', label: "DevControl's API and database are responding.", color: 'green', background: 'white', dotColor: 'green' }}
       />
     )
     const card = screen.getByText('System Status').closest('a')!

@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertTriangle, CheckCircle } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { formatDistanceToNow } from 'date-fns'
@@ -16,9 +16,11 @@ interface Alert {
 
 interface ActiveAlertsPanelProps {
   alerts: Alert[]
+  /** Shown when there are no alerts to list -- why, not a health verdict. */
+  emptyMessage: string
 }
 
-export function ActiveAlertsPanel({ alerts }: ActiveAlertsPanelProps) {
+export function ActiveAlertsPanel({ alerts, emptyMessage }: ActiveAlertsPanelProps) {
   const criticalCount = alerts.filter((a) => a.severity === 'critical').length
   const warningCount = alerts.filter((a) => a.severity === 'warning').length
 
@@ -38,11 +40,8 @@ export function ActiveAlertsPanel({ alerts }: ActiveAlertsPanelProps) {
 
       {alerts.length === 0 ? (
         <div className="px-6 py-12 text-center">
-          <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-          <p className="text-sm font-medium text-gray-900">
-            All Systems Operational
-          </p>
-          <p className="text-xs text-gray-500 mt-1">No active alerts</p>
+          <p className="text-sm font-medium text-gray-900">No alerts to show</p>
+          <p className="text-xs text-gray-500 mt-1">{emptyMessage}</p>
         </div>
       ) : (
         <div className="divide-y max-h-96 overflow-y-auto">

@@ -13,10 +13,11 @@ interface EngineeringHealthCardProps {
 }
 
 /**
- * Real mode has no authenticated production DORA metrics source wired to
- * this page — shows a truthful "connect CI/CD" state instead of demo
- * numbers. Demo mode keeps the existing demonstration metrics, laid out as
- * a compact 4-up stat grid.
+ * Real mode has no DORA metrics source wired to this card. It says only that,
+ * without claiming anything about the organization's CI/CD or deployments
+ * (which may well exist); "View details" leads to the DORA metrics page.
+ * Demo mode keeps the existing demonstration metrics, laid out as a compact
+ * 4-up stat grid.
  */
 export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHealthCardProps) {
   return (
@@ -51,10 +52,7 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
         </div>
       ) : (
         <div className="flex flex-col items-start gap-3 py-4">
-          <p className="text-sm text-[var(--text-secondary)] leading-relaxed">Connect CI/CD pipeline to see DORA metrics</p>
-          <a href="/deployments" className="inline-flex items-center gap-1.5 text-xs font-semibold no-underline" style={{ color: 'var(--text-accent)' }}>
-            Connect CI/CD →
-          </a>
+          <p className="text-sm text-[var(--text-secondary)] leading-relaxed">DORA metrics are not summarized on the dashboard yet.</p>
         </div>
       )}
     </div>

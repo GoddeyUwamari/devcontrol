@@ -24,6 +24,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import MonitoringPage from '../page'
+import { alertHistoryService } from '@/lib/services/alert-history.service'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -340,5 +341,70 @@ describe('Monitoring page — Phase 2D detail pagination disclosure', () => {
       const secondMetricsCall = calls.filter(([url]) => url.includes('/api/cloudwatch/metrics')).at(-1)
       expect(secondMetricsCall?.[0]).toContain('cursor=next-page-cursor')
     })
+  })
+})
+
+describe('Monitoring page — the healthy summary claims only what CloudWatch shows', () => {
+  beforeEach(() => {
+    mockUseDemoMode.mockReturnValue(false)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('an empty alert list is not reported as "no anomalies detected"', async () => {
+    installFetchMock({ connected: true, metrics: cloudWatchMetricsFixture() })
+
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText(/1 AWS resource is currently monitored with no active health violations\./)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/anomal(y|ies) (were|was) detected|No reliability anomalies/i)
+  })
+})
+
+describe('Monitoring page — Active Alerts only counts alerts it can actually see', () => {
+  const getAlertHistory = vi.mocked(alertHistoryService.getAlertHistory)
+  // The KPI card (the section below it shares the "Active Alerts" title).
+  const activeAlertsCard = () =>
+    screen.getAllByText('Active Alerts', { selector: 'p' })
+      .map((el) => el.parentElement as HTMLElement)
+      .find((el) => /Needs attention|Not available|Could not be retrieved|Loading/.test(el.textContent ?? ''))!
+
+  beforeEach(() => {
+    mockUseDemoMode.mockReturnValue(false)
+    installFetchMock({ connected: true, metrics: cloudWatchMetricsFixture() })
+  })
+  afterEach(() => {
+    getAlertHistory.mockResolvedValue({ data: [] } as any)
+    vi.restoreAllMocks()
+  })
+
+  it('an empty (organization-less) alert feed is not "no active alerts" or "all operational"', async () => {
+    getAlertHistory.mockResolvedValue({ data: [] } as any)
+    render(<MonitoringPage />)
+
+    await waitFor(() => expect(activeAlertsCard().textContent).toMatch(/Not available for this organization/))
+    expect(activeAlertsCard().textContent).toContain('—')
+    expect(document.body.textContent).not.toMatch(/No active alerts|All Systems Operational/i)
+  })
+
+  it('a failed alert request is unavailable, not zero', async () => {
+    getAlertHistory.mockRejectedValue(new Error('500'))
+    render(<MonitoringPage />)
+
+    await waitFor(() => expect(activeAlertsCard().textContent).toMatch(/Could not be retrieved/))
+    expect(activeAlertsCard().textContent).toContain('—')
+    expect(document.body.textContent).not.toMatch(/No active alerts|All Systems Operational/i)
+  })
+
+  it('real firing alerts are counted', async () => {
+    getAlertHistory.mockResolvedValue({
+      data: [{ id: 'a1', alertName: 'High CPU', description: 'CPU above threshold', severity: 'critical', status: 'firing', serviceName: 'api', startedAt: '2026-09-27T08:00:00.000Z' }],
+    } as any)
+    render(<MonitoringPage />)
+
+    await waitFor(() => expect(activeAlertsCard().textContent).toMatch(/Needs attention/))
+    expect(activeAlertsCard().textContent).toContain('1')
+    expect(screen.getAllByText('High CPU').length).toBeGreaterThan(0)
   })
 })

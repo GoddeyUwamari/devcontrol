@@ -115,6 +115,15 @@ export default function MonitoringPage() {
   const [responseTimeData, setResponseTimeData] = useState<Array<{ timestamp: number; value: number }>>([])
   const [trendPercent, setTrendPercent] = useState<number>(0)
   const [alerts, setAlerts] = useState<Array<{ id: string; title: string; message: string; severity: 'critical' | 'warning'; service: string; triggeredAt: Date }>>([])
+  // alert_history's only writer (the Prometheus alert sync) stores no organization,
+  // so an empty org-scoped result cannot confirm "no alerts" (same reason as the AI
+  // assistant's ALERTS_NOT_SUPPORTED_REASON). Empty and failed reads are shown as
+  // unavailable, never as zero.
+  const [alertsState, setAlertsState] = useState<'loading' | 'unavailable' | 'none_recorded' | 'present'>('loading')
+  const alertsEmptyMessage = alertsState === 'present' ? null
+    : alertsState === 'unavailable' ? 'Could not be retrieved'
+    : alertsState === 'loading' ? 'Loading…'
+    : 'Not available for this organization'
   const [slos, setSlos] = useState<Array<{ name: string; current: number; target: number; errorBudget: number; description?: string }>>([])
   const [lastSnapshot, setLastSnapshot] = useState<any>(null)
   const [isDiagnosing, setIsDiagnosing] = useState(false)
@@ -157,6 +166,7 @@ export default function MonitoringPage() {
     ])
     setSlos([{ name: 'API Uptime', current: 99.95, target: 99.9, errorBudget: 0.05, description: 'API availability SLO' }, { name: 'Response Time', current: 98.5, target: 95.0, errorBudget: 3.5, description: '< 500ms for 95% requests' }, { name: 'Error Rate', current: 99.9, target: 99.9, errorBudget: 0.0, description: '< 0.1% error rate' }])
     setAlerts([{ id: '1', title: 'High Response Time', message: 'Order Processor response time above threshold', severity: 'warning', service: 'order-processor', triggeredAt: new Date(Date.now() - 15 * 60 * 1000) }, { id: '2', title: 'Elevated Error Rate', message: 'Order Processor error rate at 1.23%', severity: 'warning', service: 'order-processor', triggeredAt: new Date(Date.now() - 8 * 60 * 1000) }])
+    setAlertsState('present')
     // Phase 2D: demo mode has no backend to compute healthSummary/pagination server-side
     // -- mirror them here to match the 4 hardcoded rows above (3 healthy + 1 degraded),
     // so the KPI cards and health-summary line render the same way they did before
@@ -290,8 +300,10 @@ export default function MonitoringPage() {
         triggeredAt: new Date(a.startedAt),
       }))
       setAlerts(mapped)
+      setAlertsState(mapped.length > 0 ? 'present' : 'none_recorded')
     } catch (err) {
       console.error('Error fetching alerts:', err)
+      setAlertsState('unavailable')
     }
   }, [])
 
@@ -581,6 +593,9 @@ export default function MonitoringPage() {
       {/* Main content */}
       {(!loading || isDemoActive) && (!error || isDemoActive) && (
         <>
+          {/* An empty alert list says nothing about anomalies: alert_history has no
+              organization-scoped writer and no anomaly detection exists, so the healthy
+              case only states what CloudWatch evidence shows. */}
           {/* AI Insight banner — Phase A: rewritten healthy-case sentence to reference the
               actual resource counts computed above instead of response-time/uptime figures
               that are usually N/A for non-ALB accounts. Degraded/critical/down branches
@@ -599,7 +614,7 @@ export default function MonitoringPage() {
                           ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
                           : 'One or more services may need attention. Review Service Health below for details.')
                       : (healthSummary?.monitored ?? 0) > 0
-                        ? `Infrastructure is healthy. ${healthSummary!.monitored} AWS resource${healthSummary!.monitored !== 1 ? 's are' : ' is'} currently monitored with no active health violations. ${alerts.length === 0 ? 'No reliability anomalies were detected during the selected period.' : `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.`}`
+                        ? `Infrastructure is healthy. ${healthSummary!.monitored} AWS resource${healthSummary!.monitored !== 1 ? 's are' : ' is'} currently monitored with no active health violations.${alerts.length > 0 ? ` ${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.` : ''}`
                         : 'No monitored resources yet. Connect AWS or run resource discovery to start tracking infrastructure health.'}
               </p>
             </div>
@@ -628,7 +643,7 @@ export default function MonitoringPage() {
             {[
               { label: 'Overall Health', value: overallHealthPercent !== null ? `${overallHealthPercent}%` : 'N/A', sub: overallHealthPercent === null ? 'No monitored resources' : `${healthSummary?.healthy ?? 0}/${healthSummary?.monitored ?? 0} healthy`, color: overallHealthPercent === null ? 'text-slate-300' : overallHealthPercent >= 90 ? 'text-green-600' : overallHealthPercent >= 70 ? 'text-amber-500' : 'text-red-600' },
               { label: 'Monitored Resources', value: (healthSummary?.monitored ?? 0).toLocaleString(), sub: (healthSummary?.monitored ?? 0) === 0 ? 'Run discovery to add resources' : coverageLabel, color: (healthSummary?.monitored ?? 0) === 0 ? 'text-slate-300' : 'text-slate-900' },
-              { label: 'Active Alerts', value: alerts.length.toLocaleString(), sub: alerts.length === 0 ? 'No active alerts' : 'Needs attention', color: alerts.length === 0 ? 'text-slate-900' : 'text-red-600' },
+              { label: 'Active Alerts', value: alertsState === 'present' ? alerts.length.toLocaleString() : '—', sub: alertsEmptyMessage ?? 'Needs attention', color: alertsState === 'present' ? 'text-red-600' : 'text-slate-300' },
               { label: 'Monthly Cost', value: monthlyCost, sub: monthlyCost === '--' ? 'Cost data unavailable' : 'Current monthly spend', color: monthlyCost === '--' ? 'text-slate-300' : 'text-slate-900' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="bg-white rounded-xl p-4 sm:p-8 border border-slate-200">
@@ -660,7 +675,7 @@ export default function MonitoringPage() {
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Active Alerts</p>
                 <a href="/settings/alerts" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">View all <ArrowRight size={11} /></a>
               </div>
-              <ActiveAlertsPanel alerts={alerts} />
+              <ActiveAlertsPanel alerts={alerts} emptyMessage={alertsEmptyMessage ?? 'Not available for this organization'} />
             </div>
           </div>
 
