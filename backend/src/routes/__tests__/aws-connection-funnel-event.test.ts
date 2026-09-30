@@ -124,13 +124,19 @@ async function insertOrg(): Promise<string> {
   return rows[0].id as string;
 }
 
-async function insertUser(): Promise<string> {
+/** A user holding a current, active owner membership in `orgId` -- connecting AWS is owner-only. */
+async function insertUser(orgId: string): Promise<string> {
   const suffix = uniqueSuffix();
   const { rows } = await pool.query(
     `INSERT INTO users (email, password_hash, full_name) VALUES ($1, 'x', 'AWS Funnel User') RETURNING id`,
     [`aws-funnel-${suffix}@example.com`]
   );
   createdUserIds.push(rows[0].id);
+  await pool.query(
+    `INSERT INTO organization_memberships (organization_id, user_id, role, joined_at, is_active)
+     VALUES ($1, $2, 'owner', NOW(), true)`,
+    [orgId, rows[0].id]
+  );
   return rows[0].id as string;
 }
 
@@ -185,6 +191,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  await pool.query(
+    'DELETE FROM organization_memberships WHERE organization_id = ANY($1) OR user_id = ANY($2)',
+    [createdOrgIds, createdUserIds]
+  );
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
@@ -216,7 +226,7 @@ function stubAuth(userId: string, orgId: string) {
 describe('POST /api/aws/accounts -- aws_connection_completed funnel event', () => {
   it('emits aws_connection_completed exactly once on the real STS-verified connect flow', async () => {
     const orgId = await insertOrg();
-    const userId = await insertUser();
+    const userId = await insertUser(orgId);
     stubAuth(userId, orgId);
     jest.spyOn(AWSResourceDiscoveryService.prototype, 'discoverAllResources').mockResolvedValue({
       job_id: 'stub-job',
@@ -242,7 +252,7 @@ describe('POST /api/aws/accounts -- aws_connection_completed funnel event', () =
 
   it('a second connect attempt for an already-connected org gets 409 and does NOT emit a second event', async () => {
     const orgId = await insertOrg();
-    const userId = await insertUser();
+    const userId = await insertUser(orgId);
     stubAuth(userId, orgId);
     jest.spyOn(AWSResourceDiscoveryService.prototype, 'discoverAllResources').mockResolvedValue({
       job_id: 'stub-job',
@@ -280,7 +290,7 @@ describe('POST /api/aws/accounts -- aws_connection_completed funnel event', () =
 describe('GET /api/aws/accounts/connect-init -- aws_connection_started funnel event', () => {
   it('emits aws_connection_started exactly once, associated with the authenticated org', async () => {
     const orgId = await insertOrg();
-    const userId = await insertUser();
+    const userId = await insertUser(orgId);
     stubAuth(userId, orgId);
 
     const response = await fetch(`${baseUrl}/accounts/connect-init`, {
@@ -297,7 +307,7 @@ describe('GET /api/aws/accounts/connect-init -- aws_connection_started funnel ev
 
   it('a second connect-init call for the same org does NOT emit a second aws_connection_started event', async () => {
     const orgId = await insertOrg();
-    const userId = await insertUser();
+    const userId = await insertUser(orgId);
     stubAuth(userId, orgId);
 
     const first = await fetch(`${baseUrl}/accounts/connect-init`, {
@@ -316,7 +326,7 @@ describe('GET /api/aws/accounts/connect-init -- aws_connection_started funnel ev
 
   it('a retry after the session has already expired still does not emit a second event, and existing session upsert behavior is unchanged', async () => {
     const orgId = await insertOrg();
-    const userId = await insertUser();
+    const userId = await insertUser(orgId);
     stubAuth(userId, orgId);
 
     const first = await fetch(`${baseUrl}/accounts/connect-init`, {
@@ -359,7 +369,7 @@ describe('GET /api/aws/accounts/connect-init -- aws_connection_started funnel ev
 
   it('reusing a still-valid session (no new row written) still only ever has one aws_connection_started event', async () => {
     const orgId = await insertOrg();
-    const userId = await insertUser();
+    const userId = await insertUser(orgId);
     stubAuth(userId, orgId);
 
     const first = await fetch(`${baseUrl}/accounts/connect-init`, {

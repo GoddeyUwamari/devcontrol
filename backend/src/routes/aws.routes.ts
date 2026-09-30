@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import { randomBytes } from 'crypto'
 import awsCostService from '../services/aws-cost.service'
 import { pool } from '../config/database'
@@ -6,12 +6,38 @@ import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
 import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
 import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents'
+import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
+import { awsAccountAuditService } from '../services/awsAccountAudit.service'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
 
 // All /api/aws/* routes require authentication
 router.use(authenticate)
+
+/**
+ * Binding the organization's AWS account decides which account every later
+ * discovery, cost, and remediation call targets, and there is no disconnect
+ * route to undo it -- so it is owner-only, checked against the caller's
+ * CURRENT membership (not their JWT role claim).
+ */
+async function requireCurrentOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, message: 'Authentication required' })
+      return
+    }
+    await requireCurrentRole(pool, req.user.organizationId, req.user.userId, ['owner'])
+    next()
+  } catch (err: unknown) {
+    if (err instanceof OrganizationAccessError && err.statusCode === 403) {
+      res.status(403).json({ success: false, message: 'Only an organization owner can connect an AWS account' })
+      return
+    }
+    console.error('[aws] owner check error:', err)
+    res.status(500).json({ success: false, message: 'Failed to verify permissions' })
+  }
+}
 
 const PLATFORM_AWS_ACCOUNT_ID = process.env.AWS_ACCOUNT_ID ?? '815931739526'
 
@@ -73,7 +99,7 @@ router.get('/costs/monthly', async (req: Request, res: Response) => {
 // GET /api/aws/accounts/connect-init
 // Generates and stores a per-org external_id for the connect flow.
 // Must be registered before GET /accounts to avoid shadowing.
-router.get('/accounts/connect-init', async (req: Request, res: Response) => {
+router.get('/accounts/connect-init', requireCurrentOwner, async (req: Request, res: Response) => {
   const orgId = req.user!.organizationId
 
   try {
@@ -131,7 +157,7 @@ router.get('/accounts/connect-init', async (req: Request, res: Response) => {
 
 // POST /api/aws/accounts
 // Validates the role via STS (with ExternalId) then writes a row scoped to this org.
-router.post('/accounts', async (req: Request, res: Response) => {
+router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response) => {
   const orgId = req.user!.organizationId
   const { roleArn, nickname } = req.body
 
@@ -225,6 +251,13 @@ router.post('/accounts', async (req: Request, res: Response) => {
       userId: req.user!.userId,
       eventName: 'aws_connection_completed',
       properties: { accountId },
+    })
+
+    await awsAccountAuditService.record({
+      organizationId: orgId,
+      action: 'aws_account.connected',
+      actorId: req.user!.userId,
+      metadata: { awsAccountId: accountId },
     })
 
     // Clean up session

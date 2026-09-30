@@ -113,9 +113,22 @@ export async function lockOrganizationMemberships(
   );
 }
 
+/** Whether `organizationId` is active and not soft-deleted. */
+async function isActiveOrganization(
+  executor: Pool | PoolClient,
+  organizationId: string
+): Promise<boolean> {
+  const result = await executor.query(
+    `SELECT 1 FROM organizations WHERE id = $1 AND is_active = true AND deleted_at IS NULL`,
+    [organizationId]
+  );
+  return result.rows.length > 0;
+}
+
 /**
  * Throws 403 unless `userId` currently holds one of `allowedRoles` in
- * `organizationId`.
+ * `organizationId`, and that organization is active and not soft-deleted
+ * (the same organization rule SSO sign-in applies).
  */
 export async function requireCurrentRole(
   executor: Pool | PoolClient,
@@ -124,7 +137,7 @@ export async function requireCurrentRole(
   allowedRoles: readonly OrganizationRole[]
 ): Promise<OrganizationRole> {
   const role = await getActiveMembershipRole(executor, organizationId, userId);
-  if (!role || !allowedRoles.includes(role)) {
+  if (!role || !allowedRoles.includes(role) || !(await isActiveOrganization(executor, organizationId))) {
     throw new OrganizationAccessError('Insufficient permissions', 403);
   }
   return role;
