@@ -1,11 +1,35 @@
-import { Router } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import { pool } from '../config/database'
 import crypto from 'crypto'
 import { authenticateToken } from '../middleware/auth.middleware'
+import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 
 const router = Router()
 
 router.use(authenticateToken)
+
+/**
+ * Creating or revoking an organization's API keys is limited to owners and
+ * admins, checked against the caller's CURRENT membership (not their JWT
+ * role claim).
+ */
+async function requireCurrentAdminOrOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, message: 'Authentication required' })
+      return
+    }
+    await requireCurrentRole(pool, req.user.organizationId, req.user.userId, ['owner', 'admin'])
+    next()
+  } catch (err: unknown) {
+    if (err instanceof OrganizationAccessError && err.statusCode === 403) {
+      res.status(403).json({ success: false, message: 'Only an organization owner or admin can manage API keys' })
+      return
+    }
+    console.error('[api-keys] role check error:', err)
+    res.status(500).json({ success: false, message: 'Failed to verify permissions' })
+  }
+}
 
 // GET /api/keys — list the caller's org's active keys (never return the hash)
 router.get('/', async (req, res) => {
@@ -26,7 +50,7 @@ router.get('/', async (req, res) => {
 })
 
 // POST /api/keys — generate a new key scoped to the caller's org
-router.post('/', async (req, res) => {
+router.post('/', requireCurrentAdminOrOwner, async (req, res) => {
   const organizationId = (req as any).user?.organizationId
   const { name, scopes } = req.body
   if (!name?.trim()) {
@@ -59,7 +83,7 @@ router.post('/', async (req, res) => {
 })
 
 // DELETE /api/keys/:id — revoke a key belonging to the caller's org
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireCurrentAdminOrOwner, async (req, res) => {
   const { id } = req.params
   const organizationId = (req as any).user?.organizationId
   try {

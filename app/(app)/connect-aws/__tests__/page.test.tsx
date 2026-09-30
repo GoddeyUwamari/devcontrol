@@ -108,3 +108,25 @@ describe('Connect AWS page — dashboard cache invalidation on successful connec
     expect(invalidateSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('Connect AWS page — connect-init denied for a non-owner', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows the server authorization reason instead of the generic trust-policy error', async () => {
+    mockConnectInit.mockRejectedValue({
+      response: { status: 403, data: { success: false, message: 'Only an organization owner can connect an AWS account' } },
+    })
+    const { toast } = await import('sonner')
+
+    renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+
+    expect(
+      await screen.findByText('Only an organization owner can connect an AWS account. Ask your owner to connect your account.')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Could not load your trust policy/)).not.toBeInTheDocument()
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /connect account/i })).toBeDisabled()
+  })
+})

@@ -12,7 +12,7 @@ export default function ConnectAwsPage() {
   const queryClient = useQueryClient()
 
   const [initData, setInitData] = useState<ConnectInitData | null>(null)
-  const [initError, setInitError] = useState(false)
+  const [initError, setInitError] = useState<string | null>(null)
   const [roleArn, setRoleArn] = useState('')
   const [nickname, setNickname] = useState('')
   const [connecting, setConnecting] = useState(false)
@@ -26,8 +26,15 @@ export default function ConnectAwsPage() {
   useEffect(() => {
     awsAccountsService.connectInit()
       .then(setInitData)
-      .catch(() => {
-        setInitError(true)
+      .catch((err: unknown) => {
+        const response = (err as { response?: { status?: number; data?: { message?: string } } })?.response
+        // Only an owner may connect AWS: show the server's reason, not a refresh prompt.
+        if (response?.status === 403) {
+          const reason = (response.data?.message ?? 'Only an organization owner can connect an AWS account').replace(/\.$/, '')
+          setInitError(`${reason}. Ask your owner to connect your account.`)
+          return
+        }
+        setInitError('Could not load your trust policy. Please refresh the page.')
         toast.error('Could not start the connect flow. Please refresh and try again.')
       })
   }, [])
@@ -107,7 +114,7 @@ export default function ConnectAwsPage() {
 
                     {initError ? (
                       <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
-                        Could not load your trust policy. Please refresh the page.
+                        {initError}
                       </div>
                     ) : !trustPolicyStr ? (
                       <div className="bg-slate-900 rounded-xl p-4 mb-3 animate-pulse h-40" />
