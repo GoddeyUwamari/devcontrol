@@ -494,6 +494,12 @@ export default function DashboardPage() {
     : displayedHealthStatus === 'At Risk' ? { label: 'At Risk', direction: 'down' as const, color: 'var(--text-danger)' }
     : undefined
 
+  // A score built on a partial component (today: observability, which measures
+  // EC2/RDS alert coverage only) is labeled partial with the backend's reason.
+  const infraHealthPartialCaption = !isDemoActive && displayedHealthScore !== null && systemIntelligence?.composite_state === 'partial'
+    ? `Partial · ${systemIntelligence.composite_reason ?? 'built on incomplete evidence'}`
+    : null
+
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
 
   return (
@@ -565,6 +571,7 @@ export default function DashboardPage() {
               value={displayedHealthScore === null ? 'Calculating…' : String(displayedHealthScore)}
               valueSuffix={displayedHealthScore === null ? undefined : '/100'}
               trend={infraHealthBadge ? { direction: infraHealthBadge.direction, label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
+              captions={infraHealthPartialCaption ? [infraHealthPartialCaption] : undefined}
               href="/infrastructure"
             />
           </div>

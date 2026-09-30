@@ -6,7 +6,8 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { alertHistoryService } from '@/lib/services/alert-history.service'
 import { Alert, AlertFilters, DateRangeOption } from '@/lib/types'
-import { Sparkles, ArrowRight, RefreshCw, Bell, Shield, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
+import { RefreshCw, Bell, Shield, AlertTriangle } from 'lucide-react'
+import { IncidentReadinessPanel, type ReadinessLoad, type ReadinessResult, type ReadinessSection } from '@/components/observability/incident-readiness-panel'
 
 const DEMO_HISTORY = [
   { id: 'h1', alertName: 'High CPU Usage',          serviceName: 'api-gateway',          severity: 'critical', status: 'resolved', description: 'CPU usage above 90% for 15 minutes on api-gateway ECS cluster.',       labels: {}, annotations: {}, startedAt: new Date(Date.now() - 1000*60*60*2).toISOString(),  durationMinutes: 25, resolvedAt: new Date(Date.now() - 1000*60*95).toISOString(),      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), costImpact: '$1,240' },
@@ -20,28 +21,58 @@ const DEMO_HISTORY = [
 ] as unknown as Alert[]
 
 const DEMO_STATS = { total: 8, critical: 4, avgResolutionTime: 17, mttr: 22 }
-const DEMO_READINESS = {
-  readiness_score: 72, status: 'Partially Ready',
+const demoSection = <T,>(state: ReadinessSection<T>['state'], source: string, reason: string | null, data: T | null = null, coverage: string | null = null): ReadinessSection<T> =>
+  ({ state, source, asOf: null, coverage, reason, data })
+const DEMO_NOT_SUPPORTED = (source: string, reason: string) => demoSection<never>('not_supported', source, reason)
+const DEMO_READINESS: ReadinessResult = {
+  connected: true,
+  state: 'partial',
+  reason: 'Measures EC2 and RDS alert coverage only (6 of 7 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.',
+  readiness_score: 86,
+  status: 'Ready',
+  discovery_run: { completedAt: new Date(Date.now() - 1000 * 60 * 42).toISOString() },
+  scope: { connectedAccountId: null, discoveryRegion: 'us-east-1' },
   components: {
-    alert_coverage:           { score: 100, label: 'Alert Coverage',    detail: '5 of 5 services have alerts',           status: 'good' },
-    monitoring_coverage:      { score: 80,  label: 'Monitoring',        detail: '4 of 5 services reporting',             status: 'good' },
-    critical_service_coverage:{ score: 100, label: 'Critical Coverage', detail: '3 of 3 critical services covered',      status: 'good' },
-    signal_freshness:         { score: 80,  label: 'Signal Freshness',  detail: 'Metrics up to date',                   status: 'good' },
-    response_config:          { score: 0,   label: 'Response Setup',    detail: 'No alert destinations configured',      status: 'risk' },
+    alert_coverage: {
+      ec2: demoSection('available', 'CloudWatch metric alarms matched to DevControl EC2 inventory', null, {
+        resourceType: 'ec2', applicable: true, inScope: 5, covered: 4, coveragePercent: 80,
+        statusCounts: { running: 5 }, excluded: { notSeenByGatedRun: 0, otherRegion: 0 },
+        nonQualifyingAlarms: { insufficient_data: 1, no_actions: 0, data_unverified: 0 },
+      }),
+      rds: demoSection('available', 'CloudWatch metric alarms matched to DevControl RDS inventory', null, {
+        resourceType: 'rds', applicable: true, inScope: 2, covered: 2, coveragePercent: 100,
+        statusCounts: { available: 2 }, excluded: { notSeenByGatedRun: 0, otherRegion: 0 },
+        nonQualifyingAlarms: { insufficient_data: 0, no_actions: 0, data_unverified: 0 },
+      }),
+      alb: DEMO_NOT_SUPPORTED('ALB alert coverage', 'discovery failures for this type are not recorded'),
+      lambda: DEMO_NOT_SUPPORTED('Lambda alert coverage', 'discovery failures for this type are not recorded'),
+    },
+    monitoring_coverage: DEMO_NOT_SUPPORTED('Monitoring coverage', 'DevControl does not yet check whether each discovered resource is reporting metrics'),
+    signal_freshness: DEMO_NOT_SUPPORTED('Signal freshness', 'DevControl does not yet measure per-resource metric freshness'),
+    response_config: DEMO_NOT_SUPPORTED('Response setup', 'DevControl does not yet record alert destinations or on-call routing'),
   },
-  top_gaps: [{ type: 'response_config', severity: 'medium', message: 'No on-call routing configured — team will not be notified of incidents', action: 'Configure destinations', actionPath: '/settings/notifications' }],
+  alarms: demoSection('available', 'CloudWatch metric alarms', null, {
+    total: 9, matched: 7, orphaned: [{ alarmName: 'legacy-api-cpu' }], unsupported: [{ alarmName: 'fleet-cpu-math' }], unevaluated: 0,
+  }),
+  top_gaps: [{ type: 'alert_coverage_ec2', severity: 'medium', message: '1 of 5 in-scope EC2 resources has no enabled alarm with actions', action: 'Configure alerts', actionPath: '/observability/alerts' }],
 }
 
 type LocalDateRange = '24h' | DateRangeOption
 const toServiceRange = (r: LocalDateRange): DateRangeOption => r === '24h' ? '7d' : r
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
-async function fetchReadiness() {
+/**
+ * connected:false (no AWS account row) is "not connected"; a non-OK response
+ * or unsuccessful body throws, so it surfaces as a request error -- never as
+ * "not connected" and never as a zero score.
+ */
+async function fetchReadiness(): Promise<{ connected: boolean | null; data: ReadinessResult | null }> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   const res = await fetch(`${API_URL}/api/observability/readiness`, { headers: { 'Authorization': `Bearer ${token}` } })
-  if (!res.ok) return null
-  const data = await res.json()
-  return data.success ? data.data : null
+  if (!res.ok) throw new Error(`readiness request failed: ${res.status}`)
+  const body = await res.json()
+  if (!body.success) throw new Error('readiness request failed')
+  return { connected: body.connected ?? null, data: body.data ?? null }
 }
 
 export default function AlertHistoryPage() {
@@ -58,11 +89,17 @@ export default function AlertHistoryPage() {
 
   const { data: historyData, isLoading, refetch } = useQuery({ queryKey: ['alert-history', filters], queryFn: () => alertHistoryService.getAlertHistory(filters), refetchInterval: 60000 })
   const { data: statsData } = useQuery({ queryKey: ['alert-stats-history', serviceRange], queryFn: () => alertHistoryService.getAlertStats({ dateRange: serviceRange }), refetchInterval: 60000 })
-  const { data: readinessData } = useQuery({ queryKey: ['observability-readiness'], queryFn: fetchReadiness, refetchInterval: 120000, enabled: !isDemoActive })
+  const { data: readinessData, isLoading: readinessLoading, isError: readinessError } = useQuery({ queryKey: ['observability-readiness'], queryFn: fetchReadiness, refetchInterval: 120000, enabled: !isDemoActive, retry: false })
 
   const displayAlerts: Alert[] = isDemoActive ? DEMO_HISTORY : (historyData?.data || [])
   const displayStats = isDemoActive ? DEMO_STATS : { total: statsData?.data?.total || 0, critical: statsData?.data?.criticalCount || 0, avgResolutionTime: statsData?.data?.avgResolutionTime || 0, mttr: statsData?.data?.avgResolutionTime || 0 }
-  const displayReadiness = isDemoActive ? DEMO_READINESS : readinessData
+  const readinessLoad: ReadinessLoad = isDemoActive ? { kind: 'loaded', result: DEMO_READINESS }
+    : readinessError ? { kind: 'request_error' }
+    : readinessLoading || !readinessData ? { kind: 'loading' }
+    : readinessData.data ? { kind: 'loaded', result: readinessData.data }
+    : readinessData.connected === false ? { kind: 'not_connected' }
+    : { kind: 'request_error' }
+  const readinessGaps = readinessLoad.kind === 'loaded' ? readinessLoad.result.top_gaps : []
 
   const filteredAlerts = displayAlerts.filter((a: Alert) => {
     if (selectedSeverity !== 'all' && a.severity !== selectedSeverity) return false
@@ -71,9 +108,6 @@ export default function AlertHistoryPage() {
   })
 
   const formatTime = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-
-  const scoreColor = (s: number) => s >= 80 ? '#059669' : s >= 65 ? '#D97706' : '#DC2626'
-  const scoreBg = (s: number) => s >= 80 ? 'bg-green-50 border-green-600' : s >= 65 ? 'bg-amber-50 border-amber-500' : 'bg-red-50 border-red-600'
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
@@ -94,67 +128,8 @@ export default function AlertHistoryPage() {
         </div>
       </div>
 
-      {/* AI Insight */}
-      <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-6 py-4 mb-6 flex items-start gap-3.5">
-        <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-white" /></div>
-        <div className="flex-1">
-          <p className="text-xs font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
-          <p className="text-sm text-slate-700 leading-relaxed">
-            {isDemoActive
-              ? '4 critical alerts resolved in the last 72 hours. RDS Failover and S3 Bucket Policy Change had the fastest resolution times (8m and 3m). Average MTTR is 17 minutes — Elite tier performance.'
-              : displayReadiness
-                ? (() => { const s = displayReadiness.readiness_score; const g = displayReadiness.top_gaps[0]; if (s >= 85) return 'System is fully prepared for incident detection. All services have alert coverage and metrics are reporting normally.'; if (s >= 65) return `System is ${Math.round(s)}% ready for incident detection. ${g ? g.message + '. Fix this to improve response time.' : 'Minor gaps exist in coverage.'}`; return `Incident detection is at risk (${Math.round(s)}/100). ${g ? g.message : 'Multiple coverage gaps detected.'} Resolve gaps before the next incident occurs.` })()
-                : 'Connect your AWS account to begin incident readiness monitoring.'}
-          </p>
-        </div>
-        <a href="/observability/alerts" className="text-xs font-semibold text-violet-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">Active alerts <ArrowRight size={11} /></a>
-      </div>
-
-      {/* Readiness banner */}
-      {displayReadiness && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7 mb-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
-            <div className="flex items-center gap-4">
-              <div className={`w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center shrink-0 ${scoreBg(displayReadiness.readiness_score)}`}>
-                <span className="text-sm font-bold leading-none" style={{ color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.readiness_score}</span>
-                <span className="text-xs text-slate-500 font-semibold uppercase tracking-widest">/100</span>
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <p className="text-sm font-semibold text-slate-900">Incident Readiness</p>
-                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ background: scoreBg(displayReadiness.readiness_score).includes('green') ? '#F0FDF4' : scoreBg(displayReadiness.readiness_score).includes('amber') ? '#FFFBEB' : '#FEF2F2', color: scoreColor(displayReadiness.readiness_score) }}>{displayReadiness.status}</span>
-                </div>
-                <p className="text-xs text-slate-500">{displayReadiness.top_gaps.length === 0 ? 'All systems ready — full incident detection coverage' : `${displayReadiness.top_gaps.length} gap${displayReadiness.top_gaps.length !== 1 ? 's' : ''} reducing detection capability`}</p>
-                {displayReadiness.readiness_score < 80 && (
-                  <p className="text-xs font-medium mt-1" style={{ color: scoreColor(displayReadiness.readiness_score) }}>
-                    {displayReadiness.readiness_score < 65 ? 'Incidents may go undetected — immediate action required' : 'Detection and response may be delayed for critical failures'}
-                  </p>
-                )}
-              </div>
-            </div>
-            {displayReadiness.top_gaps[0] && (
-              <a href={displayReadiness.top_gaps[0].actionPath} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold no-underline transition-colors whitespace-nowrap self-start sm:self-auto">
-                {displayReadiness.top_gaps[0].action} →
-              </a>
-            )}
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            {Object.values(displayReadiness.components).map((comp: any) => {
-              const isRisk = comp.status === 'risk', isWarn = comp.status === 'warning'
-              return (
-                <div key={comp.label} className={`rounded-xl p-3.5 border ${isRisk ? 'bg-red-50 border-l-2 border-red-600 border-t-red-100 border-r-red-100 border-b-red-100' : isWarn ? 'bg-amber-50 border-l-2 border-amber-500 border-t-amber-100 border-r-amber-100 border-b-amber-100' : 'bg-slate-50 border-slate-100'}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{comp.label}</p>
-                    {comp.status === 'good' ? <CheckCircle2 size={12} className="text-green-600 shrink-0" /> : comp.status === 'warning' ? <AlertTriangle size={12} className="text-amber-500 shrink-0" /> : <XCircle size={12} className="text-red-600 shrink-0" />}
-                  </div>
-                  <div className="text-xl font-bold leading-none mb-1.5" style={{ color: scoreColor(comp.score) }}>{comp.score}%</div>
-                  <p className="text-xs text-slate-500 leading-snug">{comp.detail}</p>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      {/* Incident readiness -- evidence-based EC2/RDS alert coverage */}
+      <IncidentReadinessPanel load={readinessLoad} />
 
       {/* KPI cards */}
       {(isDemoActive || displayStats.total > 0) && (
@@ -174,24 +149,12 @@ export default function AlertHistoryPage() {
         </div>
       )}
 
-      {/* Top priority action */}
-      {displayReadiness && (displayReadiness.components.response_config.score === 0 || displayReadiness.components.monitoring_coverage.score < 50) && (
-        <div className="bg-red-50 border border-red-100 border-l-[4px] border-l-red-600 rounded-xl px-4 sm:px-5 py-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-1">Top Priority</p>
-            <p className="text-sm font-semibold text-slate-900 mb-0.5">{displayReadiness.components.response_config.score === 0 ? 'Configure alert destinations' : 'Restore metric reporting for 2 services'}</p>
-            <p className="text-xs text-red-600">{displayReadiness.components.response_config.score === 0 ? 'Without this, your team will not be notified when incidents occur' : 'Services are not sending metrics — incidents may go undetected'}</p>
-          </div>
-          <a href={displayReadiness.components.response_config.score === 0 ? '/settings/notifications' : '/admin/monitoring'} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold no-underline whitespace-nowrap self-start sm:self-auto transition-colors">Fix now →</a>
-        </div>
-      )}
-
       {/* Coverage gaps */}
-      {displayReadiness?.top_gaps?.length > 0 && (
+      {readinessGaps.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 mb-6">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Coverage Gaps</p>
           <div className="flex flex-col gap-2.5">
-            {[...displayReadiness.top_gaps].sort((a: any, b: any) => ({ high: 0, medium: 1, low: 2 }[a.severity as string] ?? 2) - ({ high: 0, medium: 1, low: 2 }[b.severity as string] ?? 2)).map((gap: any, i: number) => (
+            {[...readinessGaps].sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity] ?? 2) - ({ high: 0, medium: 1, low: 2 }[b.severity] ?? 2)).map((gap, i) => (
               <div key={i} className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-4 py-3 rounded-xl border bg-white border-slate-200">
                 <div className="flex items-start gap-2.5">
                   <AlertTriangle size={13} className={`shrink-0 mt-0.5 ${gap.severity === 'high' ? 'text-red-600' : 'text-amber-500'}`} />
@@ -237,7 +200,7 @@ export default function AlertHistoryPage() {
           {isLoading && !isDemoActive ? (
             <div className="p-12 text-center"><RefreshCw size={18} className="text-slate-300 mx-auto mb-3" /><p className="text-sm text-slate-500">Loading alert history...</p></div>
           ) : filteredAlerts.length === 0 ? (
-            <EmptyHistory alertCoverageScore={displayReadiness?.components.alert_coverage.score} />
+            <EmptyHistory />
           ) : filteredAlerts.map((alert: Alert, idx: number) => {
             const sevCls = alert.severity === 'critical' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
             const cost = (alert as any).costImpact
@@ -260,7 +223,7 @@ export default function AlertHistoryPage() {
 
         {/* Mobile cards */}
         <div className="sm:hidden flex flex-col divide-y divide-slate-50">
-          {filteredAlerts.length === 0 ? <EmptyHistory alertCoverageScore={displayReadiness?.components.alert_coverage.score} /> : filteredAlerts.map((alert: Alert) => {
+          {filteredAlerts.length === 0 ? <EmptyHistory /> : filteredAlerts.map((alert: Alert) => {
             const sevCls = alert.severity === 'critical' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
             const cost = (alert as any).costImpact
             return (
@@ -286,16 +249,15 @@ export default function AlertHistoryPage() {
   )
 }
 
-function EmptyHistory({ alertCoverageScore }: { alertCoverageScore?: number }) {
-  const isFullCoverage = alertCoverageScore === 100
+function EmptyHistory() {
   return (
     <div className="p-10 sm:p-16 text-center">
       <div className="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-4"><Shield size={20} className="text-violet-600" /></div>
       <p className="text-sm font-semibold text-slate-900 mb-2">No incidents recorded yet</p>
       <p className="text-sm text-slate-500 leading-relaxed mb-1 max-w-sm mx-auto">When alerts are triggered, this timeline will show what happened, which service was affected, how long it lasted, and how quickly it was resolved.</p>
       <p className="text-xs text-slate-500 mb-6">Use this to audit reliability and improve engineering response times.</p>
-      <a href={isFullCoverage ? '/monitoring' : '/observability/alerts'} className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-xs font-semibold no-underline transition-colors">
-        {isFullCoverage ? 'Fix Monitoring Coverage →' : 'Configure Alerts →'}
+      <a href="/observability/alerts" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-xs font-semibold no-underline transition-colors">
+        Configure Alerts →
       </a>
     </div>
   )

@@ -12,13 +12,30 @@ export interface SystemIntelligenceComponentScore {
   costSource?: 'actual' | 'estimated';
 }
 
+/** The backend's ContextDataState, as carried on the observability component and the composite. */
+export type EvidenceState = 'available' | 'partial' | 'unavailable' | 'error' | 'not_supported';
+
+/**
+ * Observability carries its evidence state: score is null whenever nothing was
+ * measured (never 0 from a failure), and 'partial' means it measures EC2/RDS
+ * alert coverage only -- reason says so.
+ */
+export interface ObservabilityComponentScore extends Omit<SystemIntelligenceComponentScore, 'score'> {
+  score: number | null;
+  state: EvidenceState;
+  reason: string | null;
+}
+
 export interface SystemIntelligenceResult {
   system_score: number | null;
+  /** 'partial' when system_score is built on a partial component; composite_reason says why. null with a null score. */
+  composite_state: 'available' | 'partial' | null;
+  composite_reason: string | null;
   status: 'Healthy' | 'Stable' | 'Degraded' | 'At Risk' | 'Pending';
   components: {
     cost: SystemIntelligenceComponentScore;
     security: SystemIntelligenceComponentScore;
-    observability: SystemIntelligenceComponentScore;
+    observability: ObservabilityComponentScore;
   };
   top_action: {
     message: string;

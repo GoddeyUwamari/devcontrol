@@ -37,6 +37,7 @@ import {
   hasEvidence,
   notSupported,
   requireOrganizationId,
+  type ContextDataState,
   type ContextSection,
 } from './ai-context-contract';
 import { lastIncludedDay } from './ai-chat.service';
@@ -50,7 +51,7 @@ const EMPTY_FIELDS: StructuredDashboardSummary = {
 };
 
 /** Bump when the prompt or the facts it is built from change, so cached prose is not reused. */
-const PROMPT_VERSION = 'dashboard-summary-v2';
+const PROMPT_VERSION = 'dashboard-summary-v3';
 
 /** Shown instead of any model-written status while DevControl evaluates no outage/anomaly source. */
 export const SYSTEM_STATUS_UNAVAILABLE = 'Outage status unavailable: DevControl does not currently evaluate outages or incidents.';
@@ -76,7 +77,7 @@ interface CacheEntry {
 }
 
 export interface DashboardSections {
-  systemScore: ContextSection<{ score: number; cost: number | null; security: number | null; observability: number | null }>;
+  systemScore: ContextSection<{ score: number; cost: number | null; security: number | null; observability: number | null; observabilityState: ContextDataState }>;
   securityPosture: ContextSection<{ score: number; combinedFindings: number }>;
   accountFindings: ContextSection<{ count: number; top: { title: string; severity: string } | null }>;
   recommendations: ContextSection<{ active: number; totalEstimatedMonthlySavings: number }>;
@@ -151,15 +152,18 @@ export class AISummaryService {
         async () => {
           const intelligence = await systemIntelligenceService.getSystemIntelligence(organizationId);
           if (intelligence.system_score == null) return { state: 'unavailable', reason: 'the System Intelligence score is not ready yet' };
-          return {
-            state: 'available',
-            data: {
-              score: intelligence.system_score,
-              cost: intelligence.components.cost.score ?? null,
-              security: intelligence.components.security.score ?? null,
-              observability: intelligence.components.observability.score ?? null,
-            },
+          const observability = intelligence.components.observability;
+          const data = {
+            score: intelligence.system_score,
+            cost: intelligence.components.cost.score ?? null,
+            security: intelligence.components.security.score ?? null,
+            observability: observability.score ?? null,
+            observabilityState: observability.state,
           };
+          // A composite built on a partial component is itself partial.
+          return intelligence.composite_state === 'partial'
+            ? { state: 'partial', data, reason: intelligence.composite_reason }
+            : { state: 'available', data };
         }
       ),
       collectSection<DashboardSections['securityPosture'] extends ContextSection<infer T> ? T : never>(
@@ -204,7 +208,13 @@ export class AISummaryService {
 
     if (hasEvidence(s.systemScore)) {
       const d = s.systemScore.data;
-      facts.push(`Composite System Intelligence score: ${d.score}/100 (Cost ${d.cost}, Security ${d.security}, Observability ${d.observability}).`);
+      const observability = d.observabilityState === 'partial'
+        ? `Observability ${d.observability}, which measures EC2/RDS alert coverage only`
+        : `Observability ${d.observability}`;
+      const partial = s.systemScore.state === 'partial'
+        ? ` This composite is partial and must be described as partial: ${missing(s.systemScore)}.`
+        : '';
+      facts.push(`Composite System Intelligence score: ${d.score}/100 (Cost ${d.cost}, Security ${d.security}, ${observability}).${partial}`);
     }
 
     if (hasEvidence(s.securityPosture) && hasEvidence(s.accountFindings)) {

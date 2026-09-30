@@ -372,12 +372,14 @@ function InfrastructureContent() {
     // 73 is 'Stable' under the canonical overall thresholds (scoreToStatus:
     // >=85 Healthy, >=70 Stable, >=50 Degraded, else At Risk).
     system_score: 73, status: 'Stable',
+    composite_state: 'partial',
+    composite_reason: 'Observability is partial: it measures EC2/RDS alert coverage only.',
     top_action: { message: 'Over-provisioned compute + unused storage', consequence: '', path: '/costs/cost-optimization', severity: 'high' },
     top_drivers: [],
     components: {
       cost:          { score: 55, detail: '$2,039/mo savings identified', status: 'warning' },
       security:      { score: 87, detail: 'No critical issues',           status: 'good'    },
-      observability: { score: 65, detail: '11 alarms configured',         status: 'warning' },
+      observability: { score: 65, detail: 'Alert coverage 65% · EC2/RDS only', status: 'warning', state: 'partial' },
     },
   }
 
@@ -403,6 +405,12 @@ function InfrastructureContent() {
   const intelCostScore   = intelComponents.cost.score
   const intelSecScore    = intelComponents.security.score
   const intelObsScore    = intelComponents.observability.score
+  // The composite is partial when built on a partial component (today:
+  // observability, which measures EC2/RDS alert coverage only).
+  const intelPartialReason = intelReady && intel?.composite_state === 'partial'
+    ? (intel.composite_reason ?? 'built on incomplete evidence')
+    : null
+  const intelObsPartial  = intelReady && intelComponents.observability.state === 'partial'
   // Score impact is the backend's own top_drivers[0].impact_score --
   // round((100 - component score) x that component's 30/40/30 weight): the
   // most the System Score can gain if that component reaches 100. A calculated
@@ -601,6 +609,7 @@ function InfrastructureContent() {
               <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
               <p className="text-base font-bold text-slate-900 mb-0.5">{intelStatus}</p>
               <p data-testid="system-score-basis" className="text-xs text-slate-500">Readiness across cost, security, and observability setup — not measured uptime or performance</p>
+              {intelPartialReason && <p data-testid="system-score-partial" className="text-xs font-medium text-amber-700">Partial · {intelPartialReason}</p>}
               {intelCalculatedAgo && <p className="text-xs text-slate-500">Calculated {intelCalculatedAgo}</p>}
             </div>
           </div>
@@ -632,13 +641,14 @@ function InfrastructureContent() {
           {/* Component scores */}
           <div className="grid grid-cols-3 gap-2.5">
             {[
-              { label: COMPONENT_LABELS.cost,          score: intelCostScore, chip: scoreChip(intelCostScore) },
-              { label: COMPONENT_LABELS.security,      score: intelSecScore,  chip: scoreChip(intelSecScore)  },
-              { label: COMPONENT_LABELS.observability, score: intelObsScore,  chip: scoreChip(intelObsScore)  },
-            ].map(({ label, score, chip }) => (
+              { label: COMPONENT_LABELS.cost,          score: intelCostScore, chip: scoreChip(intelCostScore), partial: false },
+              { label: COMPONENT_LABELS.security,      score: intelSecScore,  chip: scoreChip(intelSecScore),  partial: false },
+              { label: COMPONENT_LABELS.observability, score: intelObsScore,  chip: scoreChip(intelObsScore),  partial: intelObsPartial },
+            ].map(({ label, score, chip, partial }) => (
               <div key={label} className="text-center">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ color: chip.color, background: chip.bg }}>{score}/100</span>
+                {partial && <p data-testid="observability-partial" className="text-xs font-medium text-amber-700 mt-1">Partial</p>}
               </div>
             ))}
           </div>

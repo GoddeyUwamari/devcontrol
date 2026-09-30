@@ -55,7 +55,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const component = (score: number, status: 'good' | 'warning' | 'risk') => ({ score, status, detail: '', label: '', severity: 'medium', delta: null, ready: true })
 
-function mockIntelligence(system_score: number | null, status: string) {
+function mockIntelligence(system_score: number | null, status: string, extra: { composite_state?: string | null; composite_reason?: string | null; observabilityState?: string } = {}) {
   global.fetch = vi.fn().mockImplementation((url: string) => {
     if (url.includes('/api/observability/intelligence')) {
       return Promise.resolve({
@@ -65,7 +65,9 @@ function mockIntelligence(system_score: number | null, status: string) {
           data: {
             system_score,
             status,
-            components: { cost: component(95, 'good'), security: component(90, 'good'), observability: component(88, 'good') },
+            composite_state: extra.composite_state ?? 'available',
+            composite_reason: extra.composite_reason ?? null,
+            components: { cost: component(95, 'good'), security: component(90, 'good'), observability: { ...component(88, 'good'), state: extra.observabilityState ?? 'available', reason: null } },
             top_action: { message: 'Real top action', consequence: '', path: '/costs', severity: 'high' },
             top_drivers: [],
             computed_at: '2026-09-23T00:00:00.000Z',
@@ -152,5 +154,28 @@ describe('/infrastructure subtitle', () => {
 
     const subtitle = await screen.findByText(/Visibility into cost, health, and risk/)
     expect(subtitle.textContent).not.toMatch(/real[- ]?time/i)
+  })
+})
+
+describe('/infrastructure System Score -- partial composite', () => {
+  const REASON = 'Observability is partial: Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
+
+  it('a partial composite shows a visible "Partial" label with the backend reason, and marks Observability partial', async () => {
+    mockIntelligence(51, 'Degraded', { composite_state: 'partial', composite_reason: REASON, observabilityState: 'partial' })
+    mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
+    renderPage()
+
+    const partial = await screen.findByTestId('system-score-partial')
+    expect(partial.textContent).toBe(`Partial · ${REASON}`)
+    expect(screen.getByTestId('observability-partial').textContent).toBe('Partial')
+  })
+
+  it('an available composite shows no partial label', async () => {
+    mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
+    renderPage()
+
+    await screen.findByTestId('system-score-basis')
+    expect(screen.queryByTestId('system-score-partial')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('observability-partial')).not.toBeInTheDocument()
   })
 })

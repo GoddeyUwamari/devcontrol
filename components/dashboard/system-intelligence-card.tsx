@@ -1,7 +1,7 @@
 import { Gauge } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
+import type { ObservabilityComponentScore, SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
 
 type ComponentStatus = SystemIntelligenceComponentScore['status']
 
@@ -26,16 +26,20 @@ const STATUS_FILL_CLASS: Record<ComponentStatus, string> = {
 
 const COMPONENT_ORDER = ['cost', 'security', 'observability'] as const
 
-function ComponentColumn({ component, statusBadge }: { component: SystemIntelligenceComponentScore; statusBadge: SystemIntelligenceCardProps['statusBadge'] }) {
-  // `ready: false` still carries a number (a neutral 50, a preliminary score, or
-  // an error's 0) -- so nothing score-derived is rendered until the component
-  // itself says its result is real.
-  if (!component.ready) {
+function ComponentColumn({ component, statusBadge }: { component: SystemIntelligenceComponentScore | ObservabilityComponentScore; statusBadge: SystemIntelligenceCardProps['statusBadge'] }) {
+  // Only observability carries an evidence state today.
+  const state = 'state' in component ? component.state : undefined
+  const reason = 'reason' in component ? component.reason : null
+
+  // `ready: false` can still carry a number (a neutral 50 or a preliminary
+  // score), and observability's score is null when nothing was measured -- so
+  // nothing score-derived is rendered until the component says it is real.
+  if (!component.ready || component.score === null) {
     return (
       <div className="min-w-0">
         <p className="text-sm font-semibold text-foreground truncate">{component.label}</p>
         <p className="text-base font-bold text-[var(--text-secondary)] mt-1">—</p>
-        <p className="text-xs text-[var(--text-secondary)]">Not yet available</p>
+        <p className="text-xs text-[var(--text-secondary)]">{state === 'error' ? 'Could not be retrieved' : 'Not yet available'}</p>
       </div>
     )
   }
@@ -48,6 +52,12 @@ function ComponentColumn({ component, statusBadge }: { component: SystemIntellig
         <span className="text-base font-bold text-foreground">{component.score}</span>
         <span className="text-[var(--text-secondary)]"> · </span>
         <span className="font-semibold" style={{ color: badge.color }}>{badge.label}</span>
+        {state === 'partial' && (
+          <>
+            <span className="text-[var(--text-secondary)]"> · </span>
+            <span data-testid={`${component.label}-partial`} className="font-semibold text-[var(--text-warning)]">Partial</span>
+          </>
+        )}
       </p>
       <Progress
         value={component.score}
@@ -57,8 +67,11 @@ function ComponentColumn({ component, statusBadge }: { component: SystemIntellig
         aria-valuenow={component.score}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuetext={`${component.score} of 100, ${badge.label}`}
+        aria-valuetext={`${component.score} of 100, ${badge.label}${state === 'partial' ? ', partial' : ''}`}
       />
+      {state === 'partial' && reason && (
+        <p className="text-xs text-[var(--text-secondary)] mt-2 leading-snug">{reason}</p>
+      )}
     </div>
   )
 }
