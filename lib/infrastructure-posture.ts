@@ -28,13 +28,15 @@ type PostureStatus = SystemIntelligenceResult['status']
  * Display label for the backend's existing composite status (scoreToStatus:
  * >=85 Healthy, >=70 Stable, >=50 Degraded, else At Risk). Only the words
  * change: "Healthy"/"Degraded" read as runtime health, which this score does
- * not measure. 'Pending' has no label (the score is not ready).
+ * not measure. Score-level results below Stable read "Needs attention" (the
+ * Dashboard badge still colors Degraded and At Risk differently). 'Pending'
+ * has no label (the score is not ready).
  */
 export const POSTURE_STATUS_LABELS: Record<Exclude<PostureStatus, 'Pending'>, string> = {
   Healthy: 'Strong',
   Stable: 'Stable',
   Degraded: 'Needs attention',
-  'At Risk': 'At risk',
+  'At Risk': 'Needs attention',
 }
 
 export function postureStatusLabel(status: string | null | undefined): string | null {

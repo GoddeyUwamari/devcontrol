@@ -34,7 +34,7 @@ describe('postureStatusLabel -- display words for the existing canonical status'
     ['Healthy', 'Strong'],
     ['Stable', 'Stable'],
     ['Degraded', 'Needs attention'],
-    ['At Risk', 'At risk'],
+    ['At Risk', 'Needs attention'],
   ])('%s -> %s', (status, label) => {
     expect(postureStatusLabel(status)).toBe(label)
   })
