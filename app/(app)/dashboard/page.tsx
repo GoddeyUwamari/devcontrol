@@ -29,13 +29,14 @@ import { costRecommendationsService } from '@/lib/services/cost-recommendations.
 import { computeDashboardAwsGates } from './dashboardAwsGates'
 import { computeDashboardSpendCard } from './dashboardSpendCard'
 import { computeSecurityHealthKpi, SECURITY_STATUS_BADGE } from './securityHealthKpi'
+import { INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/auth-context'
-import { DollarSign, ShieldCheck, HeartPulse, Wifi, WifiOff } from 'lucide-react'
+import { DollarSign, ShieldCheck, Gauge, Wifi, WifiOff } from 'lucide-react'
 
 type CostRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
 
@@ -315,7 +316,7 @@ export default function DashboardPage() {
   // AI Chat cost-context path (per-org cached Cost Explorer results); nothing is sent from here.
   const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, !isDemoActive && hasBillingData)
 
-  // Canonical System Intelligence score for the Infrastructure Health KPI --
+  // Canonical System Intelligence score for the Infrastructure Posture KPI --
   // same endpoint/cache the Infrastructure page reads, independent of
   // useAISummary's own narrative pipeline (still used above for Top Risk).
   const { data: systemIntelligence, isLoading: systemIntelligenceLoading } = useSystemIntelligence(organization?.id, !isDemoActive)
@@ -470,7 +471,7 @@ export default function DashboardPage() {
   // No summary (disabled, failed, or not yet returned) is 'unavailable', never "no risks".
   const topRiskStatus = isDemoActive ? 'identified' as const : (aiSummaryData?.topRiskStatus ?? 'unavailable')
 
-  // Infrastructure Health reads the canonical System Intelligence score
+  // Infrastructure Posture reads the canonical System Intelligence score
   // directly (same computation, same shared 2-minute cache the Infrastructure
   // page reads via GET /api/observability/intelligence -- see
   // useSystemIntelligence / system-intelligence.service.ts's 30/40/30
@@ -480,25 +481,25 @@ export default function DashboardPage() {
   // same "Calculating…" state below as before -- never an invented number.
   const displayedHealthScore = isDemoActive ? 87 : (systemIntelligence?.system_score ?? null)
 
-  // Badge label is the canonical status from the same System Intelligence
-  // response (scoreToStatus: >=85 Healthy, >=70 Stable, >=50 Degraded, else At
-  // Risk) -- not a second, locally-invented tier with its own thresholds and
-  // wording, which previously showed "Monitor" where the API said "Degraded".
-  // 'Pending' (not ready) and a null score render no badge. Demo keeps its
-  // fixed 87, which is 'Healthy' under the same thresholds.
+  // Badge is the canonical status from the same System Intelligence response
+  // (scoreToStatus: >=85 Healthy, >=70 Stable, >=50 Degraded, else At Risk) --
+  // never a locally-invented tier. Only its display words change (see
+  // postureStatusLabel): the composite is a posture score, so it is never shown
+  // as "Healthy"/"Degraded". 'Pending' (not ready) and a null score render no
+  // badge. Demo keeps its fixed 87, which is 'Healthy' under the same thresholds.
   const displayedHealthStatus = isDemoActive ? 'Healthy' : (systemIntelligence?.status ?? null)
-  const infraHealthBadge = displayedHealthScore === null ? undefined
-    : displayedHealthStatus === 'Healthy' ? { label: 'Healthy', direction: 'up' as const, color: 'var(--text-success)' }
-    : displayedHealthStatus === 'Stable' ? { label: 'Stable', direction: 'flat' as const, color: 'var(--text-success)' }
-    : displayedHealthStatus === 'Degraded' ? { label: 'Degraded', direction: 'flat' as const, color: 'var(--text-warning)' }
-    : displayedHealthStatus === 'At Risk' ? { label: 'At Risk', direction: 'down' as const, color: 'var(--text-danger)' }
-    : undefined
+  const postureBadgeLabel = postureStatusLabel(displayedHealthStatus)
+  const infraHealthBadge = displayedHealthScore === null || postureBadgeLabel === null ? undefined
+    : displayedHealthStatus === 'Healthy' ? { label: postureBadgeLabel, direction: 'up' as const, color: 'var(--text-success)' }
+    : displayedHealthStatus === 'Stable' ? { label: postureBadgeLabel, direction: 'flat' as const, color: 'var(--text-success)' }
+    : displayedHealthStatus === 'Degraded' ? { label: postureBadgeLabel, direction: 'flat' as const, color: 'var(--text-warning)' }
+    : { label: postureBadgeLabel, direction: 'down' as const, color: 'var(--text-danger)' }
 
-  // A score built on a partial component (today: observability, which measures
-  // EC2/RDS alert coverage only) is labeled partial with the backend's reason.
-  const infraHealthPartialCaption = !isDemoActive && displayedHealthScore !== null && systemIntelligence?.composite_state === 'partial'
-    ? `Partial · ${systemIntelligence.composite_reason ?? 'built on incomplete evidence'}`
-    : null
+  // What the composite is built from, then -- when the backend marked it
+  // partial (today: alert coverage measures EC2/RDS only) -- why.
+  const infraPostureCaptions = isDemoActive || displayedHealthScore === null
+    ? []
+    : [postureCompositionCaption(systemIntelligence?.components), posturePartialCaption(systemIntelligence)].filter((c): c is string => c !== null)
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
 
@@ -564,14 +565,14 @@ export default function DashboardPage() {
             />
 
             <DashboardMetricCard
-              icon={HeartPulse}
+              icon={Gauge}
               iconColor="var(--text-accent)"
               iconBackground="var(--bg-accent)"
-              label="Infrastructure Health"
+              label={INFRASTRUCTURE_POSTURE_LABEL}
               value={displayedHealthScore === null ? 'Calculating…' : String(displayedHealthScore)}
               valueSuffix={displayedHealthScore === null ? undefined : '/100'}
               trend={infraHealthBadge ? { direction: infraHealthBadge.direction, label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
-              captions={infraHealthPartialCaption ? [infraHealthPartialCaption] : undefined}
+              captions={infraPostureCaptions.length > 0 ? infraPostureCaptions : undefined}
               href="/infrastructure"
             />
           </div>
@@ -583,8 +584,8 @@ export default function DashboardPage() {
             systemStatus={{ value: statusConf.value, label: statusConf.label, color: statusConf.color, background: statusConf.background, dotColor: statusConf.dot }}
           />
 
-          {/* ── PLATFORM EFFICIENCY BREAKDOWN ── */}
-          {/* Same already-fetched systemIntelligence as the Infrastructure Health KPI -- no second query. */}
+          {/* ── INFRASTRUCTURE POSTURE BREAKDOWN ── */}
+          {/* Same already-fetched systemIntelligence as the Infrastructure Posture KPI -- no second query. */}
           <SystemIntelligenceCard
             isDemoActive={isDemoActive}
             components={systemIntelligence?.components}

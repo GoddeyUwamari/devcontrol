@@ -182,6 +182,16 @@ export function IncidentReadinessPanel({ load }: { load: ReadinessLoad }) {
     ['Signal freshness', c.signal_freshness],
     ['Response setup', c.response_config],
   ]
+  // The measured result in the backend's own counts and scope, e.g. "0 of 1 EC2
+  // instances" -- in place of the score's Ready / Partially Ready / At Risk
+  // band, which reads as a verdict on all infrastructure. null when nothing was
+  // scored (the state chip then says why).
+  const coverageSummary = score === null ? null : (() => {
+    const parts = ([['EC2', c.alert_coverage.ec2], ['RDS', c.alert_coverage.rds]] as const)
+      .filter(([, section]) => section.data?.applicable)
+      .map(([label, section]) => `${section.data!.covered} of ${section.data!.inScope} ${label} instance${section.data!.inScope !== 1 ? 's' : ''}`)
+    return parts.length > 0 ? parts.join(' · ') : null
+  })()
 
   return (
     <div data-testid="readiness-panel" className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7 mb-5">
@@ -204,11 +214,16 @@ export function IncidentReadinessPanel({ load }: { load: ReadinessLoad }) {
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <p className="text-sm font-semibold text-slate-900">Incident Readiness</p>
-              <span data-testid="readiness-state" className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600">{STATE_LABEL[r.state]}</span>
-              {score !== null && r.status && (
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ color: scoreColor(score), background: '#F8FAFC' }}>{r.status}</span>
+              {coverageSummary === null && (
+                <span data-testid="readiness-state" className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600">{STATE_LABEL[r.state]}</span>
               )}
             </div>
+            {coverageSummary !== null && (
+              <p data-testid="readiness-coverage" className="text-sm font-semibold text-slate-700 mb-1">
+                Alert coverage: {coverageSummary}
+                {r.state === 'partial' && <span data-testid="readiness-state" className="text-amber-700"> · Partial scope</span>}
+              </p>
+            )}
             {r.reason && <p data-testid="readiness-reason" className="text-xs text-slate-500 leading-snug max-w-2xl">{r.reason}</p>}
             {r.discovery_run && r.scope && (
               <p className="text-xs text-slate-400 mt-1">

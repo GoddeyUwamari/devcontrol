@@ -2,8 +2,10 @@ import { Gauge } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ObservabilityComponentScore, SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
+import { INFRASTRUCTURE_POSTURE_DESCRIPTION, INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS } from '@/lib/infrastructure-posture'
 
 type ComponentStatus = SystemIntelligenceComponentScore['status']
+type ComponentKey = keyof SystemIntelligenceResult['components']
 
 interface SystemIntelligenceCardProps {
   isDemoActive: boolean
@@ -26,10 +28,14 @@ const STATUS_FILL_CLASS: Record<ComponentStatus, string> = {
 
 const COMPONENT_ORDER = ['cost', 'security', 'observability'] as const
 
-function ComponentColumn({ component, statusBadge }: { component: SystemIntelligenceComponentScore | ObservabilityComponentScore; statusBadge: SystemIntelligenceCardProps['statusBadge'] }) {
-  // Only observability carries an evidence state today.
+function ComponentColumn({ componentKey, component, statusBadge }: { componentKey: ComponentKey; component: SystemIntelligenceComponentScore | ObservabilityComponentScore; statusBadge: SystemIntelligenceCardProps['statusBadge'] }) {
+  const label = POSTURE_COMPONENT_LABELS[componentKey]
+  // Only observability (alert coverage) carries an evidence state today.
   const state = 'state' in component ? component.state : undefined
   const reason = 'reason' in component ? component.reason : null
+  // Alert coverage is a coverage percentage, not a posture grade: it shows its
+  // value and scope, not the Strong / Needs attention / At risk wording.
+  const isAlertCoverage = componentKey === 'observability'
 
   // `ready: false` can still carry a number (a neutral 50 or a preliminary
   // score), and observability's score is null when nothing was measured -- so
@@ -37,25 +43,30 @@ function ComponentColumn({ component, statusBadge }: { component: SystemIntellig
   if (!component.ready || component.score === null) {
     return (
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-foreground truncate">{component.label}</p>
+        <p className="text-sm font-semibold text-foreground truncate">{label}</p>
         <p className="text-base font-bold text-[var(--text-secondary)] mt-1">—</p>
         <p className="text-xs text-[var(--text-secondary)]">{state === 'error' ? 'Could not be retrieved' : 'Not yet available'}</p>
       </div>
     )
   }
 
-  const badge = statusBadge[component.status]
+  const badge = isAlertCoverage ? null : statusBadge[component.status]
+  const valueText = isAlertCoverage ? `${component.score}%` : String(component.score)
   return (
     <div className="min-w-0">
-      <p className="text-sm font-semibold text-foreground truncate">{component.label}</p>
+      <p className="text-sm font-semibold text-foreground truncate">{label}</p>
       <p className="text-xs mt-1 mb-2">
-        <span className="text-base font-bold text-foreground">{component.score}</span>
-        <span className="text-[var(--text-secondary)]"> · </span>
-        <span className="font-semibold" style={{ color: badge.color }}>{badge.label}</span>
+        <span className="text-base font-bold text-foreground">{valueText}</span>
+        {badge && (
+          <>
+            <span className="text-[var(--text-secondary)]"> · </span>
+            <span className="font-semibold" style={{ color: badge.color }}>{badge.label}</span>
+          </>
+        )}
         {state === 'partial' && (
           <>
             <span className="text-[var(--text-secondary)]"> · </span>
-            <span data-testid={`${component.label}-partial`} className="font-semibold text-[var(--text-warning)]">Partial</span>
+            <span data-testid={`${label}-partial`} className="font-semibold text-[var(--text-warning)]">Partial</span>
           </>
         )}
       </p>
@@ -63,11 +74,11 @@ function ComponentColumn({ component, statusBadge }: { component: SystemIntellig
         value={component.score}
         className="h-1.5 bg-[color:var(--border)]"
         indicatorClassName={STATUS_FILL_CLASS[component.status]}
-        aria-label={`${component.label} score`}
+        aria-label={`${label} score`}
         aria-valuenow={component.score}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuetext={`${component.score} of 100, ${badge.label}${state === 'partial' ? ', partial' : ''}`}
+        aria-valuetext={`${isAlertCoverage ? `${valueText} alert coverage` : `${valueText} of 100`}${badge ? `, ${badge.label}` : ''}${state === 'partial' ? ', partial' : ''}`}
       />
       {state === 'partial' && reason && (
         <p className="text-xs text-[var(--text-secondary)] mt-2 leading-snug">{reason}</p>
@@ -77,21 +88,22 @@ function ComponentColumn({ component, statusBadge }: { component: SystemIntellig
 }
 
 /**
- * Cost / Security / Observability breakdown of the canonical System
+ * Cost / Security / Alert Coverage breakdown of the canonical System
  * Intelligence result -- the same already-fetched response behind the
- * Infrastructure Health KPI. Labels are the backend's component.label verbatim;
- * each component is gated on its own `ready`. Never shown in demo mode (there
- * are no demo component scores to show, and none are invented).
+ * Infrastructure Posture KPI. Each component is gated on its own `ready`.
+ * Never shown in demo mode (there are no demo component scores to show, and
+ * none are invented).
  */
 export function SystemIntelligenceCard({ isDemoActive, components, isLoading, statusBadge }: SystemIntelligenceCardProps) {
   if (isDemoActive) return null
 
   return (
     <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 mb-6">
-      <div className="flex items-center gap-2.5 mb-4">
+      <div className="flex items-center gap-2.5 mb-1">
         <Gauge size={17} style={{ color: 'var(--text-accent)' }} />
-        <h3 className="text-base font-bold text-foreground">Platform Efficiency Breakdown</h3>
+        <h3 className="text-base font-bold text-foreground">{INFRASTRUCTURE_POSTURE_LABEL}</h3>
       </div>
+      <p className="text-xs text-[var(--text-secondary)] mb-4">{INFRASTRUCTURE_POSTURE_DESCRIPTION}</p>
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
@@ -108,7 +120,7 @@ export function SystemIntelligenceCard({ isDemoActive, components, isLoading, st
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
           {COMPONENT_ORDER.map((key) => (
-            <ComponentColumn key={key} component={components[key]} statusBadge={statusBadge} />
+            <ComponentColumn key={key} componentKey={key} component={components[key]} statusBadge={statusBadge} />
           ))}
         </div>
       )}

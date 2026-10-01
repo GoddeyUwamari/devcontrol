@@ -49,27 +49,55 @@ interface PaginationMeta { shown: number; total: number; hasMore: boolean; curso
 // Shared styling for the non-healthy system-status banner — centralized here instead of
 // repeating the same 3-way ternary in multiple render spots, and so adding a future
 // status only means adding one branch, not hunting down every place it's rendered.
+// Labels describe what the resource checks found, never the whole "system":
+// systemStatus is the worst result among resources that reported telemetry, so
+// one stopped instance makes it 'down'.
 function systemStatusBannerStyle(status: 'degraded' | 'critical' | 'down') {
   switch (status) {
     case 'degraded':
-      return { bg: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500', text: 'text-amber-800', subtext: 'text-amber-700', label: 'Degraded' }
+      return { bg: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500', text: 'text-amber-800', subtext: 'text-amber-700', label: 'Issue detected' }
     case 'critical':
-      return { bg: 'bg-red-50 border-red-200', dot: 'bg-red-600', text: 'text-red-800', subtext: 'text-red-700', label: 'Critical' }
+      return { bg: 'bg-red-50 border-red-200', dot: 'bg-red-600', text: 'text-red-800', subtext: 'text-red-700', label: 'Critical issue detected' }
     case 'down':
-      return { bg: 'bg-red-50 border-red-200', dot: 'bg-red-900', text: 'text-red-900', subtext: 'text-red-700', label: 'Down' }
+      return { bg: 'bg-red-50 border-red-200', dot: 'bg-red-900', text: 'text-red-900', subtext: 'text-red-700', label: 'Resource down or stopped' }
+  }
+}
+
+// Resource check counts among resources reporting telemetry, from the
+// server's healthSummary as-is. Each type runs its own check (status checks
+// for EC2/EBS, thresholds for ALB/Lambda/Aurora...), so a mixed fleet is
+// reported as "N of M with no issues detected" -- never as a health
+// percentage. A resource whose check produced no result ('unknown') is
+// counted as undetermined, never as passing.
+interface CheckCounts { reporting: number; noIssues: number; withIssues: number; undetermined: number; discovered: number }
+function checkCountsFrom(summary: HealthSummary): CheckCounts {
+  const withIssues = summary.degraded + summary.critical + summary.down
+  return {
+    reporting: summary.monitored,
+    noIssues: summary.healthy,
+    withIssues,
+    undetermined: Math.max(0, summary.monitored - summary.healthy - withIssues),
+    discovered: summary.total,
   }
 }
 
 // Health-summary status-dot color, keyed off the same systemStatus the banner uses —
 // separate from systemStatusBannerStyle because the summary line needs a 'healthy' case
-// too (the banner never renders when healthy, so it never needed one).
-function healthSummaryDotColor(status: 'healthy' | 'degraded' | 'critical' | 'down') {
+// too (the banner never renders when healthy, so it never needed one). 'healthy' is the
+// server's fallthrough when no resource reported an issue, so it is only green when at
+// least one check actually passed; otherwise nothing has been determined yet.
+function healthSummaryDotColor(status: 'healthy' | 'degraded' | 'critical' | 'down', counts: CheckCounts) {
   switch (status) {
-    case 'healthy': return 'bg-green-500'
+    case 'healthy': return counts.noIssues > 0 ? 'bg-green-500' : 'bg-slate-300'
     case 'degraded': return 'bg-amber-500'
     case 'critical': return 'bg-red-600'
     case 'down': return 'bg-red-900'
   }
+}
+
+function checkSummaryLabel(status: 'healthy' | 'degraded' | 'critical' | 'down', counts: CheckCounts): string {
+  if (status !== 'healthy') return systemStatusBannerStyle(status).label
+  return counts.noIssues > 0 ? 'No issues detected' : 'No check results yet'
 }
 
 export default function MonitoringPage() {
@@ -97,7 +125,7 @@ export default function MonitoringPage() {
       coverage.cloudfront && 'CloudFront',
       coverage.aurora && 'Aurora',
     ].filter(Boolean)
-    return parts.length > 0 ? parts.join(', ') : 'no monitored resources yet'
+    return parts.length > 0 ? parts.join(', ') : 'no resources discovered yet'
   }, [coverage])
 
   const [systemStatus, setSystemStatus] = useState<SystemStatus>('healthy')
@@ -148,10 +176,7 @@ export default function MonitoringPage() {
   const [pagination, setPagination] = useState<PaginationMeta | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
 
-  const overallHealthPercent = useMemo(() => {
-    if (!healthSummary || healthSummary.monitored === 0) return null
-    return Math.round((healthSummary.healthy / healthSummary.monitored) * 100)
-  }, [healthSummary])
+  const checkCounts = useMemo(() => (healthSummary ? checkCountsFrom(healthSummary) : null), [healthSummary])
 
   const generateDemoMetrics = useCallback(() => {
     setError(null)
@@ -382,7 +407,9 @@ export default function MonitoringPage() {
       setError({
         type: 'connection',
         message: "Can't fetch CloudWatch metrics right now",
-        action: 'Your AWS account is connected, but CloudWatch metrics could not be retrieved this time — usually a temporary API or IAM permissions issue, not an outage. Your infrastructure is still running normally.',
+        // No status of the customer's infrastructure is claimed here: with no CloudWatch
+        // data, DevControl cannot tell whether resources are running normally.
+        action: 'Your AWS account is connected, but CloudWatch metrics could not be retrieved this time — often a temporary API or IAM permissions issue. Resource checks will resume once metrics can be read.',
       })
       return
     }
@@ -495,7 +522,7 @@ export default function MonitoringPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1.5">Infrastructure Intelligence</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">AWS infrastructure health, performance, cost, and risk. {coverageLabel} · {cloudWatchMetrics?.region || AWS_REGION}</p>
+          <p className="text-sm text-slate-500 leading-relaxed">AWS resource checks, telemetry, alerts, and cost. Discovered: {coverageLabel} · {cloudWatchMetrics?.region || AWS_REGION}</p>
           {cloudWatchMetrics && (
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium bg-green-50 border border-green-200 rounded-full px-3 py-1 text-green-600">
@@ -506,14 +533,15 @@ export default function MonitoringPage() {
           )}
           {/* Phase A: health-summary line, immediately visible below the header — surfaces
               status counts the page already computes rather than burying them in the table. */}
-          {metricsAvailable && healthSummary && healthSummary.monitored > 0 && (
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${healthSummaryDotColor(systemStatus)}`} />
+          {metricsAvailable && checkCounts && checkCounts.reporting > 0 && (
+            <div data-testid="check-summary" className="flex flex-wrap items-center gap-2 mt-3">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${healthSummaryDotColor(systemStatus, checkCounts)}`} />
               <span className="text-sm font-semibold text-slate-900">
-                {systemStatus === 'healthy' ? 'Healthy' : systemStatus === 'degraded' ? 'Degraded' : systemStatus === 'critical' ? 'Critical' : 'Down'}
+                {checkSummaryLabel(systemStatus, checkCounts)}
               </span>
               <span className="text-sm text-slate-500">
-                · {healthSummary.monitored} resource{healthSummary.monitored !== 1 ? 's' : ''} monitored · {healthSummary.healthy} healthy · {healthSummary.degraded} degraded · {healthSummary.critical} critical
+                · {checkCounts.reporting} resource{checkCounts.reporting !== 1 ? 's' : ''} reporting telemetry · {checkCounts.noIssues} with no issues detected · {checkCounts.withIssues} with issues
+                {checkCounts.undetermined > 0 && <> · {checkCounts.undetermined} undetermined</>}
               </span>
             </div>
           )}
@@ -600,26 +628,28 @@ export default function MonitoringPage() {
           {/* An empty alert list says nothing about anomalies: alert_history has no
               organization-scoped writer and no anomaly detection exists, so the healthy
               case only states what CloudWatch evidence shows. */}
-          {/* AI Insight banner — Phase A: rewritten healthy-case sentence to reference the
-              actual resource counts computed above instead of response-time/uptime figures
-              that are usually N/A for non-ALB accounts. Degraded/critical/down branches
-              unchanged from tonight's earlier fix. */}
+          {/* Check summary banner — a fixed template over the server's resource check
+              counts (not AI-generated, so not labeled as AI). It states only what the
+              checks found: "no issues detected" requires at least one passing check, and
+              resources whose check produced no result are reported as undetermined. */}
           <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-6 py-4 mb-6 flex items-start gap-3.5">
             <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={13} className="text-white" /></div>
             <div className="flex-1">
-              <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
-              <p className="text-sm text-slate-700 leading-relaxed">
+              <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-1">Check Summary</p>
+              <p data-testid="check-summary-text" className="text-sm text-slate-700 leading-relaxed">
                 {systemStatus === 'down'
-                  ? 'System is down. Immediate investigation required across all services.'
+                  ? 'One or more resources are down or stopped. Review Resource Checks below for details.'
                   : systemStatus === 'critical'
-                    ? 'One or more services are reporting critical health signals. Review Service Health below for details.'
+                    ? 'One or more resources have a critical check result. Review Resource Checks below for details.'
                     : systemStatus === 'degraded'
                       ? (isDemoActive
                           ? 'Order Processor is degraded with 1.23% error rate and 458ms response time — 2 active alerts. Root cause likely upstream dependency or resource constraint. Payment API and User Service remain healthy at 99.99% uptime.'
-                          : 'One or more services may need attention. Review Service Health below for details.')
-                      : (healthSummary?.monitored ?? 0) > 0
-                        ? `Infrastructure is healthy. ${healthSummary!.monitored} AWS resource${healthSummary!.monitored !== 1 ? 's are' : ' is'} currently monitored with no active health violations.${alerts.length > 0 ? ` ${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.` : ''}`
-                        : 'No monitored resources yet. Connect AWS or run resource discovery to start tracking infrastructure health.'}
+                          : 'One or more resources have a check issue. Review Resource Checks below for details.')
+                      : checkCounts && checkCounts.noIssues > 0
+                        ? `No issues detected in the latest resource checks: ${checkCounts.noIssues} of ${checkCounts.reporting} resource${checkCounts.reporting !== 1 ? 's' : ''} reporting telemetry${checkCounts.undetermined > 0 ? ` (${checkCounts.undetermined} undetermined)` : ''}.${alerts.length > 0 ? ` ${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}.` : ''}`
+                        : checkCounts && checkCounts.reporting > 0
+                          ? `${checkCounts.reporting} resource${checkCounts.reporting !== 1 ? 's are' : ' is'} reporting telemetry, but no check has produced a result yet.`
+                          : 'No resources are reporting telemetry yet. Connect AWS or run resource discovery to start resource checks.'}
               </p>
             </div>
             {alerts.length > 0 && (
@@ -633,20 +663,20 @@ export default function MonitoringPage() {
             return (
               <div className={`rounded-xl border px-5 py-3 mb-6 flex flex-wrap items-center gap-2 ${style.bg}`}>
                 <div className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
-                <span className={`text-sm font-semibold ${style.text}`}>System {style.label} · {alerts.length} active alert{alerts.length !== 1 ? 's' : ''}</span>
+                <span className={`text-sm font-semibold ${style.text}`}>{style.label} · {alerts.length} active alert{alerts.length !== 1 ? 's' : ''}</span>
                 <span className={`text-xs ${style.subtext}`}>· Last synced {lastSynced.toLocaleTimeString()}</span>
               </div>
             )
           })()}
 
-          {/* 4 KPI cards — Phase A: replaced System Uptime/Avg Response Time/Requests-Min
-              (frequently N/A on non-ALB accounts) with capability-aware cards that are
-              always computable from data the page already has: overall health percentage,
-              monitored resource count, active alert count, and monthly cost (unchanged). */}
+          {/* 4 KPI cards — capability-aware cards computable from data the page already
+              has: resource check counts (a count, not a health percentage -- each resource
+              type runs a different check), resources reporting telemetry, active alert
+              count, and monthly cost (unchanged). */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
             {[
-              { label: 'Overall Health', value: overallHealthPercent !== null ? `${overallHealthPercent}%` : 'N/A', sub: overallHealthPercent === null ? 'No monitored resources' : `${healthSummary?.healthy ?? 0}/${healthSummary?.monitored ?? 0} healthy`, color: overallHealthPercent === null ? 'text-slate-300' : overallHealthPercent >= 90 ? 'text-green-600' : overallHealthPercent >= 70 ? 'text-amber-500' : 'text-red-600' },
-              { label: 'Monitored Resources', value: (healthSummary?.monitored ?? 0).toLocaleString(), sub: (healthSummary?.monitored ?? 0) === 0 ? 'Run discovery to add resources' : coverageLabel, color: (healthSummary?.monitored ?? 0) === 0 ? 'text-slate-300' : 'text-slate-900' },
+              { label: 'Resource Checks', value: checkCounts && checkCounts.reporting > 0 ? `${checkCounts.noIssues} of ${checkCounts.reporting}` : '—', sub: checkCounts && checkCounts.reporting > 0 ? `with no issues detected${checkCounts.undetermined > 0 ? ` · ${checkCounts.undetermined} undetermined` : ''}` : 'No resources reporting telemetry', color: checkCounts && checkCounts.reporting > 0 ? 'text-slate-900' : 'text-slate-300' },
+              { label: 'Reporting Telemetry', value: (checkCounts?.reporting ?? 0).toLocaleString(), sub: (checkCounts?.discovered ?? 0) === 0 ? 'Run discovery to add resources' : `of ${checkCounts!.discovered.toLocaleString()} discovered resource${checkCounts!.discovered !== 1 ? 's' : ''}`, color: (checkCounts?.reporting ?? 0) === 0 ? 'text-slate-300' : 'text-slate-900' },
               { label: 'Active Alerts', value: alertsState === 'present' ? alerts.length.toLocaleString() : '—', sub: alertsEmptyMessage ?? 'Needs attention', color: alertsState === 'present' ? 'text-red-600' : 'text-slate-300' },
               { label: 'Monthly Cost', value: monthlyCost, sub: monthlyCost === '--' ? 'Cost data unavailable' : 'Current monthly spend', color: monthlyCost === '--' ? 'text-slate-300' : 'text-slate-900' },
             ].map(({ label, value, sub, color }) => (
@@ -686,9 +716,9 @@ export default function MonitoringPage() {
           {/* Service health table */}
           <div className="bg-white rounded-xl p-4 sm:p-8 border border-slate-100 mb-7 overflow-x-auto">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Service Health</p>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Resource Checks</p>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-400">{healthSummary?.healthy ?? 0}/{healthSummary?.monitored ?? 0} healthy</span>
+                <span className="text-xs text-slate-400">{checkCounts?.noIssues ?? 0} of {checkCounts?.reporting ?? 0} with no issues detected</span>
                 <a href="/services" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">All services <ArrowRight size={11} /></a>
               </div>
             </div>
@@ -755,7 +785,7 @@ export default function MonitoringPage() {
             <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4 text-2xl">🔎</div>
             <h2 className="text-lg font-bold text-slate-900 mb-2">AWS connected — no resources discovered yet</h2>
             <p className="text-sm text-slate-500 leading-relaxed max-w-md mx-auto mb-6">
-              CloudWatch is reachable, but no EC2 instances, load balancers, or RDS databases have been discovered for this account yet. Run discovery to populate infrastructure health here.
+              CloudWatch is reachable, but no EC2 instances, load balancers, or RDS databases have been discovered for this account yet. Run discovery to populate resource checks here.
             </p>
             <a href="/services" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors">
               Run Resource Discovery <ArrowRight size={13} />

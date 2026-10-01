@@ -5,7 +5,7 @@ import { Activity, AlertTriangle, Bell, BarChart3, Clock, Shield } from 'lucide-
 export default function ServiceHealthPage() {
 
   const features = [
-    { icon: Activity, title: 'Real-time Service Health', desc: 'Live health status for every service across your AWS infrastructure. Aggregate health scores surface degradation before your users file a support ticket.' },
+    { icon: Activity, title: 'Resource Checks', desc: 'A check result for each discovered AWS resource of a supported type: AWS status checks for EC2 and EBS, CloudWatch metric thresholds for load balancers, Lambda, and other supported types.' },
     { icon: AlertTriangle, title: 'Incident Detection & Alerting', desc: 'Instant alerts the moment a service degrades or goes down. Configurable thresholds per service ensure you only get alerted on what matters.' },
     { icon: Clock, title: 'Uptime Tracking & SLA Monitoring', desc: 'Track uptime percentages per service and against your SLA commitments. Historical uptime data ready for customer-facing status pages and board reports.' },
     { icon: BarChart3, title: 'Performance Trend Analysis', desc: 'Latency, error rate, and throughput trends over time. Identify services that are slowly degrading before they cause a production incident.' },
@@ -20,8 +20,8 @@ export default function ServiceHealthPage() {
   ]
 
   const steps = [
-    { step: '01', title: 'Connect Your AWS Account', desc: 'Grant read-only IAM access. DevControl immediately starts monitoring health across all your services, regions, and accounts.' },
-    { step: '02', title: 'Health Baseline Established', desc: 'DevControl learns your normal performance patterns and sets smart alert thresholds — no manual configuration required.' },
+    { step: '01', title: 'Connect Your AWS Account', desc: 'Grant read-only IAM access. DevControl discovers resources in your connected account and region.' },
+    { step: '02', title: 'Resource Checks Run', desc: 'Each supported resource type is evaluated with a fixed check — an AWS status check or a CloudWatch metric threshold — against the telemetry AWS reports.' },
     { step: '03', title: 'Monitor, Alert & Resolve', desc: 'Get instant alerts on degradation, see dependency impact maps, and track MTTR improvements over time from one dashboard.' },
   ]
 
@@ -62,8 +62,9 @@ export default function ServiceHealthPage() {
             lineHeight: 1.75, maxWidth: '600px',
             margin: '0 auto 36px',
           }}>
-            Real-time health monitoring, intelligent alerting, and dependency impact maps
-            for every service in your AWS infrastructure. Stop reacting to incidents —
+            Resource checks for your discovered AWS resources — AWS status checks for EC2
+            and EBS, CloudWatch thresholds for other supported types — plus intelligent
+            alerting and dependency impact maps. Stop reacting to incidents —
             start preventing them.
           </p>
 
@@ -91,7 +92,7 @@ export default function ServiceHealthPage() {
             justifyContent: 'center', gap: '24px',
             fontSize: '0.875rem', fontWeight: 500, color: '#374151',
           }}>
-            {['Real-time health monitoring', 'Smart alert routing', 'Dependency impact maps'].map(t => (
+            {['AWS status & threshold checks', 'Smart alert routing', 'Dependency impact maps'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#16a34a' }}>✓</span> {t}
               </span>
@@ -286,7 +287,7 @@ export default function ServiceHealthPage() {
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {[
-                  'Real-time health scores for every service',
+                  'Check results for every discovered resource of a supported type',
                   'Dependency maps show downstream blast radius instantly',
                   'Smart alerts routed to the right on-call engineer',
                   'MTTR tracking to prove incident response improvement',

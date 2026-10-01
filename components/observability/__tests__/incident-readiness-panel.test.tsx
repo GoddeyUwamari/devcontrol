@@ -156,3 +156,43 @@ describe('partial readiness', () => {
     expect(text).not.toMatch(/Critical Coverage/i)
   })
 })
+
+describe('alert coverage scope presentation (#148 contract, display only)', () => {
+  it('shows the runtime counts and scope -- "Alert coverage: 0 of 1 EC2 instances · Partial scope" -- not the "At Risk" band', () => {
+    loaded(result())
+    expect(screen.getByTestId('readiness-coverage')).toHaveTextContent(/^Alert coverage: 0 of 1 EC2 instance · Partial scope$/)
+    expect(screen.queryByText('At Risk')).not.toBeInTheDocument()
+  })
+
+  it('renders whatever counts the backend supplies, for every applicable type, never hardcoded', () => {
+    loaded(result({
+      readiness_score: 40,
+      status: 'At Risk',
+      components: {
+        ...result().components,
+        alert_coverage: {
+          ...result().components.alert_coverage,
+          ec2: section('available', null, coverage({ inScope: 3, covered: 1, coveragePercent: 33 })),
+          rds: section('available', null, coverage({ resourceType: 'rds', inScope: 2, covered: 1, coveragePercent: 50 })),
+        },
+      },
+    }))
+    expect(screen.getByTestId('readiness-coverage')).toHaveTextContent(/^Alert coverage: 1 of 3 EC2 instances · 1 of 2 RDS instances · Partial scope$/)
+  })
+
+  it.each(['Ready', 'Partially Ready', 'At Risk'] as const)('the readiness band "%s" is never rendered as a verdict', (status) => {
+    loaded(result({ status }))
+    expect(screen.queryByText(status)).not.toBeInTheDocument()
+  })
+
+  it('a non-partial state carries no "Partial scope" suffix (no state is invented)', () => {
+    loaded(result({ state: 'available' }))
+    expect(screen.getByTestId('readiness-coverage')).toHaveTextContent(/^Alert coverage: 0 of 1 EC2 instance$/)
+  })
+
+  it('makes no claim that all infrastructure is at risk or that monitoring is missing/unavailable', () => {
+    loaded(result())
+    const text = document.body.textContent ?? ''
+    expect(text).not.toMatch(/infrastructure is at risk|monitoring is (missing|unavailable)|telemetry failed/i)
+  })
+})

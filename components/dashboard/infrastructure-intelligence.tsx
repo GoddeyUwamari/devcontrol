@@ -69,7 +69,7 @@ function IntelCard({ icon: Icon, iconColor, iconBackground, label, valueNode, de
  * Status Bar blocks.
  *
  * Only Top Risk and System Status live here -- Overall Health and Cloud
- * Spend were removed because they duplicated the Infrastructure Health and
+ * Spend were removed because they duplicated the Infrastructure Posture and
  * Monthly Spend primary KPI cards directly above this section (same numbers,
  * shown twice). Those two figures are now shown exactly once, in the primary
  * KPI row.
