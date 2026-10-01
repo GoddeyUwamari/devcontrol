@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  costComponentCaption,
   INFRASTRUCTURE_POSTURE_LABEL,
   POSTURE_COMPONENT_LABELS,
   POSTURE_STATUS_LABELS,
@@ -108,5 +109,31 @@ describe('posturePartialCaption', () => {
     expect(posturePartialCaption({ ...base, composite_state: 'available' })).toBeNull()
     expect(posturePartialCaption({ ...base, composite_state: null })).toBeNull()
     expect(posturePartialCaption(null)).toBeNull()
+  })
+})
+
+describe('costComponentCaption: the Cost tile\'s one caption, from costSource and the backend\'s fixed limitation sentences', () => {
+  const ESTIMATED_REASON = 'Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+
+  it('estimated spend + anomaly checks off', () => {
+    expect(costComponentCaption({ costSource: 'estimated', reason: ESTIMATED_REASON })).toBe('Estimated from inventory · anomaly checks not yet active')
+  })
+
+  it('actual spend is labeled as Cost Explorer-based, never as an estimate', () => {
+    expect(costComponentCaption({ costSource: 'actual', reason: 'Anomaly checks not yet active.' })).toBe('Based on AWS Cost Explorer spend · anomaly checks not yet active')
+  })
+
+  it('insufficient spend data is carried; unknown sentences are never put on the face', () => {
+    expect(costComponentCaption({ costSource: undefined, reason: 'Insufficient spend data to assess cost efficiency. Anomaly checks not yet active.' })).toBe('Insufficient spend data · anomaly checks not yet active')
+    expect(costComponentCaption({ costSource: undefined, reason: 'Some new limitation the backend adds later.' })).toBeNull()
+    // Whole sentences only: a mention inside another sentence is not a match.
+    expect(costComponentCaption({ costSource: undefined, reason: 'Something else. Anomaly checks not yet active.' })).toBe('Anomaly checks not yet active')
+    expect(costComponentCaption({ costSource: undefined, reason: 'Note: Anomaly checks not yet active.' })).toBeNull()
+    expect(costComponentCaption({ costSource: undefined, reason: 'Anomaly checks not yet active soon.' })).toBeNull()
+  })
+
+  it('nothing known: null, never a fabricated caption', () => {
+    expect(costComponentCaption(undefined)).toBeNull()
+    expect(costComponentCaption({ costSource: undefined, reason: null })).toBeNull()
   })
 })

@@ -3,21 +3,22 @@
  *
  * Top Risk never claims "no risks" from missing evidence, takes its severity
  * badge and tint only from the finding's own severity (the backend's
- * deterministic "<title> (<severity> severity)" format), and links to the
- * findings only when a risk is identified.
+ * deterministic "<title> (<severity> severity)" format, whose suffix the chip
+ * replaces in the visible title), and links to the findings only when a risk
+ * is identified.
  *
  * System Health is DevControl's own /health check, never the customer's AWS:
- * the disclaimer is always on the face, "Live" is claimed only when
+ * its one caption says so in every state, "responding" is claimed only when
  * operational, and its title links to /admin/monitoring (the System Status
  * hotfix: /observability has no page).
  */
 import { describe, it, expect } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
-import { InfrastructureIntelligence, parseTopRiskSeverity } from '../infrastructure-intelligence'
+import { InfrastructureIntelligence, parseTopRiskSeverity, topRiskTitle } from '../infrastructure-intelligence'
 
-const OPERATIONAL = { value: 'Operational', detail: 'Platform API & Database Services Live', operational: true, color: 'var(--text-success)', dotColor: 'green' }
-const DEGRADED = { value: 'Degraded', detail: "DevControl's own services are degraded.", operational: false, color: 'var(--text-warning)', dotColor: 'orange' }
+const OPERATIONAL = { value: 'Operational', caption: 'API and database responding · not your AWS resources', operational: true, color: 'var(--text-success)', dotColor: 'green' }
+const DEGRADED = { value: 'Degraded', caption: "DevControl's own services are degraded. Not a status of your AWS resources.", operational: false, color: 'var(--text-warning)', dotColor: 'orange' }
 
 function renderRow(overrides: Partial<ComponentProps<typeof InfrastructureIntelligence>> = {}) {
   return render(<InfrastructureIntelligence topRisk={null} topRiskStatus="unavailable" aiSummaryLoading={false} systemStatus={OPERATIONAL} {...overrides} />)
@@ -39,10 +40,27 @@ describe('Top Risk never claims "no risks" from missing evidence', () => {
     expect(screen.getByText(/No active findings in DevControl's evaluated security checks/)).toBeTruthy()
   })
 
-  it('shows the identified risk text, once', () => {
+  it('shows the identified risk title once, its severity suffix replaced by the chip; the link keeps the full text', () => {
     renderRow({ topRisk: 'Open SSH to the internet (critical severity)', topRiskStatus: 'identified' })
-    expect(screen.getAllByText('Open SSH to the internet (critical severity)')).toHaveLength(1)
+    expect(screen.getAllByText('Open SSH to the internet')).toHaveLength(1)
+    expect(topRiskCard().textContent).not.toContain('(critical severity)')
+    expect(within(topRiskCard()).getByTestId('top-risk-severity')).toHaveTextContent('Critical')
+    expect(topRiskCard().closest('a')).toHaveAttribute('aria-label', 'Top Risk: Open SSH to the internet (critical severity)')
     expect(screen.queryByText('Risk status unavailable')).toBeNull()
+  })
+
+  it('text without a parseable suffix is shown whole -- nothing is stripped or guessed', () => {
+    expect(topRiskTitle('3 resource compliance issues currently active')).toBe('3 resource compliance issues currently active')
+    expect(topRiskTitle('Thing (Critical Severity)')).toBe('Thing (Critical Severity)')
+    expect(topRiskTitle('Rule (high severity) was changed later')).toBe('Rule (high severity) was changed later')
+    renderRow({ topRisk: '3 resource compliance issues currently active', topRiskStatus: 'identified' })
+    expect(screen.getByText('3 resource compliance issues currently active')).toBeTruthy()
+  })
+
+  it('has one title line: no second line is invented (the risk carries no structured resource IDs)', () => {
+    renderRow({ topRisk: 'Security group launch-wizard-2 allows SSH from 0.0.0.0/0 (high severity)', topRiskStatus: 'identified' })
+    const paragraphs = [...topRiskCard().querySelectorAll('p')].map((p) => p.textContent)
+    expect(paragraphs).toEqual(['Top Risk', 'Security group launch-wizard-2 allows SSH from 0.0.0.0/0'])
   })
 
   it('the title is always "Top Risk", never a fixed alert headline', () => {
@@ -131,22 +149,22 @@ describe('DevControl System Health is DevControl\'s own health, not customer AWS
     expect(link!.getAttribute('href')).toBe('/admin/monitoring')
   })
 
-  it('operational: "Operational", the "Live" micro-copy, the disclaimer, and a green tint', () => {
+  it('operational: "Operational", one caption ("responding · not your AWS resources"), and a green tint', () => {
     renderRow()
     const card = healthCard()
     expect(card).toHaveTextContent('Operational')
-    expect(card).toHaveTextContent('Platform API & Database Services Live')
-    expect(card).toHaveTextContent('Not a status of your AWS resources.')
+    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent('API and database responding · not your AWS resources')
+    expect(card.querySelectorAll('p')).toHaveLength(1)
     expect(card.style.background).toBe('var(--bg-success)')
     expect(card.textContent).not.toMatch(/\bHealthy\b|All systems|All API & database services live/i)
   })
 
-  it('not operational: existing wording, no "Live" claim, disclaimer still visible, no green tint', () => {
+  it('not operational: existing wording, no "responding" claim, not-your-AWS still on the face, no green tint', () => {
     renderRow({ systemStatus: DEGRADED })
     const card = healthCard()
-    expect(card).toHaveTextContent("DevControl's own services are degraded.")
-    expect(card.textContent).not.toMatch(/Live/)
-    expect(card).toHaveTextContent('Not a status of your AWS resources.')
+    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent("DevControl's own services are degraded. Not a status of your AWS resources.")
+    expect(card.textContent).not.toMatch(/responding|Live/)
+    expect(card.querySelectorAll('p')).toHaveLength(1)
     expect(card.style.background).toBe('var(--surface-2)')
   })
 

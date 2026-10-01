@@ -113,7 +113,10 @@ describe('Infrastructure Posture section on the real Dashboard page', () => {
     renderDashboard()
     await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Alert Coverage score' })).toBeInTheDocument())
     expect(within(postureKpi()).getByText('69')).toBeInTheDocument()
-    expect(within(await postureSection()).getByText('69')).toBeInTheDocument()
+    // The KPI card carries the composite; the section (no ring) carries the same response's component scores.
+    expect(within(postureKpi()).getByTestId('kpi-caption')).toHaveTextContent('Composite · Cost 95 · Security 59 · Alert coverage 55')
+    expect(within(await postureSection()).getByText('95')).toBeInTheDocument()
+    expect(within(await postureSection()).queryByText('69')).toBeNull()
     expect(intelligenceSpy).toHaveBeenCalledTimes(1)
     expect(client.getQueryCache().findAll({ queryKey: ['system-intelligence'] })).toHaveLength(1)
   })

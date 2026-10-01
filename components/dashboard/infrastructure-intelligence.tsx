@@ -10,7 +10,7 @@ interface InfrastructureIntelligenceProps {
   topRiskStatus: 'identified' | 'none_identified' | 'unavailable'
   aiSummaryLoading: boolean
   /** DevControl's own service health (its /health check) -- never the customer's AWS. */
-  systemStatus: { value: string; detail: string; operational: boolean; color: string; dotColor: string }
+  systemStatus: { value: string; caption: string; operational: boolean; color: string; dotColor: string }
 }
 
 export type TopRiskSeverity = 'critical' | 'high' | 'medium' | 'low'
@@ -24,9 +24,16 @@ export type TopRiskSeverity = 'critical' | 'high' | 'medium' | 'low'
  * no badge rather than a guessed one.
  * Follow-up: expose severity as its own field instead of parsing text.
  */
+const SEVERITY_SUFFIX = /\s*\((critical|high|medium|low) severity\)$/
+
 export function parseTopRiskSeverity(topRisk: string | null): TopRiskSeverity | null {
-  const match = topRisk?.match(/\((critical|high|medium|low) severity\)$/)
+  const match = topRisk?.match(SEVERITY_SUFFIX)
   return match ? (match[1] as TopRiskSeverity) : null
+}
+
+/** The finding title without the severity suffix the chip already shows; unparsed text is returned whole. */
+export function topRiskTitle(topRisk: string): string {
+  return topRisk.replace(SEVERITY_SUFFIX, '')
 }
 
 // Red tint only for critical/high.
@@ -42,7 +49,6 @@ const NEUTRAL_CARD = { color: NEUTRAL_COLOR, background: 'var(--surface-2)', bor
 const TOP_RISK_HREF = '/security#findings'
 const SYSTEM_STATUS_HREF = '/admin/monitoring'
 
-export const SYSTEM_HEALTH_DISCLAIMER = 'Not a status of your AWS resources.'
 export const SYSTEM_HEALTH_EXPLANATION =
   "Measures whether DevControl's API and database respond to a health check. This indicator reflects DevControl application availability, not your connected AWS infrastructure uptime."
 
@@ -50,7 +56,7 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
   const identified = !aiSummaryLoading && topRiskStatus === 'identified' && !!topRisk
   const severity = identified ? parseTopRiskSeverity(topRisk) : null
   const style = severity ? SEVERITY_STYLE[severity] : NEUTRAL_CARD
-  const headline = topRisk ?? (topRiskStatus === 'none_identified' ? 'No urgent risks identified' : 'Risk status unavailable')
+  const headline = topRisk ? topRiskTitle(topRisk) : (topRiskStatus === 'none_identified' ? 'No urgent risks identified' : 'Risk status unavailable')
   const description = topRisk
     ? null
     : topRiskStatus === 'none_identified'
@@ -117,8 +123,7 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: systemStatus.dotColor }} aria-hidden="true" />
           {systemStatus.value}
         </span>
-        <p className="text-xs text-[var(--text-secondary)] leading-snug mt-2 mb-0">{systemStatus.detail}</p>
-        <p className="text-xs text-[var(--text-secondary)] leading-snug mt-0.5 mb-0">{SYSTEM_HEALTH_DISCLAIMER}</p>
+        <p className="text-xs text-[var(--text-secondary)] leading-snug mt-2 mb-0" data-testid="system-health-caption">{systemStatus.caption}</p>
       </div>
     </div>
   )
@@ -134,7 +139,7 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
  * "Risk status unavailable". Only an identified risk links to the findings.
  *
  * System Health is DevControl's own /health check (API + database), never
- * the customer's AWS, and the card says so on its face.
+ * the customer's AWS, and its one caption says so in every state.
  */
 export function InfrastructureIntelligence({ topRisk, topRiskStatus, aiSummaryLoading, systemStatus }: InfrastructureIntelligenceProps) {
   return (

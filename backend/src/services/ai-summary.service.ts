@@ -306,11 +306,16 @@ export class AISummaryService {
     const accountCount = hasEvidence(s.accountFindings) ? s.accountFindings.data.count : null;
     const combined = hasEvidence(s.securityPosture) ? s.securityPosture.data.combinedFindings : null;
 
-    if ((accountCount ?? 0) > 0 || (combined ?? 0) > 0) {
-      const top = hasEvidence(s.accountFindings) ? s.accountFindings.data.top : null;
-      const topRisk = top
-        ? `${top.title} (${top.severity} severity)`
-        : `${combined} resource compliance issue${combined !== 1 ? 's' : ''} currently active`;
+    const top = hasEvidence(s.accountFindings) ? s.accountFindings.data.top : null;
+    if (top) return { topRisk: `${top.title} (${top.severity} severity)`, topRiskStatus: 'identified' };
+
+    if (combined !== null && combined > 0) {
+      // combinedFindings is account findings + resource compliance issues
+      // (combineSeverityCounts). Only with account findings known to be zero is
+      // it a resource-compliance-only count; without them it stays combined.
+      const topRisk = accountCount === 0
+        ? `${combined} resource compliance issue${combined !== 1 ? 's' : ''} currently active`
+        : `${combined} security finding${combined !== 1 ? 's' : ''} (account and resource compliance combined)`;
       return { topRisk, topRiskStatus: 'identified' };
     }
 

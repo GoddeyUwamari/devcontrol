@@ -57,6 +57,20 @@ export function formatSavingsCurrency(value: number | null | undefined): string 
   return `$${Math.round(value).toLocaleString()}`
 }
 
+const USD_CENTS = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/**
+ * A savings/cost-opportunity amount at cent precision ("$0.48", "$0.00",
+ * "$12.50") -- the Dashboard's one savings format, so a monthly figure and
+ * its annualized figure (both cent-rounded with costs/cost-display.ts's
+ * roundCents) visibly agree. Accepts DECIMAL strings; missing or non-numeric
+ * is "—", never "$0.00". Backend mirror: backend/src/utils/formatSavingsCurrency.ts.
+ */
+export function formatSavingsCents(value: number | string | null | undefined): string {
+  const amount = typeof value === 'string' ? (value.trim() === '' ? NaN : Number(value)) : value
+  return amount == null || !Number.isFinite(amount) ? '—' : USD_CENTS.format(amount)
+}
+
 export function formatFullTimestamp(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return d.toLocaleString('en-US', {

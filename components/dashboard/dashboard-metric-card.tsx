@@ -19,6 +19,8 @@ interface DashboardMetricCardProps {
   valueSuffix?: string
   /** Evidence state stays on the face as badges (status, comparison, Partial). */
   badges?: EvidenceBadgeProps[]
+  /** The one concise basis line under the value; omitted when there is no evidence for it. Longer evidence goes in `info`. */
+  caption?: string | null
   /** Score bar; omitted whenever there is no real score. */
   progress?: { value: number; fillClassName: string; ariaValueText: string }
   /** Real historical series only — omit rather than fabricate a trend shape. */
@@ -50,12 +52,12 @@ function Sparkline({ points, color }: { points: SparklinePoint[]; color: string 
 
 /**
  * Shared KPI card for the Dashboard's top row: icon chip, title (linking to
- * the metric's page), info button, primary value, status badges, and a small
+ * the metric's page), info button, primary value, status badges, one basis caption, and a small
  * visualization. Detailed evidence lives in the info panel, not on the face.
  * The card itself is not a link: it contains a button, and interactive
  * content can't nest inside an <a>.
  */
-export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, label, value, valueSuffix, badges, progress, sparkline, sparklineColor, info, href }: DashboardMetricCardProps) {
+export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, label, value, valueSuffix, badges, caption, progress, sparkline, sparklineColor, info, href }: DashboardMetricCardProps) {
   return (
     <div className="relative bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full flex flex-col" data-testid="kpi-card">
       <div className="flex items-center justify-between gap-2 mb-4">
@@ -86,6 +88,7 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
           </div>
         )}
       </div>
+      {caption && <p className="text-xs text-[var(--text-secondary)] leading-snug mt-2.5 mb-0" data-testid="kpi-caption">{caption}</p>}
       <div className="mt-auto">
         {progress && (
           <Progress

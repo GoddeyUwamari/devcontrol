@@ -25,7 +25,7 @@ describe('Security Key Findings', () => {
       <SecurityComplianceSummary
         findingCounts={{ critical: 1, high: 2, medium: 3, low: 4 }}
         riskDataLoading={false}
-        complianceBreakdown="9 critical"
+        resourceComplianceStatus="9 critical"
         soc2Subtext="6 of 6 criteria evaluated"
         soc2Loading={false}
         customFrameworksSubtext="1 framework configured"
@@ -106,7 +106,7 @@ describe('System Health arrow', () => {
         topRisk={null}
         topRiskStatus="unavailable"
         aiSummaryLoading={false}
-        systemStatus={{ value: 'Operational', detail: 'Platform API & Database Services Live', operational: true, color: 'green', dotColor: 'green' }}
+        systemStatus={{ value: 'Operational', caption: 'API and database responding · not your AWS resources', operational: true, color: 'green', dotColor: 'green' }}
       />
     )
     const link = screen.getByText('DevControl System Health').closest('a')!

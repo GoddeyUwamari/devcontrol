@@ -63,6 +63,34 @@ export function postureCompositionCaption(components: SystemIntelligenceResult['
   return `Composite · Cost ${cost.score} · Security ${security.score} · Alert coverage ${observability.score}`
 }
 
+// The cost component's limitation sentences, exactly as the backend writes
+// them into its reason (system-intelligence.service.ts computeCostScore), with
+// their short tile wording. Matched as whole sentences only; any other reason
+// text stays in the info panel. Follow-up: structured limitation codes.
+const COST_LIMITATION_CAPTIONS: Array<[sentence: string, caption: string]> = [
+  ['Insufficient spend data to assess cost efficiency.', 'insufficient spend data'],
+  ['Anomaly checks not yet active.', 'anomaly checks not yet active'],
+]
+
+/**
+ * The Cost tile's one caption: where its spend comes from (the component's
+ * costSource -- the inventory estimate, not the Spend card's Cost Explorer
+ * figure, whenever it says so), then its known limitations. null when the
+ * component has no costSource and no recognized limitation.
+ */
+export function costComponentCaption(component: Pick<SystemIntelligenceResult['components']['cost'], 'costSource' | 'reason'> | undefined): string | null {
+  if (!component) return null
+  const source = component.costSource === 'estimated'
+    ? 'Estimated from inventory'
+    : component.costSource === 'actual' ? 'Based on AWS Cost Explorer spend' : null
+  const sentences = (component.reason ?? '').split(/(?<=\.)\s+/)
+  const limitations = COST_LIMITATION_CAPTIONS.filter(([sentence]) => sentences.includes(sentence)).map(([, caption]) => caption)
+  const parts = [source, ...limitations].filter((p): p is string => p !== null)
+  if (parts.length === 0) return null
+  const caption = parts.join(' · ')
+  return caption.charAt(0).toUpperCase() + caption.slice(1)
+}
+
 /**
  * "Partial · <why>" when the backend marked the composite partial. The why is
  * composite_reason as-is: the backend names every partial component with its

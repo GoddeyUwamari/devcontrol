@@ -1,6 +1,12 @@
 import { PuzzleIcon, Sparkles } from 'lucide-react'
 
-export type OpportunityEvaluationState = 'evaluated' | 'not_evaluated' | 'in_progress'
+/**
+ * The latest cost analysis's state, mapped from the shared
+ * deriveAnalysisStatus() (app/(app)/cost-optimization/costOptimizationStatus.ts)
+ * plus the dashboard's own request state: 'unavailable' is a failed request,
+ * never "not evaluated".
+ */
+export type OpportunityEvaluationState = 'evaluated' | 'not_evaluated' | 'in_progress' | 'failed' | 'unavailable' | 'loading'
 
 export interface OpportunityCategoryItem {
   /** Resource type key, kept distinct from the display title so new supported
@@ -16,14 +22,14 @@ export interface OpportunityCategoryItem {
 interface SavingsOpportunitiesProps {
   items: OpportunityCategoryItem[]
   /** One state for all categories -- every wired detector runs in the same
-   *  optimization scan (cost_analysis_runs), so there is no scenario where
-   *  one category is evaluated and another isn't. */
+   *  cost analysis (scheduled or manual), so there is no scenario where one
+   *  category is evaluated and another isn't. It only qualifies a zero count. */
   evaluationState: OpportunityEvaluationState
   /** Same authoritative count the Recommended Action CTA uses -- never
    *  independently re-derived from just these 4 known categories, since a
    *  real recommendation can exist for a type this UI doesn't have a card
-   *  for yet. */
-  totalActiveCount: number
+   *  for yet. null when the stats request failed: no count is shown. */
+  totalActiveCount: number | null
   detailsHref?: string
 }
 
@@ -31,6 +37,9 @@ const EVALUATION_LABEL: Record<OpportunityEvaluationState, string> = {
   evaluated: '',
   not_evaluated: 'Not currently evaluated',
   in_progress: 'Evaluation in progress',
+  failed: 'Latest cost analysis did not complete',
+  unavailable: 'Could not be retrieved',
+  loading: 'Loading…',
 }
 
 function countPhrase(count: number): string {
@@ -51,11 +60,11 @@ const GRID_COLS_BY_COUNT: Record<number, string> = {
 
 /**
  * Compact detected-opportunity cards, one per supported resource type.
- * "Not currently evaluated" is only ever shown when the org genuinely has no
- * completed optimization scan yet (evaluationState from cost_analysis_runs)
- * -- never merely because a type's filtered count happens to be zero. A
- * type that ran and found nothing renders a truthful zero ("0 detected",
- * "$0/mo"), not a false "not evaluated" claim.
+ * An active recommendation is a fact whatever the analysis state, so a card
+ * with one always shows its count and savings. The evaluation state only
+ * qualifies a zero: "Not currently evaluated" only when no cost analysis
+ * (scheduled or manual) has completed, never merely because a type's count
+ * is zero; "Could not be retrieved" when a request failed.
  */
 export function SavingsOpportunities({ items, evaluationState, totalActiveCount, detailsHref = '/cost-optimization' }: SavingsOpportunitiesProps) {
   // A completed scan with nothing active shows no conclusion -- a completed
@@ -73,7 +82,7 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
           <h3 className="text-base font-bold text-foreground">Cost-Saving Opportunities</h3>
         </div>
         <a href={detailsHref} className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
-          View all ({totalActiveCount}) →
+          {totalActiveCount === null ? 'View all →' : `View all (${totalActiveCount}) →`}
         </a>
       </div>
       {showEmptyState ? (
@@ -88,7 +97,7 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
         {items.map(({ type, title, description, count, savingsLabel, priorityBadge }) => (
           <div key={type} className="bg-[var(--surface-1)] rounded-xl border border-border p-4">
             <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">{title}</p>
-            {evaluationState === 'evaluated' ? (
+            {evaluationState === 'evaluated' || count > 0 ? (
               <>
                 <div className="text-xl font-bold tracking-tight leading-none mb-1" style={{ color: count > 0 ? 'var(--text-success)' : 'var(--text-secondary)' }}>
                   {savingsLabel}
@@ -101,7 +110,7 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
               </div>
             )}
             <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-2.5">{description}</p>
-            {evaluationState === 'evaluated' && count > 0 && priorityBadge && (
+            {count > 0 && priorityBadge && (
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full inline-block" style={{ color: priorityBadge.color, background: priorityBadge.background }}>
                 {priorityBadge.label}
               </span>

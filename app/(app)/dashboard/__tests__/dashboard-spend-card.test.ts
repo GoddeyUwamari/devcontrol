@@ -10,10 +10,11 @@ import { computeDashboardSpendCard } from '../dashboardSpendCard'
 
 const ready = { isLoading: false, isError: false }
 
-function spend(amount: number, provenance: 'actual' | 'estimated' = 'actual'): CostSummary['spend'] {
+function spend(amount: number, provenance: 'actual' | 'estimated' = 'actual', lastDayInProgress = false, period: CostSummary['spend']['period'] = { kind: 'range', start: '2026-09-01', endExclusive: '2026-09-28' }): CostSummary['spend'] {
   return {
     state: 'available', source: provenance === 'actual' ? 'AWS Cost Explorer' : 'DevControl inventory cost estimate', provenance, asOf: null, coverage: null, reason: null,
-    data: { amount, basis: provenance === 'actual' ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false },
+    period: provenance === 'actual' ? period : { kind: 'point_in_time' },
+    data: { amount, basis: provenance === 'actual' ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress },
   }
 }
 function missing<T>(state: 'unavailable' | 'error'): { state: typeof state; source: string; provenance: null; asOf: null; coverage: null; reason: string; data: T | null } {
@@ -36,13 +37,14 @@ describe('Dashboard spend figure keeps its provenance', () => {
     const c = card({ spend: spend(0), monthOverMonth: mom(0, 0) })
     expect(c.label).toBe('Month-to-Date Spend')
     expect(c.value).toBe('$0.00')
-    expect(c.captions[0]).toMatch(/^Actual · AWS Cost Explorer/)
+    expect(c.caption).toBe('Actual · AWS Cost Explorer')
+    expect(c.evidence?.source).toMatch(/^Actual · AWS Cost Explorer/)
   })
 
   it('a net credit stays negative and actual', () => {
     const c = card({ spend: spend(-12.34), monthOverMonth: mom(0, 0) })
     expect(c.value).toBe('-$12.34')
-    expect(c.captions[0]).toMatch(/net of credits/)
+    expect(c.caption).toBe('Actual · AWS Cost Explorer · net of credits')
   })
 
   it('a sub-dollar month keeps its cents', () => {
@@ -53,21 +55,24 @@ describe('Dashboard spend figure keeps its provenance', () => {
     const c = card({ spend: spend(42.5, 'estimated'), monthOverMonth: missing('unavailable') as CostSummary['monthOverMonth'] })
     expect(c.label).toBe('Estimated Monthly Spend')
     expect(c.value).toBe('$42.50/mo')
-    expect(c.captions[0]).toMatch(/not AWS billed spend/)
+    expect(c.caption).toBe('Estimated from inventory · not AWS billed spend')
+    expect(c.caption).not.toMatch(/Actual|Cost Explorer ·/)
+    expect(c.evidence?.source).toMatch(/^Estimate from resource inventory · not AWS billed spend/)
   })
 
   it('unavailable, error, and a failed request are "—" -- never $0', () => {
     const unavailable = card({ spend: missing('unavailable') as CostSummary['spend'], monthOverMonth: missing('unavailable') as CostSummary['monthOverMonth'] })
     expect(unavailable.value).toBe('—')
-    expect(unavailable.captions[0]).toMatch(/Not available/)
+    expect(unavailable.caption).toMatch(/^Not available/)
 
     const error = card({ spend: missing('error') as CostSummary['spend'], monthOverMonth: missing('error') as CostSummary['monthOverMonth'] })
     expect(error.value).toBe('—')
-    expect(error.captions[0]).toBe('Could not be retrieved')
+    expect(error.caption).toBe('Could not be retrieved')
 
     const failed = computeDashboardSpendCard({ costSummary: undefined, isLoading: false, isError: true })
     expect(failed.value).toBe('—')
-    expect(failed.captions).toEqual(['Could not be retrieved', 'Month-over-month could not be retrieved'])
+    expect(failed.caption).toBe('Could not be retrieved')
+    expect(failed.evidence).toEqual({ source: 'Could not be retrieved', comparison: 'Month-over-month could not be retrieved' })
     for (const c of [unavailable, error, failed]) expect(c.value).not.toMatch(/\$/)
   })
 
@@ -75,7 +80,48 @@ describe('Dashboard spend figure keeps its provenance', () => {
     const c = computeDashboardSpendCard({ costSummary: undefined, isLoading: true, isError: false })
     expect(c.value).toBe('—')
     expect(c.trend).toBeUndefined()
-    expect(c.captions).toEqual([])
+    expect(c.caption).toBeNull()
+    expect(c.evidence).toBeNull()
+  })
+})
+
+describe('Dashboard spend face caption: one line, still-billing said once', () => {
+  it('today still billing: one short note on the face; the panel keeps the full spend and comparison wording', () => {
+    const c = card({ spend: spend(123.45, 'actual', true), monthOverMonth: mom(-7, -0.7) })
+    expect(c.caption).toBe('Actual · AWS Cost Explorer · today still billing')
+    expect(c.caption!.match(/billing|billed/g)).toHaveLength(1)
+    expect(c.caption).not.toMatch(/not the selected range|still being billed/)
+    expect(c.evidence).toEqual({
+      source: "Actual · AWS Cost Explorer · today's spend still being billed",
+      comparison: 'Month to date vs same days last month · not the selected range · the current window ends today, which is still being billed',
+    })
+  })
+
+  it('partial Cost Explorer data is on the face', () => {
+    const c = card({ spend: { ...spend(5, 'actual', true), state: 'partial' }, monthOverMonth: mom(0, 0) })
+    expect(c.caption).toBe('Actual · AWS Cost Explorer · today still billing · partial data')
+  })
+
+  it('day 1 (a one-day period still being billed): "no billed days yet this month" and no percentage', () => {
+    const day1 = spend(0.37, 'actual', true, { kind: 'range', start: '2026-10-01', endExclusive: '2026-10-02' })
+    const c = card({ spend: day1, monthOverMonth: mom(-80, -8) })
+    expect(c.value).toBe('$0.37')
+    expect(c.caption).toBe('Actual · AWS Cost Explorer · no billed days yet this month')
+    expect(c.trend).toBeUndefined()
+    expect(c.evidence?.comparison).toBe('No comparison until a day of this month has finished billing')
+    expect(JSON.stringify(c)).not.toMatch(/\d%/)
+  })
+
+  it('a one-day period whose day has finished billing is not "no billed days"', () => {
+    const c = card({ spend: spend(4, 'actual', false, { kind: 'range', start: '2026-10-01', endExclusive: '2026-10-02' }), monthOverMonth: mom(10, 1, 10, false) })
+    expect(c.caption).toBe('Actual · AWS Cost Explorer')
+    expect(c.trend?.label).toBe('+10% vs same days last month')
+  })
+
+  it('no period on the section: never inferred as day 1', () => {
+    const c = card({ spend: spend(4, 'actual', true, null), monthOverMonth: mom(10, 1) })
+    expect(c.caption).toBe('Actual · AWS Cost Explorer · today still billing')
+    expect(c.trend).toBeDefined()
   })
 })
 
@@ -83,7 +129,7 @@ describe('Dashboard month-over-month trend', () => {
   it('a real 0% is a flat 0% trend, with its MTD basis and the still-billing note', () => {
     const c = card({ spend: spend(10), monthOverMonth: mom(0, 0) })
     expect(c.trend).toEqual({ direction: 'flat', label: '0% vs same days last month', color: 'var(--text-secondary)' })
-    expect(c.captions).toContain("Month to date vs same days last month · not the selected range · today's spend still being billed")
+    expect(c.evidence?.comparison).toBe('Month to date vs same days last month · not the selected range · the current window ends today, which is still being billed')
   })
 
   it('positive and negative changes show their real percentages (a fully billed window keeps its direction color)', () => {
@@ -96,7 +142,7 @@ describe('Dashboard month-over-month trend', () => {
     for (const [pct, amt] of [[-8.3, -0.83], [12.5, 1.25], [0, 0]] as const) {
       const c = card({ spend: spend(150), monthOverMonth: mom(pct, amt) })
       expect(c.trend?.color).toBe('var(--text-secondary)')
-      expect(c.captions).toContain("Month to date vs same days last month · not the selected range · today's spend still being billed")
+      expect(c.evidence?.comparison).toMatch(/still being billed$/)
     }
     expect(card({ spend: spend(150), monthOverMonth: mom(null, 3.2, 0) }).trend?.color).toBe('var(--text-secondary)')
   })
@@ -104,13 +150,13 @@ describe('Dashboard month-over-month trend', () => {
   it('unavailable and error comparisons show no trend at all -- never 0% or flat', () => {
     const unavailable = card({ spend: spend(10), monthOverMonth: missing('unavailable') as CostSummary['monthOverMonth'] })
     expect(unavailable.trend).toBeUndefined()
-    expect(unavailable.captions).toContain('Month-over-month not available')
+    expect(unavailable.evidence?.comparison).toBe('Month-over-month not available')
 
     const error = card({ spend: spend(10), monthOverMonth: missing('error') as CostSummary['monthOverMonth'] })
     expect(error.trend).toBeUndefined()
-    expect(error.captions).toContain('Month-over-month could not be retrieved')
+    expect(error.evidence?.comparison).toBe('Month-over-month could not be retrieved')
 
-    for (const c of [unavailable, error]) expect(c.captions.join(' ')).not.toMatch(FLAT_OR_ZERO_CLAIM)
+    for (const c of [unavailable, error]) expect(`${c.caption} ${c.evidence?.comparison}`).not.toMatch(FLAT_OR_ZERO_CLAIM)
   })
 
   it('previous period $0: the dollar change, and no fabricated percentage', () => {

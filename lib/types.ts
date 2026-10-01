@@ -515,6 +515,8 @@ export interface ContextSection<T> {
   source: string;
   provenance: 'actual' | 'estimated' | 'derived' | null;
   asOf: string | null;
+  /** The time the data represents (EvidencePeriod); optional here because not every fixture carries it. */
+  period?: { kind: 'range'; start: string; endExclusive: string } | { kind: 'rolling'; window: string } | { kind: 'point_in_time' } | null;
   coverage: string | null;
   reason: string | null;
   data: T | null;

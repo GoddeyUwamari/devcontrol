@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { computeSecurityHealthKpi } from '../securityHealthKpi'
+import { complianceScanPending, computeSecurityEvidence, computeSecurityHealthKpi, securityFindingsCaption, securityKpiCaption } from '../securityHealthKpi'
 
 const pageSource = readFileSync(join(__dirname, '../page.tsx'), 'utf-8')
 const helperSource = readFileSync(join(__dirname, '../securityHealthKpi.ts'), 'utf-8')
@@ -100,5 +100,65 @@ describe('Dashboard page wiring', () => {
   it('findings stay in a loading state until the organization is known (no false empty flash)', () => {
     expect(pageSource).toMatch(/const securityFindingsLoading = !isDemoActive && \(!organization\?\.id \|\| accountFindingStatsLoading \|\| resourceStatsLoading\)/)
     expect(pageSource).toMatch(/riskDataLoading=\{securityFindingsLoading\}/)
+  })
+})
+
+describe('Security Posture face captions', () => {
+  const counts = (critical: number, high: number, medium = 0, low = 0) => ({ critical, high, medium, low })
+  const base = { isDemoActive: false, isLoading: false, findingsError: false, resourceComplianceError: false }
+
+  it('counts by severity, zeros omitted, plural from the total', () => {
+    expect(securityFindingsCaption(counts(1, 5))).toBe('1 critical · 5 high findings')
+    expect(securityFindingsCaption(counts(1, 0))).toBe('1 critical finding')
+    expect(securityFindingsCaption(counts(0, 0, 2, 1))).toBe('2 medium · 1 low findings')
+    expect(securityFindingsCaption(counts(0, 0))).toBeNull()
+    expect(securityFindingsCaption(undefined)).toBeNull()
+  })
+
+  it('"compliance scan pending" only from scan_completed === false', () => {
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: false })).toBe('1 critical · 5 high findings · compliance scan pending')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: true })).toBe('1 critical · 5 high findings')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: undefined })).toBe('1 critical · 5 high findings')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: false, resourceComplianceError: true })).toBe('1 critical · 5 high findings')
+  })
+
+  it('loading, demo, failed, or empty data: the caption is omitted', () => {
+    expect(securityKpiCaption({ ...base, isLoading: true, findingCounts: counts(1, 5), resourceScanCompleted: false })).toBeNull()
+    expect(securityKpiCaption({ ...base, isDemoActive: true, findingCounts: counts(1, 5), resourceScanCompleted: false })).toBeNull()
+    expect(securityKpiCaption({ ...base, findingsError: true, findingCounts: undefined, resourceScanCompleted: undefined })).toBeNull()
+    expect(securityKpiCaption({ ...base, findingCounts: counts(0, 0), resourceScanCompleted: true })).toBeNull()
+  })
+})
+
+describe('Security face caption and panel share one compliance-scan rule', () => {
+  const counts = { critical: 1, high: 5, medium: 0, low: 0 }
+  const evidence = (o: { resourceScanCompleted: boolean | undefined; resourceComplianceError?: boolean; complianceBreakdown?: string | null; complianceCountsReported?: boolean }) =>
+    computeSecurityEvidence({
+      isDemoActive: false, isLoading: false, findingCounts: counts, findingsError: false, securityComponent: undefined,
+      complianceBreakdown: null, complianceCountsReported: true, resourceComplianceError: false, ...o,
+    }).resourceCompliance
+  const caption = (o: { resourceScanCompleted: boolean | undefined; resourceComplianceError?: boolean }) =>
+    securityKpiCaption({ isDemoActive: false, isLoading: false, findingCounts: counts, findingsError: false, resourceComplianceError: false, ...o })
+
+  it.each([
+    [false, false],
+    [true, false],
+    [undefined, false],
+    [false, true],
+  ] as const)('scan_completed=%s, request failed=%s: the face says "pending" exactly when the panel does', (resourceScanCompleted, resourceComplianceError) => {
+    const pending = complianceScanPending(resourceScanCompleted, resourceComplianceError)
+    expect(caption({ resourceScanCompleted, resourceComplianceError })!.includes('compliance scan pending')).toBe(pending)
+    expect(evidence({ resourceScanCompleted, resourceComplianceError })!.includes('Compliance scan pending')).toBe(pending)
+  })
+
+  it('panel wording per state -- a completed scan is never "Not yet evaluated"', () => {
+    expect(evidence({ resourceScanCompleted: false })).toBe('Resource compliance: Compliance scan pending')
+    expect(evidence({ resourceScanCompleted: false, complianceBreakdown: '2 High' })).toBe('Resource compliance: Compliance scan pending · 2 High')
+    expect(evidence({ resourceScanCompleted: true, complianceBreakdown: '2 High · 1 Low' })).toBe('Resource compliance: 2 High · 1 Low')
+    expect(evidence({ resourceScanCompleted: true })).toBe('Resource compliance: No open issues in the completed compliance scan')
+    expect(evidence({ resourceScanCompleted: true, complianceCountsReported: false })).toBe('Resource compliance: Not available')
+    expect(evidence({ resourceScanCompleted: undefined, complianceCountsReported: false })).toBe('Resource compliance: Not yet evaluated')
+    expect(evidence({ resourceScanCompleted: false, resourceComplianceError: true })).toBe('Resource compliance: Unavailable')
+    for (const s of [true, false]) expect(evidence({ resourceScanCompleted: s })).not.toContain('Not yet evaluated')
   })
 })

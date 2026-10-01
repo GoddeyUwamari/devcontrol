@@ -28,15 +28,18 @@ import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
 import { computeDashboardSpendCard } from './dashboardSpendCard'
-import { computeSecurityEvidence, computeSecurityHealthKpi, SECURITY_STATUS_BADGE } from './securityHealthKpi'
-import { INFRASTRUCTURE_POSTURE_LABEL, postureStatusLabel } from '@/lib/infrastructure-posture'
+import { computeSecurityEvidence, computeSecurityHealthKpi, resourceComplianceLine, SECURITY_STATUS_BADGE, securityFindingsCaption, securityKpiCaption } from './securityHealthKpi'
+import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 import { EvidenceSection } from '@/components/dashboard/evidence-info'
 import { PostureEvidence } from '@/components/dashboard/posture-evidence'
 import { toneFillClass } from '@/components/dashboard/evidence-badge'
 import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
-import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
+import { annualizeMonthly, formatSavingsCents } from '@/lib/utils'
+import { deriveAnalysisStatus, pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
+import { roundCents } from '../costs/cost-display'
+import type { OpportunityEvaluationState } from '@/components/dashboard/savings-opportunities'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { DollarSign, ShieldCheck, Gauge, Wifi, WifiOff } from 'lucide-react'
@@ -161,7 +164,7 @@ export default function DashboardPage() {
 
   // Same authoritative cost_recommendations boundary /costs and /cost-optimization
   // already consume, via costRecommendationsService -- no independent fetch/transform.
-  const { data: costRecsRaw = [] } = useQuery<CostRecommendation[]>({
+  const { data: costRecsRaw = [], isLoading: costRecsLoading, isError: costRecsFailed } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations', organization?.id],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
     staleTime: 60_000, refetchInterval: 300_000,
@@ -171,7 +174,7 @@ export default function DashboardPage() {
 
   // Server-computed aggregate (same SUM /costs and /costs/efficiency use via
   // getStats()) rather than a client-side reduce over costRecsRaw.
-  const { data: costRecStats } = useQuery({
+  const { data: costRecStats, isError: costRecStatsFailed } = useQuery({
     queryKey: ['cost-recommendations-stats', organization?.id],
     queryFn: costRecommendationsService.getStats,
     staleTime: 60_000, refetchInterval: 300_000,
@@ -179,15 +182,20 @@ export default function DashboardPage() {
     enabled: !isDemoActive && !!organization?.id,
   })
 
-  // Real evaluation-state signal: every wired cost-optimization detector
-  // (EC2/EBS/RDS/S3/...) runs together inside one scan pass, tracked here --
-  // so "has any scan completed" is sufficient to know every category has
-  // actually been evaluated at least once, distinguishing a genuine zero
-  // result from "never scanned." Same existing endpoint already exposed via
-  // costRecommendationsService.getAnalysisRuns(), no backend change.
-  const { data: analysisRuns } = useQuery({
+  // Cost analysis runs both manually (cost_analysis_runs) and inside the
+  // scheduled discovery job (resource_discovery_jobs.cost_analysis_completed).
+  // Both histories feed pickLatestAnalysis() + deriveAnalysisStatus() below --
+  // the same evaluation state /costs and /cost-optimization show.
+  const { data: analysisRuns, isLoading: analysisRunsLoading, isError: analysisRunsFailed } = useQuery({
     queryKey: ['cost-analysis-runs', organization?.id],
     queryFn: () => costRecommendationsService.getAnalysisRuns(5),
+    staleTime: 60_000, refetchInterval: 300_000,
+    refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
+    enabled: !isDemoActive && !!organization?.id,
+  })
+  const { data: discoveryJobs, isLoading: discoveryJobsLoading, isError: discoveryJobsFailed } = useQuery({
+    queryKey: ['discovery-jobs', organization?.id],
+    queryFn: () => awsResourcesService.getDiscoveryJobs(5),
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && !!organization?.id,
@@ -242,14 +250,13 @@ export default function DashboardPage() {
 
   // Demo-only: real mode's spend trend comes from spendCard below.
   const costChange      = DEMO_DASHBOARD_STATS.costChange
-  // Raw (unrounded) monthly waste — kept separately so the annual projection can
-  // round once after multiplying, matching costs/page.tsx and cost-optimization/page.tsx,
-  // instead of rounding the monthly figure first and compounding the rounding error.
-  const wasteAmountRaw  = isDemoActive ? 1922 : (costRecStats?.totalPotentialSavings ?? 0)
-  // Deliberately NOT Math.round()'d: a genuine sub-$1 saving would round to 0 here,
-  // falsifying every `wasteAmount > 0` gate below. Display sites use
-  // formatSavingsCurrency(), which handles the sub-$1 case correctly.
-  const wasteAmount     = wasteAmountRaw
+  // The estimated monthly savings (the same getStats() total every savings
+  // surface reads), rounded to cents once. Every dashboard savings figure is
+  // shown at cent precision (formatSavingsCents) and the annual figure is this
+  // same cent-rounded monthly amount x 12, so the two always visibly agree
+  // ($5.17/month -> $62.04/year). A real sub-$1 saving stays > 0.
+  const monthlySavings = isDemoActive ? 1922 : roundCents(costRecStats?.totalPotentialSavings ?? 0)
+  const annualSavings = roundCents(annualizeMonthly(monthlySavings))
 
   const { data: awsAccounts } = useQuery({
     queryKey: ['aws-accounts', organization?.id],
@@ -317,7 +324,7 @@ export default function DashboardPage() {
   // Real-data-only, like every other computed-metric feature on this dashboard — no
   // demo-mode fabrication. The backend gathers its own cost evidence through the shared
   // AI Chat cost-context path (per-org cached Cost Explorer results); nothing is sent from here.
-  const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, !isDemoActive && hasBillingData)
+  const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, !isDemoActive)
 
   // Canonical System Intelligence score for the Infrastructure Posture KPI --
   // same endpoint/cache the Infrastructure page reads, independent of
@@ -362,27 +369,16 @@ export default function DashboardPage() {
   const systemStatusLabel = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'unknown'
 
   // systemHealth is DevControl's own /health check (API + database), not the
-  // customer's AWS -- the card always says so (SYSTEM_HEALTH_DISCLAIMER).
-  // "Live" is only claimed when that check reports operational.
+  // customer's AWS -- each state's one caption says so. "Responding" is only
+  // claimed when that check reports operational; the other states keep their
+  // existing wording.
   const systemStatusConfig = {
-    healthy:  { color: 'var(--text-success)', dot: 'var(--fill-success)', value: 'Operational', detail: 'Platform API & Database Services Live' },
-    degraded: { color: 'var(--text-warning)', dot: 'var(--fill-warning)', value: 'Degraded', detail: "DevControl's own services are degraded." },
-    down:     { color: 'var(--text-danger)', dot: 'var(--fill-danger)', value: 'Not responding', detail: "DevControl's API is not responding normally." },
-    unknown:  { color: 'var(--text-secondary)', dot: 'var(--text-secondary)', value: 'Checking', detail: "Checking DevControl's own service status." },
+    healthy:  { color: 'var(--text-success)', dot: 'var(--fill-success)', value: 'Operational', caption: 'API and database responding · not your AWS resources' },
+    degraded: { color: 'var(--text-warning)', dot: 'var(--fill-warning)', value: 'Degraded', caption: "DevControl's own services are degraded. Not a status of your AWS resources." },
+    down:     { color: 'var(--text-danger)', dot: 'var(--fill-danger)', value: 'Not responding', caption: "DevControl's API is not responding normally. Not a status of your AWS resources." },
+    unknown:  { color: 'var(--text-secondary)', dot: 'var(--text-secondary)', value: 'Checking', caption: "Checking DevControl's own service status." },
   } as const
   const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.unknown
-
-  const topRecs: { label: string; savings: string; severity?: 'LOW' | 'MEDIUM' | 'HIGH' }[] = isDemoActive
-    ? [
-        { label: 'Right-size 3 EC2 instances',    savings: '$720/mo' },
-        { label: 'Delete unattached EBS volumes', savings: '$210/mo' },
-        { label: 'Enable S3 Intelligent-Tiering',  savings: '$340/mo' },
-      ]
-    : costRecsRaw.slice(0, 5).map(r => ({
-        label:    r.issue || 'Can reduce monthly AWS spend',
-        savings:  r.potentialSavings != null ? `${formatSavingsCurrency(r.potentialSavings)}/mo` : '',
-        severity: r.severity,
-      }))
 
   // Cost-saving opportunities, grouped by resource type from the already-fetched cost
   // recommendations — no new fetch. Structured as a list (not one variable per type)
@@ -418,29 +414,44 @@ export default function DashboardPage() {
         return {
           ...cat,
           count: matches.length,
-          savingsLabel: matches.length === 0 ? '$0/mo' : total != null ? `${formatSavingsCurrency(total)}/mo` : '—',
+          savingsLabel: matches.length === 0 ? `${formatSavingsCents(0)}/mo` : total != null ? `${formatSavingsCents(roundCents(total))}/mo` : '—',
           priorityBadge: priorityBadgeFor(matches[0]?.severity),
         }
       })
 
-  // One evaluation-state signal for all categories. A completed run does NOT
-  // mean every detector succeeded -- per-detector outcomes are not persisted
-  // yet -- so a zero count is never presented as "nothing found"; the
-  // components render no conclusion for it.
-  const latestAnalysisRun = analysisRuns?.[0] ?? null
-  const opportunityEvaluationState: 'evaluated' | 'not_evaluated' | 'in_progress' = isDemoActive
+  // One evaluation-state signal for all categories: the shared
+  // pickLatestAnalysis() + deriveAnalysisStatus() over both the scheduled
+  // (discovery job) and manual analysis histories -- the same state /costs and
+  // /cost-optimization show, not a second derivation. A completed analysis does
+  // NOT mean every detector succeeded (per-detector outcomes are not persisted
+  // yet), so it only qualifies a zero count; a card with an active
+  // recommendation shows it whatever this says. A failed request is
+  // 'unavailable', never "not evaluated" or a zero.
+  const analysisStatus = deriveAnalysisStatus({
+    awsConnected: isAwsConnected,
+    latestAnalysis: pickLatestAnalysis({ latestDiscoveryJob: discoveryJobs?.[0], latestAnalysisRun: analysisRuns?.[0] }),
+    activeCount: costRecStats?.activeRecommendations ?? 0,
+    totalEverCount: costRecStats?.totalRecommendations ?? 0,
+  })
+  const opportunityEvaluationState: OpportunityEvaluationState = isDemoActive
     ? 'evaluated'
-    : latestAnalysisRun?.status === 'running'
-      ? 'in_progress'
-      : (analysisRuns?.some((r) => r.status === 'completed') ?? false)
-        ? 'evaluated'
+    : (analysisRunsFailed && !analysisRuns) || (discoveryJobsFailed && !discoveryJobs) || costRecsFailed
+      ? 'unavailable'
+      : !organization?.id || analysisRunsLoading || discoveryJobsLoading || costRecsLoading || analysisStatus === 'loading'
+        ? 'loading'
+        : analysisStatus === 'in_progress' ? 'in_progress'
+        : analysisStatus === 'failed' ? 'failed'
+        : analysisStatus.startsWith('completed') ? 'evaluated'
         : 'not_evaluated'
 
   // Single authoritative active-opportunity count, shared by the Recommended Action
-  // CTA, its "Review Savings (N)" button, and Cost-Saving Opportunities' "View all (N)"
-  // -- the server-computed aggregate (costRecStats.activeRecommendations), never
-  // topRecs.length (a display-only slice capped at 5) used as a population proxy.
-  const activeOpportunityCount = isDemoActive ? topRecs.length : (costRecStats?.activeRecommendations ?? topRecs.length)
+  // CTA and Cost-Saving Opportunities' "View all (N)" -- the server-computed
+  // aggregate (costRecStats.activeRecommendations). When that request fails there
+  // is no count (null), never one rebuilt from the capped recommendations list.
+  const DEMO_OPPORTUNITY_COUNT = 3
+  const activeOpportunityCount: number | null = isDemoActive
+    ? DEMO_OPPORTUNITY_COUNT
+    : costRecStatsFailed && !costRecStats ? null : (costRecStats?.activeRecommendations ?? null)
 
   // Dashboard SUMMARY only: show signal, not every category. "Real signal" is an
   // active recommendation existing for that category (count > 0) -- deliberately
@@ -505,15 +516,38 @@ export default function DashboardPage() {
     ? String(displayedHealthScore)
     : (!isDemoActive && (systemIntelligenceLoading || !organization?.id)) ? 'Calculating…' : '—'
 
+  // One resource compliance input set for the Security Posture panel and Key
+  // Findings, both read through resourceComplianceLine().
+  const resourceComplianceInputs = {
+    complianceBreakdown: resourceComplianceBreakdown,
+    complianceCountsReported: !!resourceStats?.compliance_stats?.by_severity,
+    resourceScanCompleted: resourceStats?.scan_completed,
+    resourceComplianceError,
+  }
   const securityEvidence = computeSecurityEvidence({
     isDemoActive,
     isLoading: securityFindingsLoading,
     findingCounts: accountFindingStats?.bySeverity,
     findingsError,
-    complianceBreakdown: resourceComplianceBreakdown,
-    resourceComplianceError,
+    ...resourceComplianceInputs,
     securityComponent: systemIntelligence?.components?.security,
   })
+
+  // One face caption per card/tile, each from data already loaded here;
+  // null (omitted) whenever its data is loading, failed, or absent.
+  const securityCaption = securityKpiCaption({
+    isDemoActive,
+    isLoading: securityFindingsLoading,
+    findingCounts: accountFindingStats?.bySeverity,
+    findingsError,
+    resourceScanCompleted: resourceStats?.scan_completed,
+    resourceComplianceError,
+  })
+  const postureCaption = isDemoActive || displayedHealthScore === null ? null : postureCompositionCaption(systemIntelligence?.components)
+  const postureTileCaptions = {
+    cost: costComponentCaption(systemIntelligence?.components?.cost),
+    security: securityFindingsLoading || findingsError ? null : securityFindingsCaption(accountFindingStats?.bySeverity),
+  }
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
 
@@ -530,8 +564,8 @@ export default function DashboardPage() {
         <>
           {showRecommendationSections && (
             <RecommendedActionCard
-              opportunityCount={activeOpportunityCount}
-              savingsLabel={wasteAmount > 0 ? `${formatSavingsCurrency(wasteAmount)}/month` : null}
+              opportunityCount={activeOpportunityCount ?? 0}
+              savingsLabel={monthlySavings > 0 ? `${formatSavingsCents(monthlySavings)}/month` : null}
               ctaHref="/cost-optimization"
               isDemoActive={isDemoActive}
             />
@@ -562,20 +596,19 @@ export default function DashboardPage() {
                   ? (spendCard.trend ? [{ label: spendCard.trend.label, color: spendCard.trend.color, direction: spendCard.trend.direction, testId: 'spend-change' }] : undefined)
                   : [{ label: `${costChange > 0 ? '+' : ''}${Math.abs(costChange)}% vs last 30 days`, color: costDeltaColor, direction: costChange > 0 ? 'up' : costChange < 0 ? 'down' : 'flat' }]
               }
+              caption={spendCard?.caption}
               sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.map(d => ({ value: d.total }))) : undefined}
-              info={spendCard && spendCard.captions.length > 0 ? {
+              info={spendCard?.evidence ? {
                 title: spendCard.label,
                 align: 'start',
                 content: (
                   <>
                     <EvidenceSection heading="Source">
-                      <p className="m-0">{spendCard.captions[0]}</p>
+                      <p className="m-0">{spendCard.evidence.source}</p>
                     </EvidenceSection>
-                    {spendCard.captions[1] && (
-                      <EvidenceSection heading="Comparison">
-                        <p className="m-0">{spendCard.captions[1]}</p>
-                      </EvidenceSection>
-                    )}
+                    <EvidenceSection heading="Comparison">
+                      <p className="m-0">{spendCard.evidence.comparison}</p>
+                    </EvidenceSection>
                   </>
                 ),
               } : undefined}
@@ -590,6 +623,7 @@ export default function DashboardPage() {
               value={securityKpi.value}
               valueSuffix={securityKpi.score === null ? undefined : '/ 100'}
               badges={securityKpi.badge ? [{ label: securityKpi.badge.label, color: securityKpi.badge.color, direction: securityKpi.badge.direction, testId: 'security-status' }] : undefined}
+              caption={securityCaption}
               progress={securityKpi.score === null || !securityKpi.badge ? undefined : {
                 value: securityKpi.score,
                 fillClassName: toneFillClass(securityKpi.badge.color),
@@ -627,6 +661,7 @@ export default function DashboardPage() {
                 ...(infraHealthBadge ? [{ label: infraHealthBadge.label, color: infraHealthBadge.color, direction: infraHealthBadge.direction, testId: 'posture-status' }] : []),
                 ...(postureIsPartial ? [{ label: 'Partial', color: 'var(--text-secondary)', testId: 'posture-partial' }] : []),
               ]}
+              caption={postureCaption}
               progress={displayedHealthScore === null || !infraHealthBadge ? undefined : {
                 value: displayedHealthScore,
                 fillClassName: toneFillClass(infraHealthBadge.color),
@@ -645,7 +680,7 @@ export default function DashboardPage() {
             topRisk={topRisk}
             topRiskStatus={topRiskStatus}
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
-            systemStatus={{ value: statusConf.value, detail: statusConf.detail, operational: systemStatusLabel === 'healthy', color: statusConf.color, dotColor: statusConf.dot }}
+            systemStatus={{ value: statusConf.value, caption: statusConf.caption, operational: systemStatusLabel === 'healthy', color: statusConf.color, dotColor: statusConf.dot }}
           />
 
           {/* ── SECTION 3: INFRASTRUCTURE POSTURE ── */}
@@ -655,8 +690,7 @@ export default function DashboardPage() {
             components={systemIntelligence?.components}
             isLoading={!isDemoActive && (systemIntelligenceLoading || !organization?.id)}
             statusBadge={SECURITY_STATUS_BADGE}
-            score={displayedHealthScore}
-            scoreBadge={infraHealthBadge ? { label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
+            captions={postureTileCaptions}
             compositeState={systemIntelligence?.composite_state ?? null}
           />
 
@@ -679,13 +713,12 @@ export default function DashboardPage() {
               <SecurityComplianceSummary
                 findingCounts={isDemoActive ? { critical: 1, high: 3, medium: 5, low: 0 } : (accountFindingStats?.bySeverity ?? null)}
                 riskDataLoading={securityFindingsLoading}
-                complianceBreakdown={resourceComplianceBreakdown}
+                resourceComplianceStatus={resourceComplianceLine(resourceComplianceInputs)}
                 soc2Subtext={soc2Subtext}
                 soc2Loading={!isDemoActive && soc2Loading}
                 customFrameworksSubtext={customFrameworksSubtext}
                 customFrameworksLoading={!isDemoActive && customFrameworksLoading}
                 findingsError={findingsError}
-                resourceComplianceError={resourceComplianceError}
                 soc2Error={soc2Error}
                 customFrameworksError={customFrameworksError}
               />
@@ -708,8 +741,8 @@ export default function DashboardPage() {
               </div>
               <div className="lg:col-span-2">
                 <ExecutiveRoiCard
-                  monthlySavingsLabel={wasteAmount > 0 ? formatSavingsCurrency(wasteAmount) : null}
-                  annualSavingsLabel={wasteAmount > 0 ? formatSavingsCurrency(annualizeMonthly(wasteAmountRaw)) : null}
+                  monthlySavingsLabel={monthlySavings > 0 ? formatSavingsCents(monthlySavings) : null}
+                  annualSavingsLabel={monthlySavings > 0 ? formatSavingsCents(annualSavings) : null}
                   isDemoActive={isDemoActive}
                 />
               </div>

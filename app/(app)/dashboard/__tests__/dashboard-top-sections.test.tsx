@@ -1,6 +1,7 @@
 /**
  * Dashboard top sections, through the real DashboardPage: section order,
- * card faces (no evidence paragraphs, evidence state as badges), the info
+ * card faces (evidence state as badges plus at most one basis caption, each
+ * derived from loaded data and omitted when that data is missing), the info
  * panels (accessible buttons, Escape, focus return, desktop anchoring), and
  * the content rules -- partial never becomes available, a missing score is
  * "—" never 0, an estimate stays labeled as one, a still-billing comparison
@@ -32,7 +33,7 @@ vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }),
 }))
 
-const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+const COST_REASON = 'Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
 const OBS_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
 
 const component = (label: string, score: number, status: 'good' | 'warning' | 'risk', extra: Record<string, unknown> = {}) =>
@@ -41,7 +42,7 @@ const PARTIAL_INTELLIGENCE = {
   system_score: 52, status: 'Degraded', composite_state: 'partial', composite_reason: `Cost: ${COST_REASON} Alert Coverage: ${OBS_REASON}`,
   computed_at: '2026-10-01T00:00:00Z', top_action: null, top_drivers: [],
   components: {
-    cost: component('Cost Efficiency', 50, 'risk', { state: 'partial', reason: COST_REASON }),
+    cost: component('Cost Efficiency', 97, 'good', { state: 'partial', reason: COST_REASON, costSource: 'estimated' }),
     security: component('Security Posture', 57, 'risk'),
     observability: component('Observability', 0, 'risk', { state: 'partial', reason: OBS_REASON }),
   },
@@ -51,8 +52,8 @@ const AVAILABLE_INTELLIGENCE = {
   components: { cost: component('Cost Efficiency', 95, 'good'), security: component('Security Posture', 57, 'risk'), observability: component('Observability', 80, 'good') },
 }
 
-const actualSpend = (amount: number, lastDayInProgress = true): CostSummary['spend'] => ({
-  state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf: null, coverage: null, reason: null,
+const actualSpend = (amount: number, lastDayInProgress = true, period: CostSummary['spend']['period'] = { kind: 'range', start: '2026-10-01', endExclusive: '2026-10-15' }): CostSummary['spend'] => ({
+  state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf: null, period, coverage: null, reason: null,
   data: { amount, basis: 'billed_month_to_date', lastDayInProgress },
 })
 const estimatedSpend = (amount: number): CostSummary['spend'] => ({
@@ -164,17 +165,70 @@ describe('2. no Resource Checks card and no reference demo content', () => {
   })
 })
 
-describe('3. no evidence paragraphs on card faces', () => {
-  it('provenance, comparison basis, finding counts, and component reasons are not on any card face', async () => {
+describe('3. one derived caption per face; long evidence stays in the panels', () => {
+  it('renders exactly these captions for the fixture data', async () => {
+    vi.spyOn(awsResourcesService, 'getStats').mockResolvedValue({ compliance_stats: null, scan_completed: false } as never)
     renderDashboard()
     await settled()
-    const faces = [...screen.getAllByTestId('kpi-card'), screen.getByTestId('posture-section')]
+    await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent('compliance scan pending'))
+    expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent(/^Actual · AWS Cost Explorer · today still billing$/)
+    expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low findings · compliance scan pending$/)
+    expect(within(kpi('/infrastructure')).getByTestId('kpi-caption')).toHaveTextContent(/^Composite · Cost 97 · Security 57 · Alert coverage 0$/)
+    expect(screen.getByTestId('posture-tile-caption-cost')).toHaveTextContent(/^Estimated from inventory · anomaly checks not yet active$/)
+    expect(screen.getByTestId('posture-tile-caption-security')).toHaveTextContent(/^1 critical · 3 high · 1 low findings$/)
+    expect(screen.queryByTestId('posture-tile-caption-observability')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('system-health-caption')).toHaveTextContent(/^API and database responding · not your AWS resources$/))
+  })
+
+  it('every card and tile has at most one caption line, and no long evidence on its face', async () => {
+    renderDashboard()
+    await settled()
+    for (const card of screen.getAllByTestId('kpi-card')) expect(within(card).queryAllByTestId('kpi-caption').length).toBeLessThanOrEqual(1)
+    for (const key of ['cost', 'security', 'observability']) {
+      expect(screen.getByTestId(`posture-tile-${key}`).querySelectorAll('[data-testid^="posture-tile-caption-"]').length).toBeLessThanOrEqual(1)
+    }
+    expect(screen.getByTestId('system-health-card').querySelectorAll('p')).toHaveLength(1)
+    const faces = [...screen.getAllByTestId('kpi-card'), screen.getByTestId('posture-section'), screen.getByTestId('system-health-card')]
     for (const face of faces) {
-      for (const evidence of ['AWS Cost Explorer', 'not the selected range', 'still being billed', 'critical finding', COST_REASON, OBS_REASON, 'A posture score']) {
+      for (const evidence of ['not the selected range', 'still being billed', COST_REASON, OBS_REASON, 'Anomaly checks not yet active.', 'A posture score', 'health check']) {
         expect(face.textContent).not.toContain(evidence)
       }
-      for (const p of face.querySelectorAll('p')) expect((p.textContent ?? '').length).toBeLessThanOrEqual(80)
     }
+    // "today still billing" is said once on the spend face, not repeated by the comparison.
+    expect(kpi('/costs').textContent!.match(/still bill/g)).toHaveLength(1)
+  })
+
+  it('missing data omits the caption instead of inventing one', async () => {
+    costSummarySpy.mockReturnValue(new Promise(() => {}))
+    vi.spyOn(accountSecurityFindingsService, 'getStats').mockRejectedValue(new Error('HTTP 500'))
+    vi.spyOn(awsResourcesService, 'getStats').mockResolvedValue({ compliance_stats: null } as never) // no scan_completed field
+    intelligenceSpy.mockRejectedValue(new Error('HTTP 500'))
+    renderDashboard()
+    await waitFor(() => expect(within(kpi('/infrastructure')).getByText('—')).toBeInTheDocument())
+    await waitFor(() => expect(within(kpi('/security')).getByText('—')).toBeInTheDocument())
+    for (const href of ['/costs', '/security', '/infrastructure']) expect(within(kpi(href)).queryByTestId('kpi-caption')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/compliance scan pending|Composite ·|0 findings/)
+  })
+
+  it('actual Spend and the estimated Cost component stay distinguishable', async () => {
+    renderDashboard()
+    await settled()
+    const spendCaption = within(kpi('/costs')).getByTestId('kpi-caption').textContent!
+    const costCaption = screen.getByTestId('posture-tile-caption-cost').textContent!
+    expect(spendCaption).toMatch(/^Actual · AWS Cost Explorer/)
+    expect(costCaption).toMatch(/^Estimated from inventory/)
+    expect(costCaption).not.toMatch(/Actual|AWS Cost Explorer/)
+    expect(spendCaption).not.toMatch(/Estimate/)
+  })
+
+  it('day 1 with no billed days: the caption says so and no percentage is shown', async () => {
+    costSummarySpy.mockResolvedValue({ spend: actualSpend(0.37, true, { kind: 'range', start: '2026-10-01', endExclusive: '2026-10-02' }), monthOverMonth: mom(-80, -8, true) })
+    renderDashboard()
+    await settled()
+    expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent('Actual · AWS Cost Explorer · no billed days yet this month')
+    expect(within(kpi('/costs')).queryByTestId('spend-change')).toBeNull()
+    expect(kpi('/costs').textContent).not.toMatch(/\d%/)
+    expect(openInfo(kpi('/costs'), 'Month-to-Date Spend details')).toHaveTextContent('No comparison until a day of this month has finished billing')
   })
 })
 
@@ -251,7 +305,21 @@ describe('5. Partial follows composite_state', () => {
     renderDashboard()
     await settled()
     expect(within(kpi('/infrastructure')).getByTestId('posture-partial')).toHaveTextContent('Partial')
-    expect(within(screen.getByTestId('posture-section')).getByTestId('posture-section-partial')).toHaveTextContent('Partial')
+    const section = screen.getByTestId('posture-section')
+    expect(within(section).getByTestId('posture-section-partial')).toHaveTextContent('Partial')
+    // The section's single Partial badge: no tile repeats it.
+    expect(within(section).getAllByText('Partial')).toHaveLength(1)
+  })
+
+  it('the KPI badges are separate chips, never run together ("WeakPartial")', async () => {
+    renderDashboard()
+    await settled()
+    const status = within(kpi('/infrastructure')).getByTestId('posture-status')
+    const partial = within(kpi('/infrastructure')).getByTestId('posture-partial')
+    expect(status).not.toBe(partial)
+    expect(status.textContent).toBe('Needs attention')
+    expect(partial.textContent).toBe('Partial')
+    expect(status.parentElement!.className).toMatch(/\bgap-/)
   })
 
   it('available: no composite Partial badge on either', async () => {
@@ -268,9 +336,9 @@ describe('6–7. component evidence in the posture panel', () => {
     renderDashboard()
     await settled()
     const row = within(openInfo(kpi('/infrastructure'), 'Infrastructure Posture details')).getByTestId('posture-evidence-cost')
-    expect(within(row).getByText('50 · At risk')).toBeInTheDocument()
+    expect(within(row).getByText('97 · Strong')).toBeInTheDocument()
     expect(within(row).getByText('Partial')).toBeInTheDocument()
-    for (const reason of ['Insufficient spend data to assess cost efficiency.', 'Spend based on inventory estimate, not AWS Cost Explorer billing.', 'Anomaly checks not yet active.']) {
+    for (const reason of ['Spend based on inventory estimate, not AWS Cost Explorer billing.', 'Anomaly checks not yet active.']) {
       expect(row.textContent).toContain(reason)
     }
   })
@@ -283,10 +351,14 @@ describe('6–7. component evidence in the posture panel', () => {
     expect(within(row).getByText('Partial')).toBeInTheDocument()
     expect(row).toHaveTextContent(OBS_REASON)
     for (const tier of ['Strong', 'Needs attention', 'At risk']) expect(row.textContent).not.toContain(tier)
-    // The section tile: Partial, no tier chip, no reason paragraph.
+    // The section tile: no Partial chip, no tier chip, no reason paragraph; the full scope text is behind its own ⓘ.
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     const tile = screen.getByTestId('posture-tile-observability')
-    expect(within(tile).getByText('Partial')).toBeInTheDocument()
+    expect(within(tile).queryByText('Partial')).toBeNull()
     expect(tile.textContent).not.toMatch(/At risk|Strong|Needs attention/)
+    expect(tile.textContent).not.toContain(OBS_REASON)
+    expect(openInfo(tile, 'Alert Coverage details')).toHaveTextContent(OBS_REASON)
   })
 })
 
@@ -301,11 +373,13 @@ describe('8. a missing score is "—", never 0', () => {
     expect(kpi('/security').querySelector('[role="progressbar"]')).toBeNull()
   })
 
-  it('a null composite score with components: section ring "—", never 0', async () => {
+  it('a null composite score with components: KPI "—", never 0, and no composite caption; the section has no ring', async () => {
     intelligenceSpy.mockResolvedValue({ ...PARTIAL_INTELLIGENCE, system_score: null, composite_state: null, status: 'Pending' } as never)
     renderDashboard()
-    await waitFor(() => expect(within(screen.getByTestId('posture-ring')).getByText('—')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('posture-tile-cost')).toBeInTheDocument())
     expect(within(kpi('/infrastructure')).getByText('—')).toBeInTheDocument()
+    expect(within(kpi('/infrastructure')).queryByTestId('kpi-caption')).toBeNull()
+    expect(screen.queryByTestId('posture-ring')).toBeNull()
     expect(screen.queryByTestId('posture-partial')).not.toBeInTheDocument()
   })
 
@@ -342,6 +416,7 @@ describe('9. estimated spend is labeled as an estimate', () => {
     const dialog = openInfo(card, 'Estimated Monthly Spend details')
     expect(dialog).toHaveTextContent('Estimate from resource inventory · not AWS billed spend')
     expect(dialog.textContent).not.toContain('Actual · AWS Cost Explorer')
+    expect(within(card).getByTestId('kpi-caption')).toHaveTextContent('Estimated from inventory · not AWS billed spend')
   })
 
   it('actual spend: the panel gives provenance and the comparison basis with the still-billing note', async () => {
@@ -349,7 +424,7 @@ describe('9. estimated spend is labeled as an estimate', () => {
     await settled()
     const dialog = openInfo(kpi('/costs'), 'Month-to-Date Spend details')
     expect(dialog).toHaveTextContent("Actual · AWS Cost Explorer · today's spend still being billed")
-    expect(dialog).toHaveTextContent("Month to date vs same days last month · not the selected range · today's spend still being billed")
+    expect(dialog).toHaveTextContent('Month to date vs same days last month · not the selected range · the current window ends today, which is still being billed')
   })
 })
 
@@ -378,12 +453,15 @@ describe('10. change badge is neutral while today is still billing', () => {
 })
 
 describe('11. Top Risk', () => {
-  it('badge follows the finding\'s actual severity, and the card links to the findings', async () => {
+  it('badge follows the finding\'s actual severity, the title drops the suffix the badge shows, and the card links to the findings', async () => {
     renderDashboard()
     await settled()
     const card = screen.getByTestId('top-risk-card')
     expect(within(card).getByTestId('top-risk-severity')).toHaveTextContent('Critical')
+    expect(within(card).getByText('Root account has no MFA')).toBeInTheDocument()
+    expect(card.textContent).not.toContain('(critical severity)')
     expect(card.closest('a')).toHaveAttribute('href', '/security#findings')
+    expect(card.closest('a')).toHaveAttribute('aria-label', 'Top Risk: Root account has no MFA (critical severity)')
   })
 
   it('no top risk: the existing empty state, no badge, no link', async () => {
@@ -397,13 +475,43 @@ describe('11. Top Risk', () => {
 })
 
 describe('12. DevControl System Health', () => {
-  it('shows the disclaimer on the face', async () => {
+  it('operational: one caption, "API and database responding · not your AWS resources"', async () => {
     renderDashboard()
     await settled()
     const card = screen.getByTestId('system-health-card')
     await waitFor(() => expect(card).toHaveTextContent('Operational'))
-    expect(card).toHaveTextContent('Platform API & Database Services Live')
-    expect(card).toHaveTextContent('Not a status of your AWS resources.')
+    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent('API and database responding · not your AWS resources')
+    expect(card.textContent).not.toMatch(/Live|Platform API/)
+  })
+
+  it('degraded: the existing wording, no "responding" claim', async () => {
+    vi.spyOn(monitoringService, 'getSystemHealth').mockResolvedValue({ status: 'degraded' } as never)
+    renderDashboard()
+    await settled()
+    const card = screen.getByTestId('system-health-card')
+    await waitFor(() => expect(card).toHaveTextContent('Degraded'))
+    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent("DevControl's own services are degraded. Not a status of your AWS resources.")
+    expect(card.textContent).not.toMatch(/responding/)
+  })
+})
+
+describe('Security Posture face and panel agree on the compliance scan', () => {
+  it('scan_completed false: "compliance scan pending" on the face and "Compliance scan pending" in the panel', async () => {
+    vi.spyOn(awsResourcesService, 'getStats').mockResolvedValue({ compliance_stats: null, scan_completed: false } as never)
+    renderDashboard()
+    await settled()
+    await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent('compliance scan pending'))
+    expect(openInfo(kpi('/security'), 'Security Posture details')).toHaveTextContent('Resource compliance: Compliance scan pending')
+  })
+
+  it('scan_completed true with zero counts: no "pending" on the face, and the panel does not say "Not yet evaluated"', async () => {
+    vi.spyOn(awsResourcesService, 'getStats').mockResolvedValue({ compliance_stats: { total_issues: 0, by_severity: { critical: 0, high: 0, medium: 0, low: 0 }, by_category: {} }, scan_completed: true } as never)
+    renderDashboard()
+    await settled()
+    await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low findings$/))
+    const dialog = openInfo(kpi('/security'), 'Security Posture details')
+    expect(dialog).toHaveTextContent('Resource compliance: No open issues in the completed compliance scan')
+    expect(dialog.textContent).not.toMatch(/pending|Not yet evaluated/)
   })
 })
 

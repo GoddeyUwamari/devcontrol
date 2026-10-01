@@ -11,17 +11,22 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { SecurityComplianceSummary } from '../security-compliance-summary'
+import { complianceScanPending, resourceComplianceLine } from '@/app/(app)/dashboard/securityHealthKpi'
 
 type Props = ComponentProps<typeof SecurityComplianceSummary>
 
 const ZERO = { critical: 0, high: 0, medium: 0, low: 0 }
 const EMPTY_FINDINGS_TEXT = 'No open account-level findings recorded yet.'
 
+/** The row text the page passes in, built by the same shared rule the Security Posture panel uses. */
+const compliance = (o: Partial<Parameters<typeof resourceComplianceLine>[0]> = {}) =>
+  resourceComplianceLine({ complianceBreakdown: null, complianceCountsReported: false, resourceScanCompleted: undefined, resourceComplianceError: false, ...o })
+
 function renderCard(overrides: Partial<Props> = {}) {
   const props: Props = {
     findingCounts: ZERO,
     riskDataLoading: false,
-    complianceBreakdown: null,
+    resourceComplianceStatus: compliance(),
     soc2Subtext: '0 of 6 criteria evaluated',
     soc2Loading: false,
     customFrameworksSubtext: 'No custom frameworks yet',
@@ -57,27 +62,38 @@ describe('account-level findings', () => {
   })
 
   it('loading -> skeletons, neither empty text nor "Unavailable" (unchanged)', () => {
-    renderCard({ findingCounts: null, riskDataLoading: true, findingsError: true, resourceComplianceError: true })
+    renderCard({ findingCounts: null, riskDataLoading: true, findingsError: true, resourceComplianceStatus: compliance({ resourceComplianceError: true }) })
     expect(screen.queryByText(EMPTY_FINDINGS_TEXT)).not.toBeInTheDocument()
     expect(screen.queryByText(/Unavailable/)).not.toBeInTheDocument()
     expect(screen.queryByText('Resource compliance')).not.toBeInTheDocument()
   })
 })
 
-describe('resource compliance', () => {
-  it('request failed -> "Unavailable", not "Not yet evaluated"', () => {
-    renderCard({ resourceComplianceError: true })
+describe('resource compliance (the shared scan_completed rule)', () => {
+  it('request failed -> "Unavailable", not "Not yet evaluated" or pending', () => {
+    renderCard({ resourceComplianceStatus: compliance({ resourceComplianceError: true, resourceScanCompleted: false }) })
     expect(subOf('Resource compliance')).toBe('Unavailable')
     expect(screen.queryByText('Not yet evaluated')).not.toBeInTheDocument()
   })
 
-  it('successful response with no severity counts -> existing "Not yet evaluated" (unchanged)', () => {
-    renderCard({ complianceBreakdown: null })
+  it('scan_completed false -> "Compliance scan pending", exactly when the Security Posture face says pending', () => {
+    expect(complianceScanPending(false, false)).toBe(true)
+    renderCard({ resourceComplianceStatus: compliance({ resourceScanCompleted: false }) })
+    expect(subOf('Resource compliance')).toBe('Compliance scan pending')
+  })
+
+  it('a completed scan with zero reported counts is never "Not yet evaluated" (and not zero issues invented when no counts came back)', () => {
+    renderCard({ resourceComplianceStatus: compliance({ resourceScanCompleted: true, complianceCountsReported: true }) })
+    expect(subOf('Resource compliance')).toBe('No open issues in the completed compliance scan')
+  })
+
+  it('no scan_completed field and no counts -> the previous "Not yet evaluated"', () => {
+    renderCard({ resourceComplianceStatus: compliance() })
     expect(subOf('Resource compliance')).toBe('Not yet evaluated')
   })
 
   it('successful response with issues -> the severity breakdown (unchanged)', () => {
-    renderCard({ complianceBreakdown: '2 High · 1 Low' })
+    renderCard({ resourceComplianceStatus: compliance({ resourceScanCompleted: true, complianceCountsReported: true, complianceBreakdown: '2 High · 1 Low' }) })
     expect(subOf('Resource compliance')).toBe('2 High · 1 Low')
   })
 })
@@ -113,7 +129,7 @@ describe('regression: an error can never render its fact\'s empty state', () => 
     renderCard({
       findingCounts: null,
       findingsError: true,
-      resourceComplianceError: true,
+      resourceComplianceStatus: compliance({ resourceComplianceError: true }),
       soc2Error: true,
       customFrameworksError: true,
     })

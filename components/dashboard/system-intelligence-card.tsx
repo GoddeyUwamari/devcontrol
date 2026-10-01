@@ -18,10 +18,8 @@ interface SystemIntelligenceCardProps {
   isLoading: boolean
   /** Status wording, passed in so the card reuses the dashboard's existing scheme (SECURITY_STATUS_BADGE). */
   statusBadge: PostureStatusBadge
-  /** The composite score (system_score); null renders "—", never 0. */
-  score?: number | null
-  /** The composite's existing status badge (postureStatusLabel wording), when there is one. */
-  scoreBadge?: { label: string; color: string }
+  /** Each tile's one face caption, built by the page from data it already loads; omitted when null. */
+  captions?: Partial<Record<ComponentKey, string | null>>
   /** The backend's composite_state, read as-is -- never derived here. */
   compositeState?: SystemIntelligenceResult['composite_state']
 }
@@ -36,72 +34,64 @@ const STATUS_FILL_CLASS: Record<ComponentStatus, string> = {
   risk: 'bg-[color:var(--fill-danger)]',
 }
 
-const RING_SIZE = 112
-const RING_STROKE = 10
-
-function ScoreRing({ score, color }: { score: number | null; color: string }) {
-  const r = (RING_SIZE - RING_STROKE) / 2
-  const circumference = 2 * Math.PI * r
-  return (
-    <div className="relative shrink-0" style={{ width: RING_SIZE, height: RING_SIZE }} data-testid="posture-ring">
-      <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} aria-hidden="true" className="-rotate-90">
-        <circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={r} fill="none" stroke="var(--border)" strokeWidth={RING_STROKE} />
-        {score !== null && (
-          <circle
-            cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={r} fill="none" stroke={color} strokeWidth={RING_STROKE} strokeLinecap="round"
-            strokeDasharray={circumference} strokeDashoffset={circumference * (1 - Math.max(0, Math.min(100, score)) / 100)}
-          />
-        )}
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[28px] font-bold leading-none text-foreground">{score === null ? '—' : score}</span>
-        <span className="text-xs text-[var(--text-secondary)] mt-1">/ 100</span>
-      </div>
-    </div>
-  )
-}
-
-function ComponentTile({ componentKey, component, statusBadge }: { componentKey: ComponentKey; component: SystemIntelligenceResult['components'][ComponentKey]; statusBadge: PostureStatusBadge }) {
+function ComponentTile({ componentKey, component, statusBadge, caption }: {
+  componentKey: ComponentKey
+  component: SystemIntelligenceResult['components'][ComponentKey]
+  statusBadge: PostureStatusBadge
+  caption: string | null
+}) {
   const d = describePostureComponent(componentKey, component, statusBadge)
   const Icon = POSTURE_COMPONENT_ICONS[componentKey]
+  // One caption line: the missing-score wording when there is no score, else the page's caption.
+  const faceCaption = d.score === null ? d.missingText : caption
   return (
-    <div className="min-w-0 rounded-xl border border-border p-4 flex flex-col" data-testid={`posture-tile-${componentKey}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={15} aria-hidden="true" className="text-[var(--text-secondary)] shrink-0" />
-        <p className="text-sm font-semibold text-foreground truncate m-0">{d.label}</p>
+    <div className="relative min-w-0 rounded-xl border border-border p-4 flex flex-col" data-testid={`posture-tile-${componentKey}`}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon size={15} aria-hidden="true" className="text-[var(--text-secondary)] shrink-0" />
+          <p className="text-sm font-semibold text-foreground truncate m-0">{d.label}</p>
+        </div>
+        {component.reason && (
+          <EvidenceInfo label={`${d.label} details`} title={d.label} align={componentKey === 'observability' ? 'end' : 'start'}>
+            <p className="m-0">{component.reason}</p>
+          </EvidenceInfo>
+        )}
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 mb-3">
+      <div className="flex flex-wrap items-center gap-1.5">
         <span className={`text-lg font-bold leading-none mr-1 ${d.score === null ? 'text-[var(--text-secondary)]' : 'text-foreground'}`}>{d.scoreText}</span>
         {d.tier && <EvidenceBadge label={d.tier.label} color={d.tier.color} />}
-        {d.partial && d.score !== null && <PartialBadge testId={`${d.label}-partial`} />}
       </div>
-      {d.score !== null ? (
-        <Progress
-          value={d.score}
-          className="h-1.5 mt-auto bg-[color:var(--border)]"
-          indicatorClassName={STATUS_FILL_CLASS[component.status]}
-          aria-label={`${d.label} score`}
-          aria-valuenow={d.score}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuetext={`${d.isAlertCoverage ? `${d.scoreText} alert coverage` : `${d.scoreText} of 100`}${d.tier ? `, ${d.tier.label}` : ''}${d.partial ? ', partial' : ''}`}
-        />
-      ) : (
-        <p className="text-xs text-[var(--text-secondary)] m-0 mt-auto">{d.missingText}</p>
+      {faceCaption && (
+        <p className="text-xs text-[var(--text-secondary)] leading-snug m-0 mt-2" data-testid={`posture-tile-caption-${componentKey}`}>{faceCaption}</p>
+      )}
+      {d.score !== null && (
+        <div className="mt-auto pt-3">
+          <Progress
+            value={d.score}
+            className="h-1.5 bg-[color:var(--border)]"
+            indicatorClassName={STATUS_FILL_CLASS[component.status]}
+            aria-label={`${d.label} score`}
+            aria-valuenow={d.score}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuetext={`${d.isAlertCoverage ? `${d.scoreText} alert coverage` : `${d.scoreText} of 100`}${d.tier ? `, ${d.tier.label}` : ''}${d.partial ? ', partial' : ''}`}
+          />
+        </div>
       )}
     </div>
   )
 }
 
 /**
- * Infrastructure Posture section: the composite score ring with its status
- * on the left, and Cost / Security / Alert Coverage tiles on the right -- the
- * same already-fetched System Intelligence response behind the KPI card.
- * Each component is gated on its own `ready`. Reasons live behind the info
- * button (the same panel as the KPI card), not on the face. Never shown in
- * demo mode (there are no demo component scores, and none are invented).
+ * Infrastructure Posture section: Cost / Security / Alert Coverage tiles from
+ * the same already-fetched System Intelligence response behind the KPI card
+ * (which carries the composite score). Each component is gated on its own
+ * `ready`. The composite's Partial state is the one badge, in the header; a
+ * tile shows one caption, and its full reason sits behind its own info
+ * button. Never shown in demo mode (there are no demo component scores, and
+ * none are invented).
  */
-export function SystemIntelligenceCard({ isDemoActive, components, isLoading, statusBadge, score = null, scoreBadge, compositeState = null }: SystemIntelligenceCardProps) {
+export function SystemIntelligenceCard({ isDemoActive, components, isLoading, statusBadge, captions = {}, compositeState = null }: SystemIntelligenceCardProps) {
   if (isDemoActive) return null
   const partial = compositeState === 'partial'
 
@@ -141,16 +131,10 @@ export function SystemIntelligenceCard({ isDemoActive, components, isLoading, st
       ) : !components ? (
         <p className="text-xs text-[var(--text-secondary)] m-0">— · Unavailable</p>
       ) : (
-        <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-          <div className="flex items-center gap-4 shrink-0">
-            <ScoreRing score={score} color={scoreBadge ? scoreBadge.color.replace('--text-', '--fill-') : 'var(--border)'} />
-            {score !== null && scoreBadge && <EvidenceBadge label={scoreBadge.label} color={scoreBadge.color} testId="posture-section-status" />}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1 min-w-0">
-            {POSTURE_COMPONENT_ORDER.map((key) => (
-              <ComponentTile key={key} componentKey={key} component={components[key]} statusBadge={statusBadge} />
-            ))}
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {POSTURE_COMPONENT_ORDER.map((key) => (
+            <ComponentTile key={key} componentKey={key} component={components[key]} statusBadge={statusBadge} caption={captions[key] ?? null} />
+          ))}
         </div>
       )}
     </div>

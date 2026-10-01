@@ -27,6 +27,41 @@ export const SECURITY_STATUS_BADGE: Record<SystemIntelligenceComponentScore['sta
 type SeverityCounts = { critical: number; high: number; medium: number; low: number }
 
 /**
+ * The one compliance-scan rule the Security Posture face caption and its
+ * info panel both read, so they can't disagree: pending only when the
+ * resource stats loaded and say the compliance scan has not completed
+ * (scan_completed === false). A failed request or an absent field is not
+ * "pending".
+ */
+export function complianceScanPending(resourceScanCompleted: boolean | undefined, resourceComplianceError: boolean): boolean {
+  return !resourceComplianceError && resourceScanCompleted === false
+}
+
+/**
+ * The resource compliance status line, shared by the Security Posture info
+ * panel and Security Key Findings so the two can't disagree. Pending (see
+ * complianceScanPending) wins, with any counts appended; a completed scan
+ * with zero reported counts says so rather than "Not yet evaluated"; a failed
+ * request is "Unavailable"; an absent scan_completed field keeps the previous
+ * wording.
+ */
+export function resourceComplianceLine(params: {
+  complianceBreakdown: string | null
+  complianceCountsReported: boolean
+  resourceScanCompleted: boolean | undefined
+  resourceComplianceError: boolean
+}): string {
+  const { complianceBreakdown, complianceCountsReported, resourceScanCompleted, resourceComplianceError } = params
+  if (resourceComplianceError) return 'Unavailable'
+  if (complianceScanPending(resourceScanCompleted, resourceComplianceError)) {
+    return `Compliance scan pending${complianceBreakdown ? ` · ${complianceBreakdown}` : ''}`
+  }
+  if (complianceBreakdown) return complianceBreakdown
+  if (resourceScanCompleted === true) return complianceCountsReported ? 'No open issues in the completed compliance scan' : 'Not available'
+  return 'Not yet evaluated'
+}
+
+/**
  * The Security Posture info panel's lines, from data the Dashboard already
  * loads (the same reads behind Security Key Findings), in its existing
  * wording: active account-level finding counts by severity (zero counts
@@ -39,12 +74,15 @@ export function computeSecurityEvidence(params: {
   isLoading: boolean
   findingCounts: SeverityCounts | null | undefined
   findingsError: boolean
-  /** Already-formatted resource compliance breakdown ("2 High · 1 Low"), or null when not evaluated. */
+  /** Already-formatted resource compliance breakdown ("2 High · 1 Low"), or null when every count is zero or none came back. */
   complianceBreakdown: string | null
+  /** The resource stats carried severity counts (all zero when complianceBreakdown is null). */
+  complianceCountsReported: boolean
+  resourceScanCompleted: boolean | undefined
   resourceComplianceError: boolean
   securityComponent: Pick<SystemIntelligenceComponentScore, 'reason'> | undefined
 }): { findings: string[]; resourceCompliance: string | null; evaluation: string | null } {
-  const { isDemoActive, isLoading, findingCounts, findingsError, complianceBreakdown, resourceComplianceError, securityComponent } = params
+  const { isDemoActive, isLoading, findingCounts, findingsError, securityComponent } = params
   if (isDemoActive) return { findings: [], resourceCompliance: null, evaluation: null }
   if (isLoading) return { findings: ['Loading…'], resourceCompliance: null, evaluation: null }
 
@@ -55,9 +93,46 @@ export function computeSecurityEvidence(params: {
         .map((tier) => `${findingCounts![tier]} ${tier} finding${findingCounts![tier] !== 1 ? 's' : ''}`)
   return {
     findings: counts.length > 0 ? counts : ['No open account-level findings recorded yet.'],
-    resourceCompliance: `Resource compliance: ${resourceComplianceError ? 'Unavailable' : (complianceBreakdown ?? 'Not yet evaluated')}`,
+    resourceCompliance: `Resource compliance: ${resourceComplianceLine(params)}`,
     evaluation: securityComponent?.reason ?? null,
   }
+}
+
+/**
+ * "1 critical · 5 high findings": active account-level findings by severity,
+ * zero counts omitted, plural from the total. null when there are no counts
+ * to show (none loaded, the request failed, or every count is zero -- the
+ * panel words those states).
+ */
+export function securityFindingsCaption(findingCounts: SeverityCounts | null | undefined): string | null {
+  if (!findingCounts) return null
+  const tiers = (['critical', 'high', 'medium', 'low'] as const).filter((tier) => findingCounts[tier] > 0)
+  if (tiers.length === 0) return null
+  const total = tiers.reduce((sum, tier) => sum + findingCounts[tier], 0)
+  return `${tiers.map((tier) => `${findingCounts[tier]} ${tier}`).join(' · ')} finding${total !== 1 ? 's' : ''}`
+}
+
+/**
+ * The Security Posture card's one face caption: the finding counts above,
+ * plus "compliance scan pending" under the same rule as the panel
+ * (complianceScanPending). Each part is
+ * omitted when its data is loading, failed, or absent.
+ */
+export function securityKpiCaption(params: {
+  isDemoActive: boolean
+  isLoading: boolean
+  findingCounts: SeverityCounts | null | undefined
+  findingsError: boolean
+  resourceScanCompleted: boolean | undefined
+  resourceComplianceError: boolean
+}): string | null {
+  const { isDemoActive, isLoading, findingCounts, findingsError, resourceScanCompleted, resourceComplianceError } = params
+  if (isDemoActive || isLoading) return null
+  const parts = [
+    findingsError ? null : securityFindingsCaption(findingCounts),
+    complianceScanPending(resourceScanCompleted, resourceComplianceError) ? 'compliance scan pending' : null,
+  ].filter((p): p is string => p !== null)
+  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 /**
