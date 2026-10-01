@@ -58,13 +58,12 @@ export function postureCompositionCaption(components: SystemIntelligenceResult['
 }
 
 /**
- * "Partial · <why>" when the backend marked the composite partial. Prefers the
- * alert-coverage component's own reason (e.g. "Measures EC2 alert coverage
- * only (0 of 1 in-scope resources covered); …") over composite_reason, whose
- * wording names the component by its internal key.
+ * "Partial · <why>" when the backend marked the composite partial. The why is
+ * composite_reason as-is: the backend names every partial component with its
+ * own reason ("Cost: … Alert Coverage: …"), so no component's limitation is
+ * attributed to another.
  */
-export function posturePartialCaption(result: Pick<SystemIntelligenceResult, 'composite_state' | 'composite_reason' | 'components'> | null | undefined): string | null {
+export function posturePartialCaption(result: Pick<SystemIntelligenceResult, 'composite_state' | 'composite_reason'> | null | undefined): string | null {
   if (!result || result.composite_state !== 'partial') return null
-  const reason = result.components?.observability?.reason ?? result.composite_reason ?? 'built on incomplete evidence'
-  return `Partial · ${reason}`
+  return `Partial · ${result.composite_reason ?? 'built on incomplete evidence'}`
 }

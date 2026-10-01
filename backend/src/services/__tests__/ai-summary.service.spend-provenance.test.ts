@@ -59,7 +59,7 @@ function noCosts(): ChatContext['costs'] {
 }
 
 function intelligence(): SystemIntelligenceResult {
-  const componentBase = { label: '', detail: '', severity: 'healthy' as const, delta: null, status: 'good' as const, ready: true };
+  const componentBase = { label: '', detail: '', severity: 'healthy' as const, delta: null, status: 'good' as const, ready: true, state: 'available' as const, reason: null };
   return {
     system_score: 80,
     composite_state: 'available',
@@ -280,7 +280,7 @@ describe('Dashboard AI summary -- observability and composite state', () => {
       ...base,
       system_score: 51,
       composite_state: 'partial',
-      composite_reason: `Observability is partial: ${PARTIAL_REASON}`,
+      composite_reason: `Alert Coverage: ${PARTIAL_REASON}`,
       components: {
         ...base.components,
         observability: { ...base.components.observability, score: 0, state: 'partial', reason: PARTIAL_REASON },
@@ -291,7 +291,7 @@ describe('Dashboard AI summary -- observability and composite state', () => {
   it('a partial composite reaches the model as partial, with what observability actually measures', async () => {
     const { prompt } = await run({ intelligence: partialIntelligence() });
     expect(prompt).toContain('Composite System Intelligence score: 51/100 (Cost 80, Security 80, Observability 0, which measures EC2/RDS alert coverage only).');
-    expect(prompt).toContain(`This composite is partial and must be described as partial: Observability is partial: ${PARTIAL_REASON.replace(/\.$/, '')}.`);
+    expect(prompt).toContain(`This composite is partial and must be described as partial: Alert Coverage: ${PARTIAL_REASON.replace(/\.$/, '')}.`);
   });
 
   it('the systemScore section itself is partial, not available', async () => {
@@ -299,7 +299,7 @@ describe('Dashboard AI summary -- observability and composite state', () => {
     const sections = await (new AISummaryService() as any).gatherSections(ORG);
     expect(sections.systemScore.state).toBe('partial');
     expect(sections.systemScore.data.observabilityState).toBe('partial');
-    expect(sections.systemScore.reason).toBe(`Observability is partial: ${PARTIAL_REASON}`);
+    expect(sections.systemScore.reason).toBe(`Alert Coverage: ${PARTIAL_REASON}`);
   });
 
   it('an observability error leaves no composite: the section is unavailable and no score reaches the model', async () => {
@@ -319,6 +319,23 @@ describe('Dashboard AI summary -- observability and composite state', () => {
     });
     expect(prompt).not.toMatch(/Composite System Intelligence score/);
     expect(prompt).not.toMatch(/Observability 0/);
+  });
+
+  it('a partial cost component reaches the model under Cost, not attributed to observability', async () => {
+    const base = partialIntelligence();
+    const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.';
+    const compositeReason = `Cost: ${COST_REASON} Alert Coverage: ${PARTIAL_REASON}`;
+    const { prompt } = await run({
+      intelligence: {
+        ...base,
+        composite_reason: compositeReason,
+        components: { ...base.components, cost: { ...base.components.cost, state: 'partial', reason: COST_REASON } },
+      },
+    });
+    expect(prompt).toContain(`This composite is partial and must be described as partial: ${compositeReason.replace(/\.$/, '')}.`);
+    expect(prompt).not.toMatch(/Observability is partial/);
+    // A stated limitation, never an anomaly finding.
+    expect(prompt).not.toMatch(/anomal(y|ies) (was|were) (detected|found)/i);
   });
 
   it('a fully available composite carries no partial caveat', async () => {

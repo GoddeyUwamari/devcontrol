@@ -370,13 +370,13 @@ function InfrastructureContent() {
     // >=85 Healthy, >=70 Stable, >=50 Degraded, else At Risk).
     system_score: 73, status: 'Stable',
     composite_state: 'partial',
-    composite_reason: 'Alert coverage is partial: it measures EC2/RDS alert coverage only.',
+    composite_reason: 'Cost: Anomaly checks not yet active. Alert Coverage: Measures EC2 and RDS alert coverage only.',
     top_action: { message: 'Over-provisioned compute + unused storage', consequence: '', path: '/costs/cost-optimization', severity: 'high' },
     top_drivers: [],
     components: {
-      cost:          { score: 55, detail: '$2,039/mo savings identified', status: 'warning' },
-      security:      { score: 87, detail: 'No critical issues',           status: 'good'    },
-      observability: { score: 65, detail: 'Alert coverage 65% · EC2/RDS only', status: 'warning', state: 'partial' },
+      cost:          { score: 55, detail: '$2,039/mo savings identified', status: 'warning', state: 'partial', reason: 'Anomaly checks not yet active.' },
+      security:      { score: 87, detail: 'No critical issues',           status: 'good',    state: 'available', reason: null },
+      observability: { score: 65, detail: 'Alert coverage 65% · EC2/RDS only', status: 'warning', state: 'partial', reason: 'Measures EC2 and RDS alert coverage only.' },
     },
   }
 
@@ -404,11 +404,12 @@ function InfrastructureContent() {
   const intelCostScore   = intelComponents.cost.score
   const intelSecScore    = intelComponents.security.score
   const intelObsScore    = intelComponents.observability.score
-  // The composite is partial when built on a partial component (today: alert
-  // coverage, which measures EC2/RDS only). posturePartialCaption prefers the
-  // alert-coverage component's own reason.
+  // The composite is partial when built on any partial component;
+  // posturePartialCaption shows the backend's composite_reason, which names
+  // each partial component with its own reason. Each chip below reads its own
+  // component's state -- never another component's.
   const intelPartialReason = intelReady ? posturePartialCaption(intel) : null
-  const intelObsPartial  = intelReady && intelComponents.observability.state === 'partial'
+  const isPartial        = (key: 'cost' | 'security' | 'observability') => intelReady && intelComponents[key]?.state === 'partial'
   // Score impact is the backend's own top_drivers[0].impact_score --
   // round((100 - component score) x that component's 30/40/30 weight): the
   // most the Infrastructure Posture score can gain if that component reaches 100. A calculated
@@ -639,15 +640,15 @@ function InfrastructureContent() {
           {/* Component scores */}
           <div className="grid grid-cols-3 gap-2.5">
             {[
-              { label: COMPONENT_LABELS.cost,          value: `${intelCostScore}/100`, chip: scoreChip(intelCostScore), partial: false },
-              { label: COMPONENT_LABELS.security,      value: `${intelSecScore}/100`,  chip: scoreChip(intelSecScore),  partial: false },
+              { key: 'cost',          label: COMPONENT_LABELS.cost,          value: `${intelCostScore}/100`, chip: scoreChip(intelCostScore), partial: isPartial('cost') },
+              { key: 'security',      label: COMPONENT_LABELS.security,      value: `${intelSecScore}/100`,  chip: scoreChip(intelSecScore),  partial: isPartial('security') },
               // Alert coverage is a coverage percentage, not a 0-100 grade.
-              { label: COMPONENT_LABELS.observability, value: `${intelObsScore}%`,     chip: scoreChip(intelObsScore),  partial: intelObsPartial },
-            ].map(({ label, value, chip, partial }) => (
+              { key: 'observability', label: COMPONENT_LABELS.observability, value: `${intelObsScore}%`,     chip: scoreChip(intelObsScore),  partial: isPartial('observability') },
+            ].map(({ key, label, value, chip, partial }) => (
               <div key={label} className="text-center">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ color: chip.color, background: chip.bg }}>{value}</span>
-                {partial && <p data-testid="observability-partial" className="text-xs font-medium text-amber-700 mt-1">Partial</p>}
+                {partial && <p data-testid={`${key}-partial`} className="text-xs font-medium text-amber-700 mt-1">Partial</p>}
               </div>
             ))}
           </div>

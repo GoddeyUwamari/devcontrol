@@ -17,7 +17,7 @@ const PARTIAL_REASON =
   'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.';
 
 function component(score: number, label: string): ComponentScore {
-  return { score, label, detail: '', severity: 'healthy', delta: null, status: 'good', ready: true };
+  return { score, label, detail: '', severity: 'healthy', delta: null, status: 'good', ready: true, state: 'available', reason: null };
 }
 
 function readiness(state: ContextDataState, score: number | null, reason: string | null): ReadinessResult {
@@ -52,7 +52,7 @@ describe('SystemIntelligence observability state', () => {
     // 50*0.30 + 90*0.40 + 0*0.30 = 51
     expect(result.system_score).toBe(51);
     expect(result.composite_state).toBe('partial');
-    expect(result.composite_reason).toBe(`Observability is partial: ${PARTIAL_REASON}`);
+    expect(result.composite_reason).toBe(`Alert Coverage: ${PARTIAL_REASON}`);
     expect(result.components.observability).toMatchObject({
       score: 0, state: 'partial', reason: PARTIAL_REASON, ready: true, detail: 'Alert coverage 0% · EC2/RDS only',
     });

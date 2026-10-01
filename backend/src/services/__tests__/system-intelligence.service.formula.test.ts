@@ -34,6 +34,8 @@ function componentFixture(score: number, overrides: Partial<ComponentScore> = {}
     delta: null,
     status: 'good',
     ready: true,
+    state: 'available',
+    reason: null,
     ...overrides,
   };
 }

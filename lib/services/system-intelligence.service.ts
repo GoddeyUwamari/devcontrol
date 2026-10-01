@@ -1,5 +1,8 @@
 import api, { handleApiResponse } from '../api';
 
+/** The backend's ContextDataState, as carried on every component and the composite. */
+export type EvidenceState = 'available' | 'partial' | 'unavailable' | 'error' | 'not_supported';
+
 export interface SystemIntelligenceComponentScore {
   score: number;
   label: string;
@@ -10,25 +13,23 @@ export interface SystemIntelligenceComponentScore {
   ready: boolean;
   monthlySpend?: number;
   costSource?: 'actual' | 'estimated';
-}
-
-/** The backend's ContextDataState, as carried on the observability component and the composite. */
-export type EvidenceState = 'available' | 'partial' | 'unavailable' | 'error' | 'not_supported';
-
-/**
- * Observability carries its evidence state: score is null whenever nothing was
- * measured (never 0 from a failure), and 'partial' means it measures EC2/RDS
- * alert coverage only -- reason says so.
- */
-export interface ObservabilityComponentScore extends Omit<SystemIntelligenceComponentScore, 'score'> {
-  score: number | null;
+  /** Evidence behind the score; 'partial' means reason lists what it does not stand on. Never changes the score. */
   state: EvidenceState;
   reason: string | null;
 }
 
+/**
+ * Observability's score is null whenever nothing was measured (never 0 from a
+ * failure), and 'partial' means it measures EC2/RDS alert coverage only --
+ * reason says so.
+ */
+export interface ObservabilityComponentScore extends Omit<SystemIntelligenceComponentScore, 'score'> {
+  score: number | null;
+}
+
 export interface SystemIntelligenceResult {
   system_score: number | null;
-  /** 'partial' when system_score is built on a partial component; composite_reason says why. null with a null score. */
+  /** 'partial' when system_score is built on any partial component; composite_reason names each one and why. null with a null score. */
   composite_state: 'available' | 'partial' | null;
   composite_reason: string | null;
   status: 'Healthy' | 'Stable' | 'Degraded' | 'At Risk' | 'Pending';

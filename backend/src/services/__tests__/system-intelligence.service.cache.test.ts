@@ -25,6 +25,8 @@ function componentFixture(overrides: Partial<ComponentScore> = {}): ComponentSco
     delta: null,
     status: 'good',
     ready: true,
+    state: 'available',
+    reason: null,
     ...overrides,
   };
 }
@@ -37,7 +39,7 @@ function intelligenceFixture(overrides: Partial<SystemIntelligenceResult> = {}):
   return {
     system_score: 80,
     composite_state: 'partial',
-    composite_reason: 'Observability is partial: Measures EC2 alert coverage only',
+    composite_reason: 'Alert Coverage: Measures EC2 alert coverage only.',
     status: 'Healthy',
     components: {
       cost: componentFixture({ label: 'Cost Efficiency', monthlySpend: 1000, costSource: 'actual' }),

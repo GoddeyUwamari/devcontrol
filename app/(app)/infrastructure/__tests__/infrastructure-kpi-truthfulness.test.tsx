@@ -56,9 +56,9 @@ vi.mock('@/lib/services/aws-services.service', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-const component = (score: number, status: 'good' | 'warning' | 'risk') => ({ score, status, detail: '', label: '', severity: 'medium', delta: null, ready: true })
+const component = (score: number, status: 'good' | 'warning' | 'risk') => ({ score, status, detail: '', label: '', severity: 'medium', delta: null, ready: true, state: 'available', reason: null as string | null })
 
-function mockIntelligence(system_score: number | null, status: string, extra: { composite_state?: string | null; composite_reason?: string | null; observabilityState?: string; observabilityReason?: string | null } = {}) {
+function mockIntelligence(system_score: number | null, status: string, extra: { composite_state?: string | null; composite_reason?: string | null; costState?: string; costReason?: string | null; observabilityState?: string; observabilityReason?: string | null } = {}) {
   global.fetch = vi.fn().mockImplementation((url: string) => {
     if (url.includes('/api/observability/intelligence')) {
       return Promise.resolve({
@@ -70,7 +70,7 @@ function mockIntelligence(system_score: number | null, status: string, extra: { 
             status,
             composite_state: extra.composite_state ?? 'available',
             composite_reason: extra.composite_reason ?? null,
-            components: { cost: component(95, 'good'), security: component(90, 'good'), observability: { ...component(88, 'good'), state: extra.observabilityState ?? 'available', reason: extra.observabilityReason ?? null } },
+            components: { cost: { ...component(95, 'good'), state: extra.costState ?? 'available', reason: extra.costReason ?? null }, security: component(90, 'good'), observability: { ...component(88, 'good'), state: extra.observabilityState ?? 'available', reason: extra.observabilityReason ?? null } },
             top_action: { message: 'Real top action', consequence: '', path: '/costs', severity: 'high' },
             top_drivers: [],
             computed_at: '2026-09-23T00:00:00.000Z',
@@ -174,25 +174,33 @@ describe('/infrastructure subtitle', () => {
 
 describe('/infrastructure Infrastructure Posture -- partial composite', () => {
   const OBS_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
-  const REASON = `Observability is partial: ${OBS_REASON}`
+  const REASON = `Alert Coverage: ${OBS_REASON}`
+  const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
 
-  it('a partial composite shows a visible "Partial" label with the alert-coverage reason, and marks Alert Coverage partial', async () => {
+  it('a partial composite shows a visible "Partial" label with the backend composite reason, and marks only Alert Coverage partial', async () => {
     mockIntelligence(51, 'Degraded', { composite_state: 'partial', composite_reason: REASON, observabilityState: 'partial', observabilityReason: OBS_REASON })
     mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
     renderPage()
 
     const partial = await screen.findByTestId('system-score-partial')
-    expect(partial.textContent).toBe(`Partial · ${OBS_REASON}`)
+    expect(partial.textContent).toBe(`Partial · ${REASON}`)
     expect(screen.getByTestId('observability-partial').textContent).toBe('Partial')
+    expect(screen.queryByTestId('cost-partial')).not.toBeInTheDocument()
   })
 
-  it('falls back to the composite reason when the component carries none', async () => {
-    mockIntelligence(51, 'Degraded', { composite_state: 'partial', composite_reason: REASON, observabilityState: 'partial' })
+  it('cost partial: the Cost chip is marked Partial and the composite reason names Cost with every cost limitation, score unchanged', async () => {
+    const both = `Cost: ${COST_REASON} ${REASON}`
+    mockIntelligence(51, 'Degraded', { composite_state: 'partial', composite_reason: both, costState: 'partial', costReason: COST_REASON, observabilityState: 'partial', observabilityReason: OBS_REASON })
     mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
     renderPage()
 
     const partial = await screen.findByTestId('system-score-partial')
-    expect(partial.textContent).toBe(`Partial · ${REASON}`)
+    expect(partial.textContent).toBe(`Partial · ${both}`)
+    expect(partial.textContent).not.toBe(`Partial · ${OBS_REASON}`)
+    expect(screen.getByTestId('cost-partial').textContent).toBe('Partial')
+    expect(screen.getByTestId('observability-partial').textContent).toBe('Partial')
+    expect(screen.queryByTestId('security-partial')).not.toBeInTheDocument()
+    expect(screen.getByText('95/100')).toBeInTheDocument()
   })
 
   it('an available composite shows no partial label', async () => {
@@ -202,6 +210,7 @@ describe('/infrastructure Infrastructure Posture -- partial composite', () => {
     await screen.findByTestId('system-score-basis')
     expect(screen.queryByTestId('system-score-partial')).not.toBeInTheDocument()
     expect(screen.queryByTestId('observability-partial')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('cost-partial')).not.toBeInTheDocument()
   })
 })
 
