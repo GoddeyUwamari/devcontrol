@@ -9,11 +9,13 @@ import { join } from 'node:path'
 import {
   INFRASTRUCTURE_POSTURE_LABEL,
   POSTURE_COMPONENT_LABELS,
+  POSTURE_STATUS_LABELS,
   postureCompositionCaption,
   posturePartialCaption,
   postureStatusLabel,
 } from '../infrastructure-posture'
 import type { SystemIntelligenceResult } from '../services/system-intelligence.service'
+import { SECURITY_STATUS_BADGE } from '@/app/(app)/dashboard/securityHealthKpi'
 
 const component = (score: number) => ({ score, label: 'x', detail: '', severity: 'medium' as const, delta: null, status: 'warning' as const, ready: true })
 const components = (obs: Partial<SystemIntelligenceResult['components']['observability']> = {}): SystemIntelligenceResult['components'] => ({
@@ -34,9 +36,20 @@ describe('postureStatusLabel -- display words for the existing canonical status'
     ['Healthy', 'Strong'],
     ['Stable', 'Stable'],
     ['Degraded', 'Needs attention'],
-    ['At Risk', 'Needs attention'],
+    ['At Risk', 'Weak'],
   ])('%s -> %s', (status, label) => {
     expect(postureStatusLabel(status)).toBe(label)
+  })
+
+  it('the four existing tiers keep four distinct labels, top to bottom: Strong, Stable, Needs attention, Weak', () => {
+    const labels = ['Healthy', 'Stable', 'Degraded', 'At Risk'].map(postureStatusLabel)
+    expect(labels).toEqual(['Strong', 'Stable', 'Needs attention', 'Weak'])
+    expect(new Set(labels).size).toBe(4)
+    expect(Object.keys(POSTURE_STATUS_LABELS)).toHaveLength(4)
+  })
+
+  it('does not change the unrelated Security Posture "At risk" badge', () => {
+    expect(SECURITY_STATUS_BADGE.risk.label).toBe('At risk')
   })
 
   it('Pending, null, and unknown values have no label (no state is invented)', () => {

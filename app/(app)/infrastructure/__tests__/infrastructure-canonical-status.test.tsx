@@ -109,7 +109,7 @@ describe('Infrastructure page -- canonical System Intelligence status', () => {
     [92, 'Healthy', 'Strong'],
     [75, 'Stable', 'Stable'],
     [68, 'Degraded', 'Needs attention'],
-    [40, 'At Risk', 'Needs attention'],
+    [40, 'At Risk', 'Weak'],
   ])('real mode: score %i with canonical status "%s" shows it as "%s", not "Calculating"', async (score, status, label) => {
     mockIntelligence(score, status)
     renderPage()
