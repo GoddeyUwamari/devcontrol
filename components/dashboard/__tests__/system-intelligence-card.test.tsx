@@ -20,7 +20,7 @@ import { SECURITY_STATUS_BADGE } from '@/app/(app)/dashboard/securityHealthKpi'
 import type { ObservabilityComponentScore, SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
 
 const component = (overrides: Partial<SystemIntelligenceComponentScore>): SystemIntelligenceComponentScore => ({
-  score: 0, label: 'X', detail: '', severity: 'healthy', delta: null, status: 'good', ready: true, ...overrides,
+  score: 0, label: 'X', detail: '', severity: 'healthy', delta: null, status: 'good', ready: true, state: 'available', reason: null, ...overrides,
 })
 
 const observability = (overrides: Partial<ObservabilityComponentScore>): ObservabilityComponentScore => ({
@@ -180,9 +180,50 @@ describe('observability evidence state', () => {
     expect(barIn(col)).toBeNull()
   })
 
-  it('cost and security (no state) never show a partial label', () => {
+  it('available cost and security never show a partial label', () => {
     renderCard({ components: { ...READY, observability: observability({ score: 55, status: 'warning', state: 'partial', reason: PARTIAL_REASON }) } })
     expect(screen.getAllByText('Partial')).toHaveLength(1)
+  })
+})
+
+describe('cost evidence state', () => {
+  const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+  const ALERT_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered).'
+
+  it('partial cost keeps its score and status word, and shows "Partial" with every one of its own reasons', () => {
+    renderCard({ components: { ...READY, cost: component({ label: 'Cost Efficiency', score: 50, status: 'risk', state: 'partial', reason: COST_REASON }) } })
+    const col = column('Cost')
+    expect(within(col).getByText('50')).toBeInTheDocument()
+    expect(within(col).getByText('At risk')).toBeInTheDocument()
+    expect(within(col).getByText('Partial')).toBeInTheDocument()
+    expect(within(col).getByText(COST_REASON)).toBeInTheDocument()
+    expect(barIn(col)).toHaveAttribute('aria-valuetext', '50 of 100, At risk, partial')
+  })
+
+  it('cost partiality is shown under Cost, never under Alert Coverage -- each column carries only its own reason', () => {
+    renderCard({
+      components: {
+        ...READY,
+        cost: component({ label: 'Cost Efficiency', score: 95, status: 'good', state: 'partial', reason: 'Anomaly checks not yet active.' }),
+        observability: observability({ score: 0, status: 'risk', state: 'partial', reason: ALERT_REASON }),
+      },
+    })
+    const cost = column('Cost')
+    const alert = column('Alert Coverage')
+    expect(within(cost).getByText('Anomaly checks not yet active.')).toBeInTheDocument()
+    expect(within(cost).queryByText(ALERT_REASON)).not.toBeInTheDocument()
+    expect(within(alert).getByText(ALERT_REASON)).toBeInTheDocument()
+    expect(within(alert).queryByText(/Anomaly checks/)).not.toBeInTheDocument()
+    expect(within(column('Security')).queryByText('Partial')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Partial')).toHaveLength(2)
+  })
+
+  it('a cost error renders "Could not be retrieved", not partial and not its 0', () => {
+    renderCard({ components: { ...READY, cost: component({ label: 'Cost Efficiency', score: 0, status: 'risk', ready: false, state: 'error', reason: 'The cost score could not be computed.' }) } })
+    const col = column('Cost')
+    expect(within(col).getByText('Could not be retrieved')).toBeInTheDocument()
+    expect(within(col).queryByText('Partial')).not.toBeInTheDocument()
+    expect(barIn(col)).toBeNull()
   })
 })
 

@@ -17,7 +17,7 @@ import {
 import type { SystemIntelligenceResult } from '../services/system-intelligence.service'
 import { SECURITY_STATUS_BADGE } from '@/app/(app)/dashboard/securityHealthKpi'
 
-const component = (score: number) => ({ score, label: 'x', detail: '', severity: 'medium' as const, delta: null, status: 'warning' as const, ready: true })
+const component = (score: number) => ({ score, label: 'x', detail: '', severity: 'medium' as const, delta: null, status: 'warning' as const, ready: true, state: 'available' as const, reason: null })
 const components = (obs: Partial<SystemIntelligenceResult['components']['observability']> = {}): SystemIntelligenceResult['components'] => ({
   cost: component(96),
   security: component(57),
@@ -86,15 +86,22 @@ describe('postureCompositionCaption', () => {
 })
 
 describe('posturePartialCaption', () => {
-  const base = { composite_state: 'partial' as const, composite_reason: 'Observability is partial: x', components: components() }
+  const ALERT = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered).'
+  const base = { composite_state: 'partial' as const, composite_reason: `Alert Coverage: ${ALERT}`, components: components() }
 
-  it('prefers the alert-coverage component reason over the composite reason', () => {
-    expect(posturePartialCaption(base)).toBe('Partial · Measures EC2 alert coverage only (0 of 1 in-scope resources covered).')
+  it('shows the backend composite reason as-is', () => {
+    expect(posturePartialCaption(base)).toBe(`Partial · Alert Coverage: ${ALERT}`)
   })
 
-  it('falls back to the composite reason, then a generic one', () => {
-    expect(posturePartialCaption({ ...base, components: components({ reason: null }) })).toBe('Partial · Observability is partial: x')
-    expect(posturePartialCaption({ ...base, composite_reason: null, components: components({ reason: null }) })).toBe('Partial · built on incomplete evidence')
+  it('a cost limitation is not attributed to Alert Coverage, even while Alert Coverage is also partial', () => {
+    const reason = `Cost: Anomaly checks not yet active. Alert Coverage: ${ALERT}`
+    const caption = posturePartialCaption({ ...base, composite_reason: reason })
+    expect(caption).toBe(`Partial · ${reason}`)
+    expect(caption).toContain('Cost: Anomaly checks not yet active.')
+  })
+
+  it('falls back to a generic reason when the backend gave none', () => {
+    expect(posturePartialCaption({ ...base, composite_reason: null })).toBe('Partial · built on incomplete evidence')
   })
 
   it('is null unless the backend marked the composite partial', () => {

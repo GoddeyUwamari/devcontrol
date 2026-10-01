@@ -7,6 +7,7 @@ import { CloudWatchService }
   from './cloudwatch.service'
 import awsCostService from './aws-cost.service'
 import type { ContextDataState, SpendProvenance } from './ai-context-contract'
+import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service'
 import { RiskTrackingService }
   from './risk-tracking.service'
 import { CostRecommendationsRepository }
@@ -39,18 +40,23 @@ export interface ComponentScore {
   // callers that narrate monthlySpend (e.g. ai-summary.service.ts) can say so
   // truthfully instead of presenting an estimate as an observed fact.
   costSource?: SpendProvenance
+  // Evidence state behind this component's score, in the shared
+  // ContextDataState vocabulary: 'available' only when nothing is missing,
+  // 'partial' when the score stands on incomplete evidence (reason lists every
+  // limitation), 'unavailable'/'error' whenever ready is false. Never changes
+  // the score itself.
+  state: ContextDataState
+  reason: string | null
 }
 
 /**
- * The observability component carries its evidence state: its score is null
- * whenever nothing was measured (never 0 from a failure), and a 'partial'
- * state means it measures EC2/RDS alert coverage only.
+ * The observability component's score is null whenever nothing was measured
+ * (never 0 from a failure), and a 'partial' state means it measures EC2/RDS
+ * alert coverage only.
  */
 export interface ObservabilityComponentScore
   extends Omit<ComponentScore, 'score'> {
   score: number | null
-  state: ContextDataState
-  reason: string | null
 }
 
 export interface SystemDriver {
@@ -78,9 +84,9 @@ export interface TopAction {
 
 export interface SystemIntelligenceResult {
   system_score: number | null
-  // 'partial' when system_score is computed from a partial component (today:
-  // observability, which measures alert coverage only); composite_reason
-  // says why. null alongside a null system_score.
+  // 'partial' when system_score is computed from any partial component;
+  // composite_reason then lists each partial component's reason (cost,
+  // security, alert coverage order). null alongside a null system_score.
   composite_state: Extract<ContextDataState, 'available' | 'partial'> | null
   composite_reason: string | null
   status: 'Healthy' | 'Stable'
@@ -227,6 +233,17 @@ export class SystemIntelligenceService {
         : score >= 50 ? 'high'
         : 'critical'
 
+      // What the score above does not stand on -- labels only, the score is
+      // unchanged. getMonthlySpendWithFallback() reports a non-positive live
+      // total as 'estimated', so no $0 here is presented as observed Cost
+      // Explorer spend. The anomaly term above is 100 whenever no active cost
+      // anomaly row exists, which is not evidence while detection is off.
+      const limitations = [
+        !hasSpendData && 'Insufficient spend data to assess cost efficiency',
+        costSource === 'estimated' && 'Spend based on inventory estimate, not AWS Cost Explorer billing',
+        !ANOMALY_DETECTION_ACTIVE && 'Anomaly checks not yet active',
+      ].filter((l): l is string => typeof l === 'string')
+
       return {
         score,
         label: 'Cost Efficiency',
@@ -240,6 +257,11 @@ export class SystemIntelligenceService {
         ready: costAnalysisRan,
         monthlySpend,
         costSource,
+        ...(!costAnalysisRan
+          ? { state: 'unavailable' as const, reason: 'No cost scan has completed yet.' }
+          : limitations.length > 0
+            ? { state: 'partial' as const, reason: limitations.map(l => `${l}.`).join(' ') }
+            : { state: 'available' as const, reason: null }),
       }
     } catch (err) {
       console.error(
@@ -254,6 +276,8 @@ export class SystemIntelligenceService {
         delta: null,
         status: 'risk',
         ready: false,
+        state: 'error',
+        reason: 'The cost score could not be computed.',
       }
     }
   }
@@ -350,6 +374,9 @@ export class SystemIntelligenceService {
         // isPreliminary is true until compliance scanning + orphaned-resource
         // detection have actually run for this org — mirrors costAnalysisRan.
         ready: !riskScore.isPreliminary,
+        ...(riskScore.isPreliminary
+          ? { state: 'unavailable' as const, reason: 'Compliance scanning and orphaned-resource detection have not completed yet.' }
+          : { state: 'available' as const, reason: null }),
       }
     } catch (err) {
       console.error(
@@ -364,6 +391,8 @@ export class SystemIntelligenceService {
         delta: null,
         status: 'risk',
         ready: false,
+        state: 'error',
+        reason: 'The security score could not be computed.',
       }
     } finally {
       client?.release()
@@ -636,9 +665,22 @@ export class SystemIntelligenceService {
         observability.score * 0.30
       )
       status = this.scoreToStatus(system_score)
-      if (observability.state === 'partial') {
+      // Partial when ANY component's evidence is partial; the score above is
+      // unchanged either way. Each partial component names its own reason, so
+      // no limitation is attributed to another component.
+      const partialReasons = ([
+        ['Cost', cost],
+        ['Security', security],
+        ['Alert Coverage', observability],
+      ] as const)
+        .filter(([, component]) => component.state === 'partial')
+        .map(([name, component]) => {
+          const reason = component.reason ?? 'evidence is incomplete'
+          return `${name}: ${reason.endsWith('.') ? reason : `${reason}.`}`
+        })
+      if (partialReasons.length > 0) {
         composite_state = 'partial'
-        composite_reason = `Observability is partial: ${observability.reason ?? 'it measures alert coverage only'}`
+        composite_reason = partialReasons.join(' ')
       } else {
         composite_state = 'available'
       }

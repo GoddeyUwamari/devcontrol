@@ -31,7 +31,7 @@ vi.mock('@/lib/contexts/auth-context', () => ({
 }))
 
 const component = (label: string, score: number, status: 'good' | 'warning' | 'risk') =>
-  ({ score, label, detail: '', severity: 'healthy', delta: null, status, ready: true })
+  ({ score, label, detail: '', severity: 'healthy', delta: null, status, ready: true, state: 'available', reason: null })
 const INTELLIGENCE = {
   system_score: 69, status: 'Degraded', computed_at: '2026-09-23T00:00:00Z', top_action: null, top_drivers: [],
   components: {
@@ -138,7 +138,7 @@ describe('Infrastructure Posture card on the real Dashboard page', () => {
 
 describe('Infrastructure Posture KPI', () => {
   const OBS_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
-  const REASON = `Observability is partial: ${OBS_REASON}`
+  const REASON = `Alert Coverage: ${OBS_REASON}`
 
   it('is labeled Infrastructure Posture -- never Infrastructure Health -- and Security Posture is unchanged', async () => {
     renderDashboard()
@@ -170,9 +170,36 @@ describe('Infrastructure Posture KPI', () => {
       components: { ...INTELLIGENCE.components, observability: { ...INTELLIGENCE.components.observability, state: 'partial', reason: OBS_REASON } },
     } as never)
     renderDashboard()
-    expect(await screen.findByText(`Partial · ${OBS_REASON}`)).toBeInTheDocument()
+    expect(await screen.findByText(`Partial · ${REASON}`)).toBeInTheDocument()
     expect(screen.queryByText(/Observability is partial/)).not.toBeInTheDocument()
     expect(screen.getByText('69')).toBeInTheDocument()
+  })
+
+  it('cost partiality renders under the KPI as Cost (with every cost reason) and in the Cost column -- not attributed to Alert Coverage', async () => {
+    const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+    const BOTH = `Cost: ${COST_REASON} Alert Coverage: ${OBS_REASON}`
+    intelligenceSpy.mockResolvedValue({
+      ...INTELLIGENCE, composite_state: 'partial', composite_reason: BOTH,
+      components: {
+        ...INTELLIGENCE.components,
+        cost: { ...INTELLIGENCE.components.cost, score: 50, state: 'partial', reason: COST_REASON },
+        observability: { ...INTELLIGENCE.components.observability, state: 'partial', reason: OBS_REASON },
+      },
+    } as never)
+    renderDashboard()
+    const caption = await screen.findByText(`Partial · ${BOTH}`)
+    expect(caption.closest('a')).toHaveAttribute('href', '/infrastructure')
+    // The old caption showed only the alert-coverage reason for any partial composite.
+    expect(screen.queryByText(`Partial · ${OBS_REASON}`)).not.toBeInTheDocument()
+    // Score unchanged by the state.
+    expect(screen.getByText('69')).toBeInTheDocument()
+    // Breakdown card: each column carries its own reason.
+    const costColumn = screen.getByText(COST_REASON).parentElement as HTMLElement
+    expect(within(costColumn).getByText('Cost')).toBeInTheDocument()
+    expect(within(costColumn).getByText('Partial')).toBeInTheDocument()
+    const alertColumn = screen.getByText(OBS_REASON).parentElement as HTMLElement
+    expect(within(alertColumn).getByText('Alert Coverage')).toBeInTheDocument()
+    expect(within(alertColumn).queryByText(/Anomaly checks/)).not.toBeInTheDocument()
   })
 
   it('an available composite carries no partial caption', async () => {

@@ -1,6 +1,17 @@
 import { Pool, PoolClient } from 'pg';
 import { AnomalyDetection } from '../types/anomaly.types';
 
+/**
+ * Whether any anomaly detector runs on measured data. False while
+ * scanForAnomalies() below and CustomAnomalyRulesService.evaluateRules() both
+ * return [] -- every anomaly_detections writer goes through them, so an empty
+ * table is not evidence that detection ran and found nothing. Consumers that
+ * read anomaly_detections as evidence (SystemIntelligenceService's cost
+ * component) report that gap instead. Set to true only when a detector backed
+ * by real measured data ships.
+ */
+export const ANOMALY_DETECTION_ACTIVE = false;
+
 export class AnomalyDetectionService {
   // Pool kept in the signature: existing callers construct it with one.
   constructor(_pool: Pool) {}

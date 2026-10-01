@@ -30,9 +30,9 @@ const COMPONENT_ORDER = ['cost', 'security', 'observability'] as const
 
 function ComponentColumn({ componentKey, component, statusBadge }: { componentKey: ComponentKey; component: SystemIntelligenceComponentScore | ObservabilityComponentScore; statusBadge: SystemIntelligenceCardProps['statusBadge'] }) {
   const label = POSTURE_COMPONENT_LABELS[componentKey]
-  // Only observability (alert coverage) carries an evidence state today.
-  const state = 'state' in component ? component.state : undefined
-  const reason = 'reason' in component ? component.reason : null
+  // Each component's own evidence state and reason, from the backend -- a
+  // partial component shows its own limitations, never another's.
+  const { state, reason } = component
   // Alert coverage is a coverage percentage, not a posture grade: it shows its
   // value and scope, not the Strong / Needs attention / At risk wording.
   const isAlertCoverage = componentKey === 'observability'
