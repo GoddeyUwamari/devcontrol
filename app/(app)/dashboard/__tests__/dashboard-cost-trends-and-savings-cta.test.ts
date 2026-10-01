@@ -53,7 +53,7 @@ describe('Dashboard: "Review savings" CTA — single instance, zero-state hidden
     expect(recommendedActionSource).not.toMatch(/No active cost-saving opportunities identified/)
   })
 
-  it('leaves the CTA label for the opportunityCount > 0 case intact, including the live count', () => {
-    expect(recommendedActionSource).toMatch(/Review Savings \(\{opportunityCount\}\) →/)
+  it('the CTA for the opportunityCount > 0 case reads "Review N recommendations", with the live count', () => {
+    expect(recommendedActionSource).toMatch(/Review \{opportunityCount\} recommendation\{opportunityCount !== 1 \? 's' : ''\} →/)
   })
 })

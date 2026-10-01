@@ -8,12 +8,15 @@
  * fill color comes only from the component's canonical `status`; each
  * component is gated on its OWN `ready` -- and `ready: false` still carries a
  * number (a neutral 50, a preliminary score, an error's 0), so nothing
- * score-derived may render for it. Demo mode hides the whole card.
+ * score-derived may render for it. The composite's Partial is one badge in
+ * the header; tiles carry no Partial chip, at most one caption, and their
+ * full reason behind their own info button. No score ring. Demo mode hides
+ * the whole card.
  * Page placement/order lives in
  * app/(app)/dashboard/__tests__/system-intelligence-card-placement.test.tsx.
  */
 import { describe, it, expect } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { SystemIntelligenceCard } from '../system-intelligence-card'
 import { SECURITY_STATUS_BADGE } from '@/app/(app)/dashboard/securityHealthKpi'
@@ -42,8 +45,14 @@ function renderCard(overrides: Partial<ComponentProps<typeof SystemIntelligenceC
   )
 }
 
-/** The column whose label text is `label`. */
-const column = (label: string) => screen.getByText(label).parentElement as HTMLElement
+const TILE_KEY: Record<string, string> = { Cost: 'cost', Security: 'security', 'Alert Coverage': 'observability' }
+/** The tile whose label text is `label`. */
+const column = (label: string) => screen.getByTestId(`posture-tile-${TILE_KEY[label]}`)
+/** Opens the section's info panel and returns the evidence row for `label`. */
+const evidenceRow = (label: string) => {
+  if (!screen.queryByRole('dialog')) fireEvent.click(screen.getByRole('button', { name: 'Infrastructure Posture section details' }))
+  return within(screen.getByRole('dialog')).getByTestId(`posture-evidence-${TILE_KEY[label]}`)
+}
 const barIn = (col: HTMLElement) => col.querySelector('[role="progressbar"]') as HTMLElement | null
 const fillOf = (bar: HTMLElement) => bar.firstElementChild as HTMLElement
 
@@ -85,7 +94,7 @@ describe('ready components', () => {
 
   it('renders the three columns in cost → security → observability order', () => {
     const { container } = renderCard()
-    const labels = [...container.querySelectorAll('.grid > div > p:first-child')].map((p) => p.textContent)
+    const labels = [...container.querySelectorAll('[data-testid^="posture-tile-"]')].map((t) => t.querySelector('p')?.textContent)
     expect(labels).toEqual(['Cost', 'Security', 'Alert Coverage'])
   })
 })
@@ -103,7 +112,7 @@ describe('labels are the Infrastructure Posture vocabulary', () => {
   it('the card is titled Infrastructure Posture and describes what the composite is built from', () => {
     renderCard()
     expect(screen.getByText('Infrastructure Posture')).toBeInTheDocument()
-    expect(screen.getByText('Composite of cost, security, and alert coverage.')).toBeInTheDocument()
+    expect(screen.getByText('Composite of cost (30%), security (40%), and alert coverage (30%)')).toBeInTheDocument()
     for (const oldName of ['Platform Efficiency Breakdown', 'Infrastructure Health', 'System Score']) {
       expect(screen.queryByText(oldName)).not.toBeInTheDocument()
     }
@@ -155,13 +164,22 @@ describe('ready gating: each component independently', () => {
 describe('observability evidence state', () => {
   const PARTIAL_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
 
-  it('partial: the score is shown with a visible "Partial" label and the backend reason', () => {
+  it('partial: the score is shown, no Partial chip and no parsed count on the tile; the full scope text is behind the tile\'s info button', () => {
     renderCard({ components: { ...READY, observability: observability({ score: 0, status: 'risk', state: 'partial', reason: PARTIAL_REASON }) } })
     const col = column('Alert Coverage')
     expect(within(col).getByText('0%')).toBeInTheDocument()
-    expect(within(col).getByText('Partial')).toBeInTheDocument()
-    expect(within(col).getByText(PARTIAL_REASON)).toBeInTheDocument()
+    expect(within(col).queryByText('Partial')).not.toBeInTheDocument()
+    // No caption: there are no structured covered / in-scope fields, and the reason is never parsed.
+    expect(within(col).queryByTestId('posture-tile-caption-observability')).toBeNull()
+    expect(col.textContent).not.toMatch(/of 1|in-scope/)
+    fireEvent.click(within(col).getByRole('button', { name: 'Alert Coverage details' }))
+    expect(within(screen.getByRole('dialog', { name: 'Alert Coverage' })).getByText(PARTIAL_REASON)).toBeInTheDocument()
     expect(barIn(col)).toHaveAttribute('aria-valuetext', '0% alert coverage, partial')
+  })
+
+  it('the section ⓘ still carries the same full reason', () => {
+    renderCard({ components: { ...READY, observability: observability({ score: 0, status: 'risk', state: 'partial', reason: PARTIAL_REASON }) } })
+    expect(within(evidenceRow('Alert Coverage')).getByText(PARTIAL_REASON)).toBeInTheDocument()
   })
 
   it('error: score null renders "Could not be retrieved" -- never 0 and no bar', () => {
@@ -180,9 +198,19 @@ describe('observability evidence state', () => {
     expect(barIn(col)).toBeNull()
   })
 
-  it('available cost and security never show a partial label', () => {
-    renderCard({ components: { ...READY, observability: observability({ score: 55, status: 'warning', state: 'partial', reason: PARTIAL_REASON }) } })
+  it('only the section header carries Partial (from compositeState); no tile does', () => {
+    renderCard({ compositeState: 'partial', components: { ...READY, observability: observability({ score: 55, status: 'warning', state: 'partial', reason: PARTIAL_REASON }) } })
     expect(screen.getAllByText('Partial')).toHaveLength(1)
+    expect(screen.getByTestId('posture-section-partial')).toHaveTextContent('Partial')
+    for (const label of ['Cost', 'Security', 'Alert Coverage']) expect(within(column(label)).queryByText('Partial')).toBeNull()
+  })
+
+  it('compositeState available or null: no Partial badge anywhere on the face', () => {
+    for (const compositeState of ['available', null] as const) {
+      const { unmount } = renderCard({ compositeState, components: { ...READY, observability: observability({ score: 55, status: 'warning', state: 'partial', reason: PARTIAL_REASON }) } })
+      expect(screen.queryByText('Partial')).toBeNull()
+      unmount()
+    }
   })
 })
 
@@ -190,14 +218,25 @@ describe('cost evidence state', () => {
   const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
   const ALERT_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered).'
 
-  it('partial cost keeps its score and status word, and shows "Partial" with every one of its own reasons', () => {
-    renderCard({ components: { ...READY, cost: component({ label: 'Cost Efficiency', score: 50, status: 'risk', state: 'partial', reason: COST_REASON }) } })
+  it('partial cost keeps its score and status word, shows its one caption instead of a Partial chip, and keeps every reason in the panels', () => {
+    renderCard({
+      components: { ...READY, cost: component({ label: 'Cost Efficiency', score: 50, status: 'risk', state: 'partial', reason: COST_REASON }) },
+      captions: { cost: 'Estimated from inventory · anomaly checks not yet active' },
+    })
     const col = column('Cost')
     expect(within(col).getByText('50')).toBeInTheDocument()
     expect(within(col).getByText('At risk')).toBeInTheDocument()
-    expect(within(col).getByText('Partial')).toBeInTheDocument()
-    expect(within(col).getByText(COST_REASON)).toBeInTheDocument()
+    expect(within(col).queryByText('Partial')).not.toBeInTheDocument()
+    expect(within(col).getByTestId('posture-tile-caption-cost')).toHaveTextContent('Estimated from inventory · anomaly checks not yet active')
+    expect(col.textContent).not.toContain(COST_REASON)
     expect(barIn(col)).toHaveAttribute('aria-valuetext', '50 of 100, At risk, partial')
+    fireEvent.click(within(col).getByRole('button', { name: 'Cost details' }))
+    expect(within(screen.getByRole('dialog', { name: 'Cost' })).getByText(COST_REASON)).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    const row = evidenceRow('Cost')
+    expect(within(row).getByText(COST_REASON)).toBeInTheDocument()
+    expect(within(row).getByText('50 · At risk')).toBeInTheDocument()
+    expect(within(row).getByText('Partial')).toBeInTheDocument()
   })
 
   it('cost partiality is shown under Cost, never under Alert Coverage -- each column carries only its own reason', () => {
@@ -208,14 +247,15 @@ describe('cost evidence state', () => {
         observability: observability({ score: 0, status: 'risk', state: 'partial', reason: ALERT_REASON }),
       },
     })
-    const cost = column('Cost')
-    const alert = column('Alert Coverage')
+    expect(screen.queryByText('Partial')).not.toBeInTheDocument()
+    const cost = evidenceRow('Cost')
+    expect(within(screen.getByRole('dialog')).getAllByText('Partial')).toHaveLength(2)
+    const alert = evidenceRow('Alert Coverage')
     expect(within(cost).getByText('Anomaly checks not yet active.')).toBeInTheDocument()
     expect(within(cost).queryByText(ALERT_REASON)).not.toBeInTheDocument()
     expect(within(alert).getByText(ALERT_REASON)).toBeInTheDocument()
     expect(within(alert).queryByText(/Anomaly checks/)).not.toBeInTheDocument()
-    expect(within(column('Security')).queryByText('Partial')).not.toBeInTheDocument()
-    expect(screen.getAllByText('Partial')).toHaveLength(2)
+    expect(within(evidenceRow('Security')).queryByText('Partial')).not.toBeInTheDocument()
   })
 
   it('a cost error renders "Could not be retrieved", not partial and not its 0', () => {
@@ -224,6 +264,43 @@ describe('cost evidence state', () => {
     expect(within(col).getByText('Could not be retrieved')).toBeInTheDocument()
     expect(within(col).queryByText('Partial')).not.toBeInTheDocument()
     expect(barIn(col)).toBeNull()
+  })
+})
+
+describe('tile captions and info buttons', () => {
+  it('a caption passed by the page renders once; a missing one is omitted, never filled in', () => {
+    renderCard({ captions: { cost: 'Estimated from inventory', security: '1 critical · 5 high findings', observability: null } })
+    expect(within(column('Cost')).getByTestId('posture-tile-caption-cost')).toHaveTextContent('Estimated from inventory')
+    expect(within(column('Security')).getByTestId('posture-tile-caption-security')).toHaveTextContent('1 critical · 5 high findings')
+    expect(within(column('Alert Coverage')).queryByTestId('posture-tile-caption-observability')).toBeNull()
+  })
+
+  it('every tile has at most one caption line', () => {
+    renderCard({
+      captions: { cost: 'Estimated from inventory', security: '1 critical finding' },
+      components: { ...READY, security: component({ label: 'Security Posture', score: 50, ready: false }) },
+    })
+    for (const label of ['Cost', 'Security', 'Alert Coverage']) {
+      // The label paragraph plus at most one caption.
+      expect(column(label).querySelectorAll('p').length).toBeLessThanOrEqual(2)
+    }
+    // An unscored tile shows its missing-score wording as its caption, not the page's caption.
+    expect(within(column('Security')).getByTestId('posture-tile-caption-security')).toHaveTextContent('Not yet available')
+    expect(column('Security').textContent).not.toContain('1 critical finding')
+  })
+
+  it('a tile without a backend reason has no info button', () => {
+    renderCard()
+    for (const label of ['Cost', 'Security', 'Alert Coverage']) expect(within(column(label)).queryByRole('button')).toBeNull()
+  })
+})
+
+describe('no score ring', () => {
+  it('the section renders no ring and no composite status chip (the KPI card carries the composite)', () => {
+    renderCard()
+    expect(screen.queryByTestId('posture-ring')).toBeNull()
+    expect(screen.queryByTestId('posture-section-status')).toBeNull()
+    expect(screen.getByTestId('posture-section').textContent).not.toContain('/ 100')
   })
 })
 
@@ -295,7 +372,7 @@ describe('coloring and track', () => {
 describe('responsive structure', () => {
   it('one column on mobile, three from the sm breakpoint up', () => {
     const { container } = renderCard()
-    const grid = container.querySelector('.grid') as HTMLElement
+    const grid = container.querySelector('[data-testid="posture-tile-cost"]')!.parentElement as HTMLElement
     expect(grid.className).toContain('grid-cols-1')
     expect(grid.className).toContain('sm:grid-cols-3')
     expect(grid.children).toHaveLength(3)

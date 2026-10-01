@@ -98,6 +98,8 @@ export interface ResourceStats {
   unencrypted_count: number;
   public_count: number;
   missing_backup_count: number;
+  /** Compliance scanning + orphaned-resource detection have completed for this org at least once. */
+  scan_completed?: boolean;
 }
 
 export const awsResourcesService = {

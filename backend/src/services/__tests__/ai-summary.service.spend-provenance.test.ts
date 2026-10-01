@@ -207,6 +207,31 @@ describe('Dashboard AI summary -- monitoring, security, recommendations', () => 
     expect(noModel.result).toMatchObject({ topRisk: 'SSH open to the internet (critical severity)', topRiskStatus: 'identified', systemStatus: SYSTEM_STATUS_UNAVAILABLE });
   });
 
+  it('account findings unavailable, posture available: the combined count is labeled combined -- never resource-compliance-only', async () => {
+    const { result } = await run({ findings: new Error('account findings query failed'), combined: 3 });
+    expect(result).toMatchObject({ topRisk: '3 security findings (account and resource compliance combined)', topRiskStatus: 'identified' });
+    expect(result.topRisk).not.toMatch(/resource compliance issue/);
+
+    jest.restoreAllMocks();
+    const one = await run({ findings: new Error('account findings query failed'), combined: 1 });
+    expect(one.result.topRisk).toBe('1 security finding (account and resource compliance combined)');
+  });
+
+  it('account findings known to be zero: the posture count is resource compliance only, and says so', async () => {
+    const { result } = await run({ findings: [], combined: 2 });
+    expect(result).toMatchObject({ topRisk: '2 resource compliance issues currently active', topRiskStatus: 'identified' });
+  });
+
+  it('both sources unavailable: Top Risk is unavailable, never an invented risk', async () => {
+    const { result } = await run({ findings: new Error('account findings query failed'), preliminary: true, combined: 4 });
+    expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'unavailable' });
+  });
+
+  it('account findings known to be zero but posture unavailable: unavailable, not "no risks"', async () => {
+    const { result } = await run({ findings: [], preliminary: true });
+    expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'unavailable' });
+  });
+
   it('with no findings, a model-invented risk is never shown', async () => {
     const { result } = await run({ findings: [], combined: 0, model: { ...MODEL_FIELDS, topRisk: 'SSH exposure detected' } });
     expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'none_identified' });

@@ -35,7 +35,7 @@ describe('real findings stay visible, with savings labeled as estimates', () => 
     const { container } = render(<RecommendedActionCard opportunityCount={3} savingsLabel="$94.50/mo" ctaHref="/cost-optimization" />)
     expect(container.textContent).toContain('3 optimization opportunities identified')
     expect(container.textContent).toContain('Estimated potential savings: $94.50/mo')
-    expect(container.textContent).toContain('Review Savings (3)')
+    expect(container.textContent).toContain('Review 3 recommendations')
   })
 
   it('SavingsOpportunities shows a category with an active finding', () => {

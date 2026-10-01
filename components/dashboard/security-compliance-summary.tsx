@@ -10,9 +10,14 @@ interface FindingCounts {
 
 interface SecurityComplianceSummaryProps {
   findingCounts: FindingCounts | null
-  /** Same underlying query as findingCounts/complianceBreakdown -- one flag covers both rows. */
+  /** Same underlying queries as findingCounts/resourceComplianceStatus -- one flag covers both rows. */
   riskDataLoading: boolean
-  complianceBreakdown: string | null
+  /**
+   * The resource compliance row's text, from the dashboard's shared rule
+   * (securityHealthKpi.ts resourceComplianceLine) -- the same one the Security
+   * Posture panel shows, including "Unavailable" for a failed request.
+   */
+  resourceComplianceStatus: string
   soc2Subtext: string
   soc2Loading: boolean
   customFrameworksSubtext: string
@@ -23,7 +28,6 @@ interface SecurityComplianceSummaryProps {
    * failed request is never presented as a real zero or empty result.
    */
   findingsError?: boolean
-  resourceComplianceError?: boolean
   soc2Error?: boolean
   customFrameworksError?: boolean
   detailsHref?: string
@@ -100,13 +104,12 @@ function RowSkeleton() {
 export function SecurityComplianceSummary({
   findingCounts,
   riskDataLoading,
-  complianceBreakdown,
+  resourceComplianceStatus,
   soc2Subtext,
   soc2Loading,
   customFrameworksSubtext,
   customFrameworksLoading,
   findingsError = false,
-  resourceComplianceError = false,
   soc2Error = false,
   customFrameworksError = false,
   detailsHref = FINDINGS_HREF,
@@ -151,7 +154,7 @@ export function SecurityComplianceSummary({
         {riskDataLoading ? (
           <RowSkeleton />
         ) : (
-          <Row badge={INFO_BADGE} headline="Resource compliance" sub={resourceComplianceError ? UNAVAILABLE : (complianceBreakdown ?? 'Not yet evaluated')} />
+          <Row badge={INFO_BADGE} headline="Resource compliance" sub={resourceComplianceStatus} />
         )}
 
         {soc2Loading ? (

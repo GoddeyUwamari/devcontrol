@@ -21,12 +21,13 @@ const cloudProviderStatusSource = readFileSync(join(__dirname, '../../../../comp
 const recentActivityCardSource = readFileSync(join(__dirname, '../../../../components/dashboard/recent-activity-card.tsx'), 'utf-8')
 
 describe('Cost-saving opportunity reconciliation', () => {
-  it('uses ONE authoritative count (costRecStats.activeRecommendations) for the opportunity total, not topRecs.length as a population proxy', () => {
-    expect(pageSource).toMatch(/const activeOpportunityCount = isDemoActive \? topRecs\.length : \(costRecStats\?\.activeRecommendations \?\? topRecs\.length\)/)
+  it('uses ONE authoritative count (costRecStats.activeRecommendations) for the opportunity total -- no topRecs.length fallback when stats fail', () => {
+    expect(pageSource).toMatch(/costRecStatsFailed && !costRecStats \? null : \(costRecStats\?\.activeRecommendations \?\? null\)/)
+    expect(pageSource).not.toMatch(/topRecs/)
   })
 
   it('RecommendedActionCard and SavingsOpportunities both receive the same authoritative count, not two independently-derived numbers', () => {
-    expect(pageSource).toMatch(/<RecommendedActionCard[^]*?opportunityCount=\{activeOpportunityCount\}/)
+    expect(pageSource).toMatch(/<RecommendedActionCard[^]*?opportunityCount=\{activeOpportunityCount \?\? 0\}/)
     expect(pageSource).toMatch(/<SavingsOpportunities[^]*?totalActiveCount=\{activeOpportunityCount\}/)
   })
 
@@ -43,15 +44,18 @@ describe('Cost-saving opportunity reconciliation', () => {
     expect(pageSource).not.toMatch(/const rdsOpportunities\s*=/)
   })
 
-  it('evaluation state is derived from cost_analysis_runs (a completed run), not merely from a zero filtered count', () => {
-    expect(pageSource).toMatch(/analysisRuns\?\.some\(\(r\) => r\.status === 'completed'\)/)
+  it('evaluation state comes from the shared pickLatestAnalysis() + deriveAnalysisStatus() over scheduled and manual analyses, not a second derivation', () => {
+    expect(pageSource).toMatch(/import \{ deriveAnalysisStatus, pickLatestAnalysis \} from '\.\.\/cost-optimization\/costOptimizationStatus'/)
+    expect(pageSource).toMatch(/pickLatestAnalysis\(\{ latestDiscoveryJob: discoveryJobs\?\.\[0\], latestAnalysisRun: analysisRuns\?\.\[0\] \}\)/)
+    expect(pageSource).not.toMatch(/analysisRuns\?\.some\(/)
     expect(pageSource).toMatch(/opportunityEvaluationState/)
   })
 
   it('SavingsOpportunities only ever shows "Not currently evaluated" when evaluationState is not_evaluated, never merely because a category count is 0', () => {
     expect(savingsOpportunitiesSource).toMatch(/not_evaluated:\s*'Not currently evaluated'/)
-    // The truthful-zero render path must be reachable independently of count.
-    expect(savingsOpportunitiesSource).toMatch(/evaluationState === 'evaluated'[^]*?countPhrase\(count\)/)
+    // The truthful-zero render path must be reachable independently of count,
+    // and an active recommendation is always shown whatever the state.
+    expect(savingsOpportunitiesSource).toMatch(/evaluationState === 'evaluated' \|\| count > 0[^]*?countPhrase\(count\)/)
   })
 
   it('a genuinely evaluated, zero-result category renders a real zero ("0 detected"), not the unevaluated message', () => {
@@ -60,13 +64,15 @@ describe('Cost-saving opportunity reconciliation', () => {
 
   it('"View all (N)" reads the same authoritative totalActiveCount prop, never re-summing only the 4 known categories', () => {
     expect(savingsOpportunitiesSource).not.toMatch(/items\.reduce\(/)
-    expect(savingsOpportunitiesSource).toMatch(/View all \(\{totalActiveCount\}\)/)
+    expect(savingsOpportunitiesSource).toMatch(/`View all \(\$\{totalActiveCount\}\) →`/)
+    // No authoritative count (stats failed): no number at all.
+    expect(savingsOpportunitiesSource).toMatch(/totalActiveCount === null \? 'View all →'/)
   })
 })
 
 describe('Top Risk: no duplicated sentence', () => {
-  it('splits headline from a genuinely distinct remainder, and omits the description when there is none (never repeats topRisk verbatim in both slots)', () => {
-    expect(infrastructureIntelligenceSource).toMatch(/function splitRiskText/)
+  it('shows the finding text once, with no second description slot when a risk exists (never repeats topRisk verbatim in both slots)', () => {
+    expect(infrastructureIntelligenceSource).toMatch(/const description = topRisk\s*\?\s*null/)
     expect(infrastructureIntelligenceSource).not.toMatch(/description=\{\s*topRisk \?\? '/)
   })
 })
@@ -101,11 +107,12 @@ describe('Infrastructure Posture: canonical System Intelligence source, no clien
   })
 
   it('shows "Calculating…" rather than an invented score when the canonical System Intelligence result is unavailable', () => {
-    expect(pageSource).toMatch(/value=\{displayedHealthScore === null \? 'Calculating…'/)
+    // 'Calculating…' only while the query is in flight; a settled null score is '—', never 0.
+    expect(pageSource).toMatch(/const postureValue = displayedHealthScore !== null\s*\? String\(displayedHealthScore\)\s*: \(!isDemoActive && \(systemIntelligenceLoading \|\| !organization\?\.id\)\) \? 'Calculating…' : '—'/)
   })
 
   it('the Infrastructure Posture primary KPI card is the only consumer of displayedHealthScore -- Infrastructure Intelligence no longer duplicates it in its own "Overall Health" card', () => {
-    const kpiMatch = pageSource.match(/label=\{INFRASTRUCTURE_POSTURE_LABEL\}[^]*?value=\{displayedHealthScore === null/)
+    const kpiMatch = pageSource.match(/label=\{INFRASTRUCTURE_POSTURE_LABEL\}\s*value=\{postureValue\}/)
     expect(kpiMatch).not.toBeNull()
     expect(pageSource).not.toMatch(/overallHealth=\{\{ score: displayedHealthScore/)
     expect(infrastructureIntelligenceSource).not.toMatch(/label="Overall Health"/)
@@ -121,13 +128,14 @@ describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication 
   })
 
   it('keeps Top Risk and System Status', () => {
-    expect(infrastructureIntelligenceSource).toMatch(/label="Top Risk"/)
-    expect(infrastructureIntelligenceSource).toMatch(/label="System Status"/)
+    expect(infrastructureIntelligenceSource).toMatch(/>Top Risk</)
+    expect(infrastructureIntelligenceSource).toMatch(/>DevControl System Health</)
   })
 
   it('System Status routes to /admin/monitoring via next/link (not a bare <a>, not an unrelated destination), independent of any other card\'s data', () => {
     expect(infrastructureIntelligenceSource).toMatch(/import Link from 'next\/link'/)
-    expect(infrastructureIntelligenceSource).toMatch(/label="System Status"[^]*?href="\/admin\/monitoring"/)
+    expect(infrastructureIntelligenceSource).toMatch(/const SYSTEM_STATUS_HREF = '\/admin\/monitoring'/)
+    expect(infrastructureIntelligenceSource).toMatch(/<Link href=\{SYSTEM_STATUS_HREF\}[^]*?DevControl System Health/)
     expect(infrastructureIntelligenceSource).not.toMatch(/<a\b/)
   })
 
@@ -214,7 +222,7 @@ describe('Infrastructure Posture badge: canonical System Intelligence status, no
 
   it('the KPI value itself is still the canonical system_score (Tier 0 source unchanged)', () => {
     expect(pageSource).toMatch(/const displayedHealthScore = isDemoActive \? 87 : \(systemIntelligence\?\.system_score \?\? null\)/)
-    expect(pageSource).toMatch(/trend=\{infraHealthBadge \? \{ direction: infraHealthBadge\.direction, label: infraHealthBadge\.label, color: infraHealthBadge\.color \} : undefined\}/)
+    expect(pageSource).toMatch(/\.\.\.\(infraHealthBadge \? \[\{ label: infraHealthBadge\.label, color: infraHealthBadge\.color, direction: infraHealthBadge\.direction/)
   })
 })
 

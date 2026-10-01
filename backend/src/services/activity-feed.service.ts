@@ -11,7 +11,8 @@
 
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
-import { formatSavingsCurrency } from '../utils/formatSavingsCurrency';
+import { formatSavingsCents } from '../utils/formatSavingsCurrency';
+import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service';
 
 export type ActivityEventType = 'sync' | 'optimization' | 'security' | 'score' | 'anomaly';
 
@@ -71,7 +72,11 @@ export class ActivityFeedService {
         this.runSource('cost_recommendations', () => this.getOptimizationEvents(client, organizationId)),
         this.runSource('account_security_findings', () => this.getSecurityEvents(client, organizationId)),
         this.runSource('risk_score_history', () => this.getScoreEvents(client, organizationId)),
-        this.runSource('anomaly_detections', () => this.getAnomalyEvents(client, organizationId)),
+        // Anomaly detection is not operating while this is false, so its old
+        // rows are not current activity. The rows themselves are left as they are.
+        ANOMALY_DETECTION_ACTIVE
+          ? this.runSource('anomaly_detections', () => this.getAnomalyEvents(client, organizationId))
+          : Promise.resolve([]),
       ]);
 
       const collapsed = this.collapseRepeatedEvents([
@@ -153,17 +158,20 @@ export class ActivityFeedService {
     });
   }
 
+  // ACTIVE only: "found" is worded as a current opportunity, which a RESOLVED or
+  // DISMISSED row no longer is (the same ACTIVE scope as getStats()). There is
+  // no resolution/dismissal event wording yet, so those rows are not shown.
   private async getOptimizationEvents(client: PoolClient, organizationId: string): Promise<ActivityEvent[]> {
     const result = await client.query(
       `SELECT created_at, potential_savings, issue, severity
        FROM cost_recommendations
-       WHERE organization_id = $1
+       WHERE organization_id = $1 AND status = 'ACTIVE'
        ORDER BY created_at DESC LIMIT $2`,
       [organizationId, PER_SOURCE_LIMIT]
     );
     return result.rows.map((row) => ({
       type: 'optimization' as const,
-      message: `Cost optimization found · ${row.issue} — ~${formatSavingsCurrency(row.potential_savings)}/month opportunity`,
+      message: `Cost optimization found · ${row.issue} — ~${formatSavingsCents(row.potential_savings)}/month opportunity`,
       timestamp: new Date(row.created_at).toISOString(),
       severity: row.severity ? String(row.severity).toLowerCase() : undefined,
     }));

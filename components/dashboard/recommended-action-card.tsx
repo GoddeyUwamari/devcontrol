@@ -51,7 +51,7 @@ export function RecommendedActionCard({ opportunityCount, savingsLabel, ctaHref,
         href={ctaHref}
         className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap shrink-0 self-start sm:self-center"
       >
-        Review Savings ({opportunityCount}) →
+        Review {opportunityCount} recommendation{opportunityCount !== 1 ? 's' : ''} →
       </a>
     </div>
   )

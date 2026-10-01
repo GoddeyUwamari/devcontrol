@@ -12,7 +12,7 @@
  * All figures are test fixtures, not production data.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '../page'
 import type { CostSummary, PlatformDashboardStats } from '@/lib/types'
@@ -111,13 +111,22 @@ afterEach(() => {
 function renderDashboard() {
   return render(<QueryClientProvider client={client}><DashboardPage /></QueryClientProvider>)
 }
-/** The spend KPI card, once its figure has settled (not loading). */
+/** The spend KPI card (the one whose title links to /costs) showing `value`. */
+function spendCard(value: string): HTMLElement | undefined {
+  return screen.getAllByText(value)
+    .map((el) => el.closest('[data-testid="kpi-card"]') as HTMLElement | null)
+    .find((card): card is HTMLElement => !!card?.querySelector('a[href="/costs"]'))
+}
+/** The spend KPI card's face, once its figure has settled (not loading). */
 async function spendCardText(expectedValue: string) {
-  await waitFor(() => {
-    const value = screen.getAllByText(expectedValue).find((el) => el.closest('a[href="/costs"]'))
-    expect(value).toBeDefined()
-  })
-  return (screen.getAllByText(expectedValue).find((el) => el.closest('a[href="/costs"]'))!.closest('a') as HTMLElement).textContent ?? ''
+  await waitFor(() => expect(spendCard(expectedValue)).toBeDefined())
+  return spendCard(expectedValue)!.textContent ?? ''
+}
+/** The spend card's face plus its info panel, where provenance now lives. */
+async function spendCardEvidenceText(expectedValue: string) {
+  const face = await spendCardText(expectedValue)
+  fireEvent.click(within(spendCard(expectedValue)!).getByRole('button', { name: /details$/ }))
+  return `${face} ${(await screen.findByRole('dialog')).textContent ?? ''}`
 }
 /**
  * Waits until every input the redirect decision depends on has settled -- the
@@ -192,7 +201,7 @@ describe('the spend card reads the evidence', () => {
     setup(LEGACY_STATS.billing, summary)
     renderDashboard()
 
-    const text = await spendCardText(value)
+    const text = await spendCardEvidenceText(value)
     expect(text).not.toMatch(/Syncing…|flat|stable|no change/i)
     // The legacy monthlyAwsCost (fixture $100) is never shown as the spend figure.
     expect(text).not.toContain('$100.00')

@@ -1,13 +1,14 @@
 /**
- * Infrastructure Posture card placement, through the real DashboardPage:
- * a standalone full-width card directly below Infrastructure Intelligence and
- * above AWS Cost Trends / Security Key Findings, fed by the page's existing
- * System Intelligence query (one request, no second fetch), and absent in demo
- * mode. Component behavior is covered in
+ * Infrastructure Posture section placement, through the real DashboardPage:
+ * a standalone full-width section directly below the Top Risk / System Health
+ * row and above AWS Cost Trends / Security Key Findings, fed by the page's
+ * existing System Intelligence query (one request, no second fetch), and
+ * absent in demo mode. Plus the Infrastructure Posture KPI card: its badges
+ * and its info panel. Component behavior is covered in
  * components/dashboard/__tests__/system-intelligence-card.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '../page'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
@@ -77,37 +78,45 @@ const renderDashboard = () => render(<QueryClientProvider client={client}><Dashb
 const precedes = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
 const postureHeading = () => screen.findByRole('heading', { name: 'Infrastructure Posture' })
+const postureSection = async () => (await postureHeading()).closest('[data-testid="posture-section"]') as HTMLElement
+/** The Infrastructure Posture KPI card (title links to /infrastructure). */
+const postureKpi = () => screen.getAllByTestId('kpi-card').find((c) => c.querySelector('a[href="/infrastructure"]')) as HTMLElement
+const openPostureKpiInfo = () => {
+  fireEvent.click(within(postureKpi()).getByRole('button', { name: 'Infrastructure Posture details' }))
+  return screen.getByRole('dialog', { name: 'Infrastructure Posture' })
+}
 
-describe('Infrastructure Posture card on the real Dashboard page', () => {
-  it('sits between Infrastructure Intelligence and AWS Cost Trends / Security Key Findings', async () => {
+describe('Infrastructure Posture section on the real Dashboard page', () => {
+  it('sits between the Top Risk / System Health row and AWS Cost Trends / Security Key Findings', async () => {
     renderDashboard()
-    const card = await postureHeading()
+    const section = await postureSection()
     await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Cost score' })).toBeInTheDocument())
 
-    const infraIntel = screen.getByRole('heading', { name: 'Infrastructure Intelligence' })
+    const riskRow = screen.getByTestId('risk-status-row')
     const costTrends = (await screen.findAllByText('AWS Cost Trends'))[0]
     const keyFindings = screen.getByRole('heading', { name: 'Security Key Findings' })
-    expect(precedes(infraIntel, card)).toBe(true)
-    expect(precedes(card, costTrends)).toBe(true)
-    expect(precedes(card, keyFindings)).toBe(true)
+    expect(precedes(riskRow, section)).toBe(true)
+    expect(precedes(section, costTrends)).toBe(true)
+    expect(precedes(section, keyFindings)).toBe(true)
   })
 
-  it('is its own full-width block, not inside the Infrastructure Intelligence section or its 2-card grid', async () => {
+  it('is its own full-width block, not inside the risk/status row or a column-span cell', async () => {
     renderDashboard()
-    const heading = await postureHeading()
-    const cardRoot = heading.closest('div.rounded-2xl') as HTMLElement
-    const infraSection = screen.getByRole('heading', { name: 'Infrastructure Intelligence' }).closest('div.mb-6') as HTMLElement
-    expect(infraSection.contains(cardRoot)).toBe(false)
-    // Infrastructure Intelligence still has exactly its two cards.
-    expect(infraSection.querySelector('.grid')!.children).toHaveLength(2)
-    // Not placed inside any column-span grid cell.
-    expect(cardRoot.closest('[class*="col-span"]')).toBeNull()
+    const section = await postureSection()
+    const riskRow = screen.getByTestId('risk-status-row')
+    expect(riskRow.contains(section)).toBe(false)
+    expect(riskRow.children).toHaveLength(2)
+    expect(section.closest('[class*="col-span"]')).toBeNull()
   })
 
-  it('reuses the page\'s existing System Intelligence query: one request feeds both the Infrastructure Posture KPI and the card', async () => {
+  it('reuses the page\'s existing System Intelligence query: one request feeds both the KPI card and the section', async () => {
     renderDashboard()
     await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Alert Coverage score' })).toBeInTheDocument())
-    expect(screen.getByText('69')).toBeInTheDocument() // Infrastructure Posture KPI, same response
+    expect(within(postureKpi()).getByText('69')).toBeInTheDocument()
+    // The KPI card carries the composite; the section (no ring) carries the same response's component scores.
+    expect(within(postureKpi()).getByTestId('kpi-caption')).toHaveTextContent('Composite · Cost 95 · Security 59 · Alert coverage 55')
+    expect(within(await postureSection()).getByText('95')).toBeInTheDocument()
+    expect(within(await postureSection()).queryByText('69')).toBeNull()
     expect(intelligenceSpy).toHaveBeenCalledTimes(1)
     expect(client.getQueryCache().findAll({ queryKey: ['system-intelligence'] })).toHaveLength(1)
   })
@@ -115,23 +124,26 @@ describe('Infrastructure Posture card on the real Dashboard page', () => {
   it('a failed System Intelligence request fabricates nothing: no component labels, scores, status words, or bars', async () => {
     intelligenceSpy.mockRejectedValue(Object.assign(new Error('HTTP 500'), { response: { status: 500 } }))
     renderDashboard()
-    const heading = await postureHeading()
-    const card = heading.closest('div.rounded-2xl') as HTMLElement
-    await waitFor(() => expect(card).toHaveTextContent('— · Unavailable'))
+    const section = await postureSection()
+    await waitFor(() => expect(section).toHaveTextContent('— · Unavailable'))
 
-    for (const label of ['Cost', 'Security', 'Alert Coverage']) expect(within(card).queryByText(label)).not.toBeInTheDocument()
-    for (const word of ['Strong', 'Needs attention', 'At risk', 'Not yet available']) expect(card).not.toHaveTextContent(word)
-    expect(card.textContent?.replace('Composite of cost, security, and alert coverage.', '')).not.toMatch(/\d/) // no score of any kind
-    expect(card.querySelectorAll('[role="progressbar"]')).toHaveLength(0)
+    for (const label of ['Cost', 'Security', 'Alert Coverage']) expect(within(section).queryByText(label)).not.toBeInTheDocument()
+    for (const word of ['Strong', 'Needs attention', 'At risk', 'Not yet available', 'Partial']) expect(section).not.toHaveTextContent(word)
+    expect(section.textContent?.replace('Composite of cost (30%), security (40%), and alert coverage (30%)', '')).not.toMatch(/\d/)
+    expect(section.querySelectorAll('[role="progressbar"]')).toHaveLength(0)
+    // The KPI card: "—", never 0, and no bar.
+    await waitFor(() => expect(within(postureKpi()).getByText('—')).toBeInTheDocument())
+    expect(postureKpi().querySelectorAll('[role="progressbar"]')).toHaveLength(0)
+    expect(within(postureKpi()).queryByText('0')).not.toBeInTheDocument()
     expect(intelligenceSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('demo mode: the card is absent from the page entirely', async () => {
+  it('demo mode: the section is absent from the page entirely', async () => {
     localStorage.setItem('devcontrol_demo_mode', 'true')
     renderDashboard()
-    await screen.findByText('Infrastructure Intelligence')
+    await screen.findByText('Top Risk')
     expect(screen.queryByRole('heading', { name: 'Infrastructure Posture' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('posture-section')).not.toBeInTheDocument()
     expect(intelligenceSpy).not.toHaveBeenCalled()
   })
 })
@@ -142,40 +154,47 @@ describe('Infrastructure Posture KPI', () => {
 
   it('is labeled Infrastructure Posture -- never Infrastructure Health -- and Security Posture is unchanged', async () => {
     renderDashboard()
-    await waitFor(() => expect(screen.getByText('69')).toBeInTheDocument())
-    const kpi = screen.getByText('69').closest('a') as HTMLElement
-    expect(within(kpi).getByText('Infrastructure Posture')).toBeInTheDocument()
-    expect(kpi).toHaveAttribute('href', '/infrastructure')
+    await waitFor(() => expect(within(postureKpi()).getByText('69')).toBeInTheDocument())
+    expect(within(postureKpi()).getByRole('link', { name: 'Infrastructure Posture' })).toHaveAttribute('href', '/infrastructure')
     expect(screen.queryByText('Infrastructure Health')).not.toBeInTheDocument()
     expect(screen.queryByText('Platform Efficiency Breakdown')).not.toBeInTheDocument()
-    expect(screen.getByText('Security Posture')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Security Posture' })).toBeInTheDocument()
   })
 
   it('shows the existing Degraded status as "Needs attention", never as a health word', async () => {
     renderDashboard()
-    await waitFor(() => expect(screen.getByText('69')).toBeInTheDocument())
-    const kpi = screen.getByText('69').closest('a') as HTMLElement
-    expect(within(kpi).getByText('Needs attention')).toBeInTheDocument()
-    for (const word of ['Degraded', 'Healthy']) expect(within(kpi).queryByText(word)).not.toBeInTheDocument()
+    await waitFor(() => expect(within(postureKpi()).getByText('69')).toBeInTheDocument())
+    expect(within(postureKpi()).getByTestId('posture-status')).toHaveTextContent('Needs attention')
+    for (const word of ['Degraded', 'Healthy']) expect(within(postureKpi()).queryByText(word)).not.toBeInTheDocument()
   })
 
-  it('states what the composite is built from, using the runtime component scores', async () => {
+  it('the info panel states what the composite measures and each component\'s runtime score', async () => {
     renderDashboard()
-    expect(await screen.findByText('Composite · Cost 95 · Security 59 · Alert coverage 55')).toBeInTheDocument()
+    await waitFor(() => expect(within(postureKpi()).getByText('69')).toBeInTheDocument())
+    const dialog = openPostureKpiInfo()
+    expect(dialog).toHaveTextContent('Composite of cost (30%), security (40%), and alert coverage (30%). A posture score, not measured uptime or performance.')
+    expect(within(within(dialog).getByTestId('posture-evidence-cost')).getByText('95 · Strong')).toBeInTheDocument()
+    expect(within(within(dialog).getByTestId('posture-evidence-security')).getByText('59 · At risk')).toBeInTheDocument()
+    expect(within(within(dialog).getByTestId('posture-evidence-observability')).getByText('55%')).toBeInTheDocument()
   })
 
-  it('a partial composite is labeled "Partial" with the alert-coverage reason under the score', async () => {
+  it('a partial composite shows "Partial" on the card and the section, with the alert-coverage reason in the panel', async () => {
     intelligenceSpy.mockResolvedValue({
       ...INTELLIGENCE, composite_state: 'partial', composite_reason: REASON,
       components: { ...INTELLIGENCE.components, observability: { ...INTELLIGENCE.components.observability, state: 'partial', reason: OBS_REASON } },
     } as never)
     renderDashboard()
-    expect(await screen.findByText(`Partial · ${REASON}`)).toBeInTheDocument()
-    expect(screen.queryByText(/Observability is partial/)).not.toBeInTheDocument()
-    expect(screen.getByText('69')).toBeInTheDocument()
+    await waitFor(() => expect(within(postureKpi()).getByTestId('posture-partial')).toHaveTextContent('Partial'))
+    expect(within(await postureSection()).getByTestId('posture-section-partial')).toBeInTheDocument()
+    // No reason paragraph on the face.
+    expect(postureKpi().textContent).not.toContain(OBS_REASON)
+    const alertRow = within(openPostureKpiInfo()).getByTestId('posture-evidence-observability')
+    expect(alertRow).toHaveTextContent(OBS_REASON)
+    expect(within(alertRow).getByText('Partial')).toBeInTheDocument()
+    expect(within(postureKpi()).getByText('69')).toBeInTheDocument()
   })
 
-  it('cost partiality renders under the KPI as Cost (with every cost reason) and in the Cost column -- not attributed to Alert Coverage', async () => {
+  it('cost partiality appears in the panel under Cost (with every cost reason) -- not attributed to Alert Coverage', async () => {
     const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
     const BOTH = `Cost: ${COST_REASON} Alert Coverage: ${OBS_REASON}`
     intelligenceSpy.mockResolvedValue({
@@ -187,25 +206,22 @@ describe('Infrastructure Posture KPI', () => {
       },
     } as never)
     renderDashboard()
-    const caption = await screen.findByText(`Partial · ${BOTH}`)
-    expect(caption.closest('a')).toHaveAttribute('href', '/infrastructure')
-    // The old caption showed only the alert-coverage reason for any partial composite.
-    expect(screen.queryByText(`Partial · ${OBS_REASON}`)).not.toBeInTheDocument()
-    // Score unchanged by the state.
-    expect(screen.getByText('69')).toBeInTheDocument()
-    // Breakdown card: each column carries its own reason.
-    const costColumn = screen.getByText(COST_REASON).parentElement as HTMLElement
-    expect(within(costColumn).getByText('Cost')).toBeInTheDocument()
-    expect(within(costColumn).getByText('Partial')).toBeInTheDocument()
-    const alertColumn = screen.getByText(OBS_REASON).parentElement as HTMLElement
-    expect(within(alertColumn).getByText('Alert Coverage')).toBeInTheDocument()
-    expect(within(alertColumn).queryByText(/Anomaly checks/)).not.toBeInTheDocument()
+    await waitFor(() => expect(within(postureKpi()).getByTestId('posture-partial')).toBeInTheDocument())
+    expect(within(postureKpi()).getByText('69')).toBeInTheDocument() // score unchanged by the state
+    const dialog = openPostureKpiInfo()
+    const costRow = within(dialog).getByTestId('posture-evidence-cost')
+    expect(costRow).toHaveTextContent(COST_REASON)
+    expect(within(costRow).getByText('Partial')).toBeInTheDocument()
+    const alertRow = within(dialog).getByTestId('posture-evidence-observability')
+    expect(alertRow).toHaveTextContent(OBS_REASON)
+    expect(alertRow.textContent).not.toMatch(/Anomaly checks/)
   })
 
-  it('an available composite carries no partial caption', async () => {
+  it('an available composite carries no Partial badge on the card or the section', async () => {
     intelligenceSpy.mockResolvedValue({ ...INTELLIGENCE, composite_state: 'available', composite_reason: null } as never)
     renderDashboard()
-    await waitFor(() => expect(screen.getByText('69')).toBeInTheDocument())
-    expect(screen.queryByText(/^Partial · /)).not.toBeInTheDocument()
+    await waitFor(() => expect(within(postureKpi()).getByText('69')).toBeInTheDocument())
+    expect(screen.queryByTestId('posture-partial')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('posture-section-partial')).not.toBeInTheDocument()
   })
 })

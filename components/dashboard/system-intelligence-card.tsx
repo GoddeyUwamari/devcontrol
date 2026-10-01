@@ -1,8 +1,12 @@
+import Link from 'next/link'
 import { Gauge } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ObservabilityComponentScore, SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
-import { INFRASTRUCTURE_POSTURE_DESCRIPTION, INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS } from '@/lib/infrastructure-posture'
+import type { SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
+import { INFRASTRUCTURE_POSTURE_LABEL, INFRASTRUCTURE_POSTURE_WEIGHTED_DESCRIPTION } from '@/lib/infrastructure-posture'
+import { EvidenceBadge, PartialBadge } from './evidence-badge'
+import { EvidenceInfo } from './evidence-info'
+import { describePostureComponent, POSTURE_COMPONENT_ICONS, POSTURE_COMPONENT_ORDER, PostureEvidence, type PostureStatusBadge } from './posture-evidence'
 
 type ComponentStatus = SystemIntelligenceComponentScore['status']
 type ComponentKey = keyof SystemIntelligenceResult['components']
@@ -13,7 +17,11 @@ interface SystemIntelligenceCardProps {
   components: SystemIntelligenceResult['components'] | undefined
   isLoading: boolean
   /** Status wording, passed in so the card reuses the dashboard's existing scheme (SECURITY_STATUS_BADGE). */
-  statusBadge: Record<ComponentStatus, { label: string; color: string }>
+  statusBadge: PostureStatusBadge
+  /** Each tile's one face caption, built by the page from data it already loads; omitted when null. */
+  captions?: Partial<Record<ComponentKey, string | null>>
+  /** The backend's composite_state, read as-is -- never derived here. */
+  compositeState?: SystemIntelligenceResult['composite_state']
 }
 
 // Fill color comes only from the component's canonical `status` -- the backend
@@ -26,88 +34,93 @@ const STATUS_FILL_CLASS: Record<ComponentStatus, string> = {
   risk: 'bg-[color:var(--fill-danger)]',
 }
 
-const COMPONENT_ORDER = ['cost', 'security', 'observability'] as const
-
-function ComponentColumn({ componentKey, component, statusBadge }: { componentKey: ComponentKey; component: SystemIntelligenceComponentScore | ObservabilityComponentScore; statusBadge: SystemIntelligenceCardProps['statusBadge'] }) {
-  const label = POSTURE_COMPONENT_LABELS[componentKey]
-  // Each component's own evidence state and reason, from the backend -- a
-  // partial component shows its own limitations, never another's.
-  const { state, reason } = component
-  // Alert coverage is a coverage percentage, not a posture grade: it shows its
-  // value and scope, not the Strong / Needs attention / At risk wording.
-  const isAlertCoverage = componentKey === 'observability'
-
-  // `ready: false` can still carry a number (a neutral 50 or a preliminary
-  // score), and observability's score is null when nothing was measured -- so
-  // nothing score-derived is rendered until the component says it is real.
-  if (!component.ready || component.score === null) {
-    return (
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-foreground truncate">{label}</p>
-        <p className="text-base font-bold text-[var(--text-secondary)] mt-1">—</p>
-        <p className="text-xs text-[var(--text-secondary)]">{state === 'error' ? 'Could not be retrieved' : 'Not yet available'}</p>
-      </div>
-    )
-  }
-
-  const badge = isAlertCoverage ? null : statusBadge[component.status]
-  const valueText = isAlertCoverage ? `${component.score}%` : String(component.score)
+function ComponentTile({ componentKey, component, statusBadge, caption }: {
+  componentKey: ComponentKey
+  component: SystemIntelligenceResult['components'][ComponentKey]
+  statusBadge: PostureStatusBadge
+  caption: string | null
+}) {
+  const d = describePostureComponent(componentKey, component, statusBadge)
+  const Icon = POSTURE_COMPONENT_ICONS[componentKey]
+  // One caption line: the missing-score wording when there is no score, else the page's caption.
+  const faceCaption = d.score === null ? d.missingText : caption
   return (
-    <div className="min-w-0">
-      <p className="text-sm font-semibold text-foreground truncate">{label}</p>
-      <p className="text-xs mt-1 mb-2">
-        <span className="text-base font-bold text-foreground">{valueText}</span>
-        {badge && (
-          <>
-            <span className="text-[var(--text-secondary)]"> · </span>
-            <span className="font-semibold" style={{ color: badge.color }}>{badge.label}</span>
-          </>
+    <div className="relative min-w-0 rounded-xl border border-border p-4 flex flex-col" data-testid={`posture-tile-${componentKey}`}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon size={15} aria-hidden="true" className="text-[var(--text-secondary)] shrink-0" />
+          <p className="text-sm font-semibold text-foreground truncate m-0">{d.label}</p>
+        </div>
+        {component.reason && (
+          <EvidenceInfo label={`${d.label} details`} title={d.label} align={componentKey === 'observability' ? 'end' : 'start'}>
+            <p className="m-0">{component.reason}</p>
+          </EvidenceInfo>
         )}
-        {state === 'partial' && (
-          <>
-            <span className="text-[var(--text-secondary)]"> · </span>
-            <span data-testid={`${label}-partial`} className="font-semibold text-[var(--text-warning)]">Partial</span>
-          </>
-        )}
-      </p>
-      <Progress
-        value={component.score}
-        className="h-1.5 bg-[color:var(--border)]"
-        indicatorClassName={STATUS_FILL_CLASS[component.status]}
-        aria-label={`${label} score`}
-        aria-valuenow={component.score}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuetext={`${isAlertCoverage ? `${valueText} alert coverage` : `${valueText} of 100`}${badge ? `, ${badge.label}` : ''}${state === 'partial' ? ', partial' : ''}`}
-      />
-      {state === 'partial' && reason && (
-        <p className="text-xs text-[var(--text-secondary)] mt-2 leading-snug">{reason}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={`text-lg font-bold leading-none mr-1 ${d.score === null ? 'text-[var(--text-secondary)]' : 'text-foreground'}`}>{d.scoreText}</span>
+        {d.tier && <EvidenceBadge label={d.tier.label} color={d.tier.color} />}
+      </div>
+      {faceCaption && (
+        <p className="text-xs text-[var(--text-secondary)] leading-snug m-0 mt-2" data-testid={`posture-tile-caption-${componentKey}`}>{faceCaption}</p>
+      )}
+      {d.score !== null && (
+        <div className="mt-auto pt-3">
+          <Progress
+            value={d.score}
+            className="h-1.5 bg-[color:var(--border)]"
+            indicatorClassName={STATUS_FILL_CLASS[component.status]}
+            aria-label={`${d.label} score`}
+            aria-valuenow={d.score}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuetext={`${d.isAlertCoverage ? `${d.scoreText} alert coverage` : `${d.scoreText} of 100`}${d.tier ? `, ${d.tier.label}` : ''}${d.partial ? ', partial' : ''}`}
+          />
+        </div>
       )}
     </div>
   )
 }
 
 /**
- * Cost / Security / Alert Coverage breakdown of the canonical System
- * Intelligence result -- the same already-fetched response behind the
- * Infrastructure Posture KPI. Each component is gated on its own `ready`.
- * Never shown in demo mode (there are no demo component scores to show, and
+ * Infrastructure Posture section: Cost / Security / Alert Coverage tiles from
+ * the same already-fetched System Intelligence response behind the KPI card
+ * (which carries the composite score). Each component is gated on its own
+ * `ready`. The composite's Partial state is the one badge, in the header; a
+ * tile shows one caption, and its full reason sits behind its own info
+ * button. Never shown in demo mode (there are no demo component scores, and
  * none are invented).
  */
-export function SystemIntelligenceCard({ isDemoActive, components, isLoading, statusBadge }: SystemIntelligenceCardProps) {
+export function SystemIntelligenceCard({ isDemoActive, components, isLoading, statusBadge, captions = {}, compositeState = null }: SystemIntelligenceCardProps) {
   if (isDemoActive) return null
+  const partial = compositeState === 'partial'
 
   return (
-    <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 mb-6">
-      <div className="flex items-center gap-2.5 mb-1">
-        <Gauge size={17} style={{ color: 'var(--text-accent)' }} />
-        <h3 className="text-base font-bold text-foreground">{INFRASTRUCTURE_POSTURE_LABEL}</h3>
+    <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 mb-6" data-testid="posture-section">
+      <div className="relative flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-5">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-[var(--bg-accent)]">
+            <Gauge size={16} aria-hidden="true" style={{ color: 'var(--text-accent)' }} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-bold text-foreground m-0">{INFRASTRUCTURE_POSTURE_LABEL}</h3>
+              <EvidenceInfo label={`${INFRASTRUCTURE_POSTURE_LABEL} section details`} title={INFRASTRUCTURE_POSTURE_LABEL} align="start">
+                <PostureEvidence components={components} statusBadge={statusBadge} />
+              </EvidenceInfo>
+              {partial && <PartialBadge testId="posture-section-partial" />}
+            </div>
+            <p className="text-xs text-[var(--text-secondary)] m-0 mt-0.5">{INFRASTRUCTURE_POSTURE_WEIGHTED_DESCRIPTION}</p>
+          </div>
+        </div>
+        <Link href="/infrastructure" className="text-xs font-semibold no-underline whitespace-nowrap py-2" style={{ color: 'var(--text-accent)' }}>
+          View details →
+        </Link>
       </div>
-      <p className="text-xs text-[var(--text-secondary)] mb-4">{INFRASTRUCTURE_POSTURE_DESCRIPTION}</p>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {COMPONENT_ORDER.map((key) => (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {POSTURE_COMPONENT_ORDER.map((key) => (
             <div key={key} className="flex flex-col gap-2">
               <Skeleton className="h-3.5 w-1/2" />
               <Skeleton className="h-4 w-1/3" />
@@ -116,11 +129,11 @@ export function SystemIntelligenceCard({ isDemoActive, components, isLoading, st
           ))}
         </div>
       ) : !components ? (
-        <p className="text-xs text-[var(--text-secondary)]">— · Unavailable</p>
+        <p className="text-xs text-[var(--text-secondary)] m-0">— · Unavailable</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {COMPONENT_ORDER.map((key) => (
-            <ComponentColumn key={key} componentKey={key} component={components[key]} statusBadge={statusBadge} />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {POSTURE_COMPONENT_ORDER.map((key) => (
+            <ComponentTile key={key} componentKey={key} component={components[key]} statusBadge={statusBadge} caption={captions[key] ?? null} />
           ))}
         </div>
       )}
