@@ -265,8 +265,22 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
       request: auditRequestContext(req),
     })
 
-    // Clean up session
-    pool.query(`DELETE FROM aws_connect_sessions WHERE org_id = $1`, [orgId]).catch(() => {})
+    // Clean up the session this connect consumed. Matched on its external_id
+    // so a session created or rotated for this org after the read above is
+    // left alone, and awaited so the delete cannot land after the response.
+    // A failure only leaves a session that expires on its own -- log it
+    // (org id and message only, never the ExternalId) and keep the 201.
+    try {
+      await pool.query(
+        `DELETE FROM aws_connect_sessions WHERE org_id = $1 AND external_id = $2`,
+        [orgId, externalId]
+      )
+    } catch (sessionError: unknown) {
+      console.error(
+        `[Connect AWS] Failed to clear connect session for org ${orgId}:`,
+        sessionError instanceof Error ? sessionError.message : String(sessionError)
+      )
+    }
 
     // Kick off initial resource discovery in the background.
     // Fire-and-forget so we don't block the 201 response (a full scan can take 30-120s).
