@@ -24,6 +24,7 @@ import apiKeysRoutes from '../api-keys.routes';
 import { authService } from '../../services/auth.service';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
 import { auditEvents, createAuditEventWriter } from '../../services/auditEvents.service';
+import { requestContext } from '../../config/database';
 
 jest.mock('@aws-sdk/client-sts', () => ({
   STSClient: jest.fn().mockImplementation(() => ({
@@ -262,6 +263,44 @@ async function insertConnectSession(orgId: string): Promise<string> {
     [orgId, externalId]
   );
   return externalId;
+}
+
+const SESSION_DELETE = /^\s*DELETE FROM aws_connect_sessions\b/i;
+
+/**
+ * Holds the route's connect-session DELETE until released, so its timing
+ * relative to the response and to other session writes is deterministic. The
+ * exported `pool` is a Proxy whose query() runs on the request-scoped client
+ * from requestContext, so the hold is applied to that client. `reached`
+ * resolves when the DELETE is issued, `settled` once it has run (or failed).
+ */
+function holdSessionDelete(opts: { releaseAfterMs?: number; fail?: Error } = {}) {
+  let markReached!: () => void;
+  let release!: () => void;
+  let markSettled!: () => void;
+  const reached = new Promise<void>((resolve) => (markReached = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const settled = new Promise<void>((resolve) => (markSettled = resolve));
+  const getStore = requestContext.getStore.bind(requestContext);
+  jest.spyOn(requestContext, 'getStore').mockImplementation(() => {
+    const client = getStore();
+    if (!client) return client;
+    return new Proxy(client, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target);
+        if (prop !== 'query') return typeof value === 'function' ? value.bind(target) : value;
+        return (...args: unknown[]) => {
+          if (typeof args[0] !== 'string' || !SESSION_DELETE.test(args[0])) return value.apply(target, args);
+          markReached();
+          if (opts.releaseAfterMs !== undefined) setTimeout(release, opts.releaseAfterMs);
+          return released
+            .then(() => (opts.fail ? Promise.reject(opts.fail) : value.apply(target, args)))
+            .finally(markSettled);
+        };
+      },
+    });
+  });
+  return { reached, settled, release };
 }
 
 async function connectSession(orgId: string) {
@@ -541,6 +580,61 @@ describe('AWS account connection -- audit-write failure', () => {
     expect((await as(org.owner, org.orgId).connect()).status).toBe(201);
     expect(await awsAccountRow(org.orgId)).not.toBeNull();
     expect(await auditRows(org.orgId)).toHaveLength(0);
+  });
+});
+
+describe('AWS account connection -- connect-session cleanup', () => {
+  it('a session created after a successful connect survives, and the next connect returns 409', async () => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+    const hold = holdSessionDelete({ releaseAfterMs: 200 });
+
+    expect((await as(org.owner, org.orgId).connect()).status).toBe(201);
+    const next = await insertConnectSession(org.orgId);
+    await hold.settled;
+
+    expect(await connectSession(org.orgId)).toEqual({ external_id: next });
+    expect((await as(org.owner, org.orgId).connect()).status).toBe(409);
+  });
+
+  it('the consumed session is removed by the time connect responds', async () => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+    holdSessionDelete({ releaseAfterMs: 200 });
+
+    expect((await as(org.owner, org.orgId).connect()).status).toBe(201);
+    expect(await connectSession(org.orgId)).toBeNull();
+  });
+
+  it('only the consumed session is deleted: one rotated while connect is in flight survives', async () => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+    const hold = holdSessionDelete();
+
+    const response = as(org.owner, org.orgId).connect();
+    await hold.reached;
+    const rotated = await insertConnectSession(org.orgId);
+    hold.release();
+    expect((await response).status).toBe(201);
+    await hold.settled;
+
+    expect(await connectSession(org.orgId)).toEqual({ external_id: rotated });
+  });
+
+  it('a failed session delete still returns 201, binds the account, and logs no ExternalId', async () => {
+    const org = await buildOrg();
+    const externalId = await insertConnectSession(org.orgId);
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const hold = holdSessionDelete({ releaseAfterMs: 0, fail: new Error('session store unavailable') });
+
+    expect((await as(org.owner, org.orgId).connect()).status).toBe(201);
+    await hold.settled;
+    expect(await awsAccountRow(org.orgId)).not.toBeNull();
+
+    const logged = JSON.stringify(errorLog.mock.calls);
+    expect(logged).toContain(org.orgId);
+    expect(logged).toContain('session store unavailable');
+    expect(logged).not.toContain(externalId);
   });
 });
 
