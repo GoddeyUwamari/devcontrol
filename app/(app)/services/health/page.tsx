@@ -62,8 +62,9 @@ export default function ServiceHealthPage() {
             lineHeight: 1.75, maxWidth: '600px',
             margin: '0 auto 36px',
           }}>
-            Real-time health monitoring, intelligent alerting, and dependency impact maps
-            for every service in your AWS infrastructure. Stop reacting to incidents —
+            Resource checks for your discovered AWS resources — AWS status checks for EC2
+            and EBS, CloudWatch thresholds for other supported types — plus intelligent
+            alerting and dependency impact maps. Stop reacting to incidents —
             start preventing them.
           </p>
 
@@ -91,7 +92,7 @@ export default function ServiceHealthPage() {
             justifyContent: 'center', gap: '24px',
             fontSize: '0.875rem', fontWeight: 500, color: '#374151',
           }}>
-            {['Real-time health monitoring', 'Smart alert routing', 'Dependency impact maps'].map(t => (
+            {['AWS status & threshold checks', 'Smart alert routing', 'Dependency impact maps'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#16a34a' }}>✓</span> {t}
               </span>
