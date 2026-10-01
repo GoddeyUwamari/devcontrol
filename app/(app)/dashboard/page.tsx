@@ -28,8 +28,11 @@ import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
 import { computeDashboardSpendCard } from './dashboardSpendCard'
-import { computeSecurityHealthKpi, SECURITY_STATUS_BADGE } from './securityHealthKpi'
-import { INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
+import { computeSecurityEvidence, computeSecurityHealthKpi, SECURITY_STATUS_BADGE } from './securityHealthKpi'
+import { INFRASTRUCTURE_POSTURE_LABEL, postureStatusLabel } from '@/lib/infrastructure-posture'
+import { EvidenceSection } from '@/components/dashboard/evidence-info'
+import { PostureEvidence } from '@/components/dashboard/posture-evidence'
+import { toneFillClass } from '@/components/dashboard/evidence-badge'
 import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
@@ -359,12 +362,13 @@ export default function DashboardPage() {
   const systemStatusLabel = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'unknown'
 
   // systemHealth is DevControl's own /health check (API + database), not the
-  // customer's AWS -- the wording says so.
+  // customer's AWS -- the card always says so (SYSTEM_HEALTH_DISCLAIMER).
+  // "Live" is only claimed when that check reports operational.
   const systemStatusConfig = {
-    healthy:  { color: 'var(--text-success)', background: 'var(--bg-success)', border: 'var(--border-success)', dot: 'var(--fill-success)', value: 'Operational', label: "DevControl's API and database are responding. Not a status of your AWS resources." },
-    degraded: { color: 'var(--text-warning)', background: 'var(--bg-warning)', border: 'var(--border-warning)', dot: 'var(--fill-warning)', value: 'Degraded', label: "DevControl's own services are degraded. Not a status of your AWS resources." },
-    down:     { color: 'var(--text-danger)', background: 'var(--bg-danger)', border: 'var(--border-danger)', dot: 'var(--fill-danger)', value: 'Not responding', label: "DevControl's API is not responding normally. Not a status of your AWS resources." },
-    unknown:  { color: 'var(--text-secondary)', background: 'var(--surface-1)', border: 'var(--border)', dot: 'var(--text-secondary)', value: 'Checking', label: "Checking DevControl's own service status." },
+    healthy:  { color: 'var(--text-success)', dot: 'var(--fill-success)', value: 'Operational', detail: 'Platform API & Database Services Live' },
+    degraded: { color: 'var(--text-warning)', dot: 'var(--fill-warning)', value: 'Degraded', detail: "DevControl's own services are degraded." },
+    down:     { color: 'var(--text-danger)', dot: 'var(--fill-danger)', value: 'Not responding', detail: "DevControl's API is not responding normally." },
+    unknown:  { color: 'var(--text-secondary)', dot: 'var(--text-secondary)', value: 'Checking', detail: "Checking DevControl's own service status." },
   } as const
   const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.unknown
 
@@ -495,11 +499,21 @@ export default function DashboardPage() {
     : displayedHealthStatus === 'Degraded' ? { label: postureBadgeLabel, direction: 'flat' as const, color: 'var(--text-warning)' }
     : { label: postureBadgeLabel, direction: 'down' as const, color: 'var(--text-danger)' }
 
-  // What the composite is built from, then -- when the backend marked it
-  // partial (today: alert coverage measures EC2/RDS only) -- why.
-  const infraPostureCaptions = isDemoActive || displayedHealthScore === null
-    ? []
-    : [postureCompositionCaption(systemIntelligence?.components), posturePartialCaption(systemIntelligence)].filter((c): c is string => c !== null)
+  // The backend's composite_state, read as-is: the frontend never derives it.
+  const postureIsPartial = !isDemoActive && displayedHealthScore !== null && systemIntelligence?.composite_state === 'partial'
+  const postureValue = displayedHealthScore !== null
+    ? String(displayedHealthScore)
+    : (!isDemoActive && (systemIntelligenceLoading || !organization?.id)) ? 'Calculating…' : '—'
+
+  const securityEvidence = computeSecurityEvidence({
+    isDemoActive,
+    isLoading: securityFindingsLoading,
+    findingCounts: accountFindingStats?.bySeverity,
+    findingsError,
+    complianceBreakdown: resourceComplianceBreakdown,
+    resourceComplianceError,
+    securityComponent: systemIntelligence?.components?.security,
+  })
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
 
@@ -534,21 +548,37 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ── PRIMARY KPI ROW ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-6">
+          {/* ── SECTION 1: KPI ROW ── */}
+          {/* Equal heights come from the grid's stretch, not fixed pixel heights. */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6" data-testid="kpi-row">
             <DashboardMetricCard
               icon={DollarSign}
               iconColor="var(--text-success)"
               iconBackground="var(--bg-success)"
               label={spendCard ? spendCard.label : 'Monthly Spend'}
               value={spendCard ? spendCard.value : currencyFormatter.format(DEMO_DASHBOARD_STATS.monthlyAwsCost)}
-              trend={
+              badges={
                 spendCard
-                  ? spendCard.trend
-                  : { direction: costChange > 0 ? 'up' : costChange < 0 ? 'down' : 'flat', label: `${costChange > 0 ? '+' : ''}${Math.abs(costChange)}% vs last 30 days`, color: costDeltaColor }
+                  ? (spendCard.trend ? [{ label: spendCard.trend.label, color: spendCard.trend.color, direction: spendCard.trend.direction, testId: 'spend-change' }] : undefined)
+                  : [{ label: `${costChange > 0 ? '+' : ''}${Math.abs(costChange)}% vs last 30 days`, color: costDeltaColor, direction: costChange > 0 ? 'up' : costChange < 0 ? 'down' : 'flat' }]
               }
-              captions={spendCard?.captions}
               sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.map(d => ({ value: d.total }))) : undefined}
+              info={spendCard && spendCard.captions.length > 0 ? {
+                title: spendCard.label,
+                align: 'start',
+                content: (
+                  <>
+                    <EvidenceSection heading="Source">
+                      <p className="m-0">{spendCard.captions[0]}</p>
+                    </EvidenceSection>
+                    {spendCard.captions[1] && (
+                      <EvidenceSection heading="Comparison">
+                        <p className="m-0">{spendCard.captions[1]}</p>
+                      </EvidenceSection>
+                    )}
+                  </>
+                ),
+              } : undefined}
               href="/costs"
             />
 
@@ -558,9 +588,31 @@ export default function DashboardPage() {
               iconBackground="var(--bg-accent)"
               label="Security Posture"
               value={securityKpi.value}
-              valueSuffix={securityKpi.score === null ? undefined : '/100'}
-              valueColor={securityKpi.score === null ? undefined : securityKpi.badge?.color}
-              trend={securityKpi.badge ? { direction: securityKpi.badge.direction, label: securityKpi.badge.label, color: securityKpi.badge.color } : undefined}
+              valueSuffix={securityKpi.score === null ? undefined : '/ 100'}
+              badges={securityKpi.badge ? [{ label: securityKpi.badge.label, color: securityKpi.badge.color, direction: securityKpi.badge.direction, testId: 'security-status' }] : undefined}
+              progress={securityKpi.score === null || !securityKpi.badge ? undefined : {
+                value: securityKpi.score,
+                fillClassName: toneFillClass(securityKpi.badge.color),
+                ariaValueText: `${securityKpi.score} of 100, ${securityKpi.badge.label}`,
+              }}
+              info={isDemoActive ? undefined : {
+                title: 'Security Posture',
+                content: (
+                  <>
+                    <EvidenceSection heading="Active findings">
+                      <ul className="list-none m-0 p-0">
+                        {securityEvidence.findings.map((line) => <li key={line}>{line}</li>)}
+                        {securityEvidence.resourceCompliance && <li>{securityEvidence.resourceCompliance}</li>}
+                      </ul>
+                    </EvidenceSection>
+                    {securityEvidence.evaluation && (
+                      <EvidenceSection heading="Evaluation">
+                        <p className="m-0">{securityEvidence.evaluation}</p>
+                      </EvidenceSection>
+                    )}
+                  </>
+                ),
+              }}
               href="/security"
             />
 
@@ -569,28 +621,43 @@ export default function DashboardPage() {
               iconColor="var(--text-accent)"
               iconBackground="var(--bg-accent)"
               label={INFRASTRUCTURE_POSTURE_LABEL}
-              value={displayedHealthScore === null ? 'Calculating…' : String(displayedHealthScore)}
-              valueSuffix={displayedHealthScore === null ? undefined : '/100'}
-              trend={infraHealthBadge ? { direction: infraHealthBadge.direction, label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
-              captions={infraPostureCaptions.length > 0 ? infraPostureCaptions : undefined}
+              value={postureValue}
+              valueSuffix={displayedHealthScore === null ? undefined : '/ 100'}
+              badges={[
+                ...(infraHealthBadge ? [{ label: infraHealthBadge.label, color: infraHealthBadge.color, direction: infraHealthBadge.direction, testId: 'posture-status' }] : []),
+                ...(postureIsPartial ? [{ label: 'Partial', color: 'var(--text-secondary)', testId: 'posture-partial' }] : []),
+              ]}
+              progress={displayedHealthScore === null || !infraHealthBadge ? undefined : {
+                value: displayedHealthScore,
+                fillClassName: toneFillClass(infraHealthBadge.color),
+                ariaValueText: `${displayedHealthScore} of 100, ${infraHealthBadge.label}${postureIsPartial ? ', partial' : ''}`,
+              }}
+              info={{
+                title: INFRASTRUCTURE_POSTURE_LABEL,
+                content: <PostureEvidence components={isDemoActive ? undefined : systemIntelligence?.components} statusBadge={SECURITY_STATUS_BADGE} />,
+              }}
               href="/infrastructure"
             />
           </div>
 
+          {/* ── SECTION 2: TOP RISK + DEVCONTROL SYSTEM HEALTH ── */}
           <InfrastructureIntelligence
             topRisk={topRisk}
             topRiskStatus={topRiskStatus}
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
-            systemStatus={{ value: statusConf.value, label: statusConf.label, color: statusConf.color, background: statusConf.background, dotColor: statusConf.dot }}
+            systemStatus={{ value: statusConf.value, detail: statusConf.detail, operational: systemStatusLabel === 'healthy', color: statusConf.color, dotColor: statusConf.dot }}
           />
 
-          {/* ── INFRASTRUCTURE POSTURE BREAKDOWN ── */}
+          {/* ── SECTION 3: INFRASTRUCTURE POSTURE ── */}
           {/* Same already-fetched systemIntelligence as the Infrastructure Posture KPI -- no second query. */}
           <SystemIntelligenceCard
             isDemoActive={isDemoActive}
             components={systemIntelligence?.components}
             isLoading={!isDemoActive && (systemIntelligenceLoading || !organization?.id)}
             statusBadge={SECURITY_STATUS_BADGE}
+            score={displayedHealthScore}
+            scoreBadge={infraHealthBadge ? { label: infraHealthBadge.label, color: infraHealthBadge.color } : undefined}
+            compositeState={systemIntelligence?.composite_state ?? null}
           />
 
           {/* ── AWS COST TRENDS + SECURITY KEY FINDINGS ── */}

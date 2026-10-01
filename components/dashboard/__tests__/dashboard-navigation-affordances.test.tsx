@@ -99,21 +99,21 @@ describe('Engineering Health', () => {
   })
 })
 
-describe('System Status arrow', () => {
-  it('is a 14px ArrowRight, matching the KPI card arrows', () => {
+describe('System Health arrow', () => {
+  it('is a 14px ArrowRight on the title link, matching the other dashboard arrows', () => {
     render(
       <InfrastructureIntelligence
         topRisk={null}
         topRiskStatus="unavailable"
         aiSummaryLoading={false}
-        systemStatus={{ value: 'Operational', label: "DevControl's API and database are responding.", color: 'green', background: 'white', dotColor: 'green' }}
+        systemStatus={{ value: 'Operational', detail: 'Platform API & Database Services Live', operational: true, color: 'green', dotColor: 'green' }}
       />
     )
-    const card = screen.getByText('System Status').closest('a')!
-    const arrows = card.querySelectorAll('svg.lucide-arrow-right')
+    const link = screen.getByText('DevControl System Health').closest('a')!
+    const arrows = link.querySelectorAll('svg.lucide-arrow-right')
     expect(arrows).toHaveLength(1)
     expect(arrows[0].getAttribute('width')).toBe('14')
-    expect(chevronsIn(card)).toHaveLength(0)
+    expect(chevronsIn(link)).toHaveLength(0)
   })
 })
 

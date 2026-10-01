@@ -24,6 +24,42 @@ export const SECURITY_STATUS_BADGE: Record<SystemIntelligenceComponentScore['sta
   risk: { label: 'At risk', direction: 'down', color: 'var(--text-danger)' },
 }
 
+type SeverityCounts = { critical: number; high: number; medium: number; low: number }
+
+/**
+ * The Security Posture info panel's lines, from data the Dashboard already
+ * loads (the same reads behind Security Key Findings), in its existing
+ * wording: active account-level finding counts by severity (zero counts
+ * omitted), resource compliance, and the security component's own
+ * evaluation-state reason. A failed request reads "Unavailable", never a
+ * zero or an empty result.
+ */
+export function computeSecurityEvidence(params: {
+  isDemoActive: boolean
+  isLoading: boolean
+  findingCounts: SeverityCounts | null | undefined
+  findingsError: boolean
+  /** Already-formatted resource compliance breakdown ("2 High · 1 Low"), or null when not evaluated. */
+  complianceBreakdown: string | null
+  resourceComplianceError: boolean
+  securityComponent: Pick<SystemIntelligenceComponentScore, 'reason'> | undefined
+}): { findings: string[]; resourceCompliance: string | null; evaluation: string | null } {
+  const { isDemoActive, isLoading, findingCounts, findingsError, complianceBreakdown, resourceComplianceError, securityComponent } = params
+  if (isDemoActive) return { findings: [], resourceCompliance: null, evaluation: null }
+  if (isLoading) return { findings: ['Loading…'], resourceCompliance: null, evaluation: null }
+
+  const counts = findingsError
+    ? ['Account-level findings: Unavailable']
+    : (['critical', 'high', 'medium', 'low'] as const)
+        .filter((tier) => (findingCounts?.[tier] ?? 0) > 0)
+        .map((tier) => `${findingCounts![tier]} ${tier} finding${findingCounts![tier] !== 1 ? 's' : ''}`)
+  return {
+    findings: counts.length > 0 ? counts : ['No open account-level findings recorded yet.'],
+    resourceCompliance: `Resource compliance: ${resourceComplianceError ? 'Unavailable' : (complianceBreakdown ?? 'Not yet evaluated')}`,
+    evaluation: securityComponent?.reason ?? null,
+  }
+}
+
 /**
  * Pure, extracted-for-testability Security Posture KPI state.
  *

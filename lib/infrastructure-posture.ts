@@ -13,6 +13,12 @@ export const INFRASTRUCTURE_POSTURE_LABEL = 'Infrastructure Posture'
 
 export const INFRASTRUCTURE_POSTURE_DESCRIPTION = 'Composite of cost, security, and alert coverage.'
 
+/** The same composite with the backend's 30/40/30 weights spelled out (display copy only). */
+export const INFRASTRUCTURE_POSTURE_WEIGHTED_DESCRIPTION = 'Composite of cost (30%), security (40%), and alert coverage (30%)'
+
+/** What the composite is not -- shown alongside the weighted description. */
+export const INFRASTRUCTURE_POSTURE_NOT_UPTIME = 'A posture score, not measured uptime or performance.'
+
 /** Customer-facing component names, keyed by the backend's component keys. */
 export const POSTURE_COMPONENT_LABELS = {
   cost: 'Cost',

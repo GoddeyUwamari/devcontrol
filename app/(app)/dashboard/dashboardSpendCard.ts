@@ -40,10 +40,15 @@ export function computeDashboardSpendCard(params: {
   const captions = [spend.sub]
   let trend: DashboardSpendCard['trend']
   if (mom.direction !== null) {
-    // Same thresholds the Dashboard used before: rising spend on a bill of $100+ is a danger color.
-    const color = mom.direction === 'up'
-      ? ((spend.amount ?? 0) >= 100 ? 'var(--text-danger)' : 'var(--text-warning)')
-      : mom.direction === 'down' ? 'var(--text-success)' : 'var(--text-warning)'
+    // A window that includes today compares against a day Cost Explorer is
+    // still billing, so its direction is not yet a verdict: neutral, never the
+    // "improvement" green. Otherwise the same thresholds as before: rising
+    // spend on a bill of $100+ is a danger color.
+    const color = mom.includesToday
+      ? 'var(--text-secondary)'
+      : mom.direction === 'up'
+        ? ((spend.amount ?? 0) >= 100 ? 'var(--text-danger)' : 'var(--text-warning)')
+        : mom.direction === 'down' ? 'var(--text-success)' : 'var(--text-warning)'
     trend = {
       direction: mom.direction,
       label: mom.changePercent !== null

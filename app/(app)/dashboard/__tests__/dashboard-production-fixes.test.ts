@@ -65,8 +65,8 @@ describe('Cost-saving opportunity reconciliation', () => {
 })
 
 describe('Top Risk: no duplicated sentence', () => {
-  it('splits headline from a genuinely distinct remainder, and omits the description when there is none (never repeats topRisk verbatim in both slots)', () => {
-    expect(infrastructureIntelligenceSource).toMatch(/function splitRiskText/)
+  it('shows the finding text once, with no second description slot when a risk exists (never repeats topRisk verbatim in both slots)', () => {
+    expect(infrastructureIntelligenceSource).toMatch(/const description = topRisk\s*\?\s*null/)
     expect(infrastructureIntelligenceSource).not.toMatch(/description=\{\s*topRisk \?\? '/)
   })
 })
@@ -101,11 +101,12 @@ describe('Infrastructure Posture: canonical System Intelligence source, no clien
   })
 
   it('shows "Calculating…" rather than an invented score when the canonical System Intelligence result is unavailable', () => {
-    expect(pageSource).toMatch(/value=\{displayedHealthScore === null \? 'Calculating…'/)
+    // 'Calculating…' only while the query is in flight; a settled null score is '—', never 0.
+    expect(pageSource).toMatch(/const postureValue = displayedHealthScore !== null\s*\? String\(displayedHealthScore\)\s*: \(!isDemoActive && \(systemIntelligenceLoading \|\| !organization\?\.id\)\) \? 'Calculating…' : '—'/)
   })
 
   it('the Infrastructure Posture primary KPI card is the only consumer of displayedHealthScore -- Infrastructure Intelligence no longer duplicates it in its own "Overall Health" card', () => {
-    const kpiMatch = pageSource.match(/label=\{INFRASTRUCTURE_POSTURE_LABEL\}[^]*?value=\{displayedHealthScore === null/)
+    const kpiMatch = pageSource.match(/label=\{INFRASTRUCTURE_POSTURE_LABEL\}\s*value=\{postureValue\}/)
     expect(kpiMatch).not.toBeNull()
     expect(pageSource).not.toMatch(/overallHealth=\{\{ score: displayedHealthScore/)
     expect(infrastructureIntelligenceSource).not.toMatch(/label="Overall Health"/)
@@ -121,13 +122,14 @@ describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication 
   })
 
   it('keeps Top Risk and System Status', () => {
-    expect(infrastructureIntelligenceSource).toMatch(/label="Top Risk"/)
-    expect(infrastructureIntelligenceSource).toMatch(/label="System Status"/)
+    expect(infrastructureIntelligenceSource).toMatch(/>Top Risk</)
+    expect(infrastructureIntelligenceSource).toMatch(/>DevControl System Health</)
   })
 
   it('System Status routes to /admin/monitoring via next/link (not a bare <a>, not an unrelated destination), independent of any other card\'s data', () => {
     expect(infrastructureIntelligenceSource).toMatch(/import Link from 'next\/link'/)
-    expect(infrastructureIntelligenceSource).toMatch(/label="System Status"[^]*?href="\/admin\/monitoring"/)
+    expect(infrastructureIntelligenceSource).toMatch(/const SYSTEM_STATUS_HREF = '\/admin\/monitoring'/)
+    expect(infrastructureIntelligenceSource).toMatch(/<Link href=\{SYSTEM_STATUS_HREF\}[^]*?DevControl System Health/)
     expect(infrastructureIntelligenceSource).not.toMatch(/<a\b/)
   })
 
@@ -214,7 +216,7 @@ describe('Infrastructure Posture badge: canonical System Intelligence status, no
 
   it('the KPI value itself is still the canonical system_score (Tier 0 source unchanged)', () => {
     expect(pageSource).toMatch(/const displayedHealthScore = isDemoActive \? 87 : \(systemIntelligence\?\.system_score \?\? null\)/)
-    expect(pageSource).toMatch(/trend=\{infraHealthBadge \? \{ direction: infraHealthBadge\.direction, label: infraHealthBadge\.label, color: infraHealthBadge\.color \} : undefined\}/)
+    expect(pageSource).toMatch(/\.\.\.\(infraHealthBadge \? \[\{ label: infraHealthBadge\.label, color: infraHealthBadge\.color, direction: infraHealthBadge\.direction/)
   })
 })
 

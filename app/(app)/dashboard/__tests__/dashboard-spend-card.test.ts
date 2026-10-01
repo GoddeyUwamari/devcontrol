@@ -19,12 +19,12 @@ function spend(amount: number, provenance: 'actual' | 'estimated' = 'actual'): C
 function missing<T>(state: 'unavailable' | 'error'): { state: typeof state; source: string; provenance: null; asOf: null; coverage: null; reason: string; data: T | null } {
   return { state, source: 'fixture', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null }
 }
-function mom(changePercent: number | null, changeAmount: number, previousWindowTotal = 10): CostSummary['monthOverMonth'] {
+function mom(changePercent: number | null, changeAmount: number, previousWindowTotal = 10, includesToday = true): CostSummary['monthOverMonth'] {
   return {
     state: 'available', source: 'DevControl month-over-month comparison', provenance: 'derived', asOf: null, coverage: null, reason: null,
     data: {
       currentWindow: { start: '2026-09-01', end: '2026-09-27' }, previousWindow: { start: '2026-08-01', end: '2026-08-27' },
-      currentWindowTotal: previousWindowTotal + changeAmount, previousWindowTotal, changeAmount, changePercent, currentWindowIncludesToday: true,
+      currentWindowTotal: previousWindowTotal + changeAmount, previousWindowTotal, changeAmount, changePercent, currentWindowIncludesToday: includesToday,
     },
   }
 }
@@ -82,14 +82,23 @@ describe('Dashboard spend figure keeps its provenance', () => {
 describe('Dashboard month-over-month trend', () => {
   it('a real 0% is a flat 0% trend, with its MTD basis and the still-billing note', () => {
     const c = card({ spend: spend(10), monthOverMonth: mom(0, 0) })
-    expect(c.trend).toEqual({ direction: 'flat', label: '0% vs same days last month', color: 'var(--text-warning)' })
+    expect(c.trend).toEqual({ direction: 'flat', label: '0% vs same days last month', color: 'var(--text-secondary)' })
     expect(c.captions).toContain("Month to date vs same days last month · not the selected range · today's spend still being billed")
   })
 
-  it('positive and negative changes show their real percentages', () => {
-    expect(card({ spend: spend(150), monthOverMonth: mom(12.5, 1.25) }).trend).toEqual({ direction: 'up', label: '+12.5% vs same days last month', color: 'var(--text-danger)' })
-    expect(card({ spend: spend(20), monthOverMonth: mom(12.5, 1.25) }).trend?.color).toBe('var(--text-warning)')
-    expect(card({ spend: spend(20), monthOverMonth: mom(-8.3, -0.83) }).trend).toEqual({ direction: 'down', label: '-8.3% vs same days last month', color: 'var(--text-success)' })
+  it('positive and negative changes show their real percentages (a fully billed window keeps its direction color)', () => {
+    expect(card({ spend: spend(150), monthOverMonth: mom(12.5, 1.25, 10, false) }).trend).toEqual({ direction: 'up', label: '+12.5% vs same days last month', color: 'var(--text-danger)' })
+    expect(card({ spend: spend(20), monthOverMonth: mom(12.5, 1.25, 10, false) }).trend?.color).toBe('var(--text-warning)')
+    expect(card({ spend: spend(20), monthOverMonth: mom(-8.3, -0.83, 10, false) }).trend).toEqual({ direction: 'down', label: '-8.3% vs same days last month', color: 'var(--text-success)' })
+  })
+
+  it('a window that includes today (still being billed) is neutral in every direction -- never "improvement" green', () => {
+    for (const [pct, amt] of [[-8.3, -0.83], [12.5, 1.25], [0, 0]] as const) {
+      const c = card({ spend: spend(150), monthOverMonth: mom(pct, amt) })
+      expect(c.trend?.color).toBe('var(--text-secondary)')
+      expect(c.captions).toContain("Month to date vs same days last month · not the selected range · today's spend still being billed")
+    }
+    expect(card({ spend: spend(150), monthOverMonth: mom(null, 3.2, 0) }).trend?.color).toBe('var(--text-secondary)')
   })
 
   it('unavailable and error comparisons show no trend at all -- never 0% or flat', () => {
