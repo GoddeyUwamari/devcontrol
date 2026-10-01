@@ -188,6 +188,8 @@ describe('Monitoring page — AWS Service Health never contains DevControl self-
 
     expect(await screen.findByText("Can't fetch CloudWatch metrics right now")).toBeInTheDocument()
     expect(screen.queryByText(/Unable to connect to Prometheus/)).not.toBeInTheDocument()
+    // With no CloudWatch data there is no evidence about the customer's resources.
+    expect(document.body.textContent).not.toMatch(/still running normally|not an outage/i)
   })
 })
 
@@ -358,8 +360,95 @@ describe('Monitoring page — the healthy summary claims only what CloudWatch sh
 
     render(<MonitoringPage />)
 
-    expect(await screen.findByText(/1 AWS resource is currently monitored with no active health violations\./)).toBeInTheDocument()
+    expect(await screen.findByText(/No issues detected in the latest resource checks: 1 of 1 resource reporting telemetry\./)).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/anomal(y|ies) (were|was) detected|No reliability anomalies/i)
+  })
+})
+
+describe('Monitoring page — resource check terminology', () => {
+  beforeEach(() => {
+    mockUseDemoMode.mockReturnValue(false)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // 1 EC2 (status checks), 2 EBS (status checks) -- today's production shape -- plus one
+  // EBS whose check returned no result.
+  const mixedFleet = () => cloudWatchMetricsFixture({
+    healthSummary: { total: 5, healthy: 3, degraded: 0, critical: 0, down: 0, monitored: 4 },
+    systemStatus: 'healthy',
+    pagination: { shown: 1, total: 5, hasMore: false, cursor: null },
+  })
+
+  it('reports a factual count, never an "Overall Health" percentage or "Healthy" verdict', async () => {
+    installFetchMock({ connected: true, metrics: mixedFleet() })
+    render(<MonitoringPage />)
+
+    // The KPI card (the section and table below share the "Resource Checks" title).
+    const card = (await screen.findByText('3 of 4')).parentElement as HTMLElement
+    expect(card).toHaveTextContent('Resource Checks')
+    expect(card).toHaveTextContent('with no issues detected · 1 undetermined')
+    expect(screen.queryByText('Overall Health')).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/\b\d+% healthy|Infrastructure is healthy|no active health violations/i)
+    expect(screen.getByTestId('check-summary')).toHaveTextContent(/^No issues detected\s*· 4 resources reporting telemetry · 3 with no issues detected · 0 with issues · 1 undetermined$/)
+  })
+
+  it('never counts an undetermined (unknown) result as passing', async () => {
+    installFetchMock({ connected: true, metrics: mixedFleet() })
+    render(<MonitoringPage />)
+
+    expect(await screen.findByTestId('check-summary-text')).toHaveTextContent('No issues detected in the latest resource checks: 3 of 4 resources reporting telemetry (1 undetermined).')
+  })
+
+  it('when every reporting resource is undetermined, it says no check has a result -- not "no issues" or "healthy"', async () => {
+    installFetchMock({
+      connected: true,
+      metrics: cloudWatchMetricsFixture({
+        healthSummary: { total: 2, healthy: 0, degraded: 0, critical: 0, down: 0, monitored: 2 },
+        systemStatus: 'healthy',
+        services: [ec2ServiceRow({ status: 'unknown', uptime: null })],
+      }),
+    })
+    render(<MonitoringPage />)
+
+    expect(await screen.findByTestId('check-summary-text')).toHaveTextContent('2 resources are reporting telemetry, but no check has produced a result yet.')
+    expect(screen.getByTestId('check-summary')).toHaveTextContent('No check results yet')
+    expect(document.body.textContent).not.toMatch(/No issues detected|no active health violations|Infrastructure is healthy/)
+  })
+
+  it('uses "reporting telemetry" instead of the ambiguous "monitored"', async () => {
+    installFetchMock({ connected: true, metrics: mixedFleet() })
+    render(<MonitoringPage />)
+
+    const card = (await screen.findByText('Reporting Telemetry', { selector: 'p' })).parentElement as HTMLElement
+    expect(card).toHaveTextContent('4')
+    expect(card).toHaveTextContent('of 5 discovered resources')
+    expect(screen.queryByText('Monitored Resources')).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/resources? monitored|currently monitored/i)
+  })
+
+  it('labels the fixed summary template as a check summary, not "AI Insight"', async () => {
+    installFetchMock({ connected: true, metrics: mixedFleet() })
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText('Check Summary')).toBeInTheDocument()
+    expect(screen.queryByText('AI Insight')).not.toBeInTheDocument()
+  })
+
+  it('a degraded result is described as a resource check issue, not a "System Degraded" outage', async () => {
+    installFetchMock({
+      connected: true,
+      metrics: cloudWatchMetricsFixture({
+        healthSummary: { total: 1, healthy: 0, degraded: 1, critical: 0, down: 0, monitored: 1 },
+        systemStatus: 'degraded',
+        services: [ec2ServiceRow({ status: 'degraded' })],
+      }),
+    })
+    render(<MonitoringPage />)
+
+    expect(await screen.findByTestId('check-summary-text')).toHaveTextContent('One or more resources have a check issue.')
+    expect(document.body.textContent).not.toMatch(/System Degraded|System is down/)
   })
 })
 

@@ -1,7 +1,8 @@
 /**
- * The Infrastructure page's "System Score" status shows the canonical overall
- * System Intelligence status (backend scoreToStatus: Healthy / Stable /
- * Degraded / At Risk, or Pending when not ready). It previously compared the
+ * The Infrastructure page's "Infrastructure Posture" status shows the canonical
+ * overall System Intelligence status (backend scoreToStatus: Healthy / Stable /
+ * Degraded / At Risk, or Pending when not ready), in posture display words
+ * (Strong / Stable / Needs attention / At risk) -- never a health word. It previously compared the
  * status against the component-level good/warning/critical vocabulary, which
  * never matched, so every ready production score read "Calculating".
  *
@@ -91,7 +92,7 @@ function renderPage() {
   )
 }
 
-const statusLine = () => screen.getByText('System Score').nextElementSibling?.textContent
+const statusLine = () => screen.getByText('Infrastructure Posture').nextElementSibling?.textContent
 
 describe('Infrastructure page -- canonical System Intelligence status', () => {
   beforeEach(() => {
@@ -105,18 +106,19 @@ describe('Infrastructure page -- canonical System Intelligence status', () => {
   })
 
   it.each([
-    [92, 'Healthy'],
-    [75, 'Stable'],
-    [68, 'Degraded'],
-    [40, 'At Risk'],
-  ])('real mode: score %i with canonical status "%s" shows that status, not "Calculating"', async (score, status) => {
+    [92, 'Healthy', 'Strong'],
+    [75, 'Stable', 'Stable'],
+    [68, 'Degraded', 'Needs attention'],
+    [40, 'At Risk', 'At risk'],
+  ])('real mode: score %i with canonical status "%s" shows it as "%s", not "Calculating"', async (score, status, label) => {
     mockIntelligence(score, status)
     renderPage()
 
-    // The loading placeholder also carries a "System Score" label -- wait for
-    // the real, ready strip instead.
+    // The loading placeholder also carries an "Infrastructure Posture" label --
+    // wait for the real, ready strip instead.
     await waitFor(() => expect(screen.queryByTestId('intel-not-ready')).not.toBeInTheDocument())
-    expect(statusLine()).toBe(status)
+    expect(statusLine()).toBe(label)
+    expect(screen.queryByText('System Score')).not.toBeInTheDocument()
     expect(screen.getByText(String(score))).toBeInTheDocument()
   })
 
@@ -125,7 +127,7 @@ describe('Infrastructure page -- canonical System Intelligence status', () => {
     renderPage()
 
     await waitFor(() => expect(screen.getByText('Not yet available')).toBeInTheDocument())
-    // The System Score block is the not-ready placeholder, not the ready strip.
+    // The Infrastructure Posture block is the not-ready placeholder, not the ready strip.
     // ("Healthy" etc. also appear elsewhere on the page as resource filters.)
     expect(screen.getByTestId('intel-not-ready')).toBeInTheDocument()
     expect(statusLine()).toBe('Not yet available')
@@ -154,7 +156,7 @@ const minutesAgo = (m: number) => new Date(Date.now() - m * 60 * 1000).toISOStri
 const SECURITY_DRIVER: Driver = { id: 'security-posture', type: 'security', message: '1 critical issue active · Score 57/100', impact_score: 17 }
 const OBSERVABILITY_DRIVER: Driver = { id: 'observability-readiness', type: 'observability', message: 'At Risk · 2 gaps identified', impact_score: 14 }
 
-describe('Infrastructure page -- System Score provenance (no unsupported confidence claim)', () => {
+describe('Infrastructure page -- Infrastructure Posture provenance (no unsupported confidence claim)', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('devcontrol_demo_mode', 'false')
@@ -212,7 +214,7 @@ describe('Infrastructure page -- calculated-at clock skew and refresh', () => {
     await waitFor(() => expect(screen.queryByTestId('intel-not-ready')).not.toBeInTheDocument())
     expect(screen.queryByText(/^Calculated /)).not.toBeInTheDocument()
     // Only the timestamp line is affected -- the rest of the ready strip renders.
-    expect(statusLine()).toBe('Degraded')
+    expect(statusLine()).toBe('Needs attention')
     expect(screen.getByTestId('score-impact').textContent).toContain('Up to +17 pts')
   })
 
@@ -236,7 +238,7 @@ describe('Infrastructure page -- calculated-at clock skew and refresh', () => {
     expect(screen.queryByText('Calculated less than a minute ago')).not.toBeInTheDocument()
     // Only the display changed: no API request came from the tick.
     expect((global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(fetchCallsBefore)
-    expect(statusLine()).toBe('Degraded')
+    expect(statusLine()).toBe('Needs attention')
     expect(screen.getByTestId('score-impact').textContent).toContain('Up to +17 pts')
 
     unmount()
@@ -272,7 +274,7 @@ describe('Infrastructure page -- Score Impact is the canonical top driver impact
 
     await waitFor(() => expect(screen.getByTestId('score-impact')).toBeInTheDocument())
     expect(screen.getByTestId('score-impact').textContent).toContain('Up to +14 pts')
-    expect(screen.getByTestId('score-impact').textContent).toContain('if Observability reaches 100')
+    expect(screen.getByTestId('score-impact').textContent).toContain('if Alert Coverage reaches 100')
     expect(screen.getByTestId('score-impact').textContent).not.toMatch(/observability-readiness|security-posture/)
   })
 

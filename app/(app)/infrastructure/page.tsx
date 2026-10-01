@@ -20,6 +20,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { formatCalculatedAgo } from './calculatedAgo'
+import { INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 
 const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
   ec2:        { icon: Server,    color: '#3B82F6', bg: '#EFF6FF' },
@@ -34,14 +35,10 @@ const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string 
 
 const CANONICAL_SYSTEM_STATUSES: readonly string[] = ['Healthy', 'Stable', 'Degraded', 'At Risk']
 
-// User-facing names for the three System Intelligence components, keyed by the
-// canonical component/driver type -- the same labels the component-score tiles
-// on this page show.
-const COMPONENT_LABELS: Record<string, string> = {
-  cost: 'Cost',
-  security: 'Security',
-  observability: 'Observability',
-}
+// User-facing names for the three Infrastructure Posture components, keyed by
+// the canonical component/driver type -- the same labels the component-score
+// tiles on this page show.
+const COMPONENT_LABELS: Record<string, string> = POSTURE_COMPONENT_LABELS
 
 const DROPDOWN_PILLS: { key: string; label: string; items: { value: string | null; label: string }[] }[] = [
   {
@@ -373,7 +370,7 @@ function InfrastructureContent() {
     // >=85 Healthy, >=70 Stable, >=50 Degraded, else At Risk).
     system_score: 73, status: 'Stable',
     composite_state: 'partial',
-    composite_reason: 'Observability is partial: it measures EC2/RDS alert coverage only.',
+    composite_reason: 'Alert coverage is partial: it measures EC2/RDS alert coverage only.',
     top_action: { message: 'Over-provisioned compute + unused storage', consequence: '', path: '/costs/cost-optimization', severity: 'high' },
     top_drivers: [],
     components: {
@@ -395,25 +392,26 @@ function InfrastructureContent() {
   }
   const intelComponents  = intel?.components ?? EMPTY_INTEL_COMPONENTS
   const intelScore       = intel?.system_score ?? 0
-  // The overall System Intelligence status, shown as-is. The backend's values
-  // are Healthy/Stable/Degraded/At Risk/Pending -- not the component-level
+  // The overall System Intelligence status. The backend's values are
+  // Healthy/Stable/Degraded/At Risk/Pending -- not the component-level
   // good/warning/risk this line used to compare against, which never matched
   // and left every ready score labelled "Calculating". Only a genuinely
-  // not-ready result (Pending, or no ready score) reads "Calculating".
-  const intelStatus      = intelReady && CANONICAL_SYSTEM_STATUSES.includes(intel?.status) ? intel.status : 'Calculating'
+  // not-ready result (Pending, or no ready score) reads "Calculating". The
+  // status itself is unchanged; postureStatusLabel only picks its display
+  // words, since this posture score is not a health measurement.
+  const intelStatus      = intelReady && CANONICAL_SYSTEM_STATUSES.includes(intel?.status) ? (postureStatusLabel(intel.status) ?? 'Calculating') : 'Calculating'
   const intelTopAction   = typeof intel?.top_action === 'string' ? intel.top_action : intel?.top_action?.message ?? 'Analyzing your infrastructure…'
   const intelCostScore   = intelComponents.cost.score
   const intelSecScore    = intelComponents.security.score
   const intelObsScore    = intelComponents.observability.score
-  // The composite is partial when built on a partial component (today:
-  // observability, which measures EC2/RDS alert coverage only).
-  const intelPartialReason = intelReady && intel?.composite_state === 'partial'
-    ? (intel.composite_reason ?? 'built on incomplete evidence')
-    : null
+  // The composite is partial when built on a partial component (today: alert
+  // coverage, which measures EC2/RDS only). posturePartialCaption prefers the
+  // alert-coverage component's own reason.
+  const intelPartialReason = intelReady ? posturePartialCaption(intel) : null
   const intelObsPartial  = intelReady && intelComponents.observability.state === 'partial'
   // Score impact is the backend's own top_drivers[0].impact_score --
   // round((100 - component score) x that component's 30/40/30 weight): the
-  // most the System Score can gain if that component reaches 100. A calculated
+  // most the Infrastructure Posture score can gain if that component reaches 100. A calculated
   // maximum, not a forecast, so no time window is attached, and nothing is
   // recomputed here. top_drivers[0] is the same driver top_action (the
   // "Primary Issue") is built from. Hidden when there's no valid driver --
@@ -606,10 +604,10 @@ function InfrastructureContent() {
               <span className="absolute inset-0 flex items-center justify-center text-[13px] font-bold text-slate-900">{intelScore}</span>
             </div>
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">{INFRASTRUCTURE_POSTURE_LABEL}</p>
               <p className="text-base font-bold text-slate-900 mb-0.5">{intelStatus}</p>
-              <p data-testid="system-score-basis" className="text-xs text-slate-500">Readiness across cost, security, and observability setup — not measured uptime or performance</p>
-              {intelPartialReason && <p data-testid="system-score-partial" className="text-xs font-medium text-amber-700">Partial · {intelPartialReason}</p>}
+              <p data-testid="system-score-basis" className="text-xs text-slate-500">Composite of cost, security, and alert coverage — not a measure of uptime, performance, or resource health</p>
+              {intelPartialReason && <p data-testid="system-score-partial" className="text-xs font-medium text-amber-700">{intelPartialReason}</p>}
               {intelCalculatedAgo && <p className="text-xs text-slate-500">Calculated {intelCalculatedAgo}</p>}
             </div>
           </div>
@@ -641,13 +639,14 @@ function InfrastructureContent() {
           {/* Component scores */}
           <div className="grid grid-cols-3 gap-2.5">
             {[
-              { label: COMPONENT_LABELS.cost,          score: intelCostScore, chip: scoreChip(intelCostScore), partial: false },
-              { label: COMPONENT_LABELS.security,      score: intelSecScore,  chip: scoreChip(intelSecScore),  partial: false },
-              { label: COMPONENT_LABELS.observability, score: intelObsScore,  chip: scoreChip(intelObsScore),  partial: intelObsPartial },
-            ].map(({ label, score, chip, partial }) => (
+              { label: COMPONENT_LABELS.cost,          value: `${intelCostScore}/100`, chip: scoreChip(intelCostScore), partial: false },
+              { label: COMPONENT_LABELS.security,      value: `${intelSecScore}/100`,  chip: scoreChip(intelSecScore),  partial: false },
+              // Alert coverage is a coverage percentage, not a 0-100 grade.
+              { label: COMPONENT_LABELS.observability, value: `${intelObsScore}%`,     chip: scoreChip(intelObsScore),  partial: intelObsPartial },
+            ].map(({ label, value, chip, partial }) => (
               <div key={label} className="text-center">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ color: chip.color, background: chip.bg }}>{score}/100</span>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full" style={{ color: chip.color, background: chip.bg }}>{value}</span>
                 {partial && <p data-testid="observability-partial" className="text-xs font-medium text-amber-700 mt-1">Partial</p>}
               </div>
             ))}
@@ -655,10 +654,10 @@ function InfrastructureContent() {
         </div>
         ) : (
         <div data-testid="intel-not-ready" className="flex flex-col gap-1">
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">System Score</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">{INFRASTRUCTURE_POSTURE_LABEL}</p>
           <p className="text-base font-bold text-slate-900 mb-0.5">{intelLoading ? 'Calculating…' : 'Not yet available'}</p>
           <p className="text-xs text-slate-500">
-            {intelLoading ? 'Analyzing your infrastructure — this can take a minute.' : 'Run a sync to generate your system intelligence score.'}
+            {intelLoading ? 'Analyzing your infrastructure — this can take a minute.' : 'Run a sync to generate your Infrastructure Posture score.'}
           </p>
         </div>
         )}
@@ -825,8 +824,8 @@ function InfrastructureContent() {
             <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} className="text-xs font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
               <option value="all">View by Issue ▾</option>
               <option value="Cost Waste">Cost Waste</option>
-              <option value="Reliability Risk">Reliability Risk</option>
-              <option value="Healthy">Healthy</option>
+              <option value="Reliability Risk">Stopped or pending</option>
+              <option value="Healthy">Running</option>
             </select>
             <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="text-xs font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
               <option value="impact">Sort: Impact ▾</option>
@@ -906,13 +905,17 @@ function InfrastructureContent() {
             const Icon = typeConf.icon
             const isReliabilityRisk = r.status === 'pending' || r.status === 'stopped'
             const isCostWaste       = r.costPerMonth != null && r.costPerMonth > 400
-            const statusLabel = r.status === 'running' && !isCostWaste ? 'Healthy' : isCostWaste && r.status === 'running' ? 'Cost Waste' : isReliabilityRisk ? 'Critical' : r.status ?? '—'
-            const statusColor = statusLabel === 'Critical' ? '#fff' : statusLabel === 'Cost Waste' ? '#fff' : '#475569'
-            const statusBg    = statusLabel === 'Critical' ? '#DC2626' : statusLabel === 'Cost Waste' ? '#D97706' : '#F1F5F9'
-            const rowBg       = statusLabel === 'Critical' ? '#FFF5F5' : statusLabel === 'Cost Waste' ? '#FFFBEB' : '#FFFFFF'
-            const rowBorder   = statusLabel === 'Critical' ? '#FEE2E2' : statusLabel === 'Cost Waste' ? '#FDE68A' : '#F8FAFC'
-            const issueLabel  = statusLabel === 'Critical'
-              ? '⚠ Reliability risk · elevated error rate · potential downtime'
+            // The row's status is the resource's discovered AWS lifecycle state
+            // (running/stopped/pending...), shown as-is: this table has no
+            // health, error-rate, or availability evidence, so it never says
+            // "Healthy" or "Critical".
+            const statusLabel = isCostWaste && r.status === 'running' ? 'Cost Waste' : r.status ?? '—'
+            const statusColor = isReliabilityRisk ? '#fff' : statusLabel === 'Cost Waste' ? '#fff' : '#475569'
+            const statusBg    = isReliabilityRisk ? '#DC2626' : statusLabel === 'Cost Waste' ? '#D97706' : '#F1F5F9'
+            const rowBg       = isReliabilityRisk ? '#FFF5F5' : statusLabel === 'Cost Waste' ? '#FFFBEB' : '#FFFFFF'
+            const rowBorder   = isReliabilityRisk ? '#FEE2E2' : statusLabel === 'Cost Waste' ? '#FDE68A' : '#F8FAFC'
+            const issueLabel  = isReliabilityRisk
+              ? `⚠ Not running · AWS lifecycle state: ${r.status}`
               : statusLabel === 'Cost Waste'
                 ? (isDemoActive
                     ? `↑ Cost waste · $${Math.round((r.costPerMonth ?? 0) * 0.4).toLocaleString()}/mo recoverable · downsize candidate`
@@ -935,9 +938,9 @@ function InfrastructureContent() {
                     <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                   </div>
                   {issueLabel && (
-                    <p className="text-xs font-semibold mb-2.5" style={{ color: statusLabel === 'Critical' ? '#DC2626' : '#D97706' }}>
+                    <p className="text-xs font-semibold mb-2.5" style={{ color: isReliabilityRisk ? '#DC2626' : '#D97706' }}>
                       {issueLabel}
-                      {statusLabel === 'Critical' && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline" style={{ color: '#DC2626' }}>Investigate →</a>}
+                      {isReliabilityRisk && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline" style={{ color: '#DC2626' }}>Investigate →</a>}
                     </p>
                   )}
                   <div className="flex items-center gap-2 flex-wrap">
@@ -959,9 +962,9 @@ function InfrastructureContent() {
                     <div>
                       <p className="text-sm font-semibold text-slate-900 mb-0.5">{r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}</p>
                       {issueLabel
-                        ? <p className="text-xs font-bold" style={{ color: statusLabel === 'Critical' ? '#DC2626' : '#D97706' }}>
+                        ? <p className="text-xs font-bold" style={{ color: isReliabilityRisk ? '#DC2626' : '#D97706' }}>
                             {issueLabel}
-                            {statusLabel === 'Critical' && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline text-xs" style={{ color: '#DC2626' }}>Investigate →</a>}
+                            {isReliabilityRisk && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline text-xs" style={{ color: '#DC2626' }}>Investigate →</a>}
                           </p>
                         : <p className="text-xs text-slate-500">Added {new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
                     </div>

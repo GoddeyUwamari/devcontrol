@@ -1,8 +1,10 @@
 /**
- * Platform Efficiency Breakdown card: Cost / Security / Observability breakdown of the
+ * Infrastructure Posture card: Cost / Security / Alert Coverage breakdown of the
  * canonical System Intelligence result.
  *
- * The contract under test: labels are the backend's component.label verbatim;
+ * The contract under test: labels are the Infrastructure Posture vocabulary
+ * (Cost / Security / Alert Coverage), whatever the backend's component.label
+ * says; alert coverage shows its percentage and scope, never a posture grade;
  * fill color comes only from the component's canonical `status`; each
  * component is gated on its OWN `ready` -- and `ready: false` still carries a
  * number (a neutral 50, a preliminary score, an error's 0), so nothing
@@ -49,14 +51,22 @@ describe('ready components', () => {
   it('renders each label, score, and its own status word', () => {
     renderCard()
     const expected = [
-      ['Cost Efficiency', '95', 'Strong'],
-      ['Security Posture', '82', 'At risk'],
-      ['Observability', '55', 'Needs attention'],
+      ['Cost', '95', 'Strong'],
+      ['Security', '82', 'At risk'],
     ]
     for (const [label, score, word] of expected) {
       const col = column(label)
       expect(within(col).getByText(score)).toBeInTheDocument()
       expect(within(col).getByText(word)).toBeInTheDocument()
+    }
+  })
+
+  it('alert coverage shows its percentage with no posture grade (no Strong / Needs attention / At risk)', () => {
+    renderCard()
+    const col = column('Alert Coverage')
+    expect(within(col).getByText('55%')).toBeInTheDocument()
+    for (const word of ['Strong', 'Needs attention', 'At risk']) {
+      expect(within(col).queryByText(word)).not.toBeInTheDocument()
     }
   })
 
@@ -68,47 +78,57 @@ describe('ready components', () => {
 
   it('each bar width follows its own score (Radix indicator offset = 100 - score)', () => {
     renderCard()
-    expect(fillOf(barIn(column('Cost Efficiency'))!).style.transform).toBe('translateX(-5%)')
-    expect(fillOf(barIn(column('Security Posture'))!).style.transform).toBe('translateX(-18%)')
-    expect(fillOf(barIn(column('Observability'))!).style.transform).toBe('translateX(-45%)')
+    expect(fillOf(barIn(column('Cost'))!).style.transform).toBe('translateX(-5%)')
+    expect(fillOf(barIn(column('Security'))!).style.transform).toBe('translateX(-18%)')
+    expect(fillOf(barIn(column('Alert Coverage'))!).style.transform).toBe('translateX(-45%)')
   })
 
   it('renders the three columns in cost → security → observability order', () => {
     const { container } = renderCard()
     const labels = [...container.querySelectorAll('.grid > div > p:first-child')].map((p) => p.textContent)
-    expect(labels).toEqual(['Cost Efficiency', 'Security Posture', 'Observability'])
+    expect(labels).toEqual(['Cost', 'Security', 'Alert Coverage'])
   })
 })
 
-describe('labels are rendered verbatim from component.label', () => {
-  it('an altered backend label is shown exactly, with no hardcoded replacement', () => {
-    renderCard({ components: { ...READY, cost: { ...READY.cost, label: 'Custom Cost Efficiency' } } })
-    expect(screen.getByText('Custom Cost Efficiency')).toBeInTheDocument()
-    expect(screen.queryByText('Cost Efficiency')).not.toBeInTheDocument()
-    expect(screen.queryByText(/^Cost$/)).not.toBeInTheDocument()
-    expect(barIn(column('Custom Cost Efficiency'))).toHaveAttribute('aria-label', 'Custom Cost Efficiency score')
+describe('labels are the Infrastructure Posture vocabulary', () => {
+  it('backend labels (Cost Efficiency / Security Posture / Observability) are never shown as component names', () => {
+    renderCard()
+    for (const backendLabel of ['Cost Efficiency', 'Security Posture', 'Observability']) {
+      expect(screen.queryByText(backendLabel)).not.toBeInTheDocument()
+    }
+    expect(barIn(column('Cost'))).toHaveAttribute('aria-label', 'Cost score')
+    expect(barIn(column('Alert Coverage'))).toHaveAttribute('aria-label', 'Alert Coverage score')
+  })
+
+  it('the card is titled Infrastructure Posture and describes what the composite is built from', () => {
+    renderCard()
+    expect(screen.getByText('Infrastructure Posture')).toBeInTheDocument()
+    expect(screen.getByText('Composite of cost, security, and alert coverage.')).toBeInTheDocument()
+    for (const oldName of ['Platform Efficiency Breakdown', 'Infrastructure Health', 'System Score']) {
+      expect(screen.queryByText(oldName)).not.toBeInTheDocument()
+    }
   })
 })
 
 describe('ready gating: each component independently', () => {
   it('ready:false with a real-looking score (50) renders only the placeholder -- no 50, no status word, no bar', () => {
     renderCard({ components: { ...READY, security: component({ label: 'Security Posture', score: 50, status: 'warning', ready: false }) } })
-    const col = column('Security Posture')
+    const col = column('Security')
     expect(within(col).getByText('—')).toBeInTheDocument()
     expect(within(col).getByText('Not yet available')).toBeInTheDocument()
     expect(within(col).queryByText('50')).not.toBeInTheDocument()
     expect(within(col).queryByText('Needs attention')).not.toBeInTheDocument()
     expect(barIn(col)).toBeNull()
     // The other two columns are unaffected.
-    expect(within(column('Cost Efficiency')).getByText('95')).toBeInTheDocument()
-    expect(barIn(column('Cost Efficiency'))).not.toBeNull()
-    expect(within(column('Observability')).getByText('55')).toBeInTheDocument()
-    expect(barIn(column('Observability'))).not.toBeNull()
+    expect(within(column('Cost')).getByText('95')).toBeInTheDocument()
+    expect(barIn(column('Cost'))).not.toBeNull()
+    expect(within(column('Alert Coverage')).getByText('55%')).toBeInTheDocument()
+    expect(barIn(column('Alert Coverage'))).not.toBeNull()
   })
 
   it('ready:false with the error placeholder (score 0, status risk) is gated the same way', () => {
     renderCard({ components: { ...READY, cost: component({ label: 'Cost Efficiency', score: 0, status: 'risk', ready: false }) } })
-    const col = column('Cost Efficiency')
+    const col = column('Cost')
     expect(within(col).getByText('Not yet available')).toBeInTheDocument()
     expect(within(col).queryByText('0')).not.toBeInTheDocument()
     expect(within(col).queryByText('At risk')).not.toBeInTheDocument()
@@ -117,16 +137,15 @@ describe('ready gating: each component independently', () => {
 
   it('a ready score of 0 is a real score and is shown with its bar (readiness is never inferred from the number)', () => {
     renderCard({ components: { ...READY, observability: observability({ score: 0, status: 'risk', ready: true }) } })
-    const col = column('Observability')
-    expect(within(col).getByText('0')).toBeInTheDocument()
-    expect(within(col).getByText('At risk')).toBeInTheDocument()
+    const col = column('Alert Coverage')
+    expect(within(col).getByText('0%')).toBeInTheDocument()
     expect(barIn(col)).not.toBeNull()
   })
 
   it('all three not ready: the card still renders, with three placeholders and no bars', () => {
     const notReady = (label: string) => component({ label, score: 50, status: 'good', ready: false })
     const { container } = renderCard({ components: { cost: notReady('Cost Efficiency'), security: notReady('Security Posture'), observability: observability({ score: null, ready: false, state: 'unavailable' }) } })
-    expect(screen.getByText('Platform Efficiency Breakdown')).toBeInTheDocument()
+    expect(screen.getByText('Infrastructure Posture')).toBeInTheDocument()
     expect(screen.getAllByText('Not yet available')).toHaveLength(3)
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0)
     expect(screen.queryByText('50')).not.toBeInTheDocument()
@@ -138,24 +157,25 @@ describe('observability evidence state', () => {
 
   it('partial: the score is shown with a visible "Partial" label and the backend reason', () => {
     renderCard({ components: { ...READY, observability: observability({ score: 0, status: 'risk', state: 'partial', reason: PARTIAL_REASON }) } })
-    const col = column('Observability')
-    expect(within(col).getByText('0')).toBeInTheDocument()
+    const col = column('Alert Coverage')
+    expect(within(col).getByText('0%')).toBeInTheDocument()
     expect(within(col).getByText('Partial')).toBeInTheDocument()
     expect(within(col).getByText(PARTIAL_REASON)).toBeInTheDocument()
-    expect(barIn(col)).toHaveAttribute('aria-valuetext', '0 of 100, At risk, partial')
+    expect(barIn(col)).toHaveAttribute('aria-valuetext', '0% alert coverage, partial')
   })
 
   it('error: score null renders "Could not be retrieved" -- never 0 and no bar', () => {
     renderCard({ components: { ...READY, observability: observability({ score: null, ready: false, status: 'risk', state: 'error', reason: 'the connected AWS role could not be assumed' }) } })
-    const col = column('Observability')
+    const col = column('Alert Coverage')
     expect(within(col).getByText('Could not be retrieved')).toBeInTheDocument()
     expect(within(col).queryByText('0')).not.toBeInTheDocument()
+    expect(within(col).queryByText('0%')).not.toBeInTheDocument()
     expect(barIn(col)).toBeNull()
   })
 
   it('a null score is never rendered even if ready were true', () => {
     renderCard({ components: { ...READY, observability: observability({ score: null, ready: true, state: 'unavailable' }) } })
-    const col = column('Observability')
+    const col = column('Alert Coverage')
     expect(within(col).getByText('Not yet available')).toBeInTheDocument()
     expect(barIn(col)).toBeNull()
   })
@@ -170,16 +190,16 @@ describe('demo mode', () => {
   it('the entire card is absent -- no heading, labels, bars, or values', () => {
     const { container } = renderCard({ isDemoActive: true })
     expect(container).toBeEmptyDOMElement()
-    expect(screen.queryByText('Platform Efficiency Breakdown')).not.toBeInTheDocument()
+    expect(screen.queryByText('Infrastructure Posture')).not.toBeInTheDocument()
   })
 })
 
 describe('loading and unavailable', () => {
   it('loading: skeletons only, no labels, scores, or bars', () => {
     const { container } = renderCard({ isLoading: true })
-    expect(screen.getByText('Platform Efficiency Breakdown')).toBeInTheDocument()
+    expect(screen.getByText('Infrastructure Posture')).toBeInTheDocument()
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Cost Efficiency')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cost')).not.toBeInTheDocument()
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0)
   })
 
@@ -194,16 +214,16 @@ describe('accessibility', () => {
   it('every ready bar carries label, value range, and a text value including the status word', () => {
     renderCard()
     const expected: [string, number, string][] = [
-      ['Cost Efficiency', 95, 'Strong'],
-      ['Security Posture', 82, 'At risk'],
-      ['Observability', 55, 'Needs attention'],
+      ['Cost', 95, '95 of 100, Strong'],
+      ['Security', 82, '82 of 100, At risk'],
+      ['Alert Coverage', 55, '55% alert coverage'],
     ]
-    for (const [label, score, word] of expected) {
+    for (const [label, score, text] of expected) {
       const bar = screen.getByRole('progressbar', { name: `${label} score` })
       expect(bar).toHaveAttribute('aria-valuenow', String(score))
       expect(bar).toHaveAttribute('aria-valuemin', '0')
       expect(bar).toHaveAttribute('aria-valuemax', '100')
-      expect(bar).toHaveAttribute('aria-valuetext', `${score} of 100, ${word}`)
+      expect(bar).toHaveAttribute('aria-valuetext', text)
     }
   })
 })
@@ -212,17 +232,17 @@ describe('coloring and track', () => {
   it('fill color comes from status only: good → --fill-success, warning → --fill-warning, risk → --fill-danger', () => {
     renderCard()
     const fill = (label: string) => fillOf(barIn(column(label))!).className
-    expect(fill('Cost Efficiency')).toContain('bg-[color:var(--fill-success)]')
-    expect(fill('Security Posture')).toContain('bg-[color:var(--fill-danger)]') // score 82, status risk
-    expect(fill('Observability')).toContain('bg-[color:var(--fill-warning)]')
-    for (const label of ['Cost Efficiency', 'Security Posture', 'Observability']) {
+    expect(fill('Cost')).toContain('bg-[color:var(--fill-success)]')
+    expect(fill('Security')).toContain('bg-[color:var(--fill-danger)]') // score 82, status risk
+    expect(fill('Alert Coverage')).toContain('bg-[color:var(--fill-warning)]')
+    for (const label of ['Cost', 'Security', 'Alert Coverage']) {
       expect(fill(label)).not.toContain('bg-primary') // the primitive's default fill is overridden
     }
   })
 
   it('the track uses var(--border) at ~6px (h-1.5), replacing the primitive defaults', () => {
     renderCard()
-    const bar = barIn(column('Cost Efficiency'))!
+    const bar = barIn(column('Cost'))!
     expect(bar.className).toContain('bg-[color:var(--border)]')
     expect(bar.className).toContain('h-1.5')
     expect(bar.className).not.toContain('bg-secondary')

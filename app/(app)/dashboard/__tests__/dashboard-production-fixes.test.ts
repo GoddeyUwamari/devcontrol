@@ -82,7 +82,7 @@ describe('Security score: historical activity framing', () => {
   })
 })
 
-describe('Overall Health / Infrastructure Health: canonical System Intelligence source, no client-side alternate scoring', () => {
+describe('Infrastructure Posture: canonical System Intelligence source, no client-side alternate scoring', () => {
   it('sources the KPI from useSystemIntelligence (the same canonical, cached System Intelligence result the Infrastructure page reads), not from the AI-summary narrative', () => {
     expect(pageSource).toMatch(/import \{ useSystemIntelligence \} from '@\/lib\/hooks\/useSystemIntelligence'/)
     expect(pageSource).toMatch(/const \{ data: systemIntelligence(, isLoading: systemIntelligenceLoading)? \} = useSystemIntelligence\(organization\?\.id, !isDemoActive\)/)
@@ -104,8 +104,8 @@ describe('Overall Health / Infrastructure Health: canonical System Intelligence 
     expect(pageSource).toMatch(/value=\{displayedHealthScore === null \? 'Calculating…'/)
   })
 
-  it('the Infrastructure Health primary KPI card is the only consumer of displayedHealthScore -- Infrastructure Intelligence no longer duplicates it in its own "Overall Health" card', () => {
-    const kpiMatch = pageSource.match(/label="Infrastructure Health"[^]*?value=\{displayedHealthScore === null/)
+  it('the Infrastructure Posture primary KPI card is the only consumer of displayedHealthScore -- Infrastructure Intelligence no longer duplicates it in its own "Overall Health" card', () => {
+    const kpiMatch = pageSource.match(/label=\{INFRASTRUCTURE_POSTURE_LABEL\}[^]*?value=\{displayedHealthScore === null/)
     expect(kpiMatch).not.toBeNull()
     expect(pageSource).not.toMatch(/overallHealth=\{\{ score: displayedHealthScore/)
     expect(infrastructureIntelligenceSource).not.toMatch(/label="Overall Health"/)
@@ -185,19 +185,24 @@ describe('Cloud provider tiles: reusable connected/unavailable variants', () => 
 })
 
 describe('Primary KPI row: all three cards link to their detail pages', () => {
-  it('Monthly Spend links to /costs, Security Posture links to /security, Infrastructure Health links to /infrastructure', () => {
+  it('Monthly Spend links to /costs, Security Posture links to /security, Infrastructure Posture links to /infrastructure', () => {
     expect(pageSource).toMatch(/'Monthly Spend'[^]*?href="\/costs"/)
     expect(pageSource).toMatch(/label="Security Posture"[^]*?href="\/security"/)
-    expect(pageSource).toMatch(/label="Infrastructure Health"[^]*?href="\/infrastructure"/)
+    expect(pageSource).toMatch(/label=\{INFRASTRUCTURE_POSTURE_LABEL\}[^]*?href="\/infrastructure"/)
+    expect(pageSource).not.toMatch(/label="Infrastructure Health"/)
   })
 })
 
-describe('Infrastructure Health badge: canonical System Intelligence status, not a local tier', () => {
-  it('reads the badge label from systemIntelligence.status (demo keeps its fixed Healthy)', () => {
+describe('Infrastructure Posture badge: canonical System Intelligence status, not a local tier', () => {
+  it('reads the badge from systemIntelligence.status (demo keeps its fixed Healthy) and only maps its display words', () => {
     expect(pageSource).toMatch(/const displayedHealthStatus = isDemoActive \? 'Healthy' : \(systemIntelligence\?\.status \?\? null\)/)
-    for (const status of ['Healthy', 'Stable', 'Degraded', 'At Risk']) {
-      expect(pageSource).toMatch(new RegExp(`displayedHealthStatus === '${status}' \\? \\{ label: '${status}'`))
+    expect(pageSource).toMatch(/const postureBadgeLabel = postureStatusLabel\(displayedHealthStatus\)/)
+    for (const status of ['Healthy', 'Stable', 'Degraded']) {
+      expect(pageSource).toMatch(new RegExp(`displayedHealthStatus === '${status}' \\? \\{ label: postureBadgeLabel`))
     }
+    // The composite is never labeled with a health word.
+    expect(pageSource).not.toMatch(/label: 'Healthy'/)
+    expect(pageSource).not.toMatch(/label: 'Degraded'/)
   })
 
   it('the old locally-invented thresholds and "Monitor" / "Needs attention" wording are gone', () => {

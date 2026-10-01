@@ -1,5 +1,5 @@
 /**
- * Platform Efficiency Breakdown card placement, through the real DashboardPage:
+ * Infrastructure Posture card placement, through the real DashboardPage:
  * a standalone full-width card directly below Infrastructure Intelligence and
  * above AWS Cost Trends / Security Key Findings, fed by the page's existing
  * System Intelligence query (one request, no second fetch), and absent in demo
@@ -7,7 +7,7 @@
  * components/dashboard/__tests__/system-intelligence-card.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '../page'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
@@ -76,11 +76,13 @@ afterEach(() => {
 const renderDashboard = () => render(<QueryClientProvider client={client}><DashboardPage /></QueryClientProvider>)
 const precedes = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
-describe('Platform Efficiency Breakdown card on the real Dashboard page', () => {
+const postureHeading = () => screen.findByRole('heading', { name: 'Infrastructure Posture' })
+
+describe('Infrastructure Posture card on the real Dashboard page', () => {
   it('sits between Infrastructure Intelligence and AWS Cost Trends / Security Key Findings', async () => {
     renderDashboard()
-    const card = await screen.findByText('Platform Efficiency Breakdown')
-    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Cost Efficiency score' })).toBeInTheDocument())
+    const card = await postureHeading()
+    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Cost score' })).toBeInTheDocument())
 
     const infraIntel = screen.getByRole('heading', { name: 'Infrastructure Intelligence' })
     const costTrends = (await screen.findAllByText('AWS Cost Trends'))[0]
@@ -92,7 +94,7 @@ describe('Platform Efficiency Breakdown card on the real Dashboard page', () => 
 
   it('is its own full-width block, not inside the Infrastructure Intelligence section or its 2-card grid', async () => {
     renderDashboard()
-    const heading = await screen.findByText('Platform Efficiency Breakdown')
+    const heading = await postureHeading()
     const cardRoot = heading.closest('div.rounded-2xl') as HTMLElement
     const infraSection = screen.getByRole('heading', { name: 'Infrastructure Intelligence' }).closest('div.mb-6') as HTMLElement
     expect(infraSection.contains(cardRoot)).toBe(false)
@@ -102,10 +104,10 @@ describe('Platform Efficiency Breakdown card on the real Dashboard page', () => 
     expect(cardRoot.closest('[class*="col-span"]')).toBeNull()
   })
 
-  it('reuses the page\'s existing System Intelligence query: one request feeds both Infrastructure Health and the card', async () => {
+  it('reuses the page\'s existing System Intelligence query: one request feeds both the Infrastructure Posture KPI and the card', async () => {
     renderDashboard()
-    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Observability score' })).toBeInTheDocument())
-    expect(screen.getByText('69')).toBeInTheDocument() // Infrastructure Health KPI, same response
+    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Alert Coverage score' })).toBeInTheDocument())
+    expect(screen.getByText('69')).toBeInTheDocument() // Infrastructure Posture KPI, same response
     expect(intelligenceSpy).toHaveBeenCalledTimes(1)
     expect(client.getQueryCache().findAll({ queryKey: ['system-intelligence'] })).toHaveLength(1)
   })
@@ -113,13 +115,13 @@ describe('Platform Efficiency Breakdown card on the real Dashboard page', () => 
   it('a failed System Intelligence request fabricates nothing: no component labels, scores, status words, or bars', async () => {
     intelligenceSpy.mockRejectedValue(Object.assign(new Error('HTTP 500'), { response: { status: 500 } }))
     renderDashboard()
-    const heading = await screen.findByText('Platform Efficiency Breakdown')
+    const heading = await postureHeading()
     const card = heading.closest('div.rounded-2xl') as HTMLElement
     await waitFor(() => expect(card).toHaveTextContent('— · Unavailable'))
 
-    for (const label of ['Cost Efficiency', 'Security Posture', 'Observability']) expect(card).not.toHaveTextContent(label)
+    for (const label of ['Cost', 'Security', 'Alert Coverage']) expect(within(card).queryByText(label)).not.toBeInTheDocument()
     for (const word of ['Strong', 'Needs attention', 'At risk', 'Not yet available']) expect(card).not.toHaveTextContent(word)
-    expect(card.textContent).not.toMatch(/\d/) // no score of any kind
+    expect(card.textContent?.replace('Composite of cost, security, and alert coverage.', '')).not.toMatch(/\d/) // no score of any kind
     expect(card.querySelectorAll('[role="progressbar"]')).toHaveLength(0)
     expect(intelligenceSpy).toHaveBeenCalledTimes(1)
   })
@@ -128,19 +130,48 @@ describe('Platform Efficiency Breakdown card on the real Dashboard page', () => 
     localStorage.setItem('devcontrol_demo_mode', 'true')
     renderDashboard()
     await screen.findByText('Infrastructure Intelligence')
-    expect(screen.queryByText('Platform Efficiency Breakdown')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Infrastructure Posture' })).not.toBeInTheDocument()
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     expect(intelligenceSpy).not.toHaveBeenCalled()
   })
 })
 
-describe('Infrastructure Health KPI -- partial composite', () => {
-  const REASON = 'Observability is partial: Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
+describe('Infrastructure Posture KPI', () => {
+  const OBS_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
+  const REASON = `Observability is partial: ${OBS_REASON}`
 
-  it('a partial composite is labeled "Partial" with the backend reason under the score', async () => {
-    intelligenceSpy.mockResolvedValue({ ...INTELLIGENCE, composite_state: 'partial', composite_reason: REASON } as never)
+  it('is labeled Infrastructure Posture -- never Infrastructure Health -- and Security Posture is unchanged', async () => {
     renderDashboard()
-    expect(await screen.findByText(`Partial · ${REASON}`)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('69')).toBeInTheDocument())
+    const kpi = screen.getByText('69').closest('a') as HTMLElement
+    expect(within(kpi).getByText('Infrastructure Posture')).toBeInTheDocument()
+    expect(kpi).toHaveAttribute('href', '/infrastructure')
+    expect(screen.queryByText('Infrastructure Health')).not.toBeInTheDocument()
+    expect(screen.queryByText('Platform Efficiency Breakdown')).not.toBeInTheDocument()
+    expect(screen.getByText('Security Posture')).toBeInTheDocument()
+  })
+
+  it('shows the existing Degraded status as "Needs attention", never as a health word', async () => {
+    renderDashboard()
+    await waitFor(() => expect(screen.getByText('69')).toBeInTheDocument())
+    const kpi = screen.getByText('69').closest('a') as HTMLElement
+    expect(within(kpi).getByText('Needs attention')).toBeInTheDocument()
+    for (const word of ['Degraded', 'Healthy']) expect(within(kpi).queryByText(word)).not.toBeInTheDocument()
+  })
+
+  it('states what the composite is built from, using the runtime component scores', async () => {
+    renderDashboard()
+    expect(await screen.findByText('Composite · Cost 95 · Security 59 · Alert coverage 55')).toBeInTheDocument()
+  })
+
+  it('a partial composite is labeled "Partial" with the alert-coverage reason under the score', async () => {
+    intelligenceSpy.mockResolvedValue({
+      ...INTELLIGENCE, composite_state: 'partial', composite_reason: REASON,
+      components: { ...INTELLIGENCE.components, observability: { ...INTELLIGENCE.components.observability, state: 'partial', reason: OBS_REASON } },
+    } as never)
+    renderDashboard()
+    expect(await screen.findByText(`Partial · ${OBS_REASON}`)).toBeInTheDocument()
+    expect(screen.queryByText(/Observability is partial/)).not.toBeInTheDocument()
     expect(screen.getByText('69')).toBeInTheDocument()
   })
 

@@ -55,6 +55,48 @@ const RESOURCE_TYPE_TABS: { key: string; label: string }[] = [
   { key: 'aurora', label: 'Aurora' },
 ]
 
+// What a row's existing status means for its resource type, in terms of the
+// check that produced it (cloudwatch.service.ts's per-type rules). Display only
+// -- statuses are never re-derived here. EC2 uses AWS status checks when
+// StatusCheckFailed reported (uptime present) and falls back to a CPU threshold
+// otherwise; EBS uses DescribeVolumeStatus; ALB/Lambda/DynamoDB use metric
+// thresholds; CloudFront/Aurora mix thresholds with control-plane state, and
+// ECS/EKS use control-plane state only, so their non-passing results are not
+// called threshold breaches. A row with no telemetry gets no check label: its
+// status comes from inventory only.
+const STATUS_CHECK_TYPES = new Set(['ebs'])
+const THRESHOLD_TYPES = new Set(['load-balancer', 'lambda', 'dynamodb'])
+const MIXED_THRESHOLD_TYPES = new Set(['cloudfront', 'aurora'])
+
+const DOWN_LABELS: Record<string, string> = {
+  ec2: 'Not running',
+  ebs: 'Volume error or deleting',
+  lambda: 'Function failed or inactive',
+  cloudfront: 'Distribution disabled',
+  aurora: 'Cluster stopped or deleting',
+  ecs: 'Service inactive',
+}
+
+export function checkResultLabel(service: Pick<ServiceHealth, 'status' | 'monitored' | 'resourceType' | 'uptime'>): string | null {
+  if (service.monitored === false || !service.resourceType) return null
+  const type = service.resourceType
+  const { status } = service
+  if (status === 'unknown') return 'Undetermined'
+  if (status === 'down') return DOWN_LABELS[type] ?? 'Down'
+
+  const passed = status === 'healthy'
+  // EC2's status-check path reports a numeric uptime; the CPU fallback does not.
+  const usesStatusChecks = STATUS_CHECK_TYPES.has(type) || (type === 'ec2' && service.uptime !== 'N/A')
+  if (usesStatusChecks) return passed ? 'Status checks passing' : 'Status check issue detected'
+  if (type === 'ec2' || THRESHOLD_TYPES.has(type)) return passed ? 'Within thresholds' : 'Threshold exceeded'
+  if (MIXED_THRESHOLD_TYPES.has(type)) {
+    if (passed) return 'Within thresholds'
+    // Only these types' 'critical' results come solely from a metric threshold.
+    return status === 'critical' ? 'Threshold exceeded' : 'Issue detected'
+  }
+  return passed ? 'No issues detected' : 'Issue detected'
+}
+
 function formatMetricValue(metric: ServiceMetric): string {
   const formatted = metric.value.toLocaleString(undefined, { maximumFractionDigits: 2 })
   return `${metric.label} ${formatted}${metric.unit ?? ''}`
@@ -109,8 +151,8 @@ export function ServiceHealthTable({ services, loading = false, rangeLabel }: Se
   return (
     <div className="bg-white rounded-lg border">
       <div className="px-6 py-4 border-b">
-        <h3 className="text-lg font-semibold">Service Health</h3>
-        <p className="text-sm text-gray-600">Infrastructure Intelligence status of platform services</p>
+        <h3 className="text-lg font-semibold">Resource Checks</h3>
+        <p className="text-sm text-gray-600">Latest check result for each discovered AWS resource</p>
       </div>
 
       {hasResourceTypeData && (
@@ -174,7 +216,7 @@ export function ServiceHealthTable({ services, loading = false, rangeLabel }: Se
                       service.monitored !== false && service.status === 'down' && "bg-red-900",
                       service.monitored !== false && service.status === 'unknown' && "bg-gray-300"
                     )}
-                    title={service.monitored === false ? 'No live monitoring data — status from inventory only' : undefined}
+                    title={service.monitored === false ? 'No telemetry was received for this resource in this window — status from inventory only' : undefined}
                   />
 
                   {/* Service Name + Tags */}
@@ -190,7 +232,12 @@ export function ServiceHealthTable({ services, loading = false, rangeLabel }: Se
                       )}
                       {service.monitored === false && (
                         <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-medium">
-                          Not monitored
+                          No telemetry received
+                        </span>
+                      )}
+                      {checkResultLabel(service) && (
+                        <span data-testid="check-result" className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full font-medium">
+                          {checkResultLabel(service)}
                         </span>
                       )}
                     </div>

@@ -1,5 +1,5 @@
 /**
- * /infrastructure KPI cards and System Score presentation.
+ * /infrastructure KPI cards, Infrastructure Posture, and resource table presentation.
  *
  * - The resource counts come from /api/services/stats, where "healthy" means
  *   "not stopped or failed and no high-severity finding" -- real mode says so
@@ -7,8 +7,10 @@
  * - The Critical Issues card's "1 cost inefficiency · 1 reliability risk"
  *   breakdown is demo copy and never appears for a real account.
  * - A failed stats request is unknown, not 0.
- * - The System Score (a readiness composite) is not presented as measured
- *   uptime or performance.
+ * - Infrastructure Posture (the cost/security/alert-coverage composite) is not
+ *   presented as measured uptime, performance, or resource health.
+ * - Resource rows show their discovered AWS lifecycle state, never an invented
+ *   "Healthy" / "Critical" verdict or error-rate claim.
  *
  * Same mocking harness as infrastructure-canonical-status.test.tsx.
  */
@@ -16,6 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import InfrastructurePage from '../page'
+import { infrastructureService } from '@/lib/services/infrastructure.service'
 
 vi.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
@@ -55,7 +58,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const component = (score: number, status: 'good' | 'warning' | 'risk') => ({ score, status, detail: '', label: '', severity: 'medium', delta: null, ready: true })
 
-function mockIntelligence(system_score: number | null, status: string, extra: { composite_state?: string | null; composite_reason?: string | null; observabilityState?: string } = {}) {
+function mockIntelligence(system_score: number | null, status: string, extra: { composite_state?: string | null; composite_reason?: string | null; observabilityState?: string; observabilityReason?: string | null } = {}) {
   global.fetch = vi.fn().mockImplementation((url: string) => {
     if (url.includes('/api/observability/intelligence')) {
       return Promise.resolve({
@@ -67,7 +70,7 @@ function mockIntelligence(system_score: number | null, status: string, extra: { 
             status,
             composite_state: extra.composite_state ?? 'available',
             composite_reason: extra.composite_reason ?? null,
-            components: { cost: component(95, 'good'), security: component(90, 'good'), observability: { ...component(88, 'good'), state: extra.observabilityState ?? 'available', reason: null } },
+            components: { cost: component(95, 'good'), security: component(90, 'good'), observability: { ...component(88, 'good'), state: extra.observabilityState ?? 'available', reason: extra.observabilityReason ?? null } },
             top_action: { message: 'Real top action', consequence: '', path: '/costs', severity: 'high' },
             top_drivers: [],
             computed_at: '2026-09-23T00:00:00.000Z',
@@ -136,14 +139,26 @@ describe('/infrastructure KPI cards -- real mode', () => {
   })
 })
 
-describe('/infrastructure System Score -- a readiness score, not measured health', () => {
-  it('states what the score is based on next to its status', async () => {
+describe('/infrastructure Infrastructure Posture -- a posture composite, not measured health', () => {
+  it('states what the score is built from next to its status', async () => {
     mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
     renderPage()
 
     const basis = await screen.findByTestId('system-score-basis')
-    expect(basis.textContent).toMatch(/readiness/i)
-    expect(basis.textContent).toMatch(/not measured uptime or performance/i)
+    expect(basis.textContent).toMatch(/composite of cost, security, and alert coverage/i)
+    expect(basis.textContent).toMatch(/not a measure of uptime, performance, or resource health/i)
+  })
+
+  it('is labeled Infrastructure Posture with Cost / Security / Alert Coverage components -- never System Score, Observability, or Healthy', async () => {
+    mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
+    renderPage()
+
+    await screen.findByTestId('system-score-basis')
+    expect(screen.getByText('Infrastructure Posture')).toBeInTheDocument()
+    expect(screen.getByText('Strong')).toBeInTheDocument() // canonical 'Healthy' (92), display word only
+    for (const label of ['Cost', 'Security', 'Alert Coverage']) expect(screen.getByText(label)).toBeInTheDocument()
+    expect(screen.getByText('88%')).toBeInTheDocument() // alert coverage is a percentage, not /100
+    for (const old of ['System Score', 'Observability', 'Healthy']) expect(screen.queryByText(old)).not.toBeInTheDocument()
   })
 })
 
@@ -157,17 +172,27 @@ describe('/infrastructure subtitle', () => {
   })
 })
 
-describe('/infrastructure System Score -- partial composite', () => {
-  const REASON = 'Observability is partial: Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
+describe('/infrastructure Infrastructure Posture -- partial composite', () => {
+  const OBS_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
+  const REASON = `Observability is partial: ${OBS_REASON}`
 
-  it('a partial composite shows a visible "Partial" label with the backend reason, and marks Observability partial', async () => {
+  it('a partial composite shows a visible "Partial" label with the alert-coverage reason, and marks Alert Coverage partial', async () => {
+    mockIntelligence(51, 'Degraded', { composite_state: 'partial', composite_reason: REASON, observabilityState: 'partial', observabilityReason: OBS_REASON })
+    mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
+    renderPage()
+
+    const partial = await screen.findByTestId('system-score-partial')
+    expect(partial.textContent).toBe(`Partial · ${OBS_REASON}`)
+    expect(screen.getByTestId('observability-partial').textContent).toBe('Partial')
+  })
+
+  it('falls back to the composite reason when the component carries none', async () => {
     mockIntelligence(51, 'Degraded', { composite_state: 'partial', composite_reason: REASON, observabilityState: 'partial' })
     mockServicesStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 })
     renderPage()
 
     const partial = await screen.findByTestId('system-score-partial')
     expect(partial.textContent).toBe(`Partial · ${REASON}`)
-    expect(screen.getByTestId('observability-partial').textContent).toBe('Partial')
   })
 
   it('an available composite shows no partial label', async () => {
@@ -177,5 +202,25 @@ describe('/infrastructure System Score -- partial composite', () => {
     await screen.findByTestId('system-score-basis')
     expect(screen.queryByTestId('system-score-partial')).not.toBeInTheDocument()
     expect(screen.queryByTestId('observability-partial')).not.toBeInTheDocument()
+  })
+})
+
+describe('/infrastructure resource table -- lifecycle state, not invented health', () => {
+  const resource = (id: string, status: string, costPerMonth: number) => ({
+    id, serviceId: `svc-${id}`, serviceName: `service-${id}`, resourceType: 'ec2', awsId: `i-${id}`, awsRegion: 'us-east-1',
+    status, costPerMonth, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  it('shows "running" / "stopped" as-is -- never "Healthy", "Critical", or an error-rate / downtime claim', async () => {
+    vi.mocked(infrastructureService.getAll).mockResolvedValue([resource('a', 'running', 20), resource('b', 'stopped', 20)] as never)
+    mockServicesStats.mockResolvedValue({ total: 2, healthy: 1, needs_attention: 1 })
+    renderPage()
+
+    await waitFor(() => expect(screen.getAllByText('running').length).toBeGreaterThan(0))
+    expect(screen.getAllByText('stopped').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Not running · AWS lifecycle state: stopped/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Healthy', { selector: 'span' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Critical', { selector: 'span' })).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/elevated error rate|potential downtime/)
   })
 })
