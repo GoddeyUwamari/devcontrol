@@ -292,7 +292,7 @@ export function ResourceChecksSection({ isDemoActive, organizationId, aboveLoade
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-bold text-foreground m-0">{RESOURCE_CHECKS_TITLE}</h3>
-              <EvidenceInfo label={`${RESOURCE_CHECKS_TITLE} section details`} title={RESOURCE_CHECKS_TITLE} align="start">
+              <EvidenceInfo about={RESOURCE_CHECKS_TITLE} heading="How these checks work" tooltip="How these checks work" align="start">
                 <SectionInfo />
               </EvidenceInfo>
             </div>

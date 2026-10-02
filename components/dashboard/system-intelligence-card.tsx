@@ -46,19 +46,20 @@ function ComponentTile({ componentKey, component, statusBadge, caption }: {
   const faceCaption = d.score === null ? d.missingText : caption
   return (
     <div className="relative min-w-0 rounded-xl border border-border p-4 flex flex-col" data-testid={`posture-tile-${componentKey}`}>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Icon size={15} aria-hidden="true" className="text-[var(--text-secondary)] shrink-0" />
-          <p className="text-sm font-semibold text-foreground truncate m-0">{d.label}</p>
-        </div>
+      <div className="flex items-center gap-2 mb-2 min-w-0">
+        <Icon size={15} aria-hidden="true" className="text-[var(--text-secondary)] shrink-0" />
+        <p className="text-sm font-semibold text-foreground truncate m-0">{d.label}</p>
         {component.reason && (
-          <EvidenceInfo label={`${d.label} details`} title={d.label} align={componentKey === 'observability' ? 'end' : 'start'}>
+          <EvidenceInfo about={`${d.label} score`} align="start">
             <p className="m-0">{component.reason}</p>
           </EvidenceInfo>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className={`text-lg font-bold leading-none mr-1 ${d.score === null ? 'text-[var(--text-secondary)]' : 'text-foreground'}`}>{d.scoreText}</span>
+        <span className={`text-lg font-bold leading-none mr-1 ${d.score === null ? 'text-[var(--text-secondary)]' : 'text-foreground'}`} data-testid={`posture-score-${componentKey}`}>
+          {d.scoreText}
+          {d.score !== null && <span className="text-xs font-normal text-[var(--text-secondary)]"> /100</span>}
+        </span>
         {d.tier && <EvidenceBadge label={d.tier.label} color={d.tier.color} />}
       </div>
       {faceCaption && (
@@ -74,7 +75,7 @@ function ComponentTile({ componentKey, component, statusBadge, caption }: {
             aria-valuenow={d.score}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuetext={`${d.isAlertCoverage ? `${d.scoreText} alert coverage` : `${d.scoreText} of 100`}${d.tier ? `, ${d.tier.label}` : ''}${d.partial ? ', partial' : ''}`}
+            aria-valuetext={`${d.scoreText} of 100${d.isAlertCoverage ? ' alert coverage' : ''}${d.tier ? `, ${d.tier.label}` : ''}${d.partial ? ', partial' : ''}`}
           />
         </div>
       )}
@@ -105,7 +106,7 @@ export function SystemIntelligenceCard({ isDemoActive, components, isLoading, st
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-bold text-foreground m-0">{INFRASTRUCTURE_POSTURE_LABEL}</h3>
-              <EvidenceInfo label={`${INFRASTRUCTURE_POSTURE_LABEL} section details`} title={INFRASTRUCTURE_POSTURE_LABEL} align="start">
+              <EvidenceInfo about={INFRASTRUCTURE_POSTURE_LABEL} label={`About the ${INFRASTRUCTURE_POSTURE_LABEL} section`} align="start">
                 <PostureEvidence components={components} statusBadge={statusBadge} />
               </EvidenceInfo>
               {partial && <PartialBadge testId="posture-section-partial" />}

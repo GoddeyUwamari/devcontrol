@@ -28,7 +28,7 @@ import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
 import { computeDashboardSpendCard } from './dashboardSpendCard'
-import { computeSecurityEvidence, computeSecurityHealthKpi, resourceComplianceLine, SECURITY_STATUS_BADGE, securityFindingsCaption, securityKpiCaption } from './securityHealthKpi'
+import { computeSecurityEvidence, computeSecurityHealthKpi, resourceComplianceLine, resourceIssueCount, SECURITY_STATUS_BADGE, securityKpiCaption, securityScopeCaption } from './securityHealthKpi'
 import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 import { EvidenceSection } from '@/components/dashboard/evidence-info'
 import { PostureEvidence } from '@/components/dashboard/posture-evidence'
@@ -536,18 +536,20 @@ export default function DashboardPage() {
 
   // One face caption per card/tile, each from data already loaded here;
   // null (omitted) whenever its data is loading, failed, or absent.
+  const resourceIssues = resourceIssueCount({ bySeverity: resourceStats?.compliance_stats?.by_severity, resourceComplianceError })
   const securityCaption = securityKpiCaption({
     isDemoActive,
     isLoading: securityFindingsLoading,
     findingCounts: accountFindingStats?.bySeverity,
     findingsError,
+    resourceIssues,
     resourceScanCompleted: resourceStats?.scan_completed,
     resourceComplianceError,
   })
   const postureCaption = isDemoActive || displayedHealthScore === null ? null : postureCompositionCaption(systemIntelligence?.components)
   const postureTileCaptions = {
     cost: costComponentCaption(systemIntelligence?.components?.cost),
-    security: securityFindingsLoading || findingsError ? null : securityFindingsCaption(accountFindingStats?.bySeverity),
+    security: securityFindingsLoading ? null : securityScopeCaption({ findingCounts: accountFindingStats?.bySeverity, findingsError, resourceIssues }),
   }
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
@@ -600,7 +602,6 @@ export default function DashboardPage() {
               caption={spendCard?.caption}
               sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.map(d => ({ value: d.total }))) : undefined}
               info={spendCard?.evidence ? {
-                title: spendCard.label,
                 align: 'start',
                 content: (
                   <>
@@ -613,7 +614,7 @@ export default function DashboardPage() {
                   </>
                 ),
               } : undefined}
-              href="/costs"
+              link={{ href: '/costs', label: 'Open costs' }}
             />
 
             <DashboardMetricCard
@@ -631,7 +632,6 @@ export default function DashboardPage() {
                 ariaValueText: `${securityKpi.score} of 100, ${securityKpi.badge.label}`,
               }}
               info={isDemoActive ? undefined : {
-                title: 'Security Posture',
                 content: (
                   <>
                     <EvidenceSection heading="Active findings">
@@ -648,7 +648,7 @@ export default function DashboardPage() {
                   </>
                 ),
               }}
-              href="/security"
+              link={{ href: '/security', label: 'Open security findings' }}
             />
 
             <DashboardMetricCard
@@ -669,10 +669,9 @@ export default function DashboardPage() {
                 ariaValueText: `${displayedHealthScore} of 100, ${infraHealthBadge.label}${postureIsPartial ? ', partial' : ''}`,
               }}
               info={{
-                title: INFRASTRUCTURE_POSTURE_LABEL,
                 content: <PostureEvidence components={isDemoActive ? undefined : systemIntelligence?.components} statusBadge={SECURITY_STATUS_BADGE} />,
               }}
-              href="/infrastructure"
+              link={{ href: '/infrastructure', label: 'Open infrastructure' }}
             />
           </div>
 

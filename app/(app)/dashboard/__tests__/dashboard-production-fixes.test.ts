@@ -17,7 +17,6 @@ import { join } from 'node:path'
 const pageSource = readFileSync(join(__dirname, '../page.tsx'), 'utf-8')
 const savingsOpportunitiesSource = readFileSync(join(__dirname, '../../../../components/dashboard/savings-opportunities.tsx'), 'utf-8')
 const infrastructureIntelligenceSource = readFileSync(join(__dirname, '../../../../components/dashboard/infrastructure-intelligence.tsx'), 'utf-8')
-const cloudProviderStatusSource = readFileSync(join(__dirname, '../../../../components/dashboard/cloud-provider-status.tsx'), 'utf-8')
 const recentActivityCardSource = readFileSync(join(__dirname, '../../../../components/dashboard/recent-activity-card.tsx'), 'utf-8')
 
 describe('Cost-saving opportunity reconciliation', () => {
@@ -132,10 +131,9 @@ describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication 
     expect(infrastructureIntelligenceSource).toMatch(/>DevControl System Health</)
   })
 
-  it('System Status routes to /admin/monitoring via next/link (not a bare <a>, not an unrelated destination), independent of any other card\'s data', () => {
-    expect(infrastructureIntelligenceSource).toMatch(/import Link from 'next\/link'/)
-    expect(infrastructureIntelligenceSource).toMatch(/const SYSTEM_STATUS_HREF = '\/admin\/monitoring'/)
-    expect(infrastructureIntelligenceSource).toMatch(/<Link href=\{SYSTEM_STATUS_HREF\}[^]*?DevControl System Health/)
+  it('System Status routes to /status (DevControl\'s own /health page) through the card\'s arrow button (next/link), independent of any other card\'s data', () => {
+    expect(infrastructureIntelligenceSource).toMatch(/const SYSTEM_STATUS_HREF = '\/status'/)
+    expect(infrastructureIntelligenceSource).toMatch(/<CardArrowLink href=\{SYSTEM_STATUS_HREF\} label="Open DevControl status" \/>/)
     expect(infrastructureIntelligenceSource).not.toMatch(/<a\b/)
   })
 
@@ -163,40 +161,11 @@ describe('Currency formatting: precise 2-decimal display', () => {
   })
 })
 
-describe('Cloud provider tiles: reusable connected/unavailable variants', () => {
-  it('defines exactly two reusable variants rather than one-off AWS-specific styling', () => {
-    expect(cloudProviderStatusSource).toMatch(/type TileVariant = 'connected' \| 'unavailable'/)
-    expect(cloudProviderStatusSource).toMatch(/const TILE_VARIANTS: Record<TileVariant/)
-  })
-
-  it('AWS state still comes from the real awsConnected prop; GCP/Azure remain hardcoded unavailable', () => {
-    expect(cloudProviderStatusSource).toMatch(/variant: awsConnected \? 'connected' : 'unavailable'/)
-    expect(cloudProviderStatusSource).toMatch(/\{ name: 'Google Cloud', short: 'GCP', variant: 'unavailable' \}/)
-    expect(cloudProviderStatusSource).toMatch(/\{ name: 'Azure', short: 'Azure', variant: 'unavailable' \}/)
-  })
-
-  it('never renders "Connected" for GCP or Azure under any awsConnected value', () => {
-    // The "Connected" caption is only reachable via variant === 'connected',
-    // and GCP/Azure's variant is unconditionally 'unavailable' (confirmed
-    // above), so they can never reach this branch regardless of awsConnected.
-    expect(cloudProviderStatusSource).toMatch(/provider\.variant === 'connected' \? 'Connected'/)
-  })
-
-  it('label text uses solid --foreground/--text-secondary colors, never a colored label directly on a pale tint (the prior low-contrast treatment)', () => {
-    expect(cloudProviderStatusSource).not.toMatch(/tileColor:\s*'#F59E0B'/)
-    expect(cloudProviderStatusSource).toMatch(/labelColor: 'var\(--foreground\)'/)
-  })
-
-  it('does not render the "Connected" caption text under the AWS tile (the hero pill is the single source of truth for that text)', () => {
-    expect(cloudProviderStatusSource).toMatch(/const visibleCaption = provider\.variant === 'connected' \? '' : caption/)
-  })
-})
-
 describe('Primary KPI row: all three cards link to their detail pages', () => {
-  it('Monthly Spend links to /costs, Security Posture links to /security, Infrastructure Posture links to /infrastructure', () => {
-    expect(pageSource).toMatch(/'Monthly Spend'[^]*?href="\/costs"/)
-    expect(pageSource).toMatch(/label="Security Posture"[^]*?href="\/security"/)
-    expect(pageSource).toMatch(/label=\{INFRASTRUCTURE_POSTURE_LABEL\}[^]*?href="\/infrastructure"/)
+  it('Monthly Spend links to /costs, Security Posture links to /security, Infrastructure Posture links to /infrastructure (arrow buttons)', () => {
+    expect(pageSource).toMatch(/'Monthly Spend'[^]*?link=\{\{ href: '\/costs', label: 'Open costs' \}\}/)
+    expect(pageSource).toMatch(/label="Security Posture"[^]*?link=\{\{ href: '\/security', label: 'Open security findings' \}\}/)
+    expect(pageSource).toMatch(/label=\{INFRASTRUCTURE_POSTURE_LABEL\}[^]*?link=\{\{ href: '\/infrastructure', label: 'Open infrastructure' \}\}/)
     expect(pageSource).not.toMatch(/label="Infrastructure Health"/)
   })
 })

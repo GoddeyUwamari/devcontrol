@@ -40,12 +40,12 @@ describe('Top Risk never claims "no risks" from missing evidence', () => {
     expect(screen.getByText(/No active findings in DevControl's evaluated security checks/)).toBeTruthy()
   })
 
-  it('shows the identified risk title once, its severity suffix replaced by the chip; the link keeps the full text', () => {
+  it('shows the identified risk title once, its severity suffix replaced by the chip', () => {
     renderRow({ topRisk: 'Open SSH to the internet (critical severity)', topRiskStatus: 'identified' })
     expect(screen.getAllByText('Open SSH to the internet')).toHaveLength(1)
     expect(topRiskCard().textContent).not.toContain('(critical severity)')
     expect(within(topRiskCard()).getByTestId('top-risk-severity')).toHaveTextContent('Critical')
-    expect(topRiskCard().closest('a')).toHaveAttribute('aria-label', 'Top Risk: Open SSH to the internet (critical severity)')
+    expect(topRiskCard().closest('a')).toBeNull()
     expect(screen.queryByText('Risk status unavailable')).toBeNull()
   })
 
@@ -123,18 +123,21 @@ describe('Top Risk severity follows the finding\'s actual severity', () => {
 })
 
 describe('Top Risk link', () => {
-  it('an identified risk links to /security#findings with a chevron', () => {
+  it('an identified risk has one arrow button to /security#findings; the card itself is not a link and has no chevron', () => {
     renderRow({ topRisk: 'Open SSH (high severity)', topRiskStatus: 'identified' })
-    const link = topRiskCard().closest('a')
-    expect(link).not.toBeNull()
-    expect(link!.getAttribute('href')).toBe('/security#findings')
-    expect(topRiskCard().querySelector('svg.lucide-chevron-right')).not.toBeNull()
+    expect(topRiskCard().closest('a')).toBeNull()
+    const links = within(topRiskCard()).getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAccessibleName('Open top risk')
+    expect(links[0]).toHaveAttribute('href', '/security#findings')
+    expect(topRiskCard().querySelector('svg.lucide-chevron-right')).toBeNull()
   })
 
-  it('no link and no chevron in the empty states or while loading', () => {
+  it('no arrow (no link) in the empty states or while loading -- the existing rule', () => {
     for (const props of [{ topRiskStatus: 'unavailable' as const }, { topRiskStatus: 'none_identified' as const }, { topRisk: 'Open SSH (high severity)', topRiskStatus: 'identified' as const, aiSummaryLoading: true }]) {
       const { unmount } = renderRow(props)
       expect(topRiskCard().closest('a')).toBeNull()
+      expect(within(topRiskCard()).queryAllByRole('link')).toHaveLength(0)
       expect(topRiskCard().querySelector('svg.lucide-chevron-right')).toBeNull()
       unmount()
     }
@@ -142,11 +145,13 @@ describe('Top Risk link', () => {
 })
 
 describe('DevControl System Health is DevControl\'s own health, not customer AWS', () => {
-  it('titles the card "DevControl System Health" and links it to /admin/monitoring, not /observability', () => {
+  it('titles the card "DevControl System Health" (not a link) and its one arrow opens /status', () => {
     renderRow()
-    const link = screen.getByText('DevControl System Health').closest('a')
-    expect(link).not.toBeNull()
-    expect(link!.getAttribute('href')).toBe('/admin/monitoring')
+    expect(screen.getByText('DevControl System Health').closest('a')).toBeNull()
+    const links = within(healthCard()).getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAccessibleName('Open DevControl status')
+    expect(links[0]).toHaveAttribute('href', '/status')
   })
 
   it('operational: "Operational", one caption ("responding · not your AWS resources"), and a green tint', () => {
@@ -154,7 +159,7 @@ describe('DevControl System Health is DevControl\'s own health, not customer AWS
     const card = healthCard()
     expect(card).toHaveTextContent('Operational')
     expect(within(card).getByTestId('system-health-caption')).toHaveTextContent('API and database responding · not your AWS resources')
-    expect(card.querySelectorAll('p')).toHaveLength(1)
+    expect(card.querySelectorAll('[data-testid="system-health-caption"]')).toHaveLength(1)
     expect(card.style.background).toBe('var(--bg-success)')
     expect(card.textContent).not.toMatch(/\bHealthy\b|All systems|All API & database services live/i)
   })
@@ -164,15 +169,16 @@ describe('DevControl System Health is DevControl\'s own health, not customer AWS
     const card = healthCard()
     expect(within(card).getByTestId('system-health-caption')).toHaveTextContent("DevControl's own services are degraded. Not a status of your AWS resources.")
     expect(card.textContent).not.toMatch(/responding|Live/)
-    expect(card.querySelectorAll('p')).toHaveLength(1)
+    expect(card.querySelectorAll('[data-testid="system-health-caption"]')).toHaveLength(1)
     expect(card.style.background).toBe('var(--surface-2)')
   })
 
   it('the longer explanation is behind the info button, not on the face', () => {
     renderRow()
     expect(healthCard().textContent).not.toMatch(/health check/)
-    fireEvent.click(within(healthCard()).getByRole('button', { name: 'DevControl System Health details' }))
-    const dialog = screen.getByRole('dialog', { name: 'DevControl Platform Health' })
+    fireEvent.click(within(healthCard()).getByRole('button', { name: 'About DevControl System Health' }))
+    const dialog = screen.getByRole('dialog', { name: 'How this is calculated' })
+    expect(dialog).toHaveTextContent('DevControl System Health')
     expect(dialog).toHaveTextContent("Measures whether DevControl's API and database respond to a health check. This indicator reflects DevControl application availability, not your connected AWS infrastructure uptime.")
     expect(dialog.textContent).not.toMatch(/telemetry/i)
   })

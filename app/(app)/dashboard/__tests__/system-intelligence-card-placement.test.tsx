@@ -79,11 +79,11 @@ const precedes = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b
 
 const postureHeading = () => screen.findByRole('heading', { name: 'Infrastructure Posture' })
 const postureSection = async () => (await postureHeading()).closest('[data-testid="posture-section"]') as HTMLElement
-/** The Infrastructure Posture KPI card (title links to /infrastructure). */
+/** The Infrastructure Posture KPI card (its arrow opens /infrastructure). */
 const postureKpi = () => screen.getAllByTestId('kpi-card').find((c) => c.querySelector('a[href="/infrastructure"]')) as HTMLElement
 const openPostureKpiInfo = () => {
-  fireEvent.click(within(postureKpi()).getByRole('button', { name: 'Infrastructure Posture details' }))
-  return screen.getByRole('dialog', { name: 'Infrastructure Posture' })
+  fireEvent.click(within(postureKpi()).getByRole('button', { name: 'About Infrastructure Posture' }))
+  return screen.getByRole('dialog', { name: 'How this is calculated' })
 }
 
 describe('Infrastructure Posture section on the real Dashboard page', () => {
@@ -155,10 +155,12 @@ describe('Infrastructure Posture KPI', () => {
   it('is labeled Infrastructure Posture -- never Infrastructure Health -- and Security Posture is unchanged', async () => {
     renderDashboard()
     await waitFor(() => expect(within(postureKpi()).getByText('69')).toBeInTheDocument())
-    expect(within(postureKpi()).getByRole('link', { name: 'Infrastructure Posture' })).toHaveAttribute('href', '/infrastructure')
+    expect(within(postureKpi()).getByRole('link', { name: 'Open infrastructure' })).toHaveAttribute('href', '/infrastructure')
+    expect(within(postureKpi()).getByTestId('kpi-title')).toHaveTextContent('Infrastructure Posture')
     expect(screen.queryByText('Infrastructure Health')).not.toBeInTheDocument()
     expect(screen.queryByText('Platform Efficiency Breakdown')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Security Posture' })).toBeInTheDocument()
+    expect(screen.getByText('Security Posture')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open security findings' })).toHaveAttribute('href', '/security')
   })
 
   it('shows the existing Degraded status as "Needs attention", never as a health word', async () => {
@@ -175,7 +177,7 @@ describe('Infrastructure Posture KPI', () => {
     expect(dialog).toHaveTextContent('Composite of cost (30%), security (40%), and alert coverage (30%). A posture score, not measured uptime or performance.')
     expect(within(within(dialog).getByTestId('posture-evidence-cost')).getByText('95 · Strong')).toBeInTheDocument()
     expect(within(within(dialog).getByTestId('posture-evidence-security')).getByText('59 · At risk')).toBeInTheDocument()
-    expect(within(within(dialog).getByTestId('posture-evidence-observability')).getByText('55%')).toBeInTheDocument()
+    expect(within(within(dialog).getByTestId('posture-evidence-observability')).getByText('55 /100')).toBeInTheDocument()
   })
 
   it('a partial composite shows "Partial" on the card and the section, with the alert-coverage reason in the panel', async () => {

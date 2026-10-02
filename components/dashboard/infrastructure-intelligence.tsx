@@ -1,8 +1,8 @@
-import Link from 'next/link'
-import { AlertTriangle, Activity, ArrowRight, ChevronRight } from 'lucide-react'
+import { AlertTriangle, Activity } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EvidenceBadge, NEUTRAL_COLOR } from './evidence-badge'
 import { EvidenceInfo } from './evidence-info'
+import { CardArrowLink } from './card-arrow-link'
 
 interface InfrastructureIntelligenceProps {
   topRisk: string | null
@@ -47,7 +47,8 @@ const NEUTRAL_CARD = { color: NEUTRAL_COLOR, background: 'var(--surface-2)', bor
 
 // Existing page over the same account findings Top Risk names.
 const TOP_RISK_HREF = '/security#findings'
-const SYSTEM_STATUS_HREF = '/admin/monitoring'
+// DevControl's own status page: the same /health check this card reports.
+const SYSTEM_STATUS_HREF = '/status'
 
 export const SYSTEM_HEALTH_EXPLANATION =
   "Measures whether DevControl's API and database respond to a health check. This indicator reflects DevControl application availability, not your connected AWS infrastructure uptime."
@@ -63,7 +64,7 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
       ? "No active findings in DevControl's evaluated security checks."
       : 'DevControl could not evaluate current risks right now.'
 
-  const content = (
+  return (
     <div
       data-testid="top-risk-card"
       data-severity={severity ?? 'none'}
@@ -72,9 +73,13 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
     >
       <AlertTriangle size={20} aria-hidden="true" className="shrink-0 mt-0.5" style={{ color: style.color }} />
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2 mb-1.5">
-          <p className="text-sm font-semibold m-0" style={{ color: severity ? style.color : 'var(--foreground)' }}>Top Risk</p>
-          {severity && <EvidenceBadge label={SEVERITY_STYLE[severity].label} color={style.color} testId="top-risk-severity" />}
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <p className="text-sm font-semibold m-0" style={{ color: severity ? style.color : 'var(--foreground)' }}>Top Risk</p>
+            {severity && <EvidenceBadge label={SEVERITY_STYLE[severity].label} color={style.color} testId="top-risk-severity" />}
+          </div>
+          {/* Only an identified risk links to the findings, as before. */}
+          {identified && <CardArrowLink href={TOP_RISK_HREF} label="Open top risk" />}
         </div>
         {aiSummaryLoading ? (
           <span className="flex flex-col gap-1.5">
@@ -88,10 +93,8 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
           </>
         )}
       </div>
-      {identified && <ChevronRight size={18} aria-hidden="true" className="shrink-0 self-center text-[var(--text-secondary)]" />}
     </div>
   )
-  return identified ? <Link href={TOP_RISK_HREF} className="no-underline block h-full" aria-label={`Top Risk: ${topRisk}`}>{content}</Link> : content
 }
 
 function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntelligenceProps['systemStatus'] }) {
@@ -108,13 +111,13 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
       <Activity size={20} aria-hidden="true" className="shrink-0 mt-0.5" style={{ color: systemStatus.color }} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2 mb-1.5">
-          <Link href={SYSTEM_STATUS_HREF} className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground no-underline hover:underline min-w-0">
-            <span className="truncate">DevControl System Health</span>
-            <ArrowRight size={14} strokeWidth={1.75} aria-hidden="true" className="text-[var(--text-secondary)] shrink-0" />
-          </Link>
-          <EvidenceInfo label="DevControl System Health details" title="DevControl Platform Health">
-            <p className="m-0">{SYSTEM_HEALTH_EXPLANATION}</p>
-          </EvidenceInfo>
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="text-sm font-semibold text-foreground m-0 truncate">DevControl System Health</p>
+            <EvidenceInfo about="DevControl System Health" align="start">
+              <p className="m-0">{SYSTEM_HEALTH_EXPLANATION}</p>
+            </EvidenceInfo>
+          </div>
+          <CardArrowLink href={SYSTEM_STATUS_HREF} label="Open DevControl status" />
         </div>
         <span
           className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full border border-border"
@@ -136,7 +139,8 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
  * so it's shown only when the backend reports topRiskStatus
  * 'none_identified' (security evidence evaluated, no active findings) --
  * never merely because topRisk is null. Missing or failed evidence reads
- * "Risk status unavailable". Only an identified risk links to the findings.
+ * "Risk status unavailable". Only an identified risk links to the findings,
+ * through the arrow button; neither card is itself a link.
  *
  * System Health is DevControl's own /health check (API + database), never
  * the customer's AWS, and its one caption says so in every state.

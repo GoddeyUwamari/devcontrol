@@ -127,7 +127,7 @@ describe('1. section order', () => {
     await settled()
     const kpiRow = screen.getByTestId('kpi-row')
     expect(within(kpiRow).getAllByTestId('kpi-card')).toHaveLength(3)
-    expect(within(kpiRow).getAllByTestId('kpi-card').map((c) => c.querySelector('a')!.textContent)).toEqual(['Month-to-Date Spend', 'Security Posture', 'Infrastructure Posture'])
+    expect(within(kpiRow).getAllByTestId('kpi-card').map((c) => within(c).getByTestId('kpi-title').textContent)).toEqual(['Month-to-Date Spend', 'Security Posture', 'Infrastructure Posture'])
     expect(kpiRow.className).toContain('lg:grid-cols-3')
 
     const riskRow = screen.getByTestId('risk-status-row')
@@ -221,10 +221,10 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
     await settled()
     await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent('compliance scan pending'))
     expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent(/^Actual · AWS Cost Explorer · today still billing$/)
-    expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low findings · compliance scan pending$/)
+    expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low account findings · compliance scan pending$/)
     expect(within(kpi('/infrastructure')).getByTestId('kpi-caption')).toHaveTextContent(/^Composite · Cost 97 · Security 57 · Alert coverage 0$/)
     expect(screen.getByTestId('posture-tile-caption-cost')).toHaveTextContent(/^Monthly run-rate estimate · anomaly checks not yet active$/)
-    expect(screen.getByTestId('posture-tile-caption-security')).toHaveTextContent(/^1 critical · 3 high · 1 low findings$/)
+    expect(screen.getByTestId('posture-tile-caption-security')).toHaveTextContent(/^1 critical · 3 high · 1 low account findings$/)
     expect(screen.queryByTestId('posture-tile-caption-observability')).toBeNull()
     await waitFor(() => expect(screen.getByTestId('system-health-caption')).toHaveTextContent(/^API and database responding · not your AWS resources$/))
   })
@@ -236,7 +236,7 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
     for (const key of ['cost', 'security', 'observability']) {
       expect(screen.getByTestId(`posture-tile-${key}`).querySelectorAll('[data-testid^="posture-tile-caption-"]').length).toBeLessThanOrEqual(1)
     }
-    expect(screen.getByTestId('system-health-card').querySelectorAll('p')).toHaveLength(1)
+    expect(screen.getByTestId('system-health-card').querySelectorAll('[data-testid="system-health-caption"]')).toHaveLength(1)
     const faces = [...screen.getAllByTestId('kpi-card'), screen.getByTestId('posture-section'), screen.getByTestId('system-health-card')]
     for (const face of faces) {
       for (const evidence of ['not the selected range', 'still being billed', COST_REASON, OBS_REASON, 'Anomaly checks not yet active.', 'A posture score', 'health check']) {
@@ -277,20 +277,20 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
     expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent('Actual · AWS Cost Explorer · no billed days yet this month')
     expect(within(kpi('/costs')).queryByTestId('spend-change')).toBeNull()
     expect(kpi('/costs').textContent).not.toMatch(/\d%/)
-    expect(openInfo(kpi('/costs'), 'Month-to-Date Spend details')).toHaveTextContent('No comparison until a day of this month has finished billing')
+    expect(openInfo(kpi('/costs'), 'About Month-to-Date Spend')).toHaveTextContent('No comparison until a day of this month has finished billing')
   })
 })
 
 describe('4. info buttons', () => {
   const BUTTONS: Array<[string, () => HTMLElement, string]> = [
-    ['Month-to-Date Spend details', () => kpi('/costs'), 'Month-to-Date Spend'],
-    ['Security Posture details', () => kpi('/security'), 'Security Posture'],
-    ['Infrastructure Posture details', () => kpi('/infrastructure'), 'Infrastructure Posture'],
-    ['Infrastructure Posture section details', () => screen.getByTestId('posture-section'), 'Infrastructure Posture'],
-    ['DevControl System Health details', () => screen.getByTestId('system-health-card'), 'DevControl Platform Health'],
+    ['About Month-to-Date Spend', () => kpi('/costs'), 'Month-to-Date Spend'],
+    ['About Security Posture', () => kpi('/security'), 'Security Posture'],
+    ['About Infrastructure Posture', () => kpi('/infrastructure'), 'Infrastructure Posture'],
+    ['About the Infrastructure Posture section', () => screen.getByTestId('posture-section'), 'Infrastructure Posture'],
+    ['About DevControl System Health', () => screen.getByTestId('system-health-card'), 'DevControl System Health'],
   ]
 
-  it.each(BUTTONS)('%s: a native button with aria-label / aria-expanded / aria-controls; click opens, Escape closes, focus returns', async (name, container, title) => {
+  it.each(BUTTONS)('%s: a native button with aria-label / aria-expanded / aria-controls; click opens, Escape closes, focus returns', async (name, container, subject) => {
     renderDashboard()
     await settled()
     const button = within(container()).getByRole('button', { name })
@@ -301,7 +301,8 @@ describe('4. info buttons', () => {
     expect(button.className).toMatch(/\bh-11\b/) // 44px target
 
     fireEvent.click(button)
-    const dialog = screen.getByRole('dialog', { name: title })
+    const dialog = screen.getByRole('dialog', { name: 'How this is calculated' })
+    expect(within(dialog).getByTestId('evidence-info-subject')).toHaveTextContent(subject)
     expect(button).toHaveAttribute('aria-expanded', 'true')
     expect(button.getAttribute('aria-controls')).toBe(dialog.id)
 
@@ -314,26 +315,26 @@ describe('4. info buttons', () => {
   it('the close button closes the panel too', async () => {
     renderDashboard()
     await settled()
-    openInfo(kpi('/security'), 'Security Posture details')
+    openInfo(kpi('/security'), 'About Security Posture')
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
-  it('desktop: the panel is non-modal and anchored inside its card (right-aligned for posture, left for spend)', async () => {
+  it('desktop: the panel is non-modal and anchored inside its card, left-aligned under the ⓘ beside the title', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(min-width: 1024px)', media: query, addEventListener: () => {}, removeEventListener: () => {} }))
     renderDashboard()
     await settled()
     const posture = kpi('/infrastructure')
-    const dialog = openInfo(posture, 'Infrastructure Posture details')
+    const dialog = openInfo(posture, 'About Infrastructure Posture')
     expect(posture.contains(dialog)).toBe(true)
-    expect(dialog.className).toContain('right-0')
+    expect(dialog.className).toContain('left-0')
     expect(dialog.className).toContain('max-w-[calc(100vw-2rem)]')
     expect(document.querySelector('[data-state="open"].fixed.inset-0')).toBeNull() // no overlay on desktop
     fireEvent.keyDown(dialog, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
     const spend = kpi('/costs')
-    const spendDialog = openInfo(spend, 'Month-to-Date Spend details')
+    const spendDialog = openInfo(spend, 'About Month-to-Date Spend')
     expect(spend.contains(spendDialog)).toBe(true)
     expect(spendDialog.className).toContain('left-0')
   })
@@ -342,7 +343,7 @@ describe('4. info buttons', () => {
     renderDashboard()
     await settled()
     const posture = kpi('/infrastructure')
-    const dialog = openInfo(posture, 'Infrastructure Posture details')
+    const dialog = openInfo(posture, 'About Infrastructure Posture')
     expect(posture.contains(dialog)).toBe(false)
     expect(dialog.className).toContain('z-[60]')
     expect(dialog.className).toContain('max-h-[85vh]')
@@ -384,7 +385,7 @@ describe('6–7. component evidence in the posture panel', () => {
   it('Cost shows its score · tier, Partial, and every one of its reasons', async () => {
     renderDashboard()
     await settled()
-    const row = within(openInfo(kpi('/infrastructure'), 'Infrastructure Posture details')).getByTestId('posture-evidence-cost')
+    const row = within(openInfo(kpi('/infrastructure'), 'About Infrastructure Posture')).getByTestId('posture-evidence-cost')
     expect(within(row).getByText('97 · Strong')).toBeInTheDocument()
     expect(within(row).getByText('Partial')).toBeInTheDocument()
     for (const reason of ['Based on monthly run-rate estimate from resource inventory.', 'Anomaly checks not yet active.']) {
@@ -392,11 +393,12 @@ describe('6–7. component evidence in the posture panel', () => {
     }
   })
 
-  it('Alert Coverage stays Partial with its scope text, as a percentage with no tier', async () => {
+  it('Alert Coverage stays Partial with its scope text, on the /100 scale with no tier', async () => {
     renderDashboard()
     await settled()
-    const row = within(openInfo(kpi('/infrastructure'), 'Infrastructure Posture details')).getByTestId('posture-evidence-observability')
-    expect(within(row).getByText('0%')).toBeInTheDocument()
+    const row = within(openInfo(kpi('/infrastructure'), 'About Infrastructure Posture')).getByTestId('posture-evidence-observability')
+    expect(within(row).getByText('0 /100')).toBeInTheDocument()
+    expect(row.textContent).not.toContain('%')
     expect(within(row).getByText('Partial')).toBeInTheDocument()
     expect(row).toHaveTextContent(OBS_REASON)
     for (const tier of ['Strong', 'Needs attention', 'At risk']) expect(row.textContent).not.toContain(tier)
@@ -407,7 +409,7 @@ describe('6–7. component evidence in the posture panel', () => {
     expect(within(tile).queryByText('Partial')).toBeNull()
     expect(tile.textContent).not.toMatch(/At risk|Strong|Needs attention/)
     expect(tile.textContent).not.toContain(OBS_REASON)
-    expect(openInfo(tile, 'Alert Coverage details')).toHaveTextContent(OBS_REASON)
+    expect(openInfo(tile, 'About Alert Coverage score')).toHaveTextContent(OBS_REASON)
   })
 })
 
@@ -443,7 +445,7 @@ describe('8. a missing score is "—", never 0', () => {
     expect(within(tile).getByText('—')).toBeInTheDocument()
     expect(within(tile).getByText('Could not be retrieved')).toBeInTheDocument()
     expect(tile.querySelector('[role="progressbar"]')).toBeNull()
-    const row = within(openInfo(kpi('/infrastructure'), 'Infrastructure Posture details')).getByTestId('posture-evidence-cost')
+    const row = within(openInfo(kpi('/infrastructure'), 'About Infrastructure Posture')).getByTestId('posture-evidence-cost')
     expect(within(row).getByText('—')).toBeInTheDocument()
   })
 
@@ -461,8 +463,8 @@ describe('9. estimated spend is labeled as an estimate', () => {
     renderDashboard()
     await waitFor(() => expect(within(kpi('/costs')).getByText('$42.50/mo')).toBeInTheDocument())
     const card = kpi('/costs')
-    expect(card.querySelector('a')!.textContent).toBe('Estimated Monthly Spend')
-    const dialog = openInfo(card, 'Estimated Monthly Spend details')
+    expect(within(card).getByTestId('kpi-title').textContent).toBe('Estimated Monthly Spend')
+    const dialog = openInfo(card, 'About Estimated Monthly Spend')
     expect(dialog).toHaveTextContent('Estimate from resource inventory · not AWS billed spend')
     expect(dialog.textContent).not.toContain('Actual · AWS Cost Explorer')
     expect(within(card).getByTestId('kpi-caption')).toHaveTextContent('Estimated from inventory · not AWS billed spend')
@@ -471,7 +473,7 @@ describe('9. estimated spend is labeled as an estimate', () => {
   it('actual spend: the panel gives provenance and the comparison basis with the still-billing note', async () => {
     renderDashboard()
     await settled()
-    const dialog = openInfo(kpi('/costs'), 'Month-to-Date Spend details')
+    const dialog = openInfo(kpi('/costs'), 'About Month-to-Date Spend')
     expect(dialog).toHaveTextContent("Actual · AWS Cost Explorer · today's spend still being billed")
     expect(dialog).toHaveTextContent('Finished days this month vs same days last month · not the selected range · Oct 1 vs Sep 1 · the current window ends today, which is still being billed')
   })
@@ -502,15 +504,16 @@ describe('10. change badge is neutral while today is still billing', () => {
 })
 
 describe('11. Top Risk', () => {
-  it('badge follows the finding\'s actual severity, the title drops the suffix the badge shows, and the card links to the findings', async () => {
+  it('badge follows the finding\'s actual severity, the title drops the suffix the badge shows, and the arrow links to the findings', async () => {
     renderDashboard()
     await settled()
     const card = screen.getByTestId('top-risk-card')
     expect(within(card).getByTestId('top-risk-severity')).toHaveTextContent('Critical')
     expect(within(card).getByText('Root account has no MFA')).toBeInTheDocument()
     expect(card.textContent).not.toContain('(critical severity)')
-    expect(card.closest('a')).toHaveAttribute('href', '/security#findings')
-    expect(card.closest('a')).toHaveAttribute('aria-label', 'Top Risk: Root account has no MFA (critical severity)')
+    expect(card.closest('a')).toBeNull()
+    expect(within(card).getAllByRole('link')).toHaveLength(1)
+    expect(within(card).getByRole('link', { name: 'Open top risk' })).toHaveAttribute('href', '/security#findings')
   })
 
   it('no top risk: the existing empty state, no badge, no link', async () => {
@@ -550,15 +553,15 @@ describe('Security Posture face and panel agree on the compliance scan', () => {
     renderDashboard()
     await settled()
     await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent('compliance scan pending'))
-    expect(openInfo(kpi('/security'), 'Security Posture details')).toHaveTextContent('Resource compliance: Compliance scan pending')
+    expect(openInfo(kpi('/security'), 'About Security Posture')).toHaveTextContent('Resource compliance: Compliance scan pending')
   })
 
   it('scan_completed true with zero counts: no "pending" on the face, and the panel does not say "Not yet evaluated"', async () => {
     vi.spyOn(awsResourcesService, 'getStats').mockResolvedValue({ compliance_stats: { total_issues: 0, by_severity: { critical: 0, high: 0, medium: 0, low: 0 }, by_category: {} }, scan_completed: true } as never)
     renderDashboard()
     await settled()
-    await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low findings$/))
-    const dialog = openInfo(kpi('/security'), 'Security Posture details')
+    await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low account findings$/))
+    const dialog = openInfo(kpi('/security'), 'About Security Posture')
     expect(dialog).toHaveTextContent('Resource compliance: No open issues in the completed compliance scan')
     expect(dialog.textContent).not.toMatch(/pending|Not yet evaluated/)
   })
@@ -568,11 +571,72 @@ describe('Security Posture panel', () => {
   it('active finding counts by severity (zero omitted, singular/plural), and resource compliance state', async () => {
     renderDashboard()
     await settled()
-    const dialog = openInfo(kpi('/security'), 'Security Posture details')
+    const dialog = openInfo(kpi('/security'), 'About Security Posture')
     expect(dialog).toHaveTextContent('1 critical finding')
     expect(dialog).toHaveTextContent('3 high findings')
     expect(dialog).toHaveTextContent('1 low finding')
     expect(dialog.textContent).not.toMatch(/medium/)
     expect(dialog).toHaveTextContent('Resource compliance: Not yet evaluated')
+  })
+})
+
+describe('UI polish: card arrows, info buttons, both security scopes', () => {
+  it('each top-level card has exactly one arrow button (its href and label); titles are not links; posture tiles have none', async () => {
+    renderDashboard()
+    await settled()
+    const cards: Array<[HTMLElement, string, string, string]> = [
+      [kpi('/costs'), 'Month-to-Date Spend', '/costs', 'Open costs'],
+      [kpi('/security'), 'Security Posture', '/security', 'Open security findings'],
+      [kpi('/infrastructure'), 'Infrastructure Posture', '/infrastructure', 'Open infrastructure'],
+      [screen.getByTestId('top-risk-card'), 'Top Risk', '/security#findings', 'Open top risk'],
+      [screen.getByTestId('system-health-card'), 'DevControl System Health', '/status', 'Open DevControl status'],
+    ]
+    for (const [card, title, href, label] of cards) {
+      const links = within(card).getAllByRole('link')
+      expect(links).toHaveLength(1)
+      expect(links[0]).toHaveAccessibleName(label)
+      expect(links[0]).toHaveAttribute('href', href)
+      expect(links[0]).toHaveAttribute('data-testid', 'card-arrow')
+      expect(within(card).getByText(title).closest('a')).toBeNull()
+      expect(card.closest('a')).toBeNull()
+    }
+    for (const key of ['cost', 'security', 'observability']) {
+      expect(within(screen.getByTestId(`posture-tile-${key}`)).queryAllByRole('link')).toHaveLength(0)
+    }
+    expect(within(screen.getByTestId('posture-section')).getByText('View details →').closest('a')).toHaveAttribute('href', '/infrastructure')
+  })
+
+  it('every info button on the page has a unique "About …" label, sits beside its title, and never navigates', async () => {
+    renderDashboard()
+    await settled()
+    const buttons = screen.getAllByTestId('evidence-info-button')
+    const labels = buttons.map((b) => b.getAttribute('aria-label'))
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(labels).toEqual(expect.arrayContaining([
+      'About Month-to-Date Spend', 'About Security Posture', 'About Infrastructure Posture',
+      'About DevControl System Health', 'About the Infrastructure Posture section',
+    ]))
+    for (const b of buttons) {
+      expect(b.getAttribute('aria-label')).toMatch(/^About /)
+      expect(b.tagName).toBe('BUTTON')
+      expect(b.closest('a')).toBeNull()
+      // Beside the title: the ⓘ shares a container with the title, never with the arrow button.
+      expect(b.parentElement!.querySelector('[data-testid="card-arrow"]')).toBeNull()
+    }
+  })
+
+  it('Security Posture face and tile name both scopes from the already-loaded counts', async () => {
+    vi.spyOn(awsResourcesService, 'getStats').mockResolvedValue({ compliance_stats: { total_issues: 3, by_severity: { critical: 0, high: 2, medium: 0, low: 1 }, by_category: {} }, scan_completed: true } as never)
+    renderDashboard()
+    await settled()
+    await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low account findings · 3 resource issues$/))
+    expect(screen.getByTestId('posture-tile-caption-security')).toHaveTextContent(/^1 critical · 3 high · 1 low account findings · 3 resource issues$/)
+  })
+
+  it('Alert Coverage reads "N /100" on its tile, never a percentage', async () => {
+    renderDashboard()
+    await settled()
+    expect(screen.getByTestId('posture-score-observability')).toHaveTextContent(/^0 \/100$/)
+    expect(screen.getByTestId('posture-tile-observability').textContent).not.toContain('%')
   })
 })

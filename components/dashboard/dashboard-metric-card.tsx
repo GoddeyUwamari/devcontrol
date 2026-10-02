@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import Link from 'next/link'
 import { Progress } from '@/components/ui/progress'
 import { EvidenceBadge, type EvidenceBadgeProps } from './evidence-badge'
 import { EvidenceInfo } from './evidence-info'
+import { CardArrowLink } from './card-arrow-link'
 
 interface SparklinePoint {
   value: number
@@ -27,8 +27,9 @@ interface DashboardMetricCardProps {
   sparkline?: SparklinePoint[]
   sparklineColor?: string
   /** Detailed evidence, behind the info button -- never as paragraphs on the face. */
-  info?: { title: string; content: ReactNode; align?: 'start' | 'end' }
-  href?: string
+  info?: { content: ReactNode; align?: 'start' | 'end' }
+  /** The card's one navigation control: an arrow button at the right edge of the header. */
+  link?: { href: string; label: string }
 }
 
 function Sparkline({ points, color }: { points: SparklinePoint[]; color: string }) {
@@ -51,13 +52,13 @@ function Sparkline({ points, color }: { points: SparklinePoint[]; color: string 
 }
 
 /**
- * Shared KPI card for the Dashboard's top row: icon chip, title (linking to
- * the metric's page), info button, primary value, status badges, one basis caption, and a small
+ * Shared KPI card for the Dashboard's top row: icon chip, title with its info
+ * button beside it, an arrow button at the right edge (the card's only
+ * navigation), primary value, status badges, one basis caption, and a small
  * visualization. Detailed evidence lives in the info panel, not on the face.
- * The card itself is not a link: it contains a button, and interactive
- * content can't nest inside an <a>.
+ * Neither the card nor its title is a link.
  */
-export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, label, value, valueSuffix, badges, caption, progress, sparkline, sparklineColor, info, href }: DashboardMetricCardProps) {
+export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, label, value, valueSuffix, badges, caption, progress, sparkline, sparklineColor, info, link }: DashboardMetricCardProps) {
   return (
     <div className="relative bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full flex flex-col" data-testid="kpi-card">
       <div className="flex items-center justify-between gap-2 mb-4">
@@ -65,17 +66,14 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
           <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: iconBackground }}>
             <Icon size={16} style={{ color: iconColor }} aria-hidden="true" />
           </div>
-          {href ? (
-            <Link href={href} className="text-sm font-semibold text-foreground no-underline hover:underline truncate">{label}</Link>
-          ) : (
-            <p className="text-sm font-semibold text-foreground truncate m-0">{label}</p>
+          <p className="text-sm font-semibold text-foreground truncate m-0" data-testid="kpi-title">{label}</p>
+          {info && (
+            <EvidenceInfo about={label} align={info.align ?? 'start'}>
+              {info.content}
+            </EvidenceInfo>
           )}
         </div>
-        {info && (
-          <EvidenceInfo label={`${label} details`} title={info.title} align={info.align}>
-            {info.content}
-          </EvidenceInfo>
-        )}
+        {link && <CardArrowLink href={link.href} label={link.label} />}
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="text-[30px] font-bold leading-none tracking-tight text-foreground">

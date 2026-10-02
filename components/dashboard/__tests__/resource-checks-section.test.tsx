@@ -382,7 +382,7 @@ describe('header and wording', () => {
     respond({ success: true, data: metrics() })
     renderSection()
     await loaded()
-    fireEvent.click(within(section()).getByRole('button', { name: 'Resource checks section details' }))
+    fireEvent.click(within(section()).getByRole('button', { name: 'About Resource checks' }))
     const panel = screen.getByRole('dialog')
     expect(panel).toHaveTextContent('What resource checks are')
     expect(panel).toHaveTextContent('How results are counted')
