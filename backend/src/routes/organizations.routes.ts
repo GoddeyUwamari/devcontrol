@@ -12,6 +12,8 @@ import {
   requirePermission,
 } from '../middleware/rbac.middleware';
 import { checkResourceLimit } from '../middleware/subscription.middleware';
+import { validateParams } from '../middleware/validation';
+import { organizationMemberParamsSchema } from '../validators/schemas';
 
 const router = Router();
 
@@ -98,11 +100,13 @@ router.post(
   organizationController.acceptInvitation.bind(organizationController)
 );
 
-// Remove users (requires admin or owner)
+// Remove users (requires admin or owner). A malformed :userId is rejected
+// with a 400 before the controller runs any query.
 router.delete(
   '/:id/members/:userId',
   requireOwnOrg,
   requireAdmin,
+  validateParams(organizationMemberParamsSchema),
   organizationController.removeUser.bind(organizationController)
 );
 
@@ -111,6 +115,7 @@ router.patch(
   '/:id/members/:userId/role',
   requireOwnOrg,
   requireAdmin,
+  validateParams(organizationMemberParamsSchema),
   organizationController.updateUserRole.bind(organizationController)
 );
 

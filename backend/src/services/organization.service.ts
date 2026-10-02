@@ -739,7 +739,7 @@ export class OrganizationService {
       [organizationId, excludedUserId]
     );
     if (parseInt(result.rows[0].count) === 0) {
-      throw new Error(message);
+      throw new OrganizationAccessError(message, 400);
     }
   }
 
