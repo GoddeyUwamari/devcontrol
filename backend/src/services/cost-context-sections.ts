@@ -12,7 +12,7 @@
  *   - neither is a number when both are missing ('unavailable' / 'error').
  *
  * The month-over-month comparison is AI Chat's computeMonthOverMonthComparison()
- * result (same windows, coverage threshold, and current-day flag), expressed
+ * result (same finished-day windows and coverage threshold), expressed
  * through deriveSection() so it is 'derived' and records the daily trend it
  * came from. No comparison is recomputed here.
  */
@@ -40,6 +40,12 @@ export interface SpendEvidence {
   topServices: Array<{ service: string; amount: number; sharePercent: number | null }> | null;
   /** For billed spend: the period's last day is today and still being billed. */
   lastDayInProgress: boolean;
+  /**
+   * For billed spend: the last UTC day whose charges are treated as finished
+   * (today minus the provisional days Cost Explorer is still reporting). The
+   * month-over-month comparison never extends past it. null for estimates.
+   */
+  finishedThrough: string | null;
 }
 
 export interface MonthOverMonthEvidence {
@@ -50,7 +56,7 @@ export interface MonthOverMonthEvidence {
   changeAmount: number;
   /** null when the previous window totals $0 (a percentage is undefined). */
   changePercent: number | null;
-  /** The current window ends today (still being billed); the previous window's days are complete. */
+  /** The current window ends today (still being billed). Always false: windows end at finished days. */
   currentWindowIncludesToday: boolean;
   basis: string;
 }
@@ -92,6 +98,7 @@ export async function spendSection(costs: ChatContext['costs']): Promise<Context
         basis: 'billed_month_to_date',
         topServices: (costs.topSpenders ?? []).map(s => ({ service: s.service, amount: s.cost, sharePercent: s.percentage })),
         lastDayInProgress,
+        finishedThrough: costs.comparison.finishedThrough,
       },
       reason: lastDayInProgress ? 'month-to-date; the last day of the period is still being billed, so it is incomplete' : null,
     }));
@@ -111,7 +118,7 @@ export async function spendSection(costs: ChatContext['costs']): Promise<Context
       async () => ({
         state: 'available',
         asOf: costs.asOf,
-        data: { amount: current, basis: 'estimated_monthly_run_rate', topServices: null, lastDayInProgress: false },
+        data: { amount: current, basis: 'estimated_monthly_run_rate', topServices: null, lastDayInProgress: false, finishedThrough: null },
         completeness: coverage
           ? { unit: 'discovered resources with a cost estimate', expected: coverage.totalResources, received: coverage.estimatedResources, missing: null }
           : null,
@@ -178,7 +185,7 @@ export async function monthOverMonthSection(costs: ChatContext['costs']): Promis
       asOf: trend.asOf,
       coverage: c.currentWindowIncludesToday
         ? "month-to-date vs the same days of the previous month; the current window's last day is today and still being billed, while every previous-window day is complete"
-        : 'month-to-date vs the same days of the previous month',
+        : 'finished days of this month vs the same days of the previous month; the latest days, still being reported by AWS Cost Explorer, are excluded',
     },
     [trend] as const,
     ([windows]) => ({ ...windows, basis: COMPARISON_BASIS })

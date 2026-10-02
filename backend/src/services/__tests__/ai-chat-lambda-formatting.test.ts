@@ -51,7 +51,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
       comparison: {
         state: 'unavailable', note: null, currentWindow: null, previousWindow: null,
         currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null,
-        currentWindowIncludesToday: false, asOf: null, basis: COMPARISON_BASIS,
+        currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
       },
     },
     inventoryScope: { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: null },

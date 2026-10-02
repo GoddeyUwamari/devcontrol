@@ -556,11 +556,19 @@ class AWSCostService {
       return { amount: liveTotal, source: 'actual' }
     }
 
+    return { amount: await this.getInventoryMonthlyRunRate(organizationId), source: 'estimated' }
+  }
+
+  /**
+   * The inventory's monthly run-rate estimate: SUM(estimated_monthly_cost) over
+   * the org's non-terminated resources. A DB read only -- never Cost Explorer.
+   */
+  async getInventoryMonthlyRunRate(organizationId: string): Promise<number> {
     const estimateResult = await (this.dbPool || pool).query(
       `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
       [organizationId]
     )
-    return { amount: parseFloat(estimateResult.rows[0].total), source: 'estimated' }
+    return parseFloat(estimateResult.rows[0].total)
   }
 
   /**

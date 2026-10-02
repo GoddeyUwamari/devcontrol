@@ -195,7 +195,7 @@ describe('Infrastructure Posture KPI', () => {
   })
 
   it('cost partiality appears in the panel under Cost (with every cost reason) -- not attributed to Alert Coverage', async () => {
-    const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+    const COST_REASON = 'Insufficient spend data to assess cost efficiency. Anomaly checks not yet active.'
     const BOTH = `Cost: ${COST_REASON} Alert Coverage: ${OBS_REASON}`
     intelligenceSpy.mockResolvedValue({
       ...INTELLIGENCE, composite_state: 'partial', composite_reason: BOTH,

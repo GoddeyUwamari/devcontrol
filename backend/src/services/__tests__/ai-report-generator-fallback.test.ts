@@ -34,7 +34,7 @@ const RANGE = { from: '2026-09-19', to: '2026-09-26' };
 function unavailableComparison(note = 'not enough daily Cost Explorer data to compare'): ChatContext['costs']['comparison'] {
   return {
     state: 'unavailable', note, currentWindow: null, previousWindow: null, currentWindowTotal: null, previousWindowTotal: null,
-    changeAmount: null, changePercent: null, coverage: null, currentWindowIncludesToday: false, asOf: null, basis: COMPARISON_BASIS,
+    changeAmount: null, changePercent: null, coverage: null, currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
   };
 }
 
@@ -43,7 +43,7 @@ const AVAILABLE_COMPARISON: ChatContext['costs']['comparison'] = {
   currentWindow: { start: '2026-09-01', end: '2026-09-26' }, previousWindow: { start: '2026-08-01', end: '2026-08-26' },
   currentWindowTotal: 120, previousWindowTotal: 100, changeAmount: 20, changePercent: 20,
   coverage: { currentDays: 26, previousDays: 26, expectedCurrentDays: 26, expectedPreviousDays: 26 },
-  currentWindowIncludesToday: true, asOf: '2026-09-26T06:00:00.000Z', basis: COMPARISON_BASIS,
+  currentWindowIncludesToday: true, finishedThrough: null, asOf: '2026-09-26T06:00:00.000Z', basis: COMPARISON_BASIS,
 };
 
 function actualCosts(amount: number, comparison = unavailableComparison()): ChatContext['costs'] {

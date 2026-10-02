@@ -8,6 +8,9 @@ import { CloudWatchService }
 import awsCostService from './aws-cost.service'
 import type { ContextDataState, SpendProvenance } from './ai-context-contract'
 import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service'
+
+/** The cost component's basis sentence (without its period), as written into its reason. */
+export const COST_RUN_RATE_BASIS = 'Based on monthly run-rate estimate from resource inventory'
 import { RiskTrackingService }
   from './risk-tracking.service'
 import { CostRecommendationsRepository }
@@ -29,16 +32,12 @@ export interface ComponentScore {
   // for every error/fallback path so callers can
   // tell "bad score" apart from "no data yet"
   ready: boolean
-  // Raw monthly cloud spend in USD (live Cost Explorer, falling back to the
-  // DB cost estimate — see computeCostScore). Only populated on the cost
-  // component, so other callers (e.g. ai-summary.service.ts) can reuse this
-  // already-fetched figure instead of re-calling Cost Explorer themselves.
+  // The monthly spend the cost score stands on: the inventory's monthly
+  // run-rate estimate (AWSCostService.getInventoryMonthlyRunRate), never Cost
+  // Explorer month-to-date spend. Only populated on the cost component.
   monthlySpend?: number
-  // Which path produced monthlySpend above -- 'actual' for a live Cost Explorer
-  // read, 'estimated' for the DB cost-estimate fallback (see AWSCostService.
-  // getMonthlySpendWithFallback). Only populated on the cost component, so
-  // callers that narrate monthlySpend (e.g. ai-summary.service.ts) can say so
-  // truthfully instead of presenting an estimate as an observed fact.
+  // Always 'estimated' on the cost component (monthlySpend above is the
+  // inventory run-rate), so the Cost tile never presents it as billed spend.
   costSource?: SpendProvenance
   // Evidence state behind this component's score, in the shared
   // ContextDataState vocabulary: 'available' only when nothing is missing,
@@ -147,30 +146,31 @@ export class SystemIntelligenceService {
         [organizationId]
       )
 
-      // Get active cost anomalies
-      const anomalyResult = await pool.query(
-        `SELECT COUNT(*) as count
-         FROM anomaly_detections
-         WHERE organization_id = $1
-           AND type ILIKE '%cost%'
-           AND status = 'active'`,
-        [organizationId]
-      )
-
-      const anomalyCount = parseInt(
-        anomalyResult.rows[0]
-          ?.count ?? '0'
-      )
+      // Active cost anomalies -- only read while anomaly detection is running.
+      // With detection off, no anomaly_detections row is evidence of anything,
+      // so the anomaly term is left out of the score entirely (below).
+      let anomalyCount = 0
+      if (ANOMALY_DETECTION_ACTIVE) {
+        const anomalyResult = await pool.query(
+          `SELECT COUNT(*) as count
+           FROM anomaly_detections
+           WHERE organization_id = $1
+             AND type ILIKE '%cost%'
+             AND status = 'active'`,
+          [organizationId]
+        )
+        anomalyCount = parseInt(anomalyResult.rows[0]?.count ?? '0')
+      }
 
       const costAnalysisRan = (scanResult.rowCount ?? 0) > 0
 
-      // Real monthly spend: canonical live-Cost-Explorer-or-DB-estimate decision,
-      // shared with stats.controller.ts's dashboard stats endpoint (see
-      // AWSCostService.getMonthlySpendWithFallback) -- also carries which path
-      // produced it (costSource), so callers like ai-summary.service.ts can tell
-      // an observed spend from an estimate instead of losing that distinction here.
-      const { amount: monthlySpend, source: costSource } =
-        await awsCostService.getMonthlySpendWithFallback(organizationId)
+      // Monthly spend = the inventory's monthly run-rate estimate, the same
+      // period as the monthly savings estimate it is compared with. Never Cost
+      // Explorer month-to-date spend: early in a month that is a day or two of
+      // billing against a full month of savings, which moves the score with the
+      // calendar, not the infrastructure.
+      const monthlySpend = await awsCostService.getInventoryMonthlyRunRate(organizationId)
+      const costSource = 'estimated' as const
 
       // Scoring model — continuous weighted-coverage-ratio, same shape as
       // Security's riskScoring.ts:
@@ -202,13 +202,17 @@ export class SystemIntelligenceService {
       // score so it doesn't read as a false "clean" result. The detail
       // string below is forced to match this branch so score and text
       // never contradict each other.
+      // While anomaly detection is off, the score is the efficiency ratio
+      // alone -- no substituted or default anomaly value.
       const score =
-        hasSpendData
-          ? Math.round(
-              costEfficiencyRatio * 0.75 +
-              anomalyScore * 0.25
-            )
-          : 50
+        !hasSpendData
+          ? 50
+          : ANOMALY_DETECTION_ACTIVE
+            ? Math.round(
+                costEfficiencyRatio * 0.75 +
+                anomalyScore * 0.25
+              )
+            : Math.round(costEfficiencyRatio)
 
       const detail =
         !hasSpendData
@@ -233,16 +237,14 @@ export class SystemIntelligenceService {
         : score >= 50 ? 'high'
         : 'critical'
 
-      // What the score above does not stand on -- labels only, the score is
-      // unchanged. getMonthlySpendWithFallback() reports a non-positive live
-      // total as 'estimated', so no $0 here is presented as observed Cost
-      // Explorer spend. The anomaly term above is 100 whenever no active cost
-      // anomaly row exists, which is not evidence while detection is off.
+      // What the score above does not stand on -- labels only. A partial reason
+      // also names the basis the score does stand on (the run-rate estimate).
       const limitations = [
         !hasSpendData && 'Insufficient spend data to assess cost efficiency',
-        costSource === 'estimated' && 'Spend based on inventory estimate, not AWS Cost Explorer billing',
         !ANOMALY_DETECTION_ACTIVE && 'Anomaly checks not yet active',
       ].filter((l): l is string => typeof l === 'string')
+      const reasonSentences = [hasSpendData ? COST_RUN_RATE_BASIS : null, ...limitations]
+        .filter((l): l is string => typeof l === 'string')
 
       return {
         score,
@@ -260,7 +262,7 @@ export class SystemIntelligenceService {
         ...(!costAnalysisRan
           ? { state: 'unavailable' as const, reason: 'No cost scan has completed yet.' }
           : limitations.length > 0
-            ? { state: 'partial' as const, reason: limitations.map(l => `${l}.`).join(' ') }
+            ? { state: 'partial' as const, reason: reasonSentences.map(l => `${l}.`).join(' ') }
             : { state: 'available' as const, reason: null }),
       }
     } catch (err) {

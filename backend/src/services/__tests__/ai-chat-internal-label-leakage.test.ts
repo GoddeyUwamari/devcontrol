@@ -22,7 +22,7 @@ const INTERNAL_IDENTIFIERS = [
   // scope kinds
   'resource_inventory', 'aws_resource_inventory', 'cost_explorer', 'cost_explorer_billing_scope',
   // ContextSection / scope / cost / comparison field names, as code and as snake_case
-  'asOf', 'as_of', 'endExclusive', 'end_exclusive', 'currentWindowIncludesToday', 'connectedAccountId',
+  'asOf', 'as_of', 'endExclusive', 'end_exclusive', 'currentWindowIncludesToday', 'finishedThrough', 'finished_through', 'connectedAccountId',
   'connected_account_id', 'discoveryRegion', 'discovery_region', 'linkedAccountFilter', 'linked_account_filter',
   'consolidatedBilling', 'consolidated_billing', 'estimatedMonthlyCost', 'estimated_monthly_cost',
   'estimatedForCount', 'invocationsKnownForCount', 'topSpenders', 'costExplorer', 'estimateCoverage',
@@ -74,7 +74,7 @@ function everyStateContext(): ChatContext {
         currentWindow: { start: '2026-09-01', end: '2026-09-25' }, previousWindow: { start: '2026-08-01', end: '2026-08-25' },
         currentWindowTotal: 15.07, previousWindowTotal: 14.33, changeAmount: 0.74, changePercent: 5.2,
         coverage: { currentDays: 24, previousDays: 25, expectedCurrentDays: 25, expectedPreviousDays: 25 },
-        currentWindowIncludesToday: true, asOf: '2026-09-25T15:17:36.123Z', basis: COMPARISON_BASIS,
+        currentWindowIncludesToday: true, finishedThrough: null, asOf: '2026-09-25T15:17:36.123Z', basis: COMPARISON_BASIS,
       },
     },
     inventoryScope: INVENTORY_SCOPE,
@@ -106,7 +106,7 @@ function estimatedCostContext(): ChatContext {
       comparison: {
         state: 'unavailable', note: 'no Cost Explorer data for the current period, so there is nothing to compare',
         currentWindow: null, previousWindow: null, currentWindowTotal: null, previousWindowTotal: null,
-        changeAmount: null, changePercent: null, coverage: null, currentWindowIncludesToday: false, asOf: null, basis: COMPARISON_BASIS,
+        changeAmount: null, changePercent: null, coverage: null, currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
       },
     },
     dora: noData('unavailable', { source: 'DevControl deployment records', scope: { kind: 'organization', window: 'last 30 days' }, reason: 'no deployments were recorded for this organization in the last 30 days' }),

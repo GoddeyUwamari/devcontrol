@@ -137,3 +137,10 @@ describe('SystemIntelligenceService system_score formula -- 30/40/30 weighting',
     expect(result.status).not.toBe('Pending');
   });
 });
+
+describe('composite thresholds are unchanged by the run-rate cost score', () => {
+  it('scoreToStatus: 85 Healthy, 70 Stable, 50 Degraded, below 50 At Risk', () => {
+    const toStatus = (score: number) => (new SystemIntelligenceService() as any).scoreToStatus(score);
+    expect([85, 84, 70, 69, 50, 49].map(toStatus)).toEqual(['Healthy', 'Stable', 'Stable', 'Degraded', 'Degraded', 'At Risk']);
+  });
+});

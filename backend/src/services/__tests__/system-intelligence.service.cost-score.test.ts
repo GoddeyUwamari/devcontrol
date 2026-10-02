@@ -2,10 +2,9 @@
  * Tier 0 shared source-of-truth: coverage for SystemIntelligenceService's cost
  * component after consolidation --
  *
- * 1. monthlySpend/costSource now come from AWSCostService.
- *    getMonthlySpendWithFallback() (the single canonical live-Cost-Explorer-
- *    or-DB-estimate decision, shared with stats.controller.ts) instead of an
- *    independently duplicated try/fallback block.
+ * 1. monthlySpend is the inventory's monthly run-rate
+ *    (AWSCostService.getInventoryMonthlyRunRate()), never Cost Explorer
+ *    month-to-date spend; costSource is always 'estimated'.
  * 2. totalSavings/totalOpps now come from CostRecommendationsRepository.
  *    getStats() (the same source the Dashboard's Savings Actions card and the
  *    cost-recommendations API read) instead of an independently duplicated
@@ -187,21 +186,42 @@ afterAll(async () => {
 });
 
 describe('SystemIntelligenceService cost component -- consolidated monthly-spend + savings sources', () => {
-  it('live Cost Explorer path: costSource is "actual" and monthlySpend matches the live total exactly', async () => {
+  it('Cost Explorer month-to-date spend is never the input: with live spend available, monthlySpend is still the inventory run-rate and Cost Explorer is not called', async () => {
     const orgId = await insertOrgWithAwsAccount();
-    await insertActiveRecommendation(orgId, 'i-live-1', 50);
-    mockSend.mockResolvedValueOnce(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '456.78'));
+    await insertAwsResource(orgId, 'i-rr-1', 20);
+    await insertAwsResource(orgId, 'i-rr-2', 5);
+    await insertActiveRecommendation(orgId, 'i-live-1', 0.96);
+    mockSend.mockResolvedValue(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '0.19'));
 
     const service = new SystemIntelligenceService();
     stubSecurityAndObservability(service);
 
-    const result = await service.getSystemIntelligence(orgId);
+    const { cost } = (await service.getSystemIntelligence(orgId)).components;
 
-    expect(result.components.cost.costSource).toBe('actual');
-    expect(result.components.cost.monthlySpend).toBeCloseTo(456.78, 2);
+    expect(cost.costSource).toBe('estimated');
+    expect(cost.monthlySpend).toBeCloseTo(25, 2);
+    expect(mockSend).not.toHaveBeenCalled();
+    // run-rate $25 vs $0.96 savings: 100 x 25 / 25.96 = 96.3 -- not the MTD-driven 38.
+    expect(cost.score).toBe(96);
   });
 
-  it('DB estimate fallback path (Cost Explorer returns nothing): costSource is "estimated" and monthlySpend matches the aws_resources sum exactly', async () => {
+  it('the score does not move when month-to-date spend changes (MTD $0.19 vs $5,000)', async () => {
+    const scores: number[] = [];
+    for (const mtd of ['0.19', '5000.00']) {
+      const orgId = await insertOrgWithAwsAccount();
+      await insertAwsResource(orgId, `i-mtd-${mtd}`, 25);
+      await insertActiveRecommendation(orgId, `i-mtd-rec-${mtd}`, 0.96);
+      mockSend.mockReset();
+      mockSend.mockResolvedValue(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', mtd));
+
+      const service = new SystemIntelligenceService();
+      stubSecurityAndObservability(service);
+      scores.push((await service.getSystemIntelligence(orgId)).components.cost.score);
+    }
+    expect(scores).toEqual([96, 96]);
+  });
+
+  it('DB estimate path (Cost Explorer returns nothing): costSource is "estimated" and monthlySpend matches the aws_resources sum exactly', async () => {
     const orgId = await insertOrgWithAwsAccount();
     await insertAwsResource(orgId, 'i-est-1', 120.5);
     await insertAwsResource(orgId, 'i-est-2', 30.25);
@@ -218,6 +238,7 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
 
   it('savings aggregate reuse: totalSavings/totalOpps in the cost detail exactly match CostRecommendationsRepository.getStats() for the same org (no independent duplicate query)', async () => {
     const orgId = await insertOrgWithAwsAccount();
+    await insertAwsResource(orgId, 'i-savings-rr', 1000);
     await insertActiveRecommendation(orgId, 'i-savings-1', 75);
     await insertActiveRecommendation(orgId, 'i-savings-2', 25);
     mockSend.mockResolvedValueOnce(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '1000.00'));
@@ -241,6 +262,7 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
 
   it('ACTIVE filtering is preserved: a RESOLVED recommendation is excluded from the cost score\'s savings detail, matching getStats() semantics', async () => {
     const orgId = await insertOrgWithAwsAccount();
+    await insertAwsResource(orgId, 'i-active-rr', 500);
     await insertActiveRecommendation(orgId, 'i-active-only', 40);
     await pool.query(
       `INSERT INTO cost_recommendations

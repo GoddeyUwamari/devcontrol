@@ -14,7 +14,7 @@
  * Router only permits a fixed set of named exports from a page file.
  */
 import type { CostSummary } from '@/lib/types'
-import { describeMonthOverMonth, describeSpend, MOM_BASIS_LABEL } from '../costs/cost-display'
+import { describeComparisonWindows, describeMonthOverMonth, describeSpend, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, noFinishedDayThisMonth } from '../costs/cost-display'
 
 export interface DashboardSpendCard {
   label: string
@@ -43,7 +43,7 @@ function hasNoBilledDays(section: CostSummary['spend'] | undefined): boolean {
  * month-over-month window's own "includes today" note stays in the panel, so
  * the still-billing day is mentioned once on the face.
  */
-function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: ReturnType<typeof describeSpend>, noBilledDays: boolean): string {
+function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: ReturnType<typeof describeSpend>, noBilledDays: boolean, noFinishedDay: boolean): string {
   if (spend.provenance === 'estimated') {
     return `Estimated from inventory · not AWS billed spend${section?.state === 'partial' ? ' · some resources have no estimate' : ''}`
   }
@@ -51,6 +51,7 @@ function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: Retu
   const notes = ['Actual · AWS Cost Explorer']
   if (section.data.amount < 0) notes.push('net of credits')
   if (noBilledDays) notes.push('no billed days yet this month')
+  else if (noFinishedDay) notes.push(LATEST_DAYS_REPORTING)
   else if (section.data.lastDayInProgress) notes.push('today still billing')
   if (section.state === 'partial') notes.push('partial data')
   return notes.join(' · ')
@@ -64,17 +65,21 @@ export function computeDashboardSpendCard(params: {
   const { costSummary, isLoading, isError } = params
   const status = { isLoading, isError }
   const spend = describeSpend(costSummary?.spend, status)
-  const mom = describeMonthOverMonth(costSummary?.monthOverMonth, status)
+  const noFinishedDay = noFinishedDayThisMonth(costSummary?.spend)
+  const mom = describeMonthOverMonth(costSummary?.monthOverMonth, status, { noFinishedDay })
 
   if (isLoading) return { label: spend.label, value: spend.value, caption: null, evidence: null }
 
   const noBilledDays = hasNoBilledDays(costSummary?.spend)
-  const caption = spendFaceCaption(costSummary?.spend, spend, noBilledDays)
+  const caption = spendFaceCaption(costSummary?.spend, spend, noBilledDays, noFinishedDay)
   let trend: DashboardSpendCard['trend']
   let comparison: string
   if (noBilledDays) {
     // Today's partial day against a fully billed day last month is not a comparison.
     comparison = 'No comparison until a day of this month has finished billing'
+  } else if (noFinishedDay && mom.direction === null) {
+    // Days of this month are billed, but AWS Cost Explorer is still reporting them.
+    comparison = 'No comparison until a day of this month has finished reporting · AWS Cost Explorer is still reporting the latest days'
   } else if (mom.direction !== null) {
     // A window that includes today compares against a day Cost Explorer is
     // still billing, so its direction is not yet a verdict: neutral, never the
@@ -92,7 +97,8 @@ export function computeDashboardSpendCard(params: {
         : `${mom.value} vs same days last month (% change undefined: last month was $0)`,
       color,
     }
-    comparison = `${MOM_BASIS_LABEL}${mom.includesToday ? ' · the current window ends today, which is still being billed' : ''}`
+    const windows = costSummary?.monthOverMonth.data ? ` · ${describeComparisonWindows(costSummary.monthOverMonth.data)}` : ''
+    comparison = `${MOM_BASIS_LABEL}${windows}${mom.includesToday ? ' · the current window ends today, which is still being billed' : ''}`
   } else {
     const failed = isError || costSummary?.monthOverMonth.state === 'error'
     comparison = failed ? 'Month-over-month could not be retrieved' : 'Month-over-month not available'

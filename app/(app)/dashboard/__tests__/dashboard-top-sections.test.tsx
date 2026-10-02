@@ -33,7 +33,7 @@ vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }),
 }))
 
-const COST_REASON = 'Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+const COST_REASON = 'Based on monthly run-rate estimate from resource inventory. Anomaly checks not yet active.'
 const OBS_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
 
 const component = (label: string, score: number, status: 'good' | 'warning' | 'risk', extra: Record<string, unknown> = {}) =>
@@ -223,7 +223,7 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
     expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent(/^Actual · AWS Cost Explorer · today still billing$/)
     expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low findings · compliance scan pending$/)
     expect(within(kpi('/infrastructure')).getByTestId('kpi-caption')).toHaveTextContent(/^Composite · Cost 97 · Security 57 · Alert coverage 0$/)
-    expect(screen.getByTestId('posture-tile-caption-cost')).toHaveTextContent(/^Estimated from inventory · anomaly checks not yet active$/)
+    expect(screen.getByTestId('posture-tile-caption-cost')).toHaveTextContent(/^Monthly run-rate estimate · anomaly checks not yet active$/)
     expect(screen.getByTestId('posture-tile-caption-security')).toHaveTextContent(/^1 critical · 3 high · 1 low findings$/)
     expect(screen.queryByTestId('posture-tile-caption-observability')).toBeNull()
     await waitFor(() => expect(screen.getByTestId('system-health-caption')).toHaveTextContent(/^API and database responding · not your AWS resources$/))
@@ -265,7 +265,7 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
     const spendCaption = within(kpi('/costs')).getByTestId('kpi-caption').textContent!
     const costCaption = screen.getByTestId('posture-tile-caption-cost').textContent!
     expect(spendCaption).toMatch(/^Actual · AWS Cost Explorer/)
-    expect(costCaption).toMatch(/^Estimated from inventory/)
+    expect(costCaption).toMatch(/^Monthly run-rate estimate/)
     expect(costCaption).not.toMatch(/Actual|AWS Cost Explorer/)
     expect(spendCaption).not.toMatch(/Estimate/)
   })
@@ -387,7 +387,7 @@ describe('6–7. component evidence in the posture panel', () => {
     const row = within(openInfo(kpi('/infrastructure'), 'Infrastructure Posture details')).getByTestId('posture-evidence-cost')
     expect(within(row).getByText('97 · Strong')).toBeInTheDocument()
     expect(within(row).getByText('Partial')).toBeInTheDocument()
-    for (const reason of ['Spend based on inventory estimate, not AWS Cost Explorer billing.', 'Anomaly checks not yet active.']) {
+    for (const reason of ['Based on monthly run-rate estimate from resource inventory.', 'Anomaly checks not yet active.']) {
       expect(row.textContent).toContain(reason)
     }
   })
@@ -473,7 +473,7 @@ describe('9. estimated spend is labeled as an estimate', () => {
     await settled()
     const dialog = openInfo(kpi('/costs'), 'Month-to-Date Spend details')
     expect(dialog).toHaveTextContent("Actual · AWS Cost Explorer · today's spend still being billed")
-    expect(dialog).toHaveTextContent('Month to date vs same days last month · not the selected range · the current window ends today, which is still being billed')
+    expect(dialog).toHaveTextContent('Finished days this month vs same days last month · not the selected range · Oct 1 vs Sep 1 · the current window ends today, which is still being billed')
   })
 })
 

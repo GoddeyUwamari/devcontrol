@@ -40,8 +40,14 @@ export interface CostComparison {
   /**
    * The current window's last day is today -- still being billed -- while the
    * previous window's days are complete, so the windows are not like-for-like.
+   * Always false since the windows end at finishedThrough; kept for consumers.
    */
   currentWindowIncludesToday: boolean;
+  /**
+   * The last UTC day treated as finished (costFinishedThrough): the current
+   * window never extends past it. null when there is no Cost Explorer result.
+   */
+  finishedThrough: string | null;
   /** When the daily trend behind this comparison was fetched from Cost Explorer; null if unknown. */
   asOf: string | null;
   /** How the window totals are calculated -- stated so the model can't read them as net billed spend. */
@@ -59,6 +65,17 @@ export const COMPARISON_BASIS =
 const STATE_LABELS = CONTEXT_STATE_LABELS;
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/**
+ * Cost Explorer keeps filling in a day's charges for 24-48 hours, so today and
+ * yesterday (UTC, Cost Explorer's own day boundary) are provisional.
+ */
+export const PROVISIONAL_COST_DAYS = 2;
+
+/** The last UTC day whose Cost Explorer charges are treated as finished: today (UTC) minus PROVISIONAL_COST_DAYS. */
+export function costFinishedThrough(now: Date = new Date()): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - PROVISIONAL_COST_DAYS)).toISOString().slice(0, 10);
+}
 
 /** The inclusive last day of an exclusive YYYY-MM-DD end boundary (calendar dates, no timezone shift). */
 export function lastIncludedDay(endExclusive: string): string {
@@ -465,7 +482,7 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
    */
   private formatComparisonSection(comparison: CostComparison, monthToDateSpend: number | null = null): string {
     const lines = [
-      'Period comparison (month-to-date vs the same days of the previous month; source: AWS Cost Explorer daily trend, same scope as the cost data above):',
+      "Period comparison (this month's finished days vs the same days of the previous month -- the latest days, still being reported by AWS Cost Explorer, are left out; source: AWS Cost Explorer daily trend, same scope as the cost data above):",
       `- Status: ${STATE_LABELS[comparison.state]}`,
       `- As of: ${comparison.asOf ?? 'unknown'}`,
       `- Basis: ${comparison.basis}`,

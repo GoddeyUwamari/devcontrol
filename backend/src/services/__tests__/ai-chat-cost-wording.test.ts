@@ -66,7 +66,7 @@ function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, do
         previousWindow: { start: '2026-08-01', end: '2026-08-25' },
         currentWindowTotal: 14.83, previousWindowTotal: 14.33, changeAmount: 0.5, changePercent: 3.5,
         coverage: { currentDays: 25, previousDays: 25, expectedCurrentDays: 25, expectedPreviousDays: 25 },
-        currentWindowIncludesToday: true, asOf: '2026-09-25T08:57:16.538Z', basis: COMPARISON_BASIS,
+        currentWindowIncludesToday: true, finishedThrough: null, asOf: '2026-09-25T08:57:16.538Z', basis: COMPARISON_BASIS,
       },
       ...overrides,
     },

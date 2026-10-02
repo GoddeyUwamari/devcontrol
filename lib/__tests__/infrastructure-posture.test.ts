@@ -113,10 +113,10 @@ describe('posturePartialCaption', () => {
 })
 
 describe('costComponentCaption: the Cost tile\'s one caption, from costSource and the backend\'s fixed limitation sentences', () => {
-  const ESTIMATED_REASON = 'Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+  const ESTIMATED_REASON = 'Based on monthly run-rate estimate from resource inventory. Anomaly checks not yet active.'
 
-  it('estimated spend + anomaly checks off', () => {
-    expect(costComponentCaption({ costSource: 'estimated', reason: ESTIMATED_REASON })).toBe('Estimated from inventory · anomaly checks not yet active')
+  it('run-rate estimate + anomaly checks off', () => {
+    expect(costComponentCaption({ costSource: 'estimated', reason: ESTIMATED_REASON })).toBe('Monthly run-rate estimate · anomaly checks not yet active')
   })
 
   it('actual spend is labeled as Cost Explorer-based, never as an estimate', () => {
