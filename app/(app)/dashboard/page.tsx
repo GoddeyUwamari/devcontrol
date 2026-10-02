@@ -32,6 +32,7 @@ import { computeSecurityEvidence, computeSecurityHealthKpi, resourceComplianceLi
 import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 import { EvidenceSection } from '@/components/dashboard/evidence-info'
 import { PostureEvidence } from '@/components/dashboard/posture-evidence'
+import { ResourceChecksSection } from '@/components/dashboard/resource-checks-section'
 import { toneFillClass } from '@/components/dashboard/evidence-badge'
 import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
@@ -692,6 +693,16 @@ export default function DashboardPage() {
             statusBadge={SECURITY_STATUS_BADGE}
             captions={postureTileCaptions}
             compositeState={systemIntelligence?.composite_state ?? null}
+          />
+
+          {/* ── RESOURCE CHECKS ── */}
+          {/* Canonical /api/cloudwatch/metrics results, requested only once scrolled into view.
+              Watched only after everything above has loaded: their loading skeletons are
+              shorter, and would otherwise pull this section into view on page load. */}
+          <ResourceChecksSection
+            isDemoActive={isDemoActive}
+            organizationId={organization?.id}
+            aboveLoaded={!costSummaryLoading && !securityFindingsLoading && !systemIntelligenceLoading && !aiSummaryLoading}
           />
 
           {/* ── AWS COST TRENDS + SECURITY KEY FINDINGS ── */}

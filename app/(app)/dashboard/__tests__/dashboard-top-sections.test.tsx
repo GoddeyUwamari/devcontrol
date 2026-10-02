@@ -9,7 +9,7 @@
  * it is not the customer's AWS. All figures are fixtures, not production data.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '../page'
 import type { CostSummary } from '@/lib/types'
@@ -137,6 +137,7 @@ describe('1. section order', () => {
     expect(riskRow.className).toContain('lg:grid-cols-2')
 
     const section = screen.getByTestId('posture-section')
+    const resourceChecks = screen.getByTestId('resource-checks-section')
     const rest = [
       (await screen.findAllByText('AWS Cost Trends'))[0],
       screen.getByRole('heading', { name: 'Security Key Findings' }),
@@ -144,19 +145,67 @@ describe('1. section order', () => {
       screen.getAllByText(/Engineering Health/)[0],
       screen.getAllByText(/Recent Activity/)[0],
     ]
-    const order = [kpiRow, riskRow, section, ...rest]
+    const order = [kpiRow, riskRow, section, resourceChecks, ...rest]
     for (let i = 1; i < order.length; i++) expect(precedes(order[i - 1], order[i])).toBe(true)
     expect(screen.queryByText('Infrastructure Intelligence')).not.toBeInTheDocument()
   })
 })
 
-describe('2. no Resource Checks card and no reference demo content', () => {
+describe('2. Resource checks section, and no reference demo content', () => {
+  it('renders the Resource checks section directly after Infrastructure Posture and before AWS Cost Trends', async () => {
+    renderDashboard()
+    await settled()
+    const posture = screen.getByTestId('posture-section')
+    const resourceChecks = screen.getByTestId('resource-checks-section')
+    const costTrends = (await screen.findAllByText('AWS Cost Trends'))[0]
+    expect(posture.nextElementSibling).toBe(resourceChecks)
+    expect(precedes(resourceChecks, costTrends)).toBe(true)
+    expect(resourceChecks.className).toBe(posture.className)
+  })
+
+  it('requests resource checks only once the section is scrolled into view, once, at the monitoring range', async () => {
+    const observers: Array<() => void> = []
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(private cb: IntersectionObserverCallback) { observers.push(() => this.cb([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver)) }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() { return [] }
+    })
+    renderDashboard()
+    await settled()
+    await waitFor(() => expect(screen.getByTestId('top-risk-card').textContent).toContain('Root account has no MFA'))
+    const metricsCalls = () => (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/api/cloudwatch/metrics'))
+    expect(metricsCalls()).toHaveLength(0)
+    expect(within(screen.getByTestId('resource-checks-summary')).getByText('Loading…')).toBeInTheDocument()
+    act(() => observers.forEach((enter) => enter()))
+    await waitFor(() => expect(metricsCalls()).toHaveLength(1))
+    const url = new URL(metricsCalls()[0])
+    expect(url.searchParams.get('range')).toBe('1h')
+    expect(url.searchParams.has('refresh')).toBe(false)
+  })
+
+  it('does not watch for the section while the sections above it are still loading', async () => {
+    let observed = 0
+    vi.stubGlobal('IntersectionObserver', class {
+      observe() { observed += 1 }
+      unobserve() {}
+      disconnect() {}
+      takeRecords() { return [] }
+    })
+    intelligenceSpy.mockReturnValue(new Promise(() => {}))
+    renderDashboard()
+    await waitFor(() => expect(screen.getByTestId('resource-checks-section')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('top-risk-card').textContent).toContain('Root account has no MFA'))
+    expect(observed).toBe(0)
+  })
+
   it('renders none of the mock\'s values, labels, or links', async () => {
     renderDashboard()
     await settled()
     const text = document.body.textContent ?? ''
     for (const banned of [
-      'Resource Checks', '$11,648', '12%', 'Platform Health Index', 'Security Posture Index', 'Critical Risk Alert',
+      'Resource Checks', 'What this measures', 'Component details', 'All monitored resources are healthy', 'within expected ranges', '3 / 3', '$11,648', '12%', 'Platform Health Index', 'Security Posture Index', 'Critical Risk Alert',
       'All API & database services live', 'Security scan status and computation may be delayed',
       'View full evidence & methodology', 'Data Source & Evidence', 'Health Component Breakdown',
       'FinOps Efficiency', 'Alert & Telemetry Coverage', 'Healthy',

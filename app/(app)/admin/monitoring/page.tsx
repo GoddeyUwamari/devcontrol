@@ -15,36 +15,17 @@ import { ErrorBoundary } from '@/components/error-boundary'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { alertHistoryService } from '@/lib/services/alert-history.service'
+import { checkCountsFrom, mapServiceRow, requestCloudWatchMetrics, RESOURCE_CHECKS_DEFAULT_RANGE, type HealthSummary, type PaginationMeta, type ServiceHealth, type SystemStatus } from '@/lib/resource-checks'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
 
-interface ServiceMetric {
-  label: string
-  value: number
-  unit?: string
-}
-
-interface ServiceHealth {
-  name: string; description?: string; status: 'healthy' | 'degraded' | 'critical' | 'down' | 'unknown'
-  uptime: string; responseTime: string; errorRate: number | null; critical?: boolean
-  recentIncidents?: number; uptimeHistory?: number[]; monitored?: boolean
-  // Phase B additions, passed through from the backend response below.
-  resourceType?: string; metrics?: ServiceMetric[]
-}
 interface MonitoringError { type: MonitoringErrorType; message: string; action?: string }
 // Service Health Coverage Expansion: adds ebs/cloudfront, and fixes a pre-existing drift
 // where this type never included lambda or ecs even though both have always been
 // evaluated by the backend (see cloudwatch.service.ts's coverage object) — coverageLabel
 // below silently omitted them from the summary string as a result.
 interface CloudWatchCoverage { ec2: boolean; loadBalancer: boolean; rds: boolean; lambda: boolean; dynamodb: boolean; ecs: boolean; eks: boolean; ebs: boolean; cloudfront: boolean; aurora: boolean }
-
-// CloudWatch Scalability Phase 2D: complete-fleet aggregate health, computed server-side
-// from every evaluated resource (see cloudwatch.service.ts's computeMetrics()) -- never
-// derived client-side from `services` anymore, since that's now only a bounded page.
-interface HealthSummary { total: number; healthy: number; degraded: number; critical: number; down: number; monitored: number }
-type SystemStatus = 'healthy' | 'degraded' | 'critical' | 'down'
-interface PaginationMeta { shown: number; total: number; hasMore: boolean; cursor: string | null }
 
 // Shared styling for the non-healthy system-status banner — centralized here instead of
 // repeating the same 3-way ternary in multiple render spots, and so adding a future
@@ -63,23 +44,8 @@ function systemStatusBannerStyle(status: 'degraded' | 'critical' | 'down') {
   }
 }
 
-// Resource check counts among resources reporting telemetry, from the
-// server's healthSummary as-is. Each type runs its own check (status checks
-// for EC2/EBS, thresholds for ALB/Lambda/Aurora...), so a mixed fleet is
-// reported as "N of M with no issues detected" -- never as a health
-// percentage. A resource whose check produced no result ('unknown') is
-// counted as undetermined, never as passing.
-interface CheckCounts { reporting: number; noIssues: number; withIssues: number; undetermined: number; discovered: number }
-function checkCountsFrom(summary: HealthSummary): CheckCounts {
-  const withIssues = summary.degraded + summary.critical + summary.down
-  return {
-    reporting: summary.monitored,
-    noIssues: summary.healthy,
-    withIssues,
-    undetermined: Math.max(0, summary.monitored - summary.healthy - withIssues),
-    discovered: summary.total,
-  }
-}
+// Resource check counts (checkCountsFrom) come from lib/resource-checks, shared with the Dashboard.
+type CheckCounts = ReturnType<typeof checkCountsFrom>
 
 // Health-summary status-dot color, keyed off the same systemStatus the banner uses —
 // separate from systemStatusBannerStyle because the summary line needs a 'healthy' case
@@ -132,8 +98,7 @@ export default function MonitoringPage() {
   const [metricsAvailable, setMetricsAvailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<MonitoringError | null>(null)
-  const [timeRange, setTimeRange] = useState('1h')
-  const [lastSynced, setLastSynced] = useState<Date>(new Date())
+  const [timeRange, setTimeRange] = useState(RESOURCE_CHECKS_DEFAULT_RANGE)
   const [uptime, setUptime] = useState<string>('--')
   const [responseTime, setResponseTime] = useState<number>(0)
   const [responseTimeString, setResponseTimeString] = useState<string>('--')
@@ -177,6 +142,12 @@ export default function MonitoringPage() {
   const [loadingMore, setLoadingMore] = useState(false)
 
   const checkCounts = useMemo(() => (healthSummary ? checkCountsFrom(healthSummary) : null), [healthSummary])
+  // When the backend finished the checks it returned (capturedAt survives its 45s cache),
+  // never when this page received them. Omitted when absent or unparseable.
+  const lastChecked = useMemo(() => {
+    const at = cloudWatchMetrics?.capturedAt ? new Date(cloudWatchMetrics.capturedAt) : null
+    return at && !isNaN(at.getTime()) ? at : null
+  }, [cloudWatchMetrics])
 
   const generateDemoMetrics = useCallback(() => {
     setError(null)
@@ -240,18 +211,9 @@ export default function MonitoringPage() {
   // handleRefresh()/refreshAwsHealth(true) (manual refresh, error-state Retry), never
   // from the automatic 60s poll, which should keep benefiting from the response cache.
   const fetchCloudWatchMetrics = useCallback(async (range?: string, forceRefresh?: boolean) => {
-    try {
-      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
-      const params = new URLSearchParams()
-      if (range) params.set('range', range)
-      if (forceRefresh) params.set('refresh', 'true')
-      const query = params.toString()
-      const url = `${API_URL}/api/cloudwatch/metrics${query ? `?${query}` : ''}`
-      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
-      const data = await res.json()
-      if (data.success && data.data) { setCloudWatchMetrics(data.data); return data.data }
-      return null
-    } catch { return null }
+    const result = await requestCloudWatchMetrics({ range, forceRefresh })
+    if (result.kind === 'ok') { setCloudWatchMetrics(result.data); return result.data }
+    return null
   }, [])
 
   // Monitoring Truthfulness Phase 1: DevControl's own platform status, sourced from
@@ -337,25 +299,6 @@ export default function MonitoringPage() {
     try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/prometheus/diagnose`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success) setDiagnosticResult(data.data) } catch {} finally { setIsDiagnosing(false) }
   }, [])
 
-  // CloudWatch Scalability Phase 2D: shared mapper so the first page (fetchMetrics,
-  // below) and subsequent pages (loadMoreServices) map a raw API service row to the
-  // display shape identically, rather than duplicating this logic.
-  const mapServiceRow = (s: any): ServiceHealth => ({
-    name: s.name,
-    description: s.description,
-    status: s.status,
-    uptime: s.uptime !== null && s.uptime !== undefined ? `${s.uptime}%` : 'N/A',
-    responseTime: s.responseTimeMs !== null && s.responseTimeMs !== undefined ? `${s.responseTimeMs}ms` : 'N/A',
-    errorRate: s.errorRate ?? null,
-    critical: s.critical,
-    monitored: s.monitored,
-    // Phase B: pass through resourceType and metrics — previously dropped here even
-    // though the backend already returned resourceType, which is why filter tabs and
-    // per-resource metrics couldn't be built without this fix.
-    resourceType: s.resourceType,
-    metrics: Array.isArray(s.metrics) ? s.metrics : undefined,
-  })
-
   const fetchMetrics = useCallback(async (cwData?: any, connectedOverride?: boolean) => {
     const cw = cwData ?? cloudWatchMetrics
     if (cw && !demoMode) {
@@ -385,7 +328,7 @@ export default function MonitoringPage() {
       setPagination(data.pagination ?? null)
       setServices((data.services ?? []).map(mapServiceRow))
 
-      setMetricsAvailable(true); setError(null); setLoading(false); setLastSynced(new Date())
+      setMetricsAvailable(true); setError(null); setLoading(false)
       fetchAlerts()
       return
     }
@@ -459,17 +402,12 @@ export default function MonitoringPage() {
     if (!pagination?.hasMore || !pagination.cursor || loadingMore) return
     setLoadingMore(true)
     try {
-      const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
-      const params = new URLSearchParams()
-      if (timeRange) params.set('range', timeRange)
-      params.set('cursor', pagination.cursor)
-      const res = await fetch(`${API_URL}/api/cloudwatch/metrics?${params.toString()}`, { headers: { 'Authorization': `Bearer ${token}` } })
-      const data = await res.json()
-      if (data.success && data.data) {
-        setServices(prev => [...prev, ...((data.data.services ?? []).map(mapServiceRow))])
-        setPagination(data.data.pagination ?? null)
-        if (data.data.healthSummary) setHealthSummary(data.data.healthSummary)
-        if (data.data.systemStatus) setSystemStatus(data.data.systemStatus)
+      const result = await requestCloudWatchMetrics({ range: timeRange, cursor: pagination.cursor })
+      if (result.kind === 'ok') {
+        setServices(prev => [...prev, ...((result.data.services ?? []).map(mapServiceRow))])
+        setPagination(result.data.pagination ?? null)
+        if (result.data.healthSummary) setHealthSummary(result.data.healthSummary)
+        if (result.data.systemStatus) setSystemStatus(result.data.systemStatus)
       }
     } catch (err) {
       console.error('Error loading more resources:', err)
@@ -528,7 +466,7 @@ export default function MonitoringPage() {
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium bg-green-50 border border-green-200 rounded-full px-3 py-1 text-green-600">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" /> CloudWatch connected
               </span>
-              <span className="text-[11px] text-slate-400">· Last synced {lastSynced.toLocaleTimeString()}</span>
+              {lastChecked && <span className="text-[11px] text-slate-400">· Last checked {lastChecked.toLocaleTimeString()}</span>}
             </div>
           )}
           {/* Phase A: health-summary line, immediately visible below the header — surfaces
@@ -664,7 +602,7 @@ export default function MonitoringPage() {
               <div className={`rounded-xl border px-5 py-3 mb-6 flex flex-wrap items-center gap-2 ${style.bg}`}>
                 <div className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
                 <span className={`text-sm font-semibold ${style.text}`}>{style.label} · {alerts.length} active alert{alerts.length !== 1 ? 's' : ''}</span>
-                <span className={`text-xs ${style.subtext}`}>· Last synced {lastSynced.toLocaleTimeString()}</span>
+                {lastChecked && <span className={`text-xs ${style.subtext}`}>· Last checked {lastChecked.toLocaleTimeString()}</span>}
               </div>
             )
           })()}

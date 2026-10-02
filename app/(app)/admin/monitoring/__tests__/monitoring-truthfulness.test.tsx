@@ -546,3 +546,40 @@ describe('Monitoring page — Active Alerts only counts alerts it can actually s
     expect(screen.getByText('1 critical • 0 warnings')).toBeInTheDocument()
   })
 })
+
+describe('Monitoring page — "Last checked" is when the checks ran, not when the page loaded', () => {
+  beforeEach(() => {
+    mockUseDemoMode.mockReturnValue(false)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const capturedAt = '2026-01-15T03:04:05.000Z'
+  const expected = `Last checked ${new Date(capturedAt).toLocaleTimeString()}`
+
+  it('header and status banner show capturedAt', async () => {
+    installFetchMock({
+      connected: true,
+      metrics: cloudWatchMetricsFixture({
+        capturedAt,
+        systemStatus: 'degraded',
+        healthSummary: { total: 1, healthy: 0, degraded: 1, critical: 0, down: 0, monitored: 1 },
+        services: [ec2ServiceRow({ status: 'degraded', uptime: 98 })],
+      }),
+    })
+    render(<MonitoringPage />)
+
+    await waitFor(() => expect(screen.getAllByText(new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))).toHaveLength(2))
+    expect(document.body.textContent).not.toContain('Last synced')
+  })
+
+  it('omits "Last checked" when the response has no capturedAt', async () => {
+    installFetchMock({ connected: true, metrics: cloudWatchMetricsFixture({ capturedAt: undefined }) })
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText('i-123')).toBeInTheDocument()
+    expect(screen.getByText('CloudWatch connected')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Last checked|Last synced/)
+  })
+})

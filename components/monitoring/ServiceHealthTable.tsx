@@ -55,6 +55,11 @@ const RESOURCE_TYPE_TABS: { key: string; label: string }[] = [
   { key: 'aurora', label: 'Aurora' },
 ]
 
+/** Display label for a resourceType from the response; an unlisted type shows as-is. */
+export function resourceTypeLabel(type: string): string {
+  return RESOURCE_TYPE_TABS.find((t) => t.key === type)?.label ?? type
+}
+
 // What a row's existing status means for its resource type, in terms of the
 // check that produced it (cloudwatch.service.ts's per-type rules). Display only
 // -- statuses are never re-derived here. EC2 uses AWS status checks when
