@@ -18,7 +18,7 @@ const pool = {} as Pool; // AIChatService's constructor stores it but never quer
 const NO_COMPARISON: ChatContext['costs']['comparison'] = {
   state: 'unavailable', note: null, currentWindow: null, previousWindow: null,
   currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null,
-  currentWindowIncludesToday: false, asOf: null, basis: COMPARISON_BASIS,
+  currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
 };
 
 /** A section in a given state -- data only when available/partial, as the repository builds them. */
@@ -78,7 +78,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
         currentWindow: { start: '2026-09-01', end: '2026-09-06' }, previousWindow: { start: '2026-08-01', end: '2026-08-06' },
         currentWindowTotal: 1000, previousWindowTotal: 900, changeAmount: 100, changePercent: 11.1,
         coverage: { currentDays: 6, previousDays: 6, expectedCurrentDays: 6, expectedPreviousDays: 6 },
-        currentWindowIncludesToday: true, asOf: '2026-09-06T10:00:00.000Z', basis: COMPARISON_BASIS,
+        currentWindowIncludesToday: true, finishedThrough: null, asOf: '2026-09-06T10:00:00.000Z', basis: COMPARISON_BASIS,
       },
     },
     inventoryScope: INVENTORY_SCOPE,

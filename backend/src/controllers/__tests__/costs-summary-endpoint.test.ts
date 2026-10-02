@@ -60,15 +60,20 @@ function isoDate(year: number, monthIndex: number, day: number): string {
   return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/** Daily trend fixture: every day of this month so far at `current`, the same days of last month at `previous`. */
+/**
+ * Daily trend fixture (UTC, like the comparison): every day of this month so
+ * far at `current` -- including today and yesterday, which the comparison
+ * leaves out as still being reported -- and every day of last month at
+ * `previous` (or its first `previousDays`).
+ */
 function dailyTrend(current: number, previous: number, previousDays?: number): CostTrendPoint[] {
   const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth(), today = now.getDate();
+  const y = now.getUTCFullYear(), m = now.getUTCMonth(), today = now.getUTCDate();
   const lastM = m === 0 ? 11 : m - 1, lastY = m === 0 ? y - 1 : y;
-  const daysInLast = new Date(y, m, 0).getDate();
+  const daysInLast = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const point = (date: string, total: number): CostTrendPoint => ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total });
   const points: CostTrendPoint[] = [];
-  for (let d = 1; d <= (previousDays ?? Math.min(today, daysInLast)); d++) points.push(point(isoDate(lastY, lastM, d), previous));
+  for (let d = 1; d <= (previousDays ?? daysInLast); d++) points.push(point(isoDate(lastY, lastM, d), previous));
   for (let d = 1; d <= today; d++) points.push(point(isoDate(y, m, d), current));
   return points;
 }
@@ -83,7 +88,17 @@ async function summary(pool: Pool = fixturePool()) {
   return body.data;
 }
 
+/** Pins Date (only) to a UTC instant; the default is mid-month, so a comparison exists. */
+function setClock(iso: string) {
+  jest.setSystemTime(new Date(iso));
+}
+beforeAll(() => {
+  jest.useFakeTimers({ now: new Date('2026-10-15T12:00:00.000Z'), doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask', 'hrtime', 'performance'] });
+});
+afterAll(() => jest.useRealTimers());
+
 beforeEach(() => {
+  setClock('2026-10-15T12:00:00.000Z');
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
   jest.spyOn(console, 'log').mockImplementation(() => undefined);
   jest.spyOn(awsCostService, 'getCostTrendFetchedAt').mockReturnValue(FETCHED_AT);
@@ -230,6 +245,114 @@ describe('GET /api/platform/costs/summary -- month-over-month is a real change o
     expect(spend.provenance).toBe('actual');
     expect(monthOverMonth.state).toBe('error');
     expect(monthOverMonth.data).toBeNull();
+  });
+});
+
+describe('GET /api/platform/costs/summary -- the comparison uses finished days only (UTC)', () => {
+  /** A trend where every day is $1 except the provisional days (today, yesterday), which are $100 -- so any leak shows. */
+  function trendWithProvisionalSpike(): CostTrendPoint[] {
+    const now = new Date();
+    const provisional = new Set([0, 1].map((back) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - back)).toISOString().slice(0, 10)));
+    return dailyTrend(1, 1).map((p) => (provisional.has(p.date) ? { ...p, compute: 100, total: 100 } : p));
+  }
+
+  it.each([
+    ['Oct 1', '2026-10-01T12:00:00.000Z', '2026-09-29'],
+    ['Oct 2', '2026-10-02T12:00:00.000Z', '2026-09-30'],
+  ])('%s: no comparison, no percentage -- no day of this month has finished reporting', async (_label, now, finishedThrough) => {
+    setClock(now);
+    mockMonthlyCost(0.19);
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(trendWithProvisionalSpike());
+
+    const { spend, monthOverMonth } = await summary();
+
+    expect(monthOverMonth.state).toBe('unavailable');
+    expect(monthOverMonth.data).toBeNull();
+    expect(JSON.stringify(monthOverMonth)).not.toMatch(/changePercent|%/);
+    expect(spend.data.amount).toBe(0.19);
+    expect(spend.data.finishedThrough).toBe(finishedThrough);
+  });
+
+  it('Oct 3: Oct 1 vs Sep 1 only', async () => {
+    setClock('2026-10-03T12:00:00.000Z');
+    mockMonthlyCost(0.5);
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(trendWithProvisionalSpike());
+
+    const { spend, monthOverMonth } = await summary();
+
+    expect(monthOverMonth.data.currentWindow).toEqual({ start: '2026-10-01', end: '2026-10-01' });
+    expect(monthOverMonth.data.previousWindow).toEqual({ start: '2026-09-01', end: '2026-09-01' });
+    expect(monthOverMonth.data.currentWindowTotal).toBe(1);
+    expect(monthOverMonth.data.previousWindowTotal).toBe(1);
+    expect(monthOverMonth.data.changePercent).toBe(0);
+    expect(monthOverMonth.data.currentWindowIncludesToday).toBe(false);
+    expect(spend.data.finishedThrough).toBe('2026-10-01');
+  });
+
+  it('Oct 15: Oct 1-13 vs Sep 1-13; the Spend amount is still the full month-to-date actual', async () => {
+    mockMonthlyCost(42.37);
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(trendWithProvisionalSpike());
+
+    const { spend, monthOverMonth } = await summary();
+
+    expect(monthOverMonth.data.currentWindow).toEqual({ start: '2026-10-01', end: '2026-10-13' });
+    expect(monthOverMonth.data.previousWindow).toEqual({ start: '2026-09-01', end: '2026-09-13' });
+    expect(monthOverMonth.data.currentWindowTotal).toBe(13);
+    expect(monthOverMonth.data.previousWindowTotal).toBe(13);
+    expect(spend.provenance).toBe('actual');
+    expect(spend.data.amount).toBe(42.37);
+    expect(spend.data.finishedThrough).toBe('2026-10-13');
+  });
+
+  it('Mar 31: Mar 1-29 vs Feb 1-28 -- the previous window is capped at February\'s last day', async () => {
+    setClock('2027-03-31T12:00:00.000Z');
+    mockMonthlyCost(10);
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(dailyTrend(1, 1));
+
+    const { monthOverMonth } = await summary();
+
+    expect(monthOverMonth.data.currentWindow).toEqual({ start: '2027-03-01', end: '2027-03-29' });
+    expect(monthOverMonth.data.previousWindow).toEqual({ start: '2027-02-01', end: '2027-02-28' });
+    expect(monthOverMonth.data.currentWindowTotal).toBe(29);
+    expect(monthOverMonth.data.previousWindowTotal).toBe(28);
+  });
+
+  it('Mar 30: Mar 1-28 vs Feb 1-28 -- not capped', async () => {
+    setClock('2027-03-30T12:00:00.000Z');
+    mockMonthlyCost(10);
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(dailyTrend(1, 1));
+
+    const { monthOverMonth } = await summary();
+
+    expect(monthOverMonth.data.currentWindow).toEqual({ start: '2027-03-01', end: '2027-03-28' });
+    expect(monthOverMonth.data.previousWindow).toEqual({ start: '2027-02-01', end: '2027-02-28' });
+  });
+
+  it('uses the UTC date, not the server\'s local date: Oct 3 01:00 UTC is still Oct 2 in New York, and compares Oct 1 vs Sep 1', async () => {
+    const originalTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      setClock('2026-10-03T01:00:00.000Z');
+      expect(new Date().getDate()).toBe(2); // local evening of the previous day
+      mockMonthlyCost(0.5);
+      jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(dailyTrend(1, 1));
+
+      const { spend, monthOverMonth } = await summary();
+
+      expect(monthOverMonth.data.currentWindow).toEqual({ start: '2026-10-01', end: '2026-10-01' });
+      expect(monthOverMonth.data.previousWindow).toEqual({ start: '2026-09-01', end: '2026-09-01' });
+      expect(spend.data.finishedThrough).toBe('2026-10-01');
+    } finally {
+      process.env.TZ = originalTz;
+    }
+  });
+
+  it('an inventory estimate has no finishedThrough', async () => {
+    jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AWS_NOT_CONNECTED'));
+    const { spend } = await summary(fixturePool({ total: '25.00', estimated: '3', resources: '3' }));
+
+    expect(spend.provenance).toBe('estimated');
+    expect(spend.data.finishedThrough).toBeNull();
   });
 });
 

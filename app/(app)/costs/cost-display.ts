@@ -68,12 +68,49 @@ export function describeSpend(section: ContextSection<CostSpendEvidence> | undef
 }
 
 /**
- * What the month-over-month figure compares. It is fixed: month to date vs
- * the same days of last month (the backend's comparison over a 90-day Cost
- * Explorer trend) -- it does not follow the Costs page's 7D/30D/3M/6M/1Y
- * chart range.
+ * What the month-over-month figure compares. It is fixed: this month's
+ * finished days vs the same days of last month (the backend's comparison over
+ * a 90-day Cost Explorer trend; the latest days, which Cost Explorer is still
+ * reporting, are left out) -- it does not follow the Costs page's
+ * 7D/30D/3M/6M/1Y chart range.
  */
-export const MOM_BASIS_LABEL = 'Month to date vs same days last month · not the selected range'
+export const MOM_BASIS_LABEL = 'Finished days this month vs same days last month · not the selected range'
+
+/** No day of this month has finished reporting in AWS Cost Explorer yet. */
+export const LATEST_DAYS_REPORTING = 'latest days still being reported'
+
+/**
+ * Billed spend whose finished-through day is still in the previous month: no
+ * day of this month has finished reporting, so there is nothing to compare.
+ */
+export function noFinishedDayThisMonth(section: ContextSection<CostSpendEvidence> | undefined): boolean {
+  const finishedThrough = section?.data?.finishedThrough
+  const period = section?.period
+  return section?.provenance === 'actual' && typeof finishedThrough === 'string' && period?.kind === 'range' && finishedThrough < period.start
+}
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "Oct 1–13" for an inclusive YYYY-MM-DD window within one month; "Oct 1" for a single day. */
+function formatDayWindow(window: { start: string; end: string }): string {
+  const [, m, startDay] = window.start.split('-').map(Number)
+  const endDay = Number(window.end.split('-')[2])
+  return startDay === endDay ? `${MONTH_ABBR[m - 1]} ${startDay}` : `${MONTH_ABBR[m - 1]} ${startDay}–${endDay}`
+}
+
+/**
+ * "Oct 1–13 vs Sep 1–13" from the comparison's own windows. When the previous
+ * month is shorter than the current window, its window stops at that month's
+ * last day, and this says so.
+ */
+export function describeComparisonWindows(data: Pick<CostMonthOverMonthEvidence, 'currentWindow' | 'previousWindow'>): string {
+  const text = `${formatDayWindow(data.currentWindow)} vs ${formatDayWindow(data.previousWindow)}`
+  const currentDays = Number(data.currentWindow.end.split('-')[2])
+  const previousDays = Number(data.previousWindow.end.split('-')[2])
+  if (previousDays >= currentDays) return text
+  const previousMonth = MONTH_ABBR[Number(data.previousWindow.start.split('-')[1]) - 1]
+  return `${text} (${previousMonth} has only ${previousDays} days)`
+}
 
 /** Reuses the month-to-date spend disclosure wording (describeSpend). */
 export const TODAY_STILL_BILLING = "today's spend still being billed"
@@ -89,18 +126,23 @@ export interface MonthOverMonthDisplay {
 }
 
 /**
- * The month-over-month KPI. Always month to date vs the same days last month
- * (see MOM_BASIS_LABEL), independent of the selected chart range.
+ * The month-over-month KPI. Always this month's finished days vs the same days
+ * last month (see MOM_BASIS_LABEL), independent of the selected chart range.
+ * `noFinishedDay` (from the spend section, noFinishedDayThisMonth) says why a
+ * comparison is missing early in the month.
  */
 export function describeMonthOverMonth(
   section: ContextSection<CostMonthOverMonthEvidence> | undefined,
-  { isLoading, isError }: QueryStatus
+  { isLoading, isError }: QueryStatus,
+  { noFinishedDay = false }: { noFinishedDay?: boolean } = {}
 ): MonthOverMonthDisplay {
   const missing = (sub: string): MonthOverMonthDisplay => ({ value: '—', sub, changePercent: null, direction: null, includesToday: false })
   if (isLoading) return missing('Loading…')
   if (isError || !section || section.state === 'error') return missing('Comparison could not be retrieved')
   if ((section.state !== 'available' && section.state !== 'partial') || !section.data) {
-    return missing('Comparison not available · not enough comparable AWS Cost Explorer data')
+    return missing(noFinishedDay
+      ? `No comparison yet · ${LATEST_DAYS_REPORTING}`
+      : 'Comparison not available · not enough comparable AWS Cost Explorer data')
   }
 
   const { changePercent, changeAmount, previousWindowTotal, currentWindowIncludesToday } = section.data

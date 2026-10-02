@@ -22,7 +22,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
 import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/lib/types'
 import { formatSavingsCurrency } from '@/lib/utils'
-import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, roundCents, TODAY_STILL_BILLING } from './cost-display'
+import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, roundCents, TODAY_STILL_BILLING } from './cost-display'
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -231,7 +231,7 @@ export default function CostsPage() {
   // independent of the chart range: selectedRange changes only the Spend Trend data.
   const mom = isDemoActive
     ? { value: `+${DEMO_GROWTH_RATE}%`, sub: 'Spend trending up vs last month', changePercent: DEMO_GROWTH_RATE, direction: 'up' as const, includesToday: false }
-    : describeMonthOverMonth(costSummary?.monthOverMonth, { isLoading: costSummaryLoading, isError: costSummaryError })
+    : describeMonthOverMonth(costSummary?.monthOverMonth, { isLoading: costSummaryLoading, isError: costSummaryError }, { noFinishedDay: noFinishedDayThisMonth(costSummary?.spend) })
   // Only a real percentage drives colors and the spike banner; a missing comparison is neither up nor down.
   const growthRate = mom.changePercent
 
@@ -457,7 +457,7 @@ export default function CostsPage() {
             <p className="text-xs text-amber-800 leading-relaxed mb-2.5">
               {isDemoActive
                 ? 'EC2 compute spending increased 35% in the last 24 hours. Possible cause: Lambda invocation spike on payment-processor triggering auto-scaling. Estimated impact: $864/month if sustained.'
-                : `Month-to-date spend is more than 20% above the same days last month (AWS Cost Explorer)${mom.includesToday ? `; ${TODAY_STILL_BILLING}` : ''}. Review your recent deployments and scaling events.`
+                : `Spend over this month's finished days is more than 20% above the same days last month (AWS Cost Explorer)${mom.includesToday ? `; ${TODAY_STILL_BILLING}` : ''}. Review your recent deployments and scaling events.`
               }
             </p>
             <div className="flex gap-2 flex-wrap">

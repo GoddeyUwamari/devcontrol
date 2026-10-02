@@ -528,6 +528,12 @@ export interface CostSpendEvidence {
   amount: number;
   basis: 'billed_month_to_date' | 'estimated_monthly_run_rate';
   lastDayInProgress: boolean;
+  /**
+   * Billed spend: the last UTC day AWS Cost Explorer has finished reporting
+   * (the month-over-month comparison never goes past it). null for estimates;
+   * absent from responses of a backend that predates it.
+   */
+  finishedThrough?: string | null;
 }
 
 /** MonthOverMonthEvidence in backend/src/services/cost-context-sections.ts. */

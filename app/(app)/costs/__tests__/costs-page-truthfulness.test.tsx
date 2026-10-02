@@ -345,14 +345,14 @@ describe('Costs page -- Ask AI chips', () => {
 })
 
 describe('Costs page -- month-over-month basis', () => {
-  it('the Spend Trend strip states the fixed MTD basis and the still-billing caveat for every chart range', async () => {
+  it('the Spend Trend strip states the fixed finished-days basis and the still-billing caveat for every chart range', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(14.2, 1.42) })
     renderPage()
 
     for (const range of ['7D', '30D', '3M', '6M', '1Y']) {
       fireEvent.click(await screen.findByRole('button', { name: range }))
       const basis = await screen.findByTestId('mom-basis')
-      expect(basis.textContent).toBe("Month to date vs same days last month · not the selected range · today's spend still being billed")
+      expect(basis.textContent).toBe("Finished days this month vs same days last month · not the selected range · today's spend still being billed")
     }
     // The comparison is fetched once, not per range.
     expect(mockGetCostSummary).toHaveBeenCalledTimes(1)
@@ -366,11 +366,25 @@ describe('Costs page -- month-over-month basis', () => {
     expect(await within(momCard).findByText("Spend flat vs the same days last month · today's spend still being billed")).toBeInTheDocument()
   })
 
+  it('early in the month (no day finished reporting yet), the KPI says so instead of "not enough data", with no percentage', async () => {
+    const oct2: CostSummary['spend'] = {
+      ...spendActual(0.19),
+      period: { kind: 'range', start: '2026-10-01', endExclusive: '2026-10-03' },
+      data: { amount: 0.19, basis: 'billed_month_to_date', lastDayInProgress: true, finishedThrough: '2026-09-30' },
+    }
+    mockGetCostSummary.mockResolvedValue({ spend: oct2, monthOverMonth: momMissing('unavailable') })
+    renderPage()
+
+    const momCard = await card('Month-over-Month Change')
+    expect(await within(momCard).findByText('No comparison yet · latest days still being reported')).toBeInTheDocument()
+    expect(momCard.textContent).not.toMatch(/\d%/)
+  })
+
   it('the strip still states its basis when no comparison exists', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: momMissing('unavailable') })
     renderPage()
 
-    expect((await screen.findByTestId('mom-basis')).textContent).toBe('Month to date vs same days last month · not the selected range')
+    expect((await screen.findByTestId('mom-basis')).textContent).toBe('Finished days this month vs same days last month · not the selected range')
   })
 })
 

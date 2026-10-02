@@ -175,7 +175,7 @@ describe('/infrastructure subtitle', () => {
 describe('/infrastructure Infrastructure Posture -- partial composite', () => {
   const OBS_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.'
   const REASON = `Alert Coverage: ${OBS_REASON}`
-  const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+  const COST_REASON = 'Insufficient spend data to assess cost efficiency. Anomaly checks not yet active.'
 
   it('a partial composite shows a visible "Partial" label with the backend composite reason, and marks only Alert Coverage partial', async () => {
     mockIntelligence(51, 'Degraded', { composite_state: 'partial', composite_reason: REASON, observabilityState: 'partial', observabilityReason: OBS_REASON })

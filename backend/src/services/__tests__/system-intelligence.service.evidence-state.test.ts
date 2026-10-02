@@ -5,7 +5,7 @@
  * also pins the numeric result next to the state it asserts.
  *
  * Cost and security run their real computers against a mocked pool, a mocked
- * getMonthlySpendWithFallback() and a mocked risk score; observability is
+ * getInventoryMonthlyRunRate() and a mocked risk score; observability is
  * stubbed. No AWS, database, or network.
  */
 const mockQuery = jest.fn();
@@ -23,18 +23,23 @@ import awsCostService from '../aws-cost.service';
 import { RiskTrackingService } from '../risk-tracking.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { ANOMALY_DETECTION_ACTIVE } from '../anomaly-detection.service';
-import type { ContextDataState, SpendProvenance } from '../ai-context-contract';
+import type { ContextDataState } from '../ai-context-contract';
 
 const ORG = '7c1e4a2b-9d3f-4b6a-8e5c-2f0d1a3b4c5d';
 const ANOMALY = 'Anomaly checks not yet active';
 const INSUFFICIENT = 'Insufficient spend data to assess cost efficiency';
-const ESTIMATE = 'Spend based on inventory estimate, not AWS Cost Explorer billing';
+const BASIS = 'Based on monthly run-rate estimate from resource inventory';
 const ALERT_REASON =
   'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.';
 // Wording that would claim a retrieval failure the cost path cannot observe.
 const FAILURE_CLAIMS = /Cost data unavailable|Cost Explorer failed|No billing data|AWS cost unavailable/i;
 
-function mockCostInputs(opts: { amount: number; source: SpendProvenance; scanRan?: boolean; savings?: number }) {
+/**
+ * Cost inputs: the inventory run-rate, the savings estimate, and whether a
+ * cost scan ran. anomaly_detections answers `anomalyRows` when read -- and
+ * every test with detection off asserts it is never read.
+ */
+function mockCostInputs(opts: { runRate: number; scanRan?: boolean; savings?: number; anomalyRows?: number }) {
   jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue({
     total_recommendations: 0, active_recommendations: 0, total_potential_savings: opts.savings ?? 0,
     potential_savings_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
@@ -43,12 +48,15 @@ function mockCostInputs(opts: { amount: number; source: SpendProvenance; scanRan
     if (sql.includes('resource_discovery_jobs')) {
       return opts.scanRan === false ? { rowCount: 0, rows: [] } : { rowCount: 1, rows: [{ '?column?': 1 }] };
     }
-    // No active cost anomaly rows -- the only state detection-off can produce.
-    if (sql.includes('anomaly_detections')) return { rowCount: 1, rows: [{ count: '0' }] };
+    if (sql.includes('anomaly_detections')) return { rowCount: 1, rows: [{ count: String(opts.anomalyRows ?? 0) }] };
     throw new Error(`unexpected query: ${sql}`);
   });
-  jest.spyOn(awsCostService, 'getMonthlySpendWithFallback').mockResolvedValue({ amount: opts.amount, source: opts.source });
+  const runRate = jest.spyOn(awsCostService, 'getInventoryMonthlyRunRate').mockResolvedValue(opts.runRate);
+  const monthToDate = jest.spyOn(awsCostService, 'getMonthlySpendWithFallback').mockResolvedValue({ amount: 0.19, source: 'actual' });
+  return { runRate, monthToDate };
 }
+
+const anomalyQueries = () => mockQuery.mock.calls.filter(([sql]) => String(sql).includes('anomaly_detections'))
 
 function cost(service: SystemIntelligenceService): Promise<ComponentScore> {
   return (service as any).computeCostScore(ORG);
@@ -65,49 +73,58 @@ describe('Cost component evidence state', () => {
     expect(ANOMALY_DETECTION_ACTIVE).toBe(false);
   });
 
-  it('anomaly detection disabled: actual non-zero spend is partial with "Anomaly checks not yet active", score unchanged', async () => {
-    mockCostInputs({ amount: 1000, source: 'actual' });
+  it('spend input is the inventory run-rate, never Cost Explorer month-to-date spend', async () => {
+    const { runRate, monthToDate } = mockCostInputs({ runRate: 25, savings: 0.96 });
     const result = await cost(new SystemIntelligenceService());
-    // 1000/(1000+0)*100*0.75 + 100*0.25 = 100 -- the anomaly term still counts.
+    expect(runRate).toHaveBeenCalledWith(ORG);
+    expect(monthToDate).not.toHaveBeenCalled();
+    expect(result.monthlySpend).toBe(25);
+    expect(result.costSource).toBe('estimated');
+    // 100 x 25 / (25 + 0.96) = 96.3 -> 96
+    expect(result.score).toBe(96);
+  });
+
+  it('anomaly detection disabled: the score is the efficiency ratio alone -- no 25-point anomaly credit, and anomaly rows are not read', async () => {
+    mockCostInputs({ runRate: 300, savings: 100, anomalyRows: 3 });
+    const result = await cost(new SystemIntelligenceService());
+    // 300/400 x 100 = 75 (the old formula gave 0.75 x 75 + 0.25 x 100 = 81)
+    expect(result.score).toBe(75);
+    expect(anomalyQueries()).toHaveLength(0);
+  });
+
+  it('a run-rate with no savings scores 100 from the ratio alone; partial with both required sentences', async () => {
+    mockCostInputs({ runRate: 1000 });
+    const result = await cost(new SystemIntelligenceService());
     expect(result.score).toBe(100);
     expect(result.ready).toBe(true);
-    expect(result.costSource).toBe('actual');
     expect(result.state).toBe('partial');
-    expect(result.reason).toBe(`${ANOMALY}.`);
+    expect(result.reason).toBe(`${BASIS}. ${ANOMALY}.`);
   });
 
-  it('spend <= 0: keeps the Cost=50 placeholder, partial (not unavailable/error), with every limitation and no failure claim', async () => {
-    // The only shape getMonthlySpendWithFallback() returns for a non-positive live total.
-    mockCostInputs({ amount: 0, source: 'estimated' });
+  it('no run-rate (no resources / sum <= 0): keeps the existing Cost=50 insufficient-data behavior, partial, no failure claim', async () => {
+    mockCostInputs({ runRate: 0, savings: 0.96 });
     const result = await cost(new SystemIntelligenceService());
     expect(result.score).toBe(50);
     expect(result.ready).toBe(true);
     expect(result.state).toBe('partial');
-    expect(result.reason).toBe(`${INSUFFICIENT}. ${ESTIMATE}. ${ANOMALY}.`);
-    expect(result.reason).not.toMatch(FAILURE_CLAIMS);
-  });
-
-  it('a $0 labeled actual is still partial, never unavailable/error, and both limitations survive', async () => {
-    mockCostInputs({ amount: 0, source: 'actual' });
-    const result = await cost(new SystemIntelligenceService());
-    expect(result.score).toBe(50);
-    expect(result.state).toBe('partial');
     expect(result.reason).toBe(`${INSUFFICIENT}. ${ANOMALY}.`);
+    expect(result.detail).toBe('Spend data unavailable — cost efficiency cannot be assessed');
     expect(result.reason).not.toMatch(FAILURE_CLAIMS);
   });
 
-  it('estimated non-zero spend: score from the estimate is kept, and the estimate limitation is visible', async () => {
-    mockCostInputs({ amount: 300, source: 'estimated', savings: 100 });
-    const result = await cost(new SystemIntelligenceService());
-    // 300/400*100*0.75 + 100*0.25 = 81.25 -> 81
-    expect(result.score).toBe(81);
-    expect(result.costSource).toBe('estimated');
-    expect(result.state).toBe('partial');
-    expect(result.reason).toBe(`${ESTIMATE}. ${ANOMALY}.`);
+  it('status thresholds are unchanged: 75 good, 74 warning, 55 warning, 54 risk', async () => {
+    const statusFor = async (runRate: number, savings: number) => {
+      mockCostInputs({ runRate, savings });
+      return (await cost(new SystemIntelligenceService())).status;
+    };
+    expect(await statusFor(75, 25)).toBe('good'); // 75
+    expect(await statusFor(74, 26)).toBe('warning'); // 74
+    expect(await statusFor(55, 45)).toBe('warning'); // 55
+    expect(await statusFor(54, 46)).toBe('risk'); // 54
   });
 
   it('no cost scan yet: unavailable and not ready (unchanged readiness), not partial', async () => {
-    mockCostInputs({ amount: 1000, source: 'actual', scanRan: false });
+    mockCostInputs({ runRate: 1000, scanRan: false });
     const result = await cost(new SystemIntelligenceService());
     expect(result.ready).toBe(false);
     expect(result.state).toBe('unavailable');
@@ -121,7 +138,7 @@ describe('Cost component evidence state', () => {
     expect(result.reason).not.toContain(ANOMALY);
   });
 
-  it('the partial state comes from the declaration, not the anomaly row count: with detection active and actual spend, cost is available', async () => {
+  it('with detection active, the existing 0.75/0.25 formula and anomaly rows apply, and the state is available', async () => {
     let Service!: typeof SystemIntelligenceService;
     let costService!: typeof awsCostService;
     let Repo!: typeof CostRecommendationsRepository;
@@ -134,18 +151,24 @@ describe('Cost component evidence state', () => {
       costService = (await import('../aws-cost.service')).default;
       Repo = (await import('../../repositories/cost-recommendations.repository')).CostRecommendationsRepository;
     });
-    jest.spyOn(Repo.prototype, 'getStats').mockResolvedValue({
-      total_recommendations: 0, active_recommendations: 0, total_potential_savings: 0,
-      potential_savings_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
-    });
-    mockQuery.mockImplementation(async (sql: string) =>
-      sql.includes('resource_discovery_jobs') ? { rowCount: 1, rows: [{}] } : { rowCount: 1, rows: [{ count: '0' }] });
-    jest.spyOn(costService, 'getMonthlySpendWithFallback').mockResolvedValue({ amount: 1000, source: 'actual' });
+    const scoreWith = async (anomalyRows: number) => {
+      jest.spyOn(Repo.prototype, 'getStats').mockResolvedValue({
+        total_recommendations: 0, active_recommendations: 0, total_potential_savings: 100,
+        potential_savings_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
+      });
+      mockQuery.mockImplementation(async (sql: string) =>
+        sql.includes('resource_discovery_jobs') ? { rowCount: 1, rows: [{}] } : { rowCount: 1, rows: [{ count: String(anomalyRows) }] });
+      jest.spyOn(costService, 'getInventoryMonthlyRunRate').mockResolvedValue(300);
+      return (new Service() as any).computeCostScore(ORG) as Promise<ComponentScore>;
+    };
 
-    const result: ComponentScore = await (new Service() as any).computeCostScore(ORG);
-    expect(result.score).toBe(100);
-    expect(result.state).toBe('available');
-    expect(result.reason).toBeNull();
+    const clean = await scoreWith(0);
+    // 300/400 x 100 x 0.75 + 100 x 0.25 = 81.25 -> 81
+    expect(clean.score).toBe(81);
+    expect(clean.state).toBe('available');
+    expect(clean.reason).toBeNull();
+    // 2 active cost anomalies: 0.75 x 75 + 0.25 x 60 = 71.25 -> 71
+    expect((await scoreWith(2)).score).toBe(71);
   });
 });
 
@@ -182,7 +205,7 @@ describe('Composite evidence state', () => {
     jest.spyOn(service as any, 'computeObservabilityScore').mockResolvedValue(o);
     return service.getSystemIntelligence(ORG);
   }
-  const COST_REASON = `${INSUFFICIENT}. ${ESTIMATE}. ${ANOMALY}.`;
+  const COST_REASON = `${BASIS}. ${ANOMALY}.`;
 
   it('all components available => available, no reason', async () => {
     const result = await composite(component(50), component(90), observability(70, 'available', null));

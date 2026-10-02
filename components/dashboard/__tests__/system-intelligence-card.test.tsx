@@ -215,7 +215,7 @@ describe('observability evidence state', () => {
 })
 
 describe('cost evidence state', () => {
-  const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.'
+  const COST_REASON = 'Insufficient spend data to assess cost efficiency. Anomaly checks not yet active.'
   const ALERT_REASON = 'Measures EC2 alert coverage only (0 of 1 in-scope resources covered).'
 
   it('partial cost keeps its score and status word, shows its one caption instead of a Partial chip, and keeps every reason in the panels', () => {

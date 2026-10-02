@@ -74,14 +74,14 @@ const COST_LIMITATION_CAPTIONS: Array<[sentence: string, caption: string]> = [
 
 /**
  * The Cost tile's one caption: where its spend comes from (the component's
- * costSource -- the inventory estimate, not the Spend card's Cost Explorer
- * figure, whenever it says so), then its known limitations. null when the
- * component has no costSource and no recognized limitation.
+ * costSource -- the inventory's monthly run-rate estimate, not the Spend
+ * card's Cost Explorer month-to-date figure), then its known limitations.
+ * null when the component has no costSource and no recognized limitation.
  */
 export function costComponentCaption(component: Pick<SystemIntelligenceResult['components']['cost'], 'costSource' | 'reason'> | undefined): string | null {
   if (!component) return null
   const source = component.costSource === 'estimated'
-    ? 'Estimated from inventory'
+    ? 'Monthly run-rate estimate'
     : component.costSource === 'actual' ? 'Based on AWS Cost Explorer spend' : null
   const sentences = (component.reason ?? '').split(/(?<=\.)\s+/)
   const limitations = COST_LIMITATION_CAPTIONS.filter(([sentence]) => sentences.includes(sentence)).map(([, caption]) => caption)

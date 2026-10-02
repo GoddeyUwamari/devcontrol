@@ -84,15 +84,34 @@ function mockCostExplorer(total: number, byService: Array<{ service: string; amo
   });
 }
 
-/** Daily trend points in the same local-date terms computeMonthOverMonthComparison() uses. */
+/**
+ * A fixed UTC clock for this file: mid-month, so the finished-day windows
+ * (day 1 through today minus 2, UTC) are non-empty whatever day the suite
+ * runs. Only Date is faked -- the DB pool's timers stay real.
+ */
+const FIXED_NOW = new Date('2026-10-15T12:00:00.000Z');
+beforeAll(() => {
+  jest.useFakeTimers({ now: FIXED_NOW, doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask', 'hrtime', 'performance'] });
+});
+afterAll(() => {
+  jest.useRealTimers();
+});
+
+/**
+ * Daily trend points in the same UTC terms computeMonthOverMonthComparison()
+ * uses: every day of this month through today (including the provisional
+ * days the comparison leaves out) and the previous month's matching days.
+ * currentDays/previousDays are the finished-day windows' lengths.
+ */
 function dailyTrend(currentDaily: number, previousDaily: number | null) {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const day = now.getDate();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const day = now.getUTCDate();
+  const finishedDay = day - 2;
   const lastMonth = month === 0 ? 11 : month - 1;
   const lastMonthYear = month === 0 ? year - 1 : year;
-  const previousDays = Math.min(day, new Date(year, month, 0).getDate());
+  const previousDays = Math.min(finishedDay, new Date(Date.UTC(year, month, 0)).getUTCDate());
   const iso = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   const point = (date: string, total: number) => ({
     date, total, compute: total, storage: 0, database: 0, network: 0, other: 0, byService: [],
@@ -103,7 +122,7 @@ function dailyTrend(currentDaily: number, previousDaily: number | null) {
     for (let d = 1; d <= previousDays; d++) points.push(point(iso(lastMonthYear, lastMonth, d), previousDaily));
   }
   for (let d = 1; d <= day; d++) points.push(point(iso(year, month, d), currentDaily));
-  return { points: points as any, currentDays: day, previousDays };
+  return { points: points as any, currentDays: finishedDay, previousDays };
 }
 
 function format(context: ChatContext): string {
@@ -455,7 +474,7 @@ describe('Inventory scope', () => {
 function trendWithTotals(currentTotal: number, previousTotal: number) {
   const { points } = dailyTrend(0, 0);
   const now = new Date();
-  const currentPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-`;
+  const currentPrefix = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-`;
   const firstCurrent = points.find((p: any) => p.date.startsWith(currentPrefix));
   const firstPrevious = points.find((p: any) => !p.date.startsWith(currentPrefix));
   firstCurrent.total = currentTotal;
@@ -528,15 +547,31 @@ describe('Comparison arithmetic is done on the displayed cents', () => {
 });
 
 describe('Comparison partial-day semantics', () => {
-  it('flags that the current window ends on today, which is still in progress, and says so in the formatted context', () => {
+  it('ends the current window at the last finished day (today minus 2, UTC), so no provisional day is compared', () => {
     const comparison = compare(14.83, 14.33);
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    expect(comparison.currentWindow.end).toBe(today);
-    expect(comparison.currentWindowIncludesToday).toBe(true);
-    const formatted = (chatService as any).formatComparisonSection(comparison);
-    expect(formatted).toMatch(new RegExp(`Partial day: the current window's last day \\(${today}\\) is today and still in progress`));
+    expect(comparison.currentWindow).toEqual({ start: '2026-10-01', end: '2026-10-13' });
+    expect(comparison.previousWindow).toEqual({ start: '2026-09-01', end: '2026-09-13' });
+    expect(comparison.finishedThrough).toBe('2026-10-13');
+    expect(comparison.currentWindowIncludesToday).toBe(false);
+    expect((chatService as any).formatComparisonSection(comparison)).not.toMatch(/Partial day/);
+  });
+
+  it('before any day of this month has finished (Oct 2), the model is told there is no comparison and why -- never a percentage', () => {
+    jest.setSystemTime(new Date('2026-10-02T12:00:00.000Z'));
+    try {
+      const point = (date: string, total: number) => ({ date, total, compute: total, storage: 0, database: 0, network: 0, other: 0, byService: [] });
+      const comparison = (contextRepo as any).computeMonthOverMonthComparison([
+        point('2026-09-01', 14.33), point('2026-09-02', 14.33), point('2026-10-01', 0.19), point('2026-10-02', 0.01),
+      ]);
+      expect(comparison).toMatchObject({ state: 'unavailable', currentWindow: null, changePercent: null, finishedThrough: '2026-09-30' });
+      const formatted = (chatService as any).formatComparisonSection(comparison);
+      expect(formatted).toMatch(/Note: no day of this month has finished reporting in AWS Cost Explorer yet/);
+      expect(formatted).toMatch(/Previous period: not available/);
+      expect(formatted).not.toMatch(/- Change: /);
+    } finally {
+      jest.setSystemTime(FIXED_NOW);
+    }
   });
 
   it('a comparison with no windows makes no partial-day claim', () => {

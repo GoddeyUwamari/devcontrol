@@ -8,6 +8,7 @@
 import { Pool } from 'pg';
 import {
   COMPARISON_BASIS,
+  costFinishedThrough,
   type ChatContext,
   type ContextDataState,
   type CostComparison,
@@ -61,6 +62,7 @@ function emptyComparison(state: ContextDataState, note: string): CostComparison 
     changePercent: null,
     coverage: null,
     currentWindowIncludesToday: false,
+    finishedThrough: null,
     asOf: null,
     basis: COMPARISON_BASIS,
   };
@@ -245,28 +247,40 @@ export class AIChatContextRepository {
    * cents), not from the unrounded sums -- otherwise e.g. $14.83 vs $14.33
    * could report a $0.51 change the reader can't reproduce from the figures.
    *
-   * Like the Dashboard, the current window runs through today, which Cost
-   * Explorer has not finished billing, while the previous window's days are
-   * complete. That is kept (so both surfaces agree) but flagged via
-   * currentWindowIncludesToday rather than presented as like-for-like days.
+   * Finished days only: Cost Explorer keeps filling in a day for 24-48 hours,
+   * so the current window runs from day 1 of this month through
+   * finishedThrough (today minus PROVISIONAL_COST_DAYS), never into the
+   * provisional days. The previous window is the same day numbers of the
+   * previous month, capped at that month's last day. While no day of this
+   * month has finished, there is no comparison. All date math is UTC, Cost
+   * Explorer's own day boundary.
    */
   private computeMonthOverMonthComparison(
     costTrend: Array<{ date: string; total: number }>,
-    asOf: string | null = null
+    asOf: string | null = null,
+    now: Date = new Date()
   ): CostComparison {
-    const now = new Date();
-    const curYear = now.getFullYear();
-    const curMonth = now.getMonth();
-    const dayOfMonth = now.getDate();
+    const finishedThrough = costFinishedThrough(now);
+    const curYear = now.getUTCFullYear();
+    const curMonth = now.getUTCMonth();
+    const [finishedYear, finishedMonth, finishedDay] = finishedThrough.split('-').map(Number);
+    if (finishedYear !== curYear || finishedMonth - 1 !== curMonth) {
+      return {
+        ...emptyComparison('unavailable', 'no day of this month has finished reporting in AWS Cost Explorer yet (the latest days are still being reported)'),
+        finishedThrough,
+        asOf,
+      };
+    }
+
     const lastMonth = curMonth === 0 ? 11 : curMonth - 1;
     const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear;
-    const daysInLastMonth = new Date(curYear, curMonth, 0).getDate();
+    const daysInLastMonth = new Date(Date.UTC(curYear, curMonth, 0)).getUTCDate();
 
     const isoDate = (year: number, monthIndex: number, day: number) =>
       `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const expectedCurrentDays = dayOfMonth;
-    const expectedPreviousDays = Math.min(dayOfMonth, daysInLastMonth);
-    const currentWindow = { start: isoDate(curYear, curMonth, 1), end: isoDate(curYear, curMonth, dayOfMonth) };
+    const expectedCurrentDays = finishedDay;
+    const expectedPreviousDays = Math.min(finishedDay, daysInLastMonth);
+    const currentWindow = { start: isoDate(curYear, curMonth, 1), end: isoDate(curYear, curMonth, expectedCurrentDays) };
     const previousWindow = { start: isoDate(lastMonthYear, lastMonth, 1), end: isoDate(lastMonthYear, lastMonth, expectedPreviousDays) };
 
     let currentSum = 0, currentDays = 0;
@@ -275,24 +289,24 @@ export class AIChatContextRepository {
     for (const entry of costTrend ?? []) {
       const [y, m, d] = entry.date.split('-').map(Number);
       const month = m - 1;
-      if (y === curYear && month === curMonth && d <= dayOfMonth) {
+      if (y === curYear && month === curMonth && d <= expectedCurrentDays) {
         currentSum += entry.total;
         currentDays++;
-      } else if (y === lastMonthYear && month === lastMonth && d <= dayOfMonth) {
+      } else if (y === lastMonthYear && month === lastMonth && d <= expectedPreviousDays) {
         lastSum += entry.total;
         lastDays++;
       }
     }
 
     const coverage = { currentDays, previousDays: lastDays, expectedCurrentDays, expectedPreviousDays };
-    const minDays = Math.max(1, Math.floor(dayOfMonth * 0.8));
+    const minDays = Math.max(1, Math.floor(expectedCurrentDays * 0.8));
     if (currentDays < minDays || lastDays < minDays) {
       return {
         ...emptyComparison('unavailable', `not enough daily Cost Explorer data to compare (at least ${minDays} days needed in each window)`),
         currentWindow,
         previousWindow,
         coverage,
-        currentWindowIncludesToday: true,
+        finishedThrough,
         asOf,
       };
     }
@@ -311,7 +325,8 @@ export class AIChatContextRepository {
       changeAmount: changeCents / 100,
       changePercent: previousCents > 0 ? Math.round((changeCents / previousCents) * 1000) / 10 : null,
       coverage,
-      currentWindowIncludesToday: true,
+      currentWindowIncludesToday: false,
+      finishedThrough,
       asOf,
       basis: COMPARISON_BASIS,
     };
@@ -367,7 +382,7 @@ export class AIChatContextRepository {
         comparison = this.computeMonthOverMonthComparison(costTrend, awsCostService.getCostTrendFetchedAt(organizationId, '90d'));
       } catch (error: any) {
         console.error('[AI Chat Context] Error getting cost trend:', error.message);
-        comparison = emptyComparison('error', 'the Cost Explorer daily trend request failed');
+        comparison = { ...emptyComparison('error', 'the Cost Explorer daily trend request failed'), finishedThrough: costFinishedThrough() };
       }
 
       const total = monthlyCost.total;

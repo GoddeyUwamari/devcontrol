@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { ContextSection, CostMonthOverMonthEvidence, CostSpendEvidence } from '@/lib/types'
-import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd } from '../cost-display'
+import { describeAnnualizedSavings, describeComparisonWindows, describeMonthOverMonth, describeSpend, formatUsd, noFinishedDayThisMonth } from '../cost-display'
 
 const ready = { isLoading: false, isError: false }
 
@@ -174,5 +174,34 @@ describe('formatUsd', () => {
     expect(formatUsd(0.05)).toBe('$0.05')
     expect(formatUsd(-3.5)).toBe('-$3.50')
     expect(formatUsd(1234.5)).toBe('$1,234.50')
+  })
+})
+
+describe('finished-day comparison wording', () => {
+  const billed = (start: string, endExclusive: string, finishedThrough?: string | null): ContextSection<CostSpendEvidence> => ({
+    state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf: null, coverage: null, reason: null,
+    period: { kind: 'range', start, endExclusive },
+    data: { amount: 1, basis: 'billed_month_to_date', lastDayInProgress: true, ...(finishedThrough === undefined ? {} : { finishedThrough }) },
+  })
+
+  it('noFinishedDayThisMonth: only when finishedThrough is before the period start', () => {
+    expect(noFinishedDayThisMonth(billed('2026-10-01', '2026-10-03', '2026-09-30'))).toBe(true)
+    expect(noFinishedDayThisMonth(billed('2026-10-01', '2026-10-04', '2026-10-01'))).toBe(false)
+    expect(noFinishedDayThisMonth(billed('2026-10-01', '2026-10-03'))).toBe(false)
+    expect(noFinishedDayThisMonth(billed('2026-10-01', '2026-10-03', null))).toBe(false)
+    expect(noFinishedDayThisMonth(undefined)).toBe(false)
+  })
+
+  it('the KPI says why there is no comparison yet, without a percentage', () => {
+    const unavailable = { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'x', data: null } as ContextSection<CostMonthOverMonthEvidence>
+    expect(describeMonthOverMonth(unavailable, { isLoading: false, isError: false }, { noFinishedDay: true })).toMatchObject({ value: '—', sub: 'No comparison yet · latest days still being reported', changePercent: null })
+    expect(describeMonthOverMonth(unavailable, { isLoading: false, isError: false }).sub).toBe('Comparison not available · not enough comparable AWS Cost Explorer data')
+  })
+
+  it('describeComparisonWindows', () => {
+    expect(describeComparisonWindows({ currentWindow: { start: '2026-10-01', end: '2026-10-01' }, previousWindow: { start: '2026-09-01', end: '2026-09-01' } })).toBe('Oct 1 vs Sep 1')
+    expect(describeComparisonWindows({ currentWindow: { start: '2026-10-01', end: '2026-10-13' }, previousWindow: { start: '2026-09-01', end: '2026-09-13' } })).toBe('Oct 1–13 vs Sep 1–13')
+    expect(describeComparisonWindows({ currentWindow: { start: '2027-03-01', end: '2027-03-28' }, previousWindow: { start: '2027-02-01', end: '2027-02-28' } })).toBe('Mar 1–28 vs Feb 1–28')
+    expect(describeComparisonWindows({ currentWindow: { start: '2027-03-01', end: '2027-03-29' }, previousWindow: { start: '2027-02-01', end: '2027-02-28' } })).toBe('Mar 1–29 vs Feb 1–28 (Feb has only 28 days)')
   })
 })

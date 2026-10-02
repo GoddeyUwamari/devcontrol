@@ -31,7 +31,7 @@ function unavailableComparison(): ChatContext['costs']['comparison'] {
   return {
     state: 'unavailable', note: 'not enough daily Cost Explorer data to compare', currentWindow: null, previousWindow: null,
     currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null,
-    currentWindowIncludesToday: false, asOf: null, basis: COMPARISON_BASIS,
+    currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
   };
 }
 
@@ -157,7 +157,7 @@ describe('Dashboard AI summary -- cost evidence (AI Chat cost path, not getMonth
         currentWindow: { start: '2026-09-01', end: '2026-09-26' }, previousWindow: { start: '2026-08-01', end: '2026-08-26' },
         currentWindowTotal: 120, previousWindowTotal: 100, changeAmount: 20, changePercent: 20,
         coverage: { currentDays: 26, previousDays: 26, expectedCurrentDays: 26, expectedPreviousDays: 26 },
-        currentWindowIncludesToday: true, asOf: null, basis: COMPARISON_BASIS,
+        currentWindowIncludesToday: true, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
       }),
     });
     expect(withComparison.prompt).toContain('Month-to-date spend vs the same days last month: up 20.0% ($120.00 vs $100.00, daily charges with credits excluded; the current day is still being billed).');
@@ -348,7 +348,7 @@ describe('Dashboard AI summary -- observability and composite state', () => {
 
   it('a partial cost component reaches the model under Cost, not attributed to observability', async () => {
     const base = partialIntelligence();
-    const COST_REASON = 'Insufficient spend data to assess cost efficiency. Spend based on inventory estimate, not AWS Cost Explorer billing. Anomaly checks not yet active.';
+    const COST_REASON = 'Insufficient spend data to assess cost efficiency. Anomaly checks not yet active.';
     const compositeReason = `Cost: ${COST_REASON} Alert Coverage: ${PARTIAL_REASON}`;
     const { prompt } = await run({
       intelligence: {
