@@ -7,6 +7,7 @@ import { Request, Response } from 'express';
 import { organizationService } from '../services/organization.service';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
 import { auditRequestContext } from '../services/auditEvents.service';
+import { OrganizationAccessError } from '../services/organization-authorization';
 
 /**
  * Status for a failed membership operation: authorization/seat errors from
@@ -20,6 +21,26 @@ function membershipErrorResponse(res: Response, error: any, fallback: string): v
     error: error?.message || fallback,
     ...(error?.code ? { code: error.code } : {}),
   });
+}
+
+/**
+ * Error response for the member role-change and removal endpoints. Only an
+ * OrganizationAccessError (a deliberate authorization or business-rule
+ * refusal) reaches the client with its own status and message. Anything
+ * else -- including database errors, whose text can describe the schema or
+ * the rejected input -- is logged here and answered with a generic message.
+ */
+function memberMutationErrorResponse(res: Response, error: unknown, fallback: string): void {
+  if (error instanceof OrganizationAccessError) {
+    res.status(error.statusCode).json({
+      success: false,
+      error: error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
+    return;
+  }
+  console.error(`[Organizations] ${fallback}:`, error);
+  res.status(500).json({ success: false, error: fallback });
 }
 
 export class OrganizationController {
@@ -334,7 +355,7 @@ export class OrganizationController {
         message: 'User removed from organization successfully',
       });
     } catch (error: any) {
-      membershipErrorResponse(res, error, 'Failed to remove user');
+      memberMutationErrorResponse(res, error, 'Failed to remove user');
     }
   }
 
@@ -372,7 +393,7 @@ export class OrganizationController {
         message: 'User role updated successfully',
       });
     } catch (error: any) {
-      membershipErrorResponse(res, error, 'Failed to update user role');
+      memberMutationErrorResponse(res, error, 'Failed to update user role');
     }
   }
 

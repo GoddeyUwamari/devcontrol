@@ -15,11 +15,11 @@ import { usePlan } from '@/lib/hooks/use-plan'
 const DEMO_SUBSCRIPTION = { id: 'sub-demo-1', plan: 'Enterprise', status: 'active' as const, billingCycle: 'yearly' as const, currentPrice: 1498800, currency: 'USD', currentPeriodStart: '2024-01-01T00:00:00Z', currentPeriodEnd: '2025-01-01T00:00:00Z', nextBillingDate: '2025-01-01T00:00:00Z', autoRenew: true, isTrial: false }
 
 const DEMO_MEMBERS: OrganizationMember[] = [
-  { id: 'm1', userId: 'u1', organizationId: 'org-demo', role: 'owner',  joinedAt: '2024-01-01T00:00:00Z', user: { id: 'u1', email: 'cto@wayup.com',      fullName: 'Alex Morgan'   } },
-  { id: 'm2', userId: 'u2', organizationId: 'org-demo', role: 'admin',  joinedAt: '2024-01-15T00:00:00Z', user: { id: 'u2', email: 'platform@wayup.com', fullName: 'Jordan Lee'    } },
-  { id: 'm3', userId: 'u3', organizationId: 'org-demo', role: 'admin',  joinedAt: '2024-02-01T00:00:00Z', user: { id: 'u3', email: 'devops@wayup.com',   fullName: 'Sam Rivera'    } },
-  { id: 'm4', userId: 'u4', organizationId: 'org-demo', role: 'member', joinedAt: '2024-02-10T00:00:00Z', user: { id: 'u4', email: 'security@wayup.com', fullName: 'Taylor Chen'   } },
-  { id: 'm5', userId: 'u5', organizationId: 'org-demo', role: 'viewer', joinedAt: '2024-03-01T00:00:00Z', user: { id: 'u5', email: 'finance@wayup.com',  fullName: 'Morgan Park'   } },
+  { id: 'm1', organizationId: 'org-demo', role: 'owner', joinedAt: '2024-01-01T00:00:00Z', email: 'cto@wayup.com', fullName: 'Alex Morgan' },
+  { id: 'm2', organizationId: 'org-demo', role: 'admin', joinedAt: '2024-01-15T00:00:00Z', email: 'platform@wayup.com', fullName: 'Jordan Lee' },
+  { id: 'm3', organizationId: 'org-demo', role: 'admin', joinedAt: '2024-02-01T00:00:00Z', email: 'devops@wayup.com', fullName: 'Sam Rivera' },
+  { id: 'm4', organizationId: 'org-demo', role: 'member', joinedAt: '2024-02-10T00:00:00Z', email: 'security@wayup.com', fullName: 'Taylor Chen' },
+  { id: 'm5', organizationId: 'org-demo', role: 'viewer', joinedAt: '2024-03-01T00:00:00Z', email: 'finance@wayup.com', fullName: 'Morgan Park' },
 ]
 
 const DEMO_MEMBER_META: Record<string, { lastActive: string; status: 'active' | 'inactive' }> = {
@@ -217,16 +217,16 @@ export default function EnterprisePage() {
           {displayMembers.map(m => {
             const rs = roleStyle(m.role)
             const meta = DEMO_MEMBER_META[m.id]
-            const initials = (m.user?.fullName || m.fullName || m.user?.email || m.email || '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+            const initials = (m.fullName || m.email || '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
             const lastActive = demoMode && meta ? meta.lastActive : m.role === 'owner' ? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'
             const memberStatus = demoMode && meta ? meta.status : !demoMode ? 'active' : null
             return (
               <div key={m.id} className="grid py-3 border-b border-slate-50 last:border-0 items-center min-w-[560px]" style={{ gridTemplateColumns: '2fr 2fr 120px 80px 90px', gap: '12px' }}>
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 bg-violet-50 rounded-lg flex items-center justify-center text-[10px] font-bold text-violet-700 shrink-0">{initials}</div>
-                  <span className="text-sm font-semibold text-slate-900 truncate">{m.user?.fullName || m.fullName || m.user?.email || m.email || '—'}</span>
+                  <span className="text-sm font-semibold text-slate-900 truncate">{m.fullName || m.email || '—'}</span>
                 </div>
-                <span className="text-xs text-slate-500 truncate">{m.user?.email || m.email || '—'}</span>
+                <span className="text-xs text-slate-500 truncate">{m.email || '—'}</span>
                 <span className="text-xs text-slate-500">{lastActive}</span>
                 <div>
                   {memberStatus ? (
@@ -246,19 +246,19 @@ export default function EnterprisePage() {
           {displayMembers.map(m => {
             const rs = roleStyle(m.role)
             const meta = DEMO_MEMBER_META[m.id]
-            const initials = (m.user?.fullName || m.fullName || m.user?.email || m.email || '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+            const initials = (m.fullName || m.email || '?').split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
             const memberStatus = demoMode && meta ? meta.status : !demoMode ? 'active' : null
             return (
               <div key={m.id} className="py-3">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-7 h-7 bg-violet-50 rounded-lg flex items-center justify-center text-[10px] font-bold text-violet-700 shrink-0">{initials}</div>
-                    <span className="text-sm font-semibold text-slate-900 truncate">{m.user?.fullName || m.fullName || m.user?.email || m.email || '—'}</span>
+                    <span className="text-sm font-semibold text-slate-900 truncate">{m.fullName || m.email || '—'}</span>
                   </div>
                   <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize shrink-0 ${rs.bg}`}>{m.role}</span>
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500 pl-9">
-                  <span>{m.user?.email || m.email || '—'}</span>
+                  <span>{m.email || '—'}</span>
                   {memberStatus && <span className={memberStatus === 'active' ? 'text-green-600' : 'text-slate-500'}>{memberStatus}</span>}
                 </div>
               </div>

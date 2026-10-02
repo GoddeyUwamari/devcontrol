@@ -55,3 +55,9 @@ export const paginationSchema = z.object({
 export const uuidParamSchema = z.object({
   id: z.string().uuid('Invalid ID format'),
 });
+
+/** /api/organizations/:id/members/:userId -- both ids are UUIDs. */
+export const organizationMemberParamsSchema = z.object({
+  id: z.string().uuid('Invalid organization ID format'),
+  userId: z.string().uuid('Invalid member ID format'),
+});

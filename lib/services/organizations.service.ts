@@ -27,19 +27,19 @@ export interface UpdateOrganizationRequest {
   description?: string;
 }
 
+/**
+ * One row of GET /api/organizations/:id/members (backend
+ * organizationService.getMembers): a flat object whose `id` is the member's
+ * USER id -- the id the role-change and removal routes take as :userId.
+ */
 export interface OrganizationMember {
   id: string;
-  userId: string;
   organizationId: string;
   role: "owner" | "admin" | "member" | "viewer";
   joinedAt: string;
-  user?: {
-    id: string;
-    email: string;
-    fullName: string;
-  };
-  fullName?: string;
+  fullName?: string | null;
   email?: string;
+  avatarUrl?: string | null;
 }
 
 export interface InviteMemberRequest {
