@@ -23,12 +23,8 @@ export interface SecurityAuditEvent {
 
 /**
  * Small, explicit writer for security-domain audit events into the existing
- * audit_logs table. Deliberately NOT a rewrite of the generic HTTP auditLogger
- * middleware (backend/src/middleware/auditLogger.ts) — that middleware pattern-
- * matches req.path/method and doesn't recognize these routes, and broadening
- * it would be exactly the "rewrite the global audit middleware" this feature
- * is scoped to avoid. Deliberately not a new table either: audit_logs already
- * has organization_id/resource_type/resource_id/metadata, which is all these
+ * audit_logs table. Deliberately not a new table: audit_logs already has
+ * organization_id/resource_type/resource_id/metadata, which is all these
  * nine event names need.
  *
  * Disposition/resolution events are called synchronously right after their
