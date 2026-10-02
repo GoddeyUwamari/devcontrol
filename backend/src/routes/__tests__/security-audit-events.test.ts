@@ -21,6 +21,8 @@ import { createSAMLRoutes } from '../saml.routes';
 import { authService } from '../../services/auth.service';
 import { emailService } from '../../services/email.service';
 import { auditEvents, createAuditEventWriter } from '../../services/auditEvents.service';
+import { pool as appPool } from '../../config/database';
+import type { PoolClient } from 'pg';
 
 function dbConfig() {
   return {
@@ -219,6 +221,42 @@ function failAuditWrites() {
   jest.spyOn(auditEvents, 'record').mockImplementation(failing.record);
 }
 
+/**
+ * Lets the service's own transaction run its real mutation, then fails that
+ * transaction's COMMIT so the service rolls it back -- a change that passed
+ * authorization but never committed. Only a connection that ran `mutation`
+ * is affected (the audit writer's own connection never does); each wrapped
+ * connection gets its real query/release back before it returns to the pool.
+ * Returns how many transactions were made to fail.
+ */
+function failCommitAfter(mutation: RegExp): { failedCommits: number } {
+  const state = { failedCommits: 0 };
+  const realConnect = appPool.connect.bind(appPool) as () => Promise<PoolClient>;
+  jest.spyOn(appPool, 'connect').mockImplementation((async () => {
+    const client = await realConnect();
+    const realQuery = client.query;
+    const realRelease = client.release;
+    let mutated = false;
+    client.query = ((text: unknown, ...rest: unknown[]) => {
+      const sql = typeof text === 'string' ? text : (text as { text?: string } | null)?.text;
+      if (typeof sql === 'string' && mutation.test(sql)) mutated = true;
+      if (sql === 'COMMIT' && mutated) {
+        state.failedCommits += 1;
+        return Promise.reject(new Error('simulated COMMIT failure'));
+      }
+      return (realQuery as (...args: unknown[]) => unknown).call(client, text, ...rest);
+    }) as PoolClient['query'];
+    client.release = ((err?: Error | boolean) => {
+      client.query = realQuery;
+      client.release = realRelease;
+      return realRelease.call(client, err);
+    }) as PoolClient['release'];
+    return client;
+  }) as unknown as typeof appPool.connect);
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  return state;
+}
+
 function expectRequestMetadata(row: { ip_address: string; user_agent: string }) {
   expect(row.ip_address).toBe(CLIENT_IP);
   expect(row.user_agent).toBe(USER_AGENT);
@@ -389,6 +427,24 @@ describe('role changed', () => {
     expectRequestMetadata(rows[0]);
   });
 
+  it('a change that passed authorization but was rolled back (COMMIT failed) records nothing', async () => {
+    const org = await buildOrg();
+    const commit = failCommitAfter(/^\s*UPDATE organization_memberships\s+SET role/);
+
+    const res = await as(org.owner, org.orgId)('PATCH', `/organizations/${org.orgId}/members/${org.member}/role`, {
+      role: 'admin',
+    });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(commit.failedCommits).toBe(1);
+    const { rows } = await pool.query(
+      'SELECT role FROM organization_memberships WHERE organization_id = $1 AND user_id = $2',
+      [org.orgId, org.member]
+    );
+    expect(rows[0].role).toBe('member');
+    expect(await events(org.orgId, 'organization_membership.role_changed')).toHaveLength(0);
+  });
+
   it('setting the same role, or a refused change, records nothing', async () => {
     const org = await buildOrg();
     expect(
@@ -422,6 +478,19 @@ describe('member removed', () => {
       metadata: { userId: org.member, role: 'member', pendingInvitation: false },
     });
     expectRequestMetadata(rows[0]);
+  });
+
+  it('a removal that passed authorization but was rolled back (COMMIT failed) records nothing', async () => {
+    const org = await buildOrg();
+    const target = await membershipId(org.orgId, org.member);
+    const commit = failCommitAfter(/^\s*DELETE FROM organization_memberships/);
+
+    const res = await as(org.owner, org.orgId)('DELETE', `/organizations/${org.orgId}/members/${org.member}`);
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(commit.failedCommits).toBe(1);
+    expect(await membershipId(org.orgId, org.member)).toBe(target);
+    expect(await events(org.orgId, 'organization_membership.removed')).toHaveLength(0);
   });
 
   it('a refused removal records nothing', async () => {

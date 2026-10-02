@@ -23,10 +23,7 @@ export interface Soc2CustomerEvidenceAuditEvent {
 /**
  * Small, explicit writer for SOC 2 customer-evidence audit events into the existing
  * audit_logs table -- follows securityAuditService's exact pattern (same file:
- * backend/src/services/securityAudit.service.ts), deliberately NOT an extension of the
- * generic HTTP auditLogger middleware (backend/src/middleware/auditLogger.ts), whose
- * hardcoded req.path/method pattern-matching doesn't recognize these routes and whose
- * broadening this feature is explicitly scoped to avoid (per the Phase 3 audit).
+ * backend/src/services/securityAudit.service.ts).
  */
 export const soc2CustomerEvidenceAuditService = {
   async record(event: Soc2CustomerEvidenceAuditEvent): Promise<void> {
