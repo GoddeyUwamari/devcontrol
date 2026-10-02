@@ -1,6 +1,6 @@
+import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
-import { CheckCircle2, XCircle } from 'lucide-react'
-import { CloudProviderStatus } from './cloud-provider-status'
+import { Plug } from 'lucide-react'
 
 interface DashboardHeroProps {
   isAwsConnected: boolean
@@ -9,11 +9,59 @@ interface DashboardHeroProps {
   lastSynced: Date | null
 }
 
+const PILL = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap'
+
 /**
- * Page hero: title, truthful supporting copy, AWS connection pill, and
- * cloud-provider status tiles. No "real-time" claim: the dashboard's sources
- * refresh on their own schedules (see the dashboard page's data-provenance
- * comments).
+ * Cloud providers as one row of pills. AWS is connected or not, from the
+ * page's existing isAwsConnected; "not connected" is the way to connect.
+ * There is no syncing pill: the page loads only the latest discovery jobs,
+ * which cannot show that no discovery has ever completed. GCP and Azure are
+ * not available yet and are not interactive.
+ */
+export function ProviderPills({ isAwsConnected }: { isAwsConnected: boolean }) {
+  return (
+    <div className="flex flex-nowrap items-center gap-2" data-testid="provider-pills">
+      {isAwsConnected ? (
+        <span
+          className={`${PILL} border`}
+          style={{ background: 'var(--bg-success)', borderColor: 'var(--border-success)', color: 'var(--text-success)' }}
+          data-testid="provider-pill-aws"
+          data-state="connected"
+        >
+          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--fill-success)' }} aria-hidden="true" />
+          AWS
+          <span className="sr-only">connected</span>
+        </span>
+      ) : (
+        <Link
+          href="/connect-aws"
+          className={`${PILL} border no-underline transition-colors hover:bg-[var(--bg-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-accent)]`}
+          style={{ borderColor: 'var(--border-accent)', color: 'var(--text-accent)' }}
+          data-testid="provider-pill-aws"
+          data-state="not-connected"
+        >
+          <Plug size={12} aria-hidden="true" />
+          Connect AWS
+        </Link>
+      )}
+      {['GCP', 'Azure'].map((name) => (
+        <span
+          key={name}
+          className={`${PILL} border border-dashed border-border bg-transparent text-[var(--text-secondary)] cursor-default`}
+          data-testid={`provider-pill-${name.toLowerCase()}`}
+        >
+          {name} soon
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Page hero: title, truthful supporting copy, and the provider pills (right
+ * of the title on desktop, one row below it on narrow screens). No
+ * "real-time" claim: the dashboard's sources refresh on their own schedules
+ * (see the dashboard page's data-provenance comments).
  */
 export function DashboardHero({ isAwsConnected, orgName, lastSynced }: DashboardHeroProps) {
   return (
@@ -31,24 +79,8 @@ export function DashboardHero({ isAwsConnected, orgName, lastSynced }: Dashboard
             : 'Connect your AWS account to get started · Setup takes 2 minutes'}
         </p>
       </div>
-      <div className="flex flex-col items-start lg:items-end gap-3 shrink-0">
-        <div
-          className="flex items-center gap-2 rounded-full border px-3.5 py-1.5"
-          style={{
-            borderColor: isAwsConnected ? 'var(--border-success)' : 'var(--border)',
-            background: isAwsConnected ? 'var(--bg-success)' : 'var(--surface-2)',
-          }}
-        >
-          {isAwsConnected ? (
-            <CheckCircle2 size={14} style={{ color: 'var(--text-success)' }} />
-          ) : (
-            <XCircle size={14} className="text-[var(--text-secondary)]" />
-          )}
-          <span className="text-xs font-semibold" style={{ color: isAwsConnected ? 'var(--text-success)' : 'var(--text-secondary)' }}>
-            {isAwsConnected ? 'AWS Account Connected' : 'AWS Account Not Connected'}
-          </span>
-        </div>
-        <CloudProviderStatus awsConnected={isAwsConnected} />
+      <div className="shrink-0">
+        <ProviderPills isAwsConnected={isAwsConnected} />
       </div>
     </div>
   )

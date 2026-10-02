@@ -50,7 +50,7 @@ const TILE_KEY: Record<string, string> = { Cost: 'cost', Security: 'security', '
 const column = (label: string) => screen.getByTestId(`posture-tile-${TILE_KEY[label]}`)
 /** Opens the section's info panel and returns the evidence row for `label`. */
 const evidenceRow = (label: string) => {
-  if (!screen.queryByRole('dialog')) fireEvent.click(screen.getByRole('button', { name: 'Infrastructure Posture section details' }))
+  if (!screen.queryByRole('dialog')) fireEvent.click(screen.getByRole('button', { name: 'About the Infrastructure Posture section' }))
   return within(screen.getByRole('dialog')).getByTestId(`posture-evidence-${TILE_KEY[label]}`)
 }
 const barIn = (col: HTMLElement) => col.querySelector('[role="progressbar"]') as HTMLElement | null
@@ -70,10 +70,10 @@ describe('ready components', () => {
     }
   })
 
-  it('alert coverage shows its percentage with no posture grade (no Strong / Needs attention / At risk)', () => {
+  it('alert coverage shows its score on the /100 scale, never a percentage, with no posture grade (no Strong / Needs attention / At risk)', () => {
     renderCard()
     const col = column('Alert Coverage')
-    expect(within(col).getByText('55%')).toBeInTheDocument()
+    expect(within(col).getByTestId('posture-score-observability')).toHaveTextContent(/^55 \/100$/)
     for (const word of ['Strong', 'Needs attention', 'At risk']) {
       expect(within(col).queryByText(word)).not.toBeInTheDocument()
     }
@@ -131,7 +131,7 @@ describe('ready gating: each component independently', () => {
     // The other two columns are unaffected.
     expect(within(column('Cost')).getByText('95')).toBeInTheDocument()
     expect(barIn(column('Cost'))).not.toBeNull()
-    expect(within(column('Alert Coverage')).getByText('55%')).toBeInTheDocument()
+    expect(within(column('Alert Coverage')).getByTestId('posture-score-observability')).toHaveTextContent(/^55 \/100$/)
     expect(barIn(column('Alert Coverage'))).not.toBeNull()
   })
 
@@ -147,7 +147,7 @@ describe('ready gating: each component independently', () => {
   it('a ready score of 0 is a real score and is shown with its bar (readiness is never inferred from the number)', () => {
     renderCard({ components: { ...READY, observability: observability({ score: 0, status: 'risk', ready: true }) } })
     const col = column('Alert Coverage')
-    expect(within(col).getByText('0%')).toBeInTheDocument()
+    expect(within(col).getByTestId('posture-score-observability')).toHaveTextContent(/^0 \/100$/)
     expect(barIn(col)).not.toBeNull()
   })
 
@@ -167,14 +167,14 @@ describe('observability evidence state', () => {
   it('partial: the score is shown, no Partial chip and no parsed count on the tile; the full scope text is behind the tile\'s info button', () => {
     renderCard({ components: { ...READY, observability: observability({ score: 0, status: 'risk', state: 'partial', reason: PARTIAL_REASON }) } })
     const col = column('Alert Coverage')
-    expect(within(col).getByText('0%')).toBeInTheDocument()
+    expect(within(col).getByTestId('posture-score-observability')).toHaveTextContent(/^0 \/100$/)
     expect(within(col).queryByText('Partial')).not.toBeInTheDocument()
     // No caption: there are no structured covered / in-scope fields, and the reason is never parsed.
     expect(within(col).queryByTestId('posture-tile-caption-observability')).toBeNull()
     expect(col.textContent).not.toMatch(/of 1|in-scope/)
-    fireEvent.click(within(col).getByRole('button', { name: 'Alert Coverage details' }))
-    expect(within(screen.getByRole('dialog', { name: 'Alert Coverage' })).getByText(PARTIAL_REASON)).toBeInTheDocument()
-    expect(barIn(col)).toHaveAttribute('aria-valuetext', '0% alert coverage, partial')
+    fireEvent.click(within(col).getByRole('button', { name: 'About Alert Coverage score' }))
+    expect(within(screen.getByRole('dialog', { name: 'How this is calculated' })).getByText(PARTIAL_REASON)).toBeInTheDocument()
+    expect(barIn(col)).toHaveAttribute('aria-valuetext', '0 of 100 alert coverage, partial')
   })
 
   it('the section ⓘ still carries the same full reason', () => {
@@ -187,7 +187,7 @@ describe('observability evidence state', () => {
     const col = column('Alert Coverage')
     expect(within(col).getByText('Could not be retrieved')).toBeInTheDocument()
     expect(within(col).queryByText('0')).not.toBeInTheDocument()
-    expect(within(col).queryByText('0%')).not.toBeInTheDocument()
+    expect(col.textContent).not.toContain('/100')
     expect(barIn(col)).toBeNull()
   })
 
@@ -230,8 +230,8 @@ describe('cost evidence state', () => {
     expect(within(col).getByTestId('posture-tile-caption-cost')).toHaveTextContent('Estimated from inventory · anomaly checks not yet active')
     expect(col.textContent).not.toContain(COST_REASON)
     expect(barIn(col)).toHaveAttribute('aria-valuetext', '50 of 100, At risk, partial')
-    fireEvent.click(within(col).getByRole('button', { name: 'Cost details' }))
-    expect(within(screen.getByRole('dialog', { name: 'Cost' })).getByText(COST_REASON)).toBeInTheDocument()
+    fireEvent.click(within(col).getByRole('button', { name: 'About Cost score' }))
+    expect(within(screen.getByRole('dialog', { name: 'How this is calculated' })).getByText(COST_REASON)).toBeInTheDocument()
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     const row = evidenceRow('Cost')
     expect(within(row).getByText(COST_REASON)).toBeInTheDocument()
@@ -334,7 +334,7 @@ describe('accessibility', () => {
     const expected: [string, number, string][] = [
       ['Cost', 95, '95 of 100, Strong'],
       ['Security', 82, '82 of 100, At risk'],
-      ['Alert Coverage', 55, '55% alert coverage'],
+      ['Alert Coverage', 55, '55 of 100 alert coverage'],
     ]
     for (const [label, score, text] of expected) {
       const bar = screen.getByRole('progressbar', { name: `${label} score` })

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { Info, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 // Same lg breakpoint the Dashboard's multi-column rows switch at: below it the
 // cards stack, and the details open as a centered dialog instead.
@@ -21,11 +22,18 @@ function useIsDesktop() {
   return useSyncExternalStore(subscribe, isDesktopNow, () => false)
 }
 
+export const INFO_HEADING = 'How this is calculated'
+export const INFO_TOOLTIP = 'How this number is calculated'
+
 interface EvidenceInfoProps {
-  /** Accessible name of the info button, e.g. "Infrastructure Posture details". */
-  label: string
-  /** Heading of the details panel. */
-  title: string
+  /** The card or section this explains, e.g. "Month-to-Date Spend": the panel's subtitle. */
+  about: string
+  /** Accessible name of the info button; unique on the page. Defaults to "About <about>". */
+  label?: string
+  /** Panel heading. */
+  heading?: string
+  /** One-line hover/focus tooltip on the button. */
+  tooltip?: string
   children: ReactNode
   /** Desktop only: which edge of the anchoring card the panel lines up with. */
   align?: 'start' | 'end'
@@ -35,13 +43,14 @@ interface EvidenceInfoProps {
  * Info button plus its evidence panel, on the app's existing Radix Dialog
  * primitive (no separate popover implementation). Radix supplies
  * aria-expanded / aria-controls on the button, Escape to close, and focus
- * returning to the button.
+ * returning to the button. Hover or focus shows a one-line tooltip; the
+ * panel opens on click/tap only. The button never navigates.
  *
  * Desktop: a non-modal panel anchored under the nearest positioned ancestor
  * (the card, or a section header marked `relative`). Below the lg breakpoint:
  * a modal dialog with an overlay, above the floating assistant button.
  */
-export function EvidenceInfo({ label, title, children, align = 'end' }: EvidenceInfoProps) {
+export function EvidenceInfo({ about, label = `About ${about}`, heading = INFO_HEADING, tooltip = INFO_TOOLTIP, children, align = 'end' }: EvidenceInfoProps) {
   const [open, setOpen] = useState(false)
   const isDesktop = useIsDesktop()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -59,7 +68,10 @@ export function EvidenceInfo({ label, title, children, align = 'end' }: Evidence
   const body = (
     <>
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
-        <DialogPrimitive.Title className="text-sm font-semibold text-foreground m-0">{title}</DialogPrimitive.Title>
+        <div className="min-w-0">
+          <DialogPrimitive.Title className="text-sm font-semibold text-foreground m-0">{heading}</DialogPrimitive.Title>
+          <p className="text-xs text-[var(--text-secondary)] m-0 mt-0.5" data-testid="evidence-info-subject">{about}</p>
+        </div>
         <DialogPrimitive.Close
           aria-label="Close"
           className="inline-flex items-center justify-center w-11 h-11 -my-3 -mr-3 rounded-full text-[var(--text-secondary)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-accent)]"
@@ -73,12 +85,22 @@ export function EvidenceInfo({ label, title, children, align = 'end' }: Evidence
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen} modal={!isDesktop}>
-      <DialogPrimitive.Trigger
-        aria-label={label}
-        className="inline-flex items-center justify-center w-11 h-11 -m-3 rounded-full shrink-0 text-[var(--text-secondary)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-accent)]"
-      >
-        <Info size={15} aria-hidden="true" />
-      </DialogPrimitive.Trigger>
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogPrimitive.Trigger
+              aria-label={label}
+              data-testid="evidence-info-button"
+              className="group inline-flex items-center justify-center w-11 h-11 -m-3 rounded-full shrink-0 cursor-pointer text-[var(--text-secondary)] focus-visible:outline-none"
+            >
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors group-hover:bg-[var(--surface-1)] group-focus-visible:bg-[var(--surface-1)] group-focus-visible:ring-2 group-focus-visible:ring-[var(--text-accent)]">
+                <Info size={15} aria-hidden="true" />
+              </span>
+            </DialogPrimitive.Trigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="z-[70]" data-testid="evidence-info-tooltip">{tooltip}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       {isDesktop ? (
         <DialogPrimitive.Content
           ref={panelRef}

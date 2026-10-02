@@ -26,8 +26,9 @@ export const POSTURE_COMPONENT_ICONS: Record<ComponentKey, LucideIcon> = {
  * Infrastructure Posture section tiles. `ready: false` can still carry a
  * number (a neutral 50, a preliminary score, an error's 0) and alert
  * coverage's score is null when nothing was measured -- so no score is shown
- * unless the component says it is real. Alert coverage is a coverage
- * percentage, never graded Strong / Needs attention / At risk.
+ * unless the component says it is real. Every component is shown on the
+ * same 0-100 scale; alert coverage is never graded Strong / Needs
+ * attention / At risk.
  */
 export function describePostureComponent(
   key: ComponentKey,
@@ -40,7 +41,7 @@ export function describePostureComponent(
     label: POSTURE_COMPONENT_LABELS[key],
     isAlertCoverage,
     score: scored ? component.score : null,
-    scoreText: scored ? (isAlertCoverage ? `${component.score}%` : String(component.score)) : '—',
+    scoreText: scored ? String(component.score) : '—',
     tier: scored && !isAlertCoverage ? statusBadge[component.status] : null,
     partial: component.state === 'partial',
     missingText: scored ? null : component.state === 'error' ? 'Could not be retrieved' : 'Not yet available',
@@ -69,7 +70,7 @@ export function PostureEvidence({ components, statusBadge }: {
               const component = components[key]
               const d = describePostureComponent(key, component, statusBadge)
               const Icon = POSTURE_COMPONENT_ICONS[key]
-              const chip = d.tier ? `${d.scoreText} · ${d.tier.label}` : d.scoreText
+              const chip = d.tier ? `${d.scoreText} · ${d.tier.label}` : d.score !== null ? `${d.scoreText} /100` : d.scoreText
               return (
                 <li key={key} data-testid={`posture-evidence-${key}`} className="flex gap-3 py-2.5 border-b border-border last:border-b-0">
                   <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-[var(--surface-1)] border border-border">

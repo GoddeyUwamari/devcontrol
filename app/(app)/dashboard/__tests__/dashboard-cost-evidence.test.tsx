@@ -125,7 +125,7 @@ async function spendCardText(expectedValue: string) {
 /** The spend card's face plus its info panel, where provenance now lives. */
 async function spendCardEvidenceText(expectedValue: string) {
   const face = await spendCardText(expectedValue)
-  fireEvent.click(within(spendCard(expectedValue)!).getByRole('button', { name: /details$/ }))
+  fireEvent.click(within(spendCard(expectedValue)!).getByRole('button', { name: /^About / }))
   return `${face} ${(await screen.findByRole('dialog')).textContent ?? ''}`
 }
 /**

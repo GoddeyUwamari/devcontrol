@@ -21,8 +21,10 @@ interface EngineeringHealthCardProps {
  */
 export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHealthCardProps) {
   return (
-    <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full">
-      <div className="flex items-center flex-wrap justify-between gap-x-3 gap-y-1 mb-4">
+    // Real mode has one line to show, so the card keeps its own compact height
+    // instead of stretching to Recent Activity's; demo mode fills the row.
+    <div className={`bg-[var(--surface-2)] rounded-2xl border border-border p-5 ${isDemoActive ? 'h-full' : 'self-start'}`} data-testid="engineering-health-card">
+      <div className={`flex items-center flex-wrap justify-between gap-x-3 gap-y-1 ${isDemoActive ? 'mb-4' : 'mb-2'}`}>
         <div className="flex items-center gap-2.5">
           <Code2 size={17} style={{ color: 'var(--text-accent)' }} />
           <h3 className="text-base font-bold text-foreground">Engineering Health</h3>
@@ -51,9 +53,7 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
           })}
         </div>
       ) : (
-        <div className="flex flex-col items-start gap-3 py-4">
-          <p className="text-sm text-[var(--text-secondary)] leading-relaxed">DORA metrics are not summarized on the dashboard yet.</p>
-        </div>
+        <p className="text-sm text-[var(--text-secondary)] leading-relaxed m-0" data-testid="engineering-health-empty">DORA metrics are not summarized on the dashboard yet.</p>
       )}
     </div>
   )

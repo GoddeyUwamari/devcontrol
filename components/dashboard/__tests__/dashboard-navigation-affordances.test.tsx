@@ -76,12 +76,12 @@ describe('Security Key Findings', () => {
   })
 })
 
-describe('AWS Account Connected pill', () => {
-  it('is a status indicator with no chevron and no link', () => {
+describe('AWS provider pill', () => {
+  it('connected: a status indicator with no chevron and no link', () => {
     render(<DashboardHero isAwsConnected orgName="Org" lastSynced={null} />)
-    const pill = screen.getByText('AWS Account Connected')
+    const pill = screen.getByTestId('provider-pill-aws')
     expect(pill.closest('a')).toBeNull()
-    expect(chevronsIn(pill.parentElement!)).toHaveLength(0)
+    expect(chevronsIn(pill)).toHaveLength(0)
   })
 })
 
@@ -100,7 +100,7 @@ describe('Engineering Health', () => {
 })
 
 describe('System Health arrow', () => {
-  it('is a 14px ArrowRight on the title link, matching the other dashboard arrows', () => {
+  it('is the card\'s arrow button (a 14px ArrowRight), not on the title', () => {
     render(
       <InfrastructureIntelligence
         topRisk={null}
@@ -109,7 +109,8 @@ describe('System Health arrow', () => {
         systemStatus={{ value: 'Operational', caption: 'API and database responding · not your AWS resources', operational: true, color: 'green', dotColor: 'green' }}
       />
     )
-    const link = screen.getByText('DevControl System Health').closest('a')!
+    expect(screen.getByText('DevControl System Health').closest('a')).toBeNull()
+    const link = screen.getByRole('link', { name: 'Open DevControl status' })
     const arrows = link.querySelectorAll('svg.lucide-arrow-right')
     expect(arrows).toHaveLength(1)
     expect(arrows[0].getAttribute('width')).toBe('14')

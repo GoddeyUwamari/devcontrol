@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { complianceScanPending, computeSecurityEvidence, computeSecurityHealthKpi, securityFindingsCaption, securityKpiCaption } from '../securityHealthKpi'
+import { complianceScanPending, computeSecurityEvidence, computeSecurityHealthKpi, resourceIssueCount, securityFindingsCaption, securityKpiCaption, securityScopeCaption } from '../securityHealthKpi'
 
 const pageSource = readFileSync(join(__dirname, '../page.tsx'), 'utf-8')
 const helperSource = readFileSync(join(__dirname, '../securityHealthKpi.ts'), 'utf-8')
@@ -105,21 +105,21 @@ describe('Dashboard page wiring', () => {
 
 describe('Security Posture face captions', () => {
   const counts = (critical: number, high: number, medium = 0, low = 0) => ({ critical, high, medium, low })
-  const base = { isDemoActive: false, isLoading: false, findingsError: false, resourceComplianceError: false }
+  const base = { isDemoActive: false, isLoading: false, findingsError: false, resourceComplianceError: false, resourceIssues: null }
 
   it('counts by severity, zeros omitted, plural from the total', () => {
-    expect(securityFindingsCaption(counts(1, 5))).toBe('1 critical · 5 high findings')
-    expect(securityFindingsCaption(counts(1, 0))).toBe('1 critical finding')
-    expect(securityFindingsCaption(counts(0, 0, 2, 1))).toBe('2 medium · 1 low findings')
+    expect(securityFindingsCaption(counts(1, 5))).toBe('1 critical · 5 high account findings')
+    expect(securityFindingsCaption(counts(1, 0))).toBe('1 critical account finding')
+    expect(securityFindingsCaption(counts(0, 0, 2, 1))).toBe('2 medium · 1 low account findings')
     expect(securityFindingsCaption(counts(0, 0))).toBeNull()
     expect(securityFindingsCaption(undefined)).toBeNull()
   })
 
   it('"compliance scan pending" only from scan_completed === false', () => {
-    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: false })).toBe('1 critical · 5 high findings · compliance scan pending')
-    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: true })).toBe('1 critical · 5 high findings')
-    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: undefined })).toBe('1 critical · 5 high findings')
-    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: false, resourceComplianceError: true })).toBe('1 critical · 5 high findings')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: false })).toBe('1 critical · 5 high account findings · compliance scan pending')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: true })).toBe('1 critical · 5 high account findings')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: undefined })).toBe('1 critical · 5 high account findings')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceScanCompleted: false, resourceComplianceError: true })).toBe('1 critical · 5 high account findings')
   })
 
   it('loading, demo, failed, or empty data: the caption is omitted', () => {
@@ -138,7 +138,7 @@ describe('Security face caption and panel share one compliance-scan rule', () =>
       complianceBreakdown: null, complianceCountsReported: true, resourceComplianceError: false, ...o,
     }).resourceCompliance
   const caption = (o: { resourceScanCompleted: boolean | undefined; resourceComplianceError?: boolean }) =>
-    securityKpiCaption({ isDemoActive: false, isLoading: false, findingCounts: counts, findingsError: false, resourceComplianceError: false, ...o })
+    securityKpiCaption({ isDemoActive: false, isLoading: false, findingCounts: counts, findingsError: false, resourceIssues: null, resourceComplianceError: false, ...o })
 
   it.each([
     [false, false],
@@ -160,5 +160,37 @@ describe('Security face caption and panel share one compliance-scan rule', () =>
     expect(evidence({ resourceScanCompleted: undefined, complianceCountsReported: false })).toBe('Resource compliance: Not yet evaluated')
     expect(evidence({ resourceScanCompleted: false, resourceComplianceError: true })).toBe('Resource compliance: Unavailable')
     for (const s of [true, false]) expect(evidence({ resourceScanCompleted: s })).not.toContain('Not yet evaluated')
+  })
+})
+
+describe('Security captions name both scopes', () => {
+  const counts = (critical: number, high: number, medium = 0, low = 0) => ({ critical, high, medium, low })
+  const base = { isDemoActive: false, isLoading: false, findingsError: false, resourceComplianceError: false, resourceScanCompleted: true }
+
+  it('account findings and resource issues, from the loaded counts; plurals', () => {
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceIssues: 3 })).toBe('1 critical · 5 high account findings · 3 resource issues')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(0, 1), resourceIssues: 1 })).toBe('1 high account finding · 1 resource issue')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceIssues: 2, resourceScanCompleted: false })).toBe('1 critical · 5 high account findings · 2 resource issues · compliance scan pending')
+  })
+
+  it('zero or unavailable parts are omitted', () => {
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceIssues: 0 })).toBe('1 critical · 5 high account findings')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(1, 5), resourceIssues: null })).toBe('1 critical · 5 high account findings')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(0, 0), resourceIssues: 4 })).toBe('4 resource issues')
+    expect(securityKpiCaption({ ...base, findingsError: true, findingCounts: undefined, resourceIssues: 4 })).toBe('4 resource issues')
+    expect(securityKpiCaption({ ...base, findingCounts: counts(0, 0), resourceIssues: 0 })).toBeNull()
+  })
+
+  it('the tile caption is the same two scopes, without "compliance scan pending"', () => {
+    expect(securityScopeCaption({ findingCounts: counts(1, 5), findingsError: false, resourceIssues: 3 })).toBe('1 critical · 5 high account findings · 3 resource issues')
+    expect(securityScopeCaption({ findingCounts: counts(0, 0), findingsError: false, resourceIssues: 0 })).toBeNull()
+  })
+
+  it('resourceIssueCount: the sum of the loaded severity counts; null when failed or absent', () => {
+    expect(resourceIssueCount({ bySeverity: counts(1, 2, 3, 4), resourceComplianceError: false })).toBe(10)
+    expect(resourceIssueCount({ bySeverity: counts(0, 0), resourceComplianceError: false })).toBe(0)
+    expect(resourceIssueCount({ bySeverity: counts(1, 2), resourceComplianceError: true })).toBeNull()
+    expect(resourceIssueCount({ bySeverity: null, resourceComplianceError: false })).toBeNull()
+    expect(resourceIssueCount({ bySeverity: undefined, resourceComplianceError: false })).toBeNull()
   })
 })

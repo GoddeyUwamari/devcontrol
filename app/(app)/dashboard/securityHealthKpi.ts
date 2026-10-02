@@ -99,37 +99,69 @@ export function computeSecurityEvidence(params: {
 }
 
 /**
- * "1 critical · 5 high findings": active account-level findings by severity,
- * zero counts omitted, plural from the total. null when there are no counts
- * to show (none loaded, the request failed, or every count is zero -- the
- * panel words those states).
+ * "1 critical · 5 high account findings": active account-level findings by
+ * severity, zero counts omitted, plural from the total. null when there are
+ * no counts to show (none loaded, the request failed, or every count is
+ * zero -- the panel words those states).
  */
 export function securityFindingsCaption(findingCounts: SeverityCounts | null | undefined): string | null {
   if (!findingCounts) return null
   const tiers = (['critical', 'high', 'medium', 'low'] as const).filter((tier) => findingCounts[tier] > 0)
   if (tiers.length === 0) return null
   const total = tiers.reduce((sum, tier) => sum + findingCounts[tier], 0)
-  return `${tiers.map((tier) => `${findingCounts[tier]} ${tier}`).join(' · ')} finding${total !== 1 ? 's' : ''}`
+  return `${tiers.map((tier) => `${findingCounts[tier]} ${tier}`).join(' · ')} account finding${total !== 1 ? 's' : ''}`
 }
 
 /**
- * The Security Posture card's one face caption: the finding counts above,
- * plus "compliance scan pending" under the same rule as the panel
- * (complianceScanPending). Each part is
- * omitted when its data is loading, failed, or absent.
+ * Open resource compliance issues: the sum of the resource stats' severity
+ * counts the Dashboard already loads (the same counts the panel's resource
+ * compliance line shows). null when the request failed or no counts came back.
+ */
+export function resourceIssueCount(params: {
+  bySeverity: SeverityCounts | null | undefined
+  resourceComplianceError: boolean
+}): number | null {
+  const { bySeverity, resourceComplianceError } = params
+  if (resourceComplianceError || !bySeverity) return null
+  return bySeverity.critical + bySeverity.high + bySeverity.medium + bySeverity.low
+}
+
+/**
+ * Both security scopes in one line: "1 critical · 5 high account findings ·
+ * 3 resource issues". Each part is omitted when it is zero or unavailable.
+ */
+export function securityScopeCaption(params: {
+  findingCounts: SeverityCounts | null | undefined
+  findingsError: boolean
+  resourceIssues: number | null
+}): string | null {
+  const { findingCounts, findingsError, resourceIssues } = params
+  const parts = [
+    findingsError ? null : securityFindingsCaption(findingCounts),
+    resourceIssues !== null && resourceIssues > 0 ? `${resourceIssues} resource issue${resourceIssues !== 1 ? 's' : ''}` : null,
+  ].filter((p): p is string => p !== null)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/**
+ * The Security Posture card's one face caption: both scopes (above), plus
+ * "compliance scan pending" under the same rule as the panel
+ * (complianceScanPending). Each part is omitted when its data is loading,
+ * failed, absent, or zero.
  */
 export function securityKpiCaption(params: {
   isDemoActive: boolean
   isLoading: boolean
   findingCounts: SeverityCounts | null | undefined
   findingsError: boolean
+  resourceIssues: number | null
   resourceScanCompleted: boolean | undefined
   resourceComplianceError: boolean
 }): string | null {
-  const { isDemoActive, isLoading, findingCounts, findingsError, resourceScanCompleted, resourceComplianceError } = params
+  const { isDemoActive, isLoading, findingCounts, findingsError, resourceIssues, resourceScanCompleted, resourceComplianceError } = params
   if (isDemoActive || isLoading) return null
   const parts = [
-    findingsError ? null : securityFindingsCaption(findingCounts),
+    securityScopeCaption({ findingCounts, findingsError, resourceIssues }),
     complianceScanPending(resourceScanCompleted, resourceComplianceError) ? 'compliance scan pending' : null,
   ].filter((p): p is string => p !== null)
   return parts.length > 0 ? parts.join(' · ') : null
