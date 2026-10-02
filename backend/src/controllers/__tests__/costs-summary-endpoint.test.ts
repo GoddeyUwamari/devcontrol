@@ -328,23 +328,24 @@ describe('GET /api/platform/costs/summary -- the comparison uses finished days o
     expect(monthOverMonth.data.previousWindow).toEqual({ start: '2027-02-01', end: '2027-02-28' });
   });
 
-  it('uses the UTC date, not the server\'s local date: Oct 3 01:00 UTC is still Oct 2 in New York, and compares Oct 1 vs Sep 1', async () => {
-    const originalTz = process.env.TZ;
-    process.env.TZ = 'America/New_York';
-    try {
-      setClock('2026-10-03T01:00:00.000Z');
-      expect(new Date().getDate()).toBe(2); // local evening of the previous day
-      mockMonthlyCost(0.5);
-      jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(dailyTrend(1, 1));
+  it('uses the UTC date, not the server\'s local date: at Oct 3 01:00 UTC a server whose local date is still Oct 2 compares Oct 1 vs Sep 1', async () => {
+    setClock('2026-10-03T01:00:00.000Z');
+    // A server in America/New_York (UTC-4), where it is Oct 2, 9pm. Jest workers cannot
+    // switch timezone through process.env.TZ, so the local-date getters are pinned to that
+    // zone for this test only -- on every machine, CI included. UTC getters stay real.
+    jest.spyOn(Date.prototype, 'getFullYear').mockReturnValue(2026);
+    jest.spyOn(Date.prototype, 'getMonth').mockReturnValue(9);
+    jest.spyOn(Date.prototype, 'getDate').mockReturnValue(2);
+    expect(new Date().getDate()).toBe(2); // local evening of the previous day
+    expect(new Date().getUTCDate()).toBe(3);
+    mockMonthlyCost(0.5);
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(dailyTrend(1, 1));
 
-      const { spend, monthOverMonth } = await summary();
+    const { spend, monthOverMonth } = await summary();
 
-      expect(monthOverMonth.data.currentWindow).toEqual({ start: '2026-10-01', end: '2026-10-01' });
-      expect(monthOverMonth.data.previousWindow).toEqual({ start: '2026-09-01', end: '2026-09-01' });
-      expect(spend.data.finishedThrough).toBe('2026-10-01');
-    } finally {
-      process.env.TZ = originalTz;
-    }
+    expect(monthOverMonth.data.currentWindow).toEqual({ start: '2026-10-01', end: '2026-10-01' });
+    expect(monthOverMonth.data.previousWindow).toEqual({ start: '2026-09-01', end: '2026-09-01' });
+    expect(spend.data.finishedThrough).toBe('2026-10-01');
   });
 
   it('an inventory estimate has no finishedThrough', async () => {
