@@ -31,7 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, UserPlus, MoreVertical, Trash2, Shield } from "lucide-react";
 import {
   DropdownMenu,
@@ -71,11 +71,12 @@ export function MembersTab({ organization }: MembersTabProps) {
     }
   };
 
-  const handleRoleChange = async (memberId: string, userId: string, newRole: string) => {
+  // member.id is the member's user id -- the id the /members/:userId routes take.
+  const handleRoleChange = async (memberId: string, newRole: string) => {
     try {
       await organizationsService.updateMemberRole(
         organization.id,
-        userId,
+        memberId,
         newRole as "owner" | "admin" | "member" | "viewer"
       );
 
@@ -101,7 +102,7 @@ export function MembersTab({ organization }: MembersTabProps) {
     try {
       await organizationsService.removeMember(
         organization.id,
-        memberToRemove.userId
+        memberToRemove.id
       );
 
       // Update local state
@@ -187,7 +188,7 @@ export function MembersTab({ organization }: MembersTabProps) {
               </TableHeader>
               <TableBody>
                 {members.map((member) => {
-                  const isCurrentUser = member.userId === user?.id;
+                  const isCurrentUser = member.id === user?.id;
                   const isOwner = member.role === "owner";
 
                   return (
@@ -195,17 +196,18 @@ export function MembersTab({ organization }: MembersTabProps) {
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8">
+                            {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt="" />}
                             <AvatarFallback className="text-xs">
-                              {member.user?.fullName
-                                ? getInitials(member.user.fullName)
-                                : member.user?.email
-                                  ? member.user.email.substring(0, 2).toUpperCase()
+                              {member.fullName
+                                ? getInitials(member.fullName)
+                                : member.email
+                                  ? member.email.substring(0, 2).toUpperCase()
                                   : "??"}
                             </AvatarFallback>
                           </Avatar>
                           <div>
                             <p className="font-medium">
-                              {member.user?.fullName || member.user?.email || "Unknown User"}
+                              {member.fullName || member.email || "Unknown User"}
                               {isCurrentUser && (
                                 <span className="ml-2 text-xs text-muted-foreground">
                                   (You)
@@ -213,7 +215,7 @@ export function MembersTab({ organization }: MembersTabProps) {
                               )}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {member.user?.email || "No email"}
+                              {member.email || "No email"}
                             </p>
                           </div>
                         </div>
@@ -227,7 +229,7 @@ export function MembersTab({ organization }: MembersTabProps) {
                           <Select
                             value={member.role}
                             onValueChange={(value) =>
-                              handleRoleChange(member.id, member.userId, value)
+                              handleRoleChange(member.id, value)
                             }
                           >
                             <SelectTrigger className="w-32">
@@ -292,7 +294,7 @@ export function MembersTab({ organization }: MembersTabProps) {
             <AlertDialogDescription>
               Are you sure you want to remove{" "}
               <span className="font-medium">
-                {memberToRemove?.user?.fullName || memberToRemove?.user?.email || "this member"}
+                {memberToRemove?.fullName || memberToRemove?.email || "this member"}
               </span>{" "}
               from this organization? They will lose access to all resources.
             </AlertDialogDescription>
