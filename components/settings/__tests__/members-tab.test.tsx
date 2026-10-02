@@ -34,7 +34,9 @@ beforeAll(() => {
   if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = () => {}
 })
 
-beforeEach(() => {
+beforeEach(async () => {
+  const { toast } = await import('sonner')
+  vi.mocked(toast.error).mockReset()
   vi.mocked(organizationsService.getMembers).mockReset().mockResolvedValue(ROWS as never)
   vi.mocked(organizationsService.updateMemberRole).mockReset().mockResolvedValue(undefined)
   vi.mocked(organizationsService.removeMember).mockReset().mockResolvedValue(undefined)
@@ -84,5 +86,73 @@ describe('role change and removal send the member id', () => {
     expect(dialog).toHaveTextContent('Max Member')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remove Member' }))
     await waitFor(() => expect(organizationsService.removeMember).toHaveBeenCalledWith(ORG, MEMBER))
+  })
+})
+
+describe('error toasts show the backend\'s safe error field', () => {
+  const apiError = (body: Record<string, unknown>) => Object.assign(new Error('Request failed'), { response: { data: body } })
+
+  it('role change failure: the toast description is response.data.error, never response.data.message', async () => {
+    const { toast } = await import('sonner')
+    vi.mocked(organizationsService.updateMemberRole).mockRejectedValue(
+      apiError({ success: false, error: 'Insufficient permissions to assign this role', message: 'should not be shown' })
+    )
+    renderTab()
+    await screen.findByText('Max Member')
+    await chooseRole(row('Max Member'), 'Viewer')
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Failed to update role', { description: 'Insufficient permissions to assign this role' })
+    )
+  })
+
+  it('removal failure: the toast description is response.data.error', async () => {
+    const { toast } = await import('sonner')
+    vi.mocked(organizationsService.removeMember).mockRejectedValue(apiError({ success: false, error: 'Validation failed' }))
+    renderTab()
+    await screen.findByText('Max Member')
+    fireEvent.pointerDown(within(row('Max Member')).getByRole('button', { name: 'Member actions menu' }), { button: 0, ctrlKey: false, pointerType: 'mouse' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Remove member/ }))
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove Member' }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to remove member', { description: 'Validation failed' }))
+  })
+
+  it('with no error field, the generic fallback', async () => {
+    const { toast } = await import('sonner')
+    vi.mocked(organizationsService.updateMemberRole).mockRejectedValue(new Error('Network Error'))
+    renderTab()
+    await screen.findByText('Max Member')
+    await chooseRole(row('Max Member'), 'Viewer')
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to update role', { description: 'Please try again' }))
+  })
+})
+
+describe('Admin role option', () => {
+  const ADMIN_ME = { ...ROWS[0], role: 'admin' }
+  const optionsFor = async (rowName: string) => {
+    const trigger = within(row(rowName)).getByRole('combobox')
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' })
+    const listbox = await screen.findByRole('listbox')
+    return within(listbox).getAllByRole('option').map((o) => o.textContent)
+  }
+
+  it('an owner is offered Admin, Member and Viewer', async () => {
+    renderTab()
+    await screen.findByText('Max Member')
+    expect(await optionsFor('Max Member')).toEqual(['Admin', 'Member', 'Viewer'])
+  })
+
+  it('an admin is not offered Admin (the backend lets admins grant only member or viewer)', async () => {
+    vi.mocked(organizationsService.getMembers).mockResolvedValue([ADMIN_ME, ROWS[1]] as never)
+    renderTab()
+    await screen.findByText('Max Member')
+    expect(await optionsFor('Max Member')).toEqual(['Member', 'Viewer'])
+  })
+
+  it('an admin viewing an existing admin still sees that row\'s current value', async () => {
+    const otherAdmin = { ...ROWS[1], id: '33333333-3333-4333-8333-333333333333', fullName: 'Ada Admin', email: 'ada@example.com', role: 'admin' }
+    vi.mocked(organizationsService.getMembers).mockResolvedValue([ADMIN_ME, otherAdmin] as never)
+    renderTab()
+    await screen.findByText('Ada Admin')
+    expect(within(row('Ada Admin')).getByRole('combobox')).toHaveTextContent('Admin')
   })
 })

@@ -91,7 +91,7 @@ export function MembersTab({ organization }: MembersTabProps) {
     } catch (error: any) {
       console.error("Failed to update role:", error);
       toast.error("Failed to update role", {
-        description: error.response?.data?.message || "Please try again",
+        description: error.response?.data?.error || "Please try again",
       });
     }
   };
@@ -113,10 +113,16 @@ export function MembersTab({ organization }: MembersTabProps) {
     } catch (error: any) {
       console.error("Failed to remove member:", error);
       toast.error("Failed to remove member", {
-        description: error.response?.data?.message || "Please try again",
+        description: error.response?.data?.error || "Please try again",
       });
     }
   };
+
+  // The viewer's own role in this organization. The backend lets an admin
+  // grant only member or viewer (organization-authorization canManageRole),
+  // so an admin is not offered "Admin".
+  const viewerRole = members.find((m) => m.id === user?.id)?.role;
+  const canGrantAdmin = viewerRole !== "admin";
 
   const getInitials = (name: string) => {
     return name
@@ -236,7 +242,8 @@ export function MembersTab({ organization }: MembersTabProps) {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="admin">Admin</SelectItem>
+                              {/* Kept when it is the row's current value, so the select still shows it. */}
+                              {(canGrantAdmin || member.role === "admin") && <SelectItem value="admin">Admin</SelectItem>}
                               <SelectItem value="member">Member</SelectItem>
                               <SelectItem value="viewer">Viewer</SelectItem>
                             </SelectContent>
