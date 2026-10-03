@@ -360,7 +360,7 @@ export default function DashboardPage() {
   const soc2Total = soc2Criteria?.length ?? 6
   const soc2Subtext = isAwsConnected ? `${soc2EvaluatedCount} of ${soc2Total} criteria evaluated` : 'Not yet evaluated'
   const customFrameworksSubtext = isDemoActive
-    ? '4 frameworks · Security Hub-backed'
+    ? 'CIS AWS · PCI-DSS · NIST 800-53 · Security Hub-backed'
     : customFrameworks.length > 0
       ? `${customFrameworks.length} framework${customFrameworks.length !== 1 ? 's' : ''} configured`
       : 'No custom frameworks yet'

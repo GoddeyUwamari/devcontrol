@@ -113,10 +113,27 @@ describe('SOC 2 Readiness messaging — corrected customer-facing surfaces', () 
     expect(code).toMatch(/SOC 2 readiness planning underway/i)
   })
 
-  it('dashboard demo compliance chips reference only Security Hub-backed frameworks (CIS, PCI-DSS, NIST 800-53), never SOC2 or GDPR', () => {
+  it('dashboard demo compliance text names only Security Hub-backed frameworks (CIS, PCI-DSS, NIST 800-53), never SOC2 or GDPR, and claims no more frameworks than it names', () => {
     const code = readCode('app/(app)/dashboard/page.tsx')
-    const chipArrayMatches = code.match(/\['CIS AWS', 'PCI-DSS', 'NIST 800-53'\]/g) ?? []
-    expect(chipArrayMatches.length).toBe(2)
+    // The demo branch of the Key Findings "Custom frameworks" row: `isDemoActive ? '<demo text>' : <real data>`.
+    const demoText = code.match(/customFrameworksSubtext\s*=\s*isDemoActive\s*\?\s*'([^']*)'/)?.[1]
+    expect(demoText, 'dashboard demo framework text not found').toBeDefined()
+
+    const SECURITY_HUB_BACKED = ['CIS AWS', 'PCI-DSS', 'NIST 800-53']
+    const parts = demoText!.split(' · ')
+    expect(parts[parts.length - 1]).toBe('Security Hub-backed')
+    const named = parts.slice(0, -1)
+    expect(named.length).toBeGreaterThan(0)
+    for (const framework of named) {
+      expect(SECURITY_HUB_BACKED, `"${framework}" is not a Security Hub-backed framework`).toContain(framework)
+    }
+    expect(new Set(named).size).toBe(named.length)
+    expect(demoText).not.toMatch(/SOC\s*2|GDPR|HIPAA/i)
+    // No count beyond the frameworks actually named (e.g. "4 frameworks").
+    for (const [, count] of demoText!.matchAll(/(\d+)\s*frameworks?/gi)) {
+      expect(Number(count)).toBeLessThanOrEqual(named.length)
+    }
+
     expect(code).not.toMatch(/'SOC2', 'CIS AWS', 'GDPR'/)
   })
 
