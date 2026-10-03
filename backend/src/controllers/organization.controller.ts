@@ -7,7 +7,8 @@ import { Request, Response } from 'express';
 import { organizationService } from '../services/organization.service';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
 import { auditRequestContext } from '../services/auditEvents.service';
-import { OrganizationAccessError } from '../services/organization-authorization';
+import { OrganizationAccessError, OrganizationRole } from '../services/organization-authorization';
+import type { WebSocketServer } from '../websocket/server';
 
 /**
  * Status for a failed membership operation: authorization/seat errors from
@@ -41,6 +42,21 @@ function memberMutationErrorResponse(res: Response, error: unknown, fallback: st
   }
   console.error(`[Organizations] ${fallback}:`, error);
   res.status(500).json({ success: false, error: fallback });
+}
+
+/**
+ * Brings a member's open live-update sockets in line with a membership change
+ * that has already committed. Never fails the request: the change itself has
+ * succeeded, and every socket is re-checked against membership at handshake.
+ */
+function syncMemberSockets(req: Request, apply: (ws: WebSocketServer) => void): void {
+  const ws = req.app.get('wsServer') as WebSocketServer | undefined;
+  if (!ws) return;
+  try {
+    apply(ws);
+  } catch (error) {
+    console.error('[Organizations] Failed to update member sockets:', error);
+  }
 }
 
 export class OrganizationController {
@@ -349,6 +365,7 @@ export class OrganizationController {
       // The caller is always the authenticated token's user -- :userId is
       // only ever the TARGET membership.
       await organizationService.removeUser(id, req.user.userId, userId, auditRequestContext(req));
+      syncMemberSockets(req, (ws) => ws.disconnectUserFromOrganization(userId, id));
 
       res.status(200).json({
         success: true,
@@ -387,6 +404,8 @@ export class OrganizationController {
       // The caller is always the authenticated token's user -- :userId is
       // only ever the TARGET membership; role is validated in the service.
       await organizationService.updateUserRole(id, req.user.userId, userId, role, auditRequestContext(req));
+      // updateUserRole only succeeds for a valid role.
+      syncMemberSockets(req, (ws) => ws.updateUserRoleInOrganization(userId, id, role as OrganizationRole));
 
       res.status(200).json({
         success: true,
