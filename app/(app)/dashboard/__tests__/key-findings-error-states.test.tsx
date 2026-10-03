@@ -159,7 +159,7 @@ describe('demo mode is unchanged', () => {
     renderDashboard()
     const c = await card()
     expect(c.getByText('1 critical finding')).toBeInTheDocument()
-    expect(subOf(c, 'Custom frameworks')).toBe('4 frameworks · Security Hub-backed')
+    expect(subOf(c, 'Custom frameworks')).toBe('CIS AWS · PCI-DSS · NIST 800-53 · Security Hub-backed')
     await waitFor(() => expect(spies.frameworks).toHaveBeenCalled())
     expect(c.queryByText(/Unavailable/)).not.toBeInTheDocument()
     expect(spies.findings).not.toHaveBeenCalled()

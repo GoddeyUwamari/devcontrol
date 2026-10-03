@@ -307,16 +307,68 @@ describe('Security Overview — compliance framework truthfulness', () => {
   })
 })
 
-describe('Dashboard compliance placeholder — unaffected by this fix (regression guard)', () => {
-  it('Dashboard still renders the unconditional "—" placeholder for Compliance Frameworks, unchanged by this fix', async () => {
+describe('Dashboard Compliance Frameworks row — never a fabricated figure (regression guard)', () => {
+  /**
+   * The dashboard used to show a static "Compliance Frameworks" value ('—' in
+   * real mode). It now shows the Key Findings "Custom frameworks" row, which in
+   * real mode may only report what the frameworks request returned: a
+   * configured count, the empty state, "Unavailable" when the request failed,
+   * or a loading skeleton -- never a pass count or a "passing" judgment. Demo
+   * mode names only the Security Hub-backed frameworks.
+   */
+  const DEMO_TEXT = 'CIS AWS · PCI-DSS · NIST 800-53 · Security Hub-backed'
+  const PASS_JUDGMENT = /passing|\bpass(ed)?\b|\d+\s*\/\s*\d+|\$\{[^}]+\}\s*\/\s*\$\{/i
+
+  async function source(relPath: string) {
     const fs = await import('fs')
     const path = await import('path')
-    const dashboardSource = fs.readFileSync(
-      path.join(__dirname, '../../dashboard/page.tsx'),
-      'utf8'
+    const text = fs.readFileSync(path.join(__dirname, '../../../..', relPath), 'utf8')
+    return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+  }
+
+  it('the dashboard derives the row text only from the frameworks request: demo text, configured count, or empty state', async () => {
+    const dashboard = await source('app/(app)/dashboard/page.tsx')
+    const expression = dashboard.match(/const customFrameworksSubtext\s*=([\s\S]*?)\n\s*\n/)?.[1].replace(/\s+/g, ' ').trim()
+    expect(expression).toBe(
+      `isDemoActive ? '${DEMO_TEXT}' : customFrameworks.length > 0 ? \`\${customFrameworks.length} framework\${customFrameworks.length !== 1 ? 's' : ''} configured\` : 'No custom frameworks yet'`
     )
-    expect(dashboardSource).toContain(
-      "{ label: 'Compliance Frameworks',    value: isDemoActive ? '4/4' : '—',                    status: 'good' }"
-    )
+    const realBranch = expression!.slice(expression!.indexOf(':') + 1)
+    expect(realBranch).not.toMatch(PASS_JUDGMENT)
+    // A failed request is "Unavailable" and an in-flight one a skeleton, in real mode only.
+    expect(dashboard).toMatch(/customFrameworksError\s*=\s*!isDemoActive && !!customFrameworksFetchError && customFrameworks\.length === 0/)
+    expect(dashboard).toMatch(/customFrameworksLoading=\{!isDemoActive && customFrameworksLoading\}/)
+    expect(dashboard).toMatch(/customFrameworksError=\{customFrameworksError\}/)
+  })
+
+  it('the Key Findings card renders each real-mode state without a pass count or "passing", and the demo text unchanged', async () => {
+    const { SecurityComplianceSummary } = await import('@/components/dashboard/security-compliance-summary')
+    const base = {
+      findingCounts: null,
+      riskDataLoading: false,
+      resourceComplianceStatus: 'n/a',
+      soc2Subtext: 'Not yet evaluated',
+      soc2Loading: false,
+    }
+    const rowText = () => (screen.getByText('Custom frameworks').parentElement as HTMLElement).lastElementChild?.textContent
+
+    const loading = render(<SecurityComplianceSummary {...base} customFrameworksSubtext="No custom frameworks yet" customFrameworksLoading />)
+    expect(screen.queryByText('Custom frameworks')).not.toBeInTheDocument()
+    loading.unmount()
+
+    for (const [props, expected] of [
+      [{ customFrameworksSubtext: 'No custom frameworks yet' }, 'No custom frameworks yet'],
+      [{ customFrameworksSubtext: '2 frameworks configured' }, '2 frameworks configured'],
+      [{ customFrameworksSubtext: 'No custom frameworks yet', customFrameworksError: true }, 'Unavailable'],
+      [{ customFrameworksSubtext: DEMO_TEXT }, DEMO_TEXT],
+    ] as const) {
+      const view = render(<SecurityComplianceSummary {...base} customFrameworksLoading={false} {...props} />)
+      expect(rowText()).toBe(expected)
+      expect(rowText()).not.toMatch(PASS_JUDGMENT)
+      view.unmount()
+    }
+
+    const component = await source('components/dashboard/security-compliance-summary.tsx')
+    expect(component).toMatch(/headline="Custom frameworks" sub=\{customFrameworksError \? UNAVAILABLE : customFrameworksSubtext\}/)
+    expect(component).not.toMatch(/passing/i)
   })
 })
