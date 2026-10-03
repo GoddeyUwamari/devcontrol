@@ -57,6 +57,10 @@ jobs:
       - name: Run linter
         run: npm run lint || true
 
+      # Frontend unit tests (vitest + jsdom): no database, network or secrets.
+      - name: Run frontend tests
+        run: npm run test:frontend
+
       - name: Create devcontrol role for CI schema bootstrap
         run: PGPASSWORD=postgres psql -h localhost -U postgres -d platform_portal -c "CREATE ROLE devcontrol;"
 
