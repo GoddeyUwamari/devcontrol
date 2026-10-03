@@ -6,9 +6,9 @@
  * (role change, removal, invitation, invitation acceptance) and every
  * owner-only security operation (SSO configuration) authorizes against the
  * caller's CURRENT membership row read here -- never against the role
- * claim in their JWT, which can be days stale (see auth.service.ts's
- * refreshAccessToken, which copies the old claim forward), and never
- * against anything the client sent.
+ * claim in a JWT, and never against anything the client sent. Every
+ * authenticated request resolves the caller's role through
+ * getCurrentMembership (see auth.middleware.ts).
  *
  * Policy:
  *   - owner  may manage owner/admin/member/viewer memberships.
@@ -95,6 +95,42 @@ export async function getActiveMembershipRole(
   );
   const role = result.rows[0]?.role;
   return isOrganizationRole(role) ? role : null;
+}
+
+/**
+ * The caller's current membership in `organizationId`, or null unless they
+ * hold an active, accepted membership with a valid role, on an active,
+ * non-deleted user account, in an active, non-deleted organization -- the
+ * same rules as getActiveMembershipRole plus isActiveOrganization, in one
+ * query. Keyed on both ids: it can only ever match the row for this exact
+ * user in this exact organization. None of these tables is tenant-scoped by
+ * RLS, so the result does not depend on the connection's tenant tag.
+ */
+export async function getCurrentMembership(
+  executor: Pool | PoolClient,
+  organizationId: string,
+  userId: string
+): Promise<{ role: OrganizationRole; email: string } | null> {
+  const result = await executor.query(
+    `SELECT om.role, u.email
+       FROM organization_memberships om
+       JOIN users u ON u.id = om.user_id
+       JOIN organizations o ON o.id = om.organization_id
+      WHERE om.organization_id = $1
+        AND om.user_id = $2
+        AND om.is_active = true
+        AND om.invitation_token IS NULL
+        AND u.is_active = true
+        AND u.deleted_at IS NULL
+        AND o.is_active = true
+        AND o.deleted_at IS NULL`,
+    [organizationId, userId]
+  );
+  const row = result.rows[0];
+  if (!row || !isOrganizationRole(row.role)) {
+    return null;
+  }
+  return { role: row.role, email: row.email };
 }
 
 /**

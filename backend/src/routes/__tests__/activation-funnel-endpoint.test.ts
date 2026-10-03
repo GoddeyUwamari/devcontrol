@@ -157,7 +157,14 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-function stubAuth(userId: string, orgId: string, role: string) {
+/** Authenticates as `userId` -- a real, active `role` member of `orgId`. */
+async function stubAuth(userId: string, orgId: string, role: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO organization_memberships (organization_id, user_id, role, joined_at, is_active)
+     VALUES ($1, $2, $3, NOW(), true)
+     ON CONFLICT (organization_id, user_id) DO UPDATE SET role = $3, is_active = true`,
+    [orgId, userId, role]
+  );
   jest.spyOn(authService, 'verifyToken').mockReturnValue({
     userId,
     email: 'funnel-admin@example.com',
@@ -180,7 +187,7 @@ describe('GET /api/admin/activation-funnel', () => {
   it('Test 2 -- authenticated tenant member with no platform_staff record is rejected with 403', async () => {
     const orgId = await insertOrg('caller-member');
     const userId = await insertUser();
-    stubAuth(userId, orgId, 'member');
+    await stubAuth(userId, orgId, 'member');
 
     const response = await getFunnel();
     expect(response.status).toBe(403);
@@ -189,7 +196,7 @@ describe('GET /api/admin/activation-funnel', () => {
   it('Test 3 -- authenticated tenant admin with no platform_staff record is rejected with 403', async () => {
     const orgId = await insertOrg('caller-admin');
     const userId = await insertUser();
-    stubAuth(userId, orgId, 'admin');
+    await stubAuth(userId, orgId, 'admin');
 
     const response = await getFunnel();
     expect(response.status).toBe(403);
@@ -198,7 +205,7 @@ describe('GET /api/admin/activation-funnel', () => {
   it('Test 4 -- authenticated tenant owner with no platform_staff record is rejected with 403 -- tenant role alone must never grant access', async () => {
     const orgId = await insertOrg('caller-owner');
     const userId = await insertUser();
-    stubAuth(userId, orgId, 'owner');
+    await stubAuth(userId, orgId, 'owner');
 
     const response = await getFunnel();
     expect(response.status).toBe(403);
@@ -209,7 +216,7 @@ describe('GET /api/admin/activation-funnel', () => {
     const userId = await insertUser();
     // Lowest tenant role on purpose -- proves the grant, not the role, is
     // what admits this request.
-    stubAuth(userId, orgId, 'member');
+    await stubAuth(userId, orgId, 'member');
     await grantPlatformStaff(userId, 'active');
 
     const response = await getFunnel();
@@ -222,7 +229,7 @@ describe('GET /api/admin/activation-funnel', () => {
   it('Test 6 -- revoked platform staff is rejected with 403', async () => {
     const orgId = await insertOrg('caller-revoked');
     const userId = await insertUser();
-    stubAuth(userId, orgId, 'owner');
+    await stubAuth(userId, orgId, 'owner');
     await grantPlatformStaff(userId, 'revoked');
 
     const response = await getFunnel();
@@ -234,7 +241,7 @@ describe('GET /api/admin/activation-funnel', () => {
     // access must not depend on their org being "in" the data at all.
     const staffOwnOrgId = await insertOrg('unrelated-staff-org');
     const userId = await insertUser();
-    stubAuth(userId, staffOwnOrgId, 'viewer');
+    await stubAuth(userId, staffOwnOrgId, 'viewer');
     await grantPlatformStaff(userId, 'active');
 
     const dataOrgId = await insertOrg('unrelated-data-org');
@@ -250,17 +257,17 @@ describe('GET /api/admin/activation-funnel', () => {
   it('security regression -- 403 body is identical across tenant-role denials and revoked-staff denial (no distinguishing information)', async () => {
     const memberOrg = await insertOrg('body-check-member');
     const memberUserId = await insertUser();
-    stubAuth(memberUserId, memberOrg, 'member');
+    await stubAuth(memberUserId, memberOrg, 'member');
     const memberBody = await (await getFunnel()).json();
 
     const ownerOrg = await insertOrg('body-check-owner');
     const ownerUserId = await insertUser();
-    stubAuth(ownerUserId, ownerOrg, 'owner');
+    await stubAuth(ownerUserId, ownerOrg, 'owner');
     const ownerBody = await (await getFunnel()).json();
 
     const revokedOrg = await insertOrg('body-check-revoked');
     const revokedUserId = await insertUser();
-    stubAuth(revokedUserId, revokedOrg, 'owner');
+    await stubAuth(revokedUserId, revokedOrg, 'owner');
     await grantPlatformStaff(revokedUserId, 'revoked');
     const revokedBody = await (await getFunnel()).json();
 
@@ -286,7 +293,7 @@ describe('GET /api/admin/activation-funnel', () => {
     const adminUserId = await insertUser();
     // Deliberately the lowest tenant role -- only the platform_staff grant
     // below is what admits this caller now.
-    stubAuth(adminUserId, callerOrgId, 'viewer');
+    await stubAuth(adminUserId, callerOrgId, 'viewer');
     await grantPlatformStaff(adminUserId, 'active');
 
     const before = await (await getFunnel()).json() as any;

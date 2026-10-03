@@ -250,6 +250,16 @@ function as(userId: string, orgId: string | undefined, jwtRole = 'owner') {
   };
 }
 
+/**
+ * Refused by authenticate itself, before any route gate: the caller has no
+ * active membership in the token's organization.
+ */
+async function expectMembershipRevoked(response: Promise<Response>): Promise<void> {
+  const res = await response;
+  expect(res.status).toBe(401);
+  expect(((await res.json()) as { code?: string }).code).toBe('MEMBERSHIP_REVOKED');
+}
+
 function unauthenticated(method: string, path: string) {
   return fetch(`${baseUrl}${path}`, { method, headers: { 'Content-Type': 'application/json' } });
 }
@@ -423,7 +433,7 @@ describe('AWS account connection -- owner only, by current membership', () => {
       [org.orgId, org.owner]
     );
 
-    expect((await as(org.owner, org.orgId).connect()).status).toBe(403);
+    await expectMembershipRevoked(as(org.owner, org.orgId).connect());
     await expectNoBinding(org.orgId);
   });
 
@@ -437,7 +447,7 @@ describe('AWS account connection -- owner only, by current membership', () => {
     );
     await insertConnectSession(org.orgId);
 
-    expect((await as(invitee, org.orgId).connect()).status).toBe(403);
+    await expectMembershipRevoked(as(invitee, org.orgId).connect());
     await expectNoBinding(org.orgId);
   });
 
@@ -448,8 +458,8 @@ describe('AWS account connection -- owner only, by current membership', () => {
     await pool.query('UPDATE users SET is_active = false WHERE id = $1', [org.owner]);
     await pool.query('UPDATE users SET deleted_at = NOW() WHERE id = $1', [deleted]);
 
-    expect((await as(org.owner, org.orgId).connect()).status).toBe(403);
-    expect((await as(deleted, org.orgId).connect()).status).toBe(403);
+    await expectMembershipRevoked(as(org.owner, org.orgId).connect());
+    await expectMembershipRevoked(as(deleted, org.orgId).connect());
     await expectNoBinding(org.orgId);
   });
 
@@ -461,9 +471,9 @@ describe('AWS account connection -- owner only, by current membership', () => {
     await pool.query('UPDATE organizations SET is_active = false WHERE id = $1', [inactive.orgId]);
     await pool.query('UPDATE organizations SET deleted_at = NOW() WHERE id = $1', [deleted.orgId]);
 
-    expect((await as(inactive.owner, inactive.orgId).connectInit()).status).toBe(403);
-    expect((await as(inactive.owner, inactive.orgId).connect()).status).toBe(403);
-    expect((await as(deleted.owner, deleted.orgId).connect()).status).toBe(403);
+    await expectMembershipRevoked(as(inactive.owner, inactive.orgId).connectInit());
+    await expectMembershipRevoked(as(inactive.owner, inactive.orgId).connect());
+    await expectMembershipRevoked(as(deleted.owner, deleted.orgId).connect());
     await expectNoBinding(inactive.orgId);
     await expectNoBinding(deleted.orgId);
   });
@@ -473,7 +483,7 @@ describe('AWS account connection -- owner only, by current membership', () => {
     const odd = await member(org.orgId, 'superowner');
     await insertConnectSession(org.orgId);
 
-    expect((await as(odd, org.orgId, 'owner').connect()).status).toBe(403);
+    await expectMembershipRevoked(as(odd, org.orgId, 'owner').connect());
     await expectNoBinding(org.orgId);
   });
 
@@ -482,7 +492,7 @@ describe('AWS account connection -- owner only, by current membership', () => {
     const outsider = await insertUser('outsider');
     await insertConnectSession(org.orgId);
 
-    expect((await as(outsider, org.orgId).connect()).status).toBe(403);
+    await expectMembershipRevoked(as(outsider, org.orgId).connect());
     await expectNoBinding(org.orgId);
   });
 
@@ -498,8 +508,8 @@ describe('AWS account connection -- owner only, by current membership', () => {
     const b = await buildOrg();
     await insertConnectSession(b.orgId);
 
-    expect((await as(a.owner, b.orgId).connectInit()).status).toBe(403);
-    expect((await as(a.owner, b.orgId).connect()).status).toBe(403);
+    await expectMembershipRevoked(as(a.owner, b.orgId).connectInit());
+    await expectMembershipRevoked(as(a.owner, b.orgId).connect());
     await expectNoBinding(b.orgId);
   });
 
@@ -699,10 +709,10 @@ describe('API keys -- create/revoke limited to owner and admin, by current membe
     await pool.query('UPDATE organizations SET is_active = false WHERE id = $1', [inactiveOrg.orgId]);
     await pool.query('UPDATE organizations SET deleted_at = NOW() WHERE id = $1', [deletedOrg.orgId]);
 
-    expect((await as(org.admin, org.orgId).createKey()).status).toBe(403);
-    expect((await as(org.owner, org.orgId).createKey()).status).toBe(403);
-    expect((await as(inactiveOrg.owner, inactiveOrg.orgId).createKey()).status).toBe(403);
-    expect((await as(deletedOrg.owner, deletedOrg.orgId).createKey()).status).toBe(403);
+    await expectMembershipRevoked(as(org.admin, org.orgId).createKey());
+    await expectMembershipRevoked(as(org.owner, org.orgId).createKey());
+    await expectMembershipRevoked(as(inactiveOrg.owner, inactiveOrg.orgId).createKey());
+    await expectMembershipRevoked(as(deletedOrg.owner, deletedOrg.orgId).createKey());
     expect(await keyCount(org.orgId)).toBe(0);
     expect(await keyCount(inactiveOrg.orgId)).toBe(0);
     expect(await keyCount(deletedOrg.orgId)).toBe(0);
@@ -723,8 +733,8 @@ describe('API keys -- create/revoke limited to owner and admin, by current membe
     const b = await buildOrg();
     const bKey = await insertKey(b.orgId);
 
-    expect((await as(a.owner, b.orgId).createKey()).status).toBe(403);
-    expect((await as(a.owner, b.orgId).revokeKey(bKey)).status).toBe(403);
+    await expectMembershipRevoked(as(a.owner, b.orgId).createKey());
+    await expectMembershipRevoked(as(a.owner, b.orgId).revokeKey(bKey));
     expect(await keyStatus(bKey)).toBe('active');
     expect(await keyCount(b.orgId)).toBe(1);
   });

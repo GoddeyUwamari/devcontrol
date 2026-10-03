@@ -106,7 +106,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
   const jobId = String(job.id);
 
   // This route is authenticated by GitHub's HMAC signature, not a user JWT, so
-  // it never passes through authenticate/optionalAuthenticate — the only place
+  // it never passes through authenticate — the only place
   // that otherwise sets app.current_organization_id for RLS. Without it, the
   // plain pool.query() calls below (services/deployments both have RLS
   // policies keyed on that session variable) always fail: SELECTs silently

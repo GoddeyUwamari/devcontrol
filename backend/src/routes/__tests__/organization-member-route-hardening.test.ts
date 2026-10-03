@@ -130,10 +130,20 @@ function recordAppSql(): string[] {
 
 /**
  * Tables the member routes read or write. authenticate() itself runs SQL on
- * every request (the tenant tag, API-usage metering) -- that is not a lookup
- * of the member.
+ * every request (the caller's own membership check, the tenant tag, API-usage
+ * metering) -- that is not a lookup of the target member.
  */
 const MEMBER_TABLES = /organization_memberships|\busers\b|audit_logs/i;
+
+/**
+ * Statements run after authenticate() tagged the connection -- i.e. by the
+ * route itself. Everything before the tag is authenticate's own caller check.
+ */
+function afterAuthenticate(statements: string[]): string[] {
+  const tagAt = statements.findIndex((statement) => statement.includes('app.current_organization_id'));
+  expect(tagAt).toBeGreaterThan(-1);
+  return statements.slice(tagAt + 1);
+}
 
 async function roleOf(orgId: string, userId: string): Promise<string | null> {
   const { rows } = await pool.query('SELECT role FROM organization_memberships WHERE organization_id = $1 AND user_id = $2', [orgId, userId]);
@@ -160,9 +170,8 @@ describe('malformed :userId', () => {
     expect(res.body).toEqual(SAFE_INVALID_ID);
     expect(res.text).not.toMatch(DB_TEXT);
     expect(service).not.toHaveBeenCalled();
-    // authenticate() ran (its tenant tag is recorded), but nothing touched the member's data.
-    expect(sql.some((statement) => statement.includes('app.current_organization_id'))).toBe(true);
-    expect(sql.filter((statement) => MEMBER_TABLES.test(statement))).toEqual([]);
+    // authenticate() ran (its tenant tag is recorded); after it, nothing touched the member's data.
+    expect(afterAuthenticate(sql).filter((statement) => MEMBER_TABLES.test(statement))).toEqual([]);
     expect(await roleOf(org.orgId, org.member)).toBe('member');
   });
 
@@ -177,9 +186,8 @@ describe('malformed :userId', () => {
     expect(res.body).toEqual(SAFE_INVALID_ID);
     expect(res.text).not.toMatch(DB_TEXT);
     expect(service).not.toHaveBeenCalled();
-    // authenticate() ran (its tenant tag is recorded), but nothing touched the member's data.
-    expect(sql.some((statement) => statement.includes('app.current_organization_id'))).toBe(true);
-    expect(sql.filter((statement) => MEMBER_TABLES.test(statement))).toEqual([]);
+    // authenticate() ran (its tenant tag is recorded); after it, nothing touched the member's data.
+    expect(afterAuthenticate(sql).filter((statement) => MEMBER_TABLES.test(statement))).toEqual([]);
   });
 
   it('authorization still runs first: a non-admin gets 403 and another organization gets 404, malformed id or not', async () => {
