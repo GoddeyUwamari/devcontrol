@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto';
 import { Pool, PoolClient } from 'pg';
 import {
   createRequestClientHandle,
+  installTenantTagReset,
   pool as appPool,
   requestContext,
   RequestContextReleasedError,
@@ -491,6 +492,14 @@ describe('live Postgres: released request connections and late queries', () => {
   const WEBHOOK_ORG = randomUUID();
   const PROBE_SQL = "SELECT current_setting('app.current_organization_id', true) AS tag, pg_backend_pid() AS pid";
 
+  // RLS never restricts the CI/dev superuser, so the late-write test routes
+  // its fresh checkouts to a throwaway NOSUPERUSER NOBYPASSRLS role (the same
+  // category of role as production's), with the same tag-reset lifecycle as
+  // the application pool.
+  const RLS_ROLE = `lifecycle_rls_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const rlsPool = installTenantTagReset(new Pool({ ...dbConfig(), max: 2, options: `-c role=${RLS_ROLE}` }));
+  let lateCheckoutsUseRlsRole: boolean;
+
   type Checkout = { client: PoolClient; statements: Array<{ text: string; params: unknown }>; releases: unknown[] };
   let checkouts: Checkout[];
   let connectAttempts: number;
@@ -546,6 +555,11 @@ describe('live Postgres: released request connections and late queries', () => {
   const fresh = () => checkouts.slice(1);
 
   beforeAll(async () => {
+    await admin.query(`CREATE ROLE ${RLS_ROLE} NOSUPERUSER NOBYPASSRLS`);
+    await admin.query(`GRANT USAGE ON SCHEMA public TO ${RLS_ROLE}`);
+    // services, plus analytics_events for its AFTER INSERT tracking trigger.
+    await admin.query(`GRANT SELECT, INSERT ON services, analytics_events TO ${RLS_ROLE}`);
+
     const app = express();
     app.use(express.json());
     app.get('/before', authenticate, async (_req, res) => {
@@ -601,12 +615,13 @@ describe('live Postgres: released request connections and late queries', () => {
     handlerGate = gate();
     beforeReleaseResult = null;
     webhookCallbackRan = false;
+    lateCheckoutsUseRlsRole = false;
     lateOutcome = new Promise((resolve) => { reportOutcome = resolve; });
     realConnect = appPool.connect.bind(appPool) as () => Promise<PoolClient>;
     jest.spyOn(appPool, 'connect').mockImplementation((async () => {
       const attempt = connectAttempts++;
       if (attempt === failCheckoutAttempt) throw new Error('simulated checkout failure');
-      const client = await realConnect();
+      const client = attempt > 0 && lateCheckoutsUseRlsRole ? await rlsPool.connect() : await realConnect();
       const index = checkouts.length;
       const record: Checkout = { client, statements: [], releases: [] };
       checkouts.push(record);
@@ -642,10 +657,15 @@ describe('live Postgres: released request connections and late queries', () => {
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await admin.query('DELETE FROM api_usage WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await rlsPool.end();
+    // Only rows this suite created, scoped to its own organizations.
+    await admin.query('DELETE FROM analytics_events WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await admin.query('DELETE FROM services WHERE organization_id = ANY($1)', [createdOrgIds]);
     await admin.query('DELETE FROM organization_memberships WHERE organization_id = ANY($1)', [createdOrgIds]);
     await admin.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
     await admin.query('DELETE FROM users WHERE id = ANY($1)', [createdUserIds]);
+    await admin.query(`DROP OWNED BY ${RLS_ROLE}`);
+    await admin.query(`DROP ROLE ${RLS_ROLE}`);
     await admin.end();
     await appPool.end();
   });
@@ -737,24 +757,44 @@ describe('live Postgres: released request connections and late queries', () => {
     expect(fresh()[0].statements[0].params).toEqual([orgId]);
   });
 
-  it('a late write succeeds after release (consistency), under the verified org', async () => {
+  it('a late write passes RLS WITH CHECK under the verified org; a write for another organization is rejected', async () => {
     const { orgId, token } = await member();
-    const hour = '2001-01-01T00:00:00Z';
-    lateWork = () => appPool.query(
-      `INSERT INTO api_usage (organization_id, hour, request_count)
-       VALUES (current_setting('app.current_organization_id')::uuid, $1, 1) RETURNING organization_id`,
-      [hour]
-    );
+    const { orgId: otherOrgId } = await member();
+    const INSERT_SERVICE =
+      `INSERT INTO services (name, template, owner, organization_id)
+       VALUES ($1, 'api', 'request-lifecycle-test', $2) RETURNING organization_id`;
+    lateCheckoutsUseRlsRole = true;
+    lateWork = async () => {
+      const role = await appPool.query(
+        'SELECT current_user AS "user", r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user'
+      );
+      const own = await appPool.query(INSERT_SERVICE, [`late-own-${orgId}`, orgId]);
+      const other = await appPool.query(INSERT_SERVICE, [`late-other-${orgId}`, otherOrgId]).then(
+        () => null,
+        (error: any) => error
+      );
+      return { role: role.rows[0], own: own.rows[0], other };
+    };
     await respondThenRelease('/late', token);
     handlerGate.open();
     const outcome = await lateOutcome;
     expect(outcome.error).toBeUndefined();
-    expect(outcome.value.rows[0].organization_id).toBe(orgId);
+
+    // The late checkouts really ran as a role RLS restricts.
+    expect(outcome.value.role).toEqual({ user: RLS_ROLE, rolsuper: false, rolbypassrls: false });
+    // Own organization: passes WITH CHECK under the verified tag.
+    expect(outcome.value.own.organization_id).toBe(orgId);
+    // Another organization's row under the same tag: rejected by WITH CHECK.
+    expect(outcome.value.other?.code).toBe('42501');
+    expect(outcome.value.other?.message).toMatch(/row-level security/);
+
+    await waitFor(() => fresh().length === 3 && fresh().every((c) => c.releases.length === 1), 'fresh releases');
+    fresh().forEach((c) => expect(c.statements[0]).toEqual({ text: SET_TAG_SQL, params: [orgId] }));
     const { rows } = await admin.query(
-      'SELECT organization_id FROM api_usage WHERE organization_id = $1 AND hour = $2',
-      [orgId, hour]
+      'SELECT organization_id, name FROM services WHERE organization_id = ANY($1) ORDER BY name',
+      [[orgId, otherOrgId]]
     );
-    expect(rows).toHaveLength(1);
+    expect(rows).toEqual([{ organization_id: orgId, name: `late-own-${orgId}` }]);
   });
 
   it('a query reference captured from the request handle before release runs on a fresh tagged checkout after release', async () => {
