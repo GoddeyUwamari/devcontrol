@@ -33,12 +33,13 @@ export class TeamsRepository {
     return result.rows[0];
   }
 
-  // Callers must verify the team belongs to the caller's org (e.g. via findById)
-  // before calling this — team_id alone doesn't carry org scope.
-  async findServicesByTeamId(teamId: string): Promise<Service[]> {
+  // Callers must still verify the team belongs to the caller's org (e.g. via
+  // findById). The service rows are scoped to the org here as well — team_id
+  // alone doesn't carry org scope.
+  async findServicesByTeamId(teamId: string, organizationId: string): Promise<Service[]> {
     const result = await pool.query(
-      'SELECT * FROM services WHERE team_id = $1 ORDER BY created_at DESC',
-      [teamId]
+      'SELECT * FROM services WHERE team_id = $1 AND organization_id = $2 ORDER BY created_at DESC',
+      [teamId, organizationId]
     );
     return result.rows;
   }

@@ -86,13 +86,18 @@ export class DependenciesRepository {
 
   /**
    * Create new dependency
-   * RLS automatically filters by organization via session variable
+   * Inserts only when BOTH services belong to organizationId. The ownership
+   * check, a row lock on both services, and the insert are one statement, so
+   * neither service can be deleted or moved to another organization in
+   * between. Returns null when either service is missing or belongs to
+   * another organization; callers must not distinguish those cases to the
+   * client.
    */
   async create(
     dependency: CreateDependencyRequest,
     createdBy: string,
     organizationId: string
-  ): Promise<ServiceDependency> {
+  ): Promise<ServiceDependency | null> {
     const query = `
       INSERT INTO service_dependencies (
         organization_id,
@@ -104,7 +109,12 @@ export class DependenciesRepository {
         metadata,
         created_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      SELECT
+        $1::uuid, src.id, tgt.id, $4::varchar, $5::text, $6::boolean, $7::jsonb, $8::varchar
+      FROM services src
+      JOIN services tgt ON tgt.id = $3::uuid AND tgt.organization_id = $1::uuid
+      WHERE src.id = $2::uuid AND src.organization_id = $1::uuid
+      FOR SHARE OF src, tgt
       RETURNING *
     `;
 
@@ -119,7 +129,7 @@ export class DependenciesRepository {
       createdBy,
     ]);
 
-    return result.rows[0];
+    return result.rows[0] || null;
   }
 
   /**

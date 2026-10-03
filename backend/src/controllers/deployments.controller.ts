@@ -84,10 +84,24 @@ export class DeploymentsController {
         return;
       }
 
-      const deployment = await repository.create(deploymentData);
+      // The organization always comes from the authenticated request, never
+      // from the body.
+      const user = (req as any).user;
+      const organizationId = (req as any).organizationId || user?.organizationId;
+
+      const deployment = await repository.create({ ...deploymentData, organization_id: organizationId });
+      if (!deployment) {
+        // Same answer whether the service doesn't exist or belongs to
+        // another organization.
+        const response: ApiResponse = {
+          success: false,
+          error: 'Service not found',
+        };
+        res.status(404).json(response);
+        return;
+      }
 
       // Emit onboarding event for deployment creation
-      const user = (req as any).user;
       if (user && deployment) {
         emitOnboardingEvent('deployment:created', {
           organizationId: user.organizationId,
@@ -101,9 +115,7 @@ export class DeploymentsController {
         const wsServer: WebSocketServer = req.app.get('wsServer');
         if (wsServer) {
           const deploymentEvents = new DeploymentEvents(wsServer);
-          const organizationId = (req as any).organizationId || 'default-org';
-
-          deploymentEvents.deploymentStarted(organizationId, {
+          deploymentEvents.deploymentStarted(organizationId || 'default-org', {
             id: deployment.id,
             service_name: 'Unknown Service',
             environment: deployment.environment,
