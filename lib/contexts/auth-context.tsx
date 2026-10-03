@@ -7,11 +7,13 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
 } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { resetQueryClientForIdentityChange } from "../query-client";
+import { MEMBERSHIP_REVOKED_EVENT } from "../api";
 import type { User } from "../types";
 import { authService, tokenManager } from "../services/auth.service";
 import {
@@ -407,6 +409,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     }
   }, [router, queryClient]);
+
+  /**
+   * The backend reports MEMBERSHIP_REVOKED (via lib/api.ts) when this
+   * session's organization membership has ended. Run refreshUser once: its
+   * /me call fails the same way, the refresh is rejected, and it logs out.
+   * Ignored while one run is in flight, and once signed out -- a late
+   * response to a request sent before logout must not start another.
+   */
+  const refreshUserRef = useRef(refreshUser);
+  useEffect(() => {
+    refreshUserRef.current = refreshUser;
+  }, [refreshUser]);
+
+  useEffect(() => {
+    let inFlight = false;
+    const onMembershipRevoked = () => {
+      if (inFlight || !tokenManager.getAccessToken()) return;
+      inFlight = true;
+      refreshUserRef.current()
+        .catch(console.error)
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+    window.addEventListener(MEMBERSHIP_REVOKED_EVENT, onMembershipRevoked);
+    return () => window.removeEventListener(MEMBERSHIP_REVOKED_EVENT, onMembershipRevoked);
+  }, []);
 
   /**
    * Create organization

@@ -37,13 +37,21 @@ api.interceptors.request.use(
   }
 );
 
+/**
+ * Dispatched on window when the backend reports that the session's
+ * organization membership is no longer active. AuthContext listens and runs
+ * its refresh-or-logout flow once.
+ */
+export const MEMBERSHIP_REVOKED_EVENT = 'auth:membership-revoked';
+
 // Response interceptor - handle errors
-// NOTE: 401 handling is intentionally NOT done here. Individual API calls may
-// return 401 for many reasons (insufficient permissions, feature not enabled,
-// etc.) and bulk-redirecting on any 401 causes a redirect loop when the
-// middleware re-admits the user via the auth cookie. Auth token expiry is
-// handled by the AuthContext (refreshUser → logout) which also clears the
-// cookie before redirecting.
+// NOTE: general 401 handling is intentionally NOT done here. Individual API
+// calls may return 401 for many reasons (insufficient permissions, feature
+// not enabled, etc.) and bulk-redirecting on any 401 causes a redirect loop
+// when the middleware re-admits the user via the auth cookie. Auth token
+// expiry is handled by the AuthContext (refreshUser → logout) which also
+// clears the cookie before redirecting. The one 401 acted on here is the
+// backend's MEMBERSHIP_REVOKED, and only by notifying AuthContext.
 api.interceptors.response.use(
   (response) => {
     return response;
@@ -51,6 +59,14 @@ api.interceptors.response.use(
   (error: AxiosError) => {
     if (error.response?.status === 500) {
       console.error('Server error:', error.response.data);
+    }
+
+    if (
+      error.response?.status === 401 &&
+      (error.response.data as { code?: unknown } | undefined)?.code === 'MEMBERSHIP_REVOKED' &&
+      typeof window !== 'undefined'
+    ) {
+      window.dispatchEvent(new Event(MEMBERSHIP_REVOKED_EVENT));
     }
 
     return Promise.reject(error);
