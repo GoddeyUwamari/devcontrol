@@ -142,6 +142,196 @@ export async function assertTenantContext(
   }
 }
 
+/**
+ * Raised by a request client handle for any use other than `query`, and,
+ * after the request's connection has been released, for a statement that is
+ * not permitted on a fresh connection (see permittedAfterRelease). The
+ * message names no organization and no connection detail; error-handler maps
+ * it to a generic 500 like any other unexpected error.
+ */
+export class RequestContextReleasedError extends Error {
+  readonly code = 'REQUEST_CONTEXT_RELEASED';
+
+  constructor() {
+    super('Request database context has already been released');
+    this.name = 'RequestContextReleasedError';
+  }
+}
+
+const SET_TENANT_TAG_SQL = "SELECT set_config('app.current_organization_id', $1, false)";
+
+/**
+ * After release, the only statements allowed through a request handle are
+ * single SELECT / INSERT / UPDATE / DELETE / WITH / VALUES statements that do
+ * not touch session state. Everything else -- transaction control, SET,
+ * cursors, LISTEN, locks, CALL, DO, temp tables, any unfamiliar statement --
+ * is rejected before a connection is checked out. This is a fail-closed
+ * filter, not a parser: unusual but harmless SQL may be rejected; session
+ * state must never be allowed.
+ */
+const PERMITTED_AFTER_RELEASE = /^(SELECT|INSERT|UPDATE|DELETE|WITH|VALUES)\b/i;
+/** A further statement after a `;` (anything but trailing whitespace). */
+const ANOTHER_STATEMENT = /;\s*\S/;
+/**
+ * Session-scoped functions (also quoted or schema-qualified), SELECT ... INTO
+ * TEMP, the pg_settings view (writing it is a session-level SET) and the
+ * session's temporary schema (pg_temp, pg_temp_N).
+ */
+const SESSION_STATE =
+  /\b(set_config|pg_advisory_\w+|pg_try_advisory_\w+)"?\s*\(|\bINTO\s+(TEMP|TEMPORARY)\b|\bpg_settings\b|\bpg_temp(_\d+)?\b/i;
+const COMMENTS = /--[^\n]*|\/\*[\s\S]*?\*\//g;
+
+/**
+ * Text after any leading whitespace and comments, honouring nested block
+ * comments as PostgreSQL does. Null for an unterminated block comment.
+ */
+function afterLeadingComments(text: string): string | null {
+  let i = 0;
+  for (;;) {
+    while (i < text.length && /\s/.test(text[i])) i += 1;
+    if (text.startsWith('--', i)) {
+      const lineEnd = text.indexOf('\n', i);
+      if (lineEnd === -1) return '';
+      i = lineEnd + 1;
+    } else if (text.startsWith('/*', i)) {
+      let depth = 0;
+      do {
+        if (text.startsWith('/*', i)) {
+          depth += 1;
+          i += 2;
+        } else if (text.startsWith('*/', i)) {
+          depth -= 1;
+          i += 2;
+        } else {
+          i += 1;
+        }
+      } while (depth > 0 && i < text.length);
+      if (depth > 0) return null;
+    } else {
+      return text.slice(i);
+    }
+  }
+}
+
+function permittedAfterRelease(args: unknown[]): boolean {
+  const first = args[0] as { submit?: unknown; callback?: unknown } | null;
+  // Submittables (cursors, streams) and config-object callbacks hold or
+  // address the connection beyond one round trip.
+  if (first && typeof first === 'object' && (typeof first.submit === 'function' || typeof first.callback === 'function')) {
+    return false;
+  }
+  const text = queryText(first);
+  const statement = afterLeadingComments(text);
+  if (!statement || !PERMITTED_AFTER_RELEASE.test(statement) || ANOTHER_STATEMENT.test(statement)) {
+    return false;
+  }
+  // Checked with and without comments, so neither a comment inside the call
+  // nor comment-like text inside a string literal hides it.
+  return !SESSION_STATE.test(text) && !SESSION_STATE.test(text.replace(COMMENTS, ' '));
+}
+
+/**
+ * One query, after release, on its own fresh connection: checkout -> tag
+ * with the request's verified organization -> query -> release. Fails closed
+ * at every step: a checkout or tag failure rejects and nothing runs; a
+ * failed tag destroys the connection (release(err)) rather than return one
+ * with an uncertain tag; a failed query still releases normally, which
+ * clears the tag (installTenantTagReset) before the connection is reused.
+ */
+async function queryOnFreshConnection(
+  source: Pick<Pool, 'connect'>,
+  organizationId: string,
+  args: unknown[]
+): Promise<unknown> {
+  if (!permittedAfterRelease(args)) throw new RequestContextReleasedError();
+  const client = await source.connect();
+  try {
+    await client.query(SET_TENANT_TAG_SQL, [organizationId]);
+  } catch (tagError) {
+    client.release(tagError instanceof Error ? tagError : new Error(String(tagError)));
+    throw tagError;
+  }
+  try {
+    return await (client.query as unknown as RawQuery).apply(client, args);
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * The requestContext store for a request: a per-checkout handle in front of
+ * the request's client, bound to the organization verified for the request.
+ * pg-pool hands the same client object to later checkouts, so "released" is
+ * recorded on the handle, never on the client.
+ *
+ * The handle exposes `query` and nothing else: any other client property
+ * access, and any assignment, throws (implicit `then` / `toJSON` / symbol
+ * lookups read as absent). The client is held only in the closure of that one
+ * `query` function, which checks the revoked state on every call -- so even a
+ * reference to `handle.query` taken before release follows the rules below.
+ *
+ * Before `revoke()`: every query runs on the request's own client, exactly as
+ * before.
+ *
+ * After `revoke()` (the request's connection is being released): the
+ * released client is never reached again. Each query instead runs on a fresh
+ * connection tagged with `organizationId` (queryOnFreshConnection), so late
+ * work on behalf of the request -- e.g. recording an external action after
+ * the caller disconnected -- still completes under its own organization.
+ * Work that needs one session across statements must check out and hold its
+ * own client; through the handle it is rejected with
+ * RequestContextReleasedError rather than silently split across connections.
+ *
+ * `organizationId` must be the organization authorized for this request
+ * (authenticate's membership-checked claim, or runWithOrgClient's
+ * caller-authorized argument) -- never request input, never a default.
+ */
+export function createRequestClientHandle(
+  client: PoolClient,
+  organizationId: string,
+  source: Pick<Pool, 'connect'> = rawPool
+): { handle: PoolClient; revoke: () => void } {
+  if (typeof organizationId !== 'string' || organizationId === '') {
+    throw new Error('A request client handle requires the verified organization');
+  }
+  let revoked = false;
+  const lateQuery = (...args: unknown[]) => {
+    const callback = args[args.length - 1];
+    if (typeof callback !== 'function') return queryOnFreshConnection(source, organizationId, args);
+    // Callback form: same contract as pg's client.query(text, [values], cb).
+    queryOnFreshConnection(source, organizationId, args.slice(0, -1)).then(
+      (result) => process.nextTick(callback as (err: Error | null, result?: unknown) => void, null, result),
+      (error: Error) => process.nextTick(callback as (err: Error) => void, error)
+    );
+    return undefined;
+  };
+  const query = (...args: unknown[]) =>
+    revoked ? lateQuery(...args) : (client.query as unknown as RawQuery).apply(client, args);
+  const refuse = (): never => {
+    throw new RequestContextReleasedError();
+  };
+  // An empty target: nothing about `client` is reachable through the handle.
+  // Lookups the runtime makes implicitly -- `then` (await / Promise.resolve),
+  // `toJSON`, symbol keys (inspection, coercion) -- read as absent instead of
+  // throwing; every other property throws.
+  const handle = new Proxy(Object.create(null) as PoolClient, {
+    get: (_target, prop) => {
+      if (prop === 'query') return query;
+      if (prop === 'then' || prop === 'toJSON' || typeof prop === 'symbol') return undefined;
+      return refuse();
+    },
+    set: refuse,
+    defineProperty: refuse,
+    deleteProperty: refuse,
+  });
+  return {
+    handle,
+    revoke: () => {
+      revoked = true;
+    },
+  };
+}
+
 const rawPool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
@@ -169,7 +359,9 @@ rawPool.on('error', (err) => {
  * Holds the per-request, RLS-context-tagged client set by auth.middleware.ts.
  * See the `pool` Proxy below — it's what makes plain `pool.query(...)` calls
  * throughout the codebase automatically use that connection instead of a
- * fresh/unset one from the pool.
+ * fresh/unset one from the pool. Request middleware binds a
+ * createRequestClientHandle() handle here, so a query issued after the
+ * request's connection is released never reaches that connection.
  */
 export const requestContext = new AsyncLocalStorage<import('pg').PoolClient>();
 
