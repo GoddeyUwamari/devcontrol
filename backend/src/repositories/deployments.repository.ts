@@ -70,14 +70,25 @@ export class DeploymentsRepository {
     return result.rows[0] || null;
   }
 
-  async create(deployment: CreateDeploymentRequest): Promise<Deployment> {
+  // Inserts only when the referenced service belongs to the deployment's own
+  // organization -- checked and row-locked in the same statement as the
+  // insert, so the service can't be deleted or moved in between. Returns null
+  // when it doesn't (missing, another organization's, or no organization
+  // given); callers must not distinguish those cases to the client.
+  async create(deployment: CreateDeploymentRequest): Promise<Deployment | null> {
     const query = `
       INSERT INTO deployments (
         service_id, environment, aws_region, status,
         cost_estimate, deployed_by, resources, metadata,
         organization_id, deployed_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, NOW()))
+      SELECT
+        s.id, $2::varchar, $3::varchar, $4::varchar,
+        $5::numeric, $6::varchar, $7::jsonb, $8::jsonb,
+        s.organization_id, COALESCE($10::timestamptz, NOW())
+      FROM services s
+      WHERE s.id = $1::uuid AND s.organization_id = $9::uuid
+      FOR SHARE OF s
       RETURNING *
     `;
     const result = await pool.query(query, [
@@ -92,13 +103,13 @@ export class DeploymentsRepository {
       deployment.organization_id || null,
       deployment.deployed_at || null,
     ]);
-    return result.rows[0];
+    return result.rows[0] || null;
   }
 
-  async findByMetadataField(key: string, value: string): Promise<Deployment | null> {
+  async findByMetadataField(key: string, value: string, organizationId: string): Promise<Deployment | null> {
     const result = await pool.query(
-      `SELECT * FROM deployments WHERE metadata ->> $1 = $2 LIMIT 1`,
-      [key, value]
+      `SELECT * FROM deployments WHERE organization_id = $3 AND metadata ->> $1 = $2 LIMIT 1`,
+      [key, value, organizationId]
     );
     return result.rows[0] || null;
   }

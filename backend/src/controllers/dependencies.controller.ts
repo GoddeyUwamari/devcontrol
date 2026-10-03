@@ -120,6 +120,16 @@ export class DependenciesController {
         organizationId
       );
 
+      if (!dependency) {
+        // Same answer whether a service doesn't exist or belongs to another
+        // organization.
+        res.status(404).json({
+          success: false,
+          error: 'Service not found',
+        });
+        return;
+      }
+
       const response: ApiResponse = {
         success: true,
         data: dependency,

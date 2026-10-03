@@ -35,6 +35,21 @@ const ALLOWED_REFUND_FIELDS = new Set(['paymentId', 'amount', 'reason']);
 // of quietly having no effect.
 const ALLOWED_CHECKOUT_FIELDS = new Set(['tier', 'billingInterval']);
 
+/**
+ * A Stripe refund id that is already recorded for a different organization
+ * than the one it was just presented for. The message names the refund (so
+ * the webhook ledger's failure row identifies it) but never an organization.
+ */
+export class RefundOwnershipConflictError extends Error {
+  constructor(public readonly stripeRefundId: string) {
+    super(`Refund ${stripeRefundId} is already recorded and could not be updated`);
+    this.name = 'RefundOwnershipConflictError';
+  }
+}
+
+const REFUND_ISSUED_NOT_RECORDED_MESSAGE =
+  'The refund was issued but could not be recorded. Do not retry; contact support.';
+
 export class StripeController {
   /**
    * Billing mutations (cancel, resume, change plan, open the Customer
@@ -857,6 +872,12 @@ export class StripeController {
    * safety). A redelivered webhook, or a webhook arriving after our own
    * issueRefund already inserted the row, can only update `status`/
    * `updated_at` on the existing row -- it can never create a duplicate.
+   *
+   * The update arm is scoped to the same organization in the SQL itself
+   * (refunds' RLS is not enforced for the table owner, so it is not the
+   * boundary here). A refund id that already belongs to a different
+   * organization is neither written nor returned: that is an error, logged
+   * with both organization ids, and it throws so no caller reports success.
    */
   private async upsertRefundRecord(
     organizationId: string,
@@ -888,6 +909,7 @@ export class StripeController {
        ON CONFLICT (stripe_refund_id) DO UPDATE SET
          status = EXCLUDED.status,
          updated_at = NOW()
+       WHERE refunds.organization_id = EXCLUDED.organization_id
        RETURNING *`,
       [
         organizationId,
@@ -903,6 +925,23 @@ export class StripeController {
         extra.initiatedBy ?? null,
       ]
     );
+
+    if (result.rows.length === 0) {
+      // Only reachable when the conflict arm's organization condition
+      // blocked the update. The lookup below is for the log line only; its
+      // result is never returned to a caller.
+      const owner = await pool.query(
+        'SELECT organization_id FROM refunds WHERE stripe_refund_id = $1',
+        [refund.id]
+      );
+      console.error(
+        `[refunds] CROSS-ORGANIZATION REFUND CONFLICT: refund ${refund.id} was presented for organization ` +
+        `${organizationId} but is already recorded for organization ${owner.rows[0]?.organization_id ?? 'unknown'} ` +
+        '-- nothing was written'
+      );
+      throw new RefundOwnershipConflictError(refund.id);
+    }
+
     return result.rows[0];
   }
 
@@ -1441,6 +1480,11 @@ export class StripeController {
       res.status(200).json({ success: true, data: row ? this.mapRefundRow(row) : null });
     } catch (error: any) {
       console.error('Error issuing refund:', error);
+      if (error instanceof RefundOwnershipConflictError) {
+        // Stripe has already issued this refund; a retry must not be invited.
+        res.status(500).json({ success: false, error: REFUND_ISSUED_NOT_RECORDED_MESSAGE });
+        return;
+      }
       res.status(500).json({ success: false, error: error.message || 'Failed to issue refund' });
     }
   }

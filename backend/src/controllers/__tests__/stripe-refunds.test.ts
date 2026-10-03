@@ -22,7 +22,7 @@
 
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
-import { stripeController } from '../stripe.controller';
+import { stripeController, RefundOwnershipConflictError } from '../stripe.controller';
 import stripeService from '../../services/stripe.service';
 
 function dbConfig() {
@@ -652,5 +652,173 @@ describe('outbound Stripe Idempotency-Key on refund creation', () => {
     expect(status).toHaveBeenCalledWith(500);
     expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'Stripe: refund failed' }));
     expect(await fetchRefundRows(orgId)).toHaveLength(0);
+  });
+});
+
+/**
+ * The upsert's conflict arm is scoped to the refund's own organization in the
+ * SQL itself. In production `refunds` is owned by the application role with
+ * RLS not forced, so RLS never applies there; these tests run the same way --
+ * the precondition below fails the suite if the connecting role could be
+ * filtered by RLS -- so only the explicit predicate can make them pass.
+ */
+describe('refund upsert never touches another organization\'s row', () => {
+  function fakeRefund(refundId: string, status: string, organizationId: string) {
+    return {
+      id: refundId,
+      amount: 5000,
+      currency: 'usd',
+      status,
+      reason: null,
+      payment_intent: `pi_test_${uniqueSuffix()}`,
+      charge: `ch_test_${uniqueSuffix()}`,
+      metadata: { organizationId },
+    };
+  }
+
+  function upsert(organizationId: string, refund: any): Promise<Record<string, unknown> | null> {
+    return (stripeController as any).upsertRefundRecord(organizationId, refund, {});
+  }
+
+  async function fetchRefundById(refundId: string) {
+    const { rows } = await pool.query('SELECT * FROM refunds WHERE stripe_refund_id = $1', [refundId]);
+    return rows;
+  }
+
+  it('precondition: the connecting role is not subject to RLS on refunds', async () => {
+    const { rows } = await pool.query(
+      `SELECT (r.rolsuper OR r.rolbypassrls OR c.relowner = r.oid) AND NOT c.relforcerowsecurity AS rls_cannot_filter
+       FROM pg_roles r, pg_class c
+       WHERE r.rolname = current_user AND c.oid = 'public.refunds'::regclass`
+    );
+    expect(rows[0].rls_cannot_filter).toBe(true);
+  });
+
+  it('same organization: first sight inserts, a repeat with a new status updates the same row', async () => {
+    const { orgId } = await insertOrgWithCustomer();
+    const refundId = `re_test_${uniqueSuffix()}`;
+
+    const inserted = await upsert(orgId, fakeRefund(refundId, 'pending', orgId));
+    expect(inserted).toEqual(expect.objectContaining({ organization_id: orgId, status: 'pending' }));
+
+    const updated = await upsert(orgId, fakeRefund(refundId, 'succeeded', orgId));
+    expect(updated).toEqual(expect.objectContaining({ id: inserted!.id, organization_id: orgId, status: 'succeeded' }));
+
+    const rows = await fetchRefundById(refundId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('succeeded');
+  });
+
+  it('a refund id already owned by another organization is not updated, not returned, and throws with both organizations logged', async () => {
+    const owner = await insertOrgWithCustomer();
+    const other = await insertOrgWithCustomer();
+    const refundId = `re_test_${uniqueSuffix()}`;
+
+    await upsert(owner.orgId, fakeRefund(refundId, 'pending', owner.orgId));
+    const [before] = await fetchRefundById(refundId);
+
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const conflict = await upsert(other.orgId, fakeRefund(refundId, 'succeeded', other.orgId)).catch(err => err);
+    expect(conflict).toBeInstanceOf(RefundOwnershipConflictError);
+    // The message names the refund and neither organization.
+    expect(conflict.message).toContain(refundId);
+    expect(conflict.message).not.toContain(owner.orgId);
+    expect(conflict.message).not.toContain(other.orgId);
+
+    const rows = await fetchRefundById(refundId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(before);
+    expect(await fetchRefundRows(other.orgId)).toHaveLength(0);
+
+    const logged = errorSpy.mock.calls.map(args => args.join(' ')).join('\n');
+    expect(logged).toContain(refundId);
+    expect(logged).toContain(owner.orgId);
+    expect(logged).toContain(other.orgId);
+  });
+
+  it('issueRefund does not report success, and does not echo the other organization\'s row, on a cross-organization refund id', async () => {
+    const owner = await insertOrgWithCustomer();
+    const other = await insertOrgWithCustomer();
+    const refundId = `re_test_${uniqueSuffix()}`;
+    await upsert(owner.orgId, fakeRefund(refundId, 'pending', owner.orgId));
+    const [before] = await fetchRefundById(refundId);
+
+    const paymentIntentId = `pi_test_${uniqueSuffix()}`;
+    const chargeId = `ch_test_${uniqueSuffix()}`;
+    const invoice = fakeInvoice(other.customerId);
+    stubResolvedInvoice(invoice, paymentIntentId, {
+      id: chargeId, amount: 5000, amount_refunded: 0, currency: 'usd', customer: other.customerId,
+    });
+    jest.spyOn(stripeService, 'createRefund').mockResolvedValue({
+      ...fakeRefund(refundId, 'succeeded', other.orgId),
+      payment_intent: paymentIntentId,
+      charge: chargeId,
+    } as any);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { req, res, status, json } = mockReqRes({ paymentId: invoice.id }, other.orgId, 'owner');
+    await stripeController.issueRefund(req, res);
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledTimes(1);
+    expect(json).toHaveBeenCalledWith({
+      success: false,
+      error: 'The refund was issued but could not be recorded. Do not retry; contact support.',
+    });
+    expect(JSON.stringify(json.mock.calls)).not.toContain(owner.orgId);
+
+    const rows = await fetchRefundById(refundId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(before);
+    expect(await fetchRefundRows(other.orgId)).toHaveLength(0);
+  });
+
+  it('a refund webhook resolving to a different organization than the recorded owner is not acknowledged as processed', async () => {
+    const owner = await insertOrgWithCustomer();
+    const other = await insertOrgWithCustomer();
+    const refundId = `re_test_${uniqueSuffix()}`;
+    await upsert(owner.orgId, fakeRefund(refundId, 'pending', owner.orgId));
+    const [before] = await fetchRefundById(refundId);
+
+    const event = {
+      id: `evt_test_${uniqueSuffix()}`,
+      type: 'refund.updated',
+      data: { object: fakeRefund(refundId, 'succeeded', other.orgId) },
+      created: Math.floor(Date.now() / 1000),
+    };
+    jest.spyOn(stripeService, 'verifyWebhookSignature').mockReturnValue(event as any);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const req = {
+      headers: { 'stripe-signature': 'test-signature' },
+      body: Buffer.from(JSON.stringify(event)),
+    } as unknown as Request;
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const handlers: Array<() => void> = [];
+    const on = jest.fn((eventName: string, cb: () => void) => { if (eventName === 'finish') handlers.push(cb); });
+    const res = { json, status, on } as unknown as Response;
+
+    await stripeController.handleWebhook(req, res);
+    handlers.forEach(cb => cb());
+
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).not.toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+
+    const rows = await fetchRefundById(refundId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(before);
+    expect(await fetchRefundRows(other.orgId)).toHaveLength(0);
+
+    // The ledger's failure row identifies the refund, and no organization.
+    const ledger = await pool.query('SELECT * FROM stripe_webhook_events WHERE stripe_event_id = $1', [event.id]);
+    expect(ledger.rows).toHaveLength(1);
+    expect(ledger.rows[0].status).not.toBe('processed');
+    const ledgerText = JSON.stringify(ledger.rows[0]);
+    expect(ledgerText).toContain(refundId);
+    expect(ledgerText).not.toContain(owner.orgId);
+    expect(ledgerText).not.toContain(other.orgId);
+    await pool.query('DELETE FROM stripe_webhook_events WHERE stripe_event_id = $1', [event.id]);
   });
 });

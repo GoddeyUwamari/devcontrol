@@ -107,7 +107,7 @@ export class TeamsController {
         return;
       }
 
-      const services = await repository.findServicesByTeamId(id);
+      const services = await repository.findServicesByTeamId(id, organizationId);
 
       const response: ApiResponse = {
         success: true,

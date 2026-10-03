@@ -119,7 +119,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
   await runWithOrgClient(ORGANIZATION_ID, res, async () => {
     try {
       // GitHub redelivers on timeout/non-2xx; de-dupe on the job id.
-      const alreadyRecorded = await repository.findByMetadataField('github_job_id', jobId);
+      const alreadyRecorded = await repository.findByMetadataField('github_job_id', jobId, ORGANIZATION_ID);
       if (alreadyRecorded) {
         res.status(200).json({ success: true, message: 'Already recorded', data: { id: alreadyRecorded.id } });
         return;
@@ -146,6 +146,9 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           conclusion: job.conclusion,
         },
       });
+      if (!deployment) {
+        throw new Error(`service ${service_id} does not belong to the webhook organization`);
+      }
 
       res.status(201).json({ success: true, data: deployment });
     } catch (err: any) {
