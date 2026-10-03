@@ -606,3 +606,87 @@ describe('auth and onboarding routes', () => {
     createdOrgIds.push(res.body.data.id);
   });
 });
+
+// ─── Caller disconnects during authentication ───────────────────────────────
+
+describe('caller disconnects while membership is being checked', () => {
+  it('nothing more runs on the released connection, and the next request keeps its own tag', async () => {
+    const { orgId, user } = await setup('member');
+    const otherOrgId = randomUUID();
+
+    type Recorded = { client: PoolClient; text: string; params: unknown[] };
+    const statements: Recorded[] = [];
+    const restore: Array<() => void> = [];
+    let releasedClient: PoolClient | null = null;
+    let onRelease!: () => void;
+    const releasedSignal = new Promise<void>((resolve) => { onRelease = resolve; });
+
+    const realConnect = appPool.connect.bind(appPool) as () => Promise<PoolClient>;
+    jest.spyOn(appPool, 'connect').mockImplementation((async () => {
+      const client = await realConnect();
+      const clientQuery = client.query;
+      const clientRelease = client.release;
+      client.query = ((q: unknown, ...rest: unknown[]) => {
+        const text = typeof q === 'string' ? q : (q as { text?: string }).text ?? String(q);
+        statements.push({ client, text, params: (rest[0] as unknown[]) ?? [] });
+        return (clientQuery as (...args: unknown[]) => unknown).call(client, q, ...rest);
+      }) as typeof client.query;
+      client.release = ((err?: Error | boolean) => {
+        client.release = clientRelease;
+        releasedClient = client;
+        onRelease();
+        return clientRelease.call(client, err);
+      }) as typeof client.release;
+      restore.push(() => { client.query = clientQuery; });
+      return client;
+    }) as unknown as typeof appPool.connect);
+
+    // The lookup finishes only once the caller is gone and another request
+    // holds the same connection.
+    let openLookup!: () => void;
+    const lookupGate = new Promise<void>((resolve) => { openLookup = resolve; });
+    const realLookup = organizationAuthorization.getCurrentMembership;
+    jest.spyOn(organizationAuthorization, 'getCurrentMembership').mockImplementation(async (executor, organizationId, userId) => {
+      const result = await realLookup(executor, organizationId, userId);
+      await lookupGate;
+      return result;
+    });
+
+    let other: PoolClient | null = null;
+    try {
+      const abort = new AbortController();
+      const request = fetch(`${baseUrl}/probe/whoami`, {
+        headers: { Authorization: `Bearer ${accessToken(user.id, orgId, 'member')}` },
+        signal: abort.signal,
+      }).catch(() => 'aborted');
+      while (!statements.some((s) => isMembershipLookup(s.text))) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      abort.abort();
+      await request;
+      await releasedSignal;
+
+      // The next checkout gets the same connection and tags it for its own org.
+      other = await realConnect();
+      expect(other).toBe(releasedClient);
+      await other.query("SELECT set_config('app.current_organization_id', $1, false)", [otherOrgId]);
+
+      openLookup();
+      // Let authenticate finish whatever it would still do.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const lateTags = statements.filter((s) => isTenantTag(s.text) && s.params[0] === orgId);
+      expect(lateTags).toEqual([]);
+      expect(statements.some((s) => /api_usage/i.test(s.text))).toBe(false);
+      expect(probeHandlerCalls).toBe(0);
+      const { rows } = await other.query("SELECT current_setting('app.current_organization_id', true) AS tag");
+      expect(rows[0].tag).toBe(otherOrgId);
+    } finally {
+      restore.forEach((undo) => undo());
+      if (other) {
+        await other.query("SELECT set_config('app.current_organization_id', '', false)");
+        other.release();
+      }
+    }
+  });
+});

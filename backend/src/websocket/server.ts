@@ -119,8 +119,7 @@ export class WebSocketServer {
   /**
    * Closes a user's open sockets in one organization, e.g. once their
    * membership is removed. Only sockets connected to this process are
-   * reached; a cluster deployment would need cross-process messaging (a
-   * Socket.IO adapter) for this to reach every socket.
+   * reached.
    */
   public disconnectUserFromOrganization(userId: string, organizationId: string): void {
     for (const socket of this.socketsOf(userId, organizationId)) {

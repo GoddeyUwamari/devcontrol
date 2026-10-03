@@ -165,6 +165,9 @@ export const authenticate = async (
   let membership: Awaited<ReturnType<typeof getCurrentMembership>>;
   try {
     membership = await getCurrentMembership(client, organizationId, userId);
+    // The caller disconnected while the lookup ran: the connection is
+    // already back in the pool and may belong to another request now.
+    if (released) return;
     if (membership) {
       // Set PostgreSQL session variable for Row-Level Security -- only now
       // that the caller is known to belong to this organization.
@@ -197,6 +200,9 @@ export const authenticate = async (
   };
   req.organizationId = organizationId;
 
+  // Same check after tagging: nothing runs on a connection that has been
+  // returned to the pool.
+  if (released) return;
   requestContext.run(client, () => {
     // Track API request for usage metering (fire-and-forget, non-blocking)
     pool.query(
