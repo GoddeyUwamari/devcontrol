@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { authService } from '../services/auth.service';
 import { getCurrentMembership } from '../services/organization-authorization';
 import { pool, requestContext } from '../config/database';
+import { leaseRequestClient } from './request-lifecycle';
 
 /** 401 code: the token is valid but its organization membership is not. */
 export const MEMBERSHIP_REVOKED_CODE = 'MEMBERSHIP_REVOKED';
@@ -31,7 +32,9 @@ export const membershipClaimsSchema = z.object({
  * anywhere in the request automatically use this exact, correctly-tagged
  * connection instead of a fresh one from the pool that may carry a stale or
  * different org's RLS tag. Released once the response finishes (or the
- * connection drops before it does).
+ * connection drops before it does); request work that queries after that
+ * runs on a fresh connection tagged for `organizationId`, never on the
+ * released one (see request-lifecycle.ts).
  *
  * Exported for use by routes that need RLS context but aren't reached via
  * `authenticate` — e.g. github-webhook.routes.ts, which is authenticated by
@@ -46,20 +49,13 @@ export async function runWithOrgClient(
   next: NextFunction
 ): Promise<void> {
   const client = await pool.connect();
-
-  let released = false;
-  const release = () => {
-    if (!released) {
-      released = true;
-      client.release();
-    }
-  };
-  res.on('finish', release);
-  res.on('close', release);
+  const lease = leaseRequestClient(client, res);
 
   await client.query(SET_TENANT_TAG_SQL, [organizationId]);
 
-  requestContext.run(client, next);
+  // If the caller disconnected while the tag was being set, the handle is
+  // already revoked and the callback's queries use fresh connections.
+  requestContext.run(lease.bindVerifiedOrganization(organizationId), next);
 }
 
 // Extend Express Request type to include user and organization data
@@ -152,22 +148,15 @@ export const authenticate = async (
     return;
   }
 
-  let released = false;
-  const release = (err?: Error) => {
-    if (!released) {
-      released = true;
-      client.release(err);
-    }
-  };
-  res.on('finish', () => release());
-  res.on('close', () => release());
+  const lease = leaseRequestClient(client, res);
+  const release = (err?: Error) => lease.release(err);
 
   let membership: Awaited<ReturnType<typeof getCurrentMembership>>;
   try {
     membership = await getCurrentMembership(client, organizationId, userId);
     // The caller disconnected while the lookup ran: the connection is
     // already back in the pool and may belong to another request now.
-    if (released) return;
+    if (lease.released) return;
     if (membership) {
       // Set PostgreSQL session variable for Row-Level Security -- only now
       // that the caller is known to belong to this organization.
@@ -202,8 +191,8 @@ export const authenticate = async (
 
   // Same check after tagging: nothing runs on a connection that has been
   // returned to the pool.
-  if (released) return;
-  requestContext.run(client, () => {
+  if (lease.released) return;
+  requestContext.run(lease.bindVerifiedOrganization(organizationId), () => {
     // Track API request for usage metering (fire-and-forget, non-blocking)
     pool.query(
       `INSERT INTO api_usage (organization_id, hour, request_count)
