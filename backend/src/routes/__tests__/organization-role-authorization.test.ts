@@ -349,7 +349,9 @@ describe('PATCH /:id/members/:userId/role -- invalid input and identity', () => 
       [org.orgId, org.owner2]
     );
     const res = await as(org.owner2, org.orgId).setRole(org.member, 'admin');
-    expect(res.status).toBe(403);
+    // Refused by authenticate itself: no active membership, no request.
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code?: string }).code).toBe('MEMBERSHIP_REVOKED');
     expect(await roleOf(org.orgId, org.member)).toBe('member');
   });
 });
@@ -502,9 +504,11 @@ describe('pending invitation is not an active membership', () => {
       'User is not a member of any organization'
     );
 
-    // A pending admin can't exercise admin authority, whatever their token says.
+    // A pending admin can't exercise admin authority, whatever their token says:
+    // a pending invitation is not a membership, so authenticate refuses it.
     const res = await as(invitee.id, org.orgId, 'admin').setRole(org.member, 'viewer');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code?: string }).code).toBe('MEMBERSHIP_REVOKED');
   });
 });
 

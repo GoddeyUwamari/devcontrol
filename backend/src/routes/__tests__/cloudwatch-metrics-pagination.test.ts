@@ -41,6 +41,7 @@ function dbConfig() {
 
 const pool = new Pool(dbConfig());
 const createdOrgIds: string[] = [];
+const createdUserIds: string[] = [];
 
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -56,9 +57,21 @@ async function insertOrg(label: string): Promise<string> {
   return rows[0].id as string;
 }
 
-function stubAuth(orgId: string) {
+/** Authenticates as a real, active owner of `orgId` (created here). */
+async function stubAuth(orgId: string): Promise<void> {
+  const { rows } = await pool.query(
+    `INSERT INTO users (email, password_hash, full_name) VALUES ($1, 'x', 'CW Pagination User') RETURNING id`,
+    [`cw-pagination-${uniqueSuffix()}@example.com`]
+  );
+  const userId = rows[0].id as string;
+  createdUserIds.push(userId);
+  await pool.query(
+    `INSERT INTO organization_memberships (organization_id, user_id, role, joined_at, is_active)
+     VALUES ($1, $2, 'owner', NOW(), true)`,
+    [orgId, userId]
+  );
   jest.spyOn(authService, 'verifyToken').mockReturnValue({
-    userId: 'user-1',
+    userId,
     email: 'cw-pagination-test@example.com',
     organizationId: orgId,
     role: 'owner',
@@ -135,6 +148,9 @@ afterAll(async () => {
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
+  if (createdUserIds.length > 0) {
+    await pool.query('DELETE FROM users WHERE id = ANY($1)', [createdUserIds]);
+  }
   await pool.end();
 });
 
@@ -149,7 +165,7 @@ function getMetrics(query = ''): Promise<Response> {
 describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
   it('(1) first page: default page size, hasMore true, non-null cursor, healthSummary/systemStatus present and complete-fleet-derived', async () => {
     const orgId = await insertOrg('first-page');
-    stubAuth(orgId);
+    await stubAuth(orgId);
     jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue(fleetFixture('a', 60));
 
     const res = await getMetrics();
@@ -164,7 +180,7 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
 
   it('(2) cursor continuation walks the full fleet with no gaps or duplicates', async () => {
     const orgId = await insertOrg('cursor-walk');
-    stubAuth(orgId);
+    await stubAuth(orgId);
     jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue(fleetFixture('b', 55));
 
     const seen: string[] = [];
@@ -186,7 +202,7 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
 
   it('(3) final page: hasMore false and cursor null once every resource has been walked', async () => {
     const orgId = await insertOrg('final-page');
-    stubAuth(orgId);
+    await stubAuth(orgId);
     jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue(fleetFixture('c', 10));
 
     const res = await getMetrics('?pageSize=10');
@@ -198,7 +214,7 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
 
   it('(4) empty fleet: shown/total 0, hasMore false, no services rendered', async () => {
     const orgId = await insertOrg('empty-fleet');
-    stubAuth(orgId);
+    await stubAuth(orgId);
     jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue(fleetFixture('d', 0));
 
     const res = await getMetrics();
@@ -211,7 +227,7 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
 
   it('(5) oversized client pageSize is clamped server-side to MAX_PAGE_SIZE (100), never trusted as-is', async () => {
     const orgId = await insertOrg('oversized-page');
-    stubAuth(orgId);
+    await stubAuth(orgId);
     jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue(fleetFixture('e', 500));
 
     const res = await getMetrics('?pageSize=100000');
@@ -222,7 +238,7 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
 
   it('(6) an invalid/malformed cursor produces a clean 400, never a 500', async () => {
     const orgId = await insertOrg('bad-cursor');
-    stubAuth(orgId);
+    await stubAuth(orgId);
     jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue(fleetFixture('f', 5));
 
     const res = await getMetrics('?cursor=not-valid-base64-json!!!');
@@ -233,7 +249,7 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
 
   it('(7) cache behavior: same organization + same range with different cursor/pageSize reuses the same cached complete-fleet computation -- computeMetrics is called only once', async () => {
     const orgId = await insertOrg('cache-reuse');
-    stubAuth(orgId);
+    await stubAuth(orgId);
     const computeSpy = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue(fleetFixture('g', 40));
 
     const first = await getMetrics('?pageSize=10');
@@ -246,7 +262,7 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
 
   it('(8) manual refresh (?refresh=true) still bypasses the cache exactly as Phase 2A established, regardless of pagination params', async () => {
     const orgId = await insertOrg('manual-refresh');
-    stubAuth(orgId);
+    await stubAuth(orgId);
     const computeSpy = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue(fleetFixture('h', 20));
 
     await getMetrics('?pageSize=10');
@@ -264,14 +280,14 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
       return organizationId === orgA ? fleetFixture('org-a-tag', 30) : fleetFixture('org-b-tag', 5);
     }) as any);
 
-    stubAuth(orgA);
+    await stubAuth(orgA);
     const firstPageA = await getMetrics('?pageSize=10');
     const bodyA: any = await firstPageA.json();
     const cursorFromOrgA = bodyA.data.pagination.cursor;
     expect(bodyA.data.services.every((s: any) => s.resourceId.startsWith('org-a-tag'))).toBe(true);
 
     // Replay org A's cursor, but authenticated as org B.
-    stubAuth(orgB);
+    await stubAuth(orgB);
     const crossOrgRes = await getMetrics(`?pageSize=10&cursor=${encodeURIComponent(cursorFromOrgA)}`);
     const crossOrgBody: any = await crossOrgRes.json();
 

@@ -128,7 +128,14 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-function stubAuth(userId: string, orgId: string) {
+/** Authenticates as `userId` -- a real, active owner of `orgId`. */
+async function stubAuth(userId: string, orgId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO organization_memberships (organization_id, user_id, role, joined_at, is_active)
+     VALUES ($1, $2, 'owner', NOW(), true)
+     ON CONFLICT (organization_id, user_id) DO NOTHING`,
+    [orgId, userId]
+  );
   jest.spyOn(authService, 'verifyToken').mockReturnValue({
     userId,
     email: 'legacy-aws@example.com',
@@ -154,7 +161,7 @@ describe('POST /api/organizations/:id/aws-credentials -- aws_connection_complete
   it('emits aws_connection_completed exactly once after credentials are successfully persisted', async () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
-    stubAuth(userId, orgId);
+    await stubAuth(userId, orgId);
 
     const response = await postCredentials(orgId);
 
@@ -169,7 +176,7 @@ describe('POST /api/organizations/:id/aws-credentials -- aws_connection_complete
   it('does NOT emit aws_connection_completed when credential persistence fails', async () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
-    stubAuth(userId, orgId);
+    await stubAuth(userId, orgId);
     jest.spyOn(organizationService, 'setAWSCredentials').mockRejectedValueOnce(new Error('simulated DB failure'));
 
     const response = await postCredentials(orgId);
@@ -182,7 +189,7 @@ describe('POST /api/organizations/:id/aws-credentials -- aws_connection_complete
   it('a second call for the same organization does not create a duplicate aws_connection_completed event', async () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
-    stubAuth(userId, orgId);
+    await stubAuth(userId, orgId);
 
     const first = await postCredentials(orgId);
     expect(first.status).toBe(200);
@@ -200,7 +207,7 @@ describe('POST /api/organizations/:id/aws-credentials -- aws_connection_complete
   it('existing aws:connected onboarding behavior remains intact, and onboarding_progress.aws_connected_at is populated on first connection', async () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
-    stubAuth(userId, orgId);
+    await stubAuth(userId, orgId);
 
     const response = await postCredentials(orgId);
     expect(response.status).toBe(200);

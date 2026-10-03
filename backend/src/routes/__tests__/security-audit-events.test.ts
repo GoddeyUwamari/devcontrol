@@ -125,6 +125,20 @@ async function member(orgId: string, role: string): Promise<string> {
   return user.id;
 }
 
+/**
+ * A personal workspace the user owns -- the organization their own session
+ * is bound to, as every signed-in user has (authenticate requires it).
+ */
+async function homeOrgFor(userId: string): Promise<string> {
+  const orgId = await insertOrg();
+  await pool.query(
+    `INSERT INTO organization_memberships (organization_id, user_id, role, joined_at, is_active)
+     VALUES ($1, $2, 'owner', NOW(), true)`,
+    [orgId, userId]
+  );
+  return orgId;
+}
+
 async function buildOrg() {
   const orgId = await insertOrg();
   return {
@@ -339,7 +353,7 @@ describe('invitation accepted', () => {
   it('existing-user invitation: records the accepting user as actor and the joined membership', async () => {
     const org = await buildOrg();
     const invitee = await insertUser('accepter');
-    const home = await insertOrg();
+    const home = await homeOrgFor(invitee.id);
     await as(org.owner, org.orgId)('POST', `/organizations/${org.orgId}/invite`, { email: invitee.email, role: 'member' });
     const { rows } = await pool.query(
       'SELECT id, invitation_token FROM organization_memberships WHERE organization_id = $1 AND user_id = $2',
@@ -375,7 +389,7 @@ describe('invitation accepted', () => {
       [org.orgId, email]
     );
     const registered = await insertUser('later', email);
-    const home = await insertOrg();
+    const home = await homeOrgFor(registered.id);
 
     const res = await as(registered.id, home)('POST', '/organizations/accept-invitation', {
       invitationToken: invitation[0].invitation_token,
@@ -626,7 +640,7 @@ describe('an audit-write failure never fails the business action', () => {
       [org.orgId, invitee.id]
     );
     failAuditWrites();
-    const res = await as(invitee.id, await insertOrg())('POST', '/organizations/accept-invitation', {
+    const res = await as(invitee.id, await homeOrgFor(invitee.id))('POST', '/organizations/accept-invitation', {
       invitationToken: rows[0].invitation_token,
     });
     expect(res.status).toBe(200);

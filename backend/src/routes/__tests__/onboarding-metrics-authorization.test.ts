@@ -118,7 +118,14 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-function stubAuth(userId: string, orgId: string, role: string) {
+/** Authenticates as `userId` -- a real, active `role` member of `orgId`. */
+async function stubAuth(userId: string, orgId: string, role: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO organization_memberships (organization_id, user_id, role, joined_at, is_active)
+     VALUES ($1, $2, $3, NOW(), true)
+     ON CONFLICT (organization_id, user_id) DO UPDATE SET role = $3, is_active = true`,
+    [orgId, userId, role]
+  );
   jest.spyOn(authService, 'verifyToken').mockReturnValue({
     userId,
     email: 'onboarding-metrics-caller@example.com',
@@ -141,7 +148,7 @@ describe.each(['/metrics', '/funnel'] as const)('GET /api/onboarding%s', (path) 
   it('authenticated tenant admin with no platform_staff record is rejected with 403', async () => {
     const orgId = await insertOrg(`caller-admin${path}`);
     const userId = await insertUser();
-    stubAuth(userId, orgId, 'admin');
+    await stubAuth(userId, orgId, 'admin');
 
     const response = await callEndpoint(path);
     expect(response.status).toBe(403);
@@ -150,7 +157,7 @@ describe.each(['/metrics', '/funnel'] as const)('GET /api/onboarding%s', (path) 
   it('authenticated tenant owner with no platform_staff record is rejected with 403 -- tenant role alone must never grant access', async () => {
     const orgId = await insertOrg(`caller-owner${path}`);
     const userId = await insertUser();
-    stubAuth(userId, orgId, 'owner');
+    await stubAuth(userId, orgId, 'owner');
 
     const response = await callEndpoint(path);
     expect(response.status).toBe(403);
@@ -161,7 +168,7 @@ describe.each(['/metrics', '/funnel'] as const)('GET /api/onboarding%s', (path) 
     const userId = await insertUser();
     // Lowest tenant role on purpose -- proves the grant, not the role, is
     // what admits this request.
-    stubAuth(userId, orgId, 'member');
+    await stubAuth(userId, orgId, 'member');
     await grantPlatformStaff(userId, 'active');
     await markOnboardingCompleted(orgId);
 
@@ -174,7 +181,7 @@ describe.each(['/metrics', '/funnel'] as const)('GET /api/onboarding%s', (path) 
   it('revoked platform staff is rejected with 403', async () => {
     const orgId = await insertOrg(`caller-revoked${path}`);
     const userId = await insertUser();
-    stubAuth(userId, orgId, 'owner');
+    await stubAuth(userId, orgId, 'owner');
     await grantPlatformStaff(userId, 'revoked');
 
     const response = await callEndpoint(path);

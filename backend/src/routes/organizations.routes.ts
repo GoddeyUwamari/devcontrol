@@ -79,8 +79,8 @@ router.delete(
 router.get('/:id/members', requireOwnOrg, organizationController.getMembers.bind(organizationController));
 
 // Invite users (requires admin or owner, checks user limit). requireAdmin is a
-// coarse gate on the token's role claim; the service re-authorizes against the
-// caller's current membership and the specific role being granted.
+// coarse gate on the caller's current role; the service re-authorizes inside
+// its transaction against the specific role being granted.
 router.post(
   '/:id/invite',
   requireOwnOrg,

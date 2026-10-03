@@ -1,12 +1,22 @@
 import { Server as HTTPServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import * as jwt from 'jsonwebtoken';
+import { authService } from '../services/auth.service';
+import { getCurrentMembership, OrganizationRole } from '../services/organization-authorization';
+import { membershipClaimsSchema } from '../middleware/auth.middleware';
+import { pool } from '../config/database';
 
-interface AuthenticatedSocket extends Socket {
+/** Who a socket belongs to -- set at handshake from current membership. */
+interface SocketIdentity {
   userId: string;
   organizationId: string;
   email: string;
+  role: OrganizationRole;
+  /** When the access token the socket was opened with expires (ms epoch). */
+  expiresAt: number;
 }
+
+// setTimeout's maximum delay; access tokens expire well within it.
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 export class WebSocketServer {
   private io: SocketIOServer;
@@ -26,21 +36,37 @@ export class WebSocketServer {
   }
 
   private setupMiddleware() {
-    // JWT authentication on WebSocket handshake
-    this.io.use(async (socket: any, next) => {
+    // Handshake: an access token whose user is a current, active member of
+    // its organization. Same rules as HTTP authenticate; the role is the
+    // membership's, never the token's claim.
+    this.io.use(async (socket: Socket, next) => {
       try {
-        const token = socket.handshake.auth.token;
+        const token = socket.handshake.auth?.token;
 
         if (!token) {
           return next(new Error('Authentication token required'));
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+        const decoded = authService.verifyToken(token) as ReturnType<typeof authService.verifyToken> & { exp?: number };
+        const claims = membershipClaimsSchema.safeParse(decoded);
+        if (decoded.type !== 'access' || !claims.success || typeof decoded.exp !== 'number') {
+          return next(new Error('Authentication failed'));
+        }
 
-        // Attach user info to socket
-        socket.userId = decoded.userId;
-        socket.organizationId = decoded.organizationId;
-        socket.email = decoded.email;
+        const { userId, organizationId } = claims.data;
+        const membership = await getCurrentMembership(pool, organizationId, userId);
+        if (!membership) {
+          return next(new Error('Authentication failed'));
+        }
+
+        const identity: SocketIdentity = {
+          userId,
+          organizationId,
+          email: membership.email,
+          role: membership.role,
+          expiresAt: decoded.exp * 1000,
+        };
+        socket.data = identity;
 
         next();
       } catch (error) {
@@ -51,16 +77,23 @@ export class WebSocketServer {
 
   private setupEventHandlers() {
     this.io.on('connection', (socket: Socket) => {
-      const authSocket = socket as any as AuthenticatedSocket;
-      console.log(`✅ WebSocket connected: ${authSocket.email} (${authSocket.organizationId})`);
+      const identity = socket.data as SocketIdentity;
+      console.log(`✅ WebSocket connected: ${identity.email} (${identity.organizationId})`);
 
       // Join organization-specific room for data isolation
-      const orgRoom = `org:${authSocket.organizationId}`;
+      const orgRoom = `org:${identity.organizationId}`;
       socket.join(orgRoom);
+
+      // A socket never outlives the access token it was opened with.
+      const expiry = setTimeout(
+        () => socket.disconnect(true),
+        Math.min(Math.max(identity.expiresAt - Date.now(), 0), MAX_TIMER_MS)
+      );
 
       // Handle disconnection
       socket.on('disconnect', (reason) => {
-        console.log(`❌ WebSocket disconnected: ${authSocket.email} - ${reason}`);
+        clearTimeout(expiry);
+        console.log(`❌ WebSocket disconnected: ${identity.email} - ${reason}`);
       });
 
       // Handle errors
@@ -73,6 +106,32 @@ export class WebSocketServer {
         socket.emit('pong');
       });
     });
+  }
+
+  /** This process's sockets belonging to `userId` in `organizationId`. */
+  private socketsOf(userId: string, organizationId: string): Socket[] {
+    return [...this.io.of('/').sockets.values()].filter((socket) => {
+      const identity = socket.data as Partial<SocketIdentity>;
+      return identity.userId === userId && identity.organizationId === organizationId;
+    });
+  }
+
+  /**
+   * Closes a user's open sockets in one organization, e.g. once their
+   * membership is removed. Only sockets connected to this process are
+   * reached.
+   */
+  public disconnectUserFromOrganization(userId: string, organizationId: string): void {
+    for (const socket of this.socketsOf(userId, organizationId)) {
+      socket.disconnect(true);
+    }
+  }
+
+  /** Keeps open sockets' role in step with a membership role change. */
+  public updateUserRoleInOrganization(userId: string, organizationId: string, role: OrganizationRole): void {
+    for (const socket of this.socketsOf(userId, organizationId)) {
+      (socket.data as SocketIdentity).role = role;
+    }
   }
 
   // Broadcast to specific organization

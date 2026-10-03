@@ -42,13 +42,13 @@ export class StripeController {
    * viewers can still read billing state (getSubscription/getInvoices)
    * but must not be able to mutate the whole organization's subscription.
    * Role comes exclusively from req.user.role, set server-side by
-   * authenticate() from the verified JWT -- never from the request body,
-   * query string, or headers. Mirrors the existing requireAdminOrOwner
-   * inline-helper convention (see remediation.routes.ts,
-   * cost-recommendations.routes.ts) rather than route-level middleware,
-   * so it's exercised the same way every other validation in this
-   * controller already is, and still protects the method if it's ever
-   * called directly.
+   * authenticate() from the caller's current organization membership --
+   * never from the request body, query string, or headers. Mirrors the
+   * existing requireAdminOrOwner inline-helper convention (see
+   * remediation.routes.ts, cost-recommendations.routes.ts) rather than
+   * route-level middleware, so it's exercised the same way every other
+   * validation in this controller already is, and still protects the
+   * method if it's ever called directly.
    */
   private requireBillingAdmin(req: Request, res: Response): boolean {
     const role = req.user?.role;
