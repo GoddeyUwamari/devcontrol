@@ -111,7 +111,11 @@ export const authService = {
    * Reset password with token
    */
   async resetPassword(data: ResetPasswordRequest): Promise<void> {
-    await api.post("/api/auth/reset-password", data);
+    // The API takes the new password as `newPassword`.
+    await api.post("/api/auth/reset-password", {
+      token: data.token,
+      newPassword: data.password,
+    });
   },
 
   /**
