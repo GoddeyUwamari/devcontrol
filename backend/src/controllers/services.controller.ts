@@ -17,7 +17,13 @@ export class ServicesController {
         offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
       };
 
-      const { services, total } = await repository.findAll(filters);
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { services, total } = await repository.findAll(organizationId, filters);
 
       const response: ApiResponse = {
         success: true,
@@ -34,7 +40,11 @@ export class ServicesController {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const organizationId = (req as any).user?.organizationId;
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
       const service = await repository.findById(id, organizationId);
 
       if (!service) {
@@ -55,7 +65,11 @@ export class ServicesController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const serviceData: CreateServiceRequest = req.body;
-      const organizationId = (req as any).user?.organizationId;
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
       const service = await repository.create(serviceData, organizationId);
 
       // Emit onboarding event for service creation
@@ -84,7 +98,11 @@ export class ServicesController {
     try {
       const { id } = req.params;
       const updates: UpdateServiceRequest = req.body;
-      const organizationId = (req as any).user?.organizationId;
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
       const service = await repository.update(id, updates, organizationId);
 
       if (!service) {
@@ -106,7 +124,11 @@ export class ServicesController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const organizationId = (req as any).user?.organizationId;
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
       const deleted = await repository.delete(id, organizationId);
 
       if (!deleted) {

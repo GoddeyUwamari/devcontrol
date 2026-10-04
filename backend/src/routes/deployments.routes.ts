@@ -76,17 +76,19 @@ router.post('/', authenticateToken, checkResourceLimit('deployments', 1), async 
 
     const name = serviceName || service_name;
 
-    // Resolve service name → service_id if not already provided
+    // Resolve service name → service_id if not already provided. The name is
+    // only ever matched against, or created in, the caller's organization.
     if (!service_id && name) {
-      // Look up existing service by name (scoped to org if available)
-      const lookupConditions = orgId
-        ? `(LOWER(name) = LOWER($1) AND (organization_id = $2 OR organization_id IS NULL))`
-        : `LOWER(name) = LOWER($1)`;
-      const lookupValues = orgId ? [name, orgId] : [name];
+      if (!orgId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
 
       const { rows: existing } = await pool.query(
-        `SELECT id FROM services WHERE ${lookupConditions} ORDER BY created_at DESC LIMIT 1`,
-        lookupValues
+        `SELECT id FROM services
+          WHERE LOWER(name) = LOWER($1) AND organization_id = $2
+          ORDER BY created_at DESC LIMIT 1`,
+        [name, orgId]
       );
 
       if (existing.length > 0) {
@@ -97,7 +99,7 @@ router.post('/', authenticateToken, checkResourceLimit('deployments', 1), async 
           `INSERT INTO services (name, template, owner, status, organization_id)
            VALUES ($1, 'api', 'platform-portal@internal', 'active', $2)
            RETURNING id`,
-          [name, orgId ?? null]
+          [name, orgId]
         );
         service_id = inserted[0].id;
       }

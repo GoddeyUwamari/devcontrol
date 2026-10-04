@@ -2,10 +2,10 @@ import { pool } from '../config/database';
 import { Service, ServiceFilters, CreateServiceRequest, UpdateServiceRequest } from '../types';
 
 export class ServicesRepository {
-  async findAll(filters?: ServiceFilters): Promise<{ services: Service[]; total: number }> {
-    let query = 'SELECT * FROM services WHERE 1=1';
-    const params: any[] = [];
-    let paramCount = 0;
+  async findAll(organizationId: string, filters?: ServiceFilters): Promise<{ services: Service[]; total: number }> {
+    let query = 'SELECT * FROM services WHERE organization_id = $1';
+    const params: any[] = [organizationId];
+    let paramCount = 1;
 
     if (filters?.status) {
       paramCount++;
@@ -41,7 +41,7 @@ export class ServicesRepository {
 
     const [servicesResult, countResult] = await Promise.all([
       pool.query(query, params),
-      pool.query('SELECT COUNT(*) FROM services')
+      pool.query('SELECT COUNT(*) FROM services WHERE organization_id = $1', [organizationId])
     ]);
 
     return {
