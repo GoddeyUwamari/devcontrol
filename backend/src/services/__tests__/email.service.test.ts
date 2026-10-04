@@ -76,7 +76,9 @@ describe('EmailService', () => {
       expect(call.from).toBe('DevControl <noreply@test.devcontrol.app>');
       expect(call.to).toBe('newuser@example.com');
       expect(call.subject).toBe('Verify your email address');
-      expect(call.html).toContain('https://app.example.com/verify-email?token&#x3D;abc123token');
+      // Token in the fragment (never sent to a server), not the query string.
+      expect(call.html).toContain('https://app.example.com/verify-email#token&#x3D;abc123token');
+      expect(call.html).not.toContain('verify-email?token');
       expect(call.html).toContain('Ada Lovelace');
     });
 
