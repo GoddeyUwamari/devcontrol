@@ -110,7 +110,9 @@ describe('EmailService', () => {
       const call = mockSend.mock.calls[0][0];
       expect(call.to).toBe('user@example.com');
       expect(call.subject).toBe('Reset your DevControl password');
-      expect(call.html).toContain('https://app.example.com/reset-password?token&#x3D;reset-token-xyz');
+      // Token in the fragment (never sent to a server), not the query string.
+      expect(call.html).toContain('https://app.example.com/reset-password#token&#x3D;reset-token-xyz');
+      expect(call.html).not.toContain('reset-password?token');
       expect(call.html).toContain('1 hour');
     });
 
@@ -161,7 +163,7 @@ describe('EmailService', () => {
 
       await service.sendPasswordResetEmail({ to: 'user@example.com', resetToken: 'tok' });
 
-      expect(mockSend.mock.calls[0][0].html).toContain('http://localhost:3010/reset-password?token&#x3D;tok');
+      expect(mockSend.mock.calls[0][0].html).toContain('http://localhost:3010/reset-password#token&#x3D;tok');
     });
 
     it('returns false and logs safely (no token) when Resend returns an error response', async () => {

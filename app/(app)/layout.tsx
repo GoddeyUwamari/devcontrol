@@ -14,6 +14,7 @@ import { AIChatWidget } from '@/components/ai/AIChatWidget';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+import { SiteAnalytics } from '@/components/analytics/site-analytics';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const fetchStatus = useOnboardingStore((state) => state.fetchStatus);
@@ -60,6 +61,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <ConnectionIndicator />
       <WelcomeModal />
       {showAIChat && <AIChatWidget />}
+      <SiteAnalytics />
     </div>
   );
 }

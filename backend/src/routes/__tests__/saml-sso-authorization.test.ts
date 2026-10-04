@@ -315,7 +315,8 @@ async function postCallback(orgId: string, samlResponse: string, relayState?: st
   });
   const location = new URL(res.headers.get('location')!);
   const succeeded = location.pathname === '/auth/sso/callback';
-  const raw = location.searchParams.get('token');
+  // Tokens are handed over in the fragment, never the query string.
+  const raw = new URLSearchParams(location.hash.slice(1)).get('token');
   return {
     status: res.status,
     succeeded,
@@ -331,6 +332,7 @@ function expectRejected(result: CallbackResult): void {
   expect(result.location.searchParams.get('error')).toBe('sso_failed');
   expect(result.location.searchParams.get('token')).toBeNull();
   expect(result.location.searchParams.get('refreshToken')).toBeNull();
+  expect(result.location.hash).toBe('');
 }
 
 async function sessionCount(userId: string): Promise<number> {
@@ -374,6 +376,26 @@ describe('SAML callback -- valid SSO + active membership', () => {
       expect(result.location.origin).toBe(new URL(FRONTEND_URL).origin);
     }
   );
+
+  it('hands the tokens over in the URL fragment, never in the query string', async () => {
+    const org = await ssoOrg();
+    const requestId = await initiate(org.orgId);
+    const result = await postCallback(org.orgId, buildResponse(org.orgId, { email: org.member.email, inResponseTo: requestId }));
+
+    expect(result.status).toBe(302);
+    expect(result.succeeded).toBe(true);
+    // Nothing credential-bearing in the part of the URL a browser sends to a server.
+    expect(result.location.search).toBe('');
+    expect(result.location.searchParams.get('token')).toBeNull();
+    expect(result.location.searchParams.get('refreshToken')).toBeNull();
+
+    const fragment = new URLSearchParams(result.location.hash.slice(1));
+    const access = jwt.decode(fragment.get('token')!) as jwt.JwtPayload;
+    const refresh = jwt.decode(fragment.get('refreshToken')!) as jwt.JwtPayload;
+    expect(access).toMatchObject({ userId: org.member.id, organizationId: org.orgId, type: 'access' });
+    expect(refresh).toMatchObject({ userId: org.member.id, organizationId: org.orgId, type: 'refresh' });
+    expect(fragment.get('orgId')).toBe(org.orgId);
+  });
 
   it('asserted role/org attributes and RelayState cannot change the token', async () => {
     const org = await ssoOrg();

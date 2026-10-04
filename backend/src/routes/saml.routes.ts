@@ -108,14 +108,17 @@ export function createSAMLRoutes(): Router {
 
       const tokens = await samlService.authenticateCallback(orgId, req.body);
 
-      // Redirect to frontend SSO landing page with tokens in query params
-      // The frontend page reads these, stores to localStorage, then redirects to /dashboard
+      // Hand the tokens to the frontend SSO landing page in the URL fragment,
+      // never the query string: browsers do not send the fragment to any
+      // server (so it stays out of request logs and Referer headers). The
+      // page takes the tokens, removes them from the URL before doing
+      // anything else, stores them, then redirects to /dashboard.
       const params = new URLSearchParams({
         token: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         orgId,
       });
-      res.redirect(`${FRONTEND_URL}/auth/sso/callback?${params.toString()}`);
+      res.redirect(`${FRONTEND_URL}/auth/sso/callback#${params.toString()}`);
     } catch (err: any) {
       console.error('[SAML] callback rejected:', err?.message ?? err);
       res.redirect(`${FRONTEND_URL}/login?error=sso_failed&message=${encodeURIComponent(SSO_FAILED_MESSAGE)}`);

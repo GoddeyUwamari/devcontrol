@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
@@ -12,6 +12,7 @@ import {
   calculatePasswordStrength,
 } from "@/lib/validations/auth.schema";
 import { authService } from "@/lib/services/auth.service";
+import { takeUrlCredentials } from "@/lib/url-credentials";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,12 +29,14 @@ import { cn } from "@/lib/utils";
 
 function ResetPasswordContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  // The reset token lives only in this component's state once it has been
+  // taken from the link; it is not kept in the URL.
   const [token, setToken] = useState<string | null>(null);
+  const tokenTaken = useRef(false);
 
   const {
     register,
@@ -56,7 +59,13 @@ function ResetPasswordContent() {
     : null;
 
   useEffect(() => {
-    const tokenParam = searchParams.get("token");
+    // The link is cleaned on the first run, so a second run (React Strict
+    // Mode) would find no token there; keep what the first run took.
+    if (tokenTaken.current) return;
+    tokenTaken.current = true;
+
+    // (The legacy query-string form has a removal date; see lib/url-credentials.ts.)
+    const { token: tokenParam } = takeUrlCredentials(["token"] as const);
     if (!tokenParam) {
       toast.error("Invalid reset link", {
         description: "The password reset link is missing or invalid",
@@ -64,7 +73,7 @@ function ResetPasswordContent() {
     } else {
       setToken(tokenParam);
     }
-  }, [searchParams]);
+  }, []);
 
   const onSubmit = async (data: ResetPasswordFormData) => {
     if (!token) {
