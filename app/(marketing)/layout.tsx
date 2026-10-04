@@ -1,5 +1,6 @@
 import { MarketingNav } from '@/components/layout/MarketingNav';
 import { Footer } from '@/components/footer';
+import { SiteAnalytics } from '@/components/analytics/site-analytics';
 
 export default function MarketingLayout({
   children,
@@ -11,6 +12,7 @@ export default function MarketingLayout({
       <MarketingNav />
       <main style={{ paddingTop: '104px' }}>{children}</main>
       <Footer />
+      <SiteAnalytics />
     </div>
   );
 }

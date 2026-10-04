@@ -186,7 +186,9 @@ export class EmailService {
 
   async sendPasswordResetEmail(params: PasswordResetEmailParams): Promise<boolean> {
     const { to, resetToken } = params;
-    const resetUrl = `${this.getFrontendUrl()}/reset-password?token=${resetToken}`;
+    // Fragment, not query string: the token is never sent to a server when
+    // the link is opened, and the page removes it from the URL on load.
+    const resetUrl = `${this.getFrontendUrl()}/reset-password#token=${resetToken}`;
 
     return this.send({
       to,

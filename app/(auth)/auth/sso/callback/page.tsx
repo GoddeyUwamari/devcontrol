@@ -1,20 +1,30 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { tokenManager } from "@/lib/services/auth.service";
+import { takeUrlCredentials } from "@/lib/url-credentials";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
+/** Parameters the backend's SAML callback hands over (in the URL fragment). */
+const SSO_URL_PARAMS = ["token", "refreshToken", "orgId"] as const;
+
 function SSOCallbackContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
+  // The URL is cleaned on the first run, so a second run (React Strict Mode)
+  // would find nothing there; it must not start the flow again.
+  const started = useRef(false);
 
   useEffect(() => {
-    const token = searchParams.get("token");
-    const refreshToken = searchParams.get("refreshToken");
+    if (started.current) return;
+    started.current = true;
+
+    // First, before anything else runs: take the tokens and clean the URL.
+    // (The legacy query-string form has a removal date; see lib/url-credentials.ts.)
+    const { token, refreshToken } = takeUrlCredentials(SSO_URL_PARAMS);
 
     if (!token || !refreshToken) {
       setError("SSO authentication failed — missing tokens.");
@@ -46,7 +56,7 @@ function SSOCallbackContent() {
     } catch {
       setError("Failed to complete SSO sign-in. Please try again.");
     }
-  }, [searchParams, router]);
+  }, [router]);
 
   if (error) {
     return (
