@@ -23,15 +23,14 @@ function verifySignature(rawBody: Buffer, signatureHeader: string | undefined, s
   return crypto.timingSafeEqual(expectedBuf, actualBuf);
 }
 
-async function resolveServiceId(repoName: string): Promise<string> {
-  const lookupConditions = ORGANIZATION_ID
-    ? `(LOWER(name) = LOWER($1) AND (organization_id = $2 OR organization_id IS NULL))`
-    : `LOWER(name) = LOWER($1)`;
-  const lookupValues = ORGANIZATION_ID ? [repoName, ORGANIZATION_ID] : [repoName];
-
+// The repository name is only ever matched against, or created in, the
+// webhook's own organization.
+async function resolveServiceId(repoName: string, organizationId: string): Promise<string> {
   const { rows: existing } = await pool.query(
-    `SELECT id FROM services WHERE ${lookupConditions} ORDER BY created_at DESC LIMIT 1`,
-    lookupValues
+    `SELECT id FROM services
+      WHERE LOWER(name) = LOWER($1) AND organization_id = $2
+      ORDER BY created_at DESC LIMIT 1`,
+    [repoName, organizationId]
   );
   if (existing.length > 0) return existing[0].id;
 
@@ -39,7 +38,7 @@ async function resolveServiceId(repoName: string): Promise<string> {
     `INSERT INTO services (name, template, owner, status, organization_id)
      VALUES ($1, 'api', 'github-actions@webhook', 'active', $2)
      RETURNING id`,
-    [repoName, ORGANIZATION_ID]
+    [repoName, organizationId]
   );
   return inserted[0].id;
 }
@@ -126,7 +125,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       }
 
       const repoName = payload.repository?.name || 'devcontrol';
-      const service_id = await resolveServiceId(repoName);
+      const service_id = await resolveServiceId(repoName, ORGANIZATION_ID);
 
       const deployment = await repository.create({
         service_id,

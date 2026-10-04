@@ -6,10 +6,35 @@ import { createServiceSchema, updateServiceSchema, uuidParamSchema } from '../va
 import { authenticateToken } from '../middleware/auth.middleware';
 import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscription.middleware';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
+import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
 
 const router = Router();
 const controller = new ServicesController();
 const discoveryService = new AWSResourceDiscoveryService(pool);
+
+/**
+ * Creating, changing, or deleting a service is limited to owners and admins,
+ * checked against the caller's CURRENT membership (not their JWT role
+ * claim). Runs before parameter validation and before any service lookup, so
+ * the answer for other roles is the same for every service id.
+ */
+async function requireCurrentAdminOrOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Authentication required' });
+      return;
+    }
+    await requireCurrentRole(pool, req.user.organizationId, req.user.userId, ['owner', 'admin']);
+    next();
+  } catch (err: unknown) {
+    if (err instanceof OrganizationAccessError && err.statusCode === 403) {
+      res.status(403).json({ success: false, error: 'Only an organization owner or admin can manage services' });
+      return;
+    }
+    console.error('[Services] role check error:', err);
+    res.status(500).json({ success: false, error: 'Failed to verify permissions' });
+  }
+}
 
 // ─── Status mapping ───────────────────────────────────────────────────────────
 
@@ -328,12 +353,8 @@ router.post('/discover', authenticateToken, checkDiscoveryLimit, async (req: Req
 // ─── GET /api/services — aws_resources-backed list ───────────────────────────
 
 router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  // Only intercept if the org is authenticated — fall through to controller otherwise
   const orgId = req.organizationId;
-  if (!orgId) {
-    // No org context → fall through to legacy controller (unauthenticated callers)
-    return next();
-  }
+  if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
 
   try {
     const { type, env, search } = req.query as Record<string, string>;
@@ -350,7 +371,7 @@ router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req
 
 router.get('/:id', authenticateToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const orgId = req.organizationId;
-  if (!orgId) return next();
+  if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
 
   // Try aws_resources first (UUID match)
   try {
@@ -369,8 +390,8 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response, next: 
 
 // ─── Legacy controller routes (services table — create/update/delete) ─────────
 
-router.post(   '/',    authenticateToken, validateBody(createServiceSchema), (req, res, next) => controller.create(req, res, next));
-router.put(    '/:id', authenticateToken, validateParams(uuidParamSchema), validateBody(updateServiceSchema), (req, res, next) => controller.update(req, res, next));
-router.delete( '/:id', authenticateToken, validateParams(uuidParamSchema), (req, res, next) => controller.delete(req, res, next));
+router.post(   '/',    authenticateToken, requireCurrentAdminOrOwner, validateBody(createServiceSchema), (req, res, next) => controller.create(req, res, next));
+router.put(    '/:id', authenticateToken, requireCurrentAdminOrOwner, validateParams(uuidParamSchema), validateBody(updateServiceSchema), (req, res, next) => controller.update(req, res, next));
+router.delete( '/:id', authenticateToken, requireCurrentAdminOrOwner, validateParams(uuidParamSchema), (req, res, next) => controller.delete(req, res, next));
 
 export default router;
