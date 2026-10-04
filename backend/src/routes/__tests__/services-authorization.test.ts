@@ -10,6 +10,11 @@
  *   - Every service read, update, delete, and name match is confined to one
  *     organization. A service of another organization, or one with no
  *     organization, is never returned or matched.
+ *   - A service with no organization: where services.organization_id is
+ *     NOT NULL the database refuses the row, and that is what is asserted;
+ *     where an older schema still allows it, such a row is created and shown
+ *     never to be returned or matched. Which applies is read from
+ *     information_schema at setup.
  *   - POST /api/deployments and the GitHub webhook resolve a service name
  *     only within their own organization, and create it there when absent.
  *
@@ -113,6 +118,24 @@ async function buildOrg(id?: string) {
   };
 }
 
+/** Whether this schema allows a services row with no organization. Set in beforeAll. */
+let organizationNullable: boolean;
+
+async function readOrganizationNullable(): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT is_nullable FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'services' AND column_name = 'organization_id'`
+  );
+  if (rows.length !== 1) throw new Error('services.organization_id not found');
+  return rows[0].is_nullable === 'YES';
+}
+
+/** On a schema where the column is NOT NULL: the row cannot be created at all. */
+async function expectNoOrganizationRejected(name = `services-authz-svc-${uniqueSuffix()}`): Promise<void> {
+  await expect(insertService(null, name)).rejects.toMatchObject({ code: '23502', column: 'organization_id' });
+  expect(await servicesNamed(name)).toEqual([]);
+}
+
 /** A services row; `orgId` null makes one that belongs to no organization. */
 async function insertService(orgId: string | null, name = `services-authz-svc-${uniqueSuffix()}`): Promise<string> {
   const { rows } = await pool.query(
@@ -153,6 +176,8 @@ beforeAll(async () => {
   // Loaded after the environment is set: the router captures its
   // organization when the module is first evaluated.
   const githubWebhookRoutes = require('../github-webhook.routes').default;
+
+  organizationNullable = await readOrganizationNullable();
 
   orgA = await buildOrg();
   orgB = await buildOrg();
@@ -390,7 +415,15 @@ describe('a service of another organization behaves as if it does not exist', ()
 });
 
 describe('a service with no organization is never returned or matched', () => {
-  it('read, update, and delete by id are 404 and the row is unchanged', async () => {
+  it('the schema\'s nullability is known, so exactly one of the two behaviours below is asserted', () => {
+    expect(typeof organizationNullable).toBe('boolean');
+  });
+
+  it('by id: the row is refused by the database, or read, update, and delete are 404 and the row is unchanged', async () => {
+    if (!organizationNullable) {
+      await expectNoOrganizationRejected();
+      return;
+    }
     const orphan = await insertService(null);
     const before = await serviceRow(orphan);
     const caller = as(orgA.owner, orgA.orgId);
@@ -409,7 +442,7 @@ describe('ServicesRepository reads are confined to the given organization', () =
     const org = await buildOrg();
     const own = [await insertService(org.orgId), await insertService(org.orgId)];
     const foreign = await insertService(orgB.orgId);
-    const orphan = await insertService(null);
+    const orphan = organizationNullable ? await insertService(null) : null;
 
     const { services, total } = await repository.findAll(org.orgId, {});
     const ids = services.map((s) => s.id);
@@ -417,7 +450,7 @@ describe('ServicesRepository reads are confined to the given organization', () =
     expect(ids.sort()).toEqual([...own].sort());
     expect(total).toBe(2);
     expect(ids).not.toContain(foreign);
-    expect(ids).not.toContain(orphan);
+    if (orphan) expect(ids).not.toContain(orphan);
   });
 
   it('findAll filters stay inside the organization', async () => {
@@ -430,16 +463,26 @@ describe('ServicesRepository reads are confined to the given organization', () =
     expect(services.every((s) => (s as unknown as { organization_id: string }).organization_id === org.orgId)).toBe(true);
   });
 
-  it('findById, update, and delete do not reach a foreign or organization-less service', async () => {
+  it('findById, update, and delete do not reach a foreign service', async () => {
     const foreign = await insertService(orgB.orgId);
+
+    expect(await repository.findById(foreign, orgA.orgId)).toBeNull();
+    expect(await repository.update(foreign, { description: 'x' }, orgA.orgId)).toBeNull();
+    expect(await repository.delete(foreign, orgA.orgId)).toBe(false);
+    expect((await serviceRow(foreign)).description).toBeNull();
+  });
+
+  it('a service with no organization: refused by the database, or not reached by findById, update, or delete', async () => {
+    if (!organizationNullable) {
+      await expectNoOrganizationRejected();
+      return;
+    }
     const orphan = await insertService(null);
 
-    for (const id of [foreign, orphan]) {
-      expect(await repository.findById(id, orgA.orgId)).toBeNull();
-      expect(await repository.update(id, { description: 'x' }, orgA.orgId)).toBeNull();
-      expect(await repository.delete(id, orgA.orgId)).toBe(false);
-      expect((await serviceRow(id)).description).toBeNull();
-    }
+    expect(await repository.findById(orphan, orgA.orgId)).toBeNull();
+    expect(await repository.update(orphan, { description: 'x' }, orgA.orgId)).toBeNull();
+    expect(await repository.delete(orphan, orgA.orgId)).toBe(false);
+    expect((await serviceRow(orphan)).description).toBeNull();
   });
 });
 
@@ -470,8 +513,12 @@ describe('POST /api/deployments resolves a service name only within the caller\'
     expect(data.organization_id).toBe(orgA.orgId);
   });
 
-  it('a service with no organization of the same name is not matched', async () => {
+  it('a service with no organization of the same name: refused by the database, or not matched', async () => {
     const name = `services-authz-deploy-${uniqueSuffix()}`;
+    if (!organizationNullable) {
+      await expectNoOrganizationRejected(name);
+      return;
+    }
     const orphan = await insertService(null, name);
 
     const res = await as(orgA.admin, orgA.orgId).deploy({ serviceName: name });
@@ -523,8 +570,12 @@ describe('the GitHub webhook resolves a repository name only within its own orga
     expect((await serviceRow(data.service_id)).organization_id).toBe(webhookOrg.orgId);
   });
 
-  it('a service with no organization of the same name is not matched', async () => {
+  it('a service with no organization of the same name: refused by the database, or not matched', async () => {
     const name = `services-authz-repo-${uniqueSuffix()}`;
+    if (!organizationNullable) {
+      await expectNoOrganizationRejected(name);
+      return;
+    }
     const orphan = await insertService(null, name);
 
     const res = await webhookDelivery(name);
