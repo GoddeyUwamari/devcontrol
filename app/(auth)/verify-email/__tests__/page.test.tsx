@@ -1,6 +1,6 @@
 /**
- * Verify email: the token is taken from the link (as sent by the backend,
- * `/verify-email?token=...`, or in the fragment), removed from the URL
+ * Verify email: the token is taken from the link (in the fragment, as sent
+ * by the backend, or in the legacy query string), removed from the URL
  * before the verification request is made, and the page reports what the
  * API answered.
  */
@@ -39,8 +39,8 @@ afterEach(() => {
 
 describe("verify email page", () => {
   it.each([
-    ["query string (the link the backend sends)", `/verify-email?token=${TOKEN}`],
-    ["fragment", `/verify-email#token=${TOKEN}`],
+    ["legacy query string", `/verify-email?token=${TOKEN}`],
+    ["fragment (the link the backend sends)", `/verify-email#token=${TOKEN}`],
   ])("%s: verifies with the token and shows success", async (_form, link) => {
     visit(link);
 
@@ -53,7 +53,7 @@ describe("verify email page", () => {
   });
 
   it.each([
-    ["query string", `/verify-email?token=${TOKEN}`],
+    ["legacy query string", `/verify-email?token=${TOKEN}`],
     ["fragment", `/verify-email#token=${TOKEN}`],
   ])("%s: the token is out of the URL before the request is made, and stays out", async (_form, link) => {
     visit(link);

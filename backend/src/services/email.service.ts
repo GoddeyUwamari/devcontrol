@@ -169,7 +169,9 @@ export class EmailService {
 
   async sendVerificationEmail(params: VerificationEmailParams): Promise<boolean> {
     const { to, fullName, verificationToken } = params;
-    const verificationUrl = `${this.getFrontendUrl()}/verify-email?token=${verificationToken}`;
+    // Fragment, not query string: the token is never sent to a server when
+    // the link is opened, and the page removes it from the URL on load.
+    const verificationUrl = `${this.getFrontendUrl()}/verify-email#token=${verificationToken}`;
 
     return this.send({
       to,
