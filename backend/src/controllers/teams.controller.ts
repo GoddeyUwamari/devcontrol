@@ -6,12 +6,17 @@ const repository = new TeamsRepository();
 
 const TEAM_NAME_CONFLICT_MESSAGE = 'A team with this name already exists.';
 
+// The team-name uniqueness constraint under either of its names: the
+// per-organization one, and the global one it replaces, which is still what a
+// database reports until the migration that swaps them has been applied.
+const TEAM_NAME_CONSTRAINTS = new Set(['teams_organization_id_name_key', 'teams_name_key']);
+
 // Only the unique violation on the team name. Every other database error,
 // including a unique violation on any other constraint, is left to the
 // caller's generic handling.
 function isTeamNameConflict(error: unknown): boolean {
   const { code, constraint } = (error ?? {}) as { code?: unknown; constraint?: unknown };
-  return code === '23505' && constraint === 'teams_name_key';
+  return code === '23505' && typeof constraint === 'string' && TEAM_NAME_CONSTRAINTS.has(constraint);
 }
 
 export class TeamsController {
