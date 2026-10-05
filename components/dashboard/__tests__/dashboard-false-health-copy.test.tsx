@@ -29,8 +29,8 @@ function costTrendsCard(isDemoActive: boolean) {
 }
 
 describe('Dashboard hero', () => {
-  it.each([true, false])('makes no "real-time" claim (AWS connected: %s)', (connected) => {
-    const { container } = render(<DashboardHero isAwsConnected={connected} orgName="Org" lastSynced={null} />)
+  it.each(['connected', 'unconnected', 'unknown', 'loading'] as const)('makes no "real-time" claim (AWS: %s)', (awsConnection) => {
+    const { container } = render(<DashboardHero awsConnection={awsConnection} canConnectAws orgName="Org" lastSynced={null} />)
     expect(container.textContent).not.toMatch(/real[- ]?time/i)
   })
 })

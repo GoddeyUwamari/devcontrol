@@ -7,8 +7,8 @@
  * flat trend.
  *
  * Deliberately independent of /api/platform/stats/dashboard's monthlyAwsCost,
- * which still drives the AWS connection gates and the /connect-aws redirect
- * (computeDashboardAwsGates) unchanged.
+ * which still drives the AWS connection gates (computeDashboardAwsGates) and
+ * the connection state (computeAwsConnectionState) unchanged.
  *
  * Lives in its own module (not exported from page.tsx) because Next.js's App
  * Router only permits a fixed set of named exports from a page file.
