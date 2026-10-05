@@ -8,7 +8,10 @@ import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import api from '@/lib/api';
 import { doraMetricsService } from '@/lib/services/dora-metrics.service';
+import { servicesService } from '@/lib/services/services.service';
+import { teamsService } from '@/lib/services/teams.service';
 import { DORAMetricsFilters, DateRangeOption, BenchmarkLevel, TrendDirection, DORAMetric, Service, Team } from '@/lib/types';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
@@ -43,7 +46,7 @@ const DEMO_SERVICE_BREAKDOWN = [
   { name: 'payment-processor',    env: 'production', deployFreq: '0.8/d', leadTime: '6.2h', cfr: '4.8%', mttr: '52m', tier: 'medium', attention: true },
 ];
 
-const BENCHMARK_API = 'http://localhost:8080/api/dora/benchmarks';
+const BENCHMARK_API = '/api/dora/benchmarks';
 interface CustomBenchmark { metric_name: string; target_value: number; target_unit: string; performance_label: string; }
 
 const METRIC_CONFIGS = [
@@ -77,10 +80,10 @@ export default function DORAMetricsPage() {
   const salesDemoMode = useSalesDemo((state) => state.enabled);
   const isDemoActive = demoMode || salesDemoMode;
 
-  const { data: servicesData } = useQuery<{ success: boolean; data: Service[] }>({ queryKey: ['services'], queryFn: async () => { const r = await fetch('http://localhost:8080/api/services'); return r.json(); } });
-  const { data: teamsData } = useQuery<{ success: boolean; data: Team[] }>({ queryKey: ['teams'], queryFn: async () => { const r = await fetch('http://localhost:8080/api/teams'); return r.json(); } });
+  const { data: services } = useQuery<Service[]>({ queryKey: ['services'], queryFn: () => servicesService.getAll() });
+  const { data: teams } = useQuery<Team[]>({ queryKey: ['teams'], queryFn: teamsService.getAll });
   const { data: metricsData, isLoading, error, refetch } = useQuery({ queryKey: ['dora-metrics', dateRange, selectedService, selectedTeam, selectedEnvironment], queryFn: async () => { const filters: DORAMetricsFilters = { dateRange }; if (selectedService !== 'all') filters.serviceId = selectedService; if (selectedTeam !== 'all') filters.teamId = selectedTeam; if (selectedEnvironment !== 'all') filters.environment = selectedEnvironment; return doraMetricsService.getDORAMetrics(filters); } });
-  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({ queryKey: ['dora-benchmarks'], queryFn: async () => { const r = await fetch(BENCHMARK_API); return r.json(); } });
+  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({ queryKey: ['dora-benchmarks'], queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; } });
 
   const benchmarksMap: Record<string, CustomBenchmark> = (benchmarksData?.data || []).reduce((acc, b) => ({ ...acc, [b.metric_name]: b }), {});
 
@@ -89,15 +92,14 @@ export default function DORAMetricsPage() {
     const parsed = parseFloat(value);
     if (isNaN(parsed) || parsed <= 0) { setSaveError('Please enter a valid positive number.'); return; }
     try {
-      const res = await fetch(BENCHMARK_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ metric_name: metricKey, target_value: parsed, performance_label: label || 'Elite' }) });
-      if (!res.ok) throw new Error('Save failed');
+      await api.post(BENCHMARK_API, { metric_name: metricKey, target_value: parsed, performance_label: label || 'Elite' });
       await refetchBenchmarks(); queryClient.invalidateQueries({ queryKey: ['dora-metrics'] }); setEditingMetric(null);
     } catch { setSaveError('Failed to save. Please try again.'); }
   }, [refetchBenchmarks, queryClient]);
 
   const resetBenchmark = useCallback(async (metricKey: string) => {
     setSaveError(null);
-    try { await fetch(`${BENCHMARK_API}/${metricKey}`, { method: 'DELETE' }); await refetchBenchmarks(); queryClient.invalidateQueries({ queryKey: ['dora-metrics'] }); }
+    try { await api.delete(`${BENCHMARK_API}/${metricKey}`); await refetchBenchmarks(); queryClient.invalidateQueries({ queryKey: ['dora-metrics'] }); }
     catch { setSaveError('Failed to reset. Please try again.'); }
   }, [refetchBenchmarks, queryClient]);
 
@@ -106,8 +108,6 @@ export default function DORAMetricsPage() {
   const dataState: 'inactive' | 'insufficient' | 'active' = !isDemoActive && totalDeployments === 0 ? 'inactive' : !isDemoActive && totalDeployments < 5 ? 'insufficient' : 'active';
   const dataStateLabel = dataState === 'inactive' ? 'Pipeline inactive — no delivery activity in selected period' : dataState === 'insufficient' ? 'Insufficient data for benchmarking — fewer than 5 deployments detected' : `Based on ${totalDeployments} deployments`;
   const dataStateColor = dataState === 'inactive' ? '#DC2626' : dataState === 'insufficient' ? '#D97706' : '#059669';
-  const services = servicesData?.data;
-  const teams = teamsData?.data;
 
   return (
     <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6">
