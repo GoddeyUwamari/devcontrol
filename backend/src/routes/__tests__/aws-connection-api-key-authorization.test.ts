@@ -19,6 +19,7 @@
 import express from 'express';
 import http from 'http';
 import { Pool } from 'pg';
+import { ensureSharedFixtureTable } from './shared-fixture-tables';
 import awsRoutes from '../aws.routes';
 import apiKeysRoutes from '../api-keys.routes';
 import { authService } from '../../services/auth.service';
@@ -64,8 +65,8 @@ async function tableExists(tableName: string): Promise<boolean> {
 // aws_accounts, aws_connect_sessions, and api_keys are not created by the
 // canonical migrations CI bootstraps (see aws-connection-funnel-event.test.ts
 // and .github/scripts/ci-bootstrap-schema.js). Create only what is missing,
-// from the same shapes the routes read and write, and drop only what was
-// created here.
+// from the same shapes the routes read and write. Of the tables created
+// here only aws_accounts and aws_connect_sessions are dropped afterwards.
 async function ensureFixtureSchema(): Promise<void> {
   if (!(await tableExists('aws_accounts'))) {
     await pool.query(`
@@ -96,23 +97,8 @@ async function ensureFixtureSchema(): Promise<void> {
     `);
     fixtureTablesCreated.push('aws_connect_sessions');
   }
-  if (!(await tableExists('api_keys'))) {
-    // The columns api-keys.routes.ts reads and writes, plus 026's organization_id.
-    await pool.query(`
-      CREATE TABLE api_keys (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        name VARCHAR(255) NOT NULL,
-        key_hash TEXT NOT NULL,
-        prefix VARCHAR(20) NOT NULL,
-        scopes TEXT[] NOT NULL DEFAULT '{}',
-        status VARCHAR(20) NOT NULL DEFAULT 'active',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        last_used_at TIMESTAMPTZ,
-        organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE
-      )
-    `);
-    fixtureTablesCreated.push('api_keys');
-  }
+  // Shared with other suites: ensured here, never dropped (shared-fixture-tables.ts).
+  await ensureSharedFixtureTable(pool, 'api_keys');
 }
 
 async function insertOrg(): Promise<string> {

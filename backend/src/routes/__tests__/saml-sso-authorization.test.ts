@@ -24,6 +24,7 @@ import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
+import { ensureSharedFixtureTable } from './shared-fixture-tables';
 import { signSamlPost } from '@node-saml/node-saml/lib/saml-post-signing';
 import { createSAMLRoutes } from '../saml.routes';
 import { samlService, samlCallbackUrl, SAML_CLOCK_SKEW_MS } from '../../services/saml.service';
@@ -57,7 +58,6 @@ function dbConfig() {
 const pool = new Pool(dbConfig());
 const createdOrgIds: string[] = [];
 const createdUserIds: string[] = [];
-let createdSsoTable = false;
 
 const IDP_ENTITY_ID = 'https://idp.example.test/metadata';
 const IDP_SSO_URL = 'https://idp.example.test/sso';
@@ -163,26 +163,8 @@ beforeAll(async () => {
   ({ key: idpKey, cert: idpCert } = makeKeyPair(tmpDir, 'idp'));
   ({ key: rogueKey } = makeKeyPair(tmpDir, 'rogue'));
 
-  const { rows } = await pool.query("SELECT to_regclass('sso_configurations') AS t");
-  if (!rows[0].t) {
-    createdSsoTable = true;
-    await pool.query(`
-      CREATE TABLE sso_configurations (
-        id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id   UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-        provider_name     VARCHAR(100) NOT NULL DEFAULT 'SAML IdP',
-        idp_entity_id     TEXT NOT NULL,
-        idp_sso_url       TEXT NOT NULL,
-        idp_certificate   TEXT NOT NULL,
-        sp_entity_id      TEXT NOT NULL,
-        attribute_mapping JSONB NOT NULL DEFAULT '{"email":"email","name":"displayName"}',
-        allowed_domains   JSONB NOT NULL DEFAULT '[]',
-        is_active         BOOLEAN NOT NULL DEFAULT false,
-        created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (organization_id)
-      )`);
-  }
+  // Shared with other suites: ensured here, never dropped (shared-fixture-tables.ts).
+  await ensureSharedFixtureTable(pool, 'sso_configurations');
 
   const app = express();
   app.use(express.json());
@@ -212,7 +194,6 @@ afterAll(async () => {
   // saml_request_ids and sso_configurations cascade from organizations.
   await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM users WHERE id = ANY($1)', [createdUserIds]);
-  if (createdSsoTable) await pool.query('DROP TABLE IF EXISTS sso_configurations');
   await pool.end();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
