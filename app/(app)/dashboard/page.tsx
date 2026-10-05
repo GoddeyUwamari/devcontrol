@@ -6,6 +6,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { DEMO_LAST_SYNCED } from '@/lib/demo/demo-timestamps'
 import { DashboardHero } from '@/components/dashboard/dashboard-hero'
+import { DashboardUnconnectedPreview } from '@/components/dashboard/dashboard-unconnected-preview'
 import { RecommendedActionCard } from '@/components/dashboard/recommended-action-card'
 import { DashboardMetricCard } from '@/components/dashboard/dashboard-metric-card'
 import { InfrastructureIntelligence } from '@/components/dashboard/infrastructure-intelligence'
@@ -27,6 +28,7 @@ import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
+import { computeAwsConnectionState } from './dashboardAwsConnection'
 import { computeDashboardSpendCard } from './dashboardSpendCard'
 import { computeSecurityEvidence, computeSecurityHealthKpi, resourceComplianceLine, resourceIssueCount, SECURITY_STATUS_BADGE, securityKpiCaption, securityScopeCaption } from './securityHealthKpi'
 import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
@@ -41,8 +43,8 @@ import { annualizeMonthly, formatSavingsCents } from '@/lib/utils'
 import { deriveAnalysisStatus, pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { roundCents } from '../costs/cost-display'
 import type { OpportunityEvaluationState } from '@/components/dashboard/savings-opportunities'
-import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/auth-context'
+import { useCurrentRole } from '@/lib/hooks/use-current-role'
 import { DollarSign, ShieldCheck, Gauge, Wifi, WifiOff } from 'lucide-react'
 
 type CostRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
@@ -86,7 +88,6 @@ export default function DashboardPage() {
   const queryClient = useQueryClient()
   const demoMode = useDemoMode()
   const { enabled: salesDemoMode } = useSalesDemo()
-  const router = useRouter()
   const isDemoActive = demoMode || salesDemoMode
 
   const lastWsUpdateRef = useRef<Record<string, number>>({})
@@ -139,13 +140,13 @@ export default function DashboardPage() {
   })
   // Same reasoning as securityFindingsLoading: a query disabled only because the
   // organization isn't known yet still counts as loading, so the AWS gates and the
-  // /connect-aws redirect never act on "no stats" before the stats could be fetched.
+  // connection state never act on "no stats" before the stats could be fetched.
   const statsLoading = statsQueryLoading || (!isDemoActive && !organization?.id)
 
   // The spend KPI's figure and month-over-month comparison, as evidence sections
   // (actual Cost Explorer / inventory estimate / unavailable / error) -- the same
   // endpoint the Costs page reads. `stats` above still drives the AWS connection
-  // gates and the /connect-aws redirect; this never feeds them.
+  // gates and the connection state; this never feeds them.
   const { data: costSummary, isLoading: costSummaryQueryLoading, isError: costSummaryError } = useQuery<CostSummary>({
     queryKey: ['platform-cost-summary', organization?.id],
     queryFn: platformStatsService.getCostSummary,
@@ -259,7 +260,7 @@ export default function DashboardPage() {
   const monthlySavings = isDemoActive ? 1922 : roundCents(costRecStats?.totalPotentialSavings ?? 0)
   const annualSavings = roundCents(annualizeMonthly(monthlySavings))
 
-  const { data: awsAccounts } = useQuery({
+  const { data: awsAccounts, isError: awsAccountsError } = useQuery<unknown[]>({
     queryKey: ['aws-accounts', organization?.id],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -267,13 +268,31 @@ export default function DashboardPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: 'include'
       })
-      const json = await res.json(); return json.data ?? []
+      // A failed request is an error, not an organization with no accounts.
+      if (!res.ok) throw new Error('The AWS accounts could not be retrieved')
+      const json = await res.json()
+      if (!Array.isArray(json?.data)) throw new Error('The AWS accounts response was not a list')
+      return json.data
     },
-    staleTime: 30000,
+    // One retry, so a single transient failure is not reported as "couldn't check".
+    staleTime: 30000, retry: 1,
     enabled: !!organization?.id,
   })
 
-  const isAwsConnected = isDemoActive || (awsAccounts && awsAccounts.length > 0) || (!!stats && (stats.monthlyAwsCost > 0 || stats.activeDeployments > 0 || stats.totalServices > 0))
+  // connected / unconnected / unknown / loading. A failed accounts request with
+  // no earlier result is "unknown", never "unconnected". (A failed background
+  // refetch keeps the last successful list.)
+  const awsConnection = computeAwsConnectionState({
+    isDemoActive,
+    awsAccounts,
+    awsAccountsFailed: awsAccountsError && awsAccounts === undefined,
+    statsLoading,
+    stats,
+  })
+  const isAwsConnected = awsConnection === 'connected'
+  // Only an owner can connect AWS. The role is the access token's claim (display
+  // only); until it is known, or if it is absent, the non-owner version is shown.
+  const isOwner = useCurrentRole() === 'owner'
   // Compact severity breakdown for resource compliance — only rendered when the
   // backend has real counts to show; never fabricated when data is absent.
   // Account-level findings now render as individual severity rows in
@@ -291,12 +310,6 @@ export default function DashboardPage() {
 
   const { hasBillingData, hasServicesOnly, isBillingSyncing, showRecommendationSections } =
     computeDashboardAwsGates({ isDemoActive, isAwsConnected, statsLoading, stats })
-
-  useEffect(() => {
-    if (!isDemoActive && !statsLoading && !isAwsConnected && awsAccounts !== undefined) {
-      router.replace('/connect-aws')
-    }
-  }, [isDemoActive, statsLoading, isAwsConnected, awsAccounts, router])
 
   const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
     queryKey: ['cost-trend', costDateRange, organization?.id],
@@ -325,7 +338,10 @@ export default function DashboardPage() {
   // Real-data-only, like every other computed-metric feature on this dashboard — no
   // demo-mode fabrication. The backend gathers its own cost evidence through the shared
   // AI Chat cost-context path (per-org cached Cost Explorer results); nothing is sent from here.
-  const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, !isDemoActive)
+  // Only for a connected organization: the backend generates the summary with a
+  // model call even when every source is unavailable, so an organization with
+  // nothing connected would be billed for a summary of nothing.
+  const { data: aiSummaryData, isLoading: aiSummaryLoading } = useAISummary(organization?.id, !isDemoActive && isAwsConnected)
 
   // Canonical System Intelligence score for the Infrastructure Posture KPI --
   // same endpoint/cache the Infrastructure page reads, independent of
@@ -558,10 +574,19 @@ export default function DashboardPage() {
     <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen bg-[var(--surface-1)]">
 
       <DashboardHero
-        isAwsConnected={isAwsConnected}
+        awsConnection={awsConnection}
+        canConnectAws={isOwner}
         orgName={orgName}
         lastSynced={isDemoActive ? DEMO_LAST_SYNCED : null}
       />
+
+      {/* Only when AWS is known to be unconnected -- never while loading or unknown. */}
+      {awsConnection === 'unconnected' && <DashboardUnconnectedPreview canConnectAws={isOwner} />}
+      {awsConnection === 'unknown' && (
+        <p className="text-[13px] text-[var(--text-secondary)] mb-6" data-testid="aws-connection-line" data-state="unknown">
+          Couldn&apos;t check your AWS connection. Refresh to try again.
+        </p>
+      )}
 
       {statsLoading ? null : isAwsConnected && (
         <>

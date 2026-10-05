@@ -78,7 +78,7 @@ describe('Security Key Findings', () => {
 
 describe('AWS provider pill', () => {
   it('connected: a status indicator with no chevron and no link', () => {
-    render(<DashboardHero isAwsConnected orgName="Org" lastSynced={null} />)
+    render(<DashboardHero awsConnection="connected" canConnectAws orgName="Org" lastSynced={null} />)
     const pill = screen.getByTestId('provider-pill-aws')
     expect(pill.closest('a')).toBeNull()
     expect(chevronsIn(pill)).toHaveLength(0)

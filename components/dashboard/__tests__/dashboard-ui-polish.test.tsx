@@ -12,7 +12,7 @@ import { EngineeringHealthCard } from '../engineering-health-card'
 
 describe('provider pills', () => {
   it('connected: a green-tint "AWS" pill with a dot, not a link', () => {
-    render(<DashboardHero isAwsConnected orgName="Org" lastSynced={null} />)
+    render(<DashboardHero awsConnection="connected" canConnectAws orgName="Org" lastSynced={null} />)
     const aws = screen.getByTestId('provider-pill-aws')
     expect(aws).toHaveAttribute('data-state', 'connected')
     expect(aws.textContent).toBe('AWSconnected') // visible "AWS" + screen-reader "connected"
@@ -21,7 +21,7 @@ describe('provider pills', () => {
   })
 
   it('not connected: an outlined accent "Connect AWS" pill with a plug icon, linking to /connect-aws', () => {
-    render(<DashboardHero isAwsConnected={false} orgName="Org" lastSynced={null} />)
+    render(<DashboardHero awsConnection="unconnected" canConnectAws orgName="Org" lastSynced={null} />)
     const aws = screen.getByRole('link', { name: 'Connect AWS' })
     expect(aws).toHaveAttribute('href', '/connect-aws')
     expect(aws).toHaveAttribute('data-state', 'not-connected')
@@ -29,8 +29,8 @@ describe('provider pills', () => {
     expect(aws.querySelector('svg.lucide-plug')).not.toBeNull()
   })
 
-  it.each([true, false])('GCP and Azure are static "soon" pills with dashed borders (AWS connected: %s)', (connected) => {
-    render(<DashboardHero isAwsConnected={connected} orgName="Org" lastSynced={null} />)
+  it.each(['connected', 'unconnected', 'unknown', 'loading'] as const)('GCP and Azure are static "soon" pills with dashed borders (AWS: %s)', (awsConnection) => {
+    render(<DashboardHero awsConnection={awsConnection} canConnectAws orgName="Org" lastSynced={null} />)
     for (const [id, text] of [['gcp', 'GCP soon'], ['azure', 'Azure soon']]) {
       const pill = screen.getByTestId(`provider-pill-${id}`)
       expect(pill).toHaveTextContent(text)
@@ -41,8 +41,38 @@ describe('provider pills', () => {
     }
   })
 
-  it.each([true, false])('no "AWS Account Connected" badge, no provider tiles, and one non-wrapping row (AWS connected: %s)', (connected) => {
-    const { container } = render(<DashboardHero isAwsConnected={connected} orgName="Org" lastSynced={null} />)
+  it('not connected, not an owner: a neutral "AWS not connected" pill as plain text -- no link, not focusable, no hover or focus styling', () => {
+    render(<DashboardHero awsConnection="unconnected" canConnectAws={false} orgName="Org" lastSynced={null} />)
+    const aws = screen.getByTestId('provider-pill-aws')
+    expect(aws).toHaveAttribute('data-state', 'not-connected')
+    expect(aws.textContent).toBe('AWS not connected')
+    expect(aws.querySelector('svg.lucide-plug')).toHaveAttribute('aria-hidden', 'true')
+    expect(aws.className).toContain('text-[var(--text-secondary)]')
+    expect(aws.className).toContain('border-border')
+    expect(aws.tagName).toBe('SPAN')
+    expect(screen.queryByText('Connect AWS')).not.toBeInTheDocument()
+    expect(aws.closest('a, button')).toBeNull()
+    expect(aws.querySelector('a, button')).toBeNull()
+    expect(aws).not.toHaveAttribute('href')
+    expect(aws).not.toHaveAttribute('tabindex')
+    expect(aws).not.toHaveAttribute('role')
+    expect(aws.className).not.toMatch(/hover:|focus|cursor-pointer/)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(document.querySelector('a[href="/connect-aws"]')).toBeNull()
+    // The other pills, and the row, are as for an owner.
+    expect([...screen.getByTestId('provider-pills').children].map((pill) => pill.textContent)).toEqual(['AWS not connected', 'GCP soon', 'Azure soon'])
+  })
+
+  it.each(['connected', 'unknown', 'loading'] as const)('%s: being an owner or not changes nothing in the pills', (awsConnection) => {
+    const owner = render(<DashboardHero awsConnection={awsConnection} canConnectAws orgName="Org" lastSynced={null} />)
+    const ownerHtml = owner.getByTestId('provider-pills').outerHTML
+    owner.unmount()
+    render(<DashboardHero awsConnection={awsConnection} canConnectAws={false} orgName="Org" lastSynced={null} />)
+    expect(screen.getByTestId('provider-pills').outerHTML).toBe(ownerHtml)
+  })
+
+  it.each(['connected', 'unconnected'] as const)('no "AWS Account Connected" badge, no provider tiles, and one non-wrapping row (AWS: %s)', (awsConnection) => {
+    const { container } = render(<DashboardHero awsConnection={awsConnection} canConnectAws orgName="Org" lastSynced={null} />)
     expect(container.textContent).not.toMatch(/AWS Account (Not )?Connected|Coming soon|Google Cloud|Not connected/)
     const row = screen.getByTestId('provider-pills')
     expect(row.children).toHaveLength(3)
@@ -50,13 +80,28 @@ describe('provider pills', () => {
     for (const pill of [...row.children]) expect(pill.className).toContain('whitespace-nowrap')
   })
 
+  it.each(['unknown', 'loading'] as const)('%s: no AWS pill at all, and nothing that says connected or not connected', (awsConnection) => {
+    const { container } = render(<DashboardHero awsConnection={awsConnection} canConnectAws orgName="Org" lastSynced={null} />)
+    expect(screen.queryByTestId('provider-pill-aws')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Connect AWS' })).not.toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/Connect your AWS account|Connect AWS/)
+    // Only the two "soon" pills remain.
+    expect([...screen.getByTestId('provider-pills').children].map((pill) => pill.textContent)).toEqual(['GCP soon', 'Azure soon'])
+  })
+
+  it.each(['connected', 'unconnected', 'unknown', 'loading'] as const)('%s: the sub-copy is the organization name, with no invitation to connect and no setup-time claim', (awsConnection) => {
+    const { container } = render(<DashboardHero awsConnection={awsConnection} canConnectAws orgName="Org Name" lastSynced={null} />)
+    expect(screen.getByText('Org Name')).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/Connect your AWS account|to get started|Setup takes|2 minutes/i)
+  })
+
   it('there is no syncing pill (the page cannot tell that no discovery has ever completed)', () => {
-    const { container } = render(<DashboardHero isAwsConnected orgName="Org" lastSynced={null} />)
+    const { container } = render(<DashboardHero awsConnection="connected" canConnectAws orgName="Org" lastSynced={null} />)
     expect(container.textContent).not.toMatch(/syncing/i)
   })
 
   it('keeps the page title and subtitle', () => {
-    render(<DashboardHero isAwsConnected orgName="Org" lastSynced={null} />)
+    render(<DashboardHero awsConnection="connected" canConnectAws orgName="Org" lastSynced={null} />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('AI-Powered Cloud Operations & Infrastructure Intelligence')
     expect(screen.getByText(/^Operational visibility across cloud costs, security, observability, and infrastructure efficiency/)).toBeInTheDocument()
   })
