@@ -20,6 +20,8 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { toast } from 'sonner'
+import { isAxiosError } from 'axios'
+import { teamsService } from '@/lib/services/teams.service'
 
 // Validation schema
 const teamSchema = z.object({
@@ -58,29 +60,21 @@ export default function CreateTeamPage() {
     setIsSubmitting(true)
 
     try {
-      const response = await fetch('http://localhost:8080/api/teams', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: data.name,
-          description: data.description || null,
-          owner: data.owner,
-          slack_channel: data.slackChannel || null,
-          members: [data.owner], // Owner is first member
-        }),
+      await teamsService.create({
+        name: data.name,
+        description: data.description || undefined,
+        owner: data.owner,
+        slackChannel: data.slackChannel || undefined,
+        members: [data.owner], // Owner is first member
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Failed to create team')
-      }
 
       toast.success('Team created successfully!')
       router.push('/teams')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create team')
+      const message = isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message
+        : error instanceof Error ? error.message : undefined
+      toast.error(message || 'Failed to create team')
     } finally {
       setIsSubmitting(false)
     }
