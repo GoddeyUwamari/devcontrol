@@ -63,13 +63,23 @@ export class InfrastructureRepository {
     return result.rows[0] || null;
   }
 
-  async create(resource: CreateInfrastructureRequest, organizationId: string): Promise<InfrastructureResource> {
+  // Inserts only when the referenced service belongs to the resource's own
+  // organization -- checked and row-locked in the same statement as the
+  // insert, so the service can't be deleted or moved in between. Returns null
+  // when it doesn't (missing, or another organization's); callers must not
+  // distinguish those cases to the client.
+  async create(resource: CreateInfrastructureRequest, organizationId: string): Promise<InfrastructureResource | null> {
     const query = `
       INSERT INTO infrastructure_resources (
         service_id, resource_type, aws_id, aws_region,
         status, cost_per_month, metadata, organization_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      SELECT
+        s.id, $2::varchar, $3::varchar, $4::varchar,
+        $5::varchar, $6::numeric, $7::jsonb, s.organization_id
+      FROM services s
+      WHERE s.id = $1::uuid AND s.organization_id = $8::uuid
+      FOR SHARE OF s
       RETURNING *
     `;
     const result = await pool.query(query, [
@@ -82,7 +92,7 @@ export class InfrastructureRepository {
       JSON.stringify(resource.metadata || {}),
       organizationId,
     ]);
-    return result.rows[0];
+    return result.rows[0] || null;
   }
 
   async delete(id: string, organizationId: string): Promise<boolean> {

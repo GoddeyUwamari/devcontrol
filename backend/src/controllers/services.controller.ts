@@ -72,6 +72,13 @@ export class ServicesController {
       }
       const service = await repository.create(serviceData, organizationId);
 
+      if (!service) {
+        // Same answer whether the team doesn't exist or belongs to another
+        // organization.
+        next(new NotFoundError('Team'));
+        return;
+      }
+
       // Emit onboarding event for service creation
       const user = (req as any).user;
       if (user && service) {

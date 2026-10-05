@@ -58,13 +58,13 @@ export class ServicesRepository {
     return result.rows[0] || null;
   }
 
-  async create(service: CreateServiceRequest, organizationId: string): Promise<Service> {
-    const query = `
-      INSERT INTO services (name, template, owner, team_id, github_url, description, status, organization_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
-    `;
-    const result = await pool.query(query, [
+  // With a team: inserts only when that team belongs to the service's own
+  // organization -- checked and row-locked in the same statement as the
+  // insert, so the team can't be deleted in between. Returns null when it
+  // doesn't (missing, or another organization's); callers must not
+  // distinguish those cases to the client.
+  async create(service: CreateServiceRequest, organizationId: string): Promise<Service | null> {
+    const values = [
       service.name,
       service.template,
       service.owner,
@@ -73,8 +73,32 @@ export class ServicesRepository {
       service.description,
       'active', // default status
       organizationId,
-    ]);
-    return result.rows[0];
+    ];
+
+    if (service.team_id === undefined || service.team_id === null) {
+      const result = await pool.query(
+        `
+      INSERT INTO services (name, template, owner, team_id, github_url, description, status, organization_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `,
+        values
+      );
+      return result.rows[0];
+    }
+
+    const query = `
+      INSERT INTO services (name, template, owner, team_id, github_url, description, status, organization_id)
+      SELECT
+        $1::varchar, $2::varchar, $3::varchar, t.id,
+        $5::text, $6::text, $7::varchar, t.organization_id
+      FROM teams t
+      WHERE t.id = $4::uuid AND t.organization_id = $8::uuid
+      FOR SHARE OF t
+      RETURNING *
+    `;
+    const result = await pool.query(query, values);
+    return result.rows[0] || null;
   }
 
   async update(id: string, updates: UpdateServiceRequest, organizationId: string): Promise<Service | null> {
