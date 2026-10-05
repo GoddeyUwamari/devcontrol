@@ -4,6 +4,8 @@ import { ServicesController } from '../controllers/services.controller';
 import { validateBody, validateParams } from '../middleware/validation';
 import { createServiceSchema, updateServiceSchema, uuidParamSchema } from '../validators/schemas';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireMember } from '../middleware/rbac.middleware';
+import { discoveryRateLimiter } from '../middleware/rateLimiter';
 import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscription.middleware';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
@@ -324,7 +326,7 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
 
 // ─── POST /api/services/discover ─────────────────────────────────────────────
 
-router.post('/discover', authenticateToken, checkDiscoveryLimit, async (req: Request, res: Response): Promise<void> => {
+router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, discoveryRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
     if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }

@@ -153,6 +153,17 @@ export class InfrastructureController {
       const organizationId = (req as any).user?.organizationId;
       const resource = await repository.create(resourceData, organizationId);
 
+      if (!resource) {
+        // Same answer whether the service doesn't exist or belongs to
+        // another organization.
+        const response: ApiResponse = {
+          success: false,
+          error: 'Service not found',
+        };
+        res.status(404).json(response);
+        return;
+      }
+
       const response: ApiResponse = {
         success: true,
         data: resource,
