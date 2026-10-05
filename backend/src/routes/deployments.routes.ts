@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../config/database';
 import { DeploymentsController } from '../controllers/deployments.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireMember } from '../middleware/rbac.middleware';
 import { checkResourceLimit } from '../middleware/subscription.middleware';
 
 const router = Router();
@@ -69,7 +70,7 @@ router.get('/:id', authenticateToken, (req, res) => controller.getById(req, res)
 
 // ─── POST / — resolve serviceName → service_id, then delegate ────────────────
 
-router.post('/', authenticateToken, checkResourceLimit('deployments', 1), async (req: Request, res: Response): Promise<void> => {
+router.post('/', authenticateToken, requireMember, checkResourceLimit('deployments', 1), async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
     let { service_id, service_name, serviceName, environment, aws_region, region, deployed_by, version } = req.body;
@@ -129,6 +130,6 @@ router.post('/', authenticateToken, checkResourceLimit('deployments', 1), async 
   }
 });
 
-router.delete('/:id', authenticateToken, (req, res) => controller.delete(req, res));
+router.delete('/:id', authenticateToken, requireMember, (req, res) => controller.delete(req, res));
 
 export default router;

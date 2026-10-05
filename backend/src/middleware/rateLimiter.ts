@@ -183,6 +183,30 @@ export const discoveryRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for the manual AWS cost sync
+ * A sync whose result is not already cached makes a billed Cost Explorer
+ * call, so it is limited per organization, not per IP.
+ * In-memory: per backend process.
+ */
+export const costSyncRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour window
+  max: 10,
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  keyGenerator: (req: Request) => `cost-sync:${req.user?.organizationId ?? 'unauthenticated'}`,
+
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({
+      success: false,
+      error: 'AWS cost sync rate limit reached. Maximum 10 syncs per hour per organization.',
+      retry_after: 3600,
+    });
+  },
+});
+
+/**
  * Rate limiter for authentication endpoints (login, register)
  * Prevents brute force attacks
  */
