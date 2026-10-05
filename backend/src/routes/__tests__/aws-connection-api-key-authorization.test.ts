@@ -47,7 +47,6 @@ function dbConfig() {
 const pool = new Pool(dbConfig());
 const createdOrgIds: string[] = [];
 const createdUserIds: string[] = [];
-const fixtureTablesCreated: string[] = [];
 
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -55,50 +54,6 @@ function uniqueSuffix(): string {
 
 function uniqueAccountId(): string {
   return String(100000000000 + Math.floor(Math.random() * 899999999999));
-}
-
-async function tableExists(tableName: string): Promise<boolean> {
-  const { rows } = await pool.query('SELECT to_regclass($1) AS reg', [`public.${tableName}`]);
-  return rows[0].reg !== null;
-}
-
-// aws_accounts, aws_connect_sessions, and api_keys are not created by the
-// canonical migrations CI bootstraps (see aws-connection-funnel-event.test.ts
-// and .github/scripts/ci-bootstrap-schema.js). Create only what is missing,
-// from the same shapes the routes read and write. Of the tables created
-// here only aws_accounts and aws_connect_sessions are dropped afterwards.
-async function ensureFixtureSchema(): Promise<void> {
-  if (!(await tableExists('aws_accounts'))) {
-    await pool.query(`
-      CREATE TABLE aws_accounts (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        org_id UUID NOT NULL,
-        role_arn TEXT NOT NULL,
-        account_id VARCHAR(32) NOT NULL,
-        nickname VARCHAR(255),
-        external_id VARCHAR(64),
-        region VARCHAR(32) DEFAULT 'us-east-1',
-        connected_at TIMESTAMPTZ,
-        status VARCHAR(32),
-        CONSTRAINT aws_accounts_org_id_key UNIQUE (org_id),
-        CONSTRAINT aws_accounts_account_id_key UNIQUE (account_id)
-      )
-    `);
-    fixtureTablesCreated.push('aws_accounts');
-  }
-  if (!(await tableExists('aws_connect_sessions'))) {
-    await pool.query(`
-      CREATE TABLE aws_connect_sessions (
-        org_id      UUID        PRIMARY KEY,
-        external_id VARCHAR(64) NOT NULL,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        expires_at  TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '1 hour'
-      )
-    `);
-    fixtureTablesCreated.push('aws_connect_sessions');
-  }
-  // Shared with other suites: ensured here, never dropped (shared-fixture-tables.ts).
-  await ensureSharedFixtureTable(pool, 'api_keys');
 }
 
 async function insertOrg(): Promise<string> {
@@ -150,7 +105,12 @@ let server: http.Server;
 let baseUrl: string;
 
 beforeAll(async () => {
-  await ensureFixtureSchema();
+  // aws_accounts, aws_connect_sessions, and api_keys are not created by the
+  // canonical migrations CI bootstraps. Shared with other suites: ensured
+  // here, never dropped (shared-fixture-tables.ts).
+  await ensureSharedFixtureTable(pool, 'aws_accounts');
+  await ensureSharedFixtureTable(pool, 'aws_connect_sessions');
+  await ensureSharedFixtureTable(pool, 'api_keys');
   const app = express();
   // Same as server.ts, so req.ip is the client address behind the proxy.
   app.set('trust proxy', 1);
@@ -192,9 +152,6 @@ afterAll(async () => {
   );
   await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM users WHERE id = ANY($1)', [createdUserIds]);
-  for (const table of fixtureTablesCreated) {
-    await pool.query(`DROP TABLE IF EXISTS ${table}`);
-  }
   await pool.end();
 });
 
