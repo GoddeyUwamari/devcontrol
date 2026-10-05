@@ -15,7 +15,7 @@ on:
 
 jobs:
   lint-and-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:14
@@ -100,7 +100,7 @@ jobs:
           retention-days: 7
 
   deploy-backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint-and-build
     if: >
       github.ref == 'refs/heads/main' &&
@@ -431,7 +431,7 @@ jobs:
   # block or roll back the backend deploy, and vice versa — these are
   # unrelated concerns that happen to share a Git SHA.
   deploy-migration-tooling:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint-and-build
     if: >
       github.ref == 'refs/heads/main' &&
@@ -581,7 +581,7 @@ jobs:
   # dependencies, installed during this job, not on the host) so nothing
   # deployed here ever needs to read from /home/ubuntu either.
   deploy-migration-tooling-admin:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint-and-build
     if: >
       github.ref == 'refs/heads/main' &&
