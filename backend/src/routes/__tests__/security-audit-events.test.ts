@@ -15,6 +15,7 @@
 import express from 'express';
 import http from 'http';
 import { Pool } from 'pg';
+import { ensureSharedFixtureTable } from './shared-fixture-tables';
 import organizationRoutes from '../organizations.routes';
 import apiKeysRoutes from '../api-keys.routes';
 import { createSAMLRoutes } from '../saml.routes';
@@ -37,7 +38,6 @@ function dbConfig() {
 const pool = new Pool(dbConfig());
 const createdOrgIds: string[] = [];
 const createdUserIds: string[] = [];
-const fixtureTablesCreated: string[] = [];
 
 const CLIENT_IP = '203.0.113.50';
 const USER_AGENT = 'SecurityAuditTest/1.0';
@@ -47,51 +47,12 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function tableExists(tableName: string): Promise<boolean> {
-  const { rows } = await pool.query('SELECT to_regclass($1) AS reg', [`public.${tableName}`]);
-  return rows[0].reg !== null;
-}
-
 // api_keys and sso_configurations are not created by the canonical migrations
-// CI bootstraps -- same shapes as aws-connection-api-key-authorization.test.ts
-// and saml-sso-authorization.test.ts. Create only what is missing, drop only
-// what was created here.
+// CI bootstraps, and other suites use them too. This suite ensures both
+// itself and never drops them -- see shared-fixture-tables.ts.
 async function ensureFixtureSchema(): Promise<void> {
-  if (!(await tableExists('api_keys'))) {
-    await pool.query(`
-      CREATE TABLE api_keys (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        name VARCHAR(255) NOT NULL,
-        key_hash TEXT NOT NULL,
-        prefix VARCHAR(20) NOT NULL,
-        scopes TEXT[] NOT NULL DEFAULT '{}',
-        status VARCHAR(20) NOT NULL DEFAULT 'active',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        last_used_at TIMESTAMPTZ,
-        organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE
-      )
-    `);
-    fixtureTablesCreated.push('api_keys');
-  }
-  if (!(await tableExists('sso_configurations'))) {
-    await pool.query(`
-      CREATE TABLE sso_configurations (
-        id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id   UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-        provider_name     VARCHAR(100) NOT NULL DEFAULT 'SAML IdP',
-        idp_entity_id     TEXT NOT NULL,
-        idp_sso_url       TEXT NOT NULL,
-        idp_certificate   TEXT NOT NULL,
-        sp_entity_id      TEXT NOT NULL,
-        attribute_mapping JSONB NOT NULL DEFAULT '{"email":"email","name":"displayName"}',
-        allowed_domains   JSONB NOT NULL DEFAULT '[]',
-        is_active         BOOLEAN NOT NULL DEFAULT false,
-        created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (organization_id)
-      )`);
-    fixtureTablesCreated.push('sso_configurations');
-  }
+  await ensureSharedFixtureTable(pool, 'api_keys');
+  await ensureSharedFixtureTable(pool, 'sso_configurations');
 }
 
 async function insertOrg(): Promise<string> {
@@ -187,9 +148,6 @@ afterAll(async () => {
   );
   await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM users WHERE id = ANY($1)', [createdUserIds]);
-  for (const table of fixtureTablesCreated) {
-    await pool.query(`DROP TABLE IF EXISTS ${table}`);
-  }
   await pool.end();
 });
 
