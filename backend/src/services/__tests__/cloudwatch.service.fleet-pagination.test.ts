@@ -28,6 +28,7 @@ import { CloudWatchService } from '../cloudwatch.service';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import awsCostService from '../aws-cost.service';
 import { pool as appPool } from '../../config/database';
+import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
 function dbConfig() {
   return {
@@ -62,35 +63,6 @@ describe('CloudWatchService.computeMetrics — fleet completeness & server-side 
   const pool = new Pool(dbConfig());
 
   const createdOrgIds: string[] = [];
-  const fixtureTablesCreated: string[] = [];
-
-  async function tableExists(tableName: string): Promise<boolean> {
-    const { rows } = await pool.query('SELECT to_regclass($1) AS reg', [`public.${tableName}`]);
-    return rows[0].reg !== null;
-  }
-
-  // Verbatim from cloudwatch.service.concurrency.test.ts -- see that file's comment for
-  // why aws_accounts needs manual reconstruction in this sandbox.
-  async function ensureFixtureSchema(): Promise<void> {
-    if (!(await tableExists('aws_accounts'))) {
-      await pool.query(`
-        CREATE TABLE aws_accounts (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          org_id UUID NOT NULL,
-          role_arn TEXT NOT NULL,
-          account_id VARCHAR(32) NOT NULL,
-          nickname VARCHAR(255),
-          external_id VARCHAR(64),
-          region VARCHAR(32) DEFAULT 'us-east-1',
-          connected_at TIMESTAMPTZ,
-          status VARCHAR(32),
-          CONSTRAINT aws_accounts_org_id_key UNIQUE (org_id),
-          CONSTRAINT aws_accounts_account_id_key UNIQUE (account_id)
-        )
-      `);
-      fixtureTablesCreated.push('aws_accounts');
-    }
-  }
 
   async function insertOrgWithAccount(): Promise<string> {
     const { rows } = await pool.query(
@@ -135,7 +107,9 @@ describe('CloudWatchService.computeMetrics — fleet completeness & server-side 
   }
 
   beforeAll(async () => {
-    await ensureFixtureSchema();
+    // Not created by the canonical migrations; shared with other suites, so
+    // ensured here and never dropped (shared-fixture-tables.ts).
+    await ensureSharedFixtureTable(pool, 'aws_accounts');
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({ total: 0, byService: [], period: { start: '', end: '' } } as any);
   });
 
@@ -149,9 +123,6 @@ describe('CloudWatchService.computeMetrics — fleet completeness & server-side 
       await pool.query(`DELETE FROM aws_resources WHERE organization_id = ANY($1)`, [createdOrgIds]);
       await pool.query(`DELETE FROM aws_accounts WHERE org_id = ANY($1)`, [createdOrgIds]);
       await pool.query(`DELETE FROM organizations WHERE id = ANY($1)`, [createdOrgIds]);
-    }
-    if (fixtureTablesCreated.includes('aws_accounts')) {
-      await pool.query('DROP TABLE IF EXISTS aws_accounts');
     }
     await pool.end();
     await appPool.end();
