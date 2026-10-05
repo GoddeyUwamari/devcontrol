@@ -4,6 +4,16 @@ import { CreateTeamRequest, ApiResponse } from '../types';
 
 const repository = new TeamsRepository();
 
+const TEAM_NAME_CONFLICT_MESSAGE = 'A team with this name already exists.';
+
+// Only the unique violation on the team name. Every other database error,
+// including a unique violation on any other constraint, is left to the
+// caller's generic handling.
+function isTeamNameConflict(error: unknown): boolean {
+  const { code, constraint } = (error ?? {}) as { code?: unknown; constraint?: unknown };
+  return code === '23505' && constraint === 'teams_name_key';
+}
+
 export class TeamsController {
   async getAll(req: Request, res: Response): Promise<void> {
     try {
@@ -82,6 +92,16 @@ export class TeamsController {
 
       res.status(201).json(response);
     } catch (error) {
+      if (isTeamNameConflict(error)) {
+        const response: ApiResponse = {
+          success: false,
+          error: TEAM_NAME_CONFLICT_MESSAGE,
+          message: TEAM_NAME_CONFLICT_MESSAGE,
+        };
+        res.status(409).json(response);
+        return;
+      }
+
       console.error('Error creating team:', error);
       const response: ApiResponse = {
         success: false,
