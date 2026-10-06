@@ -52,9 +52,9 @@ const REFUND_ISSUED_NOT_RECORDED_MESSAGE =
 
 export class StripeController {
   /**
-   * Billing mutations (cancel, resume, change plan, open the Customer
-   * Portal) are restricted to organization owners/admins -- members and
-   * viewers can still read billing state (getSubscription/getInvoices)
+   * Billing mutations (start checkout, cancel, resume, change plan, open
+   * the Customer Portal) are restricted to organization owners/admins --
+   * members and viewers can still read billing state (getSubscription/getInvoices)
    * but must not be able to mutate the whole organization's subscription.
    * Role comes exclusively from req.user.role, set server-side by
    * authenticate() from the caller's current organization membership --
@@ -90,6 +90,8 @@ export class StripeController {
         });
         return;
       }
+
+      if (!this.requireBillingAdmin(req, res)) return;
 
       // The server is authoritative here: only a known tier + billing
       // interval are accepted from the client. The Stripe Price ID and the

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { CostRecommendationsController } from '../controllers/cost-recommendations.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
+import { requireAdmin } from '../middleware/rbac.middleware';
 import { remediationExecuteRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
@@ -49,8 +50,9 @@ router.get('/optimization-rules/configuration', authenticateToken, requireEnterp
 router.put('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireEnterprise, (req, res) => controller.updateOptimizationRuleConfiguration(req, res));
 router.delete('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireEnterprise, (req, res) => controller.resetOptimizationRuleConfiguration(req, res));
 
-// Analyze AWS resources (create recommendations)
-router.post('/analyze', authenticateToken, (req, res) => controller.analyze(req, res));
+// Analyze AWS resources (create recommendations). Owner/admin only: it reads
+// the organization's AWS account and rewrites its recommendations.
+router.post('/analyze', authenticateToken, requireAdmin, (req, res) => controller.analyze(req, res));
 
 // Get single recommendation by ID
 router.get('/:id', authenticateToken, (req, res) => controller.getById(req, res));
