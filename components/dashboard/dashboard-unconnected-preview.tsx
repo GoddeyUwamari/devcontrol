@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
-import { AlertTriangle, Check, DollarSign, Gauge, ListChecks, Lock, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Check, DollarSign, Gauge, Lightbulb, ListChecks, Lock, Mail, MessageSquare, ShieldCheck } from 'lucide-react'
 import { INFRASTRUCTURE_POSTURE_LABEL } from '@/lib/infrastructure-posture'
 import { RESOURCE_CHECKS_TITLE } from './resource-checks-section'
 
@@ -11,8 +11,10 @@ interface PreviewItem {
   iconBackground: string
   title: string
   description: string
-  /** What the connected card adds, in words. */
+  /** What the card or feature covers, in words: the check lines under the description. */
   shows?: string[]
+  /** The plan a feature needs, shown beside its title. Only where the product enforces one. */
+  planLabel?: string
 }
 
 /** The KPI row, by its real card titles and icon tiles. */
@@ -34,6 +36,32 @@ const PRIMARY: PreviewItem[] = [
     title: INFRASTRUCTURE_POSTURE_LABEL,
     description: 'A composite of cost, security and alert coverage.',
     shows: ['Each component scored separately', 'Clear notes where evidence is partial'],
+  },
+]
+/**
+ * Features beyond the dashboard's own cards, described in words. Each claim is
+ * what the product does today: the cost checks named here exist, the assistant
+ * is gated to Pro and above, and the weekly email goes to one organization owner.
+ */
+const FEATURES: PreviewItem[] = [
+  {
+    icon: Lightbulb, iconColor: 'var(--text-success)', iconBackground: 'var(--bg-success)',
+    title: 'Cost optimization',
+    description: 'Savings opportunities found in your AWS account.',
+    shows: ['Idle EC2 instances and unattached EBS volumes', 'gp2-to-gp3 volume upgrades', 'An estimated monthly saving for each'],
+  },
+  {
+    icon: MessageSquare, iconColor: 'var(--text-accent)', iconBackground: 'var(--bg-accent)',
+    title: 'AI assistant',
+    planLabel: 'Pro',
+    description: 'Ask questions about your spend and security.',
+    shows: ["Answers drawn from your account's data", "Says plainly when data isn't available"],
+  },
+  {
+    icon: Mail, iconColor: 'var(--text-secondary)', iconBackground: 'var(--surface-1)',
+    title: 'Weekly summary',
+    description: 'A weekly email to your workspace owner.',
+    shows: ['Spend compared with the previous week', 'Security findings and deployments'],
   },
 ]
 const SECONDARY: PreviewItem[] = [
@@ -64,7 +92,7 @@ const CARD = 'bg-[var(--surface-2)] rounded-2xl border border-border p-5'
  * or chart, and sits under a heading that says so -- not because it is faded.
  * Not interactive: no link, no hover or focus styling.
  */
-function PreviewCard({ icon: Icon, iconColor, iconBackground, title, description, shows, className = '' }: PreviewItem & { className?: string }) {
+function PreviewCard({ icon: Icon, iconColor, iconBackground, title, description, shows, planLabel, className = '' }: PreviewItem & { className?: string }) {
   return (
     <div className={`rounded-2xl border border-border p-5 h-full flex flex-col ${className}`} data-testid="preview-card">
       <div className="flex items-center gap-2.5 min-w-0 mb-4">
@@ -72,6 +100,15 @@ function PreviewCard({ icon: Icon, iconColor, iconBackground, title, description
           <Icon size={16} style={{ color: iconColor }} aria-hidden="true" />
         </div>
         <h3 className="text-sm font-semibold text-foreground m-0" data-testid="preview-title">{title}</h3>
+        {planLabel && (
+          <span
+            className="text-[11px] font-semibold leading-none rounded-md px-1.5 py-1 shrink-0"
+            style={{ background: 'var(--bg-accent)', color: 'var(--text-accent)' }}
+            data-testid="preview-plan-label"
+          >
+            {planLabel}
+          </span>
+        )}
       </div>
       <p className="text-xs text-[var(--text-secondary)] leading-snug m-0" data-testid="preview-description">{description}</p>
       {shows && (
@@ -90,8 +127,8 @@ function PreviewCard({ icon: Icon, iconColor, iconBackground, title, description
 
 /**
  * The dashboard for an organization that has not connected AWS: what each
- * main card will show, and how connecting works. Words only -- never a
- * figure, score, count, bar or chart, real or sample. Only an owner can
+ * main card will show, three further features, and how connecting works.
+ * Words only -- never a figure, score, count, bar or chart, real or sample. Only an owner can
  * connect, so only an owner gets the button; it is the page's one primary
  * control. Anyone else is told who to ask.
  */
@@ -132,6 +169,12 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-5" data-testid="preview-primary-row">
           {PRIMARY.map((item, i) => (
             <PreviewCard key={item.title} {...item} className={i === PRIMARY.length - 1 ? 'sm:col-span-2 lg:col-span-1' : ''} />
+          ))}
+        </div>
+        {/* Same grid as the KPI row above, so the two rows stack identically at every width. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-5" data-testid="preview-feature-row">
+          {FEATURES.map((item, i) => (
+            <PreviewCard key={item.title} {...item} className={i === FEATURES.length - 1 ? 'sm:col-span-2 lg:col-span-1' : ''} />
           ))}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5" data-testid="preview-secondary-row">

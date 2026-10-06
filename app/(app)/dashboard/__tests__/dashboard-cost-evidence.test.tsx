@@ -224,11 +224,20 @@ function notConnectedMentions(): number {
   return (document.body.textContent ?? '').match(/not connected/gi)?.length ?? 0
 }
 
-/** The five preview cards, exactly: title, description, and what the connected card adds. */
+/** What the Cost optimization feature card says: the one sentence on this page allowed to use the word "savings". */
+const COST_OPTIMIZATION_COPY = 'Savings opportunities found in your AWS account.'
+/** The three feature cards, in order: title, description, check lines, and the plan label beside the title (if any). */
+const FEATURE_CARDS: Array<[string, string, string[], string | null]> = [
+  ['Cost optimization', COST_OPTIMIZATION_COPY, ['Idle EC2 instances and unattached EBS volumes', 'gp2-to-gp3 volume upgrades', 'An estimated monthly saving for each'], null],
+  ['AI assistant', 'Ask questions about your spend and security.', ["Answers drawn from your account's data", "Says plainly when data isn't available"], 'Pro'],
+  ['Weekly summary', 'A weekly email to your workspace owner.', ['Spend compared with the previous week', 'Security findings and deployments'], null],
+]
+/** The eight preview cards, exactly and in page order: title, description, and what the connected card adds. */
 const PREVIEW_CARDS: Array<[string, string, string[]]> = [
   ['Month-to-Date Spend', 'Actual spend from AWS Cost Explorer.', ['Compared with the same days last month', 'Daily cost trend by service']],
   ['Security Posture', 'Account findings and resource compliance checks.', ['Findings by severity', 'A score out of 100, with its reasons']],
   ['Infrastructure Posture', 'A composite of cost, security and alert coverage.', ['Each component scored separately', 'Clear notes where evidence is partial']],
+  ...FEATURE_CARDS.map(([title, description, shows]): [string, string, string[]] => [title, description, shows]),
   ['Top Risk', 'The most serious security finding in your account, with a link to the finding.', []],
   ['Resource checks', 'AWS status checks and CloudWatch thresholds for your resources.', []],
 ]
@@ -243,8 +252,14 @@ const PREVIEW_SUBCOPY = 'DevControl reads your account through a read-only IAM r
 const FABRICATED_VALUE = /\d|\$|%|—|\bN\/A\b/
 /** The one place the spec's own wording names a number: the scale of the score, not a score. */
 const SCORE_SCALE = 'A score out of 100, with its reasons'
+/** The only product terms in the preview that contain a digit, each allowed once: an AWS service and a volume-type upgrade. */
+const NAMES_WITH_DIGITS = ['EC2', 'gp2-to-gp3']
 /** Words this state must not use: it promises nothing the product does not measure or do. */
 const FORBIDDEN = /health|operational signals|recommendations|prioriti[sz]ed|\bfix|savings|sample|example/i
+/** The page text with the Cost optimization card's sentence removed, once: nowhere else may say "savings". */
+function textOutsideCostOptimizationCopy(): string {
+  return (document.body.textContent ?? '').replace(COST_OPTIMIZATION_COPY, '')
+}
 
 /** The preview section and the "How connecting works" strip, word for word, with nothing interactive in them. */
 function expectPreviewAndSteps() {
@@ -259,6 +274,7 @@ function expectPreviewAndSteps() {
   ])).toEqual(PREVIEW_CARDS)
   expect(within(within(preview).getByTestId('preview-primary-row')).getAllByTestId('preview-card')).toHaveLength(3)
   expect(within(within(preview).getByTestId('preview-secondary-row')).getAllByTestId('preview-card')).toHaveLength(2)
+  expectFeatureRow(preview)
   for (const card of cards) {
     // Not a link, not a button, nothing focusable, and no bar or chart.
     expect(card.closest('a, button, [role="button"], [role="link"]')).toBeNull()
@@ -274,8 +290,8 @@ function expectPreviewAndSteps() {
   expect(within(steps).getByTestId('connecting-footer').textContent).toBe(STEPS_FOOTER)
   expect(steps.querySelector('a, button, [role="button"], [role="link"], [tabindex], [role="progressbar"], svg:not(.lucide)')).toBeNull()
 
-  // No figure anywhere: only the step numbers and the named score scale contain a digit.
-  const previewText = (preview.textContent ?? '').replace(SCORE_SCALE, '')
+  // No figure anywhere: only the step numbers, the named score scale and two product names contain a digit.
+  const previewText = NAMES_WITH_DIGITS.reduce((text, name) => text.replace(name, ''), (preview.textContent ?? '').replace(SCORE_SCALE, ''))
   expect(previewText).not.toMatch(FABRICATED_VALUE)
   const stepsClone = steps.cloneNode(true) as HTMLElement
   stepsClone.querySelectorAll('[data-testid="connecting-step-number"]').forEach((n) => n.remove())
@@ -285,9 +301,64 @@ function expectPreviewAndSteps() {
   // Decorative icons are hidden from assistive technology.
   for (const icon of [...preview.querySelectorAll('svg'), ...steps.querySelectorAll('svg')]) expect(icon).toHaveAttribute('aria-hidden', 'true')
 }
+/**
+ * The middle row: exactly the three feature cards, between the KPI row and the
+ * Top Risk / Resource checks row, on the KPI row's own grid, with a plan label
+ * only where the product enforces a plan.
+ */
+function expectFeatureRow(preview: HTMLElement) {
+  const rows = [...preview.children].map((child) => child.getAttribute('data-testid')).filter((id) => id?.endsWith('-row'))
+  expect(rows).toEqual(['preview-primary-row', 'preview-feature-row', 'preview-secondary-row'])
+
+  const kpiRow = within(preview).getByTestId('preview-primary-row')
+  const featureRow = within(preview).getByTestId('preview-feature-row')
+  const cards = within(featureRow).getAllByTestId('preview-card')
+  expect(cards.map((card) => [
+    within(card).getByTestId('preview-title').textContent,
+    within(card).getByTestId('preview-description').textContent,
+    within(card).queryAllByTestId('preview-shows').map((line) => line.textContent),
+    within(card).queryByTestId('preview-plan-label')?.textContent ?? null,
+  ])).toEqual(FEATURE_CARDS)
+  // Nothing in the row but the three cards: no heading, label or extra card.
+  expect(featureRow.children).toHaveLength(3)
+  expect(within(preview).getAllByRole('heading', { level: 2 })).toHaveLength(1)
+  expect(preview.textContent).not.toMatch(/Also included/i)
+
+  // "Pro" appears once in the whole preview: beside the AI assistant title, outside the heading.
+  const labels = within(preview).getAllByTestId('preview-plan-label')
+  expect(labels.map((label) => label.textContent)).toEqual(['Pro'])
+  expect(labels[0].closest('[data-testid="preview-card"]')).toBe(cards[1])
+  expect(labels[0].closest('h3')).toBeNull()
+  // No plan is named anywhere else in the preview: not in a title, a description or a checklist line.
+  for (const node of preview.querySelectorAll('[data-testid="preview-title"], [data-testid="preview-description"], [data-testid="preview-shows"], h2, p')) {
+    expect(node.textContent).not.toMatch(/\b(Free|Starter|Pro|Enterprise)\b/)
+  }
+
+  // Check lines are the KPI cards' own: the same list, the same line classes and the same check icon.
+  const kpiLine = within(kpiRow).getAllByTestId('preview-shows')[0]
+  for (const line of within(featureRow).getAllByTestId('preview-shows')) {
+    expect(line.tagName).toBe('LI')
+    expect(line.className).toBe(kpiLine.className)
+    expect(line.parentElement?.tagName).toBe('UL')
+    expect(line.parentElement?.className).toBe(kpiLine.parentElement?.className)
+    expect(line.querySelector('svg')?.getAttribute('class')).toBe(kpiLine.querySelector('svg')?.getAttribute('class'))
+    expect(line.querySelector('svg.lucide-check')).not.toBeNull()
+  }
+
+  // Same grid and same card classes as the KPI row, so both rows are three across on
+  // desktop and stack identically below it (two columns with the third card spanning, then one).
+  expect(featureRow.className).toBe(kpiRow.className)
+  const kpiCards = within(kpiRow).getAllByTestId('preview-card')
+  expect(cards.map((card) => card.className)).toEqual(kpiCards.map((card) => card.className))
+  expect(featureRow.className).toMatch(/\bgrid-cols-1\b.*\bsm:grid-cols-2\b.*\blg:grid-cols-3\b/)
+  // Nothing sets a fixed or minimum width that could force horizontal scrolling on a phone.
+  for (const node of [featureRow, ...featureRow.querySelectorAll('*')]) {
+    expect(node.getAttribute('class') ?? '').not.toMatch(/(^|\s)(min-w-\[|w-\[|whitespace-nowrap|overflow-x)/)
+  }
+}
 /** The whole unconnected page: nothing forbidden, nothing left over from the earlier versions. */
 function expectUnconnectedPageWording() {
-  const text = document.body.textContent ?? ''
+  const text = textOutsideCostOptimizationCopy()
   expect(text).not.toMatch(OLD_COPY)
   expect(text).not.toMatch(FORBIDDEN)
   expect(screen.queryByTestId('aws-connection-line')).not.toBeInTheDocument()
@@ -301,6 +372,12 @@ function expectUnconnectedPageWording() {
 function expectNoPreview() {
   expect(screen.queryByTestId('dashboard-preview')).not.toBeInTheDocument()
   expect(screen.queryByTestId('preview-card')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('preview-feature-row')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('preview-plan-label')).not.toBeInTheDocument()
+  for (const [title, description, shows] of FEATURE_CARDS) {
+    expect(screen.queryByRole('heading', { level: 3, name: title })).not.toBeInTheDocument()
+    for (const text of [description, ...shows]) expect(document.body.textContent).not.toContain(text)
+  }
   expect(screen.queryByTestId('connecting-steps')).not.toBeInTheDocument()
   expect(document.body.textContent).not.toMatch(/What you'll see|What your team will see|How connecting works/)
 }
@@ -320,7 +397,7 @@ function expectNoConnectedContent() {
   for (const text of [SYNCING_BANNER, BILLING_SYNC_BANNER]) {
     expect(screen.queryByText(text)).not.toBeInTheDocument()
   }
-  expect(document.body.textContent).not.toMatch(/\$\d|\/100|savings/i)
+  expect(textOutsideCostOptimizationCopy()).not.toMatch(/\$\d|\/100|savings/i)
 }
 function expectNoNavigation() {
   expect(router.replace).not.toHaveBeenCalled()
@@ -486,6 +563,20 @@ describe('a failed accounts request is unknown, never "not connected"', () => {
     await gateInputsSettled()
     expect(screen.queryByTestId('aws-connection-line')).not.toBeInTheDocument()
     expect(screen.getByTestId('provider-pill-aws')).toHaveAttribute('data-state', 'connected')
+    expectNoNavigation()
+  })
+})
+
+describe('demo mode is unchanged', () => {
+  it('with no AWS account it still shows the demo dashboard, never the preview or its feature cards', async () => {
+    signInAs('owner')
+    localStorage.setItem('devcontrol_demo_mode', 'true')
+    awsAccounts = []
+    setup(LEGACY_STATS.zero, { spend: noSpend('unavailable'), monthOverMonth: noMom('unavailable') })
+    renderDashboard()
+
+    expect(await screen.findByTestId('kpi-row')).toBeInTheDocument()
+    expectNoPreview()
     expectNoNavigation()
   })
 })
