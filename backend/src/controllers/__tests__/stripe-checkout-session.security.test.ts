@@ -76,7 +76,7 @@ async function insertOrgWithCustomer(): Promise<{ orgId: string; customerId: str
 
 function mockReqRes(body: any, organizationId: string) {
   const req = {
-    user: { organizationId, email: `owner-${uniqueSuffix()}@example.com` },
+    user: { organizationId, email: `owner-${uniqueSuffix()}@example.com`, role: 'owner' },
     body,
   } as unknown as Request;
 

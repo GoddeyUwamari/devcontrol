@@ -8,6 +8,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/rbac.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
 import { standardRateLimiter } from '../middleware/rateLimiter';
 import { SecurityHubSyncService } from '../services/security-hub-sync.service';
@@ -57,8 +58,8 @@ router.get('/capability', async (req: Request, res: Response): Promise<void> => 
   }
 });
 
-/** POST /api/security-hub/sync — Enterprise only, manual trigger, in-flight-deduplicated. */
-router.post('/sync', requireEnterprise, standardRateLimiter, async (req: Request, res: Response): Promise<void> => {
+/** POST /api/security-hub/sync — owner/admin, Enterprise only, manual trigger, in-flight-deduplicated. */
+router.post('/sync', requireAdmin, requireEnterprise, standardRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const organizationId = req.organizationId;
     if (!organizationId) {

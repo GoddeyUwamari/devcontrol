@@ -4,6 +4,7 @@ import { ScheduledReportsService } from '../services/scheduled-reports.service';
 import { ScheduledReportsController } from '../controllers/scheduled-reports.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
+import { requireAdmin } from '../middleware/rbac.middleware';
 
 const router = Router();
 
@@ -15,14 +16,15 @@ const controller = new ScheduledReportsController(service);
 router.use(authenticateToken);
 router.use(requireEnterprise);
 
-// Routes
+// Routes. Every mutation is owner/admin only: a schedule sends organization
+// data to the recipients and Slack channels it names.
 router.get('/', (req, res) => controller.list(req, res));
-router.post('/', (req, res) => controller.create(req, res));
+router.post('/', requireAdmin, (req, res) => controller.create(req, res));
 router.get('/:id', (req, res) => controller.get(req, res));
-router.put('/:id', (req, res) => controller.update(req, res));
-router.delete('/:id', (req, res) => controller.delete(req, res));
-router.patch('/:id/toggle', (req, res) => controller.toggle(req, res));
-router.post('/:id/test', (req, res) => controller.test(req, res));
+router.put('/:id', requireAdmin, (req, res) => controller.update(req, res));
+router.delete('/:id', requireAdmin, (req, res) => controller.delete(req, res));
+router.patch('/:id/toggle', requireAdmin, (req, res) => controller.toggle(req, res));
+router.post('/:id/test', requireAdmin, (req, res) => controller.test(req, res));
 router.get('/:id/executions', (req, res) => controller.getExecutions(req, res));
 
 export default router;

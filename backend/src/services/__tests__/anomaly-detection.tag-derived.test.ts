@@ -91,9 +91,13 @@ describe('the scheduled/manual job persists nothing and sends nothing for AI exp
 
 describe('an empty scan is not reported as healthy infrastructure', () => {
   it('the mounted POST /api/anomalies/scan handler makes no health claim', () => {
+    // The mounted handler lives in routes/anomalies.routes.ts; server.ts only mounts it.
     const serverSource = readFileSync(join(__dirname, '../../server.ts'), 'utf8');
+    const routeSource = readFileSync(join(__dirname, '../../routes/anomalies.routes.ts'), 'utf8');
 
+    expect(serverSource).toMatch(/app\.use\('\/api\/anomalies', createAnomaliesRoutes\(pool\)\);/);
     expect(serverSource).not.toMatch(/infrastructure is healthy/);
-    expect(serverSource).toMatch(/Anomaly detection on measured data is not currently active/);
+    expect(routeSource).not.toMatch(/infrastructure is healthy/);
+    expect(routeSource).toMatch(/Anomaly detection on measured data is not currently active/);
   });
 });

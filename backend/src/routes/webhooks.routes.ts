@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { pool } from '../config/database'
 import crypto from 'crypto'
 import { authenticateToken } from '../middleware/auth.middleware'
+import { requireAdmin } from '../middleware/rbac.middleware'
 
 const router = Router()
 
@@ -25,8 +26,8 @@ router.get('/', async (req, res) => {
   }
 })
 
-// POST /api/webhooks — register a new endpoint scoped to the caller's org
-router.post('/', async (req, res) => {
+// POST /api/webhooks — register a new endpoint scoped to the caller's org (owner/admin)
+router.post('/', requireAdmin, async (req, res) => {
   const organizationId = (req as any).user?.organizationId
   const { url, events } = req.body
   if (!url?.trim() || !url.startsWith('https://')) {
@@ -54,8 +55,8 @@ router.post('/', async (req, res) => {
   }
 })
 
-// DELETE /api/webhooks/:id — delete an endpoint belonging to the caller's org
-router.delete('/:id', async (req, res) => {
+// DELETE /api/webhooks/:id — delete an endpoint belonging to the caller's org (owner/admin)
+router.delete('/:id', requireAdmin, async (req, res) => {
   const { id } = req.params
   const organizationId = (req as any).user?.organizationId
   try {
