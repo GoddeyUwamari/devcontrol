@@ -58,7 +58,6 @@ import { LogStreamingService } from '../../services/logStreaming';
 describe('POST /api/logs/stream/:deploymentId — temporarily disabled', () => {
   let server: http.Server;
   let baseUrl: string;
-  let startLogStreamSpy: jest.SpyInstance;
 
   beforeAll((done) => {
     const app = express();
@@ -78,15 +77,6 @@ describe('POST /api/logs/stream/:deploymentId — temporarily disabled', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Never let a real polling interval start, even if a regression routes
-    // a request into the service.
-    startLogStreamSpy = jest
-      .spyOn(LogStreamingService.prototype, 'startLogStream')
-      .mockResolvedValue(undefined);
-  });
-
-  afterEach(() => {
-    startLogStreamSpy.mockRestore();
   });
 
   const post = (deploymentId: string, body: unknown, authed = true) =>
@@ -100,7 +90,6 @@ describe('POST /api/logs/stream/:deploymentId — temporarily disabled', () => {
     });
 
   const expectNoCloudWatchAccess = () => {
-    expect(startLogStreamSpy).not.toHaveBeenCalled();
     expect(mockCloudWatchClientCtor).not.toHaveBeenCalled();
     expect(mockFilterLogEventsCtor).not.toHaveBeenCalled();
     expect(mockCloudWatchSend).not.toHaveBeenCalled();
@@ -165,6 +154,19 @@ describe('POST /api/logs/stream/:deploymentId — temporarily disabled', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'logs.routes.ts'), 'utf-8');
     expect(source).not.toMatch(/req\.(body|query)/);
     expect(source).not.toMatch(/startLogStream\s*\(/);
+  });
+
+  it('the service has no way to start a stream and builds no AWS client', () => {
+    // The old implementation polled CloudWatch Logs on the server's ambient
+    // credentials. It is gone: constructing the service, which the stop and
+    // active-count routes still do, touches no AWS SDK client.
+    const service = new LogStreamingService({ emitToOrganization: jest.fn() } as never);
+
+    expect((service as unknown as Record<string, unknown>).startLogStream).toBeUndefined();
+    expect((service as unknown as Record<string, unknown>).cloudwatch).toBeUndefined();
+    expect(mockCloudWatchClientCtor).not.toHaveBeenCalled();
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'services', 'logStreaming.ts'), 'utf-8');
+    expect(source).not.toMatch(/@aws-sdk/);
   });
 });
 

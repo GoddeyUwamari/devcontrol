@@ -6,7 +6,6 @@ import { requireAdmin } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
 import { checkDiscoveryLimit, requireTier } from '../middleware/subscription.middleware';
 import { TaggingComplianceService } from '../services/taggingCompliance.service';
-import { AWSTaggingService } from '../services/awsTagging.service';
 
 const router = Router();
 const controller = new AWSResourcesController(pool);
@@ -90,74 +89,6 @@ router.get('/tagging-compliance', authenticate, requireTier('pro'), async (req, 
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to generate tagging compliance report'
-    });
-  }
-});
-
-/**
- * POST /api/aws-resources/bulk-tag
- * Apply tags to multiple resources (Admin only)
- */
-router.post('/bulk-tag', authenticate, requireAdmin, async (req, res) => {
-  try {
-    const { resourceIds, tags } = req.body;
-    const organizationId = (req as any).user?.organization_id;
-
-    // Validate inputs
-    if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'resourceIds must be a non-empty array'
-      });
-    }
-
-    if (!tags || typeof tags !== 'object' || Object.keys(tags).length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'tags must be a non-empty object'
-      });
-    }
-
-    // Fetch resources from database
-    const client = await pool.connect();
-    try {
-      const result = await client.query(
-        `SELECT * FROM aws_resources
-         WHERE organization_id = $1 AND id = ANY($2)`,
-        [organizationId, resourceIds]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: 'No resources found with the provided IDs'
-        });
-      }
-
-      const resources = result.rows.map(row => ({
-        ...row,
-        tags: row.tags || {},
-        metadata: row.metadata || {},
-        compliance_issues: row.compliance_issues || [],
-      }));
-
-      // Apply tags using AWS Tagging Service
-      const taggingService = new AWSTaggingService(pool);
-      const result_summary = await taggingService.bulkTagResources(resources, tags);
-
-      res.json({
-        success: true,
-        message: `Successfully tagged ${result_summary.success} resources`,
-        data: result_summary
-      });
-    } finally {
-      client.release();
-    }
-  } catch (error: any) {
-    console.error('[Bulk Tag] Error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to apply tags'
     });
   }
 });
