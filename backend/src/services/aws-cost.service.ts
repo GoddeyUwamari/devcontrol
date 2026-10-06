@@ -4,36 +4,12 @@ import {
   Granularity,
   Metric,
 } from '@aws-sdk/client-cost-explorer'
-import {
-  EC2Client,
-  DescribeInstancesCommand,
-  Instance,
-} from '@aws-sdk/client-ec2'
-import {
-  RDSClient,
-  DescribeDBInstancesCommand,
-  DBInstance,
-} from '@aws-sdk/client-rds'
-import {
-  S3Client,
-  ListBucketsCommand,
-  GetBucketLocationCommand,
-} from '@aws-sdk/client-s3'
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
 import { Pool } from 'pg'
 import { pool } from '../config/database'
 import type { SpendProvenance } from './ai-context-contract'
 
-interface ResourceCost {
-  service: string
-  resourceId: string
-  resourceName: string
-  resourceType: string
-  region: string
-  status: string
-  costPerMonth: number
-  tags?: Record<string, string>
-}
+
 
 export interface MonthlyCost {
   total: number
@@ -333,11 +309,10 @@ function categorizeAwsService(serviceName: string): CostCategory {
 }
 
 class AWSCostService {
-  private costExplorerClient: CostExplorerClient
-  private ec2Client: EC2Client
-  private rdsClient: RDSClient
-  private s3Client: S3Client
-  private enabled: boolean
+  // Set only by createForOrg(), from the organization's assumed-role
+  // credentials. The shared default instance never has one: it only caches and
+  // dispatches to a per-organization instance.
+  private costExplorerClient: CostExplorerClient | null = null
 
   // Per-org cache for fetchMonthlyCosts — Cost Explorer is billed per API call and rate
   // limited, and this same singleton is polled every ~2min by system-intelligence plus
@@ -364,35 +339,15 @@ class AWSCostService {
   // In-flight promise per org+range, same stampede rationale as monthlyCostInFlight.
   private costTrendInFlight: Map<string, Promise<CostTrendPoint[]>> = new Map()
 
-  constructor(private dbPool?: Pool) {
-    this.enabled = this.checkAWSCredentials()
-
-    if (this.enabled) {
-      const config = {
-        region: process.env.AWS_REGION || 'us-east-1',
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-        },
-      }
-
-      this.costExplorerClient = new CostExplorerClient(config)
-      this.ec2Client = new EC2Client(config)
-      this.rdsClient = new RDSClient(config)
-      this.s3Client = new S3Client(config)
-    } else {
-      // Initialize with dummy clients for non-AWS environments
-      this.costExplorerClient = {} as CostExplorerClient
-      this.ec2Client = {} as EC2Client
-      this.rdsClient = {} as RDSClient
-      this.s3Client = {} as S3Client
-    }
-  }
+  // Builds no AWS client: there is no cost data without an organization, and
+  // an organization's clients come only from createForOrg().
+  constructor(private dbPool?: Pool) {}
 
   /**
    * Create an AWSCostService instance scoped to a specific org via STS AssumeRole.
    * Queries aws_accounts for the org's role_arn / external_id / region, then assumes
-   * the role and initialises all AWS clients with the temporary credentials.
+   * the role and builds the Cost Explorer client with the temporary credentials.
+   * The STS client is the platform's own identity and is used only for AssumeRole.
    */
   static async createForOrg(organizationId: string, dbPool: Pool): Promise<AWSCostService> {
     const result = await dbPool.query(
@@ -422,68 +377,65 @@ class AWSCostService {
 
     const instance = new AWSCostService(dbPool)
     instance.costExplorerClient = new CostExplorerClient({ region, credentials })
-    instance.ec2Client = new EC2Client({ region, credentials })
-    instance.rdsClient = new RDSClient({ region, credentials })
-    instance.s3Client = new S3Client({ region, credentials })
-    instance.enabled = true
 
     return instance
   }
 
-  private checkAWSCredentials(): boolean {
-    return !!(
-      process.env.AWS_ACCESS_KEY_ID &&
-      process.env.AWS_SECRET_ACCESS_KEY &&
-      process.env.AWS_REGION
-    )
+  /** An organization-scoped operation was called without an organization: never answered from anywhere else. */
+  private requireOrganizationId(organizationId: unknown): asserts organizationId is string {
+    if (typeof organizationId !== 'string' || organizationId.trim() === '') {
+      throw new Error('ORGANIZATION_REQUIRED: AWS cost data is only available for a specific organization')
+    }
+  }
+
+  /** The Cost Explorer client of the organization this instance was created for; there is no other. */
+  private customerCostExplorer(): CostExplorerClient {
+    if (!this.costExplorerClient) {
+      throw new Error('AWS_NOT_CONNECTED: no organization AWS credentials on this cost service instance')
+    }
+    return this.costExplorerClient
   }
 
   /**
    * Fetch current-calendar-month-to-date costs from AWS Cost Explorer.
    * By design, this reads as a low/partial number for the first 1-3 days of a new month
    * (Cost Explorer's usage data lags 24-48h) — accepted tradeoff, not a bug.
-   * If organizationId is supplied, assumes the org's IAM role via STS before calling
-   * Cost Explorer; otherwise falls back to platform-level env-var credentials.
+   * Always for one organization: assumes that organization's IAM role via STS
+   * before calling Cost Explorer. Throws AWS_NOT_CONNECTED when it has no
+   * connected account -- there is no other source of credentials.
    */
-  async fetchMonthlyCosts(organizationId?: string): Promise<MonthlyCost> {
-    if (organizationId) {
-      const cached = this.monthlyCostCache.get(organizationId)
-      if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
-        return cached.data
-      }
+  async fetchMonthlyCosts(organizationId: string): Promise<MonthlyCost> {
+    this.requireOrganizationId(organizationId)
 
-      const inFlight = this.monthlyCostInFlight.get(organizationId)
-      if (inFlight) {
-        return inFlight
-      }
-
-      const fetchPromise = (async () => {
-        const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
-        const result = await orgService.fetchMonthlyCosts()
-        // Stamped once, right here, at the moment the real Cost Explorer call
-        // actually succeeded -- not when a later cache hit happens to be read.
-        const resultWithTimestamp: MonthlyCost = { ...result, fetchedAt: new Date().toISOString() }
-        this.monthlyCostCache.set(organizationId, { data: resultWithTimestamp, timestamp: Date.now() })
-        return resultWithTimestamp
-      })().finally(() => {
-        this.monthlyCostInFlight.delete(organizationId)
-      })
-
-      this.monthlyCostInFlight.set(organizationId, fetchPromise)
-      return fetchPromise
+    const cached = this.monthlyCostCache.get(organizationId)
+    if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
+      return cached.data
     }
 
-    if (!this.enabled) {
-      console.log('AWS credentials not configured, returning mock data')
-      return {
-        total: 0,
-        byService: [],
-        period: {
-          start: new Date().toISOString().split('T')[0],
-          end: new Date().toISOString().split('T')[0],
-        },
-      }
+    const inFlight = this.monthlyCostInFlight.get(organizationId)
+    if (inFlight) {
+      return inFlight
     }
+
+    const fetchPromise = (async () => {
+      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
+      const result = await orgService.queryMonthlyCosts()
+      // Stamped once, right here, at the moment the real Cost Explorer call
+      // actually succeeded -- not when a later cache hit happens to be read.
+      const resultWithTimestamp: MonthlyCost = { ...result, fetchedAt: new Date().toISOString() }
+      this.monthlyCostCache.set(organizationId, { data: resultWithTimestamp, timestamp: Date.now() })
+      return resultWithTimestamp
+    })().finally(() => {
+      this.monthlyCostInFlight.delete(organizationId)
+    })
+
+    this.monthlyCostInFlight.set(organizationId, fetchPromise)
+    return fetchPromise
+  }
+
+  /** The Cost Explorer query itself, on this instance's organization credentials. */
+  private async queryMonthlyCosts(): Promise<MonthlyCost> {
+    const costExplorer = this.customerCostExplorer()
 
     try {
       const now = new Date()
@@ -507,7 +459,7 @@ class AWSCostService {
         ],
       })
 
-      const response = await this.costExplorerClient.send(command)
+      const response = await costExplorer.send(command)
 
       const byService =
         response.ResultsByTime?.[0]?.Groups?.map((group) => ({
@@ -610,38 +562,39 @@ class AWSCostService {
    * per-service breakdown (byService) that the category buckets were derived from, and
    * a chart-ready byServiceDisplay: the top TOP_SERVICE_COUNT services (by total spend
    * across the range) with normalized names and stable colors, plus an "Other" bucket.
-   * If organizationId is supplied, assumes the org's IAM role via STS before calling
-   * Cost Explorer; otherwise falls back to platform-level env-var credentials.
+   * Always for one organization, on that organization's assumed-role credentials;
+   * throws AWS_NOT_CONNECTED when it has no connected account.
    */
-  async fetchCostTrend(organizationId: string | undefined, range: CostTrendRange): Promise<CostTrendPoint[]> {
-    if (organizationId) {
-      const cacheKey = `${organizationId}:${range}`
-      const cached = this.costTrendCache.get(cacheKey)
-      if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
-        return cached.data
-      }
+  async fetchCostTrend(organizationId: string, range: CostTrendRange): Promise<CostTrendPoint[]> {
+    this.requireOrganizationId(organizationId)
 
-      const inFlight = this.costTrendInFlight.get(cacheKey)
-      if (inFlight) {
-        return inFlight
-      }
-
-      const fetchPromise = (async () => {
-        const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
-        const result = await orgService.fetchCostTrend(undefined, range)
-        this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
-        return result
-      })().finally(() => {
-        this.costTrendInFlight.delete(cacheKey)
-      })
-
-      this.costTrendInFlight.set(cacheKey, fetchPromise)
-      return fetchPromise
+    const cacheKey = `${organizationId}:${range}`
+    const cached = this.costTrendCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
+      return cached.data
     }
 
-    if (!this.enabled) {
-      return []
+    const inFlight = this.costTrendInFlight.get(cacheKey)
+    if (inFlight) {
+      return inFlight
     }
+
+    const fetchPromise = (async () => {
+      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
+      const result = await orgService.queryCostTrend(range)
+      this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
+      return result
+    })().finally(() => {
+      this.costTrendInFlight.delete(cacheKey)
+    })
+
+    this.costTrendInFlight.set(cacheKey, fetchPromise)
+    return fetchPromise
+  }
+
+  /** The Cost Explorer query itself, on this instance's organization credentials. */
+  private async queryCostTrend(range: CostTrendRange): Promise<CostTrendPoint[]> {
+    const costExplorer = this.customerCostExplorer()
 
     const { start, end, granularity } = this.resolveTrendPeriod(range)
 
@@ -657,7 +610,7 @@ class AWSCostService {
       ],
     })
 
-    const response = await this.costExplorerClient.send(command)
+    const response = await costExplorer.send(command)
 
     const points: CostTrendPoint[] = (response.ResultsByTime || []).map((result) => {
       const raw: Record<CostCategory, number> = {
@@ -703,224 +656,10 @@ class AWSCostService {
 
     return points
   }
-
-  /**
-   * Fetch EC2 instances
-   */
-  async fetchEC2Instances(): Promise<ResourceCost[]> {
-    if (!this.enabled) return []
-
-    try {
-      const command = new DescribeInstancesCommand({})
-      const response = await this.ec2Client.send(command)
-
-      const resources: ResourceCost[] = []
-
-      response.Reservations?.forEach((reservation) => {
-        reservation.Instances?.forEach((instance: Instance) => {
-          const nameTag = instance.Tags?.find((tag) => tag.Key === 'Name')
-
-          resources.push({
-            service: 'EC2',
-            resourceId: instance.InstanceId || '',
-            resourceName: nameTag?.Value || instance.InstanceId || 'Unnamed',
-            resourceType: instance.InstanceType || 'unknown',
-            region: instance.Placement?.AvailabilityZone?.slice(0, -1) || 'us-east-1',
-            status: instance.State?.Name || 'unknown',
-            costPerMonth: this.estimateEC2Cost(instance.InstanceType || ''),
-            tags: this.convertTags(instance.Tags || []),
-          })
-        })
-      })
-
-      return resources
-    } catch (error) {
-      console.error('Error fetching EC2 instances:', error)
-      return []
-    }
-  }
-
-  /**
-   * Fetch RDS instances
-   */
-  async fetchRDSInstances(): Promise<ResourceCost[]> {
-    if (!this.enabled) return []
-
-    try {
-      const command = new DescribeDBInstancesCommand({})
-      const response = await this.rdsClient.send(command)
-
-      const resources: ResourceCost[] = []
-
-      response.DBInstances?.forEach((instance: DBInstance) => {
-        resources.push({
-          service: 'RDS',
-          resourceId: instance.DBInstanceIdentifier || '',
-          resourceName: instance.DBInstanceIdentifier || 'Unnamed',
-          resourceType: `${instance.Engine || 'unknown'} ${instance.DBInstanceClass || ''}`,
-          region: instance.AvailabilityZone?.slice(0, -1) || 'us-east-1',
-          status: instance.DBInstanceStatus || 'unknown',
-          costPerMonth: this.estimateRDSCost(instance.DBInstanceClass || ''),
-          tags: {},
-        })
-      })
-
-      return resources
-    } catch (error) {
-      console.error('Error fetching RDS instances:', error)
-      return []
-    }
-  }
-
-  /**
-   * Fetch S3 buckets
-   */
-  async fetchS3Buckets(): Promise<ResourceCost[]> {
-    if (!this.enabled) return []
-
-    try {
-      const listCommand = new ListBucketsCommand({})
-      const response = await this.s3Client.send(listCommand)
-
-      const resources: ResourceCost[] = []
-
-      for (const bucket of response.Buckets || []) {
-        try {
-          const locationCommand = new GetBucketLocationCommand({
-            Bucket: bucket.Name,
-          })
-          const locationResponse = await this.s3Client.send(locationCommand)
-          const region = locationResponse.LocationConstraint || 'us-east-1'
-
-          resources.push({
-            service: 'S3',
-            resourceId: bucket.Name || '',
-            resourceName: bucket.Name || 'Unnamed',
-            resourceType: 'Bucket',
-            region: region,
-            status: 'active',
-            costPerMonth: 5, // Estimate, would need CloudWatch metrics for accurate cost
-            tags: {},
-          })
-        } catch (error) {
-          console.error(`Error getting location for bucket ${bucket.Name}:`, error)
-        }
-      }
-
-      return resources
-    } catch (error) {
-      console.error('Error fetching S3 buckets:', error)
-      return []
-    }
-  }
-
-  /**
-   * Fetch all AWS resources
-   */
-  async fetchAllResources(): Promise<ResourceCost[]> {
-    const [ec2Instances, rdsInstances, s3Buckets] = await Promise.all([
-      this.fetchEC2Instances(),
-      this.fetchRDSInstances(),
-      this.fetchS3Buckets(),
-    ])
-
-    return [...ec2Instances, ...rdsInstances, ...s3Buckets]
-  }
-
-  /**
-   * Sync AWS resources to database
-   */
-  async syncResourcesToDatabase(): Promise<void> {
-    if (!this.enabled) {
-      console.log('AWS integration disabled, skipping sync')
-      return
-    }
-
-    try {
-      const resources = await this.fetchAllResources()
-
-      // Clear existing AWS-sourced resources
-      await pool.query(
-        'DELETE FROM infrastructure_resources WHERE tags @> \'{"source": "aws"}\'::jsonb'
-      )
-
-      // Insert new resources
-      for (const resource of resources) {
-        const tags = { ...resource.tags, source: 'aws' }
-
-        await pool.query(
-          `INSERT INTO infrastructure_resources
-           (service, resource_id, resource_name, resource_type, region, status, cost_per_month, tags)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            resource.service,
-            resource.resourceId,
-            resource.resourceName,
-            resource.resourceType,
-            resource.region,
-            resource.status,
-            resource.costPerMonth,
-            JSON.stringify(tags),
-          ]
-        )
-      }
-
-      console.log(`Synced ${resources.length} AWS resources to database`)
-    } catch (error) {
-      console.error('Error syncing resources to database:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Helper: Estimate EC2 cost based on instance type
-   */
-  private estimateEC2Cost(instanceType: string): number {
-    const costs: Record<string, number> = {
-      't2.micro': 8.5,
-      't2.small': 17,
-      't2.medium': 34,
-      't3.micro': 7.5,
-      't3.small': 15,
-      't3.medium': 30,
-      'm5.large': 70,
-      'm5.xlarge': 140,
-      'c5.large': 62,
-      'r5.large': 91,
-    }
-
-    return costs[instanceType] || 50 // Default estimate
-  }
-
-  /**
-   * Helper: Estimate RDS cost based on instance class
-   */
-  private estimateRDSCost(instanceClass: string): number {
-    const costs: Record<string, number> = {
-      'db.t3.micro': 12,
-      'db.t3.small': 24,
-      'db.t3.medium': 48,
-      'db.m5.large': 122,
-      'db.r5.large': 175,
-    }
-
-    return costs[instanceClass] || 75 // Default estimate
-  }
-
-  /**
-   * Helper: Convert AWS tags to object
-   */
-  private convertTags(tags: Array<{ Key?: string; Value?: string }>): Record<string, string> {
-    const result: Record<string, string> = {}
-    tags.forEach((tag) => {
-      if (tag.Key && tag.Value) {
-        result[tag.Key] = tag.Value
-      }
-    })
-    return result
-  }
 }
 
 export { AWSCostService }
-// @deprecated — use AWSCostService.createForOrg(organizationId, pool) for per-org credential isolation
+// The shared instance holds only the per-organization caches and no AWS client:
+// every fetch requires an organization id and runs on that organization's
+// assumed-role credentials (createForOrg).
 export default new AWSCostService()

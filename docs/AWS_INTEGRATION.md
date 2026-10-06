@@ -1,311 +1,66 @@
-# AWS Cost Explorer Integration
+# AWS Integration
 
-Complete guide for integrating real AWS infrastructure costs and resource tracking into DevControl.
+How DevControl reads an organization's AWS account, and how to work with AWS-backed features in local development.
 
-## Overview
+## The rule
 
-DevControl can automatically fetch and track your AWS infrastructure costs and resources using the AWS Cost Explorer API. This provides real-time visibility into:
+**DevControl only ever reads an organization's AWS data with credentials from that organization's own connected IAM role.** This is the same in local development, test, staging and production.
 
-- Monthly AWS spending
-- Cost breakdown by service (EC2, RDS, S3, etc.)
-- Live infrastructure resources
-- Automated cost metrics for Prometheus
+- An organization connects one AWS account by creating an IAM role in it and giving DevControl the role's ARN.
+- For every AWS operation on behalf of that organization, the backend assumes that role (`sts:AssumeRole`, with the organization's external ID) and builds its AWS clients with the temporary credentials it gets back.
+- An organization that has not connected an account gets **`AWS_NOT_CONNECTED`**. No AWS client is created and no AWS call is made. There is no fallback to any other credentials and no mock data.
 
-## Features
+The backend's own AWS credentials are used for one thing only: as the caller identity for `sts:AssumeRole`. They are never used to read cost, inventory, metrics or security data, in any environment.
 
-- **Real-time Cost Tracking**: Fetch actual AWS costs from Cost Explorer
-- **Resource Discovery**: Automatically discover EC2, RDS, and S3 resources
-- **Database Sync**: Sync AWS resources to PostgreSQL for persistence
-- **Prometheus Integration**: Export costs as metrics for monitoring
-- **Fallback Mode**: Works with mock data when AWS credentials are not configured
+## Connecting an AWS account
 
----
+Only an organization **owner** can connect AWS. In the app, open **Connect AWS** (`/connect-aws`):
 
-## Setup Instructions
+1. The page shows a trust policy containing DevControl's account and an external ID generated for your organization.
+2. In your AWS account, create an IAM role with that trust policy and attach the `ReadOnlyAccess` managed policy, as the page instructs.
+3. Paste the role's ARN into the page. DevControl verifies that it can assume the role before saving the connection.
+4. The first resource scan starts automatically. Cost Explorer data can take a day or two to become available from AWS.
 
-### 1. Create AWS IAM User
+You control the role: deleting it in AWS removes DevControl's access.
 
-Create an IAM user with the following permissions:
+The endpoints behind this flow are `GET /api/aws/accounts/connect-init`, `POST /api/aws/accounts` and `GET /api/aws/accounts`.
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ce:GetCostAndUsage",
-        "ec2:DescribeInstances",
-        "rds:DescribeDBInstances",
-        "s3:ListBuckets",
-        "s3:GetBucketLocation"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
+## What an unconnected organization sees
 
-**Recommended Policy Name**: `DevControlCostExplorerAccess`
+Pages stay reachable and say that AWS is not connected; they do not show figures. On the API, AWS-backed operations report the organization as not connected rather than returning data:
 
-### 2. Configure Environment Variables
+- Discovery (`POST /api/services/discover`, `POST /api/aws-resources/discover`) does not scan anything. The scheduled discovery job records the attempt as failed for that organization and continues with the next one.
+- Cost endpoints fall back to the inventory estimate where one is defined, or report that live cost data is unavailable. They never return another account's bill.
 
-Edit `backend/.env` and add your AWS credentials:
+## Backend configuration
 
-```bash
-# AWS Configuration
-AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-AWS_REGION=us-east-1
-```
+The backend needs its own AWS identity so that it can call `sts:AssumeRole`. Set these in `backend/.env` (never commit that file):
 
-**Important**: Never commit `.env` to version control!
+| Variable | Purpose |
+|---|---|
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The platform identity used to assume organizations' roles. |
+| `AWS_REGION` | Region for the STS call made while validating a new connection. |
+| `AWS_ACCOUNT_ID` | The platform's AWS account ID, placed in the trust policy shown to organizations. |
 
-### 3. Restart Backend
+These credentials only need permission to assume the roles organizations create for DevControl. Setting them does **not** make AWS data appear for any organization: that requires a connected account.
 
-```bash
-cd ~/Desktop/platform-portal
-npm run dev:backend
-```
+## Local development
 
-The backend will automatically detect AWS credentials and enable real-time cost tracking.
+Local development uses exactly the same model as production.
 
----
+- To work on AWS-backed features locally, connect a **dedicated test AWS account or role** to your local organization through the Connect AWS page, the same way a customer would. Use an account you are happy for a development build to read; do not connect a production account to a local environment.
+- Without a connected account, your local organization behaves like any unconnected organization: `AWS_NOT_CONNECTED`, and the unconnected states in the UI.
+- The automated tests do not need AWS credentials or network access; they stub the STS and service clients.
 
-## API Endpoints
-
-### GET /api/aws/costs/monthly
-
-Fetch current month AWS costs from Cost Explorer.
-
-**Response:**
-```json
-{
-  "total": 1234.56,
-  "byService": [
-    {
-      "service": "Amazon Elastic Compute Cloud - Compute",
-      "amount": 567.89
-    },
-    {
-      "service": "Amazon Relational Database Service",
-      "amount": 432.10
-    }
-  ],
-  "period": {
-    "start": "2025-12-01",
-    "end": "2025-12-26"
-  }
-}
-```
-
-### GET /api/aws/resources
-
-Fetch all AWS resources (EC2, RDS, S3) with cost estimates.
-
-**Response:**
-```json
-{
-  "total": 15,
-  "resources": [
-    {
-      "service": "EC2",
-      "resourceId": "i-0123456789abcdef0",
-      "resourceName": "production-web-server",
-      "resourceType": "t3.medium",
-      "region": "us-east-1",
-      "status": "running",
-      "costPerMonth": 30,
-      "tags": {
-        "Name": "production-web-server",
-        "Environment": "production"
-      }
-    }
-  ]
-}
-```
-
-### POST /api/aws/sync
-
-Sync AWS resources to database. This will:
-1. Fetch all resources from AWS
-2. Clear existing AWS-sourced resources from DB
-3. Insert fresh resource data
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "AWS resources synced to database successfully"
-}
-```
-
----
-
-## Prometheus Metrics
-
-Once AWS credentials are configured, the `/metrics` endpoint will export real AWS costs:
-
-```
-# HELP infrastructure_cost_monthly_total Monthly infrastructure cost (USD)
-# TYPE infrastructure_cost_monthly_total gauge
-infrastructure_cost_monthly_total 1234.56
-```
-
-This metric updates automatically every 30 seconds.
-
----
-
-## Testing Without AWS Credentials
-
-The system works in **fallback mode** when AWS credentials are not configured:
-
-- API endpoints return empty/zero data
-- Database costs are used for metrics
-- No errors or crashes
-- Seamless development experience
-
----
-
-## Cost Estimates
-
-For resources where Cost Explorer data is not immediately available, the system uses estimated costs:
-
-### EC2 Instance Costs (Monthly)
-- t2.micro: $8.50
-- t2.small: $17
-- t2.medium: $34
-- t3.micro: $7.50
-- t3.small: $15
-- t3.medium: $30
-- m5.large: $70
-- m5.xlarge: $140
-
-### RDS Instance Costs (Monthly)
-- db.t3.micro: $12
-- db.t3.small: $24
-- db.t3.medium: $48
-- db.m5.large: $122
-- db.r5.large: $175
-
-### S3 Buckets
-- Estimated at $5/month per bucket (actual costs vary by usage)
-
----
-
-## Automated Sync
-
-To automatically sync AWS resources daily, add a cron job or scheduler:
-
-```bash
-# Example: Sync AWS resources every day at 2 AM
-0 2 * * * curl -X POST http://localhost:8080/api/aws/sync
-```
-
-Or use a monitoring tool like Kubernetes CronJob, AWS EventBridge, etc.
-
----
-
-## Security Best Practices
-
-1. **Use IAM Roles**: If running on EC2, use IAM instance roles instead of access keys
-2. **Least Privilege**: Only grant permissions needed for cost tracking
-3. **Rotate Keys**: Regularly rotate AWS access keys
-4. **Environment Variables**: Never hardcode credentials in source code
-5. **Audit Logs**: Enable CloudTrail to monitor API usage
-
----
+Older local databases may contain resource rows that were written before this rule was enforced, when a development build could read the backend's own AWS account for organizations with no connection. Those rows do not belong to the organizations they are stored under and should not be relied on.
 
 ## Troubleshooting
 
-### "AWS credentials not configured" message
+**`AWS_NOT_CONNECTED`**
+The organization has no connected AWS account, its stored connection is missing its external ID, or DevControl could no longer assume the role. Connect the account, or check that the role and its trust policy still exist in AWS.
 
-**Cause**: Environment variables are not set or invalid.
+**"Access denied" when connecting**
+The role's trust policy does not allow DevControl's account, or the external ID does not match the one shown on the Connect AWS page. Copy the trust policy from the page again.
 
-**Solution**:
-1. Check `backend/.env` has `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
-2. Verify credentials are valid using AWS CLI: `aws sts get-caller-identity`
-3. Restart the backend server
-
-### Cost Explorer returns "AccessDenied"
-
-**Cause**: IAM user lacks necessary permissions.
-
-**Solution**:
-1. Add the `ce:GetCostAndUsage` permission to your IAM user
-2. Wait a few minutes for IAM changes to propagate
-3. Verify with: `aws ce get-cost-and-usage --time-period Start=2025-12-01,End=2025-12-26 --granularity MONTHLY --metrics UnblendedCost`
-
-### Resources not syncing
-
-**Cause**: Permissions for EC2, RDS, or S3 are missing.
-
-**Solution**:
-1. Ensure IAM user has `ec2:DescribeInstances`, `rds:DescribeDBInstances`, `s3:ListBuckets`
-2. Check CloudWatch logs for specific errors
-3. Test each service individually via AWS Console
-
----
-
-## Architecture
-
-```
-┌─────────────────┐
-│   Frontend      │
-│  (Next.js)      │
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────┐      ┌──────────────────┐
-│   Backend API   │─────→│  AWS Services    │
-│   (Express)     │      │  - Cost Explorer │
-└────────┬────────┘      │  - EC2           │
-         │               │  - RDS           │
-         │               │  - S3            │
-         ↓               └──────────────────┘
-┌─────────────────┐
-│   PostgreSQL    │
-│   (Database)    │
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────┐
-│   Prometheus    │
-│   (Metrics)     │
-└─────────────────┘
-```
-
----
-
-## Development Workflow
-
-1. **Without AWS**: System works with mock data
-2. **Add Credentials**: Real costs automatically replace mock data
-3. **Sync Resources**: Manual or automated sync keeps DB updated
-4. **Monitor**: Prometheus metrics track costs over time
-5. **Alert**: Set up Grafana alerts for cost thresholds
-
----
-
-## Next Steps
-
-- [ ] Add more AWS services (Lambda, CloudFront, etc.)
-- [ ] Implement cost forecasting
-- [ ] Add budget alerts
-- [ ] Support multi-account AWS Organizations
-- [ ] Add cost optimization recommendations
-
----
-
-## Support
-
-For issues or questions:
-- Check logs: `npm run dev:backend` output
-- Review IAM permissions in AWS Console
-- Test API endpoints with curl/Postman
-- Consult AWS Cost Explorer documentation
-
----
-
-**Last Updated**: December 26, 2025
-**DevControl Version**: 1.0.0
+**Cost data is missing after connecting**
+Cost Explorer must be enabled in the connected account, and AWS can take a day or two to make data available.

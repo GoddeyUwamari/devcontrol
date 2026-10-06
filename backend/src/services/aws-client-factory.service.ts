@@ -1,6 +1,12 @@
 /**
  * AWS Client Factory
  * Creates AWS SDK clients via STS AssumeRole using the org's stored role ARN.
+ *
+ * The platform's own credentials are used for exactly one thing here: as the
+ * caller identity for sts:AssumeRole. Every client this factory returns
+ * carries the temporary credentials of the organization's connected role. An
+ * organization with no connected account gets AWS_NOT_CONNECTED and no
+ * client, whatever the environment.
  */
 
 import { CostExplorerClient } from '@aws-sdk/client-cost-explorer';
@@ -97,10 +103,9 @@ export class AWSClientFactory {
       [organizationId]
     );
 
+    // No connected account means no clients, in every environment: nothing
+    // organization-scoped ever runs on the platform's own credentials.
     if (result.rows.length === 0) {
-      if (process.env.NODE_ENV !== 'production') {
-        return this.createClientsFromEnv();
-      }
       throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`);
     }
 
@@ -176,87 +181,6 @@ export class AWSClientFactory {
       getApplicationAutoScalingClientForRegion: (region: string) =>
         new ApplicationAutoScalingClient({ region, credentials: tempCredentials }),
       getCloudWatchClientForRegion: (region: string) => new CloudWatchClient({ region, credentials: tempCredentials }),
-    };
-  }
-
-  /** Falls back to .env credentials in non-production environments. */
-  static createClientsFromEnv(): AWSClients {
-    const hasCredentials = !!(
-      process.env.AWS_ACCESS_KEY_ID &&
-      process.env.AWS_SECRET_ACCESS_KEY &&
-      process.env.AWS_REGION
-    );
-
-    if (!hasCredentials) {
-      console.log('No global AWS credentials configured, using mock clients');
-      return this.createMockClients();
-    }
-
-    const config = {
-      region: process.env.AWS_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
-    };
-
-    console.log(`🔄 Using .env AWS credentials (region: ${config.region})`);
-
-    return {
-      costExplorer: new CostExplorerClient(config),
-      ec2: new EC2Client(config),
-      rds: new RDSClient(config),
-      s3: new S3Client(config),
-      cloudWatch: new CloudWatchClient(config),
-      lambda: new LambdaClient(config),
-      ecs: new ECSClient(config),
-      elb: new ElasticLoadBalancingV2Client(config),
-      eks: new EKSClient(config),
-      dynamodb: new DynamoDBClient(config),
-      cloudFront: new CloudFrontClient({ ...config, region: 'us-east-1' }),
-      apiGateway: new APIGatewayClient(config),
-      elastiCache: new ElastiCacheClient(config),
-      sqs: new SQSClient(config),
-      sns: new SNSClient(config),
-      iam: new IAMClient({ ...config, region: 'us-east-1' }), // IAM is global
-      resourceExplorer: new ResourceExplorer2Client(config),
-      backup: new BackupClient(config),
-      securityHub: new SecurityHubClient(config),
-      region: config.region,
-      enabled: true,
-      getDynamoDBClientForRegion: (region: string) => new DynamoDBClient({ region, credentials: config.credentials }),
-      getApplicationAutoScalingClientForRegion: (region: string) =>
-        new ApplicationAutoScalingClient({ region, credentials: config.credentials }),
-      getCloudWatchClientForRegion: (region: string) => new CloudWatchClient({ region, credentials: config.credentials }),
-    };
-  }
-
-  private static createMockClients(): AWSClients {
-    return {
-      costExplorer: {} as CostExplorerClient,
-      ec2: {} as EC2Client,
-      rds: {} as RDSClient,
-      s3: {} as S3Client,
-      cloudWatch: {} as CloudWatchClient,
-      lambda: {} as LambdaClient,
-      ecs: {} as ECSClient,
-      elb: {} as ElasticLoadBalancingV2Client,
-      eks: {} as EKSClient,
-      dynamodb: {} as DynamoDBClient,
-      cloudFront: {} as CloudFrontClient,
-      apiGateway: {} as APIGatewayClient,
-      elastiCache: {} as ElastiCacheClient,
-      sqs: {} as SQSClient,
-      sns: {} as SNSClient,
-      iam: {} as IAMClient,
-      resourceExplorer: {} as ResourceExplorer2Client,
-      backup: {} as BackupClient,
-      securityHub: {} as SecurityHubClient,
-      region: 'us-east-1',
-      enabled: false,
-      getDynamoDBClientForRegion: () => ({} as DynamoDBClient),
-      getApplicationAutoScalingClientForRegion: () => ({} as ApplicationAutoScalingClient),
-      getCloudWatchClientForRegion: () => ({} as CloudWatchClient),
     };
   }
 
