@@ -269,9 +269,9 @@ export default function ApiReferencePage() {
           {/* Quick Links */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Button asChild variant="default" className="gap-2">
-              <Link href="/settings/api-keys">
-                <Key className="w-4 h-4" />
-                Get API Key
+              <Link href="/contact">
+                <MessageCircle className="w-4 h-4" />
+                Contact Us for API Access
               </Link>
             </Button>
             <Button asChild variant="outline" className="gap-2">
@@ -444,9 +444,9 @@ export default function ApiReferencePage() {
 
               <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
                 <Button asChild size="sm" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>
-                  <Link href="/settings/api-keys">
-                    <Key className="w-4 h-4" />
-                    Manage API Keys
+                  <Link href="/contact">
+                    <MessageCircle className="w-4 h-4" />
+                    Contact Us for API Access
                   </Link>
                 </Button>
                 <Button asChild size="sm" variant="outline" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>

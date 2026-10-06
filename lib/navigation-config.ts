@@ -297,11 +297,6 @@ export const userNavSections: NavSection[] = [
         href: '/settings/alerts',
         icon: Zap,
       },
-      {
-        label: 'Developers & Webhooks',
-        href: '/developers',
-        icon: Network,
-      },
     ],
   },
   {
