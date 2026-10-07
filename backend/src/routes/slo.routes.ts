@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { Pool } from 'pg'
 import { SloService, SloValidationError, SloNotFoundError } from '../services/slo.service'
 import { authenticateToken } from '../middleware/auth.middleware'
+import { requireMember } from '../middleware/rbac.middleware'
 import { requireEnterprise } from '../middleware/subscription.middleware'
 import { SUPPORTED_SLIS, SUPPORTED_WINDOWS } from '../services/slo-evaluation'
 
@@ -42,8 +43,8 @@ export const createSloRoutes = (pool: Pool): Router => {
     }
   })
 
-  // POST /api/slos — create a new SLO
-  router.post('/', async (req, res) => {
+  // POST /api/slos — create a new SLO (member or above, as are PATCH and DELETE)
+  router.post('/', requireMember, async (req, res) => {
     try {
       const organizationId = (req as any).user?.organizationId
       if (!organizationId) return res.status(401).json({ success: false, message: 'Unauthorized' })
@@ -61,7 +62,7 @@ export const createSloRoutes = (pool: Pool): Router => {
   })
 
   // PATCH /api/slos/:id — update an SLO
-  router.patch('/:id', async (req, res) => {
+  router.patch('/:id', requireMember, async (req, res) => {
     try {
       const organizationId = (req as any).user?.organizationId
       if (!organizationId) return res.status(401).json({ success: false, message: 'Unauthorized' })
@@ -80,7 +81,7 @@ export const createSloRoutes = (pool: Pool): Router => {
   })
 
   // DELETE /api/slos/:id — delete an SLO
-  router.delete('/:id', async (req, res) => {
+  router.delete('/:id', requireMember, async (req, res) => {
     try {
       const organizationId = (req as any).user?.organizationId
       if (!organizationId) return res.status(401).json({ success: false, message: 'Unauthorized' })

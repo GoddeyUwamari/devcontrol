@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireMember } from '../middleware/rbac.middleware';
 
 const VALID_METRICS = [
   'deployment_frequency',
@@ -22,12 +23,13 @@ function isValidMetric(m: string): m is MetricName {
   return VALID_METRICS.includes(m as MetricName);
 }
 
-function getOrgId(req: Request): string {
-  return (
-    (req as any).organizationId ||
-    (req as any).user?.organizationId ||
-    'a8ea4c8f-5f93-4073-b627-160c61aa064f' // demo fallback
-  );
+/** The authenticated caller's organization, or null: there is no fallback. */
+function getOrgId(req: Request): string | null {
+  return req.organizationId || req.user?.organizationId || null;
+}
+
+function unauthorized(res: Response): void {
+  res.status(401).json({ success: false, error: 'Unauthorized' });
 }
 
 export function createDoraBenchmarksRoutes(pool: Pool): Router {
@@ -42,6 +44,7 @@ export function createDoraBenchmarksRoutes(pool: Pool): Router {
   router.get('/benchmarks', async (req: Request, res: Response) => {
     try {
       const organizationId = getOrgId(req);
+      if (!organizationId) return unauthorized(res);
       const result = await pool.query(
         `SELECT id, metric_name, target_value, target_unit, performance_label,
                 created_at, updated_at
@@ -63,10 +66,12 @@ export function createDoraBenchmarksRoutes(pool: Pool): Router {
    *
    * Body: { metric_name, target_value, performance_label? }
    * target_unit is derived automatically from metric_name.
+   * Member or above.
    */
-  router.post('/benchmarks', async (req: Request, res: Response) => {
+  router.post('/benchmarks', requireMember, async (req: Request, res: Response) => {
     try {
       const organizationId = getOrgId(req);
+      if (!organizationId) return unauthorized(res);
       const { metric_name, target_value, performance_label } = req.body;
 
       if (!metric_name || !isValidMetric(metric_name)) {
@@ -112,10 +117,12 @@ export function createDoraBenchmarksRoutes(pool: Pool): Router {
   /**
    * DELETE /api/dora/benchmarks/:metric
    * Reset a metric to industry standard by deleting the custom benchmark row.
+   * Member or above.
    */
-  router.delete('/benchmarks/:metric', async (req: Request, res: Response) => {
+  router.delete('/benchmarks/:metric', requireMember, async (req: Request, res: Response) => {
     try {
       const organizationId = getOrgId(req);
+      if (!organizationId) return unauthorized(res);
       const { metric } = req.params;
 
       if (!isValidMetric(metric)) {

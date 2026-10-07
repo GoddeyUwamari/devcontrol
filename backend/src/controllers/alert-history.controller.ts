@@ -112,10 +112,18 @@ export class AlertHistoryController {
   async acknowledgeAlert(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { user } = req.body;
-      const organizationId = (req as any).user?.organizationId;
+      const organizationId = req.user?.organizationId;
+      // The actor is the authenticated caller, never a name from the request body.
+      const actor = req.user?.email;
+      if (!organizationId || !actor) {
+        res.status(401).json({
+          success: false,
+          error: 'Unauthorized',
+        });
+        return;
+      }
 
-      const alert = await this.service.acknowledgeAlert(id, organizationId, user || 'admin');
+      const alert = await this.service.acknowledgeAlert(id, organizationId, actor);
 
       if (!alert) {
         res.status(404).json({

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { CostRecommendationsController } from '../controllers/cost-recommendations.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
-import { requireAdmin } from '../middleware/rbac.middleware';
+import { requireAdmin, requireMember } from '../middleware/rbac.middleware';
 import { remediationExecuteRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
@@ -46,9 +46,11 @@ router.get('/optimization-rules', authenticateToken, (req, res) => controller.ge
 // before /:id below for the same route-ordering reason as /optimization-rules
 // itself, and organizationId is always taken from the authenticated request
 // context inside the controller -- never accepted from the URL or body.
+// PUT/DELETE are owner/admin only: they change how the whole organization's
+// recommendations are produced.
 router.get('/optimization-rules/configuration', authenticateToken, requireEnterprise, (req, res) => controller.getOptimizationRulesConfiguration(req, res));
-router.put('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireEnterprise, (req, res) => controller.updateOptimizationRuleConfiguration(req, res));
-router.delete('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireEnterprise, (req, res) => controller.resetOptimizationRuleConfiguration(req, res));
+router.put('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireAdmin, requireEnterprise, (req, res) => controller.updateOptimizationRuleConfiguration(req, res));
+router.delete('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireAdmin, requireEnterprise, (req, res) => controller.resetOptimizationRuleConfiguration(req, res));
 
 // Analyze AWS resources (create recommendations). Owner/admin only: it reads
 // the organization's AWS account and rewrites its recommendations.
@@ -57,8 +59,9 @@ router.post('/analyze', authenticateToken, requireAdmin, (req, res) => controlle
 // Get single recommendation by ID
 router.get('/:id', authenticateToken, (req, res) => controller.getById(req, res));
 
-// Resolve recommendation (status-only — unchanged for every recommendation type)
-router.patch('/:id/resolve', authenticateToken, (req, res) => controller.resolve(req, res));
+// Resolve recommendation (status-only — unchanged for every recommendation
+// type). Member or above: triage is not open to viewers.
+router.patch('/:id/resolve', authenticateToken, requireMember, (req, res) => controller.resolve(req, res));
 
 // Execute real remediation for an Idle EC2 recommendation — enterprise-tier +
 // admin/owner only, rate-limited same as /api/remediation/:id/execute. The
@@ -75,10 +78,11 @@ router.post(
   }
 );
 
-// Dismiss recommendation
-router.patch('/:id/dismiss', authenticateToken, (req, res) => controller.dismiss(req, res));
+// Dismiss recommendation. Member or above, same as resolve.
+router.patch('/:id/dismiss', authenticateToken, requireMember, (req, res) => controller.dismiss(req, res));
 
-// Delete recommendation
-router.delete('/:id', authenticateToken, (req, res) => controller.delete(req, res));
+// Delete recommendation. Owner/admin only: unlike resolve and dismiss, this
+// permanently removes the record.
+router.delete('/:id', authenticateToken, requireAdmin, (req, res) => controller.delete(req, res));
 
 export default router;

@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { CustomAnomalyRulesService } from '../services/custom-anomaly-rules.service';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
+import { requireAdmin } from '../middleware/rbac.middleware';
 
 export const createCustomRulesRoutes = (pool: Pool): Router => {
   const router = Router();
@@ -26,8 +27,11 @@ export const createCustomRulesRoutes = (pool: Pool): Router => {
     }
   });
 
+  // Every mutation below is owner/admin only: these rules are detection
+  // configuration for the whole organization.
+
   // POST /api/anomaly-rules — create a new rule
-  router.post('/', async (req, res) => {
+  router.post('/', requireAdmin, async (req, res) => {
     try {
       const organizationId = (req as any).user?.organizationId;
       if (!organizationId) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -51,7 +55,7 @@ export const createCustomRulesRoutes = (pool: Pool): Router => {
   });
 
   // PATCH /api/anomaly-rules/:id — update a rule
-  router.patch('/:id', async (req, res) => {
+  router.patch('/:id', requireAdmin, async (req, res) => {
     try {
       const organizationId = (req as any).user?.organizationId;
       if (!organizationId) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -66,7 +70,7 @@ export const createCustomRulesRoutes = (pool: Pool): Router => {
   });
 
   // PATCH /api/anomaly-rules/:id/toggle — enable or disable
-  router.patch('/:id/toggle', async (req, res) => {
+  router.patch('/:id/toggle', requireAdmin, async (req, res) => {
     try {
       const organizationId = (req as any).user?.organizationId;
       if (!organizationId) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -83,7 +87,7 @@ export const createCustomRulesRoutes = (pool: Pool): Router => {
   });
 
   // DELETE /api/anomaly-rules/:id — delete a rule
-  router.delete('/:id', async (req, res) => {
+  router.delete('/:id', requireAdmin, async (req, res) => {
     try {
       const organizationId = (req as any).user?.organizationId;
       if (!organizationId) return res.status(401).json({ success: false, message: 'Unauthorized' });

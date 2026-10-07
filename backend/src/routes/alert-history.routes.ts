@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../config/database';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireAdmin, requireMember } from '../middleware/rbac.middleware';
 import { AlertHistoryController } from '../controllers/alert-history.controller';
 
 const router = Router();
@@ -42,23 +43,22 @@ router.get('/:id', (req, res) => controller.getAlert(req, res));
 
 /**
  * PATCH /api/alerts/:id/acknowledge
- * Acknowledge an alert
- *
- * Body:
- * - user: Username (optional, defaults to 'admin')
+ * Acknowledge an alert. Member or above. The acknowledgement is attributed to
+ * the authenticated caller; the request body is not consulted.
  */
-router.patch('/:id/acknowledge', (req, res) => controller.acknowledgeAlert(req, res));
+router.patch('/:id/acknowledge', requireMember, (req, res) => controller.acknowledgeAlert(req, res));
 
 /**
  * PATCH /api/alerts/:id/resolve
- * Resolve an alert
+ * Resolve an alert. Member or above.
  */
-router.patch('/:id/resolve', (req, res) => controller.resolveAlert(req, res));
+router.patch('/:id/resolve', requireMember, (req, res) => controller.resolveAlert(req, res));
 
 /**
  * DELETE /api/alerts/:id
- * Delete an alert
+ * Delete an alert. Owner/admin only: unlike acknowledge and resolve, this
+ * permanently removes the record.
  */
-router.delete('/:id', (req, res) => controller.deleteAlert(req, res));
+router.delete('/:id', requireAdmin, (req, res) => controller.deleteAlert(req, res));
 
 export default router;

@@ -21,7 +21,11 @@ export class ForecastController {
    */
   getForecast = async (req: Request, res: Response) => {
     try {
-      const organizationId = (req as any).user?.organizationId || 'a8ea4c8f-5f93-4073-b627-160c61aa064f';
+      // The authenticated caller's organization; there is no fallback.
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
       const period = (req.query.period as any) || '90d';
 
       console.log('[Forecast Controller] Generating forecast...');
@@ -51,7 +55,11 @@ export class ForecastController {
    */
   generateScenario = async (req: Request, res: Response) => {
     try {
-      const organizationId = (req as any).user?.organizationId || 'a8ea4c8f-5f93-4073-b627-160c61aa064f';
+      // The authenticated caller's organization; there is no fallback.
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
       const { type, params } = req.body;
 
       if (!type) {
