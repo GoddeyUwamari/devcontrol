@@ -46,9 +46,11 @@ router.get('/optimization-rules', authenticateToken, (req, res) => controller.ge
 // before /:id below for the same route-ordering reason as /optimization-rules
 // itself, and organizationId is always taken from the authenticated request
 // context inside the controller -- never accepted from the URL or body.
+// PUT/DELETE are owner/admin only: they change how the whole organization's
+// recommendations are produced.
 router.get('/optimization-rules/configuration', authenticateToken, requireEnterprise, (req, res) => controller.getOptimizationRulesConfiguration(req, res));
-router.put('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireEnterprise, (req, res) => controller.updateOptimizationRuleConfiguration(req, res));
-router.delete('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireEnterprise, (req, res) => controller.resetOptimizationRuleConfiguration(req, res));
+router.put('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireAdmin, requireEnterprise, (req, res) => controller.updateOptimizationRuleConfiguration(req, res));
+router.delete('/optimization-rules/configuration/:ruleId/:parameterId', authenticateToken, requireAdmin, requireEnterprise, (req, res) => controller.resetOptimizationRuleConfiguration(req, res));
 
 // Analyze AWS resources (create recommendations). Owner/admin only: it reads
 // the organization's AWS account and rewrites its recommendations.
@@ -79,7 +81,8 @@ router.post(
 // Dismiss recommendation. Member or above, same as resolve.
 router.patch('/:id/dismiss', authenticateToken, requireMember, (req, res) => controller.dismiss(req, res));
 
-// Delete recommendation
-router.delete('/:id', authenticateToken, (req, res) => controller.delete(req, res));
+// Delete recommendation. Owner/admin only: unlike resolve and dismiss, this
+// permanently removes the record.
+router.delete('/:id', authenticateToken, requireAdmin, (req, res) => controller.delete(req, res));
 
 export default router;

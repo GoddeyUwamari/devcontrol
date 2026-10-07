@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../config/database';
 import { authenticate } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/rbac.middleware';
 
 const router = Router();
 
@@ -83,8 +84,8 @@ router.get('/stats', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/tenants — create a new tenant
-router.post('/', async (req: Request, res: Response) => {
+// POST /api/tenants — create a new tenant (owner/admin only, as are PATCH and DELETE)
+router.post('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const organizationId = getOrgId(req);
     if (!organizationId) return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -122,7 +123,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PATCH /api/tenants/:id — update tenant
-router.patch('/:id', async (req: Request, res: Response) => {
+router.patch('/:id', requireAdmin, async (req: Request, res: Response) => {
   try {
     const organizationId = getOrgId(req);
     if (!organizationId) return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -158,7 +159,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/tenants/:id — delete tenant
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   try {
     const organizationId = getOrgId(req);
     if (!organizationId) return res.status(401).json({ success: false, error: 'Unauthorized' });

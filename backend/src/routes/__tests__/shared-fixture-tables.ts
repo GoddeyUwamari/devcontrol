@@ -117,6 +117,21 @@ const SHARED_FIXTURE_TABLES = {
       ip_address   VARCHAR(45),
       note         TEXT
     )`,
+  // Verbatim from backend/migrations/015_create_tenants.sql, which CI does not
+  // bootstrap (indexes omitted).
+  tenants: `
+    CREATE TABLE IF NOT EXISTS tenants (
+      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id  UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name             VARCHAR(255) NOT NULL,
+      email            VARCHAR(255) NOT NULL,
+      status           VARCHAR(50)  NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+      plan             VARCHAR(50)  NOT NULL DEFAULT 'free'   CHECK (plan IN ('free', 'starter', 'pro', 'enterprise')),
+      aws_resource_count INTEGER DEFAULT 0,
+      monthly_cost     NUMERIC(12, 2) DEFAULT 0.00,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
 } as const;
 
 export type SharedFixtureTable = keyof typeof SHARED_FIXTURE_TABLES;

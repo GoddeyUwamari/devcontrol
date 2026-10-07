@@ -121,7 +121,7 @@ export class AlertHistoryService {
     return this.repository.findById(id, organizationId);
   }
 
-  async acknowledgeAlert(id: string, organizationId: string, user: string = 'admin'): Promise<Alert | null> {
+  async acknowledgeAlert(id: string, organizationId: string, user: string): Promise<Alert | null> {
     const alert = await this.repository.findById(id, organizationId);
 
     if (!alert) {
