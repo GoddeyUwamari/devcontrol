@@ -207,7 +207,7 @@ describe('other remediation actions are unaffected', () => {
   });
 
   it('a handler that returns no rollback data still records rollback_available = false (unchanged by the dispatcher extraction)', async () => {
-    const pool = makeFakePool({ ...STOP_WORKFLOW, action_type: 'delete_snapshot', resource_id: 'snap-x' });
+    const pool = makeFakePool({ ...STOP_WORKFLOW, action_type: 'delete_snapshot', resource_id: 'snap-x', action_params: { resource_id: 'snap-x', region: 'us-east-1' } });
     const service = new RemediationService(pool);
     jest.spyOn(service as any, 'getAWSCredentials').mockResolvedValue({ accessKeyId: 'x', secretAccessKey: 'y', sessionToken: 'z', region: 'us-east-1' });
     jest.spyOn(service as any, 'assertNotDevControlInfrastructureByTag').mockResolvedValue(undefined);

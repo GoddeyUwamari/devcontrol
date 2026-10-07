@@ -87,6 +87,32 @@ export function assertActionAvailable(actionType: string): void {
   if (reason) throw new Error(`${ACTION_UNAVAILABLE_PREFIX} ${reason}`);
 }
 
+// A workflow has one target: resource_id. Every action handler reads its
+// target from action_params.resource_id, while the self-protection guards,
+// the rollback and the UI read the workflow's resource_id, so the two must
+// never differ. bindActionTarget() makes them equal when a workflow is
+// created; assertTargetBound() refuses to act on a stored row where they are
+// not (rows written before creation enforced this).
+export const TARGET_MISMATCH_PREFIX = 'TARGET_MISMATCH:';
+
+export function bindActionTarget(
+  resourceId: string,
+  actionParams: Record<string, any>
+): Record<string, any> {
+  if (actionParams.resource_id !== undefined && actionParams.resource_id !== resourceId) {
+    throw new Error(`${TARGET_MISMATCH_PREFIX} actionParams.resource_id must match resourceId`);
+  }
+  return { ...actionParams, resource_id: resourceId };
+}
+
+function assertTargetBound(workflow: { resource_id: string; action_params: Record<string, any> }): void {
+  if (workflow.action_params?.resource_id !== workflow.resource_id) {
+    throw new Error(
+      'REMEDIATION_BLOCKED: Workflow action target does not match its resource_id. No AWS action was taken.'
+    );
+  }
+}
+
 export class RemediationService {
   constructor(private pool: Pool) {}
 
@@ -159,24 +185,42 @@ export class RemediationService {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
-  private async getWorkflow(id: string): Promise<WorkflowRow> {
+  // Scoped to the caller's organization in the query itself, and again on the
+  // row it returns; another organization's workflow is answered exactly like
+  // one that does not exist.
+  private async getWorkflow(id: string, organizationId: string): Promise<WorkflowRow> {
     const result = await this.pool.query(
-      'SELECT * FROM remediation_workflows WHERE id = $1',
-      [id]
+      'SELECT * FROM remediation_workflows WHERE id = $1 AND organization_id = $2',
+      [id, organizationId]
     );
-    if (result.rows.length === 0) throw new Error(`Workflow ${id} not found`);
-    return result.rows[0];
+    const workflow = result.rows[0];
+    if (!workflow || workflow.organization_id !== organizationId) throw new Error('Workflow not found');
+    return workflow;
+  }
+
+  // The global kill-switch. Off by default so real AWS execution ships inert
+  // until explicitly enabled; applies to rollback as much as to execution.
+  private assertAutomatedRemediationEnabled(workflow: WorkflowRow, operation: string): void {
+    if (process.env.ENABLE_AUTOMATED_REMEDIATION !== 'true') {
+      console.log(
+        `[REMEDIATION BLOCKED] Dry-run mode enabled — workflow ${workflow.id} ` +
+        `(${operation} ${workflow.action_type} on ${workflow.resource_id}) not executed. ` +
+        `Set ENABLE_AUTOMATED_REMEDIATION=true to enable real AWS execution.`
+      );
+      throw new Error('DRY_RUN_MODE: Automated remediation is disabled. No AWS action was taken.');
+    }
   }
 
   private async updateStatus(
     workflowId: string,
+    organizationId: string,
     newStatus: WorkflowStatus,
     extras: Record<string, any> = {},
     auditNote?: string,
     changedBy?: string,
     ipAddress?: string
   ): Promise<void> {
-    const workflow = await this.getWorkflow(workflowId);
+    const workflow = await this.getWorkflow(workflowId, organizationId);
     const setFields = ['status = $1', 'updated_at = NOW()'];
     const values: any[] = [newStatus];
     let idx = 2;
@@ -185,10 +229,10 @@ export class RemediationService {
       setFields.push(`${key} = $${idx++}`);
       values.push(val);
     }
-    values.push(workflowId);
+    values.push(workflowId, organizationId);
 
     await this.pool.query(
-      `UPDATE remediation_workflows SET ${setFields.join(', ')} WHERE id = $${idx}`,
+      `UPDATE remediation_workflows SET ${setFields.join(', ')} WHERE id = $${idx} AND organization_id = $${idx + 1}`,
       values
     );
 
@@ -358,6 +402,7 @@ export class RemediationService {
     createdBy?: string
   ) {
     assertActionAvailable(data.actionType);
+    const actionParams = bindActionTarget(data.resourceId, data.actionParams);
 
     const result = await this.pool.query(
       `INSERT INTO remediation_workflows
@@ -371,7 +416,7 @@ export class RemediationService {
         data.resourceId,
         data.resourceType,
         data.actionType,
-        JSON.stringify(data.actionParams),
+        JSON.stringify(actionParams),
         data.estimatedSavings,
         data.riskLevel,
       ]
@@ -390,13 +435,13 @@ export class RemediationService {
   }
 
   async approve(workflowId: string, organizationId: string, approvedBy: string, ipAddress?: string) {
-    const workflow = await this.getWorkflow(workflowId);
-    if (workflow.organization_id !== organizationId) throw new Error('Workflow not found');
+    const workflow = await this.getWorkflow(workflowId, organizationId);
     assertActionAvailable(workflow.action_type);
     if (workflow.status !== 'pending_approval') throw new Error(`Cannot approve workflow in status: ${workflow.status}`);
 
     await this.updateStatus(
       workflowId,
+      organizationId,
       'approved',
       { approved_by: approvedBy, approved_at: new Date() },
       'Workflow approved',
@@ -404,7 +449,7 @@ export class RemediationService {
       ipAddress
     );
 
-    return this.getWorkflow(workflowId);
+    return this.getWorkflow(workflowId, organizationId);
   }
 
   async reject(
@@ -414,12 +459,12 @@ export class RemediationService {
     reason: string,
     ipAddress?: string
   ) {
-    const workflow = await this.getWorkflow(workflowId);
-    if (workflow.organization_id !== organizationId) throw new Error('Workflow not found');
+    const workflow = await this.getWorkflow(workflowId, organizationId);
     if (workflow.status !== 'pending_approval') throw new Error(`Cannot reject workflow in status: ${workflow.status}`);
 
     await this.updateStatus(
       workflowId,
+      organizationId,
       'rejected',
       { rejected_at: new Date(), rejection_reason: reason },
       `Rejected: ${reason}`,
@@ -427,14 +472,13 @@ export class RemediationService {
       ipAddress
     );
 
-    return this.getWorkflow(workflowId);
+    return this.getWorkflow(workflowId, organizationId);
   }
 
   // ─── Execute ──────────────────────────────────────────────────────────────
 
   async execute(workflowId: string, organizationId: string, executedBy: string, ipAddress?: string) {
-    const workflow = await this.getWorkflow(workflowId);
-    if (workflow.organization_id !== organizationId) throw new Error('Workflow not found');
+    const workflow = await this.getWorkflow(workflowId, organizationId);
     // Before any status change, credential fetch, or AWS call. dispatchAction()
     // repeats the check immediately before the handler (defense in depth).
     assertActionAvailable(workflow.action_type);
@@ -446,20 +490,17 @@ export class RemediationService {
     // regardless of kill-switch state (see comment on the guard methods above).
     this.assertNotDevControlInfrastructureByIdentifiers(workflow.organization_id, workflow.resource_id);
 
+    // The handlers act on action_params.resource_id; the guards inspect
+    // resource_id. Refuse unless they are the same resource.
+    assertTargetBound(workflow);
+
     // Global kill-switch — must be checked before any AWS SDK call fires.
-    // Off by default so this feature ships inert until explicitly enabled.
-    if (process.env.ENABLE_AUTOMATED_REMEDIATION !== 'true') {
-      console.log(
-        `[REMEDIATION BLOCKED] Dry-run mode enabled — workflow ${workflowId} ` +
-        `(${workflow.action_type} on ${workflow.resource_id}) not executed. ` +
-        `Set ENABLE_AUTOMATED_REMEDIATION=true to enable real AWS execution.`
-      );
-      throw new Error('DRY_RUN_MODE: Automated remediation is disabled. No AWS action was taken.');
-    }
+    this.assertAutomatedRemediationEnabled(workflow, 'execute');
 
     // Mark as executing
     await this.updateStatus(
       workflowId,
+      organizationId,
       'executing',
       { executed_by: executedBy, executed_at: new Date(), execution_log: '[Starting execution...]' },
       'Execution started',
@@ -493,6 +534,7 @@ export class RemediationService {
 
       await this.updateStatus(
         workflowId,
+        organizationId,
         'completed',
         {
           completed_at: new Date(),
@@ -508,6 +550,7 @@ export class RemediationService {
       log = this.appendLog(log, `ERROR: ${err.message}`);
       await this.updateStatus(
         workflowId,
+        organizationId,
         'failed',
         { execution_log: log },
         `Execution failed: ${err.message}`,
@@ -517,7 +560,7 @@ export class RemediationService {
       throw err;
     }
 
-    return this.getWorkflow(workflowId);
+    return this.getWorkflow(workflowId, organizationId);
   }
 
   /**
@@ -555,17 +598,29 @@ export class RemediationService {
   // ─── Rollback ─────────────────────────────────────────────────────────────
 
   async rollback(workflowId: string, organizationId: string, executedBy: string, ipAddress?: string) {
-    const workflow = await this.getWorkflow(workflowId);
-    if (workflow.organization_id !== organizationId) throw new Error('Workflow not found');
+    const workflow = await this.getWorkflow(workflowId, organizationId);
     assertActionAvailable(workflow.action_type);
     if (!workflow.rollback_available) throw new Error('Rollback is not available for this workflow');
     if (workflow.status !== 'completed') throw new Error('Can only rollback completed workflows');
+
+    // The same safety boundary as execute(), in the same order:
+    // self-protection layer 1, one target, then the kill-switch -- all before
+    // the credential fetch or any AWS call.
+    this.assertNotDevControlInfrastructureByIdentifiers(workflow.organization_id, workflow.resource_id);
+    assertTargetBound(workflow);
+    this.assertAutomatedRemediationEnabled(workflow, 'rollback');
 
     const creds = await this.getAWSCredentials(organizationId);
     const params = workflow.action_params as Record<string, any>;
     let log = this.appendLog(workflow.execution_log, `Rollback initiated by ${executedBy}`);
 
     try {
+      // Self-protection layer 2 — live tag check, before any mutating command.
+      await this.assertNotDevControlInfrastructureByTag(
+        this.makeEC2Client(creds, params.region),
+        workflow.resource_id
+      );
+
       if (workflow.action_type === 'stop_instance') {
         // Rollback: restart the instance
         const ec2 = this.makeEC2Client(creds, params.region);
@@ -582,6 +637,7 @@ export class RemediationService {
 
       await this.updateStatus(
         workflowId,
+        organizationId,
         'rolled_back',
         { execution_log: log },
         'Rollback completed',
@@ -591,13 +647,13 @@ export class RemediationService {
     } catch (err: any) {
       log = this.appendLog(log, `Rollback ERROR: ${err.message}`);
       await this.pool.query(
-        'UPDATE remediation_workflows SET execution_log = $1, updated_at = NOW() WHERE id = $2',
-        [log, workflowId]
+        'UPDATE remediation_workflows SET execution_log = $1, updated_at = NOW() WHERE id = $2 AND organization_id = $3',
+        [log, workflowId, organizationId]
       );
       throw err;
     }
 
-    return this.getWorkflow(workflowId);
+    return this.getWorkflow(workflowId, organizationId);
   }
 
   // ─── Action Implementations ───────────────────────────────────────────────
