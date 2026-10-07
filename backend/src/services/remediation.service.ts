@@ -475,6 +475,45 @@ export class RemediationService {
     return this.getWorkflow(workflowId, organizationId);
   }
 
+  /**
+   * Close an approved workflow whose execution was refused before anything
+   * ran, so it does not stay approved and executable. 'failed' is the state
+   * execute() already gives an attempt that did not complete; executed_by
+   * and executed_at stay unset because nothing was executed.
+   *
+   * The update applies only while the workflow is still approved. If it has
+   * already left that state (closed by a repeated call, or moved on by
+   * another request), nothing is changed or audited: it is no longer
+   * executable either way.
+   */
+  async closeUnexecuted(
+    workflowId: string,
+    organizationId: string,
+    closedBy: string,
+    reason: string,
+    ipAddress?: string
+  ) {
+    const workflow = await this.getWorkflow(workflowId, organizationId);
+    const note = `Not executed: ${reason}`;
+
+    const closed = await this.pool.query(
+      `UPDATE remediation_workflows SET status = 'failed', execution_log = $1, updated_at = NOW()
+        WHERE id = $2 AND organization_id = $3 AND status = 'approved'`,
+      [this.appendLog(workflow.execution_log, note), workflowId, organizationId]
+    );
+
+    if (closed.rowCount === 1) {
+      await this.pool.query(
+        `INSERT INTO remediation_audit_log
+           (workflow_id, old_status, new_status, changed_by, ip_address, note)
+         VALUES ($1, 'approved', 'failed', $2, $3, $4)`,
+        [workflowId, closedBy, ipAddress ?? null, note]
+      );
+    }
+
+    return this.getWorkflow(workflowId, organizationId);
+  }
+
   // ─── Execute ──────────────────────────────────────────────────────────────
 
   async execute(workflowId: string, organizationId: string, executedBy: string, ipAddress?: string) {
