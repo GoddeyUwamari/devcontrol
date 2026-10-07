@@ -1,15 +1,25 @@
 /**
  * Remediation Workflow Routes
  * All execution endpoints are Enterprise-only and require admin/owner role.
+ * Creating a draft is Enterprise-only and requires member, admin or owner.
  * IMPORTANT: No AWS action is taken without explicit human approval.
  */
 
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
+import { z } from 'zod';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
+import { requireMember } from '../middleware/rbac.middleware';
 import { remediationExecuteRateLimiter } from '../middleware/rateLimiter';
-import { RemediationService, ACTION_UNAVAILABLE_PREFIX } from '../services/remediation.service';
+import {
+  RemediationService,
+  ACTION_UNAVAILABLE_PREFIX,
+  TARGET_MISMATCH_PREFIX,
+} from '../services/remediation.service';
+import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+
+const recommendationIdSchema = z.string().uuid();
 
 function orgId(req: Request): string {
   return (req as any).organizationId || (req as any).user?.organizationId;
@@ -28,7 +38,7 @@ function requireAdminOrOwner(req: Request, res: Response): boolean {
   if (role !== 'admin' && role !== 'owner') {
     res.status(403).json({
       success: false,
-      error: 'Only admins and owners can approve, reject, or execute remediation workflows.',
+      error: 'Only admins and owners can approve, reject, execute, or roll back remediation workflows.',
     });
     return false;
   }
@@ -38,6 +48,7 @@ function requireAdminOrOwner(req: Request, res: Response): boolean {
 export function createRemediationRoutes(pool: Pool): Router {
   const router = Router();
   const service = new RemediationService(pool);
+  const recommendations = new CostRecommendationsRepository();
 
   // All routes require authentication
   router.use(authenticateToken);
@@ -55,7 +66,8 @@ export function createRemediationRoutes(pool: Pool): Router {
   });
 
   // ─── Create workflow ─────────────────────────────────────────────────────
-  router.post('/', requireEnterprise, async (req: Request, res: Response) => {
+  // A draft only: two database rows, no AWS call. Viewers are refused.
+  router.post('/', requireEnterprise, requireMember, async (req: Request, res: Response) => {
     try {
       const {
         recommendationId,
@@ -75,10 +87,35 @@ export function createRemediationRoutes(pool: Pool): Router {
         return;
       }
 
+      if (typeof resourceId !== 'string') {
+        res.status(400).json({ success: false, error: 'resourceId must be a string' });
+        return;
+      }
+
+      if (actionParams != null && (typeof actionParams !== 'object' || Array.isArray(actionParams))) {
+        res.status(400).json({ success: false, error: 'actionParams must be an object' });
+        return;
+      }
+
+      // A referenced recommendation must belong to the caller's organization.
+      // Another organization's recommendation is answered exactly like one
+      // that does not exist.
+      if (recommendationId != null) {
+        if (!recommendationIdSchema.safeParse(recommendationId).success) {
+          res.status(400).json({ success: false, error: 'recommendationId must be a valid UUID' });
+          return;
+        }
+        const recommendation = await recommendations.findById(recommendationId, orgId(req));
+        if (!recommendation) {
+          res.status(404).json({ success: false, error: 'Recommendation not found' });
+          return;
+        }
+      }
+
       const workflow = await service.createWorkflow(
         orgId(req),
         {
-          recommendationId,
+          recommendationId: recommendationId ?? undefined,
           resourceId,
           resourceType,
           actionType,
@@ -92,7 +129,10 @@ export function createRemediationRoutes(pool: Pool): Router {
       res.status(201).json({ success: true, data: workflow });
     } catch (err: any) {
       console.error('[Remediation] create error:', err);
-      if (err.message?.startsWith(ACTION_UNAVAILABLE_PREFIX)) {
+      if (
+        err.message?.startsWith(ACTION_UNAVAILABLE_PREFIX) ||
+        err.message?.startsWith(TARGET_MISMATCH_PREFIX)
+      ) {
         res.status(400).json({ success: false, error: err.message });
         return;
       }
@@ -176,6 +216,7 @@ export function createRemediationRoutes(pool: Pool): Router {
         const status =
           err.message.includes('not found') ? 404 :
           err.message.includes('must be approved') ? 400 :
+          err.message.startsWith('DRY_RUN_MODE') ? 400 :
           err.message.startsWith(ACTION_UNAVAILABLE_PREFIX) ? 400 : 500;
         res.status(status).json({ success: false, error: err.message });
       }
