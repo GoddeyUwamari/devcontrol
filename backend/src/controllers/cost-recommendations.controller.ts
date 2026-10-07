@@ -661,14 +661,11 @@ export class CostRecommendationsController {
         });
       } catch (execErr: any) {
         if (execErr.message?.startsWith('DRY_RUN_MODE')) {
-          // Kill-switch is off — same outcome as the pre-existing status-only
-          // resolve, but the workflow row records that execution was attempted.
-          const resolved = await repository.updateStatus(id, 'RESOLVED', organizationId);
-          res.json({
-            success: true,
-            data: { recommendation: resolved, workflow: null },
-            message: 'Automated remediation is disabled (dry-run mode) — recommendation marked resolved without taking any AWS action.',
-          });
+          // Kill-switch is off, so nothing ran. Leave the recommendation
+          // ACTIVE and close the workflow this request approved, so it is
+          // neither reported as done nor left behind as executable.
+          await remediationService.closeUnexecuted(workflow.id, organizationId, userId, execErr.message, req.ip);
+          res.status(400).json({ success: false, error: execErr.message, data: { workflowId: workflow.id } });
           return;
         }
 
