@@ -5,6 +5,7 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
+import { requireMember } from '../middleware/rbac.middleware';
 import { requirePlatformStaff } from '../middleware/platformAuth.middleware';
 import { onboardingService } from '../services/onboarding.service';
 
@@ -40,10 +41,10 @@ router.get('/status', authenticate, async (req: Request, res: Response, next: Ne
 
 // =====================================================
 // POST /api/onboarding/complete/:step
-// Mark a specific step as complete
+// Mark a specific step as complete (member or above)
 // =====================================================
 
-router.post('/complete/:step', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/complete/:step', authenticate, requireMember, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const organizationId = (req as any).user?.organizationId;
     const userId = (req as any).user?.userId;
@@ -83,10 +84,10 @@ router.post('/complete/:step', authenticate, async (req: Request, res: Response,
 
 // =====================================================
 // POST /api/onboarding/dismiss
-// Dismiss/skip onboarding
+// Dismiss/skip onboarding (member or above)
 // =====================================================
 
-router.post('/dismiss', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/dismiss', authenticate, requireMember, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const organizationId = (req as any).user?.organizationId;
     const userId = (req as any).user?.userId;
@@ -115,10 +116,10 @@ router.post('/dismiss', authenticate, async (req: Request, res: Response, next: 
 
 // =====================================================
 // POST /api/onboarding/re-enable
-// Re-enable onboarding if user dismissed it
+// Re-enable onboarding if user dismissed it (member or above)
 // =====================================================
 
-router.post('/re-enable', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/re-enable', authenticate, requireMember, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const organizationId = (req as any).user?.organizationId;
     const userId = (req as any).user?.userId;

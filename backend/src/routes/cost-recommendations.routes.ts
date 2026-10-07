@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { CostRecommendationsController } from '../controllers/cost-recommendations.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireEnterprise } from '../middleware/subscription.middleware';
-import { requireAdmin } from '../middleware/rbac.middleware';
+import { requireAdmin, requireMember } from '../middleware/rbac.middleware';
 import { remediationExecuteRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
@@ -57,8 +57,9 @@ router.post('/analyze', authenticateToken, requireAdmin, (req, res) => controlle
 // Get single recommendation by ID
 router.get('/:id', authenticateToken, (req, res) => controller.getById(req, res));
 
-// Resolve recommendation (status-only — unchanged for every recommendation type)
-router.patch('/:id/resolve', authenticateToken, (req, res) => controller.resolve(req, res));
+// Resolve recommendation (status-only — unchanged for every recommendation
+// type). Member or above: triage is not open to viewers.
+router.patch('/:id/resolve', authenticateToken, requireMember, (req, res) => controller.resolve(req, res));
 
 // Execute real remediation for an Idle EC2 recommendation — enterprise-tier +
 // admin/owner only, rate-limited same as /api/remediation/:id/execute. The
@@ -75,8 +76,8 @@ router.post(
   }
 );
 
-// Dismiss recommendation
-router.patch('/:id/dismiss', authenticateToken, (req, res) => controller.dismiss(req, res));
+// Dismiss recommendation. Member or above, same as resolve.
+router.patch('/:id/dismiss', authenticateToken, requireMember, (req, res) => controller.dismiss(req, res));
 
 // Delete recommendation
 router.delete('/:id', authenticateToken, (req, res) => controller.delete(req, res));

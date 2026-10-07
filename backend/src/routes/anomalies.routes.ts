@@ -9,7 +9,7 @@ import { AnomalyRepository } from '../repositories/anomaly.repository';
 import { AnomalyDetectionService } from '../services/anomaly-detection.service';
 import { AnomalyAIService } from '../services/anomaly-ai.service';
 import { authenticateToken } from '../middleware/auth.middleware';
-import { requireAdmin } from '../middleware/rbac.middleware';
+import { requireAdmin, requireMember } from '../middleware/rbac.middleware';
 
 export const createAnomaliesRoutes = (pool: Pool): Router => {
   const router = Router();
@@ -74,7 +74,8 @@ export const createAnomaliesRoutes = (pool: Pool): Router => {
     }
   });
 
-  router.patch('/:id/acknowledge', async (req, res) => {
+  // Triage (acknowledge, resolve, false-positive): member or above.
+  router.patch('/:id/acknowledge', requireMember, async (req, res) => {
     try {
       const { id } = req.params;
       const organizationId = (req as any).user?.organizationId;
@@ -89,7 +90,7 @@ export const createAnomaliesRoutes = (pool: Pool): Router => {
     }
   });
 
-  router.patch('/:id/resolve', async (req, res) => {
+  router.patch('/:id/resolve', requireMember, async (req, res) => {
     try {
       const { id } = req.params;
       const { notes } = req.body;
@@ -103,7 +104,7 @@ export const createAnomaliesRoutes = (pool: Pool): Router => {
     }
   });
 
-  router.patch('/:id/false-positive', async (req, res) => {
+  router.patch('/:id/false-positive', requireMember, async (req, res) => {
     try {
       const { id } = req.params;
       const { notes } = req.body;

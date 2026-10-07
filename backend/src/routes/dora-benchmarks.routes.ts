@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireMember } from '../middleware/rbac.middleware';
 
 const VALID_METRICS = [
   'deployment_frequency',
@@ -63,8 +64,9 @@ export function createDoraBenchmarksRoutes(pool: Pool): Router {
    *
    * Body: { metric_name, target_value, performance_label? }
    * target_unit is derived automatically from metric_name.
+   * Member or above.
    */
-  router.post('/benchmarks', async (req: Request, res: Response) => {
+  router.post('/benchmarks', requireMember, async (req: Request, res: Response) => {
     try {
       const organizationId = getOrgId(req);
       const { metric_name, target_value, performance_label } = req.body;
@@ -112,8 +114,9 @@ export function createDoraBenchmarksRoutes(pool: Pool): Router {
   /**
    * DELETE /api/dora/benchmarks/:metric
    * Reset a metric to industry standard by deleting the custom benchmark row.
+   * Member or above.
    */
-  router.delete('/benchmarks/:metric', async (req: Request, res: Response) => {
+  router.delete('/benchmarks/:metric', requireMember, async (req: Request, res: Response) => {
     try {
       const organizationId = getOrgId(req);
       const { metric } = req.params;

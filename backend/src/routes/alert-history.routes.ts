@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../config/database';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireMember } from '../middleware/rbac.middleware';
 import { AlertHistoryController } from '../controllers/alert-history.controller';
 
 const router = Router();
@@ -42,18 +43,18 @@ router.get('/:id', (req, res) => controller.getAlert(req, res));
 
 /**
  * PATCH /api/alerts/:id/acknowledge
- * Acknowledge an alert
+ * Acknowledge an alert. Member or above.
  *
  * Body:
  * - user: Username (optional, defaults to 'admin')
  */
-router.patch('/:id/acknowledge', (req, res) => controller.acknowledgeAlert(req, res));
+router.patch('/:id/acknowledge', requireMember, (req, res) => controller.acknowledgeAlert(req, res));
 
 /**
  * PATCH /api/alerts/:id/resolve
- * Resolve an alert
+ * Resolve an alert. Member or above.
  */
-router.patch('/:id/resolve', (req, res) => controller.resolveAlert(req, res));
+router.patch('/:id/resolve', requireMember, (req, res) => controller.resolveAlert(req, res));
 
 /**
  * DELETE /api/alerts/:id

@@ -8,7 +8,7 @@ import { pool } from '../config/database';
 import { AIInsightsService } from '../services/ai-insights.service';
 import { AIInsightsController } from '../controllers/ai-insights.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { requireOwner } from '../middleware/rbac.middleware';
+import { requireMember, requireOwner } from '../middleware/rbac.middleware';
 import { weeklySummaryTriggerRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
@@ -28,8 +28,9 @@ router.post('/analyze-cost', aiInsightsController.analyzeCost);
 router.get('/cache-stats', aiInsightsController.getCacheStats);
 
 // POST /api/ai-insights/clear-cache
-// Clear the caller's organization's insights cache (other orgs untouched)
-router.post('/clear-cache', aiInsightsController.clearCache);
+// Clear the caller's organization's insights cache (other orgs untouched).
+// Member or above.
+router.post('/clear-cache', requireMember, aiInsightsController.clearCache);
 
 // POST /api/ai-insights/trigger-weekly-summary
 // Manually send the weekly summary email for the caller's own org. Owner only
