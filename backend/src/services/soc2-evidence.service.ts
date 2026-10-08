@@ -32,7 +32,8 @@
  * FOUR MATERIAL DISCREPANCIES FOUND DURING IMPLEMENTATION AUDIT, resolved here (see the
  * accompanying implementation report for full reasoning):
  *
- * 1. checkS3PublicAccessEnhanced() (complianceScanner.ts) has NO completeness signal --
+ * 1. The S3 public-access check (complianceScanner.ts, evaluateS3Security(); formerly
+ *    checkS3PublicAccessEnhanced()) has NO persisted completeness signal --
  *    unlike checkSecurityGroups()/checkIAMSecurity(), it returns a bare
  *    ComplianceIssue[] and silently console.error()s on failure, both at its own call
  *    site and in awsResourceDiscovery.ts's caller. Absence of its finding text in a
@@ -101,13 +102,25 @@ import {
   Soc2EvidenceSummary,
   Soc2ObservationReconciliationScope,
 } from '../types/soc2-evidence.types';
+import { S3_FINDING_KEYS } from '../utils/s3FindingKeys';
 
-/** The exact issue text checkS3PublicAccessEnhanced() emits -- read here, never
- * reproduced/recomputed. See complianceScanner.ts. */
-const S3_ENHANCED_FINDING_TEXTS = [
+/** The S3 public-access findings evaluateS3Security() emits, matched by stable key. */
+const S3_PUBLIC_ACCESS_FINDING_KEYS: readonly string[] = [
+  S3_FINDING_KEYS.publicPolicy,
+  S3_FINDING_KEYS.publicAcl,
+];
+
+/** Issue texts written before S3 findings carried a key. Matched only until the
+ * bucket's next scan rewrites its compliance_issues with keyed findings. */
+const LEGACY_S3_PUBLIC_ACCESS_FINDING_TEXTS: readonly string[] = [
   'S3 bucket ACL allows public read access',
   'S3 bucket policy allows public access (wildcard principal)',
 ];
+
+function isS3PublicAccessFinding(issue: { findingKey?: string; issue?: string }): boolean {
+  if (issue.findingKey) return S3_PUBLIC_ACCESS_FINDING_KEYS.includes(issue.findingKey);
+  return LEGACY_S3_PUBLIC_ACCESS_FINDING_TEXTS.includes(issue.issue ?? '');
+}
 
 /** Resource types whose is_encrypted/is_public/has_backup are real, deep-discovered
  * AWS evidence (see this file's docblock, discrepancy #5). 'aurora' is deliberately
@@ -120,7 +133,7 @@ interface SourceResourceRow {
   is_encrypted: boolean | null;
   is_public: boolean | null;
   has_backup: boolean | null;
-  compliance_issues: Array<{ issue?: string }> | null;
+  compliance_issues: Array<{ issue?: string; findingKey?: string; verification?: 'unverified' }> | null;
 }
 
 interface SourceFindingRow {
@@ -319,30 +332,44 @@ export class Soc2EvidenceService {
       observations.push(this.observation(organizationId, 'CC6.6', r.resource_arn, r.resource_type, result, collectedAt, source, explanation));
     }
 
-    // S3: deliberately NOT is_public. Uses checkS3PublicAccessEnhanced()'s
-    // already-produced result (ACL + bucket-policy, positive-finding-only), read from
-    // compliance_issues -- never recomputed, never a new AWS call. See this file's
-    // docblock, discrepancy #1.
+    // S3: deliberately NOT is_public. Uses the S3 security evaluation's
+    // already-produced public-access findings (bucket policy + ACL, positive-finding-only),
+    // read from compliance_issues by stable key -- never recomputed, never a new AWS
+    // call. See this file's docblock, discrepancy #1. A finding carried forward
+    // unverified (the latest scan could not evaluate the check) is UNKNOWN, not
+    // CONTRADICTS; a verified finding takes precedence over an unverified one.
     for (const r of resources.filter((r) => r.resource_type === 's3')) {
       const issues = r.compliance_issues ?? [];
-      const matchedFinding = issues.find((i) => S3_ENHANCED_FINDING_TEXTS.includes(i.issue ?? ''));
+      const matches = issues.filter(isS3PublicAccessFinding);
+      const verifiedFinding = matches.find((i) => i.verification !== 'unverified');
+      const unverifiedFinding = matches.find((i) => i.verification === 'unverified');
+      const absentSource: Soc2EvidenceSource = {
+        source_type: 'compliance_issue_absent',
+        issue_text: LEGACY_S3_PUBLIC_ACCESS_FINDING_TEXTS.join(' | '),
+        finding_keys: [...S3_PUBLIC_ACCESS_FINDING_KEYS],
+        resource_type: 's3',
+      };
 
       let result: Soc2EvidenceResult;
       let source: Soc2EvidenceSource;
       let explanation: string;
 
-      if (matchedFinding) {
+      if (verifiedFinding) {
         result = 'CONTRADICTS';
-        source = { source_type: 'compliance_issue', issue_text: matchedFinding.issue!, resource_type: 's3' };
-        explanation = `checkS3PublicAccessEnhanced() recorded: "${matchedFinding.issue}".`;
+        source = { source_type: 'compliance_issue', issue_text: verifiedFinding.issue ?? '', finding_key: verifiedFinding.findingKey, resource_type: 's3' };
+        explanation = `The S3 public-access evaluation recorded: "${verifiedFinding.issue}".`;
+      } else if (unverifiedFinding) {
+        result = 'UNKNOWN';
+        source = { source_type: 'compliance_issue', issue_text: unverifiedFinding.issue ?? '', finding_key: unverifiedFinding.findingKey, resource_type: 's3' };
+        explanation = `An earlier scan recorded "${unverifiedFinding.issue}", but the latest scan could not evaluate this check, so it is unverified.`;
       } else if (discoveryComplete) {
         result = 'SUPPORTS';
-        source = { source_type: 'compliance_issue_absent', issue_text: S3_ENHANCED_FINDING_TEXTS.join(' | '), resource_type: 's3' };
-        explanation = 'checkS3PublicAccessEnhanced() recorded no ACL or bucket-policy public-exposure finding for this bucket, and the organization’s most recent discovery job completed successfully.';
+        source = absentSource;
+        explanation = 'The S3 public-access evaluation recorded no ACL or bucket-policy public-exposure finding for this bucket, and the organization’s most recent discovery job completed successfully.';
       } else {
         result = 'UNKNOWN';
-        source = { source_type: 'compliance_issue_absent', issue_text: S3_ENHANCED_FINDING_TEXTS.join(' | '), resource_type: 's3' };
-        explanation = 'checkS3PublicAccessEnhanced() recorded no finding for this bucket, but the organization’s most recent discovery job did not complete successfully, so absence cannot be trusted as confirmed-clean.';
+        source = absentSource;
+        explanation = 'The S3 public-access evaluation recorded no finding for this bucket, but the organization’s most recent discovery job did not complete successfully, so absence cannot be trusted as confirmed-clean.';
       }
 
       observations.push(this.observation(organizationId, 'CC6.6', r.resource_arn, 's3', result, collectedAt, source, explanation));
