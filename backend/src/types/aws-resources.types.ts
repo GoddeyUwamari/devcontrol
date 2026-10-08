@@ -138,7 +138,7 @@ export interface ComplianceIssue {
   resource_arn?: string;
   /**
    * Optional stable identity, set by detectors that have one (checkSecurityGroups,
-   * checkIAMSecurity) instead of relying on AccountSecurityFindingsRepository's
+   * checkIAMSecurity, the S3 security evaluation) instead of relying on AccountSecurityFindingsRepository's
    * generic resource_arn|category|issue hash, which is unstable when `issue`
    * embeds a mutable human-readable name or value (e.g. an access key's age).
    */
@@ -147,6 +147,12 @@ export interface ComplianceIssue {
   evidence?: FindingEvidence;
   /** Optional evidence-source classification — see ComplianceIssueProvenance. */
   provenance?: ComplianceIssueProvenance;
+  /**
+   * 'unverified': a finding carried forward from an earlier scan because this scan
+   * could not evaluate the check. It was true when last verified and is not a fresh
+   * observation. Absent on findings this scan verified.
+   */
+  verification?: 'unverified';
 }
 
 /**

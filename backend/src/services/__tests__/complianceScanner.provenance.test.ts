@@ -105,9 +105,14 @@ describe('OBSERVED producers -- checkEncryption/checkPublicAccess/checkBackups',
   });
 
   it('checkPublicAccess emits OBSERVED', () => {
-    const issues = (service as any).checkPublicAccess(resource({ resource_type: 's3', is_public: true }));
+    const issues = (service as any).checkPublicAccess(resource({ resource_type: 'rds', is_public: true }));
     expect(issues).toHaveLength(1);
     expect(issues[0].provenance).toBe('OBSERVED');
+  });
+
+  it('checkPublicAccess leaves S3 to evaluateS3Security (no duplicate public-ACL finding)', () => {
+    const issues = (service as any).checkPublicAccess(resource({ resource_type: 's3', is_public: true }));
+    expect(issues).toHaveLength(0);
   });
 
   it('checkBackups emits OBSERVED on verified-false evidence', () => {
@@ -162,18 +167,31 @@ describe('HIPAA findings are NOT assigned a blanket provenance', () => {
 });
 
 describe('OBSERVED producers requiring an AWS client mock', () => {
-  it('checkS3PublicAccessEnhanced emits OBSERVED for a public ACL finding', async () => {
-    const send = jest.fn()
-      .mockResolvedValueOnce({ Grants: [{ Grantee: { URI: 'http://acs.amazonaws.com/groups/global/AllUsers' }, Permission: 'READ' }] })
-      .mockRejectedValueOnce(Object.assign(new Error('no policy'), { name: 'NoSuchBucketPolicy' }));
+  it('evaluateS3Security emits OBSERVED for a public ACL finding', async () => {
+    const notFound = (name: string) => Object.assign(new Error(name), { name });
+    const send = jest.fn(async (command: { constructor: { name: string } }) => {
+      switch (command.constructor.name) {
+        case 'GetBucketAclCommand':
+          return { Grants: [{ Grantee: { URI: 'http://acs.amazonaws.com/groups/global/AllUsers' }, Permission: 'READ' }] };
+        case 'GetBucketOwnershipControlsCommand':
+          return { OwnershipControls: { Rules: [{ ObjectOwnership: 'ObjectWriter' }] } };
+        case 'GetPublicAccessBlockCommand':
+          throw notFound('NoSuchPublicAccessBlockConfiguration');
+        default:
+          throw notFound('NoSuchBucketPolicy');
+      }
+    });
     const s3Client = { send } as unknown as S3Client;
+    const s3Control = { send: jest.fn().mockRejectedValue(notFound('NoSuchPublicAccessBlockConfiguration')) };
 
-    const issues = await service.checkS3PublicAccessEnhanced(
-      resource({ resource_type: 's3', resource_id: 'bucket-1' }),
-      s3Client
+    const result = await service.evaluateS3Security(
+      resource({ resource_type: 's3', resource_id: 'bucket-1', resource_arn: 'arn:aws:s3:::bucket-1' }),
+      s3Client,
+      { s3Control: s3Control as any, accountId: '111122223333' }
     );
-    expect(issues).toHaveLength(1);
-    expect(issues[0].provenance).toBe('OBSERVED');
+    const aclIssues = result!.issues.filter((i) => i.category === 'public_access');
+    expect(aclIssues).toHaveLength(1);
+    expect(aclIssues[0].provenance).toBe('OBSERVED');
   });
 
   it('checkSecurityGroups emits OBSERVED for an unrestricted-ingress finding', async () => {

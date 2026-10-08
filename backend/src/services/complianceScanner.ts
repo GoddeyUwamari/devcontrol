@@ -7,11 +7,8 @@ import {
   IamMfaEvidence,
   IamAccessKeyEvidence,
 } from '../types/aws-resources.types';
-import {
-  S3Client,
-  GetBucketAclCommand,
-  GetBucketPolicyCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PublicAccessBlockConfiguration } from '@aws-sdk/client-s3';
+import { S3ControlClient } from '@aws-sdk/client-s3-control';
 import {
   EC2Client,
   DescribeSecurityGroupsCommand,
@@ -26,6 +23,15 @@ import {
 } from '@aws-sdk/client-iam';
 import { computeSecurityGroupFindingKey, IpVersion } from '../utils/securityGroupFindingKey';
 import { computeIamFindingKey } from '../utils/iamFindingKey';
+import {
+  Observed,
+  S3SecurityEvaluation,
+  collectS3SecurityEvidence,
+  fetchAccountPublicAccessBlock,
+  evaluateS3Security as evaluateS3Evidence,
+  s3FindingsFromEvaluation,
+  carryForwardUnverifiedS3Findings,
+} from './s3-security-evaluation';
 
 /**
  * A single category's scan result plus whether it's safe to trust an absence
@@ -43,6 +49,12 @@ export interface CategoryObservation {
  * Scans AWS resources for security and compliance issues
  */
 export class ComplianceScannerService {
+  // Account-level Block Public Access, fetched once per account for the lifetime of
+  // this scanner. Discovery creates one scanner per scan, so this is once per scan
+  // rather than once per bucket. A failed lookup is cached too: every bucket in the
+  // scan then sees it as unavailable (unknown), never as unprotected.
+  private readonly accountPublicAccessBlocks = new Map<string, Promise<Observed<PublicAccessBlockConfiguration>>>();
+
   /**
    * Scan a single resource for compliance issues
    */
@@ -130,18 +142,15 @@ export class ComplianceScannerService {
   private checkPublicAccess(resource: AWSResource): ComplianceIssue[] {
     const issues: ComplianceIssue[] = [];
 
-    if (resource.is_public) {
+    // S3 public access is evaluated by evaluateS3Security from the bucket policy, ACL,
+    // Object Ownership and Block Public Access. is_public alone (a raw ACL grant) would
+    // duplicate its ACL finding and ignore Block Public Access.
+    if (resource.is_public && resource.resource_type !== 's3') {
       let severity: ComplianceSeverity = 'high';
       let issue = '';
       let recommendation = '';
 
       switch (resource.resource_type) {
-        case 's3':
-          severity = 'critical';
-          issue = 'S3 bucket is publicly accessible';
-          recommendation = 'Remove public access permissions from bucket ACL and bucket policy. Enable S3 Block Public Access.';
-          break;
-
         case 'rds':
           severity = 'critical';
           issue = 'RDS database is publicly accessible';
@@ -364,8 +373,10 @@ export class ComplianceScannerService {
       }
     }
 
-    // HIPAA: Encryption in transit for data stores
-    if (['rds', 's3', 'elasticache'].includes(resource.resource_type)) {
+    // HIPAA: Encryption in transit for data stores. S3 is not checked here: its
+    // HTTPS-only enforcement is a baseline check evaluated from the bucket policy
+    // (evaluateS3Security), not from tags, which S3 discovery does not collect.
+    if (['rds', 'elasticache'].includes(resource.resource_type)) {
       const hasTransitEncryption = resource.tags?.['SSLEnabled'] ||
                                    resource.tags?.['TLSEnabled'] ||
                                    resource.tags?.['EncryptionInTransit'];
@@ -374,9 +385,6 @@ export class ComplianceScannerService {
         switch (resource.resource_type) {
           case 'rds':
             recommendation = 'Enable SSL/TLS connections and enforce with rds.force_ssl parameter. Tag with "SSLEnabled:true".';
-            break;
-          case 's3':
-            recommendation = 'Create bucket policy requiring aws:SecureTransport condition. Use HTTPS endpoints only.';
             break;
           case 'elasticache':
             recommendation = 'Enable in-transit encryption when creating the cluster. Recreate cluster if necessary.';
@@ -526,72 +534,39 @@ export class ComplianceScannerService {
   }
 
   /**
-   * Enhanced S3 public access check
-   * Checks both ACL and bucket policy for public access
+   * S3 public access (bucket policy, ACL) and HTTPS-only enforcement, each evaluated
+   * to pass/fail/unknown from AWS evidence -- see s3-security-evaluation.ts. Returns
+   * the verified findings plus, for controls that came out 'unknown', the previous
+   * snapshot's finding for the same key marked unverified.
    */
-  async checkS3PublicAccessEnhanced(resource: AWSResource, s3Client: S3Client): Promise<ComplianceIssue[]> {
-    if (resource.resource_type !== 's3') return [];
+  async evaluateS3Security(
+    resource: AWSResource,
+    s3Client: S3Client,
+    options: { s3Control?: S3ControlClient; accountId?: string } = {}
+  ): Promise<{ issues: ComplianceIssue[]; evaluation: S3SecurityEvaluation } | null> {
+    if (resource.resource_type !== 's3') return null;
 
-    const issues: ComplianceIssue[] = [];
+    const accountPublicAccessBlock = await this.accountPublicAccessBlock(options.s3Control, options.accountId);
+    const evidence = await collectS3SecurityEvidence(resource.resource_id, s3Client, accountPublicAccessBlock);
+    const evaluation = evaluateS3Evidence(evidence);
+    const issues = [
+      ...s3FindingsFromEvaluation(resource.resource_arn, evaluation),
+      ...carryForwardUnverifiedS3Findings(resource.compliance_issues, evaluation),
+    ];
+    return { issues, evaluation };
+  }
 
-    try {
-      // Check bucket ACL
-      try {
-        const { Grants } = await s3Client.send(
-          new GetBucketAclCommand({ Bucket: resource.resource_id })
-        );
-
-        const hasPublicRead = Grants?.some(grant =>
-          grant.Grantee?.URI === 'http://acs.amazonaws.com/groups/global/AllUsers' &&
-          (grant.Permission === 'READ' || grant.Permission === 'FULL_CONTROL')
-        );
-
-        if (hasPublicRead) {
-          issues.push({
-            severity: 'critical',
-            category: 'public_access',
-            issue: 'S3 bucket ACL allows public read access',
-            recommendation: 'Remove public read permissions from bucket ACL. Use AWS S3 Block Public Access feature.',
-            resource_arn: resource.resource_arn,
-            provenance: 'OBSERVED',
-          });
-        }
-      } catch (error: any) {
-        console.error('[Compliance] Error checking S3 ACL:', error.message);
-      }
-
-      // Check bucket policy for public access
-      try {
-        const { Policy } = await s3Client.send(
-          new GetBucketPolicyCommand({ Bucket: resource.resource_id })
-        );
-
-        if (Policy) {
-          const policyDoc = JSON.parse(Policy);
-
-          // Check for wildcard principals
-          if (Policy.includes('"Principal":"*"') || Policy.includes('"Principal":{"AWS":"*"}')) {
-            issues.push({
-              severity: 'critical',
-              category: 'public_access',
-              issue: 'S3 bucket policy allows public access (wildcard principal)',
-              recommendation: 'Restrict bucket policy to specific IAM principals or AWS accounts only.',
-              resource_arn: resource.resource_arn,
-              provenance: 'OBSERVED',
-            });
-          }
-        }
-      } catch (error: any) {
-        // NoSuchBucketPolicy error is expected for buckets without policies
-        if (error.name !== 'NoSuchBucketPolicy') {
-          console.error('[Compliance] Error checking S3 policy:', error.message);
-        }
-      }
-    } catch (error: any) {
-      console.error('[Compliance] Error in S3 public access check:', error.message);
+  private accountPublicAccessBlock(
+    s3Control?: S3ControlClient,
+    accountId?: string
+  ): Promise<Observed<PublicAccessBlockConfiguration>> {
+    if (!s3Control || !accountId) return fetchAccountPublicAccessBlock(s3Control, accountId);
+    let cached = this.accountPublicAccessBlocks.get(accountId);
+    if (!cached) {
+      cached = fetchAccountPublicAccessBlock(s3Control, accountId);
+      this.accountPublicAccessBlocks.set(accountId, cached);
     }
-
-    return issues;
+    return cached;
   }
 
   /**
