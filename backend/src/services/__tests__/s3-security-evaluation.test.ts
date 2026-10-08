@@ -412,10 +412,11 @@ describe('wildcard matching (no RegExp from policy text)', () => {
     expect(wildcardMatch('arn:aws:s3:::b.c', 'arn:aws:s3:::bxc', false)).toBe(false); // '.' is literal
   });
 
-  it('a pathological pattern completes in < 50 ms, both matching and mismatching', () => {
+  it('long wildcard patterns complete in < 250 ms, both matching and mismatching', () => {
     expect(bucketArn).toHaveLength(40);
-    // 'a*' x 50 needs at least 50 'a's, so against a 27-character bucket name every
-    // comparison fails after maximal backtracking -- the case that hung the old RegExp.
+    // 'a*' x 50 needs at least 50 'a's, more than the 27-character bucket name has, so a
+    // backtracking RegExp rejects these quickly too. These cases check correctness and a
+    // loose time bound; the backtracking regression is pinned by the test below.
     const pathological = 'arn:aws:s3:::' + 'a*'.repeat(50) + '/*';
     const mismatching = 'arn:aws:s3:::' + 'a*'.repeat(50) + 'zz';
     const matching = 'arn:aws:s3:::' + 'a*'.repeat(20) + '/*';
@@ -426,10 +427,10 @@ describe('wildcard matching (no RegExp from policy text)', () => {
     expect(wildcardMatch(mismatching, bucketArn, false)).toBe(false);
     expect(wildcardMatch(matching, `${bucketArn}/`, false)).toBe(true);
     expect(wildcardMatch(matching, bucketArn, false)).toBe(false); // bucket-ARN mismatch case
-    expect(Date.now() - started).toBeLessThan(50);
+    expect(Date.now() - started).toBeLessThan(250);
   });
 
-  it('a bucket policy built from such patterns evaluates in < 50 ms', () => {
+  it('a bucket policy built from such patterns evaluates in < 250 ms', () => {
     const policy = policyWith([{
       Effect: 'Deny', Principal: '*', Action: 's3:*',
       Resource: ['arn:aws:s3:::' + 'a*'.repeat(20) + '/*', 'arn:aws:s3:::' + 'a*'.repeat(50) + 'zz', 'arn:aws:s3:::' + 'a*'.repeat(50) + '/*'],
@@ -437,9 +438,30 @@ describe('wildcard matching (no RegExp from policy text)', () => {
     }]);
     const started = Date.now();
     const result = evaluateHttpsOnly({ ...unprotected({ policy }), bucketName: 'a'.repeat(27) });
-    expect(Date.now() - started).toBeLessThan(50);
+    expect(Date.now() - started).toBeLessThan(250);
     expect(result).toMatchObject({ status: 'fail', reason: 'HTTPS-only deny does not cover: s3:ListBucket' });
   });
+
+  it('a backtracking-prone bucket policy evaluates in < 250 ms (ReDoS regression)', () => {
+    // The bucket name has more 'a's than each pattern requires, so a backtracking
+    // RegExp explores every way to split the name between the wildcards before the
+    // trailing 'zz' fails. Against the former RegExp matcher: 'a*' x 9 took ~2.6 s and
+    // 'a*' x 12 did not finish within 30 s. The x9 case runs first so a regression
+    // fails in seconds: Jest's timeout cannot interrupt a synchronous loop, so the
+    // x12 case alone would hang rather than fail.
+    const bucketName = 'a'.repeat(40);
+    for (const stars of [9, 12]) {
+      const policy = policyWith([{
+        Effect: 'Deny', Principal: '*', Action: 's3:*',
+        Resource: ['arn:aws:s3:::' + 'a*'.repeat(stars) + 'zz'],
+        Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+      }]);
+      const started = Date.now();
+      const result = evaluateHttpsOnly({ ...unprotected({ policy }), bucketName });
+      expect(Date.now() - started).toBeLessThan(250);
+      expect(result.status).toBe('fail');
+    }
+  }, 5000);
 });
 
 describe('carry-forward of previous findings when a control is unknown', () => {
