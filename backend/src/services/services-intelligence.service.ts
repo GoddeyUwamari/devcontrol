@@ -3,9 +3,11 @@
  * organization's rows (see services-intelligence.repository.ts).
  *
  * Everything here is deterministic and read-only. Nothing is inferred:
- *   - health and cost are reported as not evaluated. Inventory presence,
- *     lifecycle state, stored cost estimates, and billing totals are not
- *     used to stand in for either;
+ *   - health is what the Resource checks evaluator last reported, read from
+ *     its cache (see resource-health.ts). This never evaluates and never
+ *     calls AWS: with no recent evaluation, a resource is no_signal;
+ *   - cost is reported as not evaluated. Stored cost estimates and billing
+ *     totals are not used to stand in for it;
  *   - findings are passed through as recorded, including their stable key
  *     and their verification marker;
  *   - remediation is an indication derived from existing ACTIVE cost
@@ -14,6 +16,15 @@
 import { ISSUE_EC2_IDLE_INSTANCE } from '../config/optimization-rules';
 import { ActionType, assertActionAvailable, isAutomatedRemediationEnabled } from './remediation.service';
 import { GENERIC_RESOURCE_TYPES } from './resourceExplorer.service';
+import { CloudWatchMetrics, CloudWatchServiceHealth, cloudWatchService } from './cloudwatch.service';
+import {
+  countByState,
+  RESOURCE_HEALTH_MAX_AGE_MS,
+  RESOURCE_HEALTH_RANGE,
+  RESOURCE_HEALTH_SOURCE,
+  resourceHealthFrom,
+  supportedChecksForType,
+} from './resource-health';
 import {
   IntelligenceRecommendationRow,
   IntelligenceResourceRow,
@@ -84,8 +95,9 @@ function remediationFor(recommendation: IntelligenceRecommendationRow): Remediat
 
 // ─── Capabilities ───────────────────────────────────────────────────────────
 // What each resource type supports, as data. Adding a type or a signal is an
-// entry here, not a contract change. Health and pricing are not evaluated by
-// this endpoint yet, so neither claims a kind or a basis.
+// entry here, not a contract change. Health lists the Resource checks
+// evaluator's own checks for the type (resource-health.ts). Pricing is not
+// evaluated by this endpoint yet, so it claims no basis.
 //
 // Discovery facts come from awsResourceDiscovery.ts: EC2, EBS, RDS, Lambda and
 // load balancers are described in the account's primary region; S3 is listed
@@ -104,6 +116,13 @@ const DESCRIBED_TYPES: Record<string, DiscoveryCapability> = {
   cloudfront: { source: 'describe', region_scope: 'global', tagsCollected: false },
 };
 
+function healthCapability(type: string): Capability['health'] {
+  const supported = supportedChecksForType(type);
+  return supported
+    ? { state: 'supported', kind: supported.kind, counts_toward_at_risk: null, checks: [...supported.checks] }
+    : { state: 'not_supported', kind: null, counts_toward_at_risk: null, checks: [] };
+}
+
 export function buildCapabilities(): Record<string, Capability> {
   const discovery: Record<string, DiscoveryCapability> = { ...DESCRIBED_TYPES };
   for (const type of GENERIC_RESOURCE_TYPES) {
@@ -118,7 +137,7 @@ export function buildCapabilities(): Record<string, Capability> {
       .map((r) => r.actionType as string);
     capabilities[type] = {
       discovery: source,
-      health: { state: 'not_evaluated', kind: null, counts_toward_at_risk: null },
+      health: healthCapability(type),
       pricing: { state: 'not_evaluated', basis: null },
       tags: { collected: tagsCollected },
       remediation: { action_types: Array.from(new Set(actionTypes)).sort() },
@@ -192,7 +211,17 @@ function recommendationKey(resourceType: string, resourceId: string): string {
   return `${resourceType.toLowerCase()}\u0000${resourceId}`;
 }
 
-function toResource(row: IntelligenceResourceRow, recommendations: IntelligenceRecommendationRow[]): Resource {
+function toResource(
+  row: IntelligenceResourceRow,
+  recommendations: IntelligenceRecommendationRow[],
+  evaluation: CloudWatchMetrics | null,
+  evaluatedRow: CloudWatchServiceHealth | undefined
+): Resource {
+  const health = resourceHealthFrom(
+    { type: row.resource_type, lifecycleState: row.status, metadataType: row.metadata_type },
+    evaluation,
+    evaluatedRow
+  );
   return {
     id: row.id,
     arn: row.resource_arn,
@@ -204,7 +233,15 @@ function toResource(row: IntelligenceResourceRow, recommendations: IntelligenceR
     service_id: row.service_id,
     last_seen_at: iso(row.last_synced_at),
     findings: [...scanFindings(row.compliance_issues), ...recommendations.map(recommendationFinding)],
-    health: { state: 'not_evaluated', group: null, reasons: [], signal: null },
+    health: {
+      state: health.state,
+      group: null,
+      reasons: health.reasons,
+      signal: null,
+      checks: health.checks,
+      evaluated_at: health.evaluated_at,
+      source: health.source,
+    },
     cost: { state: 'not_evaluated', amount: null, basis: null, display: null },
   };
 }
@@ -223,11 +260,21 @@ function buildDiscovery(rows: ServicesIntelligenceRows): Discovery | null {
   };
 }
 
+/**
+ * `evaluation` is the Resource checks evaluator's cached result for THIS
+ * organization, or null when there is none recent enough. Its rows are joined
+ * to resources by aws_resources.id, and only to the rows read for this
+ * organization, so a row for any other resource is never used.
+ */
 export function composeServicesIntelligence(
   organizationId: string,
   rows: ServicesIntelligenceRows,
-  generatedAt: Date
+  generatedAt: Date,
+  evaluation: CloudWatchMetrics | null = null
 ): ServicesIntelligence {
+  const evaluatedById = new Map<string, CloudWatchServiceHealth>();
+  for (const evaluated of evaluation?.services ?? []) evaluatedById.set(evaluated.resourceDbId, evaluated);
+
   const recommendationsByResource = new Map<string, IntelligenceRecommendationRow[]>();
   for (const recommendation of rows.recommendations) {
     const key = recommendationKey(recommendation.resource_type, recommendation.resource_id);
@@ -243,7 +290,9 @@ export function composeServicesIntelligence(
   for (const row of rows.resources) {
     const resource = toResource(
       row,
-      recommendationsByResource.get(recommendationKey(row.resource_type, row.resource_id)) ?? []
+      recommendationsByResource.get(recommendationKey(row.resource_type, row.resource_id)) ?? [],
+      evaluation,
+      evaluatedById.get(row.id)
     );
     if (resource.service_id && serviceIds.has(resource.service_id)) {
       const list = byService.get(resource.service_id) ?? [];
@@ -265,7 +314,7 @@ export function composeServicesIntelligence(
       owner_declared: service.owner,
       team: service.team_id && service.team_name ? { id: service.team_id, name: service.team_name } : null,
       resources: { count: items.length, by_type: byType, items },
-      health: { state: 'not_evaluated', resource_counts: null },
+      health: { state: 'not_evaluated', resource_counts: countByState(items.map((item) => item.health.state)) },
       cost: { state: 'not_evaluated', amount: null, priced_resources: null, unpriced_resources: null },
     };
   });
@@ -276,6 +325,13 @@ export function composeServicesIntelligence(
     organization_id: organizationId,
     discovery: buildDiscovery(rows),
     remediation_execution_enabled: isAutomatedRemediationEnabled(),
+    health: {
+      evaluated_at: evaluation ? evaluation.capturedAt : null,
+      source: evaluation ? RESOURCE_HEALTH_SOURCE : null,
+      range: RESOURCE_HEALTH_RANGE,
+      cache: evaluation ? 'hit' : 'miss',
+      max_age_seconds: RESOURCE_HEALTH_MAX_AGE_MS / 1000,
+    },
     capabilities: buildCapabilities(),
     totals: {
       resources: rows.resources.length,
@@ -288,10 +344,17 @@ export function composeServicesIntelligence(
 }
 
 export class ServicesIntelligenceService {
-  constructor(private readonly repository = new ServicesIntelligenceRepository()) {}
+  constructor(
+    private readonly repository = new ServicesIntelligenceRepository(),
+    private readonly evaluations: Pick<typeof cloudWatchService, 'peekCachedMetrics'> = cloudWatchService
+  ) {}
 
   async get(organizationId: string): Promise<ServicesIntelligence> {
     const rows = await this.repository.read(organizationId);
-    return composeServicesIntelligence(organizationId, rows, new Date());
+    // A cache read only: no evaluation is started and no AWS call is made. The
+    // key is the caller's own organization. A cached "no connected account"
+    // answer (data: null) carries no evaluation, so it reads as a miss.
+    const evaluation = this.evaluations.peekCachedMetrics(organizationId, RESOURCE_HEALTH_MAX_AGE_MS)?.data ?? null;
+    return composeServicesIntelligence(organizationId, rows, new Date(), evaluation);
   }
 }

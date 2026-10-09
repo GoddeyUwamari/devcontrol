@@ -25,6 +25,8 @@ export interface IntelligenceResourceRow {
   resource_type: string;
   region: string;
   status: string | null;
+  /** metadata->>'type': the load balancer kind, which decides whether it is health-checked. */
+  metadata_type: string | null;
   compliance_issues: unknown;
   last_synced_at: Date | null;
   /** Set only when the referenced service belongs to the same organization. */
@@ -107,6 +109,7 @@ export class ServicesIntelligenceRepository {
               r.resource_type,
               r.region,
               r.status,
+              r.metadata->>'type' AS metadata_type,
               r.compliance_issues,
               r.last_synced_at,
               s.id AS service_id

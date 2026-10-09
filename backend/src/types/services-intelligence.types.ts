@@ -1,31 +1,65 @@
 /**
  * Response contract for GET /api/services/intelligence.
  *
- * This is the first slice of the contract: inventory, service grouping,
- * recorded findings, capabilities, and discovery freshness. Health and cost
- * are not evaluated yet and say so explicitly (`state: 'not_evaluated'`)
- * rather than carrying a classification or an amount. A field whose source
- * has no value is null -- never a default.
+ * Inventory, service grouping, recorded findings, capabilities, discovery
+ * freshness, and resource health read from the Resource checks evaluator's
+ * cached results. Cost is not evaluated yet and says so explicitly
+ * (`state: 'not_evaluated'`) rather than carrying an amount. A field whose
+ * source has no value is null -- never a default.
  *
  * Resource types and finding sources are open strings: what a type supports
  * is described by the `capabilities` map, not by this file.
  */
 
+import type {
+  HealthCheckKind,
+  NoSignalReason,
+  RESOURCE_HEALTH_RANGE,
+  RESOURCE_HEALTH_SOURCE,
+  ResourceHealthCheck,
+  ResourceHealthCounts,
+  ResourceHealthState,
+} from '../services/resource-health';
+
 export const SERVICES_INTELLIGENCE_CONTRACT_VERSION = '1';
 
 export type NotEvaluated = 'not_evaluated';
 
-/** Present so a later evaluation can fill `group`/`reasons`/`signal` without reshaping. */
+/**
+ * What the Resource checks evaluator last reported for the resource (see
+ * services/resource-health.ts). Missing or undetermined data is `no_signal`:
+ * never passing, never failing. `group` and `signal` stay null: they belong
+ * to a classification policy that does not exist yet.
+ */
 export interface ResourceHealth {
-  state: NotEvaluated;
+  state: ResourceHealthState;
   group: null;
-  reasons: [];
+  /** Why the state is no_signal; empty for every other state. */
+  reasons: Array<{ kind: NoSignalReason }>;
   signal: null;
+  /** The one check that produced the state; empty when none was evaluated. */
+  checks: ResourceHealthCheck[];
+  /** When the evaluation this was read from ran; null when none was read. */
+  evaluated_at: string | null;
+  source: typeof RESOURCE_HEALTH_SOURCE | null;
 }
 
+/** Counts only. There is no rolled-up verdict for a service, so `state` stays not_evaluated. */
 export interface ServiceHealth {
   state: NotEvaluated;
-  resource_counts: null;
+  resource_counts: ResourceHealthCounts;
+}
+
+/** Freshness of the evaluation every resource's health in this response was read from. */
+export interface HealthFreshness {
+  /** null on a miss: no resource in this response carries an evaluated result. */
+  evaluated_at: string | null;
+  source: typeof RESOURCE_HEALTH_SOURCE | null;
+  /** The evaluator range that was read. */
+  range: typeof RESOURCE_HEALTH_RANGE;
+  /** hit = a cached evaluation no older than max_age_seconds was read. Nothing is evaluated on a miss. */
+  cache: 'hit' | 'miss';
+  max_age_seconds: number;
 }
 
 export interface ResourceCost {
@@ -119,7 +153,13 @@ export interface Capability {
     source: 'describe' | 'resource_explorer';
     region_scope: 'primary' | 'per_resource' | 'global';
   };
-  health: { state: NotEvaluated; kind: null; counts_toward_at_risk: null };
+  health: {
+    state: 'supported' | 'not_supported';
+    kind: HealthCheckKind | null;
+    counts_toward_at_risk: null;
+    /** Every check the evaluator can report for the type; a resource reports one of them. */
+    checks: string[];
+  };
   pricing: { state: NotEvaluated; basis: null };
   tags: { collected: boolean };
   remediation: { action_types: string[] };
@@ -162,6 +202,7 @@ export interface ServicesIntelligence {
    * checked when it is attempted.
    */
   remediation_execution_enabled: boolean;
+  health: HealthFreshness;
   /** A type absent from the map has no described capability. */
   capabilities: Record<string, Capability>;
   totals: Totals;

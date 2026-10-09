@@ -30,7 +30,14 @@ const JOB = '60000000-0000-4000-8000-000000000001';
 const GENERATED_AT = new Date('2026-01-02T03:04:05.000Z');
 const SYNCED_AT = new Date('2026-01-01T00:00:00.000Z');
 
-const NOT_EVALUATED_HEALTH = { state: 'not_evaluated', group: null, reasons: [], signal: null };
+// With no cached evaluation: a checked type has no signal, an unchecked type is not supported.
+const UNAVAILABLE_HEALTH = {
+  state: 'no_signal', group: null, reasons: [{ kind: 'evaluation_unavailable' }], signal: null,
+  checks: [], evaluated_at: null, source: null,
+};
+const NOT_SUPPORTED_HEALTH = {
+  state: 'not_supported', group: null, reasons: [], signal: null, checks: [], evaluated_at: null, source: null,
+};
 const NOT_EVALUATED_COST = { state: 'not_evaluated', amount: null, basis: null, display: null };
 
 function rows(overrides: Partial<ServicesIntelligenceRows> = {}): ServicesIntelligenceRows {
@@ -44,6 +51,7 @@ function rows(overrides: Partial<ServicesIntelligenceRows> = {}): ServicesIntell
         resource_type: 'ec2',
         region: 'test-region-1',
         status: 'running',
+        metadata_type: null,
         compliance_issues: [],
         last_synced_at: SYNCED_AT,
         service_id: SERVICE,
@@ -56,6 +64,7 @@ function rows(overrides: Partial<ServicesIntelligenceRows> = {}): ServicesIntell
         resource_type: 's3',
         region: 'test-region-2',
         status: null,
+        metadata_type: null,
         compliance_issues: [
           {
             severity: 'critical',
@@ -134,7 +143,7 @@ describe('response contract', () => {
           },
         },
       ],
-      health: NOT_EVALUATED_HEALTH,
+      health: UNAVAILABLE_HEALTH,
       cost: NOT_EVALUATED_COST,
     };
     const bucket = {
@@ -185,7 +194,7 @@ describe('response contract', () => {
           remediation: null,
         },
       ],
-      health: NOT_EVALUATED_HEALTH,
+      health: NOT_SUPPORTED_HEALTH,
       cost: NOT_EVALUATED_COST,
     };
 
@@ -201,6 +210,7 @@ describe('response contract', () => {
         inventory_refreshed_at: null,
       },
       remediation_execution_enabled: false,
+      health: { evaluated_at: null, source: null, range: '1h', cache: 'miss', max_age_seconds: 900 },
       capabilities: buildCapabilities(),
       totals: { resources: 2, services: 2, unassigned_resources: 1 },
       services: [
@@ -211,7 +221,7 @@ describe('response contract', () => {
           owner_declared: 'declared-owner',
           team: { id: TEAM, name: 'synthetic-team' },
           resources: { count: 1, by_type: { ec2: 1 }, items: [instance] },
-          health: { state: 'not_evaluated', resource_counts: null },
+          health: { state: 'not_evaluated', resource_counts: { checks_passing: 0, check_failing: 0, no_signal: 1, not_supported: 0 } },
           cost: { state: 'not_evaluated', amount: null, priced_resources: null, unpriced_resources: null },
         },
         {
@@ -221,7 +231,7 @@ describe('response contract', () => {
           owner_declared: null,
           team: null,
           resources: { count: 0, by_type: {}, items: [] },
-          health: { state: 'not_evaluated', resource_counts: null },
+          health: { state: 'not_evaluated', resource_counts: { checks_passing: 0, check_failing: 0, no_signal: 0, not_supported: 0 } },
           cost: { state: 'not_evaluated', amount: null, priced_resources: null, unpriced_resources: null },
         },
       ],
@@ -246,13 +256,27 @@ describe('response contract', () => {
     ['a non-boolean remediation execution flag', (b) => { b.remediation_execution_enabled = 'true'; }],
     ['an added resource key', (b) => { b.unassigned.resources[0].environment = null; }],
     ['a health classification', (b) => { b.unassigned.resources[0].health.group = 'healthy'; }],
-    ['a different health state', (b) => { b.services[0].health.state = 'healthy'; }],
+    ['a service verdict', (b) => { b.services[0].health.state = 'checks_passing'; }],
+    ['an extra service verdict field', (b) => { b.services[0].health.verdict = 'check_failing'; }],
+    ['removed service counts', (b) => { b.services[0].health.resource_counts = null; }],
+    ['a resource state outside the four', (b) => { b.unassigned.resources[0].health.state = 'not_evaluated'; }],
+    ['a removed PR 1 health field', (b) => { delete b.unassigned.resources[0].health.signal; }],
+    ['a renamed PR 1 health field', (b) => { const h = b.unassigned.resources[0].health; h.grouping = h.group; delete h.group; }],
+    ['a removed checks field', (b) => { delete b.unassigned.resources[0].health.checks; }],
+    ['no_signal without a reason', (b) => { b.services[0].resources.items[0].health.reasons = []; }],
+    ['a reason on a state other than no_signal', (b) => { b.unassigned.resources[0].health.reasons = [{ kind: 'no_telemetry' }]; }],
+    ['a free-text reason', (b) => { b.services[0].resources.items[0].health.reasons = [{ kind: 'Resource is degraded' }]; }],
+    ['a removed top-level health block', (b) => { delete b.health; }],
+    ['a miss that claims an evaluation time', (b) => { b.health.evaluated_at = '2026-01-01T00:00:00.000Z'; }],
     ['a cost amount', (b) => { b.unassigned.resources[0].cost.amount = 5; }],
     ['a service cost amount', (b) => { b.services[0].cost.amount = 0; }],
     ['a missing finding key field', (b) => { delete b.unassigned.resources[0].findings[0].finding_key; }],
     ['a missing verification field', (b) => { delete b.unassigned.resources[0].findings[0].verification; }],
     ['an unknown severity', (b) => { b.unassigned.resources[0].findings[0].severity = 'severe'; }],
-    ['a capability health kind', (b) => { b.capabilities.ec2.health.kind = 'aws_status_check'; }],
+    ['an unknown capability health kind', (b) => { b.capabilities.ec2.health.kind = 'heuristic'; }],
+    ['a capability reverted to not_evaluated', (b) => { b.capabilities.ec2.health.state = 'not_evaluated'; }],
+    ['a supported capability with no checks', (b) => { b.capabilities.ec2.health.checks = []; }],
+    ['an at-risk claim', (b) => { b.capabilities.ec2.health.counts_toward_at_risk = true; }],
     ['a capability pricing basis', (b) => { b.capabilities.ec2.pricing.basis = 'list_price'; }],
     ['a non-ISO timestamp', (b) => { b.generated_at = 'yesterday'; }],
     ['an unavailable remediation', (b) => { b.services[0].resources.items[0].findings[0].remediation.available = false; }],
@@ -430,9 +454,26 @@ describe('discovery provenance and freshness', () => {
 describe('capabilities', () => {
   const capabilities = buildCapabilities();
 
-  it('claims no health kind and no pricing basis for any type', () => {
+  it('lists the evaluator\'s checks for a checked type, and not_supported for the rest', () => {
+    expect(capabilities.ec2.health).toEqual({
+      state: 'supported', kind: 'aws_status_check', counts_toward_at_risk: null,
+      checks: ['ec2_status_check', 'ec2_cpu_threshold'],
+    });
+    expect(capabilities.ebs.health).toEqual({
+      state: 'supported', kind: 'aws_status_check', counts_toward_at_risk: null, checks: ['ebs_volume_status_check'],
+    });
+    expect(capabilities.ecs.health).toMatchObject({ state: 'supported', kind: 'control_plane' });
+    expect(capabilities.lambda.health).toMatchObject({ state: 'supported', kind: 'cloudwatch_metric' });
+    for (const type of ['rds', 's3', 'sns', 'sqs', 'vpc', 'api-gateway', 'elasticache']) {
+      expect(capabilities[type].health).toEqual({ state: 'not_supported', kind: null, counts_toward_at_risk: null, checks: [] });
+    }
+    const supported = Object.entries(capabilities).filter(([, c]) => c.health.state === 'supported').map(([type]) => type);
+    expect(supported.sort()).toEqual(['aurora', 'cloudfront', 'dynamodb', 'ebs', 'ec2', 'ecs', 'eks', 'lambda', 'load-balancer']);
+  });
+
+  it('claims no pricing basis and no at-risk policy for any type', () => {
     for (const capability of Object.values(capabilities)) {
-      expect(capability.health).toEqual({ state: 'not_evaluated', kind: null, counts_toward_at_risk: null });
+      expect(capability.health.counts_toward_at_risk).toBeNull();
       expect(capability.pricing).toEqual({ state: 'not_evaluated', basis: null });
     }
   });
