@@ -1,10 +1,9 @@
 import { Router } from 'express'
 import { authenticateToken } from '../middleware/auth.middleware'
-import { CloudWatchService } from '../services/cloudwatch.service'
+import { cloudWatchService } from '../services/cloudwatch.service'
 import { clampPageSize, decodeCursor, paginateServices, InvalidCursorError } from '../services/cloudwatch-pagination.util'
 
 const router = Router()
-const cloudWatchService = new CloudWatchService()
 
 // GET /api/cloudwatch/status
 // Returns whether the org has a connected AWS account

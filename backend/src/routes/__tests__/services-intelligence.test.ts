@@ -15,7 +15,11 @@
  *         made through the route passes only because of the predicates;
  *       * the RLS policies -- the same statements, run as a role RLS applies
  *         to and asked for another organization's rows, return none.
- *   - Health and cost are reported as not evaluated; findings keep their
+ *   - Resource health is read from the Resource checks evaluator's cache
+ *     (never evaluated here, never an AWS call); with no recent evaluation a
+ *     checked resource is no_signal. Per resource it agrees with what the
+ *     Dashboard's evaluator reported, apart from one documented difference.
+ *   - Cost is reported as not evaluated; findings keep their
  *     stable key and verification marker; remediation is a read-only
  *     indication from ACTIVE cost recommendations.
  *
@@ -24,13 +28,22 @@
  * identifier is synthetic.
  */
 import { randomUUID } from 'crypto';
+import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
+import { EC2Client } from '@aws-sdk/client-ec2';
+import { ECSClient } from '@aws-sdk/client-ecs';
+import { EKSClient } from '@aws-sdk/client-eks';
+import { RDSClient } from '@aws-sdk/client-rds';
 import servicesIntelligenceRoutes from '../services-intelligence.routes';
+import cloudwatchRoutes from '../cloudwatch.routes';
 import { MEMBERSHIP_REVOKED_CODE } from '../../middleware/auth.middleware';
 import { ISSUE_EC2_IDLE_INSTANCE, ISSUE_S3_LIFECYCLE_OPTIMIZATION } from '../../config/optimization-rules';
 import { pool as appPool } from '../../config/database';
 import { authService } from '../../services/auth.service';
+import { AWSClientFactory } from '../../services/aws-client-factory.service';
+import awsCostService from '../../services/aws-cost.service';
+import { CloudWatchService, CloudWatchServiceHealth, cloudWatchService } from '../../services/cloudwatch.service';
 import { ServicesIntelligenceRepository } from '../../repositories/services-intelligence.repository';
-import { servicesIntelligenceResponseSchema } from '../../services/__tests__/services-intelligence-contract';
+import { servicesIntelligenceResponseSchema, servicesIntelligenceSchema } from '../../services/__tests__/services-intelligence-contract';
 import { ServicesIntelligence, Resource } from '../../types/services-intelligence.types';
 import { createRoleGateHarness, Role, RoleGateOrg } from './role-gate-harness';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
@@ -261,11 +274,17 @@ beforeAll(async () => {
   // team of another organization.
   await pool.query('UPDATE services SET team_id = $2 WHERE id = $1', [a.emptyServiceId, b.teamId]);
 
-  await harness.listen((app) => app.use('/api/services/intelligence', servicesIntelligenceRoutes));
+  await harness.listen((app) => {
+    app.use('/api/services/intelligence', servicesIntelligenceRoutes);
+    // The Dashboard's Resource checks endpoint: the one that fills the cache health is read from.
+    app.use('/api/cloudwatch', cloudwatchRoutes);
+  });
 });
 
 beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
+  // No evaluation carries over from one test to the next.
+  (cloudWatchService as any).metricsCache.clear();
 });
 
 afterEach(() => {
@@ -695,20 +714,17 @@ describe('findings', () => {
   });
 });
 
-describe('health and cost are not evaluated', () => {
-  it('for every resource and every service, whatever the lifecycle state or stored cost estimate', async () => {
+describe('cost is not evaluated', () => {
+  it('for every resource and every service, whatever the stored cost estimate', async () => {
     const data = await intelligence(a);
 
     for (const resource of allResources(data)) {
-      expect(resource.health).toEqual({ state: 'not_evaluated', group: null, reasons: [], signal: null });
       expect(resource.cost).toEqual({ state: 'not_evaluated', amount: null, basis: null, display: null });
     }
     for (const service of data.services) {
-      expect(service.health).toEqual({ state: 'not_evaluated', resource_counts: null });
       expect(service.cost).toEqual({ state: 'not_evaluated', amount: null, priced_resources: null, unpriced_resources: null });
     }
     for (const capability of Object.values(data.capabilities)) {
-      expect(capability.health.state).toBe('not_evaluated');
       expect(capability.pricing.state).toBe('not_evaluated');
     }
     // Neither the stored estimate nor a recommendation's savings is carried anywhere.
@@ -716,6 +732,490 @@ describe('health and cost are not evaluated', () => {
     for (const leaked of ['123.45', '42.00', 'estimated_monthly_cost', 'potential_savings']) {
       expect(serialized).not.toContain(leaked);
     }
+  });
+});
+
+// ─── Resource health ────────────────────────────────────────────────────────
+// Health is read from the cache GET /api/cloudwatch/metrics fills (the
+// Dashboard's Resource checks). These tests fill it the way the Dashboard
+// does -- through that route -- and never let the intelligence read evaluate.
+
+const FORBIDDEN_HEALTH_WORDS = /healthy|unhealthy|at[ _-]?risk|degraded/i;
+
+/** Every string value under a `health` key, at any depth. */
+function healthValues(node: unknown, inHealth = false, out: string[] = []): string[] {
+  if (typeof node === 'string') { if (inHealth) out.push(node); return out; }
+  if (Array.isArray(node)) { node.forEach((n) => healthValues(n, inHealth, out)); return out; }
+  if (node && typeof node === 'object') {
+    for (const [key, value] of Object.entries(node)) healthValues(value, inHealth || key === 'health', out);
+  }
+  return out;
+}
+
+function evaluatorRow(resourceDbId: string, overrides: Partial<CloudWatchServiceHealth> = {}): CloudWatchServiceHealth {
+  return {
+    resourceId: SHARED_INSTANCE_ID,
+    resourceDbId,
+    resourceSortName: null,
+    name: 'si-evaluated',
+    description: 'synthetic',
+    resourceType: 'ec2',
+    status: 'healthy',
+    uptime: 100,
+    responseTimeMs: null,
+    errorRate: null,
+    critical: true,
+    monitored: true,
+    ...overrides,
+  };
+}
+
+/** Fill `orgId`'s cache as the Dashboard does, with the evaluator's result replaced by `services`. */
+async function dashboardLoadsResourceChecks(orgId: string, userId: string, services: CloudWatchServiceHealth[]): Promise<string> {
+  const capturedAt = new Date().toISOString();
+  const compute = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValueOnce({
+    healthSummary: { total: 0, healthy: 0, degraded: 0, critical: 0, down: 0, monitored: 0 },
+    services,
+    capturedAt,
+  });
+  const res = await harness.sendAs(orgId, userId, 'GET', '/cloudwatch/metrics');
+  expect(res.status).toBe(200);
+  expect(compute).toHaveBeenCalledTimes(1);
+  compute.mockRestore();
+  return capturedAt;
+}
+
+function ageCachedEvaluation(orgId: string, minutes: number): void {
+  const entry = (cloudWatchService as any).metricsCache.get(`${orgId}:1h`);
+  entry.cachedAt = Date.now() - minutes * 60 * 1000;
+}
+
+function instanceOf(data: ServicesIntelligence, seeded: Seeded): Resource {
+  return data.services.find((s) => s.id === seeded.serviceId)!.resources.items[0];
+}
+
+describe('resource health: cache miss', () => {
+  it('reports no_signal with a reason for checked types, not_supported for the rest, and calls neither the evaluator nor AWS', async () => {
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients');
+    const compute = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics');
+
+    const data = await intelligence(a);
+
+    expect(createClients).not.toHaveBeenCalled();
+    expect(compute).not.toHaveBeenCalled();
+    expect(data.health).toEqual({ evaluated_at: null, source: null, range: '1h', cache: 'miss', max_age_seconds: 900 });
+    expect(instanceOf(data, a).health).toEqual({
+      state: 'no_signal',
+      group: null,
+      reasons: [{ kind: 'evaluation_unavailable' }],
+      signal: null,
+      checks: [],
+      evaluated_at: null,
+      source: null,
+    });
+    for (const resource of data.unassigned.resources) {
+      expect(['s3', 'sqs']).toContain(resource.type);
+      expect(resource.health).toEqual({
+        state: 'not_supported', group: null, reasons: [], signal: null, checks: [], evaluated_at: null, source: null,
+      });
+    }
+    expect(data.services.find((s) => s.id === a.serviceId)!.health).toEqual({
+      state: 'not_evaluated',
+      resource_counts: { checks_passing: 0, check_failing: 0, no_signal: 1, not_supported: 0 },
+    });
+  });
+
+  it('reading intelligence does not fill the cache: the next read is still a miss', async () => {
+    await intelligence(a);
+    expect((await intelligence(a)).health.cache).toBe('miss');
+    expect(cloudWatchService.peekCachedMetrics(a.org.orgId, 15 * 60 * 1000)).toBeNull();
+  });
+});
+
+describe('resource health: read from the Resource checks cache', () => {
+  it('after the Dashboard loads its checks, the same result is reported with its evaluation time and no further evaluation', async () => {
+    const capturedAt = await dashboardLoadsResourceChecks(a.org.orgId, a.org.viewer, [evaluatorRow(a.instanceId)]);
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients');
+    const compute = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics');
+
+    const data = await intelligence(a, 'viewer');
+
+    expect(createClients).not.toHaveBeenCalled();
+    expect(compute).not.toHaveBeenCalled();
+    expect(data.health).toEqual({
+      evaluated_at: capturedAt, source: 'resource_checks_cache', range: '1h', cache: 'hit', max_age_seconds: 900,
+    });
+    expect(instanceOf(data, a).health).toEqual({
+      state: 'checks_passing',
+      group: null,
+      reasons: [],
+      signal: null,
+      checks: [{ name: 'ec2_status_check', result: 'passing', observed_at: capturedAt }],
+      evaluated_at: capturedAt,
+      source: 'resource_checks_cache',
+    });
+    expect(data.services.find((s) => s.id === a.serviceId)!.health.resource_counts).toEqual({
+      checks_passing: 1, check_failing: 0, no_signal: 0, not_supported: 0,
+    });
+  });
+
+  it('an evaluation with no row for the resource (its type block failed) is no_signal, evaluation_unavailable', async () => {
+    const capturedAt = await dashboardLoadsResourceChecks(a.org.orgId, a.org.member, []);
+    expect(instanceOf(await intelligence(a), a).health).toMatchObject({
+      state: 'no_signal', reasons: [{ kind: 'evaluation_unavailable' }], checks: [], evaluated_at: capturedAt,
+    });
+  });
+
+  it('an undetermined result is no_signal, never passing', async () => {
+    await dashboardLoadsResourceChecks(a.org.orgId, a.org.member, [
+      evaluatorRow(a.instanceId, { status: 'unknown', uptime: null, monitored: false }),
+    ]);
+    const health = instanceOf(await intelligence(a), a).health;
+    expect(health.state).toBe('no_signal');
+    expect(health.reasons).toEqual([{ kind: 'no_telemetry' }]);
+    expect(health.checks.map((c) => c.result)).toEqual(['undetermined']);
+  });
+
+  it('serves an evaluation up to 15 minutes old; an older one is a miss, with no AWS call', async () => {
+    const capturedAt = await dashboardLoadsResourceChecks(a.org.orgId, a.org.member, [evaluatorRow(a.instanceId)]);
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients');
+    const compute = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics');
+
+    ageCachedEvaluation(a.org.orgId, 14);
+    const recent = await intelligence(a);
+    expect(recent.health).toMatchObject({ cache: 'hit', evaluated_at: capturedAt });
+    expect(instanceOf(recent, a).health.state).toBe('checks_passing');
+
+    ageCachedEvaluation(a.org.orgId, 16);
+    const stale = await intelligence(a);
+    expect(stale.health).toMatchObject({ cache: 'miss', evaluated_at: null, source: null });
+    expect(instanceOf(stale, a).health).toMatchObject({
+      state: 'no_signal', reasons: [{ kind: 'evaluation_unavailable' }], checks: [], evaluated_at: null,
+    });
+    expect(createClients).not.toHaveBeenCalled();
+    expect(compute).not.toHaveBeenCalled();
+  });
+
+  it('the response still satisfies the strict contract on a hit', async () => {
+    await dashboardLoadsResourceChecks(a.org.orgId, a.org.member, [evaluatorRow(a.instanceId, { status: 'critical' })]);
+    const { body } = await read(a.org.orgId, a.org.member);
+    const parsed = servicesIntelligenceResponseSchema.safeParse(body);
+    expect(parsed.success ? [] : parsed.error.issues).toEqual([]);
+    expect(instanceOf(body.data, a).health.state).toBe('check_failing');
+  });
+});
+
+describe('resource health: tenant isolation', () => {
+  it("each organization reads only its own evaluation, even when another's holds a row for its resource", async () => {
+    await dashboardLoadsResourceChecks(a.org.orgId, a.org.member, [evaluatorRow(a.instanceId)]);
+    // Organization B's evaluation: its own instance failing, plus a row that
+    // claims organization A's resource id.
+    await dashboardLoadsResourceChecks(b.org.orgId, b.org.member, [
+      evaluatorRow(b.instanceId, { status: 'critical', name: 'si-evaluated-beta' }),
+      evaluatorRow(a.instanceId, { status: 'critical', name: 'si-evaluated-beta-claims-alpha' }),
+    ]);
+
+    const alpha = await intelligence(a);
+    const beta = await intelligence(b);
+
+    expect(instanceOf(alpha, a).health.state).toBe('checks_passing');
+    expect(instanceOf(beta, b).health.state).toBe('check_failing');
+    expect(alpha.services.find((s) => s.id === a.serviceId)!.health.resource_counts.check_failing).toBe(0);
+    for (const identifier of identifiersOf(b)) expect(JSON.stringify(alpha)).not.toContain(identifier);
+    for (const identifier of identifiersOf(a)) expect(JSON.stringify(beta)).not.toContain(identifier);
+  });
+
+  it("with only another organization's evaluation cached, an organization gets a miss", async () => {
+    await dashboardLoadsResourceChecks(b.org.orgId, b.org.member, [
+      evaluatorRow(b.instanceId),
+      evaluatorRow(a.instanceId),
+    ]);
+
+    const alpha = await intelligence(a);
+
+    expect(alpha.health).toMatchObject({ cache: 'miss', evaluated_at: null });
+    expect(instanceOf(alpha, a).health).toMatchObject({ state: 'no_signal', reasons: [{ kind: 'evaluation_unavailable' }] });
+    expect((await intelligence(b)).health.cache).toBe('hit');
+  });
+
+  it('a caller-supplied organization does not select whose evaluation is read', async () => {
+    await dashboardLoadsResourceChecks(b.org.orgId, b.org.member, [evaluatorRow(b.instanceId, { status: 'critical' })]);
+    const other = b.org.orgId;
+    const { status, body } = await read(a.org.orgId, a.org.member, `/services/intelligence?organization_id=${other}&organizationId=${other}`);
+    expect(status).toBe(200);
+    expect(body.data.health.cache).toBe('miss');
+  });
+});
+
+// ─── Agreement with the Dashboard's Resource checks ─────────────────────────
+// A REAL evaluator sweep (CloudWatchService.computeMetrics, unmocked) over a
+// synthetic fleet, with only the AWS clients faked. GET /api/cloudwatch/metrics
+// returns what the Dashboard shows; the intelligence endpoint must report the
+// same result for every resource, except for the one documented difference.
+
+describe('resource health: agreement with the Dashboard evaluator', () => {
+  type Fleet = Record<string, { id: string; awsId: string }>;
+  let org: RoleGateOrg;
+  let fleet: Fleet;
+  let sends: jest.Mock[];
+
+  // name -> [type, lifecycle state, metadata]
+  const FLEET_SPEC: Record<string, [string, string, Record<string, unknown> | null]> = {
+    volOk: ['ebs', 'available', null],
+    volImpaired: ['ebs', 'in-use', null],
+    volWarning: ['ebs', 'available', null],
+    volInsufficient: ['ebs', 'available', null],
+    volError: ['ebs', 'error', null],
+    volDeleting: ['ebs', 'deleting', null],
+    volCreating: ['ebs', 'creating', null],
+    ec2StatusChecks: ['ec2', 'running', null],
+    ec2CpuLow: ['ec2', 'running', null],
+    ec2CpuHigh: ['ec2', 'running', null],
+    ec2Stopped: ['ec2', 'stopped', null],
+    ec2Silent: ['ec2', 'running', null],
+    alb: ['load-balancer', 'active', { type: 'application' }],
+    nlb: ['load-balancer', 'active', { type: 'network' }],
+    database: ['rds', 'available', null],
+    bucket: ['s3', 'active', null],
+    fnFailed: ['lambda', 'Failed', null],
+    fnInactive: ['lambda', 'Inactive', null],
+  };
+
+  beforeAll(async () => {
+    org = await harness.buildOrg();
+    await pool.query(
+      `INSERT INTO aws_accounts (org_id, role_arn, account_id, region, status, external_id, connected_at)
+       VALUES ($1, $2, $3, 'test-region-1', 'active', 'si-external-id', NOW())`,
+      [org.orgId, `arn:aws:iam::${FAKE_ACCOUNT}:role/si-health`, `si-health-${suffix}`.slice(0, 32)]
+    );
+    fleet = {};
+    for (const [name, [type, status, metadata]] of Object.entries(FLEET_SPEC)) {
+      const awsId = `si-${name.toLowerCase()}-${suffix}`;
+      const arn = type === 'load-balancer'
+        ? `arn:aws:elasticloadbalancing:test-region-1:${FAKE_ACCOUNT}:loadbalancer/app/${awsId}/0000000000000000`
+        : `arn:aws:${type}:test-region-1:${FAKE_ACCOUNT}:synthetic/${awsId}`;
+      const { rows } = await pool.query(
+        `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, metadata)
+         VALUES ($1, $2, $3, $3, $4, 'test-region-1', $5, $6) RETURNING id`,
+        [org.orgId, arn, awsId, type, status, metadata ? JSON.stringify(metadata) : null]
+      );
+      fleet[name] = { id: rows[0].id as string, awsId };
+    }
+  });
+
+  /** CloudWatch datapoints by `${dimension value}|${metric}`; anything absent has no datapoints. */
+  function fakeAwsClients() {
+    const datapoints: Record<string, number> = {
+      [`${fleet.ec2StatusChecks.awsId}|StatusCheckFailed`]: 0,
+      [`${fleet.ec2StatusChecks.awsId}|CPUUtilization`]: 12,
+      [`${fleet.ec2CpuLow.awsId}|CPUUtilization`]: 10,
+      [`${fleet.ec2CpuHigh.awsId}|CPUUtilization`]: 95,
+      [`app/${fleet.alb.awsId}/0000000000000000|TargetResponseTime`]: 0.2,
+      [`app/${fleet.alb.awsId}/0000000000000000|RequestCount`]: 100,
+    };
+    const cloudWatchSend = jest.fn(async (command: any) => ({
+      MetricDataResults: (command?.input?.MetricDataQueries ?? []).map((q: any) => {
+        const key = `${q.MetricStat.Metric.Dimensions[0].Value}|${q.MetricStat.Metric.MetricName}`;
+        return key in datapoints
+          ? { Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date()], Values: [datapoints[key]] }
+          : { Id: q.Id, StatusCode: 'Complete', Timestamps: [], Values: [] };
+      }),
+    }));
+    const volumeStatus: Record<string, string> = {
+      [fleet.volOk.awsId]: 'ok',
+      [fleet.volImpaired.awsId]: 'impaired',
+      [fleet.volWarning.awsId]: 'warning',
+      [fleet.volInsufficient.awsId]: 'insufficient-data',
+      [fleet.volError.awsId]: 'ok',
+    };
+    const ec2Send = jest.fn(async () => ({
+      VolumeStatuses: Object.entries(volumeStatus).map(([VolumeId, Status]) => ({ VolumeId, VolumeStatus: { Status }, Events: [] })),
+    }));
+    const otherSend = jest.fn(async () => ({}));
+    // Real SDK client objects (the EC2 paginator requires one) whose `send` never reaches AWS.
+    const faked = <T extends { send: unknown }>(client: T, send: jest.Mock): T => {
+      (client as any).send = send;
+      return client;
+    };
+    const sdk = { region: 'us-east-1' };
+    const cloudWatch = faked(new CloudWatchClient(sdk), cloudWatchSend);
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients').mockImplementation(async () => ({
+      enabled: true,
+      region: 'test-region-1',
+      cloudWatch,
+      ec2: faked(new EC2Client(sdk), ec2Send),
+      ecs: faked(new ECSClient(sdk), otherSend),
+      eks: faked(new EKSClient(sdk), otherSend),
+      rds: faked(new RDSClient(sdk), otherSend),
+      getCloudWatchClientForRegion: () => cloudWatch,
+    } as any));
+    jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({ total: 0, byService: [], period: { start: '', end: '' } } as any);
+    sends = [cloudWatchSend, ec2Send, otherSend];
+    return { createClients };
+  }
+
+  async function dashboard() {
+    const res = await harness.sendAs(org.orgId, org.viewer, 'GET', '/cloudwatch/metrics?pageSize=200');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data.pagination.hasMore).toBe(false);
+    return body.data as { services: CloudWatchServiceHealth[]; healthSummary: Record<string, number>; capturedAt: string };
+  }
+
+  async function healthById(): Promise<{ data: ServicesIntelligence; byId: Map<string, Resource['health']> }> {
+    const { status, body } = await read(org.orgId, org.viewer);
+    expect(status).toBe(200);
+    const data = body.data as ServicesIntelligence;
+    return { data, byId: new Map(allResources(data).map((r) => [r.id, r.health])) };
+  }
+
+  const nameOf = (id: string) => Object.entries(fleet).find(([, r]) => r.id === id)![0];
+
+  it('reports, for every resource, exactly what the evaluator reported -- apart from the documented difference', async () => {
+    const { createClients } = fakeAwsClients();
+    const shown = await dashboard();
+    const awsCalls = sends.map((s) => s.mock.calls.length);
+    expect(awsCalls[0]).toBeGreaterThan(0);
+    expect(awsCalls[1]).toBeGreaterThan(0);
+    expect(createClients).toHaveBeenCalledTimes(1);
+
+    const { data, byId } = await healthById();
+
+    // The intelligence read used the cached evaluation: not one more AWS call.
+    expect(sends.map((s) => s.mock.calls.length)).toEqual(awsCalls);
+    expect(createClients).toHaveBeenCalledTimes(1);
+    expect(data.health).toEqual({
+      evaluated_at: shown.capturedAt, source: 'resource_checks_cache', range: '1h', cache: 'hit', max_age_seconds: 900,
+    });
+
+    // What the evaluator said, per resource (the Dashboard's per-row result).
+    const evaluator = Object.fromEntries(shown.services.map((s) => [nameOf(s.resourceDbId), `${s.status}${s.monitored ? '' : ' (no telemetry)'}`]));
+    expect(evaluator).toEqual({
+      volOk: 'healthy',
+      volImpaired: 'critical',
+      volWarning: 'degraded',
+      volInsufficient: 'unknown',
+      volError: 'down',
+      volDeleting: 'down',
+      volCreating: 'unknown (no telemetry)',
+      ec2StatusChecks: 'healthy',
+      ec2CpuLow: 'healthy',
+      ec2CpuHigh: 'degraded',
+      ec2Stopped: 'down (no telemetry)',
+      ec2Silent: 'unknown (no telemetry)',
+      alb: 'healthy',
+      database: 'healthy (no telemetry)',
+      fnFailed: 'down (no telemetry)',
+      fnInactive: 'down (no telemetry)',
+    });
+
+    // What the intelligence endpoint says for the same resources.
+    const reported = Object.fromEntries(
+      Object.entries(fleet).map(([name, r]) => {
+        const health = byId.get(r.id)!;
+        return [name, [health.state, ...health.reasons.map((x) => x.kind), ...health.checks.map((c) => `${c.name}=${c.result}`)].join(' ')];
+      })
+    );
+    expect(reported).toEqual({
+      volOk: 'checks_passing ebs_volume_status_check=passing',
+      volImpaired: 'check_failing ebs_volume_status_check=failing',
+      volWarning: 'check_failing ebs_volume_status_check=failing',
+      volInsufficient: 'no_signal undetermined ebs_volume_status_check=undetermined',
+      volError: 'check_failing ebs_volume_status_check=failing',
+      volDeleting: 'no_signal not_running ebs_volume_status_check=undetermined',
+      volCreating: 'no_signal no_telemetry ebs_volume_status_check=undetermined',
+      ec2StatusChecks: 'checks_passing ec2_status_check=passing',
+      ec2CpuLow: 'checks_passing ec2_cpu_threshold=passing',
+      ec2CpuHigh: 'check_failing ec2_cpu_threshold=failing',
+      ec2Stopped: 'no_signal not_running ec2_status_check=undetermined',
+      ec2Silent: 'no_signal no_telemetry ec2_status_check=undetermined',
+      alb: 'checks_passing alb_response_time_threshold=passing',
+      nlb: 'not_supported',
+      database: 'not_supported',
+      bucket: 'not_supported',
+      fnFailed: 'check_failing lambda_error_rate_threshold=failing',
+      fnInactive: 'no_signal not_running lambda_error_rate_threshold=undetermined',
+    });
+
+    // Row by row: the Dashboard's rule for a row (as components/monitoring/
+    // ServiceHealthTable.tsx's checkResultLabel and lib/resource-checks.ts's
+    // checkCountsFrom apply it) against the state reported here.
+    const differences: string[] = [];
+    for (const row of shown.services) {
+      const name = nameOf(row.resourceDbId);
+      const state = byId.get(row.resourceDbId)!.state;
+      if (state === 'not_supported') { expect(row.monitored).toBe(false); continue; }
+      const dashboardSays = !row.monitored ? 'not counted'
+        : row.status === 'healthy' ? 'no issues'
+        : row.status === 'unknown' ? 'undetermined'
+        : 'with issues';
+      const agrees =
+        (dashboardSays === 'no issues' && state === 'checks_passing') ||
+        (dashboardSays === 'with issues' && state === 'check_failing') ||
+        ((dashboardSays === 'undetermined' || dashboardSays === 'not counted') && state === 'no_signal');
+      if (!agrees) differences.push(`${name}: dashboard ${dashboardSays}, here ${state}`);
+    }
+    // The documented difference, and nothing else: 'down' is decided by the
+    // recorded lifecycle state, not counted as an issue wholesale.
+    expect(differences.sort()).toEqual([
+      'fnFailed: dashboard not counted, here check_failing',
+      'volDeleting: dashboard with issues, here no_signal',
+    ]);
+    for (const row of shown.services.filter((s) => s.status !== 'down')) {
+      expect(differences.some((d) => d.startsWith(`${nameOf(row.resourceDbId)}:`))).toBe(false);
+    }
+
+    // The counts the Dashboard shows (healthSummary, as checkCountsFrom reads it).
+    const summary = shown.healthSummary;
+    expect(summary).toEqual({ total: 16, monitored: 10, healthy: 4, degraded: 2, critical: 1, down: 2 });
+    const states = [...byId.values()].map((h) => h.state);
+    const count = (state: string) => states.filter((s) => s === state).length;
+    expect({ passing: count('checks_passing'), failing: count('check_failing'), noSignal: count('no_signal'), notSupported: count('not_supported') })
+      .toEqual({ passing: 4, failing: 5, noSignal: 6, notSupported: 3 });
+    // Passing agrees exactly.
+    expect(count('checks_passing')).toBe(summary.healthy);
+    // Failing = the Dashboard's degraded + critical, plus the 'down' rows whose lifecycle state is a failure.
+    expect(count('check_failing')).toBe(summary.degraded + summary.critical + ['volError', 'fnFailed'].length);
+    // The Dashboard's "undetermined" (reporting, no result) is a subset of no_signal.
+    const undetermined = summary.monitored - summary.healthy - (summary.degraded + summary.critical + summary.down);
+    expect(undetermined).toBe(1);
+    expect([...byId.values()].filter((h) => h.reasons.some((r) => r.kind === 'undetermined'))).toHaveLength(undetermined);
+
+    for (const value of healthValues(data)) expect(value).not.toMatch(FORBIDDEN_HEALTH_WORDS);
+    const parsed = servicesIntelligenceSchema.safeParse(data);
+    expect(parsed.success ? [] : parsed.error.issues).toEqual([]);
+  });
+
+  it('a failed type block leaves its resources no_signal (evaluation_unavailable), never passing', async () => {
+    fakeAwsClients();
+    // The EBS block throws outright; every other block still evaluates.
+    jest.spyOn(CloudWatchService.prototype as any, 'evaluateEbsVolumes').mockRejectedValue(new Error('synthetic failure'));
+    const shown = await dashboard();
+    expect(shown.services.some((s) => s.resourceType === 'ebs')).toBe(false);
+
+    const { byId } = await healthById();
+
+    for (const name of ['volOk', 'volImpaired', 'volWarning', 'volInsufficient', 'volError', 'volDeleting', 'volCreating']) {
+      expect(byId.get(fleet[name].id)).toMatchObject({
+        state: 'no_signal', reasons: [{ kind: 'evaluation_unavailable' }], checks: [], evaluated_at: shown.capturedAt,
+      });
+    }
+    expect(byId.get(fleet.ec2StatusChecks.id)!.state).toBe('checks_passing');
+  });
+
+  it('with AWS unreachable for every check, nothing is passing and nothing is failing', async () => {
+    fakeAwsClients();
+    for (const send of sends) send.mockRejectedValue(new Error('synthetic: not authorized'));
+    await dashboard();
+
+    const { byId } = await healthById();
+
+    const states = new Set(
+      Object.entries(fleet)
+        .filter(([name]) => !['volError', 'fnFailed'].includes(name)) // failures recorded in inventory, not by AWS
+        .map(([, r]) => byId.get(r.id)!.state)
+    );
+    expect([...states].sort()).toEqual(['no_signal', 'not_supported']);
   });
 });
 
@@ -829,7 +1329,7 @@ describe('response contract', () => {
 
   it('has exactly these top-level keys', async () => {
     expect(Object.keys(await intelligence(a)).sort()).toEqual([
-      'capabilities', 'contract_version', 'discovery', 'generated_at',
+      'capabilities', 'contract_version', 'discovery', 'generated_at', 'health',
       'organization_id', 'remediation_execution_enabled', 'services', 'totals', 'unassigned',
     ]);
   });

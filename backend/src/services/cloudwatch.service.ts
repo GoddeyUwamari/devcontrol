@@ -2082,6 +2082,25 @@ export class CloudWatchService {
   }
 
   /**
+   * Read-only view of the last completed evaluation for this organization at the
+   * default range (the one the Dashboard and /admin/monitoring share), if it is no
+   * older than `maxAgeMs`. Never computes, never joins an in-flight computation, and
+   * makes no AWS or database call: a caller that must not trigger an AWS sweep (the
+   * Services Intelligence read) uses this instead of getMetrics(). Returns null when
+   * nothing is cached or the entry is older than `maxAgeMs`; `data` is null when the
+   * cached answer was "no connected account".
+   *
+   * `maxAgeMs` is the caller's own tolerance and may exceed METRICS_CACHE_TTL_MS --
+   * getMetrics() only overwrites an entry, it never evicts one -- so the caller must
+   * report `cachedAt`/`data.capturedAt` alongside whatever it shows.
+   */
+  peekCachedMetrics(organizationId: string, maxAgeMs: number): { data: CloudWatchMetrics | null; cachedAt: number } | null {
+    const cached = this.metricsCache.get(this.metricsCacheKey(organizationId, DEFAULT_RANGE))
+    if (!cached || Date.now() - cached.cachedAt > maxAgeMs) return null
+    return { data: cached.data, cachedAt: cached.cachedAt }
+  }
+
+  /**
    * Engineering-only accessor for CAPABILITY_VALIDATION_STATUS — not part of the public
    * API surface, not called from any route today. Exists so this status is queryable from
    * code (e.g. a future internal debug endpoint or a test asserting a capability has been
@@ -2173,3 +2192,11 @@ export class CloudWatchService {
     }
   }
 }
+
+/**
+ * The process-wide instance behind GET /api/cloudwatch/metrics. Its cache is the one
+ * the Dashboard's Resource checks fill, so anything that reports those same results
+ * without re-evaluating (see peekCachedMetrics()) must read this instance. The SLO and
+ * System Intelligence services keep their own instances.
+ */
+export const cloudWatchService = new CloudWatchService()
