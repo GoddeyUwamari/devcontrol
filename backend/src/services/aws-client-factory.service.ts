@@ -13,6 +13,7 @@ import { CostExplorerClient } from '@aws-sdk/client-cost-explorer';
 import { EC2Client } from '@aws-sdk/client-ec2';
 import { RDSClient } from '@aws-sdk/client-rds';
 import { S3Client } from '@aws-sdk/client-s3';
+import { S3ControlClient } from '@aws-sdk/client-s3-control';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { ECSClient } from '@aws-sdk/client-ecs';
@@ -37,6 +38,9 @@ export interface AWSClients {
   ec2: EC2Client;
   rds: RDSClient;
   s3: S3Client;
+  // Account-level S3 settings (Block Public Access). Optional so callers and mocks that
+  // never read account-level settings need not provide it.
+  s3Control?: S3ControlClient;
   cloudWatch: CloudWatchClient;
   lambda: LambdaClient;
   ecs: ECSClient;
@@ -159,6 +163,7 @@ export class AWSClientFactory {
       ec2: new EC2Client(config),
       rds: new RDSClient(config),
       s3: new S3Client(config),
+      s3Control: new S3ControlClient(config),
       cloudWatch: new CloudWatchClient(config),
       lambda: new LambdaClient(config),
       ecs: new ECSClient(config),

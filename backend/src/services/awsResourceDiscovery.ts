@@ -71,6 +71,14 @@ import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usa
 import { describeDynamoDBTable } from './dynamodb-table.util';
 import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
 import { describeAuroraClusters } from './aurora-cluster.util';
+import {
+  S3SecurityEvaluation,
+  carryForwardUnverifiedS3Findings,
+  unknownS3Evaluation,
+  newS3EvaluationTally,
+  addToS3EvaluationTally,
+  formatS3EvaluationTally,
+} from './s3-security-evaluation';
 
 /**
  * Resource types allowed by subscription tier
@@ -524,16 +532,25 @@ export class AWSResourceDiscoveryService {
           [organizationId]
         );
 
+        const s3Tally = newS3EvaluationTally();
         for (const resource of allResources as AWSResource[]) {
           const issues = await scanner.scanResource(resource);
 
           if (resource.resource_type === 's3') {
+            let evaluation: S3SecurityEvaluation;
             try {
-              const enhanced = await scanner.checkS3PublicAccessEnhanced(resource, awsClients.s3!);
-              issues.push(...enhanced);
+              const result = await scanner.evaluateS3Security(resource, awsClients.s3!, {
+                s3Control: awsClients.s3Control,
+                accountId: awsClients.accountId,
+              });
+              evaluation = result!.evaluation;
+              issues.push(...result!.issues);
             } catch (error: any) {
-              console.error(`[Discovery] S3 enhanced check failed for ${resource.resource_arn}:`, error.message);
+              console.error(`[Discovery] S3 security evaluation failed for ${resource.resource_arn}:`, error.message);
+              evaluation = unknownS3Evaluation('evaluation failed');
+              issues.push(...carryForwardUnverifiedS3Findings(resource.compliance_issues, evaluation));
             }
+            addToS3EvaluationTally(s3Tally, evaluation);
           }
 
           await client.query(
@@ -542,6 +559,9 @@ export class AWSResourceDiscoveryService {
           );
         }
 
+        if (s3Tally.buckets > 0) {
+          console.log(`🪣 [Discovery] S3 security evaluation: ${formatS3EvaluationTally(s3Tally)}`);
+        }
         console.log(`✅ [Discovery] Compliance scan complete (${allResources.length} resources scanned)`);
         complianceScanCompleted = true;
       } catch (error: any) {
@@ -1037,7 +1057,7 @@ export class AWSResourceDiscoveryService {
         // Check encryption. AWS's well-known signal for "no default encryption
         // configured" is a ServerSideEncryptionConfigurationNotFoundError -- the S3
         // equivalent of GetBucketPolicy's NoSuchBucketPolicy (see
-        // checkS3PublicAccessEnhanced below). Only that specific, confirmed-negative
+        // s3-security-evaluation.ts). Only that specific, confirmed-negative
         // error may set isEncrypted = false; any other error (AccessDenied,
         // throttling, a transient failure) leaves it null/unknown rather than
         // fabricating a "not encrypted" finding.

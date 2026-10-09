@@ -42,15 +42,19 @@ export interface AwsResourceFieldSource {
 
 export interface ComplianceIssueSource {
   source_type: 'compliance_issue';
-  /** The exact ComplianceIssue.issue text this observation is keyed on. */
+  /** The ComplianceIssue.issue text of the matched finding. */
   issue_text: string;
+  /** The matched finding's stable key; absent for a legacy finding matched by text. */
+  finding_key?: string;
   resource_type: string;
 }
 
 export interface ComplianceIssueAbsentSource {
   source_type: 'compliance_issue_absent';
-  /** The exact ComplianceIssue.issue text whose absence this observation reports. */
+  /** The ComplianceIssue.issue text(s) whose absence this observation reports. */
   issue_text: string;
+  /** The stable finding keys whose absence this observation reports. */
+  finding_keys?: string[];
   resource_type: string;
 }
 

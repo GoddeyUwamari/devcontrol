@@ -13,6 +13,9 @@
 import { Pool } from 'pg';
 import { Soc2EvidenceService } from '../soc2-evidence.service';
 import { Soc2EvidenceRepository } from '../../repositories/soc2-evidence.repository';
+import { S3Client } from '@aws-sdk/client-s3';
+import { S3_FINDING_KEYS, S3_FINDING_TEXTS } from '../s3-security-evaluation';
+import { ComplianceScannerService } from '../complianceScanner';
 
 function dbConfig() {
   return {
@@ -112,6 +115,15 @@ async function insertDiscoveryJob(orgId: string, complianceScanCompleted: boolea
 
 async function observationsFor(orgId: string, criterionId: string) {
   return repository.getObservations(orgId, criterionId);
+}
+
+/** CC6.6 observation for one S3 bucket with these compliance_issues, after a complete discovery job. */
+async function cc66For(compliance_issues: unknown[]) {
+  const orgId = await insertOrg();
+  await insertDiscoveryJob(orgId, true);
+  const bucket = await insertResource(orgId, { resource_type: 's3', is_public: false, compliance_issues });
+  await service.computeAndPersistEvidence(orgId);
+  return (await observationsFor(orgId, 'CC6.6')).find((o) => o.resource_arn === bucket);
 }
 
 describe('Soc2EvidenceService — CC6.1 encryption', () => {
@@ -242,6 +254,109 @@ describe('Soc2EvidenceService — CC6.6 public exposure (S3, enhanced-check base
     const obs = observations.find((o) => o.resource_arn === bucket);
 
     expect(obs?.result).toBe('CONTRADICTS');
+  });
+});
+
+describe('Soc2EvidenceService — CC6.6 S3, stable finding keys and unverified findings', () => {
+  const keyedPolicyFinding = {
+    severity: 'critical', category: 'public_access', issue: S3_FINDING_TEXTS.publicPolicy, recommendation: 'x',
+    provenance: 'OBSERVED', findingKey: S3_FINDING_KEYS.publicPolicy,
+  };
+
+  it('a verified keyed public-access finding -> CONTRADICTS, with the key in the source', async () => {
+    const obs = await cc66For([keyedPolicyFinding]);
+    expect(obs?.result).toBe('CONTRADICTS');
+    expect(obs?.source).toMatchObject({ source_type: 'compliance_issue', finding_key: S3_FINDING_KEYS.publicPolicy });
+  });
+
+  it('matches by key, not text: a keyed ACL finding with reworded text -> CONTRADICTS', async () => {
+    const obs = await cc66For([{ ...keyedPolicyFinding, findingKey: S3_FINDING_KEYS.publicAcl, issue: S3_FINDING_TEXTS.publicAclOther }]);
+    expect(obs?.result).toBe('CONTRADICTS');
+  });
+
+  it('an unverified (carried-forward) finding -> UNKNOWN, never CONTRADICTS', async () => {
+    const obs = await cc66For([{ ...keyedPolicyFinding, verification: 'unverified' }]);
+    expect(obs?.result).toBe('UNKNOWN');
+  });
+
+  it('a verified finding outranks an unverified one -> CONTRADICTS', async () => {
+    const obs = await cc66For([
+      { ...keyedPolicyFinding, findingKey: S3_FINDING_KEYS.publicAcl, verification: 'unverified' },
+      keyedPolicyFinding,
+    ]);
+    expect(obs?.result).toBe('CONTRADICTS');
+  });
+
+  it('the HTTPS-only finding is not a public-exposure finding -> SUPPORTS', async () => {
+    const obs = await cc66For([{
+      severity: 'high', category: 'encryption', issue: S3_FINDING_TEXTS.httpsOnly, recommendation: 'x',
+      provenance: 'OBSERVED', findingKey: S3_FINDING_KEYS.httpsOnly,
+    }]);
+    expect(obs?.result).toBe('SUPPORTS');
+  });
+
+});
+
+describe('Soc2EvidenceService — CC6.6 S3, legacy wildcard-policy false positive across a re-scan', () => {
+  // The owner-confirmed protected bucket as stored before this fix: the raw-text
+  // wildcard-principal match and the tag-only HIPAA transit text, neither keyed.
+  const LEGACY_SNAPSHOT = [
+    { severity: 'critical', category: 'public_access', issue: 'S3 bucket policy allows public access (wildcard principal)', recommendation: 'x', provenance: 'OBSERVED' },
+    { severity: 'critical', category: 'encryption', issue: 'HIPAA: S3 must have encryption in transit for PHI data', recommendation: 'x' },
+  ];
+  const awsError = (name: string) => Object.assign(new Error(name), { name });
+
+  function protectedBucketS3(bucket: string): S3Client {
+    return {
+      send: jest.fn(async (command: { constructor: { name: string } }) => {
+        switch (command.constructor.name) {
+          case 'GetBucketPolicyCommand': return { Policy: JSON.stringify({
+            Version: '2012-10-17',
+            Statement: [{
+              Sid: 'DenyInsecureTransport', Effect: 'Deny', Principal: '*', Action: 's3:*',
+              Resource: [`arn:aws:s3:::${bucket}`, `arn:aws:s3:::${bucket}/*`],
+              Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+            }],
+          }) };
+          case 'GetBucketPolicyStatusCommand': return { PolicyStatus: { IsPublic: false } };
+          case 'GetPublicAccessBlockCommand': return { PublicAccessBlockConfiguration: { BlockPublicAcls: true, IgnorePublicAcls: true, BlockPublicPolicy: true, RestrictPublicBuckets: true } };
+          case 'GetBucketOwnershipControlsCommand': return { OwnershipControls: { Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] } };
+          default: return { Grants: [] };
+        }
+      }),
+    } as unknown as S3Client;
+  }
+  const deniedS3 = { send: jest.fn().mockRejectedValue(awsError('AccessDenied')) } as unknown as S3Client;
+
+  /** Re-scan a bucket whose previous snapshot is LEGACY_SNAPSHOT, as discovery would. */
+  async function rescan(s3: S3Client) {
+    const result = await new ComplianceScannerService().evaluateS3Security(
+      { resource_type: 's3', resource_id: 'protected-bucket', resource_arn: 'arn:aws:s3:::protected-bucket', compliance_issues: LEGACY_SNAPSHOT } as any,
+      s3
+    );
+    return result!.issues;
+  }
+
+  it('before any re-scan, the legacy text still maps to CONTRADICTS (compatibility fallback)', async () => {
+    const obs = await cc66For(LEGACY_SNAPSHOT);
+    expect(obs?.result).toBe('CONTRADICTS');
+  });
+
+  it('legacy wildcard finding + verified Pass re-scan -> SUPPORTS (the false positive is cleared)', async () => {
+    const issues = await rescan(protectedBucketS3('protected-bucket'));
+    expect(issues).toEqual([]);
+    const obs = await cc66For(issues);
+    expect(obs?.result).toBe('SUPPORTS');
+  });
+
+  it('legacy wildcard finding + Unknown re-scan -> UNKNOWN, not SUPPORTS (carried forward unverified)', async () => {
+    const issues = await rescan(deniedS3);
+    expect(issues).toEqual([
+      { ...LEGACY_SNAPSHOT[0], findingKey: S3_FINDING_KEYS.publicPolicy, verification: 'unverified' },
+    ]);
+    const obs = await cc66For(issues);
+    expect(obs?.result).toBe('UNKNOWN');
+    expect(obs?.result).not.toBe('SUPPORTS');
   });
 });
 
