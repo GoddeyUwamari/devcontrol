@@ -152,6 +152,7 @@ const SURFACES: Array<[string, string]> = [
   ['GET', '/api/organizations/:org/members'],
   ['POST', '/api/organizations/accept-invitation'],
   ['GET', '/api/services/stats'],
+  ['GET', '/api/services/intelligence'],
   ['GET', '/api/dependencies'],
   ['GET', '/api/deployments/stats'],
   ['GET', '/api/infrastructure'],

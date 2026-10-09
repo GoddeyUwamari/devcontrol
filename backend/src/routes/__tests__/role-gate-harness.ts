@@ -138,7 +138,10 @@ export function createRoleGateHarness(label: string) {
     await appPool.end();
   }
 
-  return { pool, buildOrg, insertUser, addMembership, listen, sendAs, close };
+  /** The listening server's /api base URL, for requests sendAs cannot make (e.g. no token). */
+  const url = () => baseUrl;
+
+  return { pool, buildOrg, insertUser, addMembership, listen, sendAs, close, url };
 }
 
 export type RoleGateOrg = Awaited<ReturnType<ReturnType<typeof createRoleGateHarness>['buildOrg']>>;
