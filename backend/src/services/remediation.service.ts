@@ -87,6 +87,15 @@ export function assertActionAvailable(actionType: string): void {
   if (reason) throw new Error(`${ACTION_UNAVAILABLE_PREFIX} ${reason}`);
 }
 
+/**
+ * Whether the global kill-switch allows real AWS execution: only the exact
+ * string 'true'. Read at call time. The one definition of the setting --
+ * the execution guard below and anything that reports it both use this.
+ */
+export function isAutomatedRemediationEnabled(): boolean {
+  return process.env.ENABLE_AUTOMATED_REMEDIATION === 'true';
+}
+
 // A workflow has one target: resource_id. Every action handler reads its
 // target from action_params.resource_id, while the self-protection guards,
 // the rollback and the UI read the workflow's resource_id, so the two must
@@ -201,7 +210,7 @@ export class RemediationService {
   // The global kill-switch. Off by default so real AWS execution ships inert
   // until explicitly enabled; applies to rollback as much as to execution.
   private assertAutomatedRemediationEnabled(workflow: WorkflowRow, operation: string): void {
-    if (process.env.ENABLE_AUTOMATED_REMEDIATION !== 'true') {
+    if (!isAutomatedRemediationEnabled()) {
       console.log(
         `[REMEDIATION BLOCKED] Dry-run mode enabled — workflow ${workflow.id} ` +
         `(${operation} ${workflow.action_type} on ${workflow.resource_id}) not executed. ` +
