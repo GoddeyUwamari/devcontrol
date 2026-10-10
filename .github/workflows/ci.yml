@@ -13,6 +13,23 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  # Minimum free space (MiB) every production deploy's SSM command requires
+  # on each filesystem it writes to, checked by
+  # .github/scripts/deploy-disk-preflight.sh before anything is downloaded,
+  # extracted or deleted. Derived from measured sizes (2026-10-10, fresh
+  # `npm ci --workspace=backend --include-workspace-root=false --omit=dev`
+  # with an empty npm cache): backend node_modules 338 MiB + npm cache
+  # growth 35 MiB + dist tarball 0.6 MiB + staged dist 2.9 MiB (briefly
+  # alongside the live dist) = ~377 MiB peak; the migration artifacts are
+  # each under 2 MiB extracted. 1024 MiB is ~2.7x the backend peak: room
+  # for dependency growth and Linux/macOS platform differences in the
+  # measurement, and it keeps the root volume (which also holds the
+  # database and logs) from being driven to 0 by a deploy. The migration
+  # jobs use the same floor because they run concurrently with
+  # deploy-backend on the same filesystem.
+  DEPLOY_MIN_FREE_MIB: '1024'
+
 jobs:
   lint-and-build:
     runs-on: ubuntu-24.04
@@ -212,31 +229,67 @@ jobs:
       - name: Deploy via SSM and restart PM2
         id: deploy
         run: |
-          set -e
+          set -eo pipefail
           # Built with jq (not manual JSON string concatenation) because the
           # install step below needs a nested `bash -c "..."` invocation --
           # jq's --arg substitution and native JSON serialization keep that
           # quoting correct instead of relying on hand-written escapes.
+          #
+          # Ordering (run 38037952336 deleted the live dist/ and
+          # node_modules/ and only then hit a full disk in `npm ci`):
+          #   1. disk preflight (.github/scripts/deploy-disk-preflight.sh,
+          #      shipped base64 like the migration jobs' symlink script) on
+          #      every filesystem written to — /tmp and the install root;
+          #   2. download + extract dist and download all three manifests
+          #      into a staging dir on the same filesystem as the install;
+          #   3. only then touch the live release: swap dist in, install
+          #      the manifests, reinstall node_modules, restart PM2.
+          # Any failure in 1-2 prints DEPLOY_ABORTED_BEFORE_LIVE_CHANGES
+          # (from the EXIT trap, never otherwise) so rollback can be skipped
+          # for a release that was never modified. The trap also removes the
+          # deploy's own tarball and staging dir on success and failure; it
+          # never touches dist/, node_modules/ or anything else persistent.
+          #
+          # executionTimeout (480s) is deliberately below
+          # wait-for-ssm-command.sh's 600s ceiling (minus its 60s
+          # registration window and one 15s poll), so the agent stops a hung
+          # deploy itself and reports TimedOut — rollback below then never
+          # races a deploy command that is still running on the host.
+          PREFLIGHT_SCRIPT_B64=$(base64 < .github/scripts/deploy-disk-preflight.sh | tr -d '\n')
           PARAMS=$(jq -n \
             --arg sha "${{ github.sha }}" \
-            '{"commands": [
+            --arg preflight_b64 "$PREFLIGHT_SCRIPT_B64" \
+            --arg min_free "$DEPLOY_MIN_FREE_MIB" \
+            '("/home/ubuntu/devcontrol/.deploy-staging-" + $sha) as $stage
+            | ("/tmp/dist-" + $sha + ".tar.gz") as $tarball
+            | {"commands": [
               "set -e",
               "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
-              ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/dist.tar.gz /tmp/dist-" + $sha + ".tar.gz"),
+              "LIVE_RELEASE_TOUCHED=0",
+              ("trap '\''rc=$?; rm -f " + $tarball + "; rm -rf " + $stage + "; if [ $rc -ne 0 ] && [ $LIVE_RELEASE_TOUCHED = 0 ]; then echo DEPLOY_ABORTED_BEFORE_LIVE_CHANGES; fi'\'' EXIT"),
+              ("echo " + $preflight_b64 + " | base64 -d | bash -s -- " + $min_free + " /tmp /home/ubuntu/devcontrol"),
+              ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/dist.tar.gz " + $tarball),
+              ("sudo -H -u ubuntu --preserve-env=PATH rm -rf " + $stage),
+              ("sudo -H -u ubuntu --preserve-env=PATH mkdir -p " + $stage + "/dist " + $stage + "/manifests"),
+              ("sudo -H -u ubuntu --preserve-env=PATH tar xzf " + $tarball + " -C " + $stage + "/dist"),
+              ("sudo -H -u ubuntu --preserve-env=PATH rm -f " + $tarball),
+              ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/package.json " + $stage + "/manifests/backend-package.json"),
+              ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/workspace-package.json " + $stage + "/manifests/workspace-package.json"),
+              ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/package-lock.json " + $stage + "/manifests/package-lock.json"),
+              "LIVE_RELEASE_TOUCHED=1",
+              "echo Staged release verified, now modifying the live release",
               "sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist",
-              "sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist",
-              ("sudo -H -u ubuntu --preserve-env=PATH tar xzf /tmp/dist-" + $sha + ".tar.gz -C /home/ubuntu/devcontrol/backend/dist"),
-              ("sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-" + $sha + ".tar.gz"),
-              ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/package.json /home/ubuntu/devcontrol/backend/package.json"),
-              ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/workspace-package.json /home/ubuntu/devcontrol/package.json"),
-              ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/package-lock.json /home/ubuntu/devcontrol/package-lock.json"),
+              ("sudo -H -u ubuntu --preserve-env=PATH mv " + $stage + "/dist /home/ubuntu/devcontrol/backend/dist"),
+              ("sudo -H -u ubuntu --preserve-env=PATH mv " + $stage + "/manifests/backend-package.json /home/ubuntu/devcontrol/backend/package.json"),
+              ("sudo -H -u ubuntu --preserve-env=PATH mv " + $stage + "/manifests/workspace-package.json /home/ubuntu/devcontrol/package.json"),
+              ("sudo -H -u ubuntu --preserve-env=PATH mv " + $stage + "/manifests/package-lock.json /home/ubuntu/devcontrol/package-lock.json"),
               "sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/node_modules",
               "sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/node_modules",
               "sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol && npm ci --workspace=backend --include-workspace-root=false --omit=dev --legacy-peer-deps\"",
               "sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env",
               "sudo -H -u ubuntu --preserve-env=PATH pm2 save",
               "echo ✅ Backend deployed, awaiting smoke test"
-            ]}')
+            ], "executionTimeout": ["480"]}')
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
@@ -250,8 +303,20 @@ jobs:
           # ceiling (~100s) treats that as a failure while the command is
           # still genuinely InProgress. Poll for a real terminal status
           # instead; see the script for the timeout rationale and the
-          # incident (run 33836015818) this fixes.
-          bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59"
+          # incidents (runs 33836015818 and 38037952336) it fixes.
+          SSM_LOG="$RUNNER_TEMP/deploy-ssm-output.log"
+          if bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59" 2>&1 | tee "$SSM_LOG"; then
+            exit 0
+          fi
+          # Only a positive marker from the remote EXIT trap proves the live
+          # release was never modified. Missing/unretrievable output (e.g.
+          # the invocation never registered, or the agent killed the command)
+          # is treated as "possibly modified", so rollback still runs.
+          if grep -q 'DEPLOY_ABORTED_BEFORE_LIVE_CHANGES' "$SSM_LOG"; then
+            echo "live_release_untouched=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Deploy ${{ github.sha }} aborted before modifying the live release (e.g. disk preflight or artifact download failed) — the previous release is still running; rollback is not needed."
+          fi
+          exit 1
 
       - name: Smoke test new deploy
         id: smoke_test
@@ -305,15 +370,32 @@ jobs:
           aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" || true
           echo "✅ Deploy ${{ github.sha }} verified healthy and recorded as last known-good"
 
+      # Runs when the smoke test fails OR when the deploy step itself fails
+      # or times out (run 38037952336: the deploy step failed after the
+      # host had already deleted the live release, and rollback — then
+      # gated on the smoke test alone — was skipped, extending the outage).
+      # `!cancelled()` is required: without a status function, `if:`
+      # implicitly ANDs success(), which is false once the deploy step has
+      # failed. The one deploy failure that skips rollback is the one that
+      # positively proved, via the remote EXIT trap's marker, that the live
+      # release was never modified — rolling back a healthy release on a
+      # disk that just failed preflight would itself risk an outage.
       - name: Roll back to previous deploy
         id: rollback
         if: >
-          steps.smoke_test.outcome == 'failure' &&
+          !cancelled() &&
+          (
+            steps.smoke_test.outcome == 'failure' ||
+            (
+              steps.deploy.outcome == 'failure' &&
+              steps.deploy.outputs.live_release_untouched != 'true'
+            )
+          ) &&
           steps.get_prev_sha.outputs.prev_artifact_exists == 'true' &&
           steps.get_prev_sha.outputs.prev_sha != github.sha
         run: |
           set -e
-          echo "Smoke test failed — rolling back to previous known-good deploy: ${{ steps.get_prev_sha.outputs.prev_sha }}"
+          echo "Deploy step outcome: ${{ steps.deploy.outcome }}, smoke test outcome: ${{ steps.smoke_test.outcome }} — rolling back to previous known-good deploy: ${{ steps.get_prev_sha.outputs.prev_sha }}"
 
           # Which install command to use is decided here (build time), not
           # inside the remote script, so the SSM payload never needs a
@@ -336,7 +418,8 @@ jobs:
                 ]
               end) as $install_steps
             | {"commands": (
-                ["set -e", "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin"]
+                ["set -e", "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
+                 "trap '\''rm -f /tmp/dist-rollback.tar.gz'\'' EXIT"]
                 + [("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/dist.tar.gz /tmp/dist-rollback.tar.gz")]
                 + ["sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist",
                    "sudo -H -u ubuntu --preserve-env=PATH mkdir -p /home/ubuntu/devcontrol/backend/dist",
@@ -347,7 +430,7 @@ jobs:
                 + ["sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env",
                    "sudo -H -u ubuntu --preserve-env=PATH pm2 save",
                    ("echo Rolled back to " + $sha)]
-              )}')
+              ), "executionTimeout": ["480"]}')
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
@@ -359,12 +442,15 @@ jobs:
           # Same rationale as the deploy step above: rollback also runs an
           # `npm install`/`npm ci` on the host and can take several minutes,
           # so it needs the same bounded-polling fix rather than the
-          # short-ceiling `aws ssm wait command-executed`.
+          # short-ceiling `aws ssm wait command-executed`, and the same
+          # executionTimeout below the poller's ceiling. No disk preflight
+          # here: rollback only runs once the live release may already be
+          # broken, so refusing to try would never leave production better.
           bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59"
 
       - name: Verify rollback health
         id: rollback_smoke_test
-        if: steps.rollback.outcome == 'success'
+        if: "!cancelled() && steps.rollback.outcome == 'success'"
         continue-on-error: true
         run: |
           set +e
@@ -403,10 +489,18 @@ jobs:
           exit 1
 
       - name: Fail job on broken deploy
-        if: steps.smoke_test.outcome == 'failure'
+        if: >
+          !cancelled() &&
+          (steps.deploy.outcome == 'failure' || steps.smoke_test.outcome == 'failure')
         run: |
-          echo "::error::Deploy ${{ github.sha }} FAILED its post-deploy smoke test."
-          if [ "${{ steps.rollback.outcome }}" == "success" ] && [ "${{ steps.rollback_smoke_test.outcome }}" == "success" ]; then
+          if [ "${{ steps.deploy.outcome }}" == "failure" ]; then
+            echo "::error::Deploy ${{ github.sha }} FAILED in the SSM deploy step (failed, timed out, or never confirmed)."
+          else
+            echo "::error::Deploy ${{ github.sha }} FAILED its post-deploy smoke test."
+          fi
+          if [ "${{ steps.deploy.outputs.live_release_untouched }}" == "true" ]; then
+            echo "::error::The deploy aborted before modifying the live release (see the deploy step log, e.g. disk preflight), so rollback was intentionally skipped — the previous release should still be serving. Confirm /health and fix the cause before redeploying."
+          elif [ "${{ steps.rollback.outcome }}" == "success" ] && [ "${{ steps.rollback_smoke_test.outcome }}" == "success" ]; then
             echo "::error::Automatic rollback to previous deploy (${{ steps.get_prev_sha.outputs.prev_sha }}) succeeded — production is stable again, but ${{ github.sha }} must be fixed before redeploying."
           elif [ "${{ steps.rollback.outcome }}" == "success" ]; then
             echo "::error::Rollback ran but the restored version ALSO failed its smoke test — production may still be down. Investigate immediately."
@@ -504,16 +598,28 @@ jobs:
           # other shell metacharacters from that script ever appear in this
           # JSON/YAML text, so nothing here can re-expand its variables early.
           # The remote host decodes and runs the exact file this repo tests.
+          #
+          # Disk preflight (.github/scripts/deploy-disk-preflight.sh, shipped
+          # the same base64 way) runs before the download; the EXIT trap
+          # removes this deploy's own tarball on success and failure. The
+          # release directory is only ever removed after a failed extract
+          # into a directory THIS run created — a re-run for the same SHA
+          # must never delete an existing (possibly live) release.
           SYMLINK_SCRIPT_B64=$(base64 < .github/scripts/deploy-migration-symlink.sh | tr -d '\n')
+          PREFLIGHT_SCRIPT_B64=$(base64 < .github/scripts/deploy-disk-preflight.sh | tr -d '\n')
           PARAMS=$(jq -n \
             --arg sha "${{ github.sha }}" \
             --arg script_b64 "$SYMLINK_SCRIPT_B64" \
+            --arg preflight_b64 "$PREFLIGHT_SCRIPT_B64" \
+            --arg min_free "$DEPLOY_MIN_FREE_MIB" \
             '{"commands": [
               "set -e",
               "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
               ("export RELEASE_DIR=/home/ubuntu/devcontrol/database-releases/" + $sha),
+              ("trap '\''rm -f /tmp/migrations-" + $sha + ".tar.gz'\'' EXIT"),
+              ("echo " + $preflight_b64 + " | base64 -d | bash -s -- " + $min_free + " /tmp /home/ubuntu/devcontrol/database-releases"),
               ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR aws s3 cp s3://devcontrol-deploy-artifacts/database/" + $sha + "/migrations.tar.gz /tmp/migrations-" + $sha + ".tar.gz"),
-              ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"mkdir -p $RELEASE_DIR && tar xzf /tmp/migrations-" + $sha + ".tar.gz -C $RELEASE_DIR || (rm -rf $RELEASE_DIR; exit 1)\""),
+              ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"if [ -e $RELEASE_DIR ]; then tar xzf /tmp/migrations-" + $sha + ".tar.gz -C $RELEASE_DIR; else mkdir -p $RELEASE_DIR && tar xzf /tmp/migrations-" + $sha + ".tar.gz -C $RELEASE_DIR || (rm -rf $RELEASE_DIR; exit 1); fi\""),
               ("sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/migrations-" + $sha + ".tar.gz"),
               ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"echo " + $sha + " > $RELEASE_DIR/.deployed_sha\""),
               ("echo " + $script_b64 + " | base64 -d | sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -s -- \"$RELEASE_DIR\" /home/ubuntu/devcontrol/database"),
@@ -530,25 +636,13 @@ jobs:
             --query "Command.CommandId" --output text)
           echo "SSM command ID: $COMMAND_ID"
 
-          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" || true
-
-          STATUS=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
-            --query "Status" --output text)
-
-          echo "--- stdout ---"
-          aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
-            --query "StandardOutputContent" --output text
-
-          if [ "$STATUS" != "Success" ]; then
-            echo "--- stderr ---"
-            aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
-              --query "StandardErrorContent" --output text
-            echo "::error::Migration tooling deploy finished with status: $STATUS"
+          # Same bounded poller as deploy-backend (registration-delay retry,
+          # explicit terminal statuses, diagnostics on failure) instead of
+          # `aws ssm wait command-executed || true`.
+          bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59" || {
+            echo "::error::Migration tooling deploy did not succeed (see SSM diagnostics above)"
             exit 1
-          fi
+          }
 
   # Deploys the ADMINISTRATIVE migration tooling (database/migrate.js +
   # database/migrations-admin/) as its own artifact, entirely independent
@@ -653,17 +747,25 @@ jobs:
         id: deploy_migration_tooling_admin
         run: |
           set -e
+          # Disk preflight, tarball-cleanup trap and "never remove a release
+          # directory this run didn't create" exactly as in
+          # deploy-migration-tooling above.
           SYMLINK_SCRIPT_B64=$(base64 < .github/scripts/deploy-migration-symlink.sh | tr -d '\n')
+          PREFLIGHT_SCRIPT_B64=$(base64 < .github/scripts/deploy-disk-preflight.sh | tr -d '\n')
           PARAMS=$(jq -n \
             --arg sha "${{ github.sha }}" \
             --arg script_b64 "$SYMLINK_SCRIPT_B64" \
+            --arg preflight_b64 "$PREFLIGHT_SCRIPT_B64" \
+            --arg min_free "$DEPLOY_MIN_FREE_MIB" \
             '{"commands": [
               "set -e",
               "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
               ("export RELEASE_DIR=/opt/devcontrol-admin/database-releases/" + $sha),
+              ("trap '\''rm -f /tmp/migrations-admin-" + $sha + ".tar.gz'\'' EXIT"),
+              ("echo " + $preflight_b64 + " | base64 -d | bash -s -- " + $min_free + " /tmp /opt/devcontrol-admin/database-releases"),
               "mkdir -p /opt/devcontrol-admin/database-releases",
               ("aws s3 cp s3://devcontrol-deploy-artifacts/database-admin/" + $sha + "/migrations-admin.tar.gz /tmp/migrations-admin-" + $sha + ".tar.gz"),
-              ("bash -c \"mkdir -p $RELEASE_DIR && tar xzf /tmp/migrations-admin-" + $sha + ".tar.gz -C $RELEASE_DIR || (rm -rf $RELEASE_DIR; exit 1)\""),
+              ("bash -c \"if [ -e $RELEASE_DIR ]; then tar xzf /tmp/migrations-admin-" + $sha + ".tar.gz -C $RELEASE_DIR; else mkdir -p $RELEASE_DIR && tar xzf /tmp/migrations-admin-" + $sha + ".tar.gz -C $RELEASE_DIR || (rm -rf $RELEASE_DIR; exit 1); fi\""),
               ("rm -f /tmp/migrations-admin-" + $sha + ".tar.gz"),
               ("bash -c \"echo " + $sha + " > $RELEASE_DIR/.deployed_sha\""),
               ("chgrp -R postgres $RELEASE_DIR"),
@@ -680,22 +782,10 @@ jobs:
             --query "Command.CommandId" --output text)
           echo "SSM command ID: $COMMAND_ID"
 
-          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" || true
-
-          STATUS=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
-            --query "Status" --output text)
-
-          echo "--- stdout ---"
-          aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
-            --query "StandardOutputContent" --output text
-
-          if [ "$STATUS" != "Success" ]; then
-            echo "--- stderr ---"
-            aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" --instance-id "i-0c3e55c290844ec59" \
-              --query "StandardErrorContent" --output text
-            echo "::error::Admin migration tooling deploy finished with status: $STATUS"
+          # Same bounded poller as deploy-backend (registration-delay retry,
+          # explicit terminal statuses, diagnostics on failure) instead of
+          # `aws ssm wait command-executed || true`.
+          bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59" || {
+            echo "::error::Admin migration tooling deploy did not succeed (see SSM diagnostics above)"
             exit 1
-          fi
+          }

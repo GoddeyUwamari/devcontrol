@@ -393,7 +393,9 @@ describe('deploy-migration-tooling destination pre-flight (executes the real .gi
     // match or a false failure here.
     const stubScriptB64 = Buffer.from('#!/usr/bin/env bash\necho stub\n').toString('base64');
     const commands = buildDeployMigrationToolingCommands('deadbeef'.repeat(5), stubScriptB64);
-    const symlinkInvocation = commands.find((c) => c.includes('base64 -d'));
+    // The disk-preflight script is also shipped via `base64 -d` (and runs
+    // first), so select the command carrying this script's own payload.
+    const symlinkInvocation = commands.find((c) => c.includes(stubScriptB64));
     expect(symlinkInvocation).toBeTruthy();
     expect(symlinkInvocation).toMatch(
       /base64 -d \| sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -s -- "\$RELEASE_DIR" \/home\/ubuntu\/devcontrol\/database/
