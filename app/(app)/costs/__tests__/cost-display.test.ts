@@ -133,7 +133,7 @@ describe('month-to-date spend', () => {
 
   it('an inventory estimate is labeled an estimate and never AWS billed spend', () => {
     const d = describeSpend(spendSection(42.5, 'estimated'), ready)
-    expect(d.label).toBe('Estimated Monthly Spend')
+    expect(d.label).toBe('Estimated Monthly Run-Rate')
     expect(d.value).toBe('$42.50/mo')
     expect(d.sub).toMatch(/not AWS billed spend/)
     expect(d.sub).not.toMatch(/^Actual|Live from AWS/)

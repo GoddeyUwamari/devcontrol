@@ -1,4 +1,5 @@
 import type { PlatformDashboardStats } from '@/lib/types'
+import { statsHasSpendFigure } from '../costs/cost-display'
 
 /**
  * Pure, extracted-for-testability version of the AWS/billing-state gates used
@@ -20,7 +21,7 @@ export function computeDashboardAwsGates(params: {
   stats: Pick<PlatformDashboardStats, 'totalServices' | 'monthlyAwsCost' | 'costSource'> | undefined
 }) {
   const { isDemoActive, isAwsConnected, statsLoading, stats } = params
-  const hasBillingData = !isDemoActive && !!stats && (stats.costSource === 'actual' || stats.monthlyAwsCost > 0)
+  const hasBillingData = !isDemoActive && !!stats && statsHasSpendFigure(stats)
   const hasServicesOnly = !isDemoActive && !!stats && stats.totalServices > 0 && !hasBillingData
   const isBillingSyncing = !isDemoActive && isAwsConnected && !statsLoading && !!stats && stats.totalServices === 0 && !hasBillingData
   // Requires stats to have loaded at least once (or demo mode, where the

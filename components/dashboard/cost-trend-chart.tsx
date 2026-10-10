@@ -19,6 +19,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
+import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis';
 
 interface CostServiceAmount {
   service: string;
@@ -262,8 +263,8 @@ export function CostTrendChart({
             <CardTitle>AWS Cost Trends</CardTitle>
             <CardDescription>
               {hasServiceBreakdown
-                ? 'Daily cost breakdown by service over time'
-                : 'Daily cost breakdown by service category over time'}
+                ? `Daily cost breakdown by service over time · ${TREND_TOTALS_NOTE}`
+                : `Daily cost breakdown by service category over time · ${TREND_TOTALS_NOTE}`}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">

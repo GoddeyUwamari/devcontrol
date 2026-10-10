@@ -181,7 +181,7 @@ describe('Costs page -- spend provenance', () => {
     })
     renderPage()
 
-    const spendCard = await card('Estimated Monthly Spend')
+    const spendCard = await card('Estimated Monthly Run-Rate')
     expect(within(spendCard).getByText('$42.50/mo')).toBeInTheDocument()
     expect(within(spendCard).getByText(/not AWS billed spend/)).toBeInTheDocument()
     expect(screen.queryByText('Live from AWS Cost Explorer')).not.toBeInTheDocument()
@@ -352,7 +352,7 @@ describe('Costs page -- month-over-month basis', () => {
     for (const range of ['7D', '30D', '3M', '6M', '1Y']) {
       fireEvent.click(await screen.findByRole('button', { name: range }))
       const basis = await screen.findByTestId('mom-basis')
-      expect(basis.textContent).toBe("Finished days this month vs same days last month · not the selected range · today's spend still being billed")
+      expect(basis.textContent).toBe("Finished days this month vs same days last month · not the selected range · Credits/refunds excluded · today's spend still being billed")
     }
     // The comparison is fetched once, not per range.
     expect(mockGetCostSummary).toHaveBeenCalledTimes(1)
@@ -384,7 +384,7 @@ describe('Costs page -- month-over-month basis', () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: momMissing('unavailable') })
     renderPage()
 
-    expect((await screen.findByTestId('mom-basis')).textContent).toBe('Finished days this month vs same days last month · not the selected range')
+    expect((await screen.findByTestId('mom-basis')).textContent).toBe('Finished days this month vs same days last month · not the selected range · Credits/refunds excluded')
   })
 })
 
@@ -416,5 +416,50 @@ describe('Costs page -- spike banner', () => {
     expect(document.querySelector('a[href="/anomalies"]')).toBeNull()
     expect(screen.queryByText(/Investigate/)).not.toBeInTheDocument()
     expect(screen.getByText(/more than 20% above the same days last month \(AWS Cost Explorer\); today's spend still being billed/)).toBeInTheDocument()
+  })
+})
+
+describe('Costs page -- trend basis', () => {
+  it('says the Spend Trend excludes credits and refunds (the backend floors each category at $0)', async () => {
+    mockGetCostSummary.mockResolvedValue({ spend: spendActual(0), monthOverMonth: mom(0, 0) })
+    renderPage()
+    expect(await screen.findByText(/from Cost Explorer · Credits\/refunds excluded/)).toBeInTheDocument()
+  })
+
+  it('the month-over-month strip, built from the same floored trend, says credits/refunds are excluded', async () => {
+    mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(14.2, 1.42) })
+    renderPage()
+    expect((await screen.findByTestId('mom-basis')).textContent).toContain('Credits/refunds excluded')
+  })
+
+  it('Cost by Service, summed from the trend categories, says credits/refunds are excluded', async () => {
+    mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(0, 0) })
+    renderPage()
+    const basis = await screen.findByTestId('cost-by-service-basis')
+    expect(basis.textContent).toMatch(/^AWS Cost Explorer · selected range \(.+\) · Credits\/refunds excluded$/)
+  })
+
+  it('the exported CSV opens with the same basis row before its header', async () => {
+    mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(0, 0) })
+    let blob: Blob | undefined
+    // jsdom has no object URLs; capture the exported Blob instead.
+    const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL }
+    URL.createObjectURL = (b: Blob) => { blob = b; return 'blob:test' }
+    URL.revokeObjectURL = () => {}
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    renderPage()
+    // Wait for the trend rows so the export carries them.
+    const basis = await screen.findByTestId('cost-by-service-basis')
+    const panel = basis.closest('.rounded-2xl') as HTMLElement
+    await waitFor(() => expect(panel.textContent).toContain('Compute'))
+    fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
+    expect(click).toHaveBeenCalled()
+    const lines = (await blob!.text()).split('\n')
+    expect(lines[0]).toBe('"AWS Cost Explorer daily totals · Credits/refunds excluded"')
+    expect(lines[1]).toBe('"Date","Service","Cost"')
+    expect(lines[2]).toMatch(/^"2026-09-26",/)
+    click.mockRestore()
+    URL.createObjectURL = original.create
+    URL.revokeObjectURL = original.revoke
   })
 })

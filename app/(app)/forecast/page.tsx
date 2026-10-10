@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { toast } from 'sonner';
+import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis';
 
 const stripMarkdown = (text: string) =>
   text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim();
@@ -193,6 +194,11 @@ export default function ForecastPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Cost Forecasting</h1>
           <p className="text-xs text-slate-500 font-medium leading-relaxed">AI-powered predictions and scenario planning for your AWS costs</p>
+          {!isDemoMode && (
+            <p className="text-xs text-slate-500 leading-relaxed mt-1" data-testid="forecast-basis">
+              Projected from AWS Cost Explorer daily totals · {TREND_TOTALS_NOTE}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-500">Updated {new Date(forecast.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>

@@ -20,69 +20,38 @@ export class OrphanedResourceDetectorService {
   constructor(private pool: Pool | PoolClient) {}
 
   /**
-   * Detect all orphaned resources for an organization
+   * Detect all orphaned resources for an organization.
+   *
+   * Stopped EC2 instances are deliberately not detected. Discovery records no
+   * stop time (metadata.launch_time is the last start), and its upsert
+   * refreshes updated_at on every run, so "stopped for more than 30 days" could
+   * not be established -- and a stopped instance accrues no compute charge, so
+   * its compute estimate was never a saving.
    */
   async detectOrphaned(organizationId: string): Promise<OrphanedResource[]> {
     await assertTenantContext(this.pool, organizationId);
 
     const orphanedResources: OrphanedResource[] = [];
 
-    // Find stopped EC2 instances (stopped for > 30 days)
-    const stoppedInstances = await this.findStoppedInstances(organizationId);
-    orphanedResources.push(...stoppedInstances);
-
-    // Find empty S3 buckets (placeholder - would need object count from metadata)
     const emptyBuckets = await this.findEmptyS3Buckets(organizationId);
     orphanedResources.push(...emptyBuckets);
-
-    // TODO: Add more orphaned resource types:
-    // - Unattached EBS volumes
-    // - Unused Elastic IPs
-    // - Idle RDS instances
 
     return orphanedResources;
   }
 
   /**
-   * Find EC2 instances that have been stopped for > 30 days
-   */
-  private async findStoppedInstances(organizationId: string): Promise<OrphanedResource[]> {
-    const result = await this.pool.query(
-      `SELECT * FROM aws_resources
-       WHERE organization_id = $1
-       AND resource_type = 'ec2'
-       AND status = 'stopped'
-       AND updated_at < NOW() - INTERVAL '30 days'`,
-      [organizationId]
-    );
-
-    return result.rows.map((resource: AWSResource) => ({
-      resource,
-      orphaned_type: 'stopped_instance' as OrphanedResourceType,
-      age_days: this.calculateAgeDays(resource.updated_at),
-      // EC2's estimated_monthly_cost is always synchronously computed (never
-      // null in practice -- only Lambda's usage-based estimate can be null,
-      // see awsResourceDiscovery.ts); the ?? 0 here is a type-narrowing
-      // guard for the shared nullable column type, not a new behavior.
-      potential_savings: resource.estimated_monthly_cost ?? 0,
-    }));
-  }
-
-  /**
-   * Find S3 buckets that appear to be empty
-   * Note: This is a simplified check - real implementation would query S3 for object count
+   * S3 buckets recorded as holding zero objects. A bucket whose object count
+   * was never recorded is unknown, not empty, and is not reported.
    */
   private async findEmptyS3Buckets(organizationId: string): Promise<OrphanedResource[]> {
-    // Unlike findStoppedInstances (whose status = 'stopped' condition already
-    // excludes 'terminated' by construction), this has no status filter at all —
-    // a terminated bucket's last-known metadata could otherwise still match and
-    // get flagged as "orphaned" savings for a bucket that no longer exists.
+    // The status filter keeps a terminated bucket's last-known metadata from
+    // being reported for a bucket that no longer exists.
     const result = await this.pool.query(
       `SELECT * FROM aws_resources
        WHERE organization_id = $1
        AND resource_type = 's3'
        AND status != 'terminated'
-       AND (metadata->>'object_count' = '0' OR metadata->>'object_count' IS NULL)`,
+       AND metadata->>'object_count' = '0'`,
       [organizationId]
     );
 
@@ -90,11 +59,9 @@ export class OrphanedResourceDetectorService {
       resource,
       orphaned_type: 'empty_s3_bucket' as OrphanedResourceType,
       age_days: this.calculateAgeDays(resource.first_discovered_at),
-      // S3's estimated_monthly_cost is always synchronously computed (never
-      // null in practice -- only Lambda's usage-based estimate can be null,
-      // see awsResourceDiscovery.ts); the ?? 0 here is a type-narrowing
-      // guard for the shared nullable column type, not a new behavior.
-      potential_savings: (resource.estimated_monthly_cost ?? 0) * 0.8, // Estimate 80% savings from deleting empty bucket
+      // An empty bucket stores nothing, so deleting it saves no storage cost;
+      // the flat inventory estimate is not a saving.
+      potential_savings: 0,
     }));
   }
 

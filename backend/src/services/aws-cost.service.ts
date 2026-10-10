@@ -155,6 +155,49 @@ const SERVICE_COLOR_OVERRIDES: Record<string, string> = {
   'Data Transfer': CATEGORICAL_PALETTE[7],
 }
 
+/** YYYY-MM-DD of a UTC instant. */
+function utcDate(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * The current calendar month to date, in UTC: from the 1st of this UTC month
+ * through today, with Cost Explorer's exclusive End set to tomorrow. Computed
+ * from UTC fields only, so the window never depends on the server's time zone.
+ */
+export function monthToDatePeriodUtc(now: Date): { start: string; end: string } {
+  return {
+    start: utcDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
+    end: utcDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))),
+  }
+}
+
+/**
+ * Cost Explorer TimePeriod and granularity for a trend range, in UTC. Short
+ * ranges are DAILY through today; 6mo/1yr are MONTHLY, aligned to UTC calendar
+ * months, current partial month included.
+ */
+export function trendPeriodUtc(range: CostTrendRange, now: Date): { start: string; end: string; granularity: Granularity } {
+  const y = now.getUTCFullYear()
+  const m = now.getUTCMonth()
+  if (range === '6mo' || range === '1yr') {
+    const monthsBack = range === '6mo' ? 6 : 12
+    return {
+      start: utcDate(new Date(Date.UTC(y, m - (monthsBack - 1), 1))),
+      end: utcDate(new Date(Date.UTC(y, m + 1, 1))),
+      granularity: Granularity.MONTHLY,
+    }
+  }
+  const daysBack = range === '7d' ? 7 : range === '30d' ? 30 : 90
+  const d = now.getUTCDate()
+  return {
+    start: utcDate(new Date(Date.UTC(y, m, d - daysBack))),
+    // Cost Explorer's End is exclusive; include today.
+    end: utcDate(new Date(Date.UTC(y, m, d + 1))),
+    granularity: Granularity.DAILY,
+  }
+}
+
 /**
  * Map a raw Cost Explorer SERVICE name to a short display name. Falls back to
  * stripping the "Amazon"/"AWS" prefix and truncating, so an unmapped service still
@@ -438,17 +481,10 @@ class AWSCostService {
     const costExplorer = this.customerCostExplorer()
 
     try {
-      const now = new Date()
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-      // Cost Explorer's End is exclusive; include today.
-      const endOfToday = new Date(now)
-      endOfToday.setDate(endOfToday.getDate() + 1)
+      const period = monthToDatePeriodUtc(new Date())
 
       const command = new GetCostAndUsageCommand({
-        TimePeriod: {
-          Start: startOfMonth.toISOString().split('T')[0],
-          End: endOfToday.toISOString().split('T')[0],
-        },
+        TimePeriod: { Start: period.start, End: period.end },
         Granularity: Granularity.MONTHLY,
         Metrics: [Metric.UNBLENDED_COST],
         GroupBy: [
@@ -472,10 +508,7 @@ class AWSCostService {
       return {
         total,
         byService,
-        period: {
-          start: startOfMonth.toISOString().split('T')[0],
-          end: endOfToday.toISOString().split('T')[0],
-        },
+        period,
         fetchedAt: new Date().toISOString(),
       }
     } catch (error) {
@@ -529,22 +562,7 @@ class AWSCostService {
    * current partial month included).
    */
   private resolveTrendPeriod(range: CostTrendRange): { start: string; end: string; granularity: Granularity } {
-    const now = new Date()
-    const toISODate = (d: Date) => d.toISOString().split('T')[0]
-
-    if (range === '6mo' || range === '1yr') {
-      const monthsBack = range === '6mo' ? 6 : 12
-      const start = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1)
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-      return { start: toISODate(start), end: toISODate(end), granularity: Granularity.MONTHLY }
-    }
-
-    const daysBack = range === '7d' ? 7 : range === '30d' ? 30 : 90
-    const start = new Date(now)
-    start.setDate(start.getDate() - daysBack)
-    const end = new Date(now)
-    end.setDate(end.getDate() + 1) // Cost Explorer's End is exclusive; include today
-    return { start: toISODate(start), end: toISODate(end), granularity: Granularity.DAILY }
+    return trendPeriodUtc(range, new Date())
   }
 
   /**

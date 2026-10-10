@@ -76,6 +76,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('spend breakdown: a failure is not "no data"', () => {
+  it('says its totals exclude credits and refunds', async () => {
+    renderPage()
+    expect(await screen.findByText('Monthly cost by service · Last 6 months · Credits/refunds excluded')).toBeInTheDocument()
+  })
+
   it('a failed trend request reads as a failure', async () => {
     vi.stubGlobal('fetch', trendFetch(false))
     renderPage()
@@ -129,7 +134,7 @@ describe('Total Spend keeps its provenance', () => {
     })
     renderPage()
 
-    const card = await kpi('Estimated Monthly Spend')
+    const card = await kpi('Estimated Monthly Run-Rate')
     expect(card.textContent).toContain('$42.50/mo')
     expect(card.textContent).toMatch(/not AWS billed spend/)
   })

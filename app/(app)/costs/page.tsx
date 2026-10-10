@@ -23,6 +23,7 @@ import Link from 'next/link'
 import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/lib/types'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, roundCents, TODAY_STILL_BILLING } from './cost-display'
+import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -289,7 +290,10 @@ export default function CostsPage() {
   const handleExportCSV = () => {
     // Real export uses costTrend (source A, already fetched for the Spend Trend chart
     // above) — real per-day/per-category numbers, not DEMO_SPEND_DATA's fabricated ones.
-    const rows: (string | number)[][] = [['Date', 'Service', 'Cost']]
+    const rows: (string | number)[][] = []
+    // The real rows are trend totals: say so in the file, which travels without the page.
+    if (!isDemoActive) rows.push([`AWS Cost Explorer daily totals · ${TREND_TOTALS_NOTE}`])
+    rows.push(['Date', 'Service', 'Cost'])
     if (isDemoActive) {
       rows.push(...DEMO_SPEND_DATA.map(d => [d.date, 'Total', d.actual ?? d.forecast ?? 0]))
     } else {
@@ -625,7 +629,7 @@ export default function CostsPage() {
           <div>
             <h2 className="text-sm font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
             <p className="text-xs text-slate-500 leading-relaxed m-0">
-              {isDemoActive ? 'Historical spend and AI forecast · Dashed line indicates prediction' : `Historical AWS spend by ${trendUnit}, from Cost Explorer`}
+              {isDemoActive ? 'Historical spend and AI forecast · Dashed line indicates prediction' : `Historical AWS spend by ${trendUnit}, from Cost Explorer · ${TREND_TOTALS_NOTE}`}
             </p>
           </div>
           <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
@@ -650,7 +654,8 @@ export default function CostsPage() {
             {
               label: 'Month-over-Month', value: mom.value, color: growthRate === null ? 'text-slate-500' : growthRate > 5 ? 'text-red-600' : 'text-green-600',
               // Fixed basis, stated because this strip sits under the range tabs it does not follow.
-              note: isDemoActive ? undefined : `${MOM_BASIS_LABEL}${mom.includesToday ? ` · ${TODAY_STILL_BILLING}` : ''}`,
+              // Built from the same floored daily trend as the chart, so credits/refunds are excluded.
+              note: isDemoActive ? undefined : `${MOM_BASIS_LABEL} · ${TREND_TOTALS_NOTE}${mom.includesToday ? ` · ${TODAY_STILL_BILLING}` : ''}`,
             },
             { label: 'Active Recommendations', value: recsUnavailable ? '—' : `${activeRecsCount}`, color: 'text-slate-500' },
             { label: 'Estimated Savings Opportunity', value: savingsValue, color: 'text-green-600' },
@@ -772,7 +777,7 @@ export default function CostsPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-sm font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
-              {!isDemoActive && <p className="text-xs text-slate-500 m-0 mt-0.5">AWS Cost Explorer · selected range ({selectedRange})</p>}
+              {!isDemoActive && <p className="text-xs text-slate-500 m-0 mt-0.5" data-testid="cost-by-service-basis">AWS Cost Explorer · selected range ({selectedRange}) · {TREND_TOTALS_NOTE}</p>}
             </div>
             <a href="/cost-optimization" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">
               Full breakdown <ChevronRight size={12} />

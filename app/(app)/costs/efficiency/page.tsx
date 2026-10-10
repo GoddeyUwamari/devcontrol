@@ -23,6 +23,7 @@ import type { AnomalyDetection } from '@/types/anomaly.types'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { describeSpend, formatUsd, roundCents } from '../cost-display'
 import Link from 'next/link'
+import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
 
@@ -538,7 +539,7 @@ export default function EfficiencyPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div>
               <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Spend breakdown</p>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>Monthly cost by service · Last 6 months</p>
+              <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>Monthly cost by service · Last 6 months{isDemoActive ? '' : ` · ${TREND_TOTALS_NOTE}`}</p>
             </div>
             <select value={barGrouping} onChange={e => setBarGrouping(e.target.value as any)} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#374151', fontSize: '12px', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}>
               <option value="service">By Service</option>

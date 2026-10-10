@@ -19,6 +19,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import InfrastructurePage from '../page'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
+import { platformStatsService } from '@/lib/services/platform-stats.service'
+import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 
 vi.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
@@ -231,5 +233,54 @@ describe('/infrastructure resource table -- lifecycle state, not invented health
     expect(screen.queryByText('Healthy', { selector: 'span' })).not.toBeInTheDocument()
     expect(screen.queryByText('Critical', { selector: 'span' })).not.toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/elevated error rate|potential downtime/)
+  })
+})
+
+describe('/infrastructure spend card -- labeled by its source', () => {
+  function mockSpend(monthlyAwsCost: number, costSource: 'actual' | 'estimated', totalPotentialSavings = 0) {
+    vi.mocked(platformStatsService.getDashboardStats).mockResolvedValue({
+      totalServices: 0, servicesChange: 0, activeDeployments: 0, deploymentsChange: 0,
+      monthlyAwsCost, costChange: 0, totalTeams: 0, teamsChange: 0, costSource,
+    })
+    vi.mocked(costRecommendationsService.getStats).mockResolvedValue({ totalPotentialSavings } as any)
+  }
+
+  beforeEach(() => {
+    mockServicesStats.mockResolvedValue({ total: 3, healthy: 3, needs_attention: 0, by_region: {} })
+  })
+
+  it('Cost Explorer spend is month-to-date spend', async () => {
+    mockSpend(1234.5, 'actual')
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('infrastructure-spend-value').textContent).toContain('$1,234.50'))
+    expect(screen.getByTestId('infrastructure-spend-label').textContent).toBe('Month-to-Date Spend')
+  })
+
+  it('an inventory estimate is a run-rate, never spend', async () => {
+    mockSpend(412.5, 'estimated')
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('infrastructure-spend-value').textContent).toContain('$412.50/mo'))
+    expect(screen.getByTestId('infrastructure-spend-label').textContent).toBe('Estimated Monthly Run-Rate')
+    expect(document.body.textContent).toContain('not AWS billed spend')
+  })
+
+  // The backend never sends 'actual' with $0: Cost Explorer failing, a real $0
+  // month, net credits and no account all arrive as an 'estimated' inventory
+  // sum, which is $0 when nothing is estimated. That is no figure, not $0.00/mo.
+  it('an estimate of $0 (any Cost Explorer fallback with nothing estimated) shows no figure, with the reason', async () => {
+    mockSpend(0, 'estimated')
+    renderPage()
+    // The loading state is also "—", so wait for the reason, not the dash.
+    await waitFor(() => expect(document.body.textContent).toContain('Not available · no AWS Cost Explorer spend or inventory estimate'))
+    expect(screen.getByTestId('infrastructure-spend-value').textContent).toBe('—')
+    expect(screen.getByTestId('infrastructure-spend-value').parentElement!.textContent).not.toMatch(/\$0/)
+    expect(document.body.textContent).not.toContain('Syncing from Cost Explorer')
+  })
+
+  it('shows no "% of total spend" share of savings in real mode', async () => {
+    mockSpend(200, 'actual', 50)
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('infrastructure-spend-value').textContent).toContain('$200.00'))
+    expect(document.body.textContent).not.toMatch(/% of total spend/)
   })
 })

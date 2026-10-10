@@ -42,3 +42,10 @@ describe('CostTrendChart -- date range tabs', () => {
     expect(onDateRangeChange).toHaveBeenCalledWith('90d')
   })
 })
+
+describe('CostTrendChart -- basis', () => {
+  it('says its totals exclude credits and refunds', () => {
+    render(<CostTrendChart data={sampleData} dateRange="7d" onDateRangeChange={() => {}} />)
+    expect(screen.getByText(/Credits\/refunds excluded/)).toBeInTheDocument()
+  })
+})
