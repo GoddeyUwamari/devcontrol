@@ -41,8 +41,37 @@ export interface SpendDisplay {
   provenance: 'actual' | 'estimated' | null
 }
 
+/** Billed spend from AWS Cost Explorer. Only an 'actual' figure carries this label. */
+export const ACTUAL_SPEND_LABEL = 'Month-to-Date Spend'
+/**
+ * An inventory estimate. Deliberately not called "spend": it is a modeled
+ * run-rate from list prices, not what AWS billed.
+ */
+export const ESTIMATED_RUN_RATE_LABEL = 'Estimated Monthly Run-Rate'
+const ESTIMATE_SUB = 'Estimate from resource inventory · not AWS billed spend'
+/**
+ * Shown instead of an estimate of $0 or less. An inventory estimate is a sum of
+ * per-resource list-price estimates, so $0 means nothing was estimated (no
+ * resources discovered, or none with a price) -- not that the account costs
+ * nothing. On the stats endpoint it also stands in for Cost Explorer failing,
+ * no connected account, a real $0 month, and net credits, which it cannot tell
+ * apart. Either way there is no figure to show.
+ */
+export const NO_SPEND_FIGURE_SUB = 'Not available · no AWS Cost Explorer spend or inventory estimate'
+
+/**
+ * Whether GET /api/platform/stats/dashboard's figure is worth showing: Cost
+ * Explorer data, or an estimate above $0. The backend sends 'actual' only for a
+ * Cost Explorer total above $0 and otherwise falls back to the inventory
+ * estimate (AWSCostService.getMonthlySpendWithFallback). The Dashboard's
+ * hasBillingData gate and describeStatsSpend both read this.
+ */
+export function statsHasSpendFigure(stats: { monthlyAwsCost: number; costSource?: 'actual' | 'estimated' }): boolean {
+  return stats.costSource === 'actual' || stats.monthlyAwsCost > 0
+}
+
 export function describeSpend(section: ContextSection<CostSpendEvidence> | undefined, { isLoading, isError }: QueryStatus): SpendDisplay {
-  const missing = (sub: string): SpendDisplay => ({ label: 'Month-to-Date Spend', value: '—', sub, amount: null, provenance: null })
+  const missing = (sub: string): SpendDisplay => ({ label: ACTUAL_SPEND_LABEL, value: '—', sub, amount: null, provenance: null })
   if (isLoading) return missing('Loading…')
   if (isError || !section || section.state === 'error') return missing('Could not be retrieved')
   if ((section.state !== 'available' && section.state !== 'partial') || !section.data) {
@@ -51,10 +80,11 @@ export function describeSpend(section: ContextSection<CostSpendEvidence> | undef
 
   const { amount, basis, lastDayInProgress } = section.data
   if (section.provenance === 'estimated' || basis === 'estimated_monthly_run_rate') {
+    if (!(amount > 0)) return missing(NO_SPEND_FIGURE_SUB)
     return {
-      label: 'Estimated Monthly Spend',
+      label: ESTIMATED_RUN_RATE_LABEL,
       value: `${formatUsd(amount)}/mo`,
-      sub: `Estimate from resource inventory · not AWS billed spend (Cost Explorer unavailable)${section.state === 'partial' ? ' · some resources have no estimate' : ''}`,
+      sub: `${ESTIMATE_SUB} (Cost Explorer unavailable)${section.state === 'partial' ? ' · some resources have no estimate' : ''}`,
       amount,
       provenance: 'estimated',
     }
@@ -64,7 +94,29 @@ export function describeSpend(section: ContextSection<CostSpendEvidence> | undef
   if (amount < 0) notes.push('net of credits')
   if (lastDayInProgress) notes.push(TODAY_STILL_BILLING)
   if (section.state === 'partial') notes.push('partial data')
-  return { label: 'Month-to-Date Spend', value: formatUsd(amount), sub: notes.join(' · '), amount, provenance: 'actual' }
+  return { label: ACTUAL_SPEND_LABEL, value: formatUsd(amount), sub: notes.join(' · '), amount, provenance: 'actual' }
+}
+
+/**
+ * The same wording for GET /api/platform/stats/dashboard's figure
+ * (monthlyAwsCost + costSource), which the by-team and /infrastructure cards
+ * read. costSource decides the label: an 'estimated' amount (the inventory
+ * run-rate the backend falls back to) is never called spend.
+ */
+export function describeStatsSpend(
+  stats: { monthlyAwsCost: number; costSource?: 'actual' | 'estimated' } | undefined,
+  { isLoading, isError }: QueryStatus
+): SpendDisplay {
+  const missing = (sub: string): SpendDisplay => ({ label: ACTUAL_SPEND_LABEL, value: '—', sub, amount: null, provenance: null })
+  if (isLoading) return missing('Loading…')
+  if (isError || !stats || !Number.isFinite(stats.monthlyAwsCost)) return missing('Could not be retrieved')
+  const amount = stats.monthlyAwsCost
+  if (!statsHasSpendFigure(stats)) return missing(NO_SPEND_FIGURE_SUB)
+  if (stats.costSource === 'actual') {
+    return { label: ACTUAL_SPEND_LABEL, value: formatUsd(amount), sub: 'Actual · AWS Cost Explorer', amount, provenance: 'actual' }
+  }
+  // 'estimated', or a response that does not say: never presented as billed spend.
+  return { label: ESTIMATED_RUN_RATE_LABEL, value: `${formatUsd(amount)}/mo`, sub: ESTIMATE_SUB, amount, provenance: 'estimated' }
 }
 
 /**

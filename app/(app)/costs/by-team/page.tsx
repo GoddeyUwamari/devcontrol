@@ -10,12 +10,13 @@ import { Users, DollarSign, TrendingUp, Lock, Download } from 'lucide-react'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
-import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
 import type { PlatformDashboardStats } from '@/lib/types'
 import Link from 'next/link'
 import { annualizeMonthly } from '@/lib/utils'
+import { describeStatsSpend } from '../cost-display'
+import { demoAttributionCsv, demoAttributionCsvFilename } from './demo-attribution-csv'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
+// ── Demo label ─────────────────────────────────────────────────────────────────
+
+/** On-page label for every block that shows sample team data. */
+const DemoDataBadge = () => (
+  <span data-testid="by-team-demo-badge" className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
+    Demo data
+  </span>
+)
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function CostsByTeamPage() {
@@ -69,19 +79,14 @@ export default function CostsByTeamPage() {
   const isDemoActive = demoMode || salesDemo
   const [activeTab, setActiveTab] = useState<'team' | 'service' | 'resource'>('team')
 
-  // Source B — still backs the by-team/by-service/by-resource-type breakdowns below,
-  // which have no source-A equivalent (Cost Explorer has no concept of this app's
-  // internal teams/services tables). Kept for the table's own internal totals/percentages
-  // and the Teams Tracked / Top Spender cards, none of which this fix is scoped to touch.
-  const { data: costsData, isLoading } = useQuery({
-    queryKey: ['infrastructure-costs'],
-    queryFn: infrastructureService.getCosts,
-    enabled: !isDemoActive,
-  })
-
-  // Source A — same call Dashboard/costs/efficiency use for live spend. Feeds only the
-  // Total Monthly Spend / Annual Projection KPI cards, so they agree with Dashboard.
-  const { data: platformStats, isLoading: statsLoading } = useQuery<PlatformDashboardStats>({
+  // Real mode shows no team/service/resource-type breakdown. DevControl does not
+  // yet allocate the AWS bill to teams or services: the former breakdown summed
+  // infrastructure_resources, which discovery never fills, so every team read $0
+  // next to a real total. The breakdown below is demo data only.
+  //
+  // The spend card reads the same figure Dashboard/costs/efficiency use for live
+  // spend, labeled by its costSource: an inventory estimate is never called spend.
+  const { data: platformStats, isLoading: statsLoading, isError: statsError } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
     queryFn: platformStatsService.getDashboardStats,
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
@@ -95,10 +100,10 @@ export default function CostsByTeamPage() {
     enabled: !isDemoActive,
   })
 
-  const data = isDemoActive ? DEMO_DATA : costsData?.data ?? null
+  const data = isDemoActive ? DEMO_DATA : null
   const totalCost = data?.total_monthly_cost ?? 0
-  const liveTotalCost = isDemoActive ? DEMO_DATA.total_monthly_cost : (platformStats?.monthlyAwsCost ?? 0)
   const isAwsConnected = isDemoActive || (awsAccounts?.length ?? 0) > 0
+  const spend = describeStatsSpend(platformStats, { isLoading: statsLoading, isError: statsError })
 
   // ── Free gate ──
   if (isFree && !isDemoActive) {
@@ -107,7 +112,7 @@ export default function CostsByTeamPage() {
         <div className="mb-8">
           <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
           <h1 className="text-2xl font-bold text-gray-900">Cost Attribution</h1>
-          <p className="text-xs text-gray-500 font-medium mt-1.5">See exactly how much each team, service, and resource type is spending.</p>
+          <p className="text-xs text-gray-500 font-medium mt-1.5">Attribution of AWS spend to teams, services, and resource types.</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center mx-auto mb-4">
@@ -115,7 +120,7 @@ export default function CostsByTeamPage() {
           </div>
           <h2 className="text-sm font-semibold text-gray-900 mb-2">Starter Plan Required</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-            Cost attribution by team is available on the Starter plan and above. See exactly which teams and services are driving your AWS spend.
+            Cost attribution by team is available on the Starter plan and above.
           </p>
           <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
             Upgrade to Starter
@@ -125,22 +130,14 @@ export default function CostsByTeamPage() {
     )
   }
 
+  // Demo mode only (the button is not rendered otherwise): the file is labeled
+  // as demo data in its name and first row.
   const handleExportCSV = () => {
-    const teamRows = data?.by_team?.map(d => [d.team_name, d.cost]) ?? []
-    const serviceRows = data?.by_service?.map(d => [d.service_name, d.cost]) ?? []
-    const resourceRows = data?.by_resource_type?.map(d => [d.resource_type, d.cost]) ?? []
-    const rows = [
-      ['Category', 'Name', 'Monthly Cost'],
-      ...teamRows.map(r => ['Team', ...r]),
-      ...serviceRows.map(r => ['Service', ...r]),
-      ...resourceRows.map(r => ['Resource Type', ...r]),
-    ]
-    const csv = rows.map(r => r.join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
+    const blob = new Blob([demoAttributionCsv(DEMO_DATA)], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `cost-attribution-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = demoAttributionCsvFilename(new Date())
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -163,117 +160,145 @@ export default function CostsByTeamPage() {
           <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
           <h1 className="text-2xl font-bold text-gray-900">Cost Attribution</h1>
           <p className="text-xs text-gray-500 font-medium mt-1.5">
-            See exactly how much each team, service, and resource type is spending on AWS.
+            Attribution of AWS spend to teams, services, and resource types.
           </p>
         </div>
-        <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white border border-gray-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium shrink-0 hover:border-violet-300 hover:text-violet-700 transition-colors">
-          <Download size={14} /> Export CSV
-        </button>
+        {isDemoActive && (
+          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white border border-gray-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium shrink-0 hover:border-violet-300 hover:text-violet-700 transition-colors">
+            <Download size={14} /> Export CSV
+          </button>
+        )}
       </div>
 
-      {/* ── KPI CARDS ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: 'Total Monthly Spend', value: `$${(liveTotalCost).toLocaleString()}`,    icon: DollarSign, color: '#7C3AED', loading: statsLoading },
-          { label: 'Annual Projection',   value: `$${annualizeMonthly(liveTotalCost).toLocaleString()}`, icon: TrendingUp, color: '#4f8ef7', loading: statsLoading },
-          { label: 'Teams Tracked',       value: String(data?.by_team?.length ?? 0),     icon: Users,      color: '#38c9a0', loading: isLoading },
-          { label: 'Top Spender',         value: topItem ? topItem.name.split(' ')[0] : 'N/A', icon: DollarSign, color: '#e05d2e', loading: isLoading },
-        ].map(({ label, value, icon: Icon, color, loading }) => (
-          <div key={label} className="bg-white border border-gray-100 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: color + '15' }}>
-                <Icon size={14} style={{ color }} />
-              </div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</p>
-            </div>
-            <p className="text-2xl font-bold text-slate-900">{loading && !isDemoActive ? '—' : value}</p>
+      {isDemoActive ? (
+        <>
+          {/* ── KPI CARDS (demo data) ── */}
+          <div className="mb-3">
+            <DemoDataBadge />
           </div>
-        ))}
-      </div>
-
-      {/* ── TABS ── */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mb-5">
-        <div className="flex border-b border-gray-100">
-          {tabs.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
-              className={`px-6 py-3.5 text-sm font-medium transition-colors border-b-2 ${
-                activeTab === tab.key
-                  ? 'border-violet-600 text-violet-700 bg-violet-50/50'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-6">
-          {isLoading && !isDemoActive ? (
-            <div className="h-64 flex items-center justify-center">
-              <p className="text-slate-500 text-sm">Loading cost data...</p>
-            </div>
-          ) : activeData.length === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center">
-              <Users size={32} className="text-slate-300 mb-3" />
-              <p className="text-slate-500 text-sm">No cost data available yet.</p>
-              <p className="text-slate-500 text-xs mt-1">
-                {isAwsConnected
-                  ? 'No cost allocation tags found in your AWS account. To enable cost attribution, add resource tags (e.g. Team=Backend) in the AWS Console and run a sync.'
-                  : 'Connect your AWS account and sync to see cost attribution.'}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Bar Chart */}
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Monthly spend</p>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={activeData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v / 1000).toFixed(0) + 'K'} />
-                    <YAxis type="category" dataKey="name" tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} width={130} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="cost" radius={[0, 4, 4, 0]}>
-                      {activeData.map((_, i) => (
-                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {[
+              { label: 'Total Monthly Spend', value: `$${DEMO_DATA.total_monthly_cost.toLocaleString()}`,                    icon: DollarSign, color: '#7C3AED' },
+              { label: 'Annual Projection',   value: `$${annualizeMonthly(DEMO_DATA.total_monthly_cost).toLocaleString()}`, icon: TrendingUp, color: '#4f8ef7' },
+              { label: 'Teams Tracked',       value: String(DEMO_DATA.by_team.length),                                       icon: Users,      color: '#38c9a0' },
+              { label: 'Top Spender',         value: topItem ? topItem.name.split(' ')[0] : 'N/A',                           icon: DollarSign, color: '#e05d2e' },
+            ].map(({ label, value, icon: Icon, color }) => (
+              <div key={label} className="bg-white border border-gray-100 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: color + '15' }}>
+                    <Icon size={14} style={{ color }} />
+                  </div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</p>
+                </div>
+                <p className="text-2xl font-bold text-slate-900">{value}</p>
               </div>
+            ))}
+          </div>
 
-              {/* Table */}
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Breakdown</p>
-                <div className="flex flex-col gap-2">
-                  {activeData.map((item, i) => {
-                    const pct = totalCost > 0 ? Math.round((item.cost / totalCost) * 100) : 0
-                    return (
-                      <div key={i} className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                        <span className="text-sm text-slate-700 flex-1 truncate">{item.name}</span>
-                        <span className="text-xs text-slate-500 w-8 text-right shrink-0">{pct}%</span>
-                        <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }} />
+          {/* ── TABS (demo data) ── */}
+          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mb-5">
+            <div className="flex border-b border-gray-100">
+              {tabs.map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key as any)}
+                  className={`px-6 py-3.5 text-sm font-medium transition-colors border-b-2 ${
+                    activeTab === tab.key
+                      ? 'border-violet-600 text-violet-700 bg-violet-50/50'
+                      : 'border-transparent text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6">
+              <div className="mb-4">
+                <DemoDataBadge />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Bar Chart */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Monthly spend</p>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={activeData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v / 1000).toFixed(0) + 'K'} />
+                      <YAxis type="category" dataKey="name" tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} width={130} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="cost" radius={[0, 4, 4, 0]}>
+                        {activeData.map((_, i) => (
+                          <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Table */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Breakdown</p>
+                  <div className="flex flex-col gap-2">
+                    {activeData.map((item, i) => {
+                      const pct = totalCost > 0 ? Math.round((item.cost / totalCost) * 100) : 0
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                          <span className="text-sm text-slate-700 flex-1 truncate">{item.name}</span>
+                          <span className="text-xs text-slate-500 w-8 text-right shrink-0">{pct}%</span>
+                          <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
+                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }} />
+                          </div>
+                          <span className="text-sm font-semibold text-slate-900 w-24 text-right shrink-0">
+                            ${item.cost.toLocaleString()}
+                          </span>
                         </div>
-                        <span className="text-sm font-semibold text-slate-900 w-24 text-right shrink-0">
-                          ${item.cost.toLocaleString()}
-                        </span>
-                      </div>
-                    )
-                  })}
-                  <div className="border-t border-slate-100 pt-2 mt-1 flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total</span>
-                    <span className="text-sm font-bold text-slate-900">${totalCost.toLocaleString()}/mo</span>
+                      )
+                    })}
+                    <div className="border-t border-slate-100 pt-2 mt-1 flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total</span>
+                      <span className="text-sm font-bold text-slate-900">${totalCost.toLocaleString()}/mo</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* ── SPEND (labeled by its source) ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white border border-gray-100 rounded-xl p-4" data-testid="by-team-spend-card">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#7C3AED15' }}>
+                  <DollarSign size={14} style={{ color: '#7C3AED' }} />
+                </div>
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{spend.label}</p>
+              </div>
+              <p className="text-2xl font-bold text-slate-900">{spend.value}</p>
+              <p className="text-xs text-slate-500 mt-1">{spend.sub}</p>
+            </div>
+          </div>
+
+          {/* ── ATTRIBUTION: not available ── */}
+          <div className="bg-white border border-gray-100 rounded-xl p-6 mb-5" data-testid="by-team-attribution-unavailable">
+            <div className="flex flex-col items-center justify-center text-center py-10">
+              <Users size={32} className="text-slate-300 mb-3" />
+              <p className="text-slate-700 text-sm font-semibold">Cost attribution by team and service is not available yet</p>
+              <p className="text-slate-500 text-xs mt-2 max-w-lg">
+                {isAwsConnected
+                  ? 'DevControl does not yet allocate your AWS bill to teams or services, so no per-team or per-service amounts are shown. The figure above is your account total, not split by owner.'
+                  : 'Connect your AWS account to see your AWS spend. Allocation to teams and services is not available yet.'}
+              </p>
+              <Link href="/costs" className="text-xs font-semibold text-violet-700 no-underline mt-4">
+                See spend by AWS service →
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
 
     </div>
   )

@@ -341,19 +341,18 @@ export class AWSResourcesRepository {
   }
 
   /**
-   * Get orphaned resources
-   * Note: This is a placeholder - actual orphaned detection is done by OrphanedResourceDetectorService
+   * Get orphaned resources, by the same rule as OrphanedResourceDetectorService:
+   * S3 buckets recorded as holding zero objects. Stopped EC2 instances are not
+   * listed -- no stop time is recorded, and a stopped instance accrues no
+   * compute charge (see detectOrphaned).
    */
   async getOrphaned(organizationId: string): Promise<AWSResource[]> {
-    // Return resources that are likely orphaned based on simple criteria
     const result = await this.pool.query(
       `SELECT * FROM aws_resources
        WHERE organization_id = $1
        AND status != 'terminated'
-       AND (
-         (resource_type = 'ec2' AND status = 'stopped') OR
-         (resource_type = 's3' AND metadata->>'object_count' = '0')
-       )
+       AND resource_type = 's3'
+       AND metadata->>'object_count' = '0'
        ORDER BY estimated_monthly_cost DESC`,
       [organizationId]
     );

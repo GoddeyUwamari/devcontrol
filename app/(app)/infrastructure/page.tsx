@@ -20,6 +20,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { formatCalculatedAgo } from './calculatedAgo'
+import { describeStatsSpend } from '../costs/cost-display'
 import { INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 
 const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
@@ -273,7 +274,7 @@ function InfrastructureContent() {
 
   // Source A — same call Dashboard/costs pages use for live spend. Feeds the Monthly
   // Cost KPI so it agrees with Dashboard instead of summing infrastructure_resources (B).
-  const { data: platformStats } = useQuery<PlatformDashboardStats>({
+  const { data: platformStats, isLoading: platformStatsLoading, isError: platformStatsError } = useQuery<PlatformDashboardStats>({
     queryKey: ['platform-dashboard-stats'],
     queryFn: platformStatsService.getDashboardStats,
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
@@ -358,9 +359,10 @@ function InfrastructureContent() {
   const demoActive       = DEMO_RESOURCES.filter(r => r.status === 'running').length
   const demoWarning      = DEMO_RESOURCES.filter(r => r.status === 'pending' || r.status === 'stopped').length
   const totalResources   = isDemoActive ? demoTotal      : (statsLoading ? null : (apiStats?.total          ?? 0))
-  // Source A — live Cost Explorer total, matching Dashboard/costs pages. Replaces the
-  // former sum of infrastructure_resources.cost_per_month (source B).
+  // Source A — the same figure Dashboard/costs pages use, labeled by its costSource:
+  // Cost Explorer month-to-date spend, or an inventory run-rate that is never called spend.
   const totalMonthlyCost = isDemoActive ? demoMonthlyCost: (platformStats?.monthlyAwsCost ?? 0)
+  const spendDisplay = describeStatsSpend(platformStats, { isLoading: platformStatsLoading, isError: platformStatsError })
   // A failed stats request is unknown (null -> "—"), never 0.
   const activeCount      = isDemoActive ? demoActive     : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.healthy         ?? 0))
   const warningCount     = isDemoActive ? demoWarning    : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.needs_attention ?? 0))
@@ -708,11 +710,11 @@ function InfrastructureContent() {
 
         {/* Monthly Cost */}
         <div className="bg-white rounded-xl p-4 sm:p-8 border border-gray-200/50">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">Monthly Cost</p>
-          <div className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight leading-none mb-2">
-            {isDemoActive ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : totalMonthlyCost > 0 ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : '—'}
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4" data-testid="infrastructure-spend-label">{isDemoActive ? 'Monthly Cost' : spendDisplay.label}</p>
+          <div className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight leading-none mb-2" data-testid="infrastructure-spend-value">
+            {isDemoActive ? `$${Math.round(totalMonthlyCost).toLocaleString()}` : spendDisplay.value}
           </div>
-          <p className="text-[13px] text-slate-500 leading-relaxed">{isDemoActive || totalMonthlyCost > 0 ? 'All resources combined' : 'Syncing from Cost Explorer'}</p>
+          <p className="text-[13px] text-slate-500 leading-relaxed">{isDemoActive ? 'All resources combined' : spendDisplay.sub}</p>
         </div>
 
         {/* Healthy */}
@@ -746,9 +748,9 @@ function InfrastructureContent() {
           <p className="text-xs font-semibold text-emerald-600 uppercase tracking-widest mb-4">Recoverable Savings</p>
           <div className="text-3xl sm:text-4xl font-bold text-green-600 tracking-tight leading-none mb-2">{potentialSavingsValue}</div>
           <p className="text-xs text-slate-500 mb-1">
-            {totalMonthlyCost > 0 && (recommendationStats?.totalPotentialSavings ?? 0) > 0
-              ? `${Math.round(((recommendationStats?.totalPotentialSavings ?? 0) / totalMonthlyCost) * 100)}% of total spend`
-              : isDemoActive ? '18% of total spend' : ''}
+            {/* Real mode shows no share: monthly savings over a month-to-date (or
+                estimated) amount is not a percentage of spend. */}
+            {isDemoActive ? '18% of total spend' : ''}
           </p>
           <p className="text-[13px] text-slate-500 leading-relaxed">
             {(recommendationStats?.totalPotentialSavings ?? 0) > 0 ? 'Approve to capture savings' : isDemoActive ? 'Approve to capture savings' : 'Run scan to identify savings'}

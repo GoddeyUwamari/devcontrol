@@ -59,13 +59,13 @@ async function insertOrg(label: string): Promise<string> {
   return rows[0].id as string;
 }
 
-/** An S3 bucket with no object_count metadata -- exactly what findEmptyS3Buckets flags. */
+/** An S3 bucket recorded as holding zero objects -- exactly what findEmptyS3Buckets flags. */
 async function insertEmptyBucket(orgId: string): Promise<string> {
   const { rows } = await admin.query(
     `INSERT INTO aws_resources
        (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status,
-        estimated_monthly_cost, is_orphaned, orphaned_monthly_savings)
-     VALUES ($1, $2, $3, $3, 's3', 'us-east-1', 'active', 10, false, 0)
+        estimated_monthly_cost, is_orphaned, orphaned_monthly_savings, metadata)
+     VALUES ($1, $2, $3, $3, 's3', 'us-east-1', 'active', 10, false, 0, '{"object_count": 0}')
      RETURNING id`,
     [orgId, `arn:aws:s3:::discovery-tenant-${orgId}`, `discovery-tenant-${orgId}`]
   );
@@ -168,6 +168,27 @@ describe('H1 -- OrphanedResourceDetectorService requires an org-tagged connectio
       const orphaned = await new OrphanedResourceDetectorService(c).detectOrphaned(orgId);
       expect(orphaned.map((o) => o.resource.id)).toEqual([resourceId]);
       expect(orphaned[0].orphaned_type).toBe('empty_s3_bucket');
+      expect(orphaned[0].potential_savings).toBe(0);
+    } finally {
+      c.release();
+    }
+  });
+
+  it('does not report a bucket whose object count was never recorded, or a long-stopped EC2 instance', async () => {
+    const orgId = await insertOrg('h1-unknown');
+    await admin.query(
+      `INSERT INTO aws_resources
+         (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, estimated_monthly_cost)
+       VALUES ($1, $2, 'unknown-count', 'unknown-count', 's3', 'us-east-1', 'active', 5),
+              ($1, $3, 'i-stopped', 'i-stopped', 'ec2', 'us-east-1', 'stopped', 120)`,
+      [orgId, `arn:aws:s3:::unknown-count-${orgId}`, `arn:aws:ec2:us-east-1:*:instance/i-stopped-${orgId}`]
+    );
+    // Even with no update for far longer than the former 30-day window.
+    await admin.query(`UPDATE aws_resources SET updated_at = NOW() - INTERVAL '90 days' WHERE organization_id = $1`, [orgId]);
+    const c = await rolePool(1).connect();
+    try {
+      await c.query("SELECT set_config('app.current_organization_id', $1, false)", [orgId]);
+      expect(await new OrphanedResourceDetectorService(c).detectOrphaned(orgId)).toEqual([]);
     } finally {
       c.release();
     }
@@ -184,7 +205,7 @@ describe('H1 -- scheduled (cron-style) discovery persists real orphan flags unde
     // Exactly how ResourceDiscoveryJob calls it: a pool, no request, no tag.
     await new AWSResourceDiscoveryService(rolePool(3)).discoverAllResources(orgId);
 
-    expect(await orphanState(resourceId)).toEqual({ is_orphaned: true, savings: 8 });
+    expect(await orphanState(resourceId)).toEqual({ is_orphaned: true, savings: 0 });
     expect(await latestJobError(orgId)).not.toMatch(/Orphaned detection/);
   });
 });
@@ -234,6 +255,6 @@ describe('H2 -- discovery started from inside a request never uses the request\'
     // request client. (The tenant-tag reset its own release() issues goes
     // through the unwrapped query captured at checkout, so it isn't counted.)
     expect(requestClientQuery).not.toHaveBeenCalled();
-    expect(await orphanState(resourceId)).toEqual({ is_orphaned: true, savings: 8 });
+    expect(await orphanState(resourceId)).toEqual({ is_orphaned: true, savings: 0 });
   });
 });

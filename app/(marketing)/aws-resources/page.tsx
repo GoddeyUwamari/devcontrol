@@ -20,23 +20,17 @@ export default function ResourceDiscoveryPage() {
   const isTablet = width >= 640 && width < 1024
 
   const features = [
-    { icon: Search, title: 'Auto-Discovery Across All Accounts', desc: 'Instantly discover every EC2, RDS, Lambda, S3, ECS, EKS, and other supported resource types across all your AWS accounts and regions — no manual inventory.', highlight: true },
-    { icon: Globe, title: 'Multi-Region & Multi-Account', desc: 'Single unified view across every AWS account and region your organization uses. No more logging into 5 different consoles to find one resource.' },
+    { icon: Search, title: 'Auto-Discovery', desc: 'Discover EC2, RDS, Lambda, S3, and other supported resource types in your connected AWS account — no manual inventory.', highlight: true },
+    { icon: Globe, title: 'Single-Region Discovery', desc: 'Discovery covers one AWS account in a single region (us-east-1 today), plus CloudFront, which is global. Multi-region and multi-account discovery are not available yet.' },
     { icon: Tag, title: 'Smart Tag Management', desc: 'Find every untagged resource instantly. Enforce tagging policies, auto-tag by environment or team, and generate compliance reports for finance and security.' },
     { icon: Filter, title: 'Powerful Search & Filtering', desc: 'Find any resource in seconds by type, tag, region, cost, health status, or custom attribute. Natural language search powered by AI.' },
     { icon: RefreshCw, title: 'Real-time Inventory Sync', desc: 'Resource inventory updates in real time as your infrastructure changes. Always accurate — no stale data, no manual refresh required.' },
     { icon: Database, title: 'Resource Relationship Mapping', desc: 'See how every resource connects to every other. Understand blast radius before making changes and avoid accidental outages from hidden dependencies.' },
   ]
 
-  const impacts = [
-    { value: '15+', label: 'AWS resource types discovered' },
-    { value: '< 1min', label: 'Time to full inventory' },
-    { value: '100%', label: 'Resource coverage across accounts' },
-  ]
-
   const steps = [
-    { step: '01', title: 'Connect Your AWS Accounts', desc: 'Grant read-only IAM access with our one-click CloudFormation template. Works across unlimited accounts and regions.' },
-    { step: '02', title: 'Full Inventory in Minutes', desc: 'DevControl scans every region, discovers every resource, and builds a complete inventory with relationships and metadata.' },
+    { step: '01', title: 'Connect Your AWS Account', desc: 'Grant read-only IAM access with our one-click CloudFormation template.' },
+    { step: '02', title: 'Inventory of Supported Resources', desc: 'DevControl scans a single region (us-east-1 today) for the supported resource types and records each resource with its metadata.' },
     { step: '03', title: 'Search, Tag & Govern', desc: 'Find anything instantly, enforce tagging standards, and export compliance reports for finance, security, and operations teams.' },
   ]
 
@@ -77,9 +71,9 @@ export default function ResourceDiscoveryPage() {
             lineHeight: 1.75, maxWidth: '600px',
             margin: '0 auto 36px',
           }}>
-            Stop losing track of cloud resources. DevControl automatically discovers,
-            catalogs, and maps every asset across all your AWS accounts and regions —
-            in real time, with zero manual effort.
+            Stop losing track of cloud resources. DevControl automatically discovers
+            and catalogs the supported resource types in your connected AWS account,
+            in a single region (us-east-1 today), with no manual inventory.
           </p>
 
           <div style={{
@@ -124,39 +118,12 @@ export default function ResourceDiscoveryPage() {
             fontSize: '0.875rem', fontWeight: 500, color: '#1f2937',
             alignItems: 'center',
           }}>
-            {['15+ AWS resource types', 'Multi-account & multi-region', 'Real-time sync'].map(t => (
+            {['Supported AWS resource types', 'Single region (us-east-1)', 'Real-time sync'].map(t => (
               <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: '#16a34a' }}>✓</span> {t}
               </span>
             ))}
           </div>
-          <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
-            {'A platform team discovered 340 untagged resources and $6,200/month in orphaned infrastructure within 15 minutes of connecting DevControl.'}
-          </p>
-        </div>
-      </section>
-
-      {/* BUSINESS IMPACT BAR */}
-      <section style={{
-        padding: isMobile ? '32px 16px' : isTablet ? '40px 32px' : '48px',
-        background: '#fafafa', borderBottom: '1px solid #f3f4f6',
-      }}>
-        <div style={{
-          maxWidth: '1400px', margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
-          gap: '32px', textAlign: 'center',
-        }}>
-          {impacts.map(({ value, label }) => (
-            <div key={label}>
-              <div style={{ fontSize: isMobile ? '1.8rem' : '2.5rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
-                {value}
-              </div>
-              <div style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', fontWeight: 500, marginTop: '8px' }}>
-                {label}
-              </div>
-            </div>
-          ))}
         </div>
       </section>
 
@@ -177,7 +144,7 @@ export default function ResourceDiscoveryPage() {
               Your Complete AWS Asset Register
             </h2>
             <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '520px', margin: '0 auto', lineHeight: 1.75 }}>
-              Every resource. Every account. Every region. Always up to date.
+              The supported resource types in your connected account, in a single region (us-east-1 today).
             </p>
           </div>
 
@@ -273,80 +240,6 @@ export default function ResourceDiscoveryPage() {
                 </p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* SOCIAL PROOF */}
-      <section style={{
-        padding: isMobile ? '40px 16px' : isTablet ? '48px 32px' : '64px 48px',
-        background: '#fff',
-      }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{
-            background: '#0f172a',
-            borderRadius: '20px',
-            padding: isMobile ? '28px 20px' : '48px 56px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            textAlign: 'center',
-            gap: '32px',
-          }}>
-            <p style={{
-              fontSize: isMobile ? '1rem' : '1.3rem', fontWeight: 600, color: '#fff',
-              lineHeight: 1.6, maxWidth: '700px',
-            }}>
-              {'\u201C'}We had no idea we were running 340 untagged resources across 3 accounts.
-              DevControl found them in{' '}
-              <span style={{ color: '#a78bfa', fontWeight: 800 }}>under 15 minutes</span>
-              {' and flagged $6,200/month in orphaned infrastructure we could eliminate.\u201D'}
-            </p>
-            <div style={{
-              display: 'flex',
-              flexDirection: isMobile ? 'column' : 'row',
-              alignItems: 'center',
-              gap: isMobile ? '8px' : '12px',
-            }}>
-              <div style={{
-                width: '44px', height: '44px', borderRadius: '50%',
-                background: '#7c3aed', color: '#fff',
-                fontWeight: 700, fontSize: '13px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                JM
-              </div>
-              <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
-                <p style={{ fontSize: '14px', fontWeight: 600, color: '#fff', margin: 0 }}>James M.</p>
-                <p style={{ fontSize: '12px', color: '#94A3B8', margin: 0 }}>Platform Engineer · Series C SaaS</p>
-              </div>
-              <div style={{
-                marginLeft: isMobile ? '0' : '12px',
-                background: 'rgba(124,58,237,0.3)', color: '#a78bfa',
-                padding: '4px 12px', borderRadius: '999px',
-                fontSize: '11px', fontWeight: 600,
-              }}>
-                Saved $6,200/month
-              </div>
-            </div>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
-              gap: '32px', width: '100%', borderTop: '1px solid rgba(255,255,255,0.1)',
-              paddingTop: '32px',
-            }}>
-              {[
-                { value: '340', label: 'Untagged resources found' },
-                { value: '15 min', label: 'Time to full inventory' },
-                { value: '$6,200', label: 'Monthly waste identified' },
-              ].map(({ value, label }) => (
-                <div key={label} style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', fontWeight: 800, color: '#a78bfa', margin: '0 0 4px' }}>{value}</p>
-                  <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: 0 }}>{label}</p>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </section>
